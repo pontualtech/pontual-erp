@@ -38,10 +38,14 @@ COPY --from=builder /app/apps/web/public ./apps/web/public
 COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static
 
-# Copy Prisma client (needed at runtime)
+# Copy Prisma client + CLI (needed at runtime for db push)
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 COPY --from=builder /app/packages/db/prisma ./packages/db/prisma
+
+# Copy startup script
+COPY --from=builder /app/start.sh ./start.sh
 
 USER nextjs
 
@@ -49,5 +53,4 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-# Standalone server is at apps/web/server.js in monorepo
-CMD ["node", "apps/web/server.js"]
+CMD ["sh", "start.sh"]
