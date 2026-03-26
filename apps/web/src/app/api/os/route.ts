@@ -1,0 +1,123 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@pontual/db'
+import { requirePermission } from '@/lib/auth'
+import { success, paginated, error, handleError } from '@/lib/api-response'
+import { logAudit } from '@/lib/audit'
+
+export async function GET(req: NextRequest) {
+  try {
+    const result = await requirePermission('os', 'view')
+    if (result instanceof NextResponse) return result
+    const user = result
+
+    const url = req.nextUrl.searchParams
+    const page = Math.max(1, Number(url.get('page') || '1'))
+    const limit = Math.min(100, Math.max(1, Number(url.get('limit') || '20')))
+    const search = url.get('search') || ''
+    const statusId = url.get('statusId') || null
+    const technicianId = url.get('assignedTo') || url.get('technicianId') || null
+    const priority = url.get('priority') || null
+    const osType = url.get('osType') || null
+
+    const where: any = {
+      company_id: user.companyId,
+      deleted_at: null,
+    }
+
+    if (statusId) where.status_id = statusId
+    if (technicianId) where.technician_id = technicianId
+    if (priority) where.priority = priority
+    if (osType) where.os_type = osType
+    if (search) {
+      where.OR = [
+        { os_number: isNaN(Number(search)) ? undefined : Number(search) },
+        { equipment_type: { contains: search, mode: 'insensitive' } },
+        { reported_issue: { contains: search, mode: 'insensitive' } },
+        { customers: { legal_name: { contains: search, mode: 'insensitive' } } },
+      ].filter(Boolean)
+    }
+
+    const [data, total] = await Promise.all([
+      prisma.serviceOrder.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { created_at: 'desc' },
+        include: { customers: { select: { id: true, legal_name: true, phone: true } } },
+      }),
+      prisma.serviceOrder.count({ where }),
+    ])
+
+    return paginated(data, total, page, limit)
+  } catch (err) {
+    return handleError(err)
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const result = await requirePermission('os', 'create')
+    if (result instanceof NextResponse) return result
+    const user = result
+
+    const body = await req.json()
+
+    // Get initial status for this company
+    const initialStatus = await prisma.moduleStatus.findFirst({
+      where: { company_id: user.companyId, module: 'os', is_default: true },
+    })
+    if (!initialStatus) return error('Status inicial não configurado para OS', 500)
+
+    // Auto-increment OS number
+    const lastOs = await prisma.serviceOrder.findFirst({
+      where: { company_id: user.companyId },
+      orderBy: { os_number: 'desc' },
+      select: { os_number: true },
+    })
+
+    const os = await prisma.serviceOrder.create({
+      data: {
+        company_id: user.companyId,
+        os_number: (lastOs?.os_number || 0) + 1,
+        customer_id: body.customer_id || body.customerId,
+        status_id: initialStatus.id,
+        technician_id: body.technician_id || body.technicianId,
+        priority: body.priority || 'MEDIUM',
+        os_type: body.os_type || body.osType || 'BALCAO',
+        equipment_type: body.equipment_type || body.equipmentType || body.equipment,
+        equipment_brand: body.equipment_brand || body.equipmentBrand,
+        equipment_model: body.equipment_model || body.equipmentModel,
+        serial_number: body.serial_number || body.serialNumber,
+        reported_issue: body.reported_issue || body.reportedIssue,
+        reception_notes: body.reception_notes || body.receptionNotes,
+        estimated_cost: body.estimated_cost || body.estimatedCost,
+        estimated_delivery: body.estimated_delivery || body.estimatedDelivery ? new Date(body.estimated_delivery || body.estimatedDelivery) : undefined,
+      },
+      include: { customers: true },
+    })
+
+    // Log initial status in history
+    await prisma.serviceOrderHistory.create({
+      data: {
+        company_id: user.companyId,
+        service_order_id: os.id,
+        to_status_id: initialStatus.id,
+        changed_by: user.id,
+        notes: 'OS criada',
+      },
+    })
+
+    logAudit({
+      companyId: user.companyId,
+      userId: user.id,
+      module: 'os',
+      action: 'create',
+      entityId: os.id,
+      newValue: body,
+    })
+
+    return success(os, 201)
+  } catch (err) {
+    return handleError(err)
+  }
+}

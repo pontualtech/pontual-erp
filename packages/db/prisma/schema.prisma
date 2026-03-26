@@ -1,0 +1,798 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Company {
+  id                  String              @id @default(dbgenerated("(gen_random_uuid())::text"))
+  name                String
+  slug                String              @unique
+  logo                String?
+  settings            Json?               @default("{}")
+  is_active           Boolean?            @default(true)
+  created_at          DateTime?           @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime?           @default(now()) @db.Timestamptz(6)
+  accounts            Account[]
+  accounts_payable    AccountPayable[]
+  accounts_receivable AccountReceivable[]
+  apiKeys             ApiKey[]
+  categories          Category[]
+  company_modules     CompanyModule[]
+  cost_centers        CostCenter[]
+  custom_fields       CustomField[]
+  customers           Customer[]
+  dashboard_widgets   DashboardWidget[]
+  field_labels        FieldLabel[]
+  fiscal_configs      FiscalConfig?
+  invoices            Invoice[]
+  message_templates   MessageTemplate[]
+  module_statuses     ModuleStatus[]
+  print_templates     PrintTemplate[]
+  products            Product[]
+  purchase_entries    PurchaseEntry[]
+  quotes              Quote[]
+  roles               Role[]
+  service_orders      ServiceOrder[]
+  companySettings     Setting[]
+  user_profiles       UserProfile[]
+  webhooks            Webhook[]
+
+  @@map("companies")
+}
+
+model UserProfile {
+  id             String         @id
+  company_id     String
+  name           String
+  email          String
+  phone          String?
+  avatar_url     String?
+  role_id        String
+  is_active      Boolean?       @default(true)
+  last_login_at  DateTime?      @db.Timestamptz(6)
+  preferences    Json?          @default("{}")
+  created_at     DateTime?      @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime?      @default(now()) @db.Timestamptz(6)
+  service_orders ServiceOrder[]
+  companies      Company        @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  roles          Role           @relation(fields: [role_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([id, company_id])
+  @@index([company_id], map: "idx_user_profiles_company")
+  @@index([email], map: "idx_user_profiles_email")
+  @@map("user_profiles")
+}
+
+model Role {
+  id               String           @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id       String
+  name             String
+  description      String?
+  is_system        Boolean?         @default(false)
+  is_active        Boolean?         @default(true)
+  created_at       DateTime?        @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime?        @default(now()) @db.Timestamptz(6)
+  role_permissions RolePermission[]
+  companies        Company          @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user_profiles    UserProfile[]
+
+  @@unique([company_id, name])
+  @@map("roles")
+}
+
+model Permission {
+  id               String           @id @default(dbgenerated("(gen_random_uuid())::text"))
+  module           String
+  action           String
+  description      String?
+  created_at       DateTime?        @default(now()) @db.Timestamptz(6)
+  role_permissions RolePermission[]
+
+  @@unique([module, action])
+  @@map("permissions")
+}
+
+model RolePermission {
+  id            String     @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id    String
+  role_id       String
+  permission_id String
+  granted       Boolean?   @default(true)
+  permissions   Permission @relation(fields: [permission_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  roles         Role       @relation(fields: [role_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([role_id, permission_id])
+  @@index([company_id], map: "idx_role_permissions_company")
+  @@map("role_permissions")
+}
+
+model CustomField {
+  id          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id  String
+  module      String
+  field_name  String
+  field_label String
+  field_type  String    @default("text")
+  required    Boolean?  @default(false)
+  options     Json?
+  defaultVal  String?   @map("default_value")
+  order       Int?      @default(0)
+  is_active   Boolean?  @default(true)
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime? @default(now()) @db.Timestamptz(6)
+  companies   Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([company_id, module, field_name])
+  @@index([company_id, module], map: "idx_custom_fields_module")
+  @@map("custom_fields")
+}
+
+model FieldLabel {
+  id           String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id   String
+  module       String
+  field_key    String
+  custom_label String
+  created_at   DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime? @default(now()) @db.Timestamptz(6)
+  companies    Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([company_id, module, field_key])
+  @@map("field_labels")
+}
+
+model ModuleStatus {
+  id                                                                          String                @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id                                                                  String
+  module                                                                      String
+  name                                                                        String
+  color                                                                       String?               @default("#6B7280")
+  icon                                                                        String?
+  order                                                                       Int?                  @default(0)
+  is_final                                                                    Boolean?              @default(false)
+  is_default                                                                  Boolean?              @default(false)
+  transitions                                                                 Json?                 @default("[]")
+  created_at                                                                  DateTime?             @default(now()) @db.Timestamptz(6)
+  updated_at                                                                  DateTime?             @default(now()) @db.Timestamptz(6)
+  companies                                                                   Company               @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  service_order_history_service_order_history_from_status_idTomodule_statuses ServiceOrderHistory[] @relation("service_order_history_from_status_idTomodule_statuses")
+  service_order_history_service_order_history_to_status_idTomodule_statuses   ServiceOrderHistory[] @relation("service_order_history_to_status_idTomodule_statuses")
+  service_orders                                                              ServiceOrder[]
+
+  @@unique([company_id, module, name])
+  @@map("module_statuses")
+}
+
+model PrintTemplate {
+  id            String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id    String
+  type          String
+  name          String
+  html_template String
+  css_override  String?
+  is_default    Boolean?  @default(false)
+  is_active     Boolean?  @default(true)
+  created_at    DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime? @default(now()) @db.Timestamptz(6)
+  companies     Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("print_templates")
+}
+
+model MessageTemplate {
+  id         String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id String
+  trigger    String
+  channel    String
+  template   String
+  is_active  Boolean?  @default(true)
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at DateTime? @default(now()) @db.Timestamptz(6)
+  companies  Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("message_templates")
+}
+
+model Category {
+  id                  String              @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id          String
+  module              String
+  name                String
+  parent_id           String?
+  order               Int?                @default(0)
+  created_at          DateTime?           @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime?           @default(now()) @db.Timestamptz(6)
+  accounts_payable    AccountPayable[]
+  accounts_receivable AccountReceivable[]
+  companies           Company             @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  categories          Category?           @relation("categoriesTocategories", fields: [parent_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  other_categories    Category[]          @relation("categoriesTocategories")
+  products            Product[]
+
+  @@map("categories")
+}
+
+model Setting {
+  id         String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id String
+  key        String
+  value      String
+  type       String?   @default("string")
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at DateTime? @default(now()) @db.Timestamptz(6)
+  companies  Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([company_id, key])
+  @@map("settings")
+}
+
+model ModuleRegistry {
+  id              String          @id @default(dbgenerated("(gen_random_uuid())::text"))
+  code            String          @unique
+  name            String
+  icon            String?
+  description     String?
+  version         String?         @default("1.0.0")
+  is_active       Boolean?        @default(true)
+  order           Int?            @default(0)
+  created_at      DateTime?       @default(now()) @db.Timestamptz(6)
+  company_modules CompanyModule[]
+
+  @@map("module_registry")
+}
+
+model CompanyModule {
+  id              String         @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id      String
+  module_id       String
+  is_active       Boolean?       @default(true)
+  companies       Company        @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  module_registry ModuleRegistry @relation(fields: [module_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([company_id, module_id])
+  @@map("company_modules")
+}
+
+model AuditLog {
+  id         String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id String
+  user_id    String
+  module     String
+  action     String
+  entity_id  String?
+  old_value  Json?
+  new_value  Json?
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([company_id, created_at(sort: Desc)], map: "idx_audit_logs_company")
+  @@map("audit_logs")
+}
+
+model DashboardWidget {
+  id          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id  String
+  user_id     String
+  widget_type String
+  title       String
+  config      Json?     @default("{}")
+  position    Json?     @default("{}")
+  is_active   Boolean?  @default(true)
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime? @default(now()) @db.Timestamptz(6)
+  companies   Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("dashboard_widgets")
+}
+
+model ApiKey {
+  id          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  companyId   String    @map("company_id")
+  name        String
+  key         String    @unique
+  secret      String
+  permissions Json?     @default("[]")
+  rateLimit   Int?      @default(100) @map("rate_limit")
+  isActive    Boolean?  @default(true) @map("is_active")
+  lastUsedAt  DateTime? @map("last_used_at") @db.Timestamptz(6)
+  expiresAt   DateTime? @map("expires_at") @db.Timestamptz(6)
+  createdAt   DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  company     Company   @relation(fields: [companyId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("api_keys")
+}
+
+model Webhook {
+  id              String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  companyId       String    @map("company_id")
+  name            String
+  url             String
+  events          Json?     @default("[]")
+  secret          String?
+  isActive        Boolean?  @default(true) @map("is_active")
+  lastTriggeredAt DateTime? @map("last_triggered_at") @db.Timestamptz(6)
+  failCount       Int?      @default(0) @map("fail_count")
+  createdAt       DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  company         Company   @relation(fields: [companyId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("webhooks")
+}
+
+model Customer {
+  id                   String              @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id           String
+  vhsys_id             String?
+  legal_name           String
+  trade_name           String?
+  person_type          String              @default("FISICA")
+  customer_type        String              @default("CLIENTE")
+  document_number      String?
+  email                String?
+  phone                String?
+  mobile               String?
+  address_street       String?
+  address_number       String?
+  address_complement   String?
+  address_neighborhood String?
+  address_city         String?
+  address_state        String?
+  address_zip          String?
+  state_registration   String?
+  city_registration    String?
+  notes                String?
+  custom_data          Json?               @default("{}")
+  total_os             Int?                @default(0)
+  last_os_at           DateTime?           @db.Timestamptz(6)
+  created_at           DateTime?           @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime?           @default(now()) @db.Timestamptz(6)
+  deleted_at           DateTime?           @db.Timestamptz(6)
+  accounts_payable     AccountPayable[]
+  accounts_receivable  AccountReceivable[]
+  companies            Company             @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  invoices             Invoice[]
+  purchase_entries     PurchaseEntry[]
+  service_orders       ServiceOrder[]
+
+  @@unique([company_id, vhsys_id])
+  @@index([company_id], map: "idx_customers_company")
+  @@index([document_number], map: "idx_customers_document")
+  @@map("customers")
+}
+
+model ServiceOrder {
+  id                    String                @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id            String
+  vhsys_id              String?
+  os_number             Int
+  customer_id           String
+  technician_id         String?
+  status_id             String
+  priority              String?               @default("MEDIUM")
+  os_type               String?               @default("BALCAO")
+  equipment_type        String
+  equipment_brand       String?
+  equipment_model       String?
+  serial_number         String?
+  reported_issue        String
+  diagnosis             String?
+  reception_notes       String?
+  internal_notes        String?
+  estimated_cost        Int?                  @default(0)
+  approved_cost         Int?                  @default(0)
+  total_parts           Int?                  @default(0)
+  total_services        Int?                  @default(0)
+  total_cost            Int?                  @default(0)
+  warranty_until        DateTime?             @db.Timestamptz(6)
+  estimated_delivery    DateTime?             @db.Timestamptz(6)
+  actual_delivery       DateTime?             @db.Timestamptz(6)
+  custom_data           Json?                 @default("{}")
+  created_at            DateTime?             @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime?             @default(now()) @db.Timestamptz(6)
+  deleted_at            DateTime?             @db.Timestamptz(6)
+  accounts_receivable   AccountReceivable[]
+  invoices              Invoice[]
+  quotes                Quote[]
+  service_order_history ServiceOrderHistory[]
+  service_order_items   ServiceOrderItem[]
+  service_order_photos  ServiceOrderPhoto[]
+  companies             Company               @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customers             Customer              @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  module_statuses       ModuleStatus          @relation(fields: [status_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user_profiles         UserProfile?          @relation(fields: [technician_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([company_id, os_number])
+  @@index([company_id], map: "idx_os_company")
+  @@index([customer_id], map: "idx_os_customer")
+  @@index([status_id], map: "idx_os_status")
+  @@index([technician_id], map: "idx_os_technician")
+  @@map("service_orders")
+}
+
+model ServiceOrderItem {
+  id               String       @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id       String
+  service_order_id String
+  item_type        String       @default("PECA")
+  product_id       String?
+  description      String
+  quantity         Int          @default(1)
+  unit_price       Int          @default(0)
+  total_price      Int          @default(0)
+  created_at       DateTime?    @default(now()) @db.Timestamptz(6)
+  deleted_at       DateTime?    @db.Timestamptz(6)
+  service_orders   ServiceOrder @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("service_order_items")
+}
+
+model ServiceOrderHistory {
+  id                                                                    String        @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id                                                            String
+  service_order_id                                                      String
+  from_status_id                                                        String?
+  to_status_id                                                          String
+  changed_by                                                            String
+  notes                                                                 String?
+  created_at                                                            DateTime?     @default(now()) @db.Timestamptz(6)
+  module_statuses_service_order_history_from_status_idTomodule_statuses ModuleStatus? @relation("service_order_history_from_status_idTomodule_statuses", fields: [from_status_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  service_orders                                                        ServiceOrder  @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  module_statuses_service_order_history_to_status_idTomodule_statuses   ModuleStatus  @relation("service_order_history_to_status_idTomodule_statuses", fields: [to_status_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("service_order_history")
+}
+
+model ServiceOrderPhoto {
+  id               String       @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id       String
+  service_order_id String
+  url              String
+  label            String?      @default("before")
+  uploaded_by      String?
+  created_at       DateTime?    @default(now()) @db.Timestamptz(6)
+  service_orders   ServiceOrder @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("service_order_photos")
+}
+
+model Quote {
+  id               String       @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id       String
+  service_order_id String
+  quote_number     Int
+  status           String?      @default("DRAFT")
+  total_amount     Int?         @default(0)
+  valid_until      DateTime?    @db.Timestamptz(6)
+  approval_token   String?      @unique
+  approved_at      DateTime?    @db.Timestamptz(6)
+  rejected_at      DateTime?    @db.Timestamptz(6)
+  sent_at          DateTime?    @db.Timestamptz(6)
+  notes            String?
+  created_at       DateTime?    @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime?    @default(now()) @db.Timestamptz(6)
+  quote_items      QuoteItem[]
+  companies        Company      @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  service_orders   ServiceOrder @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([company_id, quote_number])
+  @@map("quotes")
+}
+
+model QuoteItem {
+  id          String @id @default(dbgenerated("(gen_random_uuid())::text"))
+  quote_id    String
+  description String
+  quantity    Int    @default(1)
+  unit_price  Int    @default(0)
+  discount    Int?   @default(0)
+  total_price Int    @default(0)
+  quotes      Quote  @relation(fields: [quote_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("quote_items")
+}
+
+model Product {
+  id                   String              @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id           String
+  vhsys_id             String?
+  name                 String
+  description          String?
+  barcode              String?
+  internal_code        String?
+  category_id          String?
+  brand                String?
+  unit                 String?             @default("UN")
+  cost_price           Int?                @default(0)
+  sale_price           Int?                @default(0)
+  ncm                  String?
+  cfop                 String?
+  cst                  String?
+  weight               Decimal?            @db.Decimal
+  photo_url            String?
+  current_stock        Int?                @default(0)
+  reserved_stock       Int?                @default(0)
+  min_stock            Int?                @default(0)
+  max_stock            Int?                @default(0)
+  is_active            Boolean?            @default(true)
+  custom_data          Json?               @default("{}")
+  created_at           DateTime?           @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime?           @default(now()) @db.Timestamptz(6)
+  deleted_at           DateTime?           @db.Timestamptz(6)
+  invoice_items        InvoiceItem[]
+  categories           Category?           @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  companies            Company             @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  purchase_entry_items PurchaseEntryItem[]
+  stock_alerts         StockAlert[]
+  stock_movements      StockMovement[]
+
+  @@index([barcode], map: "idx_products_barcode")
+  @@index([company_id], map: "idx_products_company")
+  @@map("products")
+}
+
+model StockMovement {
+  id            String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id    String
+  product_id    String
+  movement_type String
+  reason        String
+  quantity      Int
+  reference_id  String?
+  notes         String?
+  user_id       String?
+  created_at    DateTime? @default(now()) @db.Timestamptz(6)
+  products      Product   @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("stock_movements")
+}
+
+model PurchaseEntry {
+  id                   String              @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id           String
+  vhsys_id             String?
+  supplier_id          String?
+  entry_number         Int?
+  status               String?             @default("RECEBIDA")
+  invoice_ref          String?
+  total_cost           Int?                @default(0)
+  shipping_cost        Int?                @default(0)
+  discount             Int?                @default(0)
+  notes                String?
+  created_at           DateTime?           @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime?           @default(now()) @db.Timestamptz(6)
+  companies            Company             @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customers            Customer?           @relation(fields: [supplier_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  purchase_entry_items PurchaseEntryItem[]
+
+  @@map("purchase_entries")
+}
+
+model PurchaseEntryItem {
+  id                String        @id @default(dbgenerated("(gen_random_uuid())::text"))
+  purchase_entry_id String
+  product_id        String
+  quantity          Int
+  unit_cost         Int           @default(0)
+  total_cost        Int           @default(0)
+  products          Product       @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  purchase_entries  PurchaseEntry @relation(fields: [purchase_entry_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("purchase_entry_items")
+}
+
+model StockAlert {
+  id              String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id      String
+  product_id      String
+  alert_type      String
+  status          String?   @default("PENDING")
+  created_at      DateTime? @default(now()) @db.Timestamptz(6)
+  acknowledged_at DateTime? @db.Timestamptz(6)
+  products        Product   @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("stock_alerts")
+}
+
+model Account {
+  id              String        @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id      String
+  name            String
+  account_type    String        @default("CHECKING")
+  bank_name       String?
+  agency          String?
+  account_number  String?
+  initial_balance Int?          @default(0)
+  current_balance Int?          @default(0)
+  is_active       Boolean?      @default(true)
+  provider_config Json?         @default("{}")
+  created_at      DateTime?     @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime?     @default(now()) @db.Timestamptz(6)
+  companies       Company       @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  transactions    Transaction[]
+
+  @@map("accounts")
+}
+
+model CostCenter {
+  id                 String           @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id         String
+  name               String
+  parent_id          String?
+  is_active          Boolean?         @default(true)
+  created_at         DateTime?        @default(now()) @db.Timestamptz(6)
+  accounts_payable   AccountPayable[]
+  companies          Company          @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  cost_centers       CostCenter?      @relation("cost_centersTocost_centers", fields: [parent_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  other_cost_centers CostCenter[]     @relation("cost_centersTocost_centers")
+
+  @@map("cost_centers")
+}
+
+model AccountPayable {
+  id             String      @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id     String
+  vhsys_id       String?
+  supplier_id    String?
+  category_id    String?
+  cost_center_id String?
+  description    String
+  total_amount   Int
+  paid_amount    Int?        @default(0)
+  due_date       DateTime    @db.Date
+  status         String?     @default("PENDENTE")
+  payment_method String?
+  notes          String?
+  created_at     DateTime?   @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime?   @default(now()) @db.Timestamptz(6)
+  deleted_at     DateTime?   @db.Timestamptz(6)
+  categories     Category?   @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  companies      Company     @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  cost_centers   CostCenter? @relation(fields: [cost_center_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customers      Customer?   @relation(fields: [supplier_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("accounts_payable")
+}
+
+model AccountReceivable {
+  id               String        @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id       String
+  vhsys_id         String?
+  customer_id      String?
+  service_order_id String?
+  category_id      String?
+  description      String
+  total_amount     Int
+  received_amount  Int?          @default(0)
+  due_date         DateTime      @db.Date
+  status           String?       @default("PENDENTE")
+  payment_method   String?
+  boleto_url       String?
+  pix_code         String?
+  notes            String?
+  created_at       DateTime?     @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime?     @default(now()) @db.Timestamptz(6)
+  deleted_at       DateTime?     @db.Timestamptz(6)
+  categories       Category?     @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  companies        Company       @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customers        Customer?     @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  service_orders   ServiceOrder? @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("accounts_receivable")
+}
+
+model Installment {
+  id                 String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id         String
+  parent_type        String
+  parent_id          String
+  installment_number Int
+  amount             Int
+  paid_amount        Int?      @default(0)
+  due_date           DateTime  @db.Date
+  paid_at            DateTime? @db.Timestamptz(6)
+  status             String?   @default("PENDENTE")
+  created_at         DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@map("installments")
+}
+
+model Transaction {
+  id               String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id       String
+  account_id       String
+  transaction_type String
+  amount           Int
+  description      String?
+  bank_ref         String?
+  reconciled       Boolean?  @default(false)
+  transaction_date DateTime  @db.Date
+  created_at       DateTime? @default(now()) @db.Timestamptz(6)
+  accounts         Account   @relation(fields: [account_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("transactions")
+}
+
+model FiscalConfig {
+  id                   String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id           String    @unique
+  provider             String?   @default("focus_nfe")
+  api_key              String?
+  environment          String?   @default("homologacao")
+  certificate_path     String?
+  certificate_password String?
+  settings             Json?     @default("{}")
+  created_at           DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime? @default(now()) @db.Timestamptz(6)
+  companies            Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("fiscal_configs")
+}
+
+model Invoice {
+  id               String        @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id       String
+  vhsys_id         String?
+  invoice_type     String
+  invoice_number   Int?
+  series           String?       @default("1")
+  access_key       String?
+  customer_id      String?
+  service_order_id String?
+  status           String?       @default("DRAFT")
+  provider_ref     String?
+  provider_name    String?
+  xml_url          String?
+  danfe_url        String?
+  total_amount     Int?          @default(0)
+  tax_amount       Int?          @default(0)
+  issued_at        DateTime?     @db.Timestamptz(6)
+  authorized_at    DateTime?     @db.Timestamptz(6)
+  notes            String?
+  created_at       DateTime?     @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime?     @default(now()) @db.Timestamptz(6)
+  fiscal_logs      FiscalLog[]
+  invoice_items    InvoiceItem[]
+  companies        Company       @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customers        Customer?     @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  service_orders   ServiceOrder? @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([access_key], map: "idx_invoices_access_key")
+  @@index([company_id], map: "idx_invoices_company")
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id           String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  invoice_id   String
+  product_id   String?
+  service_code String?
+  description  String
+  quantity     Int      @default(1)
+  unit_price   Int      @default(0)
+  total_price  Int      @default(0)
+  ncm          String?
+  cfop         String?
+  cst          String?
+  taxes        Json?    @default("{}")
+  invoices     Invoice  @relation(fields: [invoice_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  products     Product? @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("invoice_items")
+}
+
+model FiscalLog {
+  id          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id  String
+  invoice_id  String?
+  action      String
+  request     Json?
+  response    Json?
+  status_code Int?
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+  invoices    Invoice?  @relation(fields: [invoice_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("fiscal_logs")
+}
