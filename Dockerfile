@@ -1,4 +1,5 @@
 FROM node:20-alpine AS base
+RUN apk add --no-cache openssl
 
 # --- Dependencies ---
 FROM base AS deps
@@ -16,7 +17,7 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Generate Prisma client
+# Generate Prisma client (with Alpine musl target)
 RUN npx prisma generate --schema=packages/db/prisma/schema.prisma
 
 # Build Next.js (standalone mode)
