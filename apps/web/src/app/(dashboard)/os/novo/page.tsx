@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
+import { Plus, X } from 'lucide-react'
 
 interface Cliente { id: string; legal_name: string; trade_name: string | null }
 
@@ -11,6 +12,7 @@ export default function NovaOSPage() {
   const [loading, setLoading] = useState(false)
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [searchCliente, setSearchCliente] = useState('')
+  const [showNovoCliente, setShowNovoCliente] = useState(false)
 
   const [form, setForm] = useState({
     customer_id: '',
@@ -73,13 +75,22 @@ export default function NovaOSPage() {
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Cliente */}
         <div className="rounded-lg border bg-white p-5 space-y-3">
-          <h2 className="font-semibold text-gray-900">Cliente</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="font-semibold text-gray-900">Cliente</h2>
+            <button
+              type="button"
+              onClick={() => setShowNovoCliente(true)}
+              className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 font-medium"
+            >
+              <Plus className="h-4 w-4" /> Novo Cliente
+            </button>
+          </div>
           <div>
             <label className="block text-sm text-gray-600 mb-1">Buscar cliente</label>
             <input
               type="text"
               value={searchCliente}
-              onChange={e => setSearchCliente(e.target.value)}
+              onChange={e => { setSearchCliente(e.target.value); setForm(p => ({...p, customer_id: ''})) }}
               placeholder="Digite o nome do cliente..."
               className="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
             />
@@ -187,6 +198,128 @@ export default function NovaOSPage() {
           </button>
         </div>
       </form>
+
+      {/* Modal Novo Cliente */}
+      {showNovoCliente && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowNovoCliente(false)}>
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-900">Cadastro Rápido de Cliente</h2>
+              <button type="button" onClick={() => setShowNovoCliente(false)} className="rounded p-1 text-gray-400 hover:bg-gray-100">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <NovoClienteForm onCreated={(cliente) => {
+              setForm(p => ({ ...p, customer_id: cliente.id }))
+              setSearchCliente(cliente.legal_name)
+              setClientes([cliente])
+              setShowNovoCliente(false)
+              toast.success('Cliente cadastrado!')
+            }} />
+          </div>
+        </div>
+      )}
     </div>
+  )
+}
+
+function NovoClienteForm({ onCreated }: { onCreated: (c: Cliente) => void }) {
+  const [saving, setSaving] = useState(false)
+  const [personType, setPersonType] = useState('FISICA')
+  const [clienteForm, setClienteForm] = useState({
+    legal_name: '',
+    trade_name: '',
+    person_type: 'FISICA',
+    customer_type: 'CLIENTE',
+    document_number: '',
+    email: '',
+    phone: '',
+    mobile: '',
+    address_city: 'São Paulo',
+    address_state: 'SP',
+  })
+
+  function update(field: string, value: string) {
+    setClienteForm(prev => ({ ...prev, [field]: value }))
+    if (field === 'person_type') setPersonType(value)
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!clienteForm.legal_name) { toast.error('Nome é obrigatório'); return }
+
+    setSaving(true)
+    try {
+      const res = await fetch('/api/clientes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(clienteForm),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao cadastrar')
+      onCreated(data.data)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-3">
+      <div className="flex gap-3">
+        <label className="flex items-center gap-1.5 text-sm">
+          <input type="radio" name="pt" value="FISICA" checked={personType === 'FISICA'} onChange={e => update('person_type', e.target.value)} />
+          Pessoa Física
+        </label>
+        <label className="flex items-center gap-1.5 text-sm">
+          <input type="radio" name="pt" value="JURIDICA" checked={personType === 'JURIDICA'} onChange={e => update('person_type', e.target.value)} />
+          Pessoa Jurídica
+        </label>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          {personType === 'FISICA' ? 'Nome completo *' : 'Razão Social *'}
+        </label>
+        <input type="text" value={clienteForm.legal_name} onChange={e => update('legal_name', e.target.value)}
+          required className="w-full px-3 py-2 border rounded-md text-sm" />
+      </div>
+
+      {personType === 'JURIDICA' && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Nome Fantasia</label>
+          <input type="text" value={clienteForm.trade_name} onChange={e => update('trade_name', e.target.value)}
+            className="w-full px-3 py-2 border rounded-md text-sm" />
+        </div>
+      )}
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">{personType === 'FISICA' ? 'CPF' : 'CNPJ'}</label>
+        <input type="text" value={clienteForm.document_number} onChange={e => update('document_number', e.target.value)}
+          placeholder={personType === 'FISICA' ? '000.000.000-00' : '00.000.000/0001-00'}
+          className="w-full px-3 py-2 border rounded-md text-sm" />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Celular</label>
+          <input type="tel" value={clienteForm.mobile} onChange={e => update('mobile', e.target.value)}
+            placeholder="(11) 99999-0000" className="w-full px-3 py-2 border rounded-md text-sm" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+          <input type="email" value={clienteForm.email} onChange={e => update('email', e.target.value)}
+            className="w-full px-3 py-2 border rounded-md text-sm" />
+        </div>
+      </div>
+
+      <div className="flex gap-3 pt-2">
+        <button type="submit" disabled={saving}
+          className="flex-1 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-sm font-medium">
+          {saving ? 'Salvando...' : 'Cadastrar e Selecionar'}
+        </button>
+      </div>
+    </form>
   )
 }
