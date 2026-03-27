@@ -102,6 +102,7 @@ export default function FinanceiroPage() {
             { label: 'Centros de Custo', href: '/financeiro/centros-custo', icon: Target, desc: 'Departamentos', color: 'text-blue-600 bg-blue-50' },
             { label: 'Contas Bancárias', href: '/financeiro/contas-bancarias', icon: Landmark, desc: 'Bancos e caixas', color: 'text-emerald-600 bg-emerald-50' },
             { label: 'Cond. Pagamento', href: '/financeiro/condicoes-pagamento', icon: CreditCard, desc: 'Parcelamentos', color: 'text-amber-600 bg-amber-50' },
+            { label: 'Formas de Pgto', href: '/financeiro/formas-pagamento', icon: CreditCard, desc: 'Dinheiro, PIX, Cartão...', color: 'text-pink-600 bg-pink-50' },
           ].map(item => {
             const Icon = item.icon
             return (

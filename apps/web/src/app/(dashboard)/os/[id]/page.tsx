@@ -80,6 +80,8 @@ export default function OSDetailPage() {
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState('')
   const [paymentNotes, setPaymentNotes] = useState('')
+  const [paymentMethods, setPaymentMethods] = useState<{ id: string; name: string; icon: string; active: boolean }[]>([])
+  const [paymentMethodsLoaded, setPaymentMethodsLoaded] = useState(false)
 
   function loadOS() {
     fetch(`/api/os/${id}`)
@@ -225,6 +227,14 @@ export default function OSDetailPage() {
     if (isDelivery && os.total_cost > 0) {
       setPaymentMethod('')
       setPaymentNotes('')
+      // Load payment methods if not loaded yet
+      if (!paymentMethodsLoaded) {
+        fetch('/api/financeiro/formas-pagamento').then(r => r.json()).then(d => {
+          const methods = (d.data ?? []).filter((m: any) => m.active)
+          setPaymentMethods(methods)
+          setPaymentMethodsLoaded(true)
+        }).catch(() => {})
+      }
       setShowPaymentModal(true)
     } else {
       doTransition(next.id)
@@ -653,27 +663,27 @@ export default function OSDetailPage() {
               {/* Payment method */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Forma de pagamento *</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { value: 'DINHEIRO', label: 'Dinheiro', icon: '💵' },
-                    { value: 'PIX', label: 'PIX', icon: '📱' },
-                    { value: 'CARTAO_CREDITO', label: 'Cartão Crédito', icon: '💳' },
-                    { value: 'CARTAO_DEBITO', label: 'Cartão Débito', icon: '💳' },
-                    { value: 'BOLETO', label: 'Boleto', icon: '📄' },
-                    { value: 'TRANSFERENCIA', label: 'Transferência', icon: '🏦' },
-                    { value: 'CHEQUE', label: 'Cheque', icon: '📝' },
-                    { value: 'A_COMBINAR', label: 'A combinar', icon: '🤝' },
-                  ].map(pm => (
-                    <button key={pm.value} type="button" onClick={() => setPaymentMethod(pm.value)}
-                      className={`flex items-center gap-2 px-3 py-2.5 rounded-md text-sm font-medium border-2 transition-colors ${
-                        paymentMethod === pm.value
-                          ? 'border-green-500 bg-green-50 text-green-700'
-                          : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                      }`}>
-                      <span>{pm.icon}</span> {pm.label}
-                    </button>
-                  ))}
-                </div>
+                {paymentMethods.length > 0 ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    {paymentMethods.map(pm => (
+                      <button key={pm.id} type="button" onClick={() => setPaymentMethod(pm.name)}
+                        className={`flex items-center gap-2 px-3 py-2.5 rounded-md text-sm font-medium border-2 transition-colors ${
+                          paymentMethod === pm.name
+                            ? 'border-green-500 bg-green-50 text-green-700'
+                            : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                        }`}>
+                        <span>{pm.icon}</span> {pm.name}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-4 text-sm text-gray-500">
+                    <p>Nenhuma forma de pagamento cadastrada</p>
+                    <a href="/financeiro/formas-pagamento" target="_blank" className="text-blue-600 hover:underline text-xs mt-1 inline-block">
+                      Cadastrar formas de pagamento →
+                    </a>
+                  </div>
+                )}
               </div>
 
               {/* Notes */}
