@@ -118,7 +118,6 @@ export default function NovoClientePage() {
 
       if (existingClient) {
         const c = existingClient
-        const c = existData.data
         setForm({
           legal_name: c.legal_name || '',
           trade_name: c.trade_name || '',
