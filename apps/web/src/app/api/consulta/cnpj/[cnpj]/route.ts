@@ -9,59 +9,81 @@ export async function GET(
     const cnpj = params.cnpj.replace(/\D/g, '')
     if (cnpj.length !== 14) return error('CNPJ inválido — deve ter 14 dígitos', 400)
 
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 10000)
+    // Try ReceitaWS first, then cnpj.ws as fallback
+    const result = await tryReceitaWS(cnpj) || await tryCnpjWs(cnpj)
 
-    let data: any
-    try {
-      const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cnpj}`, {
-        signal: controller.signal,
-        cache: 'no-store',
-      })
-      clearTimeout(timeout)
-
-      if (!res.ok) {
-        if (res.status === 404) return error('CNPJ não encontrado na Receita Federal', 404)
-        return error(`Erro ao consultar CNPJ (status ${res.status})`, 502)
-      }
-
-      data = await res.json()
-    } catch (fetchErr: any) {
-      clearTimeout(timeout)
-      if (fetchErr?.name === 'AbortError') {
-        return error('Consulta CNPJ expirou (timeout). Tente novamente.', 504)
-      }
-      console.error('[CNPJ API] Fetch error:', fetchErr?.message)
-      return error('Erro de conexão ao consultar CNPJ', 502)
-    }
-
-    // Format phone - BrasilAPI returns ddd+number together like "1134939002"
-    let phone = ''
-    const rawPhone = data.ddd_telefone_1 ? String(data.ddd_telefone_1).replace(/\D/g, '') : ''
-    if (rawPhone.length >= 10) {
-      phone = `(${rawPhone.substring(0, 2)}) ${rawPhone.substring(2)}`
-    } else if (rawPhone.length > 0) {
-      phone = rawPhone
-    }
-
-    return success({
-      legal_name: data.razao_social || '',
-      trade_name: data.nome_fantasia || '',
-      email: (data.email && data.email !== 'null') ? data.email : '',
-      phone,
-      address_zip: data.cep ? String(data.cep).replace(/\D/g, '') : '',
-      address_street: data.descricao_tipo_de_logradouro
-        ? `${data.descricao_tipo_de_logradouro} ${data.logradouro || ''}`
-        : (data.logradouro || ''),
-      address_number: data.numero || '',
-      address_complement: data.complemento || '',
-      address_neighborhood: data.bairro || '',
-      address_city: data.municipio || '',
-      address_state: data.uf || '',
-      situacao: data.descricao_situacao_cadastral || '',
-      atividade_principal: data.cnae_fiscal_descricao || '',
-    })
+    if (!result) return error('CNPJ não encontrado ou APIs indisponíveis', 404)
+    return success(result)
   } catch (err) {
     return handleError(err)
+  }
+}
+
+async function tryReceitaWS(cnpj: string) {
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 10000)
+    const res = await fetch(`https://receitaws.com.br/v1/cnpj/${cnpj}`, {
+      signal: controller.signal,
+      cache: 'no-store',
+      headers: { 'Accept': 'application/json' },
+    })
+    clearTimeout(timeout)
+
+    if (!res.ok) return null
+    const d = await res.json()
+    if (d.status === 'ERROR') return null
+
+    return {
+      legal_name: d.nome || '',
+      trade_name: d.fantasia || '',
+      email: d.email || '',
+      phone: d.telefone || '',
+      address_zip: d.cep ? d.cep.replace(/\D/g, '') : '',
+      address_street: d.logradouro || '',
+      address_number: d.numero || '',
+      address_complement: d.complemento || '',
+      address_neighborhood: d.bairro || '',
+      address_city: d.municipio || '',
+      address_state: d.uf || '',
+      situacao: d.situacao || '',
+      atividade_principal: d.atividade_principal?.[0]?.text || '',
+    }
+  } catch {
+    return null
+  }
+}
+
+async function tryCnpjWs(cnpj: string) {
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 10000)
+    const res = await fetch(`https://publica.cnpj.ws/cnpj/${cnpj}`, {
+      signal: controller.signal,
+      cache: 'no-store',
+    })
+    clearTimeout(timeout)
+
+    if (!res.ok) return null
+    const d = await res.json()
+    const est = d.estabelecimento || {}
+
+    return {
+      legal_name: d.razao_social || '',
+      trade_name: est.nome_fantasia || '',
+      email: est.email || '',
+      phone: est.ddd1 && est.telefone1 ? `(${est.ddd1}) ${est.telefone1}` : '',
+      address_zip: est.cep ? String(est.cep).replace(/\D/g, '') : '',
+      address_street: est.logradouro || '',
+      address_number: est.numero || '',
+      address_complement: est.complemento || '',
+      address_neighborhood: est.bairro || '',
+      address_city: est.cidade?.nome || '',
+      address_state: est.estado?.sigla || '',
+      situacao: est.situacao_cadastral || '',
+      atividade_principal: est.atividade_principal?.descricao || '',
+    }
+  } catch {
+    return null
   }
 }
