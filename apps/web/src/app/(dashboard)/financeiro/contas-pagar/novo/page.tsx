@@ -16,26 +16,33 @@ interface Category {
   name: string
 }
 
-export default function NovaContaReceberPage() {
+interface CostCenter {
+  id: string
+  name: string
+}
+
+export default function NovaContaPagarPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
 
-  // Customer search
-  const [customerSearch, setCustomerSearch] = useState('')
-  const [customers, setCustomers] = useState<SearchResult[]>([])
-  const [selectedCustomer, setSelectedCustomer] = useState<SearchResult | null>(null)
+  // Supplier search
+  const [supplierSearch, setSupplierSearch] = useState('')
+  const [suppliers, setSuppliers] = useState<SearchResult[]>([])
+  const [selectedSupplier, setSelectedSupplier] = useState<SearchResult | null>(null)
 
   // Selects data
   const [categories, setCategories] = useState<Category[]>([])
+  const [costCenters, setCostCenters] = useState<CostCenter[]>([])
 
   const [form, setForm] = useState({
-    customer_id: '',
+    supplier_id: '',
     description: '',
     notes: '',
     total_amount: '',
     due_date: '',
     payment_method: '',
     category_id: '',
+    cost_center_id: '',
     installment_count: '1',
   })
 
@@ -49,29 +56,34 @@ export default function NovaContaReceberPage() {
       .then(r => r.json())
       .then(d => setCategories(d.data ?? []))
       .catch(() => {})
+
+    fetch('/api/financeiro/centros-custo?limit=100')
+      .then(r => r.json())
+      .then(d => setCostCenters(d.data ?? []))
+      .catch(() => {})
   }, [])
 
-  async function searchCustomers(query: string) {
-    setCustomerSearch(query)
-    if (query.length < 2) { setCustomers([]); return }
+  async function searchSuppliers(query: string) {
+    setSupplierSearch(query)
+    if (query.length < 2) { setSuppliers([]); return }
     try {
       const res = await fetch(`/api/clientes?search=${encodeURIComponent(query)}&limit=5`)
       const json = await res.json()
-      setCustomers(json.data || [])
-    } catch { setCustomers([]) }
+      setSuppliers(json.data || [])
+    } catch { setSuppliers([]) }
   }
 
-  function selectCustomer(customer: SearchResult) {
-    setSelectedCustomer(customer)
-    setCustomerSearch(customer.legal_name)
-    setCustomers([])
-    updateForm('customer_id', customer.id)
+  function selectSupplier(supplier: SearchResult) {
+    setSelectedSupplier(supplier)
+    setSupplierSearch(supplier.legal_name)
+    setSuppliers([])
+    updateForm('supplier_id', supplier.id)
   }
 
-  function clearCustomer() {
-    setSelectedCustomer(null)
-    setCustomerSearch('')
-    updateForm('customer_id', '')
+  function clearSupplier() {
+    setSelectedSupplier(null)
+    setSupplierSearch('')
+    updateForm('supplier_id', '')
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -85,15 +97,16 @@ export default function NovaContaReceberPage() {
       const amountInCents = Math.round(Number(form.total_amount) * 100)
       const installmentCount = Number(form.installment_count) || 1
 
-      const res = await fetch('/api/financeiro/contas-receber', {
+      const res = await fetch('/api/financeiro/contas-pagar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           description: form.description,
           total_amount: amountInCents,
           due_date: form.due_date,
-          customer_id: form.customer_id || undefined,
+          supplier_id: form.supplier_id || undefined,
           category_id: form.category_id || undefined,
+          cost_center_id: form.cost_center_id || undefined,
           payment_method: form.payment_method || undefined,
           notes: form.notes || undefined,
           installment_count: installmentCount > 1 ? installmentCount : undefined,
@@ -102,8 +115,8 @@ export default function NovaContaReceberPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Erro ao cadastrar')
 
-      toast.success('Conta a receber cadastrada!')
-      router.push('/financeiro/contas-receber')
+      toast.success('Conta a pagar cadastrada!')
+      router.push('/financeiro/contas-pagar')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao cadastrar')
     } finally {
@@ -115,54 +128,54 @@ export default function NovaContaReceberPage() {
     <div className="max-w-2xl mx-auto">
       <div className="flex items-center gap-3 mb-6">
         <Link
-          href="/financeiro/contas-receber"
+          href="/financeiro/contas-pagar"
           className="p-1.5 rounded hover:bg-gray-100 text-gray-500"
         >
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Nova Conta a Receber</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Nova Conta a Pagar</h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            <Link href="/financeiro" className="text-emerald-600 hover:underline">Financeiro</Link>
+            <Link href="/financeiro" className="text-blue-600 hover:underline">Financeiro</Link>
             {' / '}
-            <Link href="/financeiro/contas-receber" className="text-emerald-600 hover:underline">Contas a Receber</Link>
+            <Link href="/financeiro/contas-pagar" className="text-blue-600 hover:underline">Contas a Pagar</Link>
             {' / Novo'}
           </p>
         </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-5">
-        {/* Cliente */}
+        {/* Fornecedor */}
         <div className="rounded-lg border bg-white p-5 space-y-3">
-          <h2 className="font-semibold text-gray-900">Cliente</h2>
+          <h2 className="font-semibold text-gray-900">Fornecedor</h2>
           <div className="relative">
-            <label htmlFor="customer-search" className="block text-sm text-gray-600 mb-1">Buscar cliente (opcional)</label>
+            <label htmlFor="supplier-search" className="block text-sm text-gray-600 mb-1">Buscar fornecedor (opcional)</label>
             <input
-              id="customer-search"
+              id="supplier-search"
               type="text"
-              value={customerSearch}
-              onChange={e => searchCustomers(e.target.value)}
-              placeholder="Digite o nome do cliente..."
+              value={supplierSearch}
+              onChange={e => searchSuppliers(e.target.value)}
+              placeholder="Digite o nome do fornecedor..."
               className="w-full px-3 py-2 border rounded-md text-sm"
             />
-            {customers.length > 0 && (
+            {suppliers.length > 0 && (
               <div className="absolute z-10 w-full mt-1 bg-white border rounded-md shadow-lg max-h-40 overflow-y-auto">
-                {customers.map(c => (
+                {suppliers.map(s => (
                   <button
-                    key={c.id}
+                    key={s.id}
                     type="button"
-                    onClick={() => selectCustomer(c)}
-                    className="w-full text-left px-3 py-2 hover:bg-emerald-50 text-sm"
+                    onClick={() => selectSupplier(s)}
+                    className="w-full text-left px-3 py-2 hover:bg-blue-50 text-sm"
                   >
-                    {c.legal_name}
+                    {s.legal_name}
                   </button>
                 ))}
               </div>
             )}
-            {selectedCustomer && (
+            {selectedSupplier && (
               <div className="flex items-center gap-2 mt-1">
-                <p className="text-sm text-green-600">Selecionado: {selectedCustomer.legal_name}</p>
-                <button type="button" onClick={clearCustomer} className="text-xs text-red-500 hover:underline">Remover</button>
+                <p className="text-sm text-green-600">Selecionado: {selectedSupplier.legal_name}</p>
+                <button type="button" onClick={clearSupplier} className="text-xs text-red-500 hover:underline">Remover</button>
               </div>
             )}
           </div>
@@ -178,7 +191,7 @@ export default function NovaContaReceberPage() {
               type="text"
               value={form.description}
               onChange={e => updateForm('description', e.target.value)}
-              placeholder="Ex: OS #0004 - Manutencao impressora HP"
+              placeholder="Ex: Aluguel escritorio, compra de material..."
               required
               className="w-full px-3 py-2 border rounded-md text-sm"
             />
@@ -248,19 +261,35 @@ export default function NovaContaReceberPage() {
         {/* Classificacao */}
         <div className="rounded-lg border bg-white p-5 space-y-3">
           <h2 className="font-semibold text-gray-900">Classificacao</h2>
-          <div>
-            <label htmlFor="category_id" className="block text-sm text-gray-600 mb-1">Categoria</label>
-            <select
-              id="category_id"
-              value={form.category_id}
-              onChange={e => updateForm('category_id', e.target.value)}
-              className="w-full px-3 py-2 border rounded-md text-sm"
-            >
-              <option value="">Selecione...</option>
-              {categories.map(cat => (
-                <option key={cat.id} value={cat.id}>{cat.name}</option>
-              ))}
-            </select>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="category_id" className="block text-sm text-gray-600 mb-1">Categoria</label>
+              <select
+                id="category_id"
+                value={form.category_id}
+                onChange={e => updateForm('category_id', e.target.value)}
+                className="w-full px-3 py-2 border rounded-md text-sm"
+              >
+                <option value="">Selecione...</option>
+                {categories.map(cat => (
+                  <option key={cat.id} value={cat.id}>{cat.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="cost_center_id" className="block text-sm text-gray-600 mb-1">Centro de Custo</label>
+              <select
+                id="cost_center_id"
+                value={form.cost_center_id}
+                onChange={e => updateForm('cost_center_id', e.target.value)}
+                className="w-full px-3 py-2 border rounded-md text-sm"
+              >
+                <option value="">Selecione...</option>
+                {costCenters.map(cc => (
+                  <option key={cc.id} value={cc.id}>{cc.name}</option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 
@@ -289,9 +318,9 @@ export default function NovaContaReceberPage() {
           <button
             type="submit"
             disabled={loading}
-            className="flex-1 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 disabled:opacity-50 font-medium text-sm"
+            className="flex-1 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 font-medium text-sm"
           >
-            {loading ? 'Salvando...' : 'Cadastrar Conta a Receber'}
+            {loading ? 'Salvando...' : 'Cadastrar Conta a Pagar'}
           </button>
         </div>
       </form>

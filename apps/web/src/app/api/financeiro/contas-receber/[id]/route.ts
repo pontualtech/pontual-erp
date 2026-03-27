@@ -30,7 +30,7 @@ export async function GET(req: NextRequest, { params }: Params) {
       include: {
         customers: { select: { id: true, legal_name: true, document_number: true } },
         categories: { select: { id: true, name: true } },
-        service_orders: { select: { id: true, order_number: true, status: true } },
+        service_orders: { select: { id: true, os_number: true, status_id: true } },
       },
     })
 
