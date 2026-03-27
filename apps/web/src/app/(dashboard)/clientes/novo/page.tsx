@@ -105,10 +105,19 @@ export default function NovoClientePage() {
 
     try {
       // 1) Check if client already exists in the database
-      const existRes = await fetch(`/api/clientes/por-documento/${digits}`)
-      const existData = await existRes.json()
+      let existingClient = null
+      try {
+        const existRes = await fetch(`/api/clientes/por-documento/${digits}`)
+        if (existRes.ok) {
+          const existData = await existRes.json()
+          existingClient = existData.data
+        }
+      } catch {
+        // If por-documento fails, continue to CNPJ lookup
+      }
 
-      if (existData.data) {
+      if (existingClient) {
+        const c = existingClient
         const c = existData.data
         setForm({
           legal_name: c.legal_name || '',

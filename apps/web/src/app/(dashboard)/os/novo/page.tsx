@@ -274,10 +274,13 @@ function NovoClienteForm({ onCreated }: { onCreated: (c: Cliente) => void }) {
     if (digits.length < 11) { toast.error('CPF ou CNPJ incompleto'); return }
     setDocStatus('searching'); setDocMessage('Consultando...')
     try {
-      const existRes = await fetch(`/api/clientes/por-documento/${digits}`)
-      const existData = await existRes.json()
-      if (existData.data) {
-        const c = existData.data
+      let existingClient = null
+      try {
+        const existRes = await fetch(`/api/clientes/por-documento/${digits}`)
+        if (existRes.ok) { const existData = await existRes.json(); existingClient = existData.data }
+      } catch { /* continue to CNPJ lookup */ }
+      if (existingClient) {
+        const c = existingClient
         setF({
           legal_name: c.legal_name || '', trade_name: c.trade_name || '',
           person_type: c.person_type === 'JURIDICA' ? 'JURIDICA' : 'FISICA',
