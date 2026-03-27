@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Plus, X } from 'lucide-react'
+import { Plus, X, Search, Loader2, CheckCircle, Building2, User } from 'lucide-react'
 
 interface Cliente { id: string; legal_name: string; trade_name: string | null }
 
@@ -223,101 +223,286 @@ export default function NovaOSPage() {
   )
 }
 
+// ── Masks ──────────────────────────────────────
+function maskCPF(v: string) {
+  return v.replace(/\D/g, '').slice(0, 11)
+    .replace(/(\d{3})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d{1,2})$/, '$1-$2')
+}
+function maskCNPJ(v: string) {
+  return v.replace(/\D/g, '').slice(0, 14)
+    .replace(/(\d{2})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d)/, '$1/$2')
+    .replace(/(\d{4})(\d{1,2})$/, '$1-$2')
+}
+function maskCEP(v: string) {
+  return v.replace(/\D/g, '').slice(0, 8).replace(/(\d{5})(\d)/, '$1-$2')
+}
+function maskPhone(v: string) {
+  const d = v.replace(/\D/g, '').slice(0, 11)
+  if (d.length <= 10) return d.replace(/(\d{2})(\d)/, '($1) $2').replace(/(\d{4})(\d)/, '$1-$2')
+  return d.replace(/(\d{2})(\d)/, '($1) $2').replace(/(\d{5})(\d)/, '$1-$2')
+}
+
 function NovoClienteForm({ onCreated }: { onCreated: (c: Cliente) => void }) {
   const [saving, setSaving] = useState(false)
-  const [personType, setPersonType] = useState('FISICA')
-  const [clienteForm, setClienteForm] = useState({
-    legal_name: '',
-    trade_name: '',
-    person_type: 'FISICA',
-    customer_type: 'CLIENTE',
-    document_number: '',
-    email: '',
-    phone: '',
-    mobile: '',
-    address_city: 'São Paulo',
-    address_state: 'SP',
+  const [docStatus, setDocStatus] = useState<'idle' | 'searching' | 'found' | 'cnpj-filled' | 'not-found' | 'error'>('idle')
+  const [docMessage, setDocMessage] = useState('')
+  const [existingClientId, setExistingClientId] = useState<string | null>(null)
+  const [cepLoading, setCepLoading] = useState(false)
+
+  const [f, setF] = useState({
+    legal_name: '', trade_name: '', person_type: 'FISICA', customer_type: 'CLIENTE',
+    document_number: '', email: '', phone: '', mobile: '',
+    address_zip: '', address_street: '', address_number: '', address_complement: '',
+    address_neighborhood: '', address_city: '', address_state: '',
   })
 
-  function update(field: string, value: string) {
-    setClienteForm(prev => ({ ...prev, [field]: value }))
-    if (field === 'person_type') setPersonType(value)
+  function update(field: string, value: string) { setF(prev => ({ ...prev, [field]: value })) }
+
+  const handleDocChange = useCallback((value: string) => {
+    const digits = value.replace(/\D/g, '')
+    const masked = digits.length <= 11 ? maskCPF(value) : maskCNPJ(value)
+    setF(prev => ({ ...prev, document_number: masked, person_type: digits.length <= 11 ? 'FISICA' : 'JURIDICA' }))
+    setDocStatus('idle'); setDocMessage(''); setExistingClientId(null)
+  }, [])
+
+  async function searchDoc() {
+    const digits = f.document_number.replace(/\D/g, '')
+    if (digits.length < 11) { toast.error('CPF ou CNPJ incompleto'); return }
+    setDocStatus('searching'); setDocMessage('Consultando...')
+    try {
+      const existRes = await fetch(`/api/clientes/por-documento/${digits}`)
+      const existData = await existRes.json()
+      if (existData.data) {
+        const c = existData.data
+        setF({
+          legal_name: c.legal_name || '', trade_name: c.trade_name || '',
+          person_type: c.person_type === 'JURIDICA' ? 'JURIDICA' : 'FISICA',
+          customer_type: c.customer_type || 'CLIENTE', document_number: f.document_number,
+          email: c.email || '', phone: c.phone ? maskPhone(c.phone) : '', mobile: c.mobile ? maskPhone(c.mobile) : '',
+          address_zip: c.address_zip ? maskCEP(c.address_zip) : '',
+          address_street: c.address_street || '', address_number: c.address_number || '',
+          address_complement: c.address_complement || '', address_neighborhood: c.address_neighborhood || '',
+          address_city: c.address_city || '', address_state: c.address_state || '',
+        })
+        setExistingClientId(c.id)
+        setDocStatus('found'); setDocMessage(`Cliente existente: ${c.legal_name}`)
+        toast.info('Cliente encontrado! Pode editar e salvar.')
+        return
+      }
+      if (digits.length === 14) {
+        const cnpjRes = await fetch(`/api/consulta/cnpj/${digits}`)
+        const cnpjData = await cnpjRes.json()
+        if (cnpjRes.ok && cnpjData.data) {
+          const d = cnpjData.data
+          setF(prev => ({
+            ...prev, person_type: 'JURIDICA',
+            legal_name: d.legal_name || prev.legal_name, trade_name: d.trade_name || prev.trade_name,
+            email: d.email || prev.email, phone: d.phone ? maskPhone(d.phone) : prev.phone,
+            address_street: d.address_street || prev.address_street, address_number: d.address_number || prev.address_number,
+            address_complement: d.address_complement || prev.address_complement,
+            address_neighborhood: d.address_neighborhood || prev.address_neighborhood,
+            address_city: d.address_city || prev.address_city, address_state: d.address_state || prev.address_state,
+            address_zip: d.address_zip ? maskCEP(d.address_zip) : prev.address_zip,
+          }))
+          setDocStatus('cnpj-filled'); setDocMessage(d.situacao || 'Dados preenchidos')
+          toast.success('Dados da Receita Federal preenchidos!')
+          return
+        }
+      }
+      setDocStatus('not-found'); setDocMessage('Novo cliente — preencha os dados')
+    } catch { setDocStatus('error'); setDocMessage('Erro ao consultar') }
+  }
+
+  async function searchCEP() {
+    const digits = f.address_zip.replace(/\D/g, '')
+    if (digits.length !== 8) { toast.error('CEP deve ter 8 dígitos'); return }
+    setCepLoading(true)
+    try {
+      const res = await fetch(`/api/consulta/cep/${digits}`)
+      const data = await res.json()
+      if (res.ok && data.data) {
+        setF(prev => ({
+          ...prev, address_street: data.data.address_street || prev.address_street,
+          address_neighborhood: data.data.address_neighborhood || prev.address_neighborhood,
+          address_city: data.data.address_city || prev.address_city,
+          address_state: data.data.address_state || prev.address_state,
+        }))
+        toast.success('Endereço preenchido!')
+      } else { toast.error(data.error || 'CEP não encontrado') }
+    } catch { toast.error('Erro ao consultar CEP') } finally { setCepLoading(false) }
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!clienteForm.legal_name) { toast.error('Nome é obrigatório'); return }
-
+    if (!f.legal_name) { toast.error('Nome é obrigatório'); return }
+    const payload = { ...f, document_number: f.document_number.replace(/\D/g, ''),
+      phone: f.phone.replace(/\D/g, ''), mobile: f.mobile.replace(/\D/g, ''),
+      address_zip: f.address_zip.replace(/\D/g, ''),
+    }
     setSaving(true)
     try {
-      const res = await fetch('/api/clientes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(clienteForm),
-      })
+      let res: Response
+      if (existingClientId) {
+        // Existing client — just select it, update if needed
+        res = await fetch(`/api/clientes/${existingClientId}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+        })
+      } else {
+        res = await fetch('/api/clientes', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+        })
+      }
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Erro ao cadastrar')
+      if (!res.ok) throw new Error(data.error || 'Erro')
       onCreated(data.data)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Erro')
-    } finally {
-      setSaving(false)
-    }
+    } catch (err) { toast.error(err instanceof Error ? err.message : 'Erro') } finally { setSaving(false) }
   }
+
+  const rawDoc = f.document_number.replace(/\D/g, '')
+  const inp = "w-full px-3 py-2 border rounded-md text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-200 transition-colors"
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
-      <div className="flex gap-3">
-        <label className="flex items-center gap-1.5 text-sm">
-          <input type="radio" name="pt" value="FISICA" checked={personType === 'FISICA'} onChange={e => update('person_type', e.target.value)} />
-          Pessoa Física
+      {/* Document search */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">CPF ou CNPJ</label>
+        <div className="flex gap-2">
+          <input type="text" value={f.document_number} onChange={e => handleDocChange(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); searchDoc() } }}
+            placeholder="Digite CPF ou CNPJ..." className={inp + " font-mono flex-1"} autoFocus />
+          <button type="button" onClick={searchDoc} disabled={rawDoc.length < 11 || docStatus === 'searching'}
+            className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 disabled:opacity-40 flex items-center gap-1">
+            {docStatus === 'searching' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+        {docMessage && (
+          <div className={`mt-1.5 flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded ${
+            docStatus === 'found' ? 'bg-blue-50 text-blue-700' :
+            docStatus === 'cnpj-filled' ? 'bg-green-50 text-green-700' :
+            docStatus === 'error' ? 'bg-red-50 text-red-700' : 'bg-gray-50 text-gray-600'
+          }`}>
+            {docStatus === 'found' && <CheckCircle className="w-3 h-3" />}
+            {docStatus === 'cnpj-filled' && <Building2 className="w-3 h-3" />}
+            {docStatus === 'not-found' && <User className="w-3 h-3" />}
+            {docMessage}
+          </div>
+        )}
+      </div>
+
+      {/* Person/customer type */}
+      <div className="flex gap-4">
+        <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+          <input type="radio" name="pt2" value="FISICA" title="Pessoa Física" checked={f.person_type === 'FISICA'} onChange={e => update('person_type', e.target.value)} />
+          PF
         </label>
-        <label className="flex items-center gap-1.5 text-sm">
-          <input type="radio" name="pt" value="JURIDICA" checked={personType === 'JURIDICA'} onChange={e => update('person_type', e.target.value)} />
-          Pessoa Jurídica
+        <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+          <input type="radio" name="pt2" value="JURIDICA" title="Pessoa Jurídica" checked={f.person_type === 'JURIDICA'} onChange={e => update('person_type', e.target.value)} />
+          PJ
+        </label>
+        <span className="text-gray-300">|</span>
+        <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+          <input type="radio" name="ct2" value="CLIENTE" title="Cliente" checked={f.customer_type === 'CLIENTE'} onChange={e => update('customer_type', e.target.value)} />
+          Cliente
+        </label>
+        <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+          <input type="radio" name="ct2" value="FORNECEDOR" title="Fornecedor" checked={f.customer_type === 'FORNECEDOR'} onChange={e => update('customer_type', e.target.value)} />
+          Fornecedor
         </label>
       </div>
 
+      {/* Name */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
-          {personType === 'FISICA' ? 'Nome completo *' : 'Razão Social *'}
+          {f.person_type === 'FISICA' ? 'Nome completo *' : 'Razão Social *'}
         </label>
-        <input type="text" value={clienteForm.legal_name} onChange={e => update('legal_name', e.target.value)}
-          required className="w-full px-3 py-2 border rounded-md text-sm" />
+        <input type="text" value={f.legal_name} onChange={e => update('legal_name', e.target.value)}
+          placeholder={f.person_type === 'FISICA' ? 'Nome do cliente' : 'Razão social'}
+          required className={inp} />
       </div>
 
-      {personType === 'JURIDICA' && (
+      {f.person_type === 'JURIDICA' && (
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Nome Fantasia</label>
-          <input type="text" value={clienteForm.trade_name} onChange={e => update('trade_name', e.target.value)}
-            className="w-full px-3 py-2 border rounded-md text-sm" />
+          <input type="text" value={f.trade_name} onChange={e => update('trade_name', e.target.value)}
+            placeholder="Nome fantasia" className={inp} />
         </div>
       )}
 
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">{personType === 'FISICA' ? 'CPF' : 'CNPJ'}</label>
-        <input type="text" value={clienteForm.document_number} onChange={e => update('document_number', e.target.value)}
-          placeholder={personType === 'FISICA' ? '000.000.000-00' : '00.000.000/0001-00'}
-          className="w-full px-3 py-2 border rounded-md text-sm" />
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
+      {/* Contact */}
+      <div className="grid grid-cols-2 gap-2">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Celular</label>
-          <input type="tel" value={clienteForm.mobile} onChange={e => update('mobile', e.target.value)}
-            placeholder="(11) 99999-0000" className="w-full px-3 py-2 border rounded-md text-sm" />
+          <input type="tel" value={f.mobile} onChange={e => update('mobile', maskPhone(e.target.value))}
+            placeholder="(11) 99999-0000" className={inp} />
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-          <input type="email" value={clienteForm.email} onChange={e => update('email', e.target.value)}
-            className="w-full px-3 py-2 border rounded-md text-sm" />
+          <input type="email" value={f.email} onChange={e => update('email', e.target.value)}
+            placeholder="email@exemplo.com" className={inp} />
         </div>
       </div>
 
+      {/* Address */}
+      <div className="border-t pt-3 mt-1 space-y-2">
+        <h3 className="text-sm font-semibold text-gray-700">Endereço</h3>
+        <div className="flex gap-2">
+          <div className="w-36">
+            <label className="block text-xs text-gray-500 mb-0.5">CEP</label>
+            <input type="text" value={f.address_zip} onChange={e => update('address_zip', maskCEP(e.target.value))}
+              onBlur={() => { if (f.address_zip.replace(/\D/g, '').length === 8) searchCEP() }}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); searchCEP() } }}
+              placeholder="00000-000" className={inp + " font-mono"} />
+          </div>
+          <div className="flex items-end">
+            <button type="button" onClick={searchCEP} disabled={cepLoading}
+              className="px-2.5 py-2 text-xs bg-gray-100 border rounded-md hover:bg-gray-200 disabled:opacity-50 flex items-center gap-1">
+              {cepLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
+              CEP
+            </button>
+          </div>
+        </div>
+        <div className="grid grid-cols-4 gap-2">
+          <div className="col-span-3">
+            <label className="block text-xs text-gray-500 mb-0.5">Rua</label>
+            <input type="text" value={f.address_street} onChange={e => update('address_street', e.target.value)}
+              placeholder="Rua, Avenida..." className={inp} />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-0.5">Nº</label>
+            <input type="text" value={f.address_number} onChange={e => update('address_number', e.target.value)}
+              placeholder="Nº" className={inp} />
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          <div>
+            <label className="block text-xs text-gray-500 mb-0.5">Bairro</label>
+            <input type="text" value={f.address_neighborhood} onChange={e => update('address_neighborhood', e.target.value)}
+              placeholder="Bairro" className={inp} />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-0.5">Cidade</label>
+            <input type="text" value={f.address_city} onChange={e => update('address_city', e.target.value)}
+              placeholder="Cidade" className={inp} />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-0.5">UF</label>
+            <input type="text" value={f.address_state} onChange={e => update('address_state', e.target.value.toUpperCase())}
+              maxLength={2} placeholder="SP" className={inp} />
+          </div>
+        </div>
+      </div>
+
+      {/* Submit */}
       <div className="flex gap-3 pt-2">
         <button type="submit" disabled={saving}
-          className="flex-1 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-sm font-medium">
-          {saving ? 'Salvando...' : 'Cadastrar e Selecionar'}
+          className="flex-1 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-sm font-medium
+            flex items-center justify-center gap-2 transition-colors">
+          {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+          {saving ? 'Salvando...' : existingClientId ? 'Selecionar Cliente' : 'Cadastrar e Selecionar'}
         </button>
       </div>
     </form>

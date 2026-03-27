@@ -30,6 +30,10 @@ export async function GET(req: NextRequest, { params }: Params) {
   }
 }
 
+export async function PATCH(req: NextRequest, { params }: Params) {
+  return PUT(req, { params })
+}
+
 export async function PUT(req: NextRequest, { params }: Params) {
   try {
     const result = await requirePermission('clientes', 'edit')
