@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Loader2, Search, ArrowLeft } from 'lucide-react'
+import { Loader2, Search, ArrowLeft, Building2 } from 'lucide-react'
 import Link from 'next/link'
 
 function maskCEP(v: string) {
@@ -36,6 +36,7 @@ export default function EditarClientePage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [cepLoading, setCepLoading] = useState(false)
+  const [cnpjLoading, setCnpjLoading] = useState(false)
 
   const [form, setForm] = useState({
     legal_name: '', trade_name: '', person_type: 'FISICA', customer_type: 'CLIENTE',
@@ -74,6 +75,37 @@ export default function EditarClientePage() {
   }, [id, router])
 
   function update(field: string, value: string) { setForm(prev => ({ ...prev, [field]: value })) }
+
+  async function searchCNPJ() {
+    const digits = form.document_number.replace(/\D/g, '')
+    if (digits.length !== 14) { toast.error('CNPJ deve ter 14 dígitos'); return }
+    setCnpjLoading(true)
+    try {
+      const res = await fetch(`/api/consulta/cnpj/${digits}`)
+      const data = await res.json()
+      if (res.ok && data.data) {
+        const d = data.data
+        setForm(prev => ({
+          ...prev,
+          person_type: 'JURIDICA',
+          legal_name: d.legal_name || prev.legal_name,
+          trade_name: d.trade_name || prev.trade_name,
+          email: d.email || prev.email,
+          phone: d.phone ? maskPhone(d.phone) : prev.phone,
+          address_street: d.address_street || prev.address_street,
+          address_number: d.address_number || prev.address_number,
+          address_complement: d.address_complement || prev.address_complement,
+          address_neighborhood: d.address_neighborhood || prev.address_neighborhood,
+          address_city: d.address_city || prev.address_city,
+          address_state: d.address_state || prev.address_state,
+          address_zip: d.address_zip ? maskCEP(d.address_zip) : prev.address_zip,
+        }))
+        toast.success(`Dados atualizados da Receita Federal — ${d.situacao || 'Ativa'}`)
+      } else {
+        toast.error(data.error || 'CNPJ não encontrado')
+      }
+    } catch { toast.error('Erro ao consultar CNPJ') } finally { setCnpjLoading(false) }
+  }
 
   async function searchCEP() {
     const digits = form.address_zip.replace(/\D/g, '')
@@ -175,10 +207,19 @@ export default function EditarClientePage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">
               {form.person_type === 'FISICA' ? 'CPF' : 'CNPJ'}
             </label>
-            <input type="text" value={form.document_number}
-              onChange={e => update('document_number', maskDoc(e.target.value))}
-              placeholder={form.person_type === 'FISICA' ? '000.000.000-00' : '00.000.000/0001-00'}
-              className={inp + " font-mono"} />
+            <div className="flex gap-2">
+              <input type="text" value={form.document_number}
+                onChange={e => update('document_number', maskDoc(e.target.value))}
+                placeholder={form.person_type === 'FISICA' ? '000.000.000-00' : '00.000.000/0001-00'}
+                className={inp + " font-mono flex-1"} />
+              {form.document_number.replace(/\D/g, '').length === 14 && (
+                <button type="button" onClick={searchCNPJ} disabled={cnpjLoading}
+                  className="px-3 py-2 text-sm bg-amber-50 border border-amber-200 rounded-md hover:bg-amber-100 disabled:opacity-50 flex items-center gap-1.5 text-amber-700 whitespace-nowrap">
+                  {cnpjLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Building2 className="w-3.5 h-3.5" />}
+                  Consultar Receita
+                </button>
+              )}
+            </div>
           </div>
 
           <div>
