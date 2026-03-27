@@ -23,6 +23,7 @@ const sections = [
     title: 'Integracoes',
     items: [
       { label: 'Integracoes Bancarias', href: '/config/integracoes', icon: Landmark, desc: 'Boletos: Inter, Itau, Stone' },
+      { label: 'NFS-e / Fiscal', href: '/fiscal/config', icon: FileText, desc: 'Focus NFe, inscricao municipal, aliquota' },
     ],
   },
   {
