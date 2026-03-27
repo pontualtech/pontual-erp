@@ -3,24 +3,6 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, paginated, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
-import { z } from 'zod'
-
-const createProductSchema = z.object({
-  name: z.string().min(1),
-  description: z.string().optional(),
-  barcode: z.string().optional(),
-  internal_code: z.string().optional(),
-  category_id: z.string().optional(),
-  brand: z.string().optional(),
-  unit: z.string().default('UN'),
-  cost_price: z.number().int().min(0).default(0),
-  sale_price: z.number().int().min(0).default(0),
-  ncm: z.string().optional(),
-  cfop: z.string().optional(),
-  min_stock: z.number().optional(),
-  max_stock: z.number().optional(),
-  photo_url: z.string().optional(),
-})
 
 export async function GET(request: NextRequest) {
   try {
@@ -34,6 +16,7 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search') || ''
     const categoryId = searchParams.get('categoryId')
     const isActive = searchParams.get('isActive') !== 'false'
+    const type = searchParams.get('type') // 'produto', 'servico', or null (all)
 
     const where: any = {
       company_id: user.companyId,
@@ -49,6 +32,8 @@ export async function GET(request: NextRequest) {
       ]
     }
     if (categoryId) where.category_id = categoryId
+    if (type === 'servico') where.unit = 'SV'
+    if (type === 'produto') where.unit = { not: 'SV' }
 
     const [products, total] = await Promise.all([
       prisma.product.findMany({
@@ -74,12 +59,26 @@ export async function POST(request: NextRequest) {
     const user = result
 
     const body = await request.json()
-    const data = createProductSchema.parse(body)
+
+    if (!body.name || !body.name.trim()) return error('Nome é obrigatório', 400)
 
     const product = await prisma.product.create({
       data: {
-        ...data,
         company_id: user.companyId,
+        name: body.name.trim(),
+        description: body.description || null,
+        barcode: body.barcode || null,
+        internal_code: body.internal_code || null,
+        category_id: body.category_id || null,
+        brand: body.brand || null,
+        unit: body.unit || 'UN',
+        cost_price: Math.round(Number(body.cost_price) || 0),
+        sale_price: Math.round(Number(body.sale_price) || 0),
+        ncm: body.ncm || null,
+        cfop: body.cfop || null,
+        min_stock: Number(body.min_stock) || 0,
+        max_stock: Number(body.max_stock) || 0,
+        photo_url: body.photo_url || null,
         current_stock: 0,
         reserved_stock: 0,
       },
