@@ -62,7 +62,7 @@ export default function OSDetailPage() {
 
   // Item add form
   const [showAddItem, setShowAddItem] = useState(false)
-  const [itemType, setItemType] = useState<'PECA' | 'SERVICO'>('PECA')
+  const [itemType, setItemType] = useState<'PECA' | 'SERVICO'>('SERVICO')
   const [itemSearch, setItemSearch] = useState('')
   const [itemResults, setItemResults] = useState<Produto[]>([])
   const [itemDesc, setItemDesc] = useState('')
@@ -71,6 +71,10 @@ export default function OSDetailPage() {
   const [itemProductId, setItemProductId] = useState<string | null>(null)
   const [addingItem, setAddingItem] = useState(false)
   const [deletingItem, setDeletingItem] = useState<string | null>(null)
+  const [showQuickRegister, setShowQuickRegister] = useState(false)
+  const [quickName, setQuickName] = useState('')
+  const [quickPrice, setQuickPrice] = useState('')
+  const [quickSaving, setQuickSaving] = useState(false)
 
   function loadOS() {
     fetch(`/api/os/${id}`)
@@ -165,6 +169,39 @@ export default function OSDetailPage() {
       toast.error(err instanceof Error ? err.message : 'Erro')
     } finally {
       setDeletingItem(null)
+    }
+  }
+
+  async function handleQuickRegister() {
+    if (!quickName.trim()) { toast.error('Nome é obrigatório'); return }
+    setQuickSaving(true)
+    try {
+      const payload = {
+        name: quickName.trim(),
+        unit: itemType === 'SERVICO' ? 'SV' : 'UN',
+        sale_price: Math.round(parseFloat(quickPrice || '0') * 100),
+        cost_price: 0,
+      }
+      const res = await fetch('/api/produtos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao cadastrar')
+
+      const p = data.data
+      setItemDesc(p.name)
+      setItemPrice(String(p.sale_price / 100))
+      setItemProductId(p.id)
+      setShowQuickRegister(false)
+      setQuickName('')
+      setQuickPrice('')
+      toast.success(`${itemType === 'SERVICO' ? 'Serviço' : 'Produto'} cadastrado e selecionado!`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro')
+    } finally {
+      setQuickSaving(false)
     }
   }
 
@@ -299,14 +336,14 @@ export default function OSDetailPage() {
 
                 {/* Type selector */}
                 <div className="flex gap-2">
-                  <button type="button" onClick={() => { setItemType('PECA'); setItemSearch(''); setItemResults([]) }}
-                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-sm font-medium border transition-colors ${
-                      itemType === 'PECA' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 hover:bg-gray-50'
-                    }`}><Package className="h-4 w-4" /> Peça</button>
                   <button type="button" onClick={() => { setItemType('SERVICO'); setItemSearch(''); setItemResults([]) }}
                     className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-sm font-medium border transition-colors ${
                       itemType === 'SERVICO' ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-gray-600 hover:bg-gray-50'
                     }`}><Wrench className="h-4 w-4" /> Serviço</button>
+                  <button type="button" onClick={() => { setItemType('PECA'); setItemSearch(''); setItemResults([]) }}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-sm font-medium border transition-colors ${
+                      itemType === 'PECA' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 hover:bg-gray-50'
+                    }`}><Package className="h-4 w-4" /> Peça</button>
                 </div>
 
                 {/* Product/service search */}
@@ -320,9 +357,9 @@ export default function OSDetailPage() {
                       placeholder={`Buscar ${itemType === 'PECA' ? 'produto' : 'serviço'}...`}
                       className="w-full pl-9 pr-3 py-2 border rounded-md text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-200" />
                   </div>
-                  {itemResults.length > 0 && (
-                    <div className="absolute z-10 mt-1 w-full bg-white border rounded-md shadow-lg max-h-40 overflow-y-auto">
-                      {itemResults.map(p => (
+                  {itemSearch.length >= 2 && (
+                    <div className="absolute z-10 mt-1 w-full bg-white border rounded-md shadow-lg max-h-48 overflow-y-auto">
+                      {itemResults.length > 0 ? itemResults.map(p => (
                         <button key={p.id} type="button" onClick={() => selectProduct(p)}
                           className="w-full text-left px-3 py-2 hover:bg-blue-50 text-sm flex items-center justify-between">
                           <span>
@@ -331,10 +368,45 @@ export default function OSDetailPage() {
                           </span>
                           <span className="text-gray-500 font-medium">{fmt(p.sale_price)}</span>
                         </button>
-                      ))}
+                      )) : (
+                        <div className="px-3 py-2 text-sm text-gray-500">Nenhum resultado</div>
+                      )}
+                      <div className="border-t">
+                        <button type="button" onClick={() => { setShowQuickRegister(true); setQuickName(itemSearch); setItemSearch(''); setItemResults([]) }}
+                          className="w-full text-left px-3 py-2 hover:bg-green-50 text-sm font-medium text-green-700 flex items-center gap-1.5">
+                          <Plus className="h-3.5 w-3.5" /> Cadastrar "{itemSearch}" como {itemType === 'SERVICO' ? 'serviço' : 'produto'}
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
+
+                {/* Quick register inline form */}
+                {showQuickRegister && (
+                  <div className="rounded-md border border-green-200 bg-green-50 p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-green-800">
+                        Cadastrar {itemType === 'SERVICO' ? 'Serviço' : 'Produto'}
+                      </h4>
+                      <button type="button" onClick={() => setShowQuickRegister(false)} className="text-green-600 hover:text-green-800 text-xs">Cancelar</button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="col-span-2">
+                        <input type="text" value={quickName} onChange={e => setQuickName(e.target.value)}
+                          placeholder="Nome" className="w-full px-3 py-2 border rounded-md text-sm" />
+                      </div>
+                      <div>
+                        <input type="number" step="0.01" min="0" value={quickPrice} onChange={e => setQuickPrice(e.target.value)}
+                          placeholder="Preço R$" className="w-full px-3 py-2 border rounded-md text-sm" />
+                      </div>
+                    </div>
+                    <button type="button" onClick={handleQuickRegister} disabled={quickSaving}
+                      className="w-full py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 text-sm font-medium flex items-center justify-center gap-1.5">
+                      {quickSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                      {quickSaving ? 'Cadastrando...' : 'Cadastrar e Selecionar'}
+                    </button>
+                  </div>
+                )}
 
                 {/* Manual entry */}
                 <div>
