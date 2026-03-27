@@ -15,7 +15,7 @@ const sections = [
   {
     title: 'Operacional',
     items: [
-      { label: 'Status de OS', href: '/config/status-os', icon: Tag, desc: 'Configurar fluxo de status das OS' },
+      { label: 'Status de OS', href: '/config/status', icon: Tag, desc: 'Configurar fluxo de status das OS' },
       { label: 'Tipos de Servico', href: '/config/tipos-servico', icon: Wrench, desc: 'Categorias e tipos de servico' },
     ],
   },
