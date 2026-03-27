@@ -122,6 +122,7 @@ export default function FinanceiroPage() {
         <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-400 mb-3">Relatórios</h2>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {[
+            { label: 'Relatórios', href: '/financeiro/relatorios', icon: BarChart3, desc: 'Resumo e análises', color: 'text-blue-600 bg-blue-50' },
             { label: 'Fluxo de Caixa', href: '/financeiro/fluxo-caixa', icon: BarChart3, desc: 'Entradas e saídas', color: 'text-cyan-600 bg-cyan-50' },
             { label: 'DRE', href: '/financeiro/dre', icon: FileSpreadsheet, desc: 'Demonstrativo de resultados', color: 'text-indigo-600 bg-indigo-50' },
             { label: 'Conciliação', href: '/financeiro/conciliacao', icon: Receipt, desc: 'Importar OFX', color: 'text-teal-600 bg-teal-50' },

@@ -12,8 +12,8 @@ import { z } from 'zod'
 
 const matchSchema = z.object({
   transaction_id: z.string().min(1, 'transaction_id e obrigatorio'),
-  type: z.enum(['payable', 'receivable']),
-  record_id: z.string().min(1, 'record_id e obrigatorio'),
+  type: z.enum(['payable', 'receivable', 'ignore']),
+  record_id: z.string().optional(),
 })
 
 export async function POST(request: NextRequest) {
@@ -34,6 +34,34 @@ export async function POST(request: NextRequest) {
     })
     if (!transaction) return error('Transacao nao encontrada', 404)
     if (transaction.reconciled) return error('Transacao ja foi conciliada', 400)
+
+    // Handle "ignore" — mark as reconciled without linking to any record
+    if (data.type === 'ignore') {
+      await prisma.transaction.update({
+        where: { id: data.transaction_id },
+        data: { reconciled: true },
+      })
+
+      logAudit({
+        companyId: user.companyId,
+        userId: user.id,
+        module: 'financeiro',
+        action: 'conciliacao.ignore',
+        entityId: data.transaction_id,
+        newValue: {
+          description: transaction.description,
+          amount: transaction.amount,
+        },
+      })
+
+      return success({
+        transaction_id: data.transaction_id,
+        reconciled: true,
+        action: 'ignored',
+      })
+    }
+
+    if (!data.record_id) return error('record_id e obrigatorio para conciliacao', 400)
 
     const absAmount = Math.abs(transaction.amount)
 

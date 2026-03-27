@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Building2, Users, Shield, Tag, Wrench, Bell, Database, Palette } from 'lucide-react'
+import { Building2, Users, Shield, Tag, Wrench, Bell, Database, Palette, Landmark } from 'lucide-react'
 
 const sections = [
   {
@@ -17,6 +17,12 @@ const sections = [
     items: [
       { label: 'Status de OS', href: '/config/status', icon: Tag, desc: 'Configurar fluxo de status das OS' },
       { label: 'Tipos de Servico', href: '/config/tipos-servico', icon: Wrench, desc: 'Categorias e tipos de servico' },
+    ],
+  },
+  {
+    title: 'Integracoes',
+    items: [
+      { label: 'Integracoes Bancarias', href: '/config/integracoes', icon: Landmark, desc: 'Boletos: Inter, Itau, Stone' },
     ],
   },
   {

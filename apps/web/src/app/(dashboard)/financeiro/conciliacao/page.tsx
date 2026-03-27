@@ -195,36 +195,26 @@ export default function ConciliacaoPage() {
     }
   }
 
-  // Ignore a transaction (mark as reconciled without linking)
+  // Ignore a transaction (mark as reconciled without linking to any record)
   async function handleIgnore(transactionId: string) {
     setIgnoringId(transactionId)
     try {
-      // We simply mark the transaction as reconciled without linking
       const res = await fetch('/api/financeiro/conciliacao/match', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           transaction_id: transactionId,
-          type: 'payable', // dummy, won't be used
-          record_id: 'ignore',
+          type: 'ignore',
         }),
       })
-      // The match endpoint will fail because 'ignore' is not a valid record_id.
-      // So instead we'll call a custom inline approach: mark reconciled directly.
-      // For now, let's do a direct PATCH-like call. But since we don't have that
-      // endpoint, we'll just remove it from the list visually.
-      // In practice, ignore means we accept the bank statement as-is.
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao ignorar')
 
-      // Actually, let's handle this properly by using a separate approach:
-      // We'll remove it from the local list. The transaction stays in the DB
-      // as unreconciled but the user has acknowledged it.
-
-      // Since the match endpoint won't work with 'ignore', let's skip the fetch
-      // and just remove locally.
       toast.success('Transacao ignorada')
+      const txn = transactions.find(t => t.id === transactionId)
       setTransactions(prev => prev.filter(t => t.id !== transactionId))
+      setReconciledCount(prev => prev + 1)
       if (summary) {
-        const txn = transactions.find(t => t.id === transactionId)
         setSummary({
           ...summary,
           total: summary.total - 1,
@@ -232,8 +222,8 @@ export default function ConciliacaoPage() {
           without_match: txn?.suggested_match ? summary.without_match : summary.without_match - 1,
         })
       }
-    } catch {
-      toast.error('Erro ao ignorar transacao')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao ignorar transacao')
     } finally {
       setIgnoringId(null)
     }
