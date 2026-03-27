@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Plus, Search } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Plus, Search, Pencil, Trash2, Eye } from 'lucide-react'
+import { toast } from 'sonner'
 
 interface Cliente {
   id: string
@@ -26,13 +28,16 @@ const personTypeLabel: Record<string, string> = {
 }
 
 export default function ClientesPage() {
+  const router = useRouter()
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
-  useEffect(() => {
+  function loadClientes() {
     setLoading(true)
     const params = new URLSearchParams()
     params.set('page', String(page))
@@ -46,7 +51,30 @@ export default function ClientesPage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [search, page])
+  }
+
+  useEffect(() => { loadClientes() }, [search, page])
+
+  async function handleDelete() {
+    if (!deleteId) return
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/clientes/${deleteId}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Erro ao excluir')
+      }
+      toast.success('Cliente excluído')
+      setDeleteId(null)
+      loadClientes()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao excluir')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  const clienteToDelete = clientes.find(c => c.id === deleteId)
 
   return (
     <div className="space-y-4">
@@ -80,16 +108,17 @@ export default function ClientesPage() {
               <th className="px-4 py-3">Celular</th>
               <th className="px-4 py-3">Email</th>
               <th className="px-4 py-3">Cidade</th>
+              <th className="px-4 py-3 text-right">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y">
             {loading ? (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">Carregando...</td></tr>
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">Carregando...</td></tr>
             ) : clientes.length === 0 ? (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">Nenhum cliente encontrado</td></tr>
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">Nenhum cliente encontrado</td></tr>
             ) : (
               clientes.map(c => (
-                <tr key={c.id} className="hover:bg-gray-50">
+                <tr key={c.id} className="hover:bg-gray-50 group">
                   <td className="px-4 py-3">
                     <Link href={`/clientes/${c.id}`} className="font-medium text-blue-600 hover:underline">
                       {c.legal_name}
@@ -103,6 +132,22 @@ export default function ClientesPage() {
                   <td className="px-4 py-3 text-gray-500">
                     {c.address_city ? `${c.address_city}${c.address_state ? '/' + c.address_state : ''}` : '—'}
                   </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => router.push(`/clientes/${c.id}`)} title="Ver"
+                        className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-blue-600">
+                        <Eye className="h-4 w-4" />
+                      </button>
+                      <button onClick={() => router.push(`/clientes/${c.id}/editar`)} title="Editar"
+                        className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-amber-600">
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button onClick={() => setDeleteId(c.id)} title="Excluir"
+                        className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-red-600">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))
             )}
@@ -110,24 +155,33 @@ export default function ClientesPage() {
         </table>
       </div>
 
-      {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-2">
-          <button
-            onClick={() => setPage(p => Math.max(1, p - 1))}
-            disabled={page <= 1}
-            className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-40"
-          >
-            Anterior
-          </button>
-          <span className="text-sm text-gray-500">Pagina {page} de {totalPages}</span>
-          <button
-            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-            disabled={page >= totalPages}
-            className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-40"
-          >
-            Proxima
-          </button>
+          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
+            className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-40">Anterior</button>
+          <span className="text-sm text-gray-500">Página {page} de {totalPages}</span>
+          <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
+            className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-40">Próxima</button>
+        </div>
+      )}
+
+      {/* Delete confirmation modal */}
+      {deleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setDeleteId(null)}>
+          <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">Excluir cliente?</h2>
+            <p className="text-sm text-gray-600 mb-4">
+              Tem certeza que deseja excluir <strong>{clienteToDelete?.legal_name}</strong>? Esta ação não pode ser desfeita.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setDeleteId(null)}
+                className="px-4 py-2 text-sm border rounded-md hover:bg-gray-50">Cancelar</button>
+              <button onClick={handleDelete} disabled={deleting}
+                className="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50">
+                {deleting ? 'Excluindo...' : 'Excluir'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
