@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import { ArrowLeft, Edit, Camera, History, Info, Package, Plus, Trash2, Loader2, Search, Wrench } from 'lucide-react'
+import { ArrowLeft, Edit, Camera, History, Info, Package, Plus, Trash2, Loader2, Search, Wrench, CreditCard, X } from 'lucide-react'
 
 interface Customer {
   id: string; legal_name: string; trade_name: string | null; person_type: string
@@ -75,6 +75,11 @@ export default function OSDetailPage() {
   const [quickName, setQuickName] = useState('')
   const [quickPrice, setQuickPrice] = useState('')
   const [quickSaving, setQuickSaving] = useState(false)
+
+  // Payment modal (for delivery/final status)
+  const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const [paymentMethod, setPaymentMethod] = useState('')
+  const [paymentNotes, setPaymentNotes] = useState('')
 
   function loadOS() {
     fetch(`/api/os/${id}`)
@@ -212,18 +217,48 @@ export default function OSDetailPage() {
     return statusList.find(s => s.order === current.order + 1) ?? null
   }
 
-  async function handleAdvance() {
+  function handleAdvanceClick() {
     const next = getNextStatus()
     if (!os || !next) return
+    // Check if next status has name containing "Entreg" (Entregue) and OS has value
+    const isDelivery = next.name.toLowerCase().includes('entreg') && !next.name.toLowerCase().includes('recusado')
+    if (isDelivery && os.total_cost > 0) {
+      setPaymentMethod('')
+      setPaymentNotes('')
+      setShowPaymentModal(true)
+    } else {
+      doTransition(next.id)
+    }
+  }
+
+  async function doTransition(toStatusId: string, payment_method?: string, notes?: string) {
     setTransitioning(true)
     try {
-      await fetch(`/api/os/${id}/transition`, {
+      const body: any = { toStatusId }
+      if (payment_method) body.payment_method = payment_method
+      if (notes) body.notes = notes
+      const res = await fetch(`/api/os/${id}/transition`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ toStatusId: next.id }),
+        body: JSON.stringify(body),
       })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro na transição')
+      if (data.data?.receivable_created) {
+        toast.success('OS finalizada! Conta a receber gerada automaticamente.')
+      }
+      setShowPaymentModal(false)
       loadOS()
-    } catch {} finally { setTransitioning(false) }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro')
+    } finally { setTransitioning(false) }
+  }
+
+  async function handleConfirmDelivery() {
+    if (!paymentMethod) { toast.error('Selecione a forma de pagamento'); return }
+    const next = getNextStatus()
+    if (!next) return
+    doTransition(next.id, paymentMethod, paymentNotes || undefined)
   }
 
   if (loading) return <p className="p-6 text-gray-400">Carregando...</p>
@@ -253,7 +288,7 @@ export default function OSDetailPage() {
         </div>
         <div className="flex gap-2">
           {nextStatus && (
-            <button type="button" onClick={handleAdvance} disabled={transitioning}
+            <button type="button" onClick={handleAdvanceClick} disabled={transitioning}
               className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
               {transitioning ? '...' : `Avançar → ${nextStatus.name}`}
             </button>
@@ -589,6 +624,79 @@ export default function OSDetailPage() {
           </ul>
         )}
       </div>
+
+      {/* Payment modal for delivery */}
+      {showPaymentModal && os && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowPaymentModal(false)}>
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <CreditCard className="h-5 w-5 text-green-600" />
+                Finalizar OS-{String(os.os_number).padStart(4, '0')}
+              </h2>
+              <button type="button" onClick={() => setShowPaymentModal(false)} title="Fechar" className="p-1 rounded hover:bg-gray-100 text-gray-400">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Total */}
+              <div className="rounded-lg bg-green-50 border border-green-200 p-4 text-center">
+                <p className="text-sm text-green-600 font-medium">Total da OS</p>
+                <p className="text-2xl font-bold text-green-800">{fmt(os.total_cost)}</p>
+              </div>
+
+              <p className="text-sm text-gray-600">
+                Ao confirmar, uma <strong>conta a receber</strong> será gerada automaticamente no financeiro.
+              </p>
+
+              {/* Payment method */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Forma de pagamento *</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { value: 'DINHEIRO', label: 'Dinheiro', icon: '💵' },
+                    { value: 'PIX', label: 'PIX', icon: '📱' },
+                    { value: 'CARTAO_CREDITO', label: 'Cartão Crédito', icon: '💳' },
+                    { value: 'CARTAO_DEBITO', label: 'Cartão Débito', icon: '💳' },
+                    { value: 'BOLETO', label: 'Boleto', icon: '📄' },
+                    { value: 'TRANSFERENCIA', label: 'Transferência', icon: '🏦' },
+                    { value: 'CHEQUE', label: 'Cheque', icon: '📝' },
+                    { value: 'A_COMBINAR', label: 'A combinar', icon: '🤝' },
+                  ].map(pm => (
+                    <button key={pm.value} type="button" onClick={() => setPaymentMethod(pm.value)}
+                      className={`flex items-center gap-2 px-3 py-2.5 rounded-md text-sm font-medium border-2 transition-colors ${
+                        paymentMethod === pm.value
+                          ? 'border-green-500 bg-green-50 text-green-700'
+                          : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                      }`}>
+                      <span>{pm.icon}</span> {pm.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Observações</label>
+                <input type="text" value={paymentNotes} onChange={e => setPaymentNotes(e.target.value)}
+                  placeholder="Número do cartão, parcelas, etc..."
+                  className="w-full px-3 py-2 border rounded-md text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-200" />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button type="button" onClick={() => setShowPaymentModal(false)}
+                className="px-4 py-2.5 text-sm border rounded-md hover:bg-gray-50 flex-1">Cancelar</button>
+              <button type="button" onClick={handleConfirmDelivery} disabled={transitioning || !paymentMethod}
+                className="px-4 py-2.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 flex-1 font-medium flex items-center justify-center gap-2">
+                {transitioning && <Loader2 className="h-4 w-4 animate-spin" />}
+                {transitioning ? 'Finalizando...' : 'Confirmar Entrega'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
