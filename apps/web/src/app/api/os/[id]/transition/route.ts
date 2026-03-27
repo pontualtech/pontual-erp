@@ -43,7 +43,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
 
     // If target is a final status (Entregue) and OS has a total, require payment_method
-    const isFinalDelivery = toStatus.is_final && toStatus.name !== 'Cancelada' && os.total_cost > 0
+    const isFinalDelivery = toStatus.is_final && toStatus.name !== 'Cancelada' && (os.total_cost ?? 0) > 0
     if (isFinalDelivery && !payment_method) {
       return error('Forma de pagamento é obrigatória para finalizar a OS', 400)
     }
@@ -88,7 +88,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           service_order_id: os.id,
           category_id: category?.id || null,
           description: `OS-${String(os.os_number).padStart(4, '0')} — ${os.equipment_type || 'Serviço'} ${os.equipment_brand || ''} ${os.equipment_model || ''}`.trim(),
-          total_amount: os.total_cost,
+          total_amount: os.total_cost ?? 0,
           received_amount: 0,
           due_date: new Date(),
           status: 'PENDENTE',
