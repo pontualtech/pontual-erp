@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import Link from 'next/link'
-import { TrendingUp, TrendingDown, DollarSign, AlertTriangle } from 'lucide-react'
+import { TrendingUp, TrendingDown, DollarSign, AlertTriangle, Landmark, FolderTree, Target, CreditCard, BarChart3, FileSpreadsheet, Receipt } from 'lucide-react'
 
 interface FinanceiroDashboard {
   totalBalanceCents: number
@@ -40,10 +40,10 @@ export default function FinanceiroPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Financeiro</h1>
         <div className="flex gap-2">
-          <Link href="/financeiro/contas-receber" className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-gray-50">
+          <Link href="/financeiro/contas-receber" className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">
             Contas a Receber
           </Link>
-          <Link href="/financeiro/contas-pagar" className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-gray-50">
+          <Link href="/financeiro/contas-pagar" className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
             Contas a Pagar
           </Link>
         </div>
@@ -93,12 +93,61 @@ export default function FinanceiroPage() {
         </div>
       )}
 
+      {/* Navigation cards */}
+      <div>
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-400 mb-3">Cadastros</h2>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {[
+            { label: 'Categorias', href: '/financeiro/categorias', icon: FolderTree, desc: 'Receitas e despesas', color: 'text-purple-600 bg-purple-50' },
+            { label: 'Centros de Custo', href: '/financeiro/centros-custo', icon: Target, desc: 'Departamentos', color: 'text-blue-600 bg-blue-50' },
+            { label: 'Contas Bancárias', href: '/financeiro/contas-bancarias', icon: Landmark, desc: 'Bancos e caixas', color: 'text-emerald-600 bg-emerald-50' },
+            { label: 'Cond. Pagamento', href: '/financeiro/condicoes-pagamento', icon: CreditCard, desc: 'Parcelamentos', color: 'text-amber-600 bg-amber-50' },
+          ].map(item => {
+            const Icon = item.icon
+            return (
+              <Link key={item.href} href={item.href}
+                className="flex items-start gap-3 rounded-lg border bg-white p-4 shadow-sm hover:border-blue-200 hover:bg-blue-50/50 transition-colors">
+                <div className={cn('rounded-lg p-2', item.color)}><Icon className="h-4 w-4" /></div>
+                <div>
+                  <p className="font-medium text-gray-900 text-sm">{item.label}</p>
+                  <p className="text-xs text-gray-500">{item.desc}</p>
+                </div>
+              </Link>
+            )
+          })}
+        </div>
+      </div>
+
+      <div>
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-400 mb-3">Relatórios</h2>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {[
+            { label: 'Fluxo de Caixa', href: '/financeiro/fluxo-caixa', icon: BarChart3, desc: 'Entradas e saídas', color: 'text-cyan-600 bg-cyan-50' },
+            { label: 'DRE', href: '/financeiro/dre', icon: FileSpreadsheet, desc: 'Demonstrativo de resultados', color: 'text-indigo-600 bg-indigo-50' },
+            { label: 'Conciliação', href: '/financeiro/conciliacao', icon: Receipt, desc: 'Importar OFX', color: 'text-teal-600 bg-teal-50' },
+            { label: 'Boletos', href: '/financeiro/boletos', icon: Receipt, desc: 'Emitir e gerenciar', color: 'text-orange-600 bg-orange-50' },
+          ].map(item => {
+            const Icon = item.icon
+            return (
+              <Link key={item.href} href={item.href}
+                className="flex items-start gap-3 rounded-lg border bg-white p-4 shadow-sm hover:border-blue-200 hover:bg-blue-50/50 transition-colors">
+                <div className={cn('rounded-lg p-2', item.color)}><Icon className="h-4 w-4" /></div>
+                <div>
+                  <p className="font-medium text-gray-900 text-sm">{item.label}</p>
+                  <p className="text-xs text-gray-500">{item.desc}</p>
+                </div>
+              </Link>
+            )
+          })}
+        </div>
+      </div>
+
       {/* Empty state */}
       {!loading && (data?.accounts ?? []).length === 0 && (data?.payable?.openCount ?? 0) === 0 && (data?.receivable?.openCount ?? 0) === 0 && (
         <div className="rounded-lg border bg-white p-8 text-center shadow-sm">
           <DollarSign className="mx-auto h-10 w-10 text-gray-300" />
-          <p className="mt-2 text-sm text-gray-400">Nenhum lancamento financeiro encontrado</p>
-          <p className="text-xs text-gray-400">Cadastre contas a pagar e a receber para acompanhar suas financas</p>
+          <p className="mt-2 text-sm text-gray-400">Nenhum lançamento financeiro encontrado</p>
+          <p className="text-xs text-gray-400">Cadastre contas bancárias e lançamentos para acompanhar suas finanças</p>
         </div>
       )}
     </div>
