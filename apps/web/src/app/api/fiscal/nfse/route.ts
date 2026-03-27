@@ -226,7 +226,7 @@ export async function POST(request: NextRequest) {
           company_id: user.companyId,
           invoice_id: invoice.id,
           action: 'nfse.emitir.response',
-          response: focusResult.raw_response || {},
+          response: (focusResult.raw_response || {}) as any,
           status_code: focusResult.status === 'erro' ? 422 : 200,
         },
       }).catch(() => {})

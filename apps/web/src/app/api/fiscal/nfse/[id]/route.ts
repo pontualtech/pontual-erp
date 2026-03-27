@@ -49,7 +49,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
               company_id: user.companyId,
               invoice_id: invoice.id,
               action: 'nfse.consultar',
-              response: focusResult.raw_response || {},
+              response: (focusResult.raw_response || {}) as any,
               status_code: 200,
             },
           }).catch(() => {})
