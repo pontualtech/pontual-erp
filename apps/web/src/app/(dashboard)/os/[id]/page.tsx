@@ -91,6 +91,9 @@ export default function OSDetailPage() {
   const [editNotes, setEditNotes] = useState('')
   const [editInternalNotes, setEditInternalNotes] = useState('')
   const [savingField, setSavingField] = useState<string | null>(null)
+  const [discountType, setDiscountType] = useState<'reais' | 'percent'>('reais')
+  const [discountValue, setDiscountValue] = useState('')
+  const [users, setUsers] = useState<{ id: string; name: string }[]>([])
 
   // Pending status transition (for payment modal)
   const [pendingStatusId, setPendingStatusId] = useState<string | null>(null)
@@ -110,6 +113,14 @@ export default function OSDetailPage() {
       .catch(() => {})
       .finally(() => setLoading(false))
   }
+
+  useEffect(() => {
+    fetch('/api/users').then(r => r.json()).then(d => setUsers(d.data ?? [])).catch(() => {})
+    fetch('/api/financeiro/formas-pagamento').then(r => r.json()).then(d => {
+      setPaymentMethods((d.data ?? []).filter((m: any) => m.active))
+      setPaymentMethodsLoaded(true)
+    }).catch(() => {})
+  }, [])
 
   useEffect(() => {
     fetch('/api/status?module=os')
@@ -383,9 +394,12 @@ export default function OSDetailPage() {
           <Link href="/os" className="rounded-lg p-2 hover:bg-gray-100 transition-colors">
             <ArrowLeft className="h-5 w-5 text-gray-500" />
           </Link>
-          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
-            OS-{String(os.os_number).padStart(4, '0')}
-          </h1>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
+              OS-{String(os.os_number).padStart(4, '0')}
+            </h1>
+            <p className="text-xs text-gray-500">{new Date(os.created_at).toLocaleDateString('pt-BR')} às {new Date(os.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</p>
+          </div>
           {currentStatus && (
             <select
               value={os.status_id}
@@ -783,29 +797,104 @@ export default function OSDetailPage() {
         )}
       </div>
 
-      {/* ========== TOTALS ========== */}
-      <div className="rounded-xl border-2 border-blue-200 bg-gradient-to-r from-blue-50 to-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex flex-wrap gap-6">
-            <div className="text-center">
-              <p className="text-xs text-gray-500 uppercase font-medium">Servicos</p>
-              <p className="text-lg font-bold text-amber-700">{fmt(os.total_services)}</p>
+      {/* ========== TOTALS + DESCONTO ========== */}
+      {(() => {
+        const subtotal = (os.total_services ?? 0) + (os.total_parts ?? 0)
+        const discountAmt = discountType === 'percent'
+          ? Math.round(subtotal * (parseFloat(discountValue || '0') / 100))
+          : Math.round(parseFloat(discountValue || '0') * 100)
+        const totalFinal = Math.max(0, subtotal - discountAmt)
+        return (
+          <div className="rounded-xl border-2 border-blue-200 bg-gradient-to-r from-blue-50 to-white p-4 shadow-sm space-y-3">
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div className="flex flex-wrap gap-6">
+                <div className="text-center">
+                  <p className="text-xs text-gray-500 uppercase font-medium">Serviços</p>
+                  <p className="text-lg font-bold text-amber-700">{fmt(os.total_services)}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-gray-500 uppercase font-medium">Peças</p>
+                  <p className="text-lg font-bold text-blue-700">{fmt(os.total_parts)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 uppercase font-medium mb-1">Desconto</p>
+                  <div className="flex items-center gap-1">
+                    <input type="number" min="0" step="0.01" value={discountValue}
+                      onChange={e => setDiscountValue(e.target.value)}
+                      placeholder="0" className="w-20 px-2 py-1 border rounded text-sm text-right" />
+                    <select value={discountType} onChange={e => setDiscountType(e.target.value as any)}
+                      title="Tipo de desconto" className="px-1 py-1 border rounded text-xs bg-white">
+                      <option value="reais">R$</option>
+                      <option value="percent">%</option>
+                    </select>
+                  </div>
+                  {discountAmt > 0 && <p className="text-xs text-red-500 mt-0.5">-{fmt(discountAmt)}</p>}
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-blue-600 uppercase font-semibold">Total da OS</p>
+                <p className="text-3xl font-extrabold text-blue-700">{fmt(totalFinal)}</p>
+              </div>
             </div>
-            <div className="text-center">
-              <p className="text-xs text-gray-500 uppercase font-medium">Pecas</p>
-              <p className="text-lg font-bold text-blue-700">{fmt(os.total_parts)}</p>
-            </div>
-            <div className="text-center">
-              <p className="text-xs text-gray-500 uppercase font-medium">Desconto</p>
-              <p className="text-lg font-bold text-gray-400">{fmt(discount)}</p>
+
+            {/* Técnico + Forma Pagamento + Data Execução */}
+            <div className="border-t border-blue-100 pt-3 grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div>
+                <label className="block text-xs text-gray-500 uppercase font-medium mb-1">Técnico Responsável</label>
+                <select value={os.technician_id || ''} title="Técnico"
+                  onChange={e => {
+                    fetch(`/api/os/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ technician_id: e.target.value || null }) })
+                      .then(() => { toast.success('Técnico atualizado'); loadOS() })
+                      .catch(() => toast.error('Erro'))
+                  }}
+                  className="w-full px-2 py-1.5 border rounded text-sm bg-white">
+                  <option value="">Não atribuído</option>
+                  {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 uppercase font-medium mb-1">Forma de Pagamento</label>
+                <select value={os.payment_method || ''} title="Forma de pagamento"
+                  onChange={e => {
+                    fetch(`/api/os/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ payment_method: e.target.value || null }) })
+                      .then(() => { toast.success('Forma de pagamento atualizada'); loadOS() })
+                      .catch(() => toast.error('Erro'))
+                  }}
+                  className="w-full px-2 py-1.5 border rounded text-sm bg-white">
+                  <option value="">—</option>
+                  {paymentMethods.map(pm => <option key={pm.id} value={pm.name}>{pm.icon} {pm.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 uppercase font-medium mb-1">Data Execução</label>
+                <input type="date" value={os.actual_delivery ? new Date(os.actual_delivery).toISOString().split('T')[0] : ''}
+                  title="Data de execução"
+                  onChange={e => {
+                    fetch(`/api/os/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ actual_delivery: e.target.value ? new Date(e.target.value) : null }) })
+                      .then(() => { toast.success('Data atualizada'); loadOS() })
+                      .catch(() => toast.error('Erro'))
+                  }}
+                  className="w-full px-2 py-1.5 border rounded text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 uppercase font-medium mb-1">Data Previsão</label>
+                <input type="date" value={os.estimated_delivery ? new Date(os.estimated_delivery).toISOString().split('T')[0] : ''}
+                  title="Data de previsão"
+                  onChange={e => {
+                    fetch(`/api/os/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ estimated_delivery: e.target.value ? new Date(e.target.value) : null }) })
+                      .then(() => { toast.success('Data atualizada'); loadOS() })
+                      .catch(() => toast.error('Erro'))
+                  }}
+                  className="w-full px-2 py-1.5 border rounded text-sm" />
+              </div>
             </div>
           </div>
-          <div className="text-right">
-            <p className="text-xs text-blue-600 uppercase font-semibold">Total da OS</p>
-            <p className="text-3xl font-extrabold text-blue-700">{fmt(os.total_cost)}</p>
-          </div>
-        </div>
-      </div>
+        )
+      })()}
 
       {/* ========== DETAILS + HISTORY (side by side) ========== */}
       <div className="grid gap-4 lg:grid-cols-2">
