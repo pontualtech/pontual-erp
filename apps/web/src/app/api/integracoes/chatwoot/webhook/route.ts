@@ -57,7 +57,7 @@ async function handleMessageCreated(body: any) {
             module: 'os',
             name: { in: ['Aprovada', 'Aprovado', 'Em Andamento'] },
           },
-          orderBy: { sort_order: 'asc' },
+          orderBy: { order: 'asc' },
         })
 
         if (approvedStatus) {
