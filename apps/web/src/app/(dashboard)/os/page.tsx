@@ -259,7 +259,14 @@ export default function OSListPage() {
                           </Link>
                         </td>
                         <td className="px-4 py-3 text-gray-700">{os.customers?.legal_name ?? '—'}</td>
-                        <td className="px-4 py-3 text-gray-700">{os.equipment_type ?? '—'}</td>
+                        <td className="px-4 py-3 text-gray-700">
+                          {os.equipment_type ?? '—'}
+                          {(os.equipment_brand || os.equipment_model) && (
+                            <span className="text-xs text-gray-400 ml-1">
+                              {[os.equipment_brand, os.equipment_model].filter(Boolean).join(' ')}
+                            </span>
+                          )}
+                        </td>
                         <td className="px-4 py-3">
                           <span
                             className="rounded-full px-2 py-0.5 text-xs font-medium"
