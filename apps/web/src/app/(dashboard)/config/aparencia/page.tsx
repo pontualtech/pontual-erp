@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { toast } from 'sonner'
 import Link from 'next/link'
-import { ArrowLeft, Loader2, Palette, Upload, X } from 'lucide-react'
+import { ArrowLeft, Loader2, Palette, Upload, X, Sun, Moon } from 'lucide-react'
 
 const COLORS = [
   { name: 'Azul', value: '#2563EB', bg: 'bg-blue-600' },
@@ -24,6 +24,7 @@ export default function AparenciaPage() {
   const [logoUrl, setLogoUrl] = useState('')
   const [footerText, setFooterText] = useState('')
   const [pdfHeader, setPdfHeader] = useState('')
+  const [theme, setTheme] = useState<'light' | 'dark'>('light')
   const [uploadingLogo, setUploadingLogo] = useState(false)
   const logoFileRef = useRef<HTMLInputElement>(null)
 
@@ -43,6 +44,7 @@ export default function AparenciaPage() {
         if (flat['aparencia.logo_url']) setLogoUrl(flat['aparencia.logo_url'])
         if (flat['aparencia.rodape_pdf']) setFooterText(flat['aparencia.rodape_pdf'])
         if (flat['aparencia.cabecalho_pdf']) setPdfHeader(flat['aparencia.cabecalho_pdf'])
+        if (flat['aparencia.tema']) setTheme(flat['aparencia.tema'] as 'light' | 'dark')
         if (flat['company_name']) setCompanyName(flat['company_name'])
       })
       .catch(() => {})
@@ -58,6 +60,7 @@ export default function AparenciaPage() {
         { key: 'aparencia.logo_url', value: logoUrl, type: 'string', group: 'aparencia' },
         { key: 'aparencia.rodape_pdf', value: footerText, type: 'string', group: 'aparencia' },
         { key: 'aparencia.cabecalho_pdf', value: pdfHeader, type: 'string', group: 'aparencia' },
+        { key: 'aparencia.tema', value: theme, type: 'string', group: 'aparencia' },
       ]
       const res = await fetch('/api/settings', {
         method: 'PUT',
@@ -85,6 +88,41 @@ export default function AparenciaPage() {
           <h1 className="text-2xl font-bold text-gray-900">Aparência</h1>
           <p className="text-sm text-gray-500">Personalizar tema, logo e textos do sistema</p>
         </div>
+      </div>
+
+      {/* Theme mode */}
+      <div className="rounded-lg border bg-white p-5 space-y-4">
+        <h2 className="font-semibold text-gray-900 flex items-center gap-2">
+          {theme === 'dark' ? <Moon className="h-4 w-4 text-indigo-500" /> : <Sun className="h-4 w-4 text-amber-500" />}
+          Tema
+        </h2>
+        <div className="flex gap-3">
+          <button type="button" onClick={() => setTheme('light')}
+            className={`flex-1 flex items-center justify-center gap-3 py-4 rounded-lg border-2 transition-all ${
+              theme === 'light' ? 'border-amber-400 bg-amber-50' : 'border-gray-200 hover:border-gray-300'
+            }`}>
+            <Sun className={`h-6 w-6 ${theme === 'light' ? 'text-amber-500' : 'text-gray-400'}`} />
+            <div className="text-left">
+              <p className={`font-medium ${theme === 'light' ? 'text-amber-800' : 'text-gray-600'}`}>Claro</p>
+              <p className="text-xs text-gray-500">Fundo branco, texto escuro</p>
+            </div>
+          </button>
+          <button type="button" onClick={() => setTheme('dark')}
+            className={`flex-1 flex items-center justify-center gap-3 py-4 rounded-lg border-2 transition-all ${
+              theme === 'dark' ? 'border-indigo-400 bg-gray-900' : 'border-gray-200 hover:border-gray-300'
+            }`}>
+            <Moon className={`h-6 w-6 ${theme === 'dark' ? 'text-indigo-400' : 'text-gray-400'}`} />
+            <div className="text-left">
+              <p className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-600'}`}>Escuro</p>
+              <p className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Fundo escuro, menos cansaço visual</p>
+            </div>
+          </button>
+        </div>
+        {theme === 'dark' && (
+          <p className="text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-md">
+            O tema escuro será aplicado após salvar e recarregar a página. Implementação progressiva — algumas telas podem ter ajustes visuais pendentes.
+          </p>
+        )}
       </div>
 
       {/* Color theme */}

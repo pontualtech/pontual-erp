@@ -70,7 +70,7 @@ export function Header({ user }: { user: AuthUser }) {
   }
 
   return (
-    <header className="flex h-14 items-center justify-between border-b bg-white px-4 lg:px-6">
+    <header className="flex h-14 items-center justify-between border-b bg-white dark:bg-gray-800 dark:border-gray-700 px-4 lg:px-6">
       <div className="pl-10 lg:pl-0">
         <Breadcrumb />
       </div>
