@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
       ? Number(searchParams.get('page'))
       : undefined
 
-    const result = await listConversations(status, inboxId, page)
+    const result: any = await listConversations(status, inboxId, page)
 
     // Simplify response
     const payload = result?.data?.payload || result?.payload || []
