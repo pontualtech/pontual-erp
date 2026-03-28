@@ -59,13 +59,22 @@ export async function PUT(req: NextRequest, { params }: Params) {
     if (!existing) return error('OS não encontrada', 404)
 
     const body = await req.json()
-    // Don't allow changing status_id via PUT — use /transition endpoint
+    // Don't allow changing these via PUT
     delete body.status_id
     delete body.statusId
     delete body.company_id
     delete body.companyId
     delete body.os_number
     delete body.osNumber
+    // Remove fields that don't exist in schema
+    delete body.payment_method
+    delete body.customer_id
+    delete body.customers
+    delete body.user_profiles
+    delete body.service_order_items
+    delete body.service_order_history
+    delete body.service_order_photos
+    delete body.quotes
 
     const os = await prisma.serviceOrder.update({
       where: { id: params.id },
