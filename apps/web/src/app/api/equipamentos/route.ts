@@ -24,7 +24,7 @@ async function seedDefaults(companyId: string) {
   })
   if (existing) return
 
-  const ops: Parameters<typeof prisma.$transaction>[0] = []
+  const ops: any[] = []
 
   // Seed brands
   for (const brand of DEFAULT_BRANDS) {
