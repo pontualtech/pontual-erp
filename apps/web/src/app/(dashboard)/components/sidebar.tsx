@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 import type { AuthUser } from '@/lib/auth'
 import {
   ClipboardList, Users, Package, DollarSign, FileText,
-  Settings, LayoutDashboard, Menu, X, ChevronDown, MessageSquare,
+  Settings, LayoutDashboard, Menu, X, ChevronDown, MessageSquare, MessageCircle,
 } from 'lucide-react'
 
 interface NavItem {
@@ -30,6 +30,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
       { label: 'Ordens de Servico', href: '/os', icon: ClipboardList, module: 'os' },
       { label: 'Clientes', href: '/clientes', icon: Users, module: 'clientes' },
       { label: 'Tickets', href: '/tickets', icon: MessageSquare, module: 'core' },
+      { label: 'Chat', href: '/chat', icon: MessageCircle, module: 'core' },
     ],
   },
   {
