@@ -122,6 +122,21 @@ export async function POST(req: NextRequest, { params }: Params) {
       newValue: { statusId: toStatusId, notes, payment_method },
     })
 
+    // Notify customer via Chatwoot (fire and forget)
+    if (os.customers?.mobile || os.customers?.phone) {
+      const phone = os.customers.mobile || os.customers.phone
+      const statusName = toStatus.name
+      const osNum = String(os.os_number).padStart(4, '0')
+      fetch(`${process.env.NEXT_PUBLIC_APP_URL || ''}/api/integracoes/chatwoot/enviar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone,
+          message: `Olá! Sua OS-${osNum} foi atualizada para: *${statusName}*.\n\nAcompanhe pelo portal: ${process.env.NEXT_PUBLIC_APP_URL}/portal/pontualtech/login`
+        })
+      }).catch(() => {}) // fire and forget
+    }
+
     return success({ ...updated, receivable_created: isFinalDelivery })
   } catch (err) {
     return handleError(err)

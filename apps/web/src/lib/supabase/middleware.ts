@@ -28,7 +28,7 @@ export async function updateSession(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
 
   // Rotas públicas
-  const publicPaths = ['/login', '/forgot-password', '/reset-password', '/api/auth/', '/api/quotes/approve', '/api/v1/', '/api/fiscal/webhook', '/api/portal/', '/portal/']
+  const publicPaths = ['/login', '/forgot-password', '/reset-password', '/api/auth/', '/api/quotes/approve', '/api/v1/', '/api/fiscal/webhook', '/api/portal/', '/portal/', '/api/integracoes/chatwoot/webhook']
   const isPublic = publicPaths.some(p => request.nextUrl.pathname.startsWith(p))
 
   // API routes: também aceitar Bearer token no header
