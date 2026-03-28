@@ -25,7 +25,23 @@ export async function GET(req: NextRequest, { params }: Params) {
     })
 
     if (!os) return error('OS não encontrada', 404)
-    return success(os)
+
+    // Enrich history with user names
+    const changedByIds = [...new Set(os.service_order_history.map(h => h.changed_by).filter(Boolean))] as string[]
+    let userNameMap: Record<string, string> = {}
+    if (changedByIds.length > 0) {
+      const profiles = await prisma.userProfile.findMany({
+        where: { id: { in: changedByIds } },
+        select: { id: true, name: true },
+      })
+      userNameMap = Object.fromEntries(profiles.map(p => [p.id, p.name]))
+    }
+    const enrichedHistory = os.service_order_history.map(h => ({
+      ...h,
+      changed_by_name: h.changed_by ? userNameMap[h.changed_by] || null : null,
+    }))
+
+    return success({ ...os, service_order_history: enrichedHistory })
   } catch (err) {
     return handleError(err)
   }

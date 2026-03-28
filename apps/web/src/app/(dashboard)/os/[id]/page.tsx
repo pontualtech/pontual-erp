@@ -19,7 +19,7 @@ interface OSItem {
 interface OSPhoto { id: string; photo_url: string; description: string | null; created_at: string }
 interface OSHistoryEntry {
   id: string; from_status_id: string | null; to_status_id: string | null
-  changed_by: string | null; notes: string | null; created_at: string
+  changed_by: string | null; changed_by_name: string | null; notes: string | null; created_at: string
 }
 interface StatusDef { id: string; name: string; color: string; order: number }
 interface OSDetail {
@@ -94,6 +94,11 @@ export default function OSDetailPage() {
   const [discountType, setDiscountType] = useState<'reais' | 'percent'>('reais')
   const [discountValue, setDiscountValue] = useState('')
   const [users, setUsers] = useState<{ id: string; name: string }[]>([])
+  const [editTechnicianId, setEditTechnicianId] = useState('')
+  const [editPaymentMethod, setEditPaymentMethod] = useState('')
+  const [editEstimatedDelivery, setEditEstimatedDelivery] = useState('')
+  const [editActualDelivery, setEditActualDelivery] = useState('')
+  const [savingAll, setSavingAll] = useState(false)
 
   // Pending status transition (for payment modal)
   const [pendingStatusId, setPendingStatusId] = useState<string | null>(null)
@@ -108,6 +113,10 @@ export default function OSDetailPage() {
           setEditDiagnosis(data.diagnosis || '')
           setEditNotes(data.reception_notes || '')
           setEditInternalNotes(data.internal_notes || '')
+          setEditTechnicianId(data.technician_id || '')
+          setEditPaymentMethod(data.payment_method || '')
+          setEditEstimatedDelivery(data.estimated_delivery ? new Date(data.estimated_delivery).toISOString().split('T')[0] : '')
+          setEditActualDelivery(data.actual_delivery ? new Date(data.actual_delivery).toISOString().split('T')[0] : '')
         }
       })
       .catch(() => {})
@@ -341,26 +350,32 @@ export default function OSDetailPage() {
     doTransition(targetId, paymentMethod, paymentNotes || undefined)
   }
 
-  // Auto-save editable fields on blur
-  async function handleSaveField(field: string, value: string) {
+  // Save all editable fields at once
+  async function handleSaveAll() {
     if (!os) return
-    const currentValue = field === 'diagnosis' ? (os.diagnosis || '') : field === 'reception_notes' ? (os.reception_notes || '') : (os.internal_notes || '')
-    if (value === currentValue) return
-
-    setSavingField(field)
+    setSavingAll(true)
     try {
+      const payload: any = {
+        diagnosis: editDiagnosis || null,
+        reception_notes: editNotes || null,
+        internal_notes: editInternalNotes || null,
+        technician_id: editTechnicianId || null,
+        payment_method: editPaymentMethod || null,
+        estimated_delivery: editEstimatedDelivery ? new Date(editEstimatedDelivery) : null,
+        actual_delivery: editActualDelivery ? new Date(editActualDelivery) : null,
+      }
       const res = await fetch(`/api/os/${id}`, {
-        method: 'PATCH',
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [field]: value || null }),
+        body: JSON.stringify(payload),
       })
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Erro ao salvar') }
-      toast.success('Salvo!')
+      toast.success('OS salva com sucesso!')
       loadOS()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao salvar')
     } finally {
-      setSavingField(null)
+      setSavingAll(false)
     }
   }
 
@@ -554,7 +569,6 @@ export default function OSDetailPage() {
             <textarea
               value={editDiagnosis}
               onChange={e => setEditDiagnosis(e.target.value)}
-              onBlur={() => handleSaveField('diagnosis', editDiagnosis)}
               placeholder="Descreva o diagnostico..."
               rows={2}
               className="w-full px-3 py-2 border rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-200 resize-y transition-colors"
@@ -570,7 +584,6 @@ export default function OSDetailPage() {
             <textarea
               value={editNotes}
               onChange={e => setEditNotes(e.target.value)}
-              onBlur={() => handleSaveField('reception_notes', editNotes)}
               placeholder="Observacoes gerais..."
               rows={2}
               className="w-full px-3 py-2 border rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-200 resize-y transition-colors"
@@ -586,7 +599,6 @@ export default function OSDetailPage() {
             <textarea
               value={editInternalNotes}
               onChange={e => setEditInternalNotes(e.target.value)}
-              onBlur={() => handleSaveField('internal_notes', editInternalNotes)}
               placeholder="Anotacoes internas..."
               rows={2}
               className="w-full px-3 py-2 border border-yellow-300 rounded-lg text-sm bg-yellow-50 focus:border-yellow-500 focus:ring-1 focus:ring-yellow-200 resize-y transition-colors"
@@ -841,13 +853,8 @@ export default function OSDetailPage() {
             <div className="border-t border-blue-100 pt-3 grid grid-cols-2 lg:grid-cols-4 gap-3">
               <div>
                 <label className="block text-xs text-gray-500 uppercase font-medium mb-1">Técnico Responsável</label>
-                <select value={os.technician_id || ''} title="Técnico"
-                  onChange={e => {
-                    fetch(`/api/os/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ technician_id: e.target.value || null }) })
-                      .then(() => { toast.success('Técnico atualizado'); loadOS() })
-                      .catch(() => toast.error('Erro'))
-                  }}
+                <select value={editTechnicianId} title="Técnico"
+                  onChange={e => setEditTechnicianId(e.target.value)}
                   className="w-full px-2 py-1.5 border rounded text-sm bg-white">
                   <option value="">Não atribuído</option>
                   {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
@@ -855,13 +862,8 @@ export default function OSDetailPage() {
               </div>
               <div>
                 <label className="block text-xs text-gray-500 uppercase font-medium mb-1">Forma de Pagamento</label>
-                <select value={os.payment_method || ''} title="Forma de pagamento"
-                  onChange={e => {
-                    fetch(`/api/os/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ payment_method: e.target.value || null }) })
-                      .then(() => { toast.success('Forma de pagamento atualizada'); loadOS() })
-                      .catch(() => toast.error('Erro'))
-                  }}
+                <select value={editPaymentMethod} title="Forma de pagamento"
+                  onChange={e => setEditPaymentMethod(e.target.value)}
                   className="w-full px-2 py-1.5 border rounded text-sm bg-white">
                   <option value="">—</option>
                   {paymentMethods.map(pm => <option key={pm.id} value={pm.name}>{pm.icon} {pm.name}</option>)}
@@ -869,32 +871,32 @@ export default function OSDetailPage() {
               </div>
               <div>
                 <label className="block text-xs text-gray-500 uppercase font-medium mb-1">Data Execução</label>
-                <input type="date" value={os.actual_delivery ? new Date(os.actual_delivery).toISOString().split('T')[0] : ''}
-                  title="Data de execução"
-                  onChange={e => {
-                    fetch(`/api/os/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ actual_delivery: e.target.value ? new Date(e.target.value) : null }) })
-                      .then(() => { toast.success('Data atualizada'); loadOS() })
-                      .catch(() => toast.error('Erro'))
-                  }}
+                <input type="date" value={editActualDelivery} title="Data de execução"
+                  onChange={e => setEditActualDelivery(e.target.value)}
                   className="w-full px-2 py-1.5 border rounded text-sm" />
               </div>
               <div>
                 <label className="block text-xs text-gray-500 uppercase font-medium mb-1">Data Previsão</label>
-                <input type="date" value={os.estimated_delivery ? new Date(os.estimated_delivery).toISOString().split('T')[0] : ''}
-                  title="Data de previsão"
-                  onChange={e => {
-                    fetch(`/api/os/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ estimated_delivery: e.target.value ? new Date(e.target.value) : null }) })
-                      .then(() => { toast.success('Data atualizada'); loadOS() })
-                      .catch(() => toast.error('Erro'))
-                  }}
+                <input type="date" value={editEstimatedDelivery} title="Data de previsão"
+                  onChange={e => setEditEstimatedDelivery(e.target.value)}
                   className="w-full px-2 py-1.5 border rounded text-sm" />
               </div>
             </div>
           </div>
         )
       })()}
+
+      {/* ========== SAVE + BACK BUTTONS ========== */}
+      <div className="flex items-center justify-between gap-3">
+        <Link href="/os" className="px-5 py-2.5 border rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-colors flex items-center gap-2">
+          <ArrowLeft className="h-4 w-4" /> Voltar para lista
+        </Link>
+        <button type="button" onClick={handleSaveAll} disabled={savingAll}
+          className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium transition-colors flex items-center gap-2 shadow-sm">
+          {savingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          {savingAll ? 'Salvando...' : 'Salvar OS'}
+        </button>
+      </div>
 
       {/* ========== DETAILS + HISTORY (side by side) ========== */}
       <div className="grid gap-4 lg:grid-cols-2">
@@ -959,7 +961,10 @@ export default function OSDetailPage() {
                   <div className="min-w-0">
                     <p className="text-gray-700 text-sm">{action}</p>
                     {h.notes && <p className="text-xs text-gray-500">{h.notes}</p>}
-                    <p className="text-xs text-gray-400">{new Date(h.created_at).toLocaleString('pt-BR')}</p>
+                    <p className="text-xs text-gray-400">
+                      {new Date(h.created_at).toLocaleString('pt-BR')}
+                      {h.changed_by_name && <span className="ml-1">— por <span className="font-medium text-gray-500">{h.changed_by_name}</span></span>}
+                    </p>
                   </div>
                 </div>
               )
