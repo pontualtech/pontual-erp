@@ -72,7 +72,7 @@ async function handleMessageCreated(body: any) {
                 service_order_id: os.id,
                 from_status_id: os.status_id,
                 to_status_id: approvedStatus.id,
-                changed_by: null, // System action
+                changed_by: 'system-chatwoot',
                 notes: 'Aprovado automaticamente via WhatsApp/Chatwoot',
               },
             }),
