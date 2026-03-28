@@ -29,6 +29,10 @@ async function handleMessageCreated(body: any) {
   // Only process incoming messages (from customer)
   if (messageType !== 'incoming') return
 
+  // Auto-sync contact to ERP (fire and forget)
+  const sender = body.sender || body.conversation?.meta?.sender || {}
+  syncContactToERP(sender).catch(() => {})
+
   // Check for OS number patterns: OS-0001, #0001, OS 1234
   const osMatch = message.match(/(?:OS[-\s]?|#)(\d{1,6})/i)
 
@@ -86,29 +90,72 @@ async function handleMessageCreated(body: any) {
 
 async function handleConversationCreated(body: any) {
   const contact = body.contact || body.conversation?.meta?.sender || {}
-  const phone = contact.phone_number || ''
+  await syncContactToERP(contact)
+}
 
-  if (!phone) return
+// Auto-save Chatwoot contacts to ERP as customers
+async function syncContactToERP(contact: any) {
+  if (!contact) return
 
-  // Normalize phone for search
-  const cleanPhone = phone.replace(/\D/g, '').slice(-10) // Last 10 digits
+  const phone = (contact.phone_number || '').replace(/\D/g, '')
+  const name = contact.name || contact.identifier || ''
+  const email = contact.email || ''
 
-  if (cleanPhone.length < 10) return
+  if (!phone && !name) return
 
-  // Try to match with ERP customer
-  const customer = await prisma.customer.findFirst({
+  const cleanPhone = phone.slice(-10) // Last 10 digits
+  if (cleanPhone.length < 10 && !email) return
+
+  // Find the first company (for multi-tenant)
+  const company = await prisma.company.findFirst({ where: { is_active: true } })
+  if (!company) return
+
+  // Search by phone or email
+  const whereConditions: any[] = []
+  if (cleanPhone.length >= 10) {
+    whereConditions.push({ mobile: { contains: cleanPhone } })
+    whereConditions.push({ phone: { contains: cleanPhone } })
+  }
+  if (email) {
+    whereConditions.push({ email: { equals: email, mode: 'insensitive' } })
+  }
+
+  if (whereConditions.length === 0) return
+
+  const existing = await prisma.customer.findFirst({
     where: {
+      company_id: company.id,
       deleted_at: null,
-      OR: [
-        { mobile: { contains: cleanPhone } },
-        { phone: { contains: cleanPhone } },
-      ],
+      OR: whereConditions,
     },
   })
 
-  if (customer) {
-    console.log(`[Chatwoot Webhook] Matched contact ${phone} to customer: ${customer.legal_name} (${customer.id})`)
-  } else {
-    console.log(`[Chatwoot Webhook] No ERP customer found for phone: ${phone}`)
+  if (existing) {
+    // Update name/email if we have better data
+    const updates: any = {}
+    if (email && !existing.email) updates.email = email
+    if (name && name.length > (existing.legal_name?.length || 0) && name !== '.') updates.legal_name = name
+
+    if (Object.keys(updates).length > 0) {
+      await prisma.customer.update({ where: { id: existing.id }, data: updates })
+      console.log(`[Chatwoot Sync] Updated customer ${existing.id}: ${JSON.stringify(updates)}`)
+    }
+    return
   }
+
+  // Create new customer from Chatwoot contact
+  if (!name || name === '.') return // Skip unnamed contacts
+
+  await prisma.customer.create({
+    data: {
+      company_id: company.id,
+      legal_name: name,
+      person_type: 'FISICA',
+      customer_type: 'CLIENTE',
+      mobile: phone || null,
+      email: email || null,
+      notes: 'Cadastrado automaticamente via WhatsApp/Chatwoot',
+    },
+  })
+  console.log(`[Chatwoot Sync] Created customer: ${name} (${phone})`)
 }
