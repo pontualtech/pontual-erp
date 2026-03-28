@@ -240,12 +240,20 @@ export default function ContasPagarPage() {
             <Link href="/financeiro" className="text-blue-600 hover:underline">Financeiro</Link> / Contas a Pagar
           </p>
         </div>
-        <Link
-          href="/financeiro/contas-pagar/novo"
-          className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        >
-          <Plus className="h-4 w-4" /> Nova Conta a Pagar
-        </Link>
+        <div className="flex items-center gap-2">
+          {isAdmin && selected.size > 0 && (
+            <button type="button" onClick={() => setShowBulkDelete(true)}
+              className="flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
+              <Trash2 className="h-4 w-4" /> Excluir {selected.size}
+            </button>
+          )}
+          <Link
+            href="/financeiro/contas-pagar/novo"
+            className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            <Plus className="h-4 w-4" /> Nova Conta a Pagar
+          </Link>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -365,6 +373,13 @@ export default function ContasPagarPage() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
+              {isAdmin && (
+                <th className="px-3 py-3 w-10">
+                  <input type="checkbox" title="Selecionar todos"
+                    checked={contas.length > 0 && selected.size === contas.length}
+                    onChange={toggleAll} className="rounded text-blue-600" />
+                </th>
+              )}
               <th className="px-4 py-3">Descricao</th>
               <th className="px-4 py-3">Fornecedor</th>
               <th className="px-4 py-3">Categoria</th>
@@ -377,7 +392,7 @@ export default function ContasPagarPage() {
           <tbody className="divide-y">
             {loading ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={isAdmin ? 8 : 7} className="px-4 py-8 text-center text-gray-400">
                   <div className="flex items-center justify-center gap-2">
                     <Clock className="h-4 w-4 animate-spin" /> Carregando...
                   </div>
@@ -385,7 +400,7 @@ export default function ContasPagarPage() {
               </tr>
             ) : contas.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={isAdmin ? 8 : 7} className="px-4 py-8 text-center text-gray-400">
                   {hasFilters ? 'Nenhuma conta encontrada com os filtros aplicados' : 'Nenhuma conta a pagar cadastrada'}
                 </td>
               </tr>
@@ -394,7 +409,14 @@ export default function ContasPagarPage() {
                 const displayStatus = getDisplayStatus(conta)
                 const config = statusConfig[displayStatus] || statusConfig.PENDENTE
                 return (
-                  <tr key={conta.id} className="hover:bg-gray-50 group">
+                  <tr key={conta.id} className={`hover:bg-gray-50 group ${selected.has(conta.id) ? 'bg-blue-50' : ''}`}>
+                    {isAdmin && (
+                      <td className="px-3 py-3">
+                        <input type="checkbox" title={`Selecionar ${conta.description}`}
+                          checked={selected.has(conta.id)} onChange={() => toggleSelect(conta.id)}
+                          className="rounded text-blue-600" />
+                      </td>
+                    )}
                     <td className="px-4 py-3">
                       <p className="font-medium text-gray-900">{conta.description}</p>
                       {conta.notes && (
@@ -491,6 +513,21 @@ export default function ContasPagarPage() {
         </div>
       )}
 
+      {/* Selection bar */}
+      {isAdmin && selected.size > 0 && (
+        <div className="flex items-center justify-between rounded-lg bg-blue-50 border border-blue-200 px-4 py-2">
+          <span className="text-sm text-blue-700 font-medium">{selected.size} selecionado(s)</span>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setSelected(new Set())}
+              className="text-sm text-gray-500 hover:text-gray-700">Limpar seleção</button>
+            <button type="button" onClick={() => setShowBulkDelete(true)}
+              className="flex items-center gap-1.5 px-3 py-1 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 font-medium">
+              <Trash2 className="h-3.5 w-3.5" /> Excluir selecionados
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Delete Confirmation Modal */}
       {deleteId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setDeleteId(null)}>
@@ -513,6 +550,27 @@ export default function ContasPagarPage() {
                 className="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
               >
                 {deleting ? 'Excluindo...' : 'Excluir'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk delete modal */}
+      {showBulkDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowBulkDelete(false)}>
+          <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-semibold text-red-600 mb-2">Excluir {selected.size} contas a pagar?</h2>
+            <p className="text-sm text-gray-600 mb-2">Esta ação não pode ser desfeita.</p>
+            <p className="text-sm text-gray-500 mb-4">
+              {contas.filter(c => selected.has(c.id)).map(c => c.description).join(', ')}
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button type="button" onClick={() => setShowBulkDelete(false)} className="px-4 py-2 text-sm border rounded-md hover:bg-gray-50">Cancelar</button>
+              <button type="button" onClick={handleBulkDelete} disabled={bulkDeleting}
+                className="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 flex items-center gap-2">
+                {bulkDeleting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                {bulkDeleting ? 'Excluindo...' : `Excluir ${selected.size}`}
               </button>
             </div>
           </div>

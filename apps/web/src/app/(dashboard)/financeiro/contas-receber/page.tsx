@@ -5,10 +5,11 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   Plus, Search, Eye, Pencil, Trash2, DollarSign,
-  AlertTriangle, Clock, CheckCircle2, CalendarClock, X
+  AlertTriangle, Clock, CheckCircle2, CalendarClock, X, Loader2
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/lib/use-auth'
 
 interface Customer {
   id: string
@@ -67,6 +68,7 @@ const statusConfig: Record<string, { label: string; color: string }> = {
 
 export default function ContasReceberPage() {
   const router = useRouter()
+  const { isAdmin } = useAuth()
   const [contas, setContas] = useState<ContaReceber[]>([])
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
@@ -89,6 +91,9 @@ export default function ContasReceberPage() {
   const [baixaDate, setBaixaDate] = useState(() => new Date().toISOString().split('T')[0])
   const [baixaAccountId, setBaixaAccountId] = useState('')
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [showBulkDelete, setShowBulkDelete] = useState(false)
+  const [bulkDeleting, setBulkDeleting] = useState(false)
 
   const loadContas = useCallback(() => {
     setLoading(true)
@@ -112,7 +117,7 @@ export default function ContasReceberPage() {
       .finally(() => setLoading(false))
   }, [page, search, statusFilter, startDate, endDate])
 
-  useEffect(() => { loadContas() }, [loadContas])
+  useEffect(() => { loadContas(); setSelected(new Set()) }, [loadContas])
 
   // Load bank accounts for baixa modal
   useEffect(() => {
@@ -127,6 +132,27 @@ export default function ContasReceberPage() {
       return 'VENCIDO'
     }
     return conta.status || 'PENDENTE'
+  }
+
+  function toggleSelect(id: string) {
+    setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+  }
+  function toggleAll() {
+    if (selected.size === contas.length) setSelected(new Set())
+    else setSelected(new Set(contas.map(c => c.id)))
+  }
+
+  async function handleBulkDelete() {
+    setBulkDeleting(true)
+    let ok = 0, fail = 0
+    for (const id of selected) {
+      try {
+        const res = await fetch(`/api/financeiro/contas-receber/${id}`, { method: 'DELETE' })
+        if (res.ok) ok++; else fail++
+      } catch { fail++ }
+    }
+    toast.success(`${ok} conta(s) excluída(s)${fail ? `, ${fail} erro(s)` : ''}`)
+    setShowBulkDelete(false); setSelected(new Set()); setBulkDeleting(false); loadContas()
   }
 
   async function handleDelete() {
@@ -208,12 +234,20 @@ export default function ContasReceberPage() {
             <Link href="/financeiro" className="text-blue-600 hover:underline">Financeiro</Link> / Contas a Receber
           </p>
         </div>
-        <Link
-          href="/financeiro/contas-receber/novo"
-          className="flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
-        >
-          <Plus className="h-4 w-4" /> Nova Conta a Receber
-        </Link>
+        <div className="flex items-center gap-2">
+          {isAdmin && selected.size > 0 && (
+            <button type="button" onClick={() => setShowBulkDelete(true)}
+              className="flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
+              <Trash2 className="h-4 w-4" /> Excluir {selected.size}
+            </button>
+          )}
+          <Link
+            href="/financeiro/contas-receber/novo"
+            className="flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+          >
+            <Plus className="h-4 w-4" /> Nova Conta a Receber
+          </Link>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -338,6 +372,13 @@ export default function ContasReceberPage() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
+              {isAdmin && (
+                <th className="px-3 py-3 w-10">
+                  <input type="checkbox" title="Selecionar todos"
+                    checked={contas.length > 0 && selected.size === contas.length}
+                    onChange={toggleAll} className="rounded text-blue-600" />
+                </th>
+              )}
               <th className="px-4 py-3">Descricao</th>
               <th className="px-4 py-3">Cliente</th>
               <th className="px-4 py-3">Categoria</th>
@@ -350,7 +391,7 @@ export default function ContasReceberPage() {
           <tbody className="divide-y">
             {loading ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={isAdmin ? 8 : 7} className="px-4 py-8 text-center text-gray-400">
                   <div className="flex items-center justify-center gap-2">
                     <Clock className="h-4 w-4 animate-spin" /> Carregando...
                   </div>
@@ -358,7 +399,7 @@ export default function ContasReceberPage() {
               </tr>
             ) : contas.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={isAdmin ? 8 : 7} className="px-4 py-8 text-center text-gray-400">
                   {hasFilters ? 'Nenhuma conta encontrada com os filtros aplicados' : 'Nenhuma conta a receber cadastrada'}
                 </td>
               </tr>
@@ -367,7 +408,14 @@ export default function ContasReceberPage() {
                 const displayStatus = getDisplayStatus(conta)
                 const config = statusConfig[displayStatus] || statusConfig.PENDENTE
                 return (
-                  <tr key={conta.id} className="hover:bg-gray-50 group">
+                  <tr key={conta.id} className={`hover:bg-gray-50 group ${selected.has(conta.id) ? 'bg-blue-50' : ''}`}>
+                    {isAdmin && (
+                      <td className="px-3 py-3">
+                        <input type="checkbox" title={`Selecionar ${conta.description}`}
+                          checked={selected.has(conta.id)} onChange={() => toggleSelect(conta.id)}
+                          className="rounded text-blue-600" />
+                      </td>
+                    )}
                     <td className="px-4 py-3">
                       <p className="font-medium text-gray-900">{conta.description}</p>
                       {conta.notes && (
@@ -470,6 +518,21 @@ export default function ContasReceberPage() {
         </div>
       )}
 
+      {/* Selection bar */}
+      {isAdmin && selected.size > 0 && (
+        <div className="flex items-center justify-between rounded-lg bg-blue-50 border border-blue-200 px-4 py-2">
+          <span className="text-sm text-blue-700 font-medium">{selected.size} selecionado(s)</span>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setSelected(new Set())}
+              className="text-sm text-gray-500 hover:text-gray-700">Limpar seleção</button>
+            <button type="button" onClick={() => setShowBulkDelete(true)}
+              className="flex items-center gap-1.5 px-3 py-1 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 font-medium">
+              <Trash2 className="h-3.5 w-3.5" /> Excluir selecionados
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Delete Confirmation Modal */}
       {deleteId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setDeleteId(null)}>
@@ -494,6 +557,27 @@ export default function ContasReceberPage() {
                 className="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
               >
                 {deleting ? 'Excluindo...' : 'Excluir'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk delete modal */}
+      {showBulkDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowBulkDelete(false)}>
+          <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-semibold text-red-600 mb-2">Excluir {selected.size} contas a receber?</h2>
+            <p className="text-sm text-gray-600 mb-2">Esta ação não pode ser desfeita.</p>
+            <p className="text-sm text-gray-500 mb-4">
+              {contas.filter(c => selected.has(c.id)).map(c => c.description).join(', ')}
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button type="button" onClick={() => setShowBulkDelete(false)} className="px-4 py-2 text-sm border rounded-md hover:bg-gray-50">Cancelar</button>
+              <button type="button" onClick={handleBulkDelete} disabled={bulkDeleting}
+                className="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 flex items-center gap-2">
+                {bulkDeleting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                {bulkDeleting ? 'Excluindo...' : `Excluir ${selected.size}`}
               </button>
             </div>
           </div>
