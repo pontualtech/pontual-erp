@@ -30,7 +30,7 @@ interface OSDetail {
   estimated_cost: number; approved_cost: number; total_parts: number
   total_services: number; total_cost: number; warranty_until: string | null
   estimated_delivery: string | null; actual_delivery: string | null
-  technician_id: string | null
+  technician_id: string | null; payment_method: string | null
   created_at: string; updated_at: string; customers: Customer | null
   user_profiles: { id: string; name: string } | null
   service_order_items: OSItem[]; service_order_photos: OSPhoto[]
