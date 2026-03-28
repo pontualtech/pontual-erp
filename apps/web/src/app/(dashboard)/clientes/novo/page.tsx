@@ -250,6 +250,32 @@ export default function NovoClientePage() {
         })
       }
       const data = await res.json()
+
+      // Handle 409 — duplicate found, offer to update
+      if (res.status === 409 && data.existing) {
+        const confirmUpdate = window.confirm(
+          `${data.error}\n\nCliente existente: ${data.existing.legal_name}\n\nDeseja atualizar os dados deste cliente?`
+        )
+        if (confirmUpdate) {
+          // Retry with _update flag
+          const updateRes = await fetch('/api/clientes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...payload, _update: true }),
+          })
+          const updateData = await updateRes.json()
+          if (!updateRes.ok) throw new Error(updateData.error || 'Erro ao atualizar')
+          toast.success('Cliente atualizado!')
+          router.push('/clientes')
+          return
+        }
+        // User declined — set existing ID so next save does PATCH
+        setExistingClientId(data.existing.id)
+        setDocStatus('found')
+        setDocMessage(`Cliente existente: ${data.existing.legal_name}`)
+        return
+      }
+
       if (!res.ok) throw new Error(data.error || 'Erro ao cadastrar')
 
       toast.success(existingClientId ? 'Cliente atualizado!' : 'Cliente cadastrado!')

@@ -71,16 +71,59 @@ export async function POST(req: NextRequest) {
     if (email) dupConditions.push({ email: { equals: email, mode: 'insensitive' as const } })
 
     if (dupConditions.length > 0) {
-      const existing = await prisma.customer.findFirst({
-        where: { company_id: user.companyId, deleted_at: null, OR: dupConditions },
-      })
+      // CPF/CNPJ is the primary key — check it first with exact match
+      let existing = null
+      if (docDigits.length >= 11) {
+        existing = await prisma.customer.findFirst({
+          where: { company_id: user.companyId, deleted_at: null, document_number: docDigits },
+        })
+      }
+      // Fallback: check by mobile, phone, email
+      if (!existing) {
+        existing = await prisma.customer.findFirst({
+          where: { company_id: user.companyId, deleted_at: null, OR: dupConditions },
+        })
+      }
+
       if (existing) {
+        // If body has _update=true, update the existing record instead
+        if (body._update) {
+          const updated = await prisma.customer.update({
+            where: { id: existing.id },
+            data: {
+              legal_name: body.legal_name || existing.legal_name,
+              trade_name: body.trade_name ?? existing.trade_name,
+              person_type: body.person_type || existing.person_type,
+              customer_type: body.customer_type || existing.customer_type,
+              document_number: docDigits || existing.document_number,
+              email: body.email || existing.email,
+              phone: body.phone || existing.phone,
+              mobile: body.mobile || existing.mobile,
+              address_street: body.address_street || existing.address_street,
+              address_number: body.address_number || existing.address_number,
+              address_complement: body.address_complement ?? existing.address_complement,
+              address_neighborhood: body.address_neighborhood || existing.address_neighborhood,
+              address_city: body.address_city || existing.address_city,
+              address_state: body.address_state || existing.address_state,
+              address_zip: body.address_zip || existing.address_zip,
+              notes: body.notes ?? existing.notes,
+            },
+          })
+          return success({ ...updated, _was_updated: true })
+        }
+
+        // Return existing customer with duplicate flag so frontend can offer to update
         const reasons: string[] = []
-        if (docDigits && existing.document_number === docDigits) reasons.push(`CPF/CNPJ ${docDigits}`)
-        if (mobileDigits && existing.mobile?.includes(mobileDigits.slice(-10))) reasons.push(`celular ${body.mobile}`)
-        if (phoneDigits && existing.phone?.includes(phoneDigits.slice(-10))) reasons.push(`telefone ${body.phone}`)
-        if (email && existing.email?.toLowerCase() === email) reasons.push(`email ${email}`)
-        return error(`Cliente já cadastrado (${reasons.join(', ')}): ${existing.legal_name}`, 409)
+        if (docDigits && existing.document_number === docDigits) reasons.push('CPF/CNPJ')
+        if (mobileDigits && existing.mobile?.includes(mobileDigits.slice(-10))) reasons.push('celular')
+        if (phoneDigits && existing.phone?.includes(phoneDigits.slice(-10))) reasons.push('telefone')
+        if (email && existing.email?.toLowerCase() === email) reasons.push('email')
+
+        return NextResponse.json({
+          error: `Cliente já cadastrado por ${reasons.join(', ')}`,
+          existing: existing,
+          match_fields: reasons,
+        }, { status: 409 })
       }
     }
 
