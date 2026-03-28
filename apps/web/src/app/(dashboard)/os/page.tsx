@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
-import { Plus, Search, List, LayoutGrid } from 'lucide-react'
+import { Plus, Search, List, LayoutGrid, Settings2, Eye, EyeOff } from 'lucide-react'
 
 interface KanbanColumn {
   id: string
@@ -52,6 +52,8 @@ export default function OSListPage() {
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [view, setView] = useState<'table' | 'kanban'>('table')
+  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(new Set())
+  const [showColumnPicker, setShowColumnPicker] = useState(false)
 
   // Load status definitions from kanban endpoint
   useEffect(() => {
@@ -63,9 +65,55 @@ export default function OSListPage() {
         const map: Record<string, { name: string; color: string }> = {}
         cols.forEach(col => { map[col.id] = { name: col.name, color: col.color } })
         setStatusMap(map)
+
+        // Load saved visible columns from localStorage
+        try {
+          const saved = localStorage.getItem('kanban_visible_columns')
+          if (saved) {
+            const parsed = JSON.parse(saved) as string[]
+            // Only use saved if at least some match current columns
+            const validIds = new Set(cols.map(c => c.id))
+            const filtered = parsed.filter(id => validIds.has(id))
+            if (filtered.length > 0) {
+              setVisibleColumns(new Set(filtered))
+              return
+            }
+          }
+        } catch {}
+        // Default: show all columns
+        setVisibleColumns(new Set(cols.map(c => c.id)))
       })
       .catch(() => {})
   }, [])
+
+  function toggleColumn(id: string) {
+    setVisibleColumns(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        if (next.size > 1) next.delete(id) // Keep at least 1
+      } else {
+        next.add(id)
+      }
+      localStorage.setItem('kanban_visible_columns', JSON.stringify([...next]))
+      return next
+    })
+  }
+
+  function selectAllColumns() {
+    const all = new Set(kanbanColumns.map(c => c.id))
+    setVisibleColumns(all)
+    localStorage.setItem('kanban_visible_columns', JSON.stringify([...all]))
+  }
+
+  function selectNoneColumns() {
+    // Keep first column at minimum
+    const first = kanbanColumns[0]?.id
+    if (first) {
+      const s = new Set([first])
+      setVisibleColumns(s)
+      localStorage.setItem('kanban_visible_columns', JSON.stringify([...s]))
+    }
+  }
 
   useEffect(() => {
     setLoading(true)
@@ -110,6 +158,7 @@ export default function OSListPage() {
         <select
           value={statusFilter}
           onChange={e => { setStatusFilter(e.target.value); setPage(1) }}
+          title="Filtrar por status"
           className="rounded-md border bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"
         >
           <option value="">Todos os status</option>
@@ -118,10 +167,10 @@ export default function OSListPage() {
           ))}
         </select>
         <div className="flex rounded-md border bg-white">
-          <button onClick={() => setView('table')} className={cn('p-2', view === 'table' && 'bg-gray-100')}>
+          <button type="button" onClick={() => setView('table')} title="Visualização em tabela" className={cn('p-2', view === 'table' && 'bg-gray-100')}>
             <List className="h-4 w-4" />
           </button>
-          <button onClick={() => setView('kanban')} className={cn('p-2', view === 'kanban' && 'bg-gray-100')}>
+          <button type="button" onClick={() => setView('kanban')} title="Visualização kanban" className={cn('p-2', view === 'kanban' && 'bg-gray-100')}>
             <LayoutGrid className="h-4 w-4" />
           </button>
         </div>
@@ -206,8 +255,54 @@ export default function OSListPage() {
         </>
       ) : (
         /* Kanban view */
+        <div className="space-y-3">
+          {/* Column picker */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm text-gray-500">
+              <LayoutGrid className="h-4 w-4" />
+              <span>{visibleColumns.size} de {kanbanColumns.length} quadros visíveis</span>
+            </div>
+            <div className="relative">
+              <button type="button" onClick={() => setShowColumnPicker(!showColumnPicker)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-md hover:bg-gray-50 font-medium text-gray-600">
+                <Settings2 className="h-4 w-4" /> Quadros
+              </button>
+              {showColumnPicker && (
+                <div className="absolute right-0 top-full mt-1 z-20 w-64 rounded-lg border bg-white shadow-lg">
+                  <div className="px-3 py-2 border-b flex items-center justify-between">
+                    <span className="text-sm font-semibold text-gray-900">Quadros Visíveis</span>
+                    <div className="flex gap-1">
+                      <button type="button" onClick={selectAllColumns}
+                        className="text-xs text-blue-600 hover:underline">Todos</button>
+                      <span className="text-xs text-gray-300">|</span>
+                      <button type="button" onClick={selectNoneColumns}
+                        className="text-xs text-gray-500 hover:underline">Mínimo</button>
+                    </div>
+                  </div>
+                  <div className="max-h-80 overflow-y-auto p-1">
+                    {kanbanColumns.map(col => {
+                      const visible = visibleColumns.has(col.id)
+                      return (
+                        <button key={col.id} type="button" onClick={() => toggleColumn(col.id)}
+                          className={cn(
+                            'w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm text-left transition-colors',
+                            visible ? 'bg-blue-50 text-blue-700' : 'text-gray-500 hover:bg-gray-50'
+                          )}>
+                          {visible ? <Eye className="h-3.5 w-3.5 shrink-0" /> : <EyeOff className="h-3.5 w-3.5 shrink-0" />}
+                          <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: col.color }} />
+                          <span className="truncate">{col.name}</span>
+                          <span className="ml-auto text-xs text-gray-400">{col.items.length}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
         <div className="flex gap-4 overflow-x-auto pb-4">
-          {kanbanColumns.map(col => (
+          {kanbanColumns.filter(col => visibleColumns.has(col.id)).map(col => (
             <div key={col.id} className="min-w-[280px] max-w-[320px] flex-shrink-0">
               <div className="mb-2 flex items-center gap-2 rounded-t-lg px-3 py-2" style={{ backgroundColor: col.color + '15' }}>
                 <div className="h-3 w-3 rounded-full" style={{ backgroundColor: col.color }} />
@@ -237,6 +332,12 @@ export default function OSListPage() {
             </div>
           ))}
         </div>
+        </div>
+      )}
+
+      {/* Close column picker when clicking outside */}
+      {showColumnPicker && (
+        <div className="fixed inset-0 z-10" onClick={() => setShowColumnPicker(false)} />
       )}
     </div>
   )
