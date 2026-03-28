@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import { ArrowLeft, Edit, Camera, History, Info, Package, Plus, Trash2, Loader2, Search, Wrench, CreditCard, X, Printer, Mail, Send } from 'lucide-react'
+import { ArrowLeft, Edit, Camera, History, Info, Package, Plus, Trash2, Loader2, Search, Wrench, CreditCard, X, Printer, Mail, Send, Copy, FilePlus } from 'lucide-react'
 
 interface Customer {
   id: string; legal_name: string; trade_name: string | null; person_type: string
@@ -30,9 +30,12 @@ interface OSDetail {
   estimated_cost: number; approved_cost: number; total_parts: number
   total_services: number; total_cost: number; warranty_until: string | null
   estimated_delivery: string | null; actual_delivery: string | null
+  technician_id: string | null
   created_at: string; updated_at: string; customers: Customer | null
+  user_profiles: { id: string; name: string } | null
   service_order_items: OSItem[]; service_order_photos: OSPhoto[]
   service_order_history: OSHistoryEntry[]
+  customer_id: string
 }
 interface Produto { id: string; name: string; unit: string; sale_price: number; brand: string | null }
 
@@ -351,6 +354,14 @@ export default function OSDetailPage() {
             className="flex items-center gap-1.5 rounded-md border border-green-300 bg-green-50 px-4 py-2 text-sm font-medium text-green-700 hover:bg-green-100">
             <Printer className="h-4 w-4" /> Imprimir
           </button>
+          <Link href={`/os/novo?cliente=${os.customer_id || ''}`} className="flex items-center gap-1.5 rounded-md border border-green-300 bg-green-50 px-3 py-2 text-sm font-medium text-green-700 hover:bg-green-100"
+            title="Criar nova OS para o mesmo cliente">
+            <FilePlus className="h-4 w-4" /> Nova OS
+          </Link>
+          <Link href={`/os/novo?clonar=${id}`} className="flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100"
+            title="Clonar esta OS com todos os dados">
+            <Copy className="h-4 w-4" /> Clonar
+          </Link>
           <Link href={`/os/${id}/editar`} className="flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-gray-50">
             <Edit className="h-4 w-4" /> Editar
           </Link>
@@ -399,13 +410,23 @@ export default function OSDetailPage() {
             <Field label="Tipo" value={os.os_type} />
             <Field label="Equipamento" value={os.equipment_type || '—'} />
             <Field label="Marca / Modelo" value={`${os.equipment_brand || ''} ${os.equipment_model || ''}`.trim() || '—'} />
-            <Field label="Nº Série" value={os.serial_number || '—'} />
+            <Field label="N Serie" value={os.serial_number || '—'} />
             <Field label="Prioridade" value={priorityLabel[os.priority] ?? os.priority} />
+            <Field label="Tecnico Responsavel" value={os.user_profiles?.name || '—'} />
             <Field label="Data Abertura" value={new Date(os.created_at).toLocaleDateString('pt-BR')} />
-            <Field label="Previsão Entrega" value={os.estimated_delivery ? new Date(os.estimated_delivery).toLocaleDateString('pt-BR') : '—'} />
+            <Field label="Data Previsao" value={os.estimated_delivery ? new Date(os.estimated_delivery).toLocaleDateString('pt-BR') : '—'} />
+            <Field label="Data Entrega" value={os.actual_delivery ? new Date(os.actual_delivery).toLocaleDateString('pt-BR') : '—'} />
             <div className="sm:col-span-2"><Field label="Defeito Relatado" value={os.reported_issue || '—'} /></div>
-            <div className="sm:col-span-2"><Field label="Diagnóstico" value={os.diagnosis || '—'} /></div>
-            {os.internal_notes && <div className="sm:col-span-2"><Field label="Notas Internas" value={os.internal_notes} /></div>}
+            <div className="sm:col-span-2"><Field label="Diagnostico" value={os.diagnosis || '—'} /></div>
+            {os.reception_notes && (
+              <div className="sm:col-span-2"><Field label="Observacoes" value={os.reception_notes} /></div>
+            )}
+            {os.internal_notes && (
+              <div className="sm:col-span-2 rounded-md bg-yellow-50 border border-yellow-200 p-3">
+                <p className="text-xs font-medium uppercase text-yellow-600">Obs. Internas</p>
+                <p className="mt-0.5 text-sm text-yellow-900">{os.internal_notes}</p>
+              </div>
+            )}
           </div>
         )}
 

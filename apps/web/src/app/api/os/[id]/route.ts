@@ -16,6 +16,7 @@ export async function GET(req: NextRequest, { params }: Params) {
       where: { id: params.id, company_id: user.companyId, deleted_at: null },
       include: {
         customers: true,
+        user_profiles: { select: { id: true, name: true } },
         service_order_items: { where: { deleted_at: null }, orderBy: { created_at: 'asc' } },
         service_order_photos: { orderBy: { created_at: 'asc' } },
         service_order_history: { orderBy: { created_at: 'desc' }, take: 20 },

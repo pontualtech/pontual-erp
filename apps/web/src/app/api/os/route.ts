@@ -93,6 +93,7 @@ export async function POST(req: NextRequest) {
         serial_number: body.serial_number || body.serialNumber,
         reported_issue: body.reported_issue || body.reportedIssue,
         reception_notes: body.reception_notes || body.receptionNotes,
+        internal_notes: body.internal_notes || body.internalNotes || undefined,
         estimated_cost: body.estimated_cost || body.estimatedCost,
         estimated_delivery: body.estimated_delivery || body.estimatedDelivery ? new Date(body.estimated_delivery || body.estimatedDelivery) : undefined,
       },

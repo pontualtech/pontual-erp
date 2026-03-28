@@ -1,18 +1,34 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
-import { Plus, X, Search, Loader2, CheckCircle, Building2, User } from 'lucide-react'
+import { Plus, X, Search, Loader2, CheckCircle, Building2, User, ChevronDown } from 'lucide-react'
 
 interface Cliente { id: string; legal_name: string; trade_name: string | null }
+interface UserProfile { id: string; name: string }
 
 export default function NovaOSPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [loading, setLoading] = useState(false)
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [searchCliente, setSearchCliente] = useState('')
   const [showNovoCliente, setShowNovoCliente] = useState(false)
+
+  // Brands & models
+  const [marcas, setMarcas] = useState<string[]>([])
+  const [modelos, setModelos] = useState<string[]>([])
+  const [marcaSearch, setMarcaSearch] = useState('')
+  const [modeloSearch, setModeloSearch] = useState('')
+  const [showMarcaDropdown, setShowMarcaDropdown] = useState(false)
+  const [showModeloDropdown, setShowModeloDropdown] = useState(false)
+  const [modeloOutro, setModeloOutro] = useState(false)
+  const marcaRef = useRef<HTMLDivElement>(null)
+  const modeloRef = useRef<HTMLDivElement>(null)
+
+  // Technicians
+  const [tecnicos, setTecnicos] = useState<UserProfile[]>([])
 
   const [form, setForm] = useState({
     customer_id: '',
@@ -22,9 +38,99 @@ export default function NovaOSPage() {
     serial_number: '',
     reported_issue: '',
     reception_notes: '',
+    internal_notes: '',
     priority: 'MEDIUM',
     os_type: 'BALCAO',
+    technician_id: '',
+    estimated_delivery: '',
   })
+
+  // Load brands on mount
+  useEffect(() => {
+    fetch('/api/equipamentos?type=marcas')
+      .then(r => r.json())
+      .then(d => setMarcas(d.data ?? []))
+      .catch(() => {})
+  }, [])
+
+  // Load technicians on mount
+  useEffect(() => {
+    fetch('/api/users?limit=100')
+      .then(r => r.json())
+      .then(d => setTecnicos(d.data ?? []))
+      .catch(() => {})
+  }, [])
+
+  // Load models when brand changes
+  useEffect(() => {
+    if (!form.equipment_brand) { setModelos([]); return }
+    fetch(`/api/equipamentos?type=modelos&marca=${encodeURIComponent(form.equipment_brand)}`)
+      .then(r => r.json())
+      .then(d => setModelos(d.data ?? []))
+      .catch(() => {})
+  }, [form.equipment_brand])
+
+  // Handle ?cliente= or ?clonar= query params
+  useEffect(() => {
+    const clienteId = searchParams.get('cliente')
+    const clonarId = searchParams.get('clonar')
+
+    if (clonarId) {
+      // Clone: fetch OS data and pre-fill
+      fetch(`/api/os/${clonarId}`)
+        .then(r => r.json())
+        .then(d => {
+          const os = d.data
+          if (!os) return
+          setForm({
+            customer_id: os.customer_id || '',
+            equipment_type: os.equipment_type || 'Impressora',
+            equipment_brand: os.equipment_brand || '',
+            equipment_model: os.equipment_model || '',
+            serial_number: os.serial_number || '',
+            reported_issue: os.reported_issue || '',
+            reception_notes: os.reception_notes || '',
+            internal_notes: os.internal_notes || '',
+            priority: os.priority || 'MEDIUM',
+            os_type: os.os_type || 'BALCAO',
+            technician_id: os.technician_id || '',
+            estimated_delivery: '',
+          })
+          if (os.equipment_brand) setMarcaSearch(os.equipment_brand)
+          if (os.equipment_model) setModeloSearch(os.equipment_model)
+          if (os.customers) {
+            setClientes([os.customers])
+            setSearchCliente(os.customers.legal_name)
+          }
+        })
+        .catch(() => toast.error('Erro ao carregar OS para clonar'))
+    } else if (clienteId) {
+      // Pre-fill client by fetching their data
+      fetch(`/api/clientes/${clienteId}`)
+        .then(r => r.json())
+        .then(d => {
+          const c = d.data
+          if (c) {
+            setForm(p => ({ ...p, customer_id: c.id }))
+            setClientes([c])
+            setSearchCliente(c.legal_name)
+          }
+        })
+        .catch(() => {
+          setForm(p => ({ ...p, customer_id: clienteId }))
+        })
+    }
+  }, [searchParams])
+
+  // Close dropdowns on click outside
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (marcaRef.current && !marcaRef.current.contains(e.target as Node)) setShowMarcaDropdown(false)
+      if (modeloRef.current && !modeloRef.current.contains(e.target as Node)) setShowModeloDropdown(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
 
   // Buscar clientes
   useEffect(() => {
@@ -42,6 +148,36 @@ export default function NovaOSPage() {
     setForm(prev => ({ ...prev, [field]: value }))
   }
 
+  function selectMarca(marca: string) {
+    setForm(prev => ({ ...prev, equipment_brand: marca, equipment_model: '' }))
+    setMarcaSearch(marca)
+    setModeloSearch('')
+    setModeloOutro(false)
+    setShowMarcaDropdown(false)
+  }
+
+  function selectModelo(modelo: string) {
+    if (modelo === '__outro__') {
+      setModeloOutro(true)
+      setModeloSearch('')
+      setForm(prev => ({ ...prev, equipment_model: '' }))
+      setShowModeloDropdown(false)
+      return
+    }
+    setForm(prev => ({ ...prev, equipment_model: modelo }))
+    setModeloSearch(modelo)
+    setModeloOutro(false)
+    setShowModeloDropdown(false)
+  }
+
+  const filteredMarcas = marcas.filter(m =>
+    m.toLowerCase().includes(marcaSearch.toLowerCase())
+  )
+
+  const filteredModelos = modelos.filter(m =>
+    m.toLowerCase().includes(modeloSearch.toLowerCase())
+  )
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.customer_id) { toast.error('Selecione um cliente'); return }
@@ -49,10 +185,25 @@ export default function NovaOSPage() {
 
     setLoading(true)
     try {
+      const payload: Record<string, unknown> = {
+        customer_id: form.customer_id,
+        equipment_type: form.equipment_type,
+        equipment_brand: form.equipment_brand || undefined,
+        equipment_model: form.equipment_model || undefined,
+        serial_number: form.serial_number || undefined,
+        reported_issue: form.reported_issue,
+        reception_notes: form.reception_notes || undefined,
+        internal_notes: form.internal_notes || undefined,
+        priority: form.priority,
+        os_type: form.os_type,
+        technician_id: form.technician_id || undefined,
+        estimated_delivery: form.estimated_delivery || undefined,
+      }
+
       const res = await fetch('/api/os', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Erro ao criar OS')
@@ -70,7 +221,7 @@ export default function NovaOSPage() {
 
   return (
     <div className="max-w-2xl mx-auto">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Nova Ordem de Serviço</h1>
+      <h1 className="text-2xl font-bold text-gray-900 mb-6">Nova Ordem de Servico</h1>
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Cliente */}
@@ -110,7 +261,9 @@ export default function NovaOSPage() {
               </div>
             )}
             {selectedCliente && (
-              <p className="mt-1 text-sm text-green-600">✓ {selectedCliente.legal_name}</p>
+              <p className="mt-1 text-sm text-green-600 flex items-center gap-1">
+                <CheckCircle className="h-3.5 w-3.5" /> {selectedCliente.legal_name}
+              </p>
             )}
           </div>
         </div>
@@ -122,7 +275,7 @@ export default function NovaOSPage() {
             <div>
               <label className="block text-sm text-gray-600 mb-1">Tipo</label>
               <select value={form.equipment_type} onChange={e => updateForm('equipment_type', e.target.value)}
-                className="w-full px-3 py-2 border rounded-md">
+                title="Tipo de equipamento" className="w-full px-3 py-2 border rounded-md">
                 <option>Impressora</option>
                 <option>Notebook</option>
                 <option>Monitor</option>
@@ -130,18 +283,116 @@ export default function NovaOSPage() {
                 <option>Outro</option>
               </select>
             </div>
-            <div>
+            {/* Marca - searchable select */}
+            <div ref={marcaRef} className="relative">
               <label className="block text-sm text-gray-600 mb-1">Marca</label>
-              <input type="text" value={form.equipment_brand} onChange={e => updateForm('equipment_brand', e.target.value)}
-                placeholder="HP, Epson, Brother..." className="w-full px-3 py-2 border rounded-md" />
+              <div className="relative">
+                <input
+                  type="text"
+                  value={marcaSearch}
+                  onChange={e => {
+                    setMarcaSearch(e.target.value)
+                    setShowMarcaDropdown(true)
+                    if (!e.target.value) updateForm('equipment_brand', '')
+                  }}
+                  onFocus={() => setShowMarcaDropdown(true)}
+                  placeholder="Selecione ou digite..."
+                  className="w-full px-3 py-2 pr-8 border rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                />
+                <ChevronDown className="absolute right-2.5 top-3 h-4 w-4 text-gray-400 pointer-events-none" />
+              </div>
+              {showMarcaDropdown && (
+                <div className="absolute z-20 mt-1 w-full bg-white border rounded-md shadow-lg max-h-48 overflow-y-auto">
+                  {filteredMarcas.length > 0 ? filteredMarcas.map(m => (
+                    <button key={m} type="button" onClick={() => selectMarca(m)}
+                      className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 ${
+                        form.equipment_brand === m ? 'bg-blue-50 text-blue-700 font-medium' : ''
+                      }`}>
+                      {m}
+                    </button>
+                  )) : (
+                    <div className="px-3 py-2 text-sm text-gray-400">
+                      {marcaSearch ? 'Nenhuma marca encontrada' : 'Carregando...'}
+                    </div>
+                  )}
+                  {marcaSearch && !marcas.includes(marcaSearch) && (
+                    <button type="button"
+                      onClick={() => {
+                        updateForm('equipment_brand', marcaSearch)
+                        setShowMarcaDropdown(false)
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm border-t text-blue-600 hover:bg-blue-50 font-medium">
+                      Usar "{marcaSearch}"
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
-            <div>
+            {/* Modelo - searchable select */}
+            <div ref={modeloRef} className="relative">
               <label className="block text-sm text-gray-600 mb-1">Modelo</label>
-              <input type="text" value={form.equipment_model} onChange={e => updateForm('equipment_model', e.target.value)}
-                placeholder="LaserJet Pro M404" className="w-full px-3 py-2 border rounded-md" />
+              {modeloOutro ? (
+                <div className="flex gap-1">
+                  <input
+                    type="text"
+                    value={form.equipment_model}
+                    onChange={e => updateForm('equipment_model', e.target.value)}
+                    placeholder="Digite o modelo..."
+                    className="flex-1 px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    autoFocus
+                  />
+                  <button type="button" onClick={() => { setModeloOutro(false); setModeloSearch(''); updateForm('equipment_model', '') }}
+                    className="px-2 py-2 text-xs text-gray-500 hover:text-gray-700 border rounded-md hover:bg-gray-50">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={modeloSearch}
+                    onChange={e => {
+                      setModeloSearch(e.target.value)
+                      setShowModeloDropdown(true)
+                      if (!e.target.value) updateForm('equipment_model', '')
+                    }}
+                    onFocus={() => { if (form.equipment_brand) setShowModeloDropdown(true) }}
+                    placeholder={form.equipment_brand ? 'Selecione ou digite...' : 'Selecione marca primeiro'}
+                    disabled={!form.equipment_brand}
+                    className="w-full px-3 py-2 pr-8 border rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:bg-gray-50 disabled:text-gray-400"
+                  />
+                  <ChevronDown className="absolute right-2.5 top-3 h-4 w-4 text-gray-400 pointer-events-none" />
+                </div>
+              )}
+              {showModeloDropdown && form.equipment_brand && !modeloOutro && (
+                <div className="absolute z-20 mt-1 w-full bg-white border rounded-md shadow-lg max-h-48 overflow-y-auto">
+                  {filteredModelos.map(m => (
+                    <button key={m} type="button" onClick={() => selectModelo(m)}
+                      className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 ${
+                        form.equipment_model === m ? 'bg-blue-50 text-blue-700 font-medium' : ''
+                      }`}>
+                      {m}
+                    </button>
+                  ))}
+                  {modeloSearch && !modelos.includes(modeloSearch) && (
+                    <button type="button"
+                      onClick={() => {
+                        updateForm('equipment_model', modeloSearch)
+                        setShowModeloDropdown(false)
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm border-t text-blue-600 hover:bg-blue-50 font-medium">
+                      Usar "{modeloSearch}"
+                    </button>
+                  )}
+                  <button type="button" onClick={() => selectModelo('__outro__')}
+                    className="w-full text-left px-3 py-2 text-sm border-t text-gray-500 hover:bg-gray-50">
+                    Outro (digitar manualmente)
+                  </button>
+                </div>
+              )}
             </div>
             <div>
-              <label className="block text-sm text-gray-600 mb-1">Nº Série</label>
+              <label className="block text-sm text-gray-600 mb-1">N Serie</label>
               <input type="text" value={form.serial_number} onChange={e => updateForm('serial_number', e.target.value)}
                 placeholder="VNC1234567" className="w-full px-3 py-2 border rounded-md" />
             </div>
@@ -158,18 +409,25 @@ export default function NovaOSPage() {
               className="w-full px-3 py-2 border rounded-md resize-none" />
           </div>
           <div>
-            <label className="block text-sm text-gray-600 mb-1">Observações de recepção</label>
+            <label className="block text-sm text-gray-600 mb-1">Observacoes</label>
             <textarea value={form.reception_notes} onChange={e => updateForm('reception_notes', e.target.value)}
-              rows={2} placeholder="Estado do equipamento na entrada..."
+              rows={2} placeholder="Estado do equipamento na entrada, acessorios..."
               className="w-full px-3 py-2 border rounded-md resize-none" />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">Observacoes Internas</label>
+            <textarea value={form.internal_notes} onChange={e => updateForm('internal_notes', e.target.value)}
+              rows={2} placeholder="Notas internas (nao visivel ao cliente)..."
+              className="w-full px-3 py-2 border rounded-md resize-none bg-yellow-50 border-yellow-200 focus:ring-yellow-400 focus:border-yellow-400" />
+            <p className="text-xs text-yellow-600 mt-0.5">Visivel apenas para a equipe</p>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm text-gray-600 mb-1">Prioridade</label>
               <select value={form.priority} onChange={e => updateForm('priority', e.target.value)}
-                className="w-full px-3 py-2 border rounded-md">
+                title="Prioridade" className="w-full px-3 py-2 border rounded-md">
                 <option value="LOW">Baixa</option>
-                <option value="MEDIUM">Média</option>
+                <option value="MEDIUM">Media</option>
                 <option value="HIGH">Alta</option>
                 <option value="URGENT">Urgente</option>
               </select>
@@ -177,11 +435,28 @@ export default function NovaOSPage() {
             <div>
               <label className="block text-sm text-gray-600 mb-1">Tipo de OS</label>
               <select value={form.os_type} onChange={e => updateForm('os_type', e.target.value)}
-                className="w-full px-3 py-2 border rounded-md">
-                <option value="BALCAO">Balcão</option>
+                title="Tipo de OS" className="w-full px-3 py-2 border rounded-md">
+                <option value="BALCAO">Balcao</option>
                 <option value="COLETA">Coleta</option>
                 <option value="ENTREGA">Entrega</option>
               </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">Tecnico Responsavel</label>
+              <select value={form.technician_id} onChange={e => updateForm('technician_id', e.target.value)}
+                title="Tecnico Responsavel" className="w-full px-3 py-2 border rounded-md">
+                <option value="">Nao atribuido</option>
+                {tecnicos.map(t => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">Data de Previsao</label>
+              <input type="date" value={form.estimated_delivery} onChange={e => updateForm('estimated_delivery', e.target.value)}
+                title="Data de Previsao" className="w-full px-3 py-2 border rounded-md" />
             </div>
           </div>
         </div>
@@ -194,7 +469,7 @@ export default function NovaOSPage() {
           </button>
           <button type="submit" disabled={loading}
             className="flex-1 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 font-medium">
-            {loading ? 'Criando...' : 'Criar Ordem de Serviço'}
+            {loading ? 'Criando...' : 'Criar Ordem de Servico'}
           </button>
         </div>
       </form>
@@ -204,7 +479,7 @@ export default function NovaOSPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowNovoCliente(false)}>
           <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">Cadastro Rápido de Cliente</h2>
+              <h2 className="text-lg font-semibold text-gray-900">Cadastro Rapido de Cliente</h2>
               <button type="button" onClick={() => setShowNovoCliente(false)} className="rounded p-1 text-gray-400 hover:bg-gray-100">
                 <X className="h-5 w-5" />
               </button>
@@ -322,7 +597,7 @@ function NovoClienteForm({ onCreated }: { onCreated: (c: Cliente) => void }) {
 
   async function searchCEP() {
     const digits = f.address_zip.replace(/\D/g, '')
-    if (digits.length !== 8) { toast.error('CEP deve ter 8 dígitos'); return }
+    if (digits.length !== 8) { toast.error('CEP deve ter 8 digitos'); return }
     setCepLoading(true)
     try {
       const res = await fetch(`/api/consulta/cep/${digits}`)
@@ -334,14 +609,14 @@ function NovoClienteForm({ onCreated }: { onCreated: (c: Cliente) => void }) {
           address_city: data.data.address_city || prev.address_city,
           address_state: data.data.address_state || prev.address_state,
         }))
-        toast.success('Endereço preenchido!')
-      } else { toast.error(data.error || 'CEP não encontrado') }
+        toast.success('Endereco preenchido!')
+      } else { toast.error(data.error || 'CEP nao encontrado') }
     } catch { toast.error('Erro ao consultar CEP') } finally { setCepLoading(false) }
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!f.legal_name) { toast.error('Nome é obrigatório'); return }
+    if (!f.legal_name) { toast.error('Nome e obrigatorio'); return }
     const payload = { ...f, document_number: f.document_number.replace(/\D/g, ''),
       phone: f.phone.replace(/\D/g, ''), mobile: f.mobile.replace(/\D/g, ''),
       address_zip: f.address_zip.replace(/\D/g, ''),
@@ -378,6 +653,7 @@ function NovoClienteForm({ onCreated }: { onCreated: (c: Cliente) => void }) {
             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); searchDoc() } }}
             placeholder="Digite CPF ou CNPJ..." className={inp + " font-mono flex-1"} autoFocus />
           <button type="button" onClick={searchDoc} disabled={rawDoc.length < 11 || docStatus === 'searching'}
+            title="Buscar documento"
             className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 disabled:opacity-40 flex items-center gap-1">
             {docStatus === 'searching' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
           </button>
@@ -399,20 +675,20 @@ function NovoClienteForm({ onCreated }: { onCreated: (c: Cliente) => void }) {
       {/* Person/customer type */}
       <div className="flex gap-4">
         <label className="flex items-center gap-1.5 text-sm cursor-pointer">
-          <input type="radio" name="pt2" value="FISICA" title="Pessoa Física" checked={f.person_type === 'FISICA'} onChange={e => update('person_type', e.target.value)} />
+          <input type="radio" name="pt2" value="FISICA" aria-label="Pessoa Fisica" title="Pessoa Fisica" checked={f.person_type === 'FISICA'} onChange={e => update('person_type', e.target.value)} />
           PF
         </label>
         <label className="flex items-center gap-1.5 text-sm cursor-pointer">
-          <input type="radio" name="pt2" value="JURIDICA" title="Pessoa Jurídica" checked={f.person_type === 'JURIDICA'} onChange={e => update('person_type', e.target.value)} />
+          <input type="radio" name="pt2" value="JURIDICA" aria-label="Pessoa Juridica" title="Pessoa Juridica" checked={f.person_type === 'JURIDICA'} onChange={e => update('person_type', e.target.value)} />
           PJ
         </label>
         <span className="text-gray-300">|</span>
         <label className="flex items-center gap-1.5 text-sm cursor-pointer">
-          <input type="radio" name="ct2" value="CLIENTE" title="Cliente" checked={f.customer_type === 'CLIENTE'} onChange={e => update('customer_type', e.target.value)} />
+          <input type="radio" name="ct2" value="CLIENTE" aria-label="Cliente" title="Cliente" checked={f.customer_type === 'CLIENTE'} onChange={e => update('customer_type', e.target.value)} />
           Cliente
         </label>
         <label className="flex items-center gap-1.5 text-sm cursor-pointer">
-          <input type="radio" name="ct2" value="FORNECEDOR" title="Fornecedor" checked={f.customer_type === 'FORNECEDOR'} onChange={e => update('customer_type', e.target.value)} />
+          <input type="radio" name="ct2" value="FORNECEDOR" aria-label="Fornecedor" title="Fornecedor" checked={f.customer_type === 'FORNECEDOR'} onChange={e => update('customer_type', e.target.value)} />
           Fornecedor
         </label>
       </div>
@@ -420,10 +696,10 @@ function NovoClienteForm({ onCreated }: { onCreated: (c: Cliente) => void }) {
       {/* Name */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
-          {f.person_type === 'FISICA' ? 'Nome completo *' : 'Razão Social *'}
+          {f.person_type === 'FISICA' ? 'Nome completo *' : 'Razao Social *'}
         </label>
         <input type="text" value={f.legal_name} onChange={e => update('legal_name', e.target.value)}
-          placeholder={f.person_type === 'FISICA' ? 'Nome do cliente' : 'Razão social'}
+          placeholder={f.person_type === 'FISICA' ? 'Nome do cliente' : 'Razao social'}
           required className={inp} />
       </div>
 
@@ -451,7 +727,7 @@ function NovoClienteForm({ onCreated }: { onCreated: (c: Cliente) => void }) {
 
       {/* Address */}
       <div className="border-t pt-3 mt-1 space-y-2">
-        <h3 className="text-sm font-semibold text-gray-700">Endereço</h3>
+        <h3 className="text-sm font-semibold text-gray-700">Endereco</h3>
         <div className="flex gap-2">
           <div className="w-36">
             <label className="block text-xs text-gray-500 mb-0.5">CEP</label>
@@ -461,7 +737,7 @@ function NovoClienteForm({ onCreated }: { onCreated: (c: Cliente) => void }) {
               placeholder="00000-000" className={inp + " font-mono"} />
           </div>
           <div className="flex items-end">
-            <button type="button" onClick={searchCEP} disabled={cepLoading}
+            <button type="button" onClick={searchCEP} disabled={cepLoading} title="Buscar CEP"
               className="px-2.5 py-2 text-xs bg-gray-100 border rounded-md hover:bg-gray-200 disabled:opacity-50 flex items-center gap-1">
               {cepLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
               CEP
@@ -475,9 +751,9 @@ function NovoClienteForm({ onCreated }: { onCreated: (c: Cliente) => void }) {
               placeholder="Rua, Avenida..." className={inp} />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-0.5">Nº</label>
+            <label className="block text-xs text-gray-500 mb-0.5">N</label>
             <input type="text" value={f.address_number} onChange={e => update('address_number', e.target.value)}
-              placeholder="Nº" className={inp} />
+              placeholder="N" className={inp} />
           </div>
         </div>
         <div className="grid grid-cols-3 gap-2">

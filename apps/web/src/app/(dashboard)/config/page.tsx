@@ -18,6 +18,7 @@ const sections = [
       { label: 'Status de OS', href: '/config/status', icon: Tag, desc: 'Configurar fluxo de status das OS' },
       { label: 'Tipos de Servico', href: '/config/tipos-servico', icon: Wrench, desc: 'Categorias e tipos de servico' },
       { label: 'Templates', href: '/config/templates', icon: PrinterIcon, desc: 'Templates de impressao e email de OS' },
+      { label: 'Marcas e Modelos', href: '/config/marcas-modelos', icon: Wrench, desc: 'Marcas e modelos de equipamentos para OS' },
     ],
   },
   {
