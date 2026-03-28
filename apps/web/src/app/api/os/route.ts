@@ -43,7 +43,10 @@ export async function GET(req: NextRequest) {
         skip: (page - 1) * limit,
         take: limit,
         orderBy: { created_at: 'desc' },
-        include: { customers: { select: { id: true, legal_name: true, phone: true } } },
+        include: {
+          customers: { select: { id: true, legal_name: true, phone: true } },
+          user_profiles: { select: { id: true, name: true } },
+        },
       }),
       prisma.serviceOrder.count({ where }),
     ])

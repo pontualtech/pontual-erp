@@ -26,8 +26,12 @@ interface OS {
   equipment_brand: string | null
   equipment_model: string | null
   reported_issue: string | null
+  approved_cost: number | null
+  estimated_delivery: string | null
+  actual_delivery: string | null
   created_at: string
   customers: { id: string; legal_name: string; phone: string | null } | null
+  user_profiles: { id: string; name: string } | null
 }
 
 const priorityLabel: Record<string, string> = {
@@ -230,7 +234,10 @@ export default function OSListPage() {
                   <th className="px-4 py-3">Numero</th>
                   <th className="px-4 py-3">Cliente</th>
                   <th className="px-4 py-3">Equipamento</th>
+                  <th className="px-4 py-3">Marca</th>
+                  <th className="px-4 py-3">Modelo</th>
                   <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Técnico</th>
                   <th className="px-4 py-3">Prioridade</th>
                   <th className="px-4 py-3">Tipo</th>
                   <th className="px-4 py-3">Data</th>
@@ -238,9 +245,9 @@ export default function OSListPage() {
               </thead>
               <tbody className="divide-y">
                 {loading ? (
-                  <tr><td colSpan={isAdmin ? 8 : 7} className="px-4 py-8 text-center text-gray-400">Carregando...</td></tr>
+                  <tr><td colSpan={isAdmin ? 11 : 10} className="px-4 py-8 text-center text-gray-400">Carregando...</td></tr>
                 ) : osList.length === 0 ? (
-                  <tr><td colSpan={isAdmin ? 8 : 7} className="px-4 py-8 text-center text-gray-400">Nenhuma OS encontrada</td></tr>
+                  <tr><td colSpan={isAdmin ? 11 : 10} className="px-4 py-8 text-center text-gray-400">Nenhuma OS encontrada</td></tr>
                 ) : (
                   osList.map(os => {
                     const st = statusMap[os.status_id]
@@ -259,14 +266,9 @@ export default function OSListPage() {
                           </Link>
                         </td>
                         <td className="px-4 py-3 text-gray-700">{os.customers?.legal_name ?? '—'}</td>
-                        <td className="px-4 py-3 text-gray-700">
-                          {os.equipment_type ?? '—'}
-                          {(os.equipment_brand || os.equipment_model) && (
-                            <span className="text-xs text-gray-400 ml-1">
-                              {[os.equipment_brand, os.equipment_model].filter(Boolean).join(' ')}
-                            </span>
-                          )}
-                        </td>
+                        <td className="px-4 py-3 text-gray-700">{os.equipment_type ?? '—'}</td>
+                        <td className="px-4 py-3 text-gray-500">{os.equipment_brand ?? '—'}</td>
+                        <td className="px-4 py-3 text-gray-500">{os.equipment_model ?? '—'}</td>
                         <td className="px-4 py-3">
                           <span
                             className="rounded-full px-2 py-0.5 text-xs font-medium"
@@ -275,6 +277,7 @@ export default function OSListPage() {
                             {st?.name ?? os.status_id}
                           </span>
                         </td>
+                        <td className="px-4 py-3 text-gray-500 text-xs">{os.user_profiles?.name ?? '—'}</td>
                         <td className={cn('px-4 py-3 text-xs', priorityColor[os.priority])}>
                           {priorityLabel[os.priority] ?? os.priority}
                         </td>
