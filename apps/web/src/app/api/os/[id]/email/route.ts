@@ -212,37 +212,8 @@ export async function POST(req: NextRequest, { params }: Params) {
       return success({ sent: true, to: recipientEmail, subject: emailSubject })
     }
 
-    // Fallback: send via SMTP using nodemailer (dynamic import)
-    try {
-      const nodemailer = await import('nodemailer')
-      const transporter = nodemailer.default.createTransport({
-        host: smtpHost || 'smtp.gmail.com',
-        port: parseInt(process.env.SMTP_PORT || '587'),
-        secure: process.env.SMTP_PORT === '465',
-        auth: { user: smtpUser, pass: smtpPass },
-      })
-
-      await transporter.sendMail({
-        from: smtpFrom,
-        to: recipientEmail,
-        subject: emailSubject,
-        html: htmlBody,
-      })
-
-      logAudit({
-        companyId: user.companyId,
-        userId: user.id,
-        module: 'os',
-        action: 'email_sent',
-        entityId: os.id,
-        newValue: { to: recipientEmail, subject: emailSubject, provider: 'smtp' },
-      })
-
-      return success({ sent: true, to: recipientEmail, subject: emailSubject })
-    } catch (smtpErr) {
-      console.error('[EMAIL] SMTP error:', smtpErr)
-      return error('Erro ao enviar email via SMTP. Verifique as configuracoes.', 500)
-    }
+    // No email provider configured
+    return error('Email nao configurado. Configure RESEND_API_KEY nas variaveis de ambiente do Coolify, ou configure SMTP_HOST + SMTP_USER + SMTP_PASS.', 503)
   } catch (err) {
     return handleError(err)
   }
