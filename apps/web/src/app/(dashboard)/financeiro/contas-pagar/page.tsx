@@ -5,10 +5,11 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   Plus, Search, Eye, Pencil, Trash2, DollarSign,
-  AlertTriangle, Clock, CheckCircle2, CalendarClock, Filter, X
+  AlertTriangle, Clock, CheckCircle2, CalendarClock, Filter, X, Loader2
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/lib/use-auth'
 
 interface Supplier {
   id: string
@@ -73,6 +74,7 @@ const statusConfig: Record<string, { label: string; color: string }> = {
 
 export default function ContasPagarPage() {
   const router = useRouter()
+  const { isAdmin } = useAuth()
   const [contas, setContas] = useState<ContaPagar[]>([])
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
@@ -95,6 +97,9 @@ export default function ContasPagarPage() {
   const [baixaDate, setBaixaDate] = useState(() => new Date().toISOString().split('T')[0])
   const [baixaAccountId, setBaixaAccountId] = useState('')
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [showBulkDelete, setShowBulkDelete] = useState(false)
+  const [bulkDeleting, setBulkDeleting] = useState(false)
 
   const loadContas = useCallback(() => {
     setLoading(true)
@@ -118,7 +123,7 @@ export default function ContasPagarPage() {
       .finally(() => setLoading(false))
   }, [page, search, statusFilter, startDate, endDate])
 
-  useEffect(() => { loadContas() }, [loadContas])
+  useEffect(() => { loadContas(); setSelected(new Set()) }, [loadContas])
 
   // Load bank accounts for baixa modal
   useEffect(() => {
@@ -133,6 +138,27 @@ export default function ContasPagarPage() {
       return 'VENCIDO'
     }
     return conta.status || 'PENDENTE'
+  }
+
+  function toggleSelect(id: string) {
+    setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+  }
+  function toggleAll() {
+    if (selected.size === contas.length) setSelected(new Set())
+    else setSelected(new Set(contas.map(c => c.id)))
+  }
+
+  async function handleBulkDelete() {
+    setBulkDeleting(true)
+    let ok = 0, fail = 0
+    for (const id of selected) {
+      try {
+        const res = await fetch(`/api/financeiro/contas-pagar/${id}`, { method: 'DELETE' })
+        if (res.ok) ok++; else fail++
+      } catch { fail++ }
+    }
+    toast.success(`${ok} conta(s) excluída(s)${fail ? `, ${fail} erro(s)` : ''}`)
+    setShowBulkDelete(false); setSelected(new Set()); setBulkDeleting(false); loadContas()
   }
 
   async function handleDelete() {

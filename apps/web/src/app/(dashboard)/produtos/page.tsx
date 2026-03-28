@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
-import { Plus, Search, AlertTriangle, Package, Wrench } from 'lucide-react'
+import { Plus, Search, AlertTriangle, Package, Wrench, Trash2, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
+import { useAuth } from '@/lib/use-auth'
 
 interface Produto {
   id: string
@@ -27,14 +29,18 @@ function formatCurrency(cents: number) {
 }
 
 export default function ProdutosPage() {
+  const { isAdmin } = useAuth()
   const [produtos, setProdutos] = useState<Produto[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [filtroTipo, setFiltroTipo] = useState<'' | 'produto' | 'servico'>('')
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [showBulkDelete, setShowBulkDelete] = useState(false)
+  const [bulkDeleting, setBulkDeleting] = useState(false)
 
-  useEffect(() => {
+  function loadProdutos() {
     setLoading(true)
     const params = new URLSearchParams()
     params.set('page', String(page))
@@ -49,18 +55,49 @@ export default function ProdutosPage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [search, page, filtroTipo])
+  }
+
+  useEffect(() => { loadProdutos(); setSelected(new Set()) }, [search, page, filtroTipo])
+
+  function toggleSelect(id: string) {
+    setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+  }
+  function toggleAll() {
+    if (selected.size === produtos.length) setSelected(new Set())
+    else setSelected(new Set(produtos.map(p => p.id)))
+  }
+
+  async function handleBulkDelete() {
+    setBulkDeleting(true)
+    let ok = 0, fail = 0
+    for (const id of selected) {
+      try {
+        const res = await fetch(`/api/produtos/${id}`, { method: 'DELETE' })
+        if (res.ok) ok++; else fail++
+      } catch { fail++ }
+    }
+    toast.success(`${ok} produto(s) excluído(s)${fail ? `, ${fail} erro(s)` : ''}`)
+    setShowBulkDelete(false); setSelected(new Set()); setBulkDeleting(false); loadProdutos()
+  }
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Produtos e Serviços</h1>
-        <Link
-          href="/produtos/novo"
-          className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        >
-          <Plus className="h-4 w-4" /> Novo
-        </Link>
+        <div className="flex items-center gap-2">
+          {isAdmin && selected.size > 0 && (
+            <button type="button" onClick={() => setShowBulkDelete(true)}
+              className="flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
+              <Trash2 className="h-4 w-4" /> Excluir {selected.size}
+            </button>
+          )}
+          <Link
+            href="/produtos/novo"
+            className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            <Plus className="h-4 w-4" /> Novo
+          </Link>
+        </div>
       </div>
 
       {/* Filters */}
@@ -94,6 +131,13 @@ export default function ProdutosPage() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
+              {isAdmin && (
+                <th className="px-3 py-3 w-10">
+                  <input type="checkbox" title="Selecionar todos"
+                    checked={produtos.length > 0 && selected.size === produtos.length}
+                    onChange={toggleAll} className="rounded text-blue-600" />
+                </th>
+              )}
               <th className="px-4 py-3">Tipo</th>
               <th className="px-4 py-3">Nome</th>
               <th className="px-4 py-3">Código</th>
@@ -104,15 +148,22 @@ export default function ProdutosPage() {
           </thead>
           <tbody className="divide-y">
             {loading ? (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">Carregando...</td></tr>
+              <tr><td colSpan={isAdmin ? 7 : 6} className="px-4 py-8 text-center text-gray-400">Carregando...</td></tr>
             ) : produtos.length === 0 ? (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">Nenhum item encontrado</td></tr>
+              <tr><td colSpan={isAdmin ? 7 : 6} className="px-4 py-8 text-center text-gray-400">Nenhum item encontrado</td></tr>
             ) : (
               produtos.map(p => {
                 const isServico = p.unit === 'SV'
                 const baixo = !isServico && p.current_stock <= p.min_stock && p.min_stock > 0
                 return (
-                  <tr key={p.id} className="hover:bg-gray-50">
+                  <tr key={p.id} className={`hover:bg-gray-50 ${selected.has(p.id) ? 'bg-blue-50' : ''}`}>
+                    {isAdmin && (
+                      <td className="px-3 py-3">
+                        <input type="checkbox" title={`Selecionar ${p.name}`}
+                          checked={selected.has(p.id)} onChange={() => toggleSelect(p.id)}
+                          className="rounded text-blue-600" />
+                      </td>
+                    )}
                     <td className="px-4 py-3">
                       {isServico ? (
                         <span className="flex items-center gap-1 text-amber-600">
@@ -154,6 +205,21 @@ export default function ProdutosPage() {
         </table>
       </div>
 
+      {/* Selection bar */}
+      {isAdmin && selected.size > 0 && (
+        <div className="flex items-center justify-between rounded-lg bg-blue-50 border border-blue-200 px-4 py-2">
+          <span className="text-sm text-blue-700 font-medium">{selected.size} selecionado(s)</span>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setSelected(new Set())}
+              className="text-sm text-gray-500 hover:text-gray-700">Limpar seleção</button>
+            <button type="button" onClick={() => setShowBulkDelete(true)}
+              className="flex items-center gap-1.5 px-3 py-1 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 font-medium">
+              <Trash2 className="h-3.5 w-3.5" /> Excluir selecionados
+            </button>
+          </div>
+        </div>
+      )}
+
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-2">
           <button type="button" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
@@ -161,6 +227,27 @@ export default function ProdutosPage() {
           <span className="text-sm text-gray-500">Página {page} de {totalPages}</span>
           <button type="button" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
             className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-40">Próxima</button>
+        </div>
+      )}
+
+      {/* Bulk delete modal */}
+      {showBulkDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowBulkDelete(false)}>
+          <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-semibold text-red-600 mb-2">Excluir {selected.size} produtos?</h2>
+            <p className="text-sm text-gray-600 mb-2">Esta ação não pode ser desfeita.</p>
+            <p className="text-sm text-gray-500 mb-4">
+              {produtos.filter(p => selected.has(p.id)).map(p => p.name).join(', ')}
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button type="button" onClick={() => setShowBulkDelete(false)} className="px-4 py-2 text-sm border rounded-md hover:bg-gray-50">Cancelar</button>
+              <button type="button" onClick={handleBulkDelete} disabled={bulkDeleting}
+                className="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 flex items-center gap-2">
+                {bulkDeleting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                {bulkDeleting ? 'Excluindo...' : `Excluir ${selected.size}`}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

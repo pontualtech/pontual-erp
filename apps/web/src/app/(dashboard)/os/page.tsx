@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
-import { Plus, Search, List, LayoutGrid, Settings2, Eye, EyeOff } from 'lucide-react'
+import { Plus, Search, List, LayoutGrid, Settings2, Eye, EyeOff, Trash2, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
+import { useAuth } from '@/lib/use-auth'
 
 interface KanbanColumn {
   id: string
@@ -43,6 +45,7 @@ const priorityColor: Record<string, string> = {
 }
 
 export default function OSListPage() {
+  const { isAdmin } = useAuth()
   const [osList, setOsList] = useState<OS[]>([])
   const [kanbanColumns, setKanbanColumns] = useState<KanbanColumn[]>([])
   const [statusMap, setStatusMap] = useState<Record<string, { name: string; color: string }>>({})
@@ -54,6 +57,9 @@ export default function OSListPage() {
   const [view, setView] = useState<'table' | 'kanban'>('table')
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(new Set())
   const [showColumnPicker, setShowColumnPicker] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [showBulkDelete, setShowBulkDelete] = useState(false)
+  const [bulkDeleting, setBulkDeleting] = useState(false)
 
   // Load status definitions from kanban endpoint
   useEffect(() => {
@@ -115,7 +121,7 @@ export default function OSListPage() {
     }
   }
 
-  useEffect(() => {
+  function loadOS() {
     setLoading(true)
     const params = new URLSearchParams()
     params.set('page', String(page))
@@ -130,18 +136,49 @@ export default function OSListPage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [search, statusFilter, page])
+  }
+
+  useEffect(() => { loadOS(); setSelected(new Set()) }, [search, statusFilter, page])
+
+  function toggleSelect(id: string) {
+    setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+  }
+  function toggleAll() {
+    if (selected.size === osList.length) setSelected(new Set())
+    else setSelected(new Set(osList.map(os => os.id)))
+  }
+
+  async function handleBulkDelete() {
+    setBulkDeleting(true)
+    let ok = 0, fail = 0
+    for (const id of selected) {
+      try {
+        const res = await fetch(`/api/os/${id}`, { method: 'DELETE' })
+        if (res.ok) ok++; else fail++
+      } catch { fail++ }
+    }
+    toast.success(`${ok} OS excluída(s)${fail ? `, ${fail} erro(s)` : ''}`)
+    setShowBulkDelete(false); setSelected(new Set()); setBulkDeleting(false); loadOS()
+  }
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Ordens de Servico</h1>
-        <Link
-          href="/os/novo"
-          className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        >
-          <Plus className="h-4 w-4" /> Nova OS
-        </Link>
+        <div className="flex items-center gap-2">
+          {isAdmin && selected.size > 0 && (
+            <button type="button" onClick={() => setShowBulkDelete(true)}
+              className="flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
+              <Trash2 className="h-4 w-4" /> Excluir {selected.size}
+            </button>
+          )}
+          <Link
+            href="/os/novo"
+            className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            <Plus className="h-4 w-4" /> Nova OS
+          </Link>
+        </div>
       </div>
 
       {/* Filters */}
@@ -183,6 +220,13 @@ export default function OSListPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
+                  {isAdmin && (
+                    <th className="px-3 py-3 w-10">
+                      <input type="checkbox" title="Selecionar todos"
+                        checked={osList.length > 0 && selected.size === osList.length}
+                        onChange={toggleAll} className="rounded text-blue-600" />
+                    </th>
+                  )}
                   <th className="px-4 py-3">Numero</th>
                   <th className="px-4 py-3">Cliente</th>
                   <th className="px-4 py-3">Equipamento</th>
@@ -194,14 +238,21 @@ export default function OSListPage() {
               </thead>
               <tbody className="divide-y">
                 {loading ? (
-                  <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">Carregando...</td></tr>
+                  <tr><td colSpan={isAdmin ? 8 : 7} className="px-4 py-8 text-center text-gray-400">Carregando...</td></tr>
                 ) : osList.length === 0 ? (
-                  <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">Nenhuma OS encontrada</td></tr>
+                  <tr><td colSpan={isAdmin ? 8 : 7} className="px-4 py-8 text-center text-gray-400">Nenhuma OS encontrada</td></tr>
                 ) : (
                   osList.map(os => {
                     const st = statusMap[os.status_id]
                     return (
-                      <tr key={os.id} className="hover:bg-gray-50">
+                      <tr key={os.id} className={`hover:bg-gray-50 ${selected.has(os.id) ? 'bg-blue-50' : ''}`}>
+                        {isAdmin && (
+                          <td className="px-3 py-3">
+                            <input type="checkbox" title={`Selecionar OS-${String(os.os_number).padStart(4, '0')}`}
+                              checked={selected.has(os.id)} onChange={() => toggleSelect(os.id)}
+                              className="rounded text-blue-600" />
+                          </td>
+                        )}
                         <td className="px-4 py-3">
                           <Link href={`/os/${os.id}`} className="font-medium text-blue-600 hover:underline">
                             OS-{String(os.os_number).padStart(4, '0')}
@@ -231,6 +282,21 @@ export default function OSListPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Selection bar */}
+          {isAdmin && selected.size > 0 && (
+            <div className="flex items-center justify-between rounded-lg bg-blue-50 border border-blue-200 px-4 py-2">
+              <span className="text-sm text-blue-700 font-medium">{selected.size} selecionado(s)</span>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setSelected(new Set())}
+                  className="text-sm text-gray-500 hover:text-gray-700">Limpar seleção</button>
+                <button type="button" onClick={() => setShowBulkDelete(true)}
+                  className="flex items-center gap-1.5 px-3 py-1 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 font-medium">
+                  <Trash2 className="h-3.5 w-3.5" /> Excluir selecionados
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Pagination */}
           {totalPages > 1 && (
@@ -338,6 +404,27 @@ export default function OSListPage() {
       {/* Close column picker when clicking outside */}
       {showColumnPicker && (
         <div className="fixed inset-0 z-10" onClick={() => setShowColumnPicker(false)} />
+      )}
+
+      {/* Bulk delete modal */}
+      {showBulkDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowBulkDelete(false)}>
+          <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-semibold text-red-600 mb-2">Excluir {selected.size} OS?</h2>
+            <p className="text-sm text-gray-600 mb-2">Esta ação não pode ser desfeita.</p>
+            <p className="text-sm text-gray-500 mb-4">
+              {osList.filter(os => selected.has(os.id)).map(os => `OS-${String(os.os_number).padStart(4, '0')}`).join(', ')}
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button type="button" onClick={() => setShowBulkDelete(false)} className="px-4 py-2 text-sm border rounded-md hover:bg-gray-50">Cancelar</button>
+              <button type="button" onClick={handleBulkDelete} disabled={bulkDeleting}
+                className="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 flex items-center gap-2">
+                {bulkDeleting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                {bulkDeleting ? 'Excluindo...' : `Excluir ${selected.size}`}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
