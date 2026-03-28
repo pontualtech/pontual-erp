@@ -252,7 +252,7 @@ export default function PortalOSDetailPage() {
                           style={{
                             backgroundColor: isPast || isActive ? s.color : '#E5E7EB',
                             color: isPast || isActive ? 'white' : '#9CA3AF',
-                            ringColor: isActive ? `${s.color}40` : undefined,
+                            boxShadow: isActive ? `0 0 0 3px ${s.color}40` : undefined,
                           }}
                         >
                           {isPast ? (
