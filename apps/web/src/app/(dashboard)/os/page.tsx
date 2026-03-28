@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
-import { Plus, Search, List, LayoutGrid, Settings2, Eye, EyeOff, Trash2, Loader2 } from 'lucide-react'
+import { Plus, Search, List, LayoutGrid, Settings2, Eye, EyeOff, Trash2, Loader2, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/lib/use-auth'
 
@@ -64,6 +64,8 @@ export default function OSListPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [showBulkDelete, setShowBulkDelete] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [sortField, setSortField] = useState<string>('os_number')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
 
   // Load status definitions from kanban endpoint
   useEffect(() => {
@@ -152,6 +154,43 @@ export default function OSListPage() {
     else setSelected(new Set(osList.map(os => os.id)))
   }
 
+  function handleSort(field: string) {
+    if (sortField === field) {
+      setSortDir(prev => prev === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(field)
+      setSortDir(field === 'os_number' || field === 'created_at' ? 'desc' : 'asc')
+    }
+  }
+
+  function getSortedList() {
+    return [...osList].sort((a, b) => {
+      let va: any, vb: any
+      switch (sortField) {
+        case 'os_number': va = a.os_number; vb = b.os_number; break
+        case 'created_at': va = a.created_at; vb = b.created_at; break
+        case 'customer': va = a.customers?.legal_name || ''; vb = b.customers?.legal_name || ''; break
+        case 'equipment_type': va = a.equipment_type || ''; vb = b.equipment_type || ''; break
+        case 'equipment_brand': va = a.equipment_brand || ''; vb = b.equipment_brand || ''; break
+        case 'equipment_model': va = a.equipment_model || ''; vb = b.equipment_model || ''; break
+        case 'status': va = statusMap[a.status_id]?.name || ''; vb = statusMap[b.status_id]?.name || ''; break
+        case 'technician': va = a.user_profiles?.name || ''; vb = b.user_profiles?.name || ''; break
+        case 'priority': { const o: Record<string, number> = {URGENT:0,HIGH:1,MEDIUM:2,LOW:3}; va = o[a.priority]??9; vb = o[b.priority]??9; break }
+        case 'os_type': va = a.os_type; vb = b.os_type; break
+        default: va = a.os_number; vb = b.os_number
+      }
+      if (typeof va === 'string') { va = va.toLowerCase(); vb = (vb as string).toLowerCase() }
+      if (va < vb) return sortDir === 'asc' ? -1 : 1
+      if (va > vb) return sortDir === 'asc' ? 1 : -1
+      return 0
+    })
+  }
+
+  function SortIcon({ field }: { field: string }) {
+    if (sortField !== field) return <ArrowUpDown className="h-3 w-3 opacity-30" />
+    return sortDir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+  }
+
   async function handleBulkDelete() {
     setBulkDeleting(true)
     let ok = 0, fail = 0
@@ -231,16 +270,26 @@ export default function OSListPage() {
                         onChange={toggleAll} className="rounded text-blue-600" />
                     </th>
                   )}
-                  <th className="px-4 py-3">Numero</th>
-                  <th className="px-4 py-3">Cliente</th>
-                  <th className="px-4 py-3">Equipamento</th>
-                  <th className="px-4 py-3">Marca</th>
-                  <th className="px-4 py-3">Modelo</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Técnico</th>
-                  <th className="px-4 py-3">Prioridade</th>
-                  <th className="px-4 py-3">Tipo</th>
-                  <th className="px-4 py-3">Data</th>
+                  {[
+                    { key: 'os_number', label: 'Nº' },
+                    { key: 'created_at', label: 'Data' },
+                    { key: 'customer', label: 'Cliente' },
+                    { key: 'equipment_type', label: 'Equip.' },
+                    { key: 'equipment_brand', label: 'Marca' },
+                    { key: 'equipment_model', label: 'Modelo' },
+                    { key: 'status', label: 'Status' },
+                    { key: 'technician', label: 'Técnico' },
+                    { key: 'priority', label: 'Prioridade' },
+                    { key: 'os_type', label: 'Tipo' },
+                  ].map(col => (
+                    <th key={col.key} className="px-4 py-3">
+                      <button type="button" onClick={() => handleSort(col.key)}
+                        className="flex items-center gap-1 hover:text-gray-700 transition-colors"
+                        title={`Ordenar por ${col.label}`}>
+                        {col.label} <SortIcon field={col.key} />
+                      </button>
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -249,7 +298,7 @@ export default function OSListPage() {
                 ) : osList.length === 0 ? (
                   <tr><td colSpan={isAdmin ? 11 : 10} className="px-4 py-8 text-center text-gray-400">Nenhuma OS encontrada</td></tr>
                 ) : (
-                  osList.map(os => {
+                  getSortedList().map(os => {
                     const st = statusMap[os.status_id]
                     return (
                       <tr key={os.id} className={`hover:bg-gray-50 ${selected.has(os.id) ? 'bg-blue-50' : ''}`}>
@@ -265,10 +314,13 @@ export default function OSListPage() {
                             OS-{String(os.os_number).padStart(4, '0')}
                           </Link>
                         </td>
+                        <td className="px-4 py-3 text-gray-500 text-xs">
+                          {new Date(os.created_at).toLocaleDateString('pt-BR')}
+                        </td>
                         <td className="px-4 py-3 text-gray-700">{os.customers?.legal_name ?? '—'}</td>
-                        <td className="px-4 py-3 text-gray-700">{os.equipment_type ?? '—'}</td>
-                        <td className="px-4 py-3 text-gray-500">{os.equipment_brand ?? '—'}</td>
-                        <td className="px-4 py-3 text-gray-500">{os.equipment_model ?? '—'}</td>
+                        <td className="px-4 py-3 text-gray-700 text-xs">{os.equipment_type ?? '—'}</td>
+                        <td className="px-4 py-3 text-gray-500 text-xs">{os.equipment_brand ?? '—'}</td>
+                        <td className="px-4 py-3 text-gray-500 text-xs">{os.equipment_model ?? '—'}</td>
                         <td className="px-4 py-3">
                           <span
                             className="rounded-full px-2 py-0.5 text-xs font-medium"
@@ -282,9 +334,6 @@ export default function OSListPage() {
                           {priorityLabel[os.priority] ?? os.priority}
                         </td>
                         <td className="px-4 py-3 text-gray-500 text-xs">{os.os_type}</td>
-                        <td className="px-4 py-3 text-gray-500">
-                          {new Date(os.created_at).toLocaleDateString('pt-BR')}
-                        </td>
                       </tr>
                     )
                   })
