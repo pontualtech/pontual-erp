@@ -39,17 +39,17 @@ async function handleMessageCreated(body: any) {
     // Try to find the OS in the database
     const os = await prisma.serviceOrder.findFirst({
       where: { os_number: osNumber, deleted_at: null },
-      include: { customers: true, status: true },
+      include: { customers: true, module_statuses: true },
     })
 
     if (os) {
-      console.log(`[Chatwoot Webhook] Found OS-${String(osNumber).padStart(4, '0')}, status: ${os.status?.name}`)
+      console.log(`[Chatwoot Webhook] Found OS-${String(osNumber).padStart(4, '0')}, status: ${os.module_statuses?.name}`)
 
       // Check for approval keywords
       const lowerMessage = message.toLowerCase()
       const isApproval = lowerMessage.includes('aprovar') || lowerMessage.includes('aprovado') || lowerMessage.includes('aprovo')
 
-      if (isApproval && os.status?.name === 'Aguardando Aprovacao') {
+      if (isApproval && os.module_statuses?.name === 'Aguardando Aprovacao') {
         // Find the "Aprovada" status
         const approvedStatus = await prisma.moduleStatus.findFirst({
           where: {
