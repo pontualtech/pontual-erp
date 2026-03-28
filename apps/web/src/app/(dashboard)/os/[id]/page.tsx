@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import { ArrowLeft, Edit, Camera, History, Info, Package, Plus, Trash2, Loader2, Search, Wrench, CreditCard, X } from 'lucide-react'
+import { ArrowLeft, Edit, Camera, History, Info, Package, Plus, Trash2, Loader2, Search, Wrench, CreditCard, X, Printer, Mail, Send } from 'lucide-react'
 
 interface Customer {
   id: string; legal_name: string; trade_name: string | null; person_type: string
@@ -82,6 +82,11 @@ export default function OSDetailPage() {
   const [paymentNotes, setPaymentNotes] = useState('')
   const [paymentMethods, setPaymentMethods] = useState<{ id: string; name: string; icon: string; active: boolean }[]>([])
   const [paymentMethodsLoaded, setPaymentMethodsLoaded] = useState(false)
+
+  // Print/Email modal
+  const [showPrintModal, setShowPrintModal] = useState(false)
+  const [printEmail, setPrintEmail] = useState('')
+  const [sendingEmail, setSendingEmail] = useState(false)
 
   function loadOS() {
     fetch(`/api/os/${id}`)
@@ -212,6 +217,45 @@ export default function OSDetailPage() {
     }
   }
 
+  function handlePrintOnly() {
+    window.open(`/api/os/${id}/pdf`, '_blank')
+    setShowPrintModal(false)
+  }
+
+  async function handleSendEmail() {
+    setSendingEmail(true)
+    try {
+      const res = await fetch(`/api/os/${id}/email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: printEmail || undefined }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao enviar email')
+      toast.success(`Email enviado para ${data.data?.to || printEmail}!`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao enviar email')
+    } finally {
+      setSendingEmail(false)
+    }
+  }
+
+  function handlePrintAndEmail() {
+    window.open(`/api/os/${id}/pdf`, '_blank')
+    handleSendEmail()
+    setShowPrintModal(false)
+  }
+
+  function handleEmailOnly() {
+    handleSendEmail()
+    setShowPrintModal(false)
+  }
+
+  function openPrintModal() {
+    setPrintEmail(os?.customers?.email || '')
+    setShowPrintModal(true)
+  }
+
   function getNextStatus(): StatusDef | null {
     if (!os) return null
     const current = statusMap[os.status_id]
@@ -303,6 +347,10 @@ export default function OSDetailPage() {
               {transitioning ? '...' : `Avançar → ${nextStatus.name}`}
             </button>
           )}
+          <button type="button" onClick={openPrintModal}
+            className="flex items-center gap-1.5 rounded-md border border-green-300 bg-green-50 px-4 py-2 text-sm font-medium text-green-700 hover:bg-green-100">
+            <Printer className="h-4 w-4" /> Imprimir
+          </button>
           <Link href={`/os/${id}/editar`} className="flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-gray-50">
             <Edit className="h-4 w-4" /> Editar
           </Link>
@@ -704,6 +752,61 @@ export default function OSDetailPage() {
                 {transitioning ? 'Finalizando...' : 'Confirmar Entrega'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Print / Email modal */}
+      {showPrintModal && os && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowPrintModal(false)}>
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <Printer className="h-5 w-5 text-green-600" />
+                Imprimir OS-{String(os.os_number).padStart(4, '0')}
+              </h2>
+              <button type="button" onClick={() => setShowPrintModal(false)} title="Fechar" className="p-1 rounded hover:bg-gray-100 text-gray-400">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <p className="text-sm text-gray-600 mb-4">
+              Deseja imprimir e/ou enviar por email?
+            </p>
+
+            {/* Email field */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                <Mail className="h-3.5 w-3.5 inline mr-1" /> Email do cliente
+              </label>
+              <input type="email" value={printEmail} onChange={e => setPrintEmail(e.target.value)}
+                placeholder="email@exemplo.com"
+                className="w-full px-3 py-2 border rounded-md text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-200" />
+            </div>
+
+            <div className="space-y-2">
+              <button type="button" onClick={handlePrintOnly}
+                className="w-full flex items-center justify-center gap-2 rounded-md border-2 border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+                <Printer className="h-4 w-4" /> Apenas Imprimir
+              </button>
+
+              <button type="button" onClick={handlePrintAndEmail} disabled={sendingEmail || !printEmail}
+                className="w-full flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors">
+                {sendingEmail ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Printer className="h-4 w-4" /><Send className="h-4 w-4" /></>}
+                {sendingEmail ? 'Enviando...' : 'Imprimir e Enviar Email'}
+              </button>
+
+              <button type="button" onClick={handleEmailOnly} disabled={sendingEmail || !printEmail}
+                className="w-full flex items-center justify-center gap-2 rounded-md border-2 border-blue-200 px-4 py-2.5 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50 transition-colors">
+                {sendingEmail ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                {sendingEmail ? 'Enviando...' : 'Apenas Enviar Email'}
+              </button>
+            </div>
+
+            <button type="button" onClick={() => setShowPrintModal(false)}
+              className="w-full mt-3 px-4 py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors">
+              Cancelar
+            </button>
           </div>
         </div>
       )}
