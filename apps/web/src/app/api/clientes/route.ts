@@ -58,6 +58,32 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json()
 
+    // Check for duplicates by document, mobile, or email
+    const dupConditions: any[] = []
+    const docDigits = (body.document_number || '').replace(/\D/g, '')
+    const mobileDigits = (body.mobile || '').replace(/\D/g, '')
+    const phoneDigits = (body.phone || '').replace(/\D/g, '')
+    const email = (body.email || '').trim().toLowerCase()
+
+    if (docDigits.length >= 11) dupConditions.push({ document_number: docDigits })
+    if (mobileDigits.length >= 10) dupConditions.push({ mobile: { contains: mobileDigits.slice(-10) } })
+    if (phoneDigits.length >= 10) dupConditions.push({ phone: { contains: phoneDigits.slice(-10) } })
+    if (email) dupConditions.push({ email: { equals: email, mode: 'insensitive' as const } })
+
+    if (dupConditions.length > 0) {
+      const existing = await prisma.customer.findFirst({
+        where: { company_id: user.companyId, deleted_at: null, OR: dupConditions },
+      })
+      if (existing) {
+        const reasons: string[] = []
+        if (docDigits && existing.document_number === docDigits) reasons.push(`CPF/CNPJ ${docDigits}`)
+        if (mobileDigits && existing.mobile?.includes(mobileDigits.slice(-10))) reasons.push(`celular ${body.mobile}`)
+        if (phoneDigits && existing.phone?.includes(phoneDigits.slice(-10))) reasons.push(`telefone ${body.phone}`)
+        if (email && existing.email?.toLowerCase() === email) reasons.push(`email ${email}`)
+        return error(`Cliente já cadastrado (${reasons.join(', ')}): ${existing.legal_name}`, 409)
+      }
+    }
+
     const customer = await prisma.customer.create({
       data: {
         company_id: user.companyId,
