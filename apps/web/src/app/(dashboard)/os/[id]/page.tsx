@@ -337,19 +337,39 @@ export default function OSDetailPage() {
           </Link>
           <h1 className="text-2xl font-bold text-gray-900">OS-{String(os.os_number).padStart(4, '0')}</h1>
           {currentStatus && (
-            <span className="rounded-full px-2.5 py-0.5 text-xs font-medium text-white"
-              style={{ backgroundColor: currentStatus.color }}>
-              {currentStatus.name}
-            </span>
+            <select
+              value={os.status_id}
+              disabled={transitioning}
+              title="Alterar status"
+              onChange={e => {
+                const targetId = e.target.value
+                const target = statusList.find(s => s.id === targetId)
+                if (!target || targetId === os.status_id) return
+                const isDelivery = target.name.toLowerCase().includes('entreg') && !target.name.toLowerCase().includes('recusado')
+                if (isDelivery && (os.total_cost ?? 0) > 0) {
+                  setPaymentMethod('')
+                  setPaymentNotes('')
+                  if (!paymentMethodsLoaded) {
+                    fetch('/api/financeiro/formas-pagamento').then(r => r.json()).then(d => {
+                      setPaymentMethods((d.data ?? []).filter((m: any) => m.active))
+                      setPaymentMethodsLoaded(true)
+                    }).catch(() => {})
+                  }
+                  setShowPaymentModal(true)
+                } else {
+                  doTransition(targetId)
+                }
+              }}
+              className="rounded-full px-3 py-1 text-xs font-medium text-white border-0 cursor-pointer appearance-none pr-6"
+              style={{ backgroundColor: currentStatus.color, backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center' }}
+            >
+              {statusList.map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
           )}
         </div>
         <div className="flex gap-2">
-          {nextStatus && (
-            <button type="button" onClick={handleAdvanceClick} disabled={transitioning}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
-              {transitioning ? '...' : `Avançar → ${nextStatus.name}`}
-            </button>
-          )}
           <button type="button" onClick={openPrintModal}
             className="flex items-center gap-1.5 rounded-md border border-green-300 bg-green-50 px-4 py-2 text-sm font-medium text-green-700 hover:bg-green-100">
             <Printer className="h-4 w-4" /> Imprimir
