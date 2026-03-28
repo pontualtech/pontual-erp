@@ -42,6 +42,8 @@ model Company {
   companySettings     Setting[]
   user_profiles       UserProfile[]
   webhooks            Webhook[]
+  tickets             Ticket[]
+  customer_access     CustomerAccess[]
 
   @@map("companies")
 }
@@ -357,6 +359,8 @@ model Customer {
   invoices             Invoice[]
   purchase_entries     PurchaseEntry[]
   service_orders       ServiceOrder[]
+  tickets              Ticket[]
+  customer_access      CustomerAccess[]
 
   @@unique([company_id, vhsys_id])
   @@index([company_id], map: "idx_customers_company")
@@ -404,6 +408,7 @@ model ServiceOrder {
   customers             Customer              @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   module_statuses       ModuleStatus          @relation(fields: [status_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   user_profiles         UserProfile?          @relation(fields: [technician_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tickets               Ticket[]
 
   @@unique([company_id, os_number])
   @@index([company_id], map: "idx_os_company")
@@ -796,4 +801,68 @@ model FiscalLog {
   invoices    Invoice?  @relation(fields: [invoice_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@map("fiscal_logs")
+}
+
+// ========== TICKETS / COMUNICAÇÃO ==========
+
+model Ticket {
+  id              String          @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id      String
+  ticket_number   Int
+  subject         String
+  description     String?
+  status          String?         @default("ABERTO")
+  priority        String?         @default("NORMAL")
+  category        String?
+  source          String?         @default("INTERNO")
+  customer_id     String?
+  service_order_id String?
+  assigned_to     String?
+  created_by      String?
+  created_by_type String?         @default("FUNCIONARIO")
+  closed_at       DateTime?       @db.Timestamptz(6)
+  created_at      DateTime?       @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime?       @default(now()) @db.Timestamptz(6)
+  deleted_at      DateTime?       @db.Timestamptz(6)
+  companies       Company         @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customers       Customer?       @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  service_orders  ServiceOrder?   @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  ticket_messages TicketMessage[]
+
+  @@index([company_id], map: "idx_tickets_company")
+  @@map("tickets")
+}
+
+model TicketMessage {
+  id              String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id      String
+  ticket_id       String
+  message         String
+  sender_type     String?   @default("FUNCIONARIO")
+  sender_id       String?
+  sender_name     String?
+  is_internal     Boolean?  @default(false)
+  created_at      DateTime? @default(now()) @db.Timestamptz(6)
+  tickets         Ticket    @relation(fields: [ticket_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([ticket_id], map: "idx_ticket_messages_ticket")
+  @@map("ticket_messages")
+}
+
+// ========== PORTAL DO CLIENTE ==========
+
+model CustomerAccess {
+  id              String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id      String
+  customer_id     String
+  password_hash   String
+  email_verified  Boolean?  @default(false)
+  verify_token    String?
+  last_login_at   DateTime? @db.Timestamptz(6)
+  created_at      DateTime? @default(now()) @db.Timestamptz(6)
+  companies       Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customers       Customer  @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([company_id, customer_id])
+  @@map("customer_access")
 }
