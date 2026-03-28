@@ -187,7 +187,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: smtpFrom || `${companyName} <noreply@pontualtech.work>`,
+          from: process.env.EMAIL_FROM || smtpFrom || 'PontualTech <onboarding@resend.dev>',
           to: [recipientEmail],
           subject: emailSubject,
           html: htmlBody,
