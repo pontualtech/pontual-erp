@@ -137,17 +137,44 @@ export default function OSDetailPage() {
   const [editActualDelivery, setEditActualDelivery] = useState('')
   const [savingAll, setSavingAll] = useState(false)
   const [financeiroExpanded, setFinanceiroExpanded] = useState(true)
+  const [originalValues, setOriginalValues] = useState({
+    diagnosis: '', notes: '', internalNotes: '', technicianId: '', paymentMethod: '', estimatedDelivery: '', actualDelivery: '',
+  })
 
-  // Esc = voltar para lista
+  function hasUnsavedChanges() {
+    return editDiagnosis !== originalValues.diagnosis ||
+      editNotes !== originalValues.notes ||
+      editInternalNotes !== originalValues.internalNotes ||
+      editTechnicianId !== originalValues.technicianId ||
+      editPaymentMethod !== originalValues.paymentMethod ||
+      editEstimatedDelivery !== originalValues.estimatedDelivery ||
+      editActualDelivery !== originalValues.actualDelivery
+  }
+
+  function confirmLeave(): boolean {
+    if (!hasUnsavedChanges()) return true
+    return confirm('Você tem alterações não salvas. Deseja sair sem salvar?')
+  }
+
+  // Browser beforeunload (fechar aba/recarregar)
+  useEffect(() => {
+    function onBeforeUnload(e: BeforeUnloadEvent) {
+      if (hasUnsavedChanges()) { e.preventDefault(); e.returnValue = '' }
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  })
+
+  // Esc = voltar para lista (com confirmação)
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape' && !showAddItem && !showPaymentModal) {
-        router.push('/os')
+        if (confirmLeave()) router.push('/os')
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [router, showAddItem, showPaymentModal])
+  }, [router, showAddItem, showPaymentModal, originalValues, editDiagnosis, editNotes, editInternalNotes, editTechnicianId, editPaymentMethod, editEstimatedDelivery, editActualDelivery])
 
   // Pending status transition (for payment modal)
   const [pendingStatusId, setPendingStatusId] = useState<string | null>(null)
@@ -159,8 +186,16 @@ export default function OSDetailPage() {
         const data = d.data ?? null
         setOs(data)
         if (data) {
-          setEditDiagnosis(data.diagnosis || '')
-          setEditNotes(data.reception_notes || '')
+          const origDiag = data.diagnosis || ''
+          const origNotes = data.reception_notes || ''
+          const origInternal = data.internal_notes || ''
+          const origTech = data.technician_id || ''
+          const origPayment = data.payment_method || ''
+          const origEstDel = data.estimated_delivery ? new Date(data.estimated_delivery).toISOString().split('T')[0] : ''
+          const origActDel = data.actual_delivery ? new Date(data.actual_delivery).toISOString().split('T')[0] : ''
+          setOriginalValues({ diagnosis: origDiag, notes: origNotes, internalNotes: origInternal, technicianId: origTech, paymentMethod: origPayment, estimatedDelivery: origEstDel, actualDelivery: origActDel })
+          setEditDiagnosis(origDiag)
+          setEditNotes(origNotes)
           setEditInternalNotes(data.internal_notes || '')
           setEditTechnicianId(data.technician_id || '')
           setEditPaymentMethod(data.payment_method || '')
@@ -471,6 +506,11 @@ export default function OSDetailPage() {
       })
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Erro ao salvar') }
       toast.success('OS salva com sucesso!')
+      setOriginalValues({
+        diagnosis: editDiagnosis, notes: editNotes, internalNotes: editInternalNotes,
+        technicianId: editTechnicianId, paymentMethod: editPaymentMethod,
+        estimatedDelivery: editEstimatedDelivery, actualDelivery: editActualDelivery,
+      })
       loadOS()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao salvar')
@@ -508,9 +548,10 @@ export default function OSDetailPage() {
       {/* ========== HEADER (sticky) ========== */}
       <div className="flex flex-wrap items-center justify-between gap-3 sticky top-0 z-10 bg-gray-50 dark:bg-gray-900 -mx-6 px-6 py-3 -mt-3 border-b border-transparent" style={{ backdropFilter: 'blur(8px)' }}>
         <div className="flex items-center gap-3">
-          <Link href="/os" className="rounded-lg border px-3 py-1.5 hover:bg-gray-100 transition-colors flex items-center gap-1.5 text-sm text-gray-600">
+          <button type="button" onClick={() => { if (confirmLeave()) router.push('/os') }}
+            className="rounded-lg border px-3 py-1.5 hover:bg-gray-100 transition-colors flex items-center gap-1.5 text-sm text-gray-600">
             <ArrowLeft className="h-4 w-4" /> Voltar
-          </Link>
+          </button>
           <div>
             <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
               OS-{String(os.os_number).padStart(4, '0')}
@@ -1040,9 +1081,10 @@ export default function OSDetailPage() {
 
       {/* ========== SAVE + BACK BUTTONS ========== */}
       <div className="flex items-center justify-between gap-3">
-        <Link href="/os" className="px-5 py-2.5 border rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-colors flex items-center gap-2">
+        <button type="button" onClick={() => { if (confirmLeave()) router.push('/os') }}
+          className="px-5 py-2.5 border rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-colors flex items-center gap-2">
           <ArrowLeft className="h-4 w-4" /> Voltar para lista
-        </Link>
+        </button>
         <button type="button" onClick={handleSaveAll} disabled={savingAll}
           className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium transition-colors flex items-center gap-2 shadow-sm">
           {savingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
