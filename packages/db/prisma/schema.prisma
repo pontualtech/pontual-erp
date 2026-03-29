@@ -687,6 +687,8 @@ model AccountReceivable {
   anticipated_at       DateTime?     @db.Timestamptz(6)
   anticipation_fee     Int?          @default(0)
   anticipated_amount   Int?
+  group_id             String?
+  grouped_into_id      String?
   created_at         DateTime?     @default(now()) @db.Timestamptz(6)
   updated_at         DateTime?     @default(now()) @db.Timestamptz(6)
   deleted_at         DateTime?     @db.Timestamptz(6)

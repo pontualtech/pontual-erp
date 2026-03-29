@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import {
   Plus, Search, Eye, Pencil, Trash2, DollarSign,
   AlertTriangle, Clock, CheckCircle2, CalendarClock, X, Loader2, Zap,
-  Filter, ChevronDown, ChevronUp
+  Filter, ChevronDown, ChevronUp, Combine, Unlink
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -41,6 +41,8 @@ interface ContaReceber {
   anticipated_at: string | null
   anticipation_fee: number | null
   anticipated_amount: number | null
+  group_id: string | null
+  grouped_into_id: string | null
   customers: Customer | null
   categories: Category | null
 }
@@ -86,6 +88,7 @@ const statusConfig: Record<string, { label: string; color: string }> = {
   VENCIDO: { label: 'Vencido', color: 'bg-red-100 text-red-800' },
   RECEBIDO: { label: 'Recebido', color: 'bg-green-100 text-green-800' },
   CANCELADO: { label: 'Cancelado', color: 'bg-gray-100 text-gray-500' },
+  AGRUPADO: { label: 'Agrupado', color: 'bg-purple-100 text-purple-800' },
 }
 
 export default function ContasReceberPage() {
@@ -131,6 +134,13 @@ export default function ContasReceberPage() {
   const [antecipPreview, setAntecipPreview] = useState<AnticipationPreview | null>(null)
   const [antecipLoading, setAntecipLoading] = useState(false)
   const [antecipConfirming, setAntecipConfirming] = useState(false)
+
+  // Agrupar modal
+  const [showAgrupar, setShowAgrupar] = useState(false)
+  const [agruparPaymentMethod, setAgruparPaymentMethod] = useState('')
+  const [agruparNotes, setAgruparNotes] = useState('')
+  const [agruparLoading, setAgruparLoading] = useState(false)
+  const [desagruparLoading, setDesagruparLoading] = useState(false)
 
   const loadContas = useCallback(() => {
     setLoading(true)
@@ -334,6 +344,65 @@ export default function ContasReceberPage() {
     }
   }
 
+  // Check if selected receivables can be grouped (all PENDENTE, 2+ selected)
+  const canGroup = selected.size >= 2 && Array.from(selected).every(id => {
+    const conta = contas.find(c => c.id === id)
+    return conta && conta.status === 'PENDENTE' && !conta.grouped_into_id
+  })
+
+  const selectedContas = contas.filter(c => selected.has(c.id))
+  const selectedTotal = selectedContas.reduce((sum, c) => sum + c.total_amount, 0)
+
+  function openAgrupar() {
+    setAgruparPaymentMethod('')
+    setAgruparNotes('')
+    setShowAgrupar(true)
+  }
+
+  async function handleAgrupar() {
+    setAgruparLoading(true)
+    try {
+      const res = await fetch('/api/financeiro/contas-receber/agrupar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          receivable_ids: Array.from(selected),
+          payment_method: agruparPaymentMethod || undefined,
+          notes: agruparNotes || undefined,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao agrupar')
+      toast.success('Contas agrupadas com sucesso')
+      setShowAgrupar(false)
+      setSelected(new Set())
+      loadContas()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao agrupar')
+    } finally {
+      setAgruparLoading(false)
+    }
+  }
+
+  async function handleDesagrupar(contaId: string) {
+    setDesagruparLoading(true)
+    try {
+      const res = await fetch('/api/financeiro/contas-receber/desagrupar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ group_receivable_id: contaId }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao desagrupar')
+      toast.success('Contas desagrupadas com sucesso')
+      loadContas()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao desagrupar')
+    } finally {
+      setDesagruparLoading(false)
+    }
+  }
+
   const hasFilters = search || statusFilter || startDate || endDate || paymentMethodFilter || categoryFilter || dateType !== 'vencimento' || valueMin || valueMax
   const activeFilterCount = [statusFilter, paymentMethodFilter, categoryFilter, startDate || endDate ? 'date' : '', valueMin || valueMax ? 'value' : '', dateType !== 'vencimento' ? 'dateType' : ''].filter(Boolean).length
   const contaToDelete = contas.find(c => c.id === deleteId)
@@ -474,6 +543,7 @@ export default function ContasReceberPage() {
                 <option value="VENCIDO">Vencido</option>
                 <option value="RECEBIDO">Recebido</option>
                 <option value="CANCELADO">Cancelado</option>
+                <option value="AGRUPADO">Agrupado</option>
               </select>
             </div>
             <div className="min-w-[150px]">
@@ -663,6 +733,20 @@ export default function ContasReceberPage() {
                             Antecipado
                           </span>
                         )}
+                        {conta.status === 'AGRUPADO' && conta.grouped_into_id && (
+                          <button
+                            type="button"
+                            onClick={() => router.push(`/financeiro/contas-receber/${conta.grouped_into_id}`)}
+                            className="text-xs text-purple-600 hover:text-purple-800 underline"
+                          >
+                            Ver agrupamento
+                          </button>
+                        )}
+                        {conta.group_id && !conta.grouped_into_id && (
+                          <span className="inline-block rounded-full px-2.5 py-0.5 text-xs font-medium bg-purple-50 text-purple-700 border border-purple-200">
+                            Grupo
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -693,6 +777,17 @@ export default function ContasReceberPage() {
                             className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-purple-600"
                           >
                             <Zap className="h-4 w-4" />
+                          </button>
+                        )}
+                        {isAdmin && conta.group_id && !conta.grouped_into_id && conta.status !== 'RECEBIDO' && (
+                          <button
+                            type="button"
+                            onClick={() => handleDesagrupar(conta.id)}
+                            disabled={desagruparLoading}
+                            title="Desagrupar contas"
+                            className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-purple-600"
+                          >
+                            <Unlink className="h-4 w-4" />
                           </button>
                         )}
                         {isAdmin && conta.status !== 'RECEBIDO' && (
@@ -759,7 +854,13 @@ export default function ContasReceberPage() {
           <span className="text-sm text-blue-700 font-medium">{selected.size} selecionado(s)</span>
           <div className="flex gap-2">
             <button type="button" onClick={() => setSelected(new Set())}
-              className="text-sm text-gray-500 hover:text-gray-700">Limpar seleção</button>
+              className="text-sm text-gray-500 hover:text-gray-700">Limpar selecao</button>
+            {canGroup && (
+              <button type="button" onClick={openAgrupar}
+                className="flex items-center gap-1.5 px-3 py-1 text-sm bg-purple-600 text-white rounded-md hover:bg-purple-700 font-medium">
+                <Combine className="h-3.5 w-3.5" /> Agrupar {selected.size}
+              </button>
+            )}
             <button type="button" onClick={() => setShowBulkDelete(true)}
               className="flex items-center gap-1.5 px-3 py-1 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 font-medium">
               <Trash2 className="h-3.5 w-3.5" /> Excluir selecionados
@@ -898,19 +999,131 @@ export default function ContasReceberPage() {
         </div>
       )}
 
+      {/* Agrupar Modal */}
+      {showAgrupar && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowAgrupar(false)}>
+          <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-semibold text-gray-900 mb-1 flex items-center gap-2">
+              <Combine className="h-5 w-5 text-purple-600" /> Agrupar Contas a Receber
+            </h2>
+            <p className="text-sm text-gray-500 mb-4">
+              {selected.size} contas selecionadas serao agrupadas em uma unica conta.
+            </p>
+
+            <div className="max-h-48 overflow-y-auto rounded-md border mb-4">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
+                    <th className="px-3 py-2">Descricao</th>
+                    <th className="px-3 py-2 text-right">Valor</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {selectedContas.map(c => (
+                    <tr key={c.id} className="hover:bg-gray-50">
+                      <td className="px-3 py-2 text-gray-700">{c.description}</td>
+                      <td className="px-3 py-2 text-right font-medium">{formatCurrency(c.total_amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex justify-between items-center rounded-md bg-purple-50 p-3 mb-4">
+              <span className="text-sm font-medium text-purple-800">Total do agrupamento</span>
+              <span className="text-lg font-bold text-purple-900">{formatCurrency(selectedTotal)}</span>
+            </div>
+
+            <div className="space-y-3 mb-5">
+              <div>
+                <label htmlFor="agrupar-payment" className="block text-sm text-gray-600 mb-1">Forma de pagamento</label>
+                <select
+                  id="agrupar-payment"
+                  value={agruparPaymentMethod}
+                  onChange={e => setAgruparPaymentMethod(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-md text-sm"
+                >
+                  <option value="">Usar da primeira conta</option>
+                  {paymentMethods.map(pm => (
+                    <option key={pm.id} value={pm.name}>{pm.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="agrupar-notes" className="block text-sm text-gray-600 mb-1">Observacoes</label>
+                <textarea
+                  id="agrupar-notes"
+                  value={agruparNotes}
+                  onChange={e => setAgruparNotes(e.target.value)}
+                  rows={2}
+                  placeholder="Observacoes do agrupamento..."
+                  className="w-full px-3 py-2 border rounded-md text-sm resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <button
+                type="button"
+                onClick={() => setShowAgrupar(false)}
+                className="px-4 py-2 text-sm border rounded-md hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleAgrupar}
+                disabled={agruparLoading}
+                className="px-4 py-2 text-sm bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {agruparLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                {agruparLoading ? 'Agrupando...' : 'Confirmar Agrupamento'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Baixa (Receipt) Modal */}
       {baixaId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setBaixaId(null)}>
           <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
             <h2 className="text-lg font-semibold text-gray-900 mb-1">Registrar Recebimento</h2>
-            {contaBaixa && (
-              <p className="text-sm text-gray-500 mb-4">
-                {contaBaixa.description} - Total: {formatCurrency(contaBaixa.total_amount)}
-                {(contaBaixa.received_amount || 0) > 0 && (
-                  <span className="block text-green-600">Ja recebido: {formatCurrency(contaBaixa.received_amount || 0)}</span>
-                )}
-              </p>
-            )}
+            {contaBaixa && (() => {
+              const received = contaBaixa.received_amount || 0
+              const total = contaBaixa.total_amount
+              const remaining = total - received
+              const progressPct = total > 0 ? Math.min(100, (received / total) * 100) : 0
+              const enteredAmount = Math.round(Number(baixaAmount) * 100)
+              const willBePartial = enteredAmount > 0 && (received + enteredAmount) < total
+
+              return (
+                <div className="mb-4">
+                  <p className="text-sm text-gray-500">
+                    {contaBaixa.description} - Total: {formatCurrency(total)}
+                  </p>
+                  {received > 0 && (
+                    <div className="mt-2">
+                      <div className="flex justify-between text-xs text-gray-500 mb-1">
+                        <span className="text-green-600">Ja recebido: {formatCurrency(received)}</span>
+                        <span>Restante: {formatCurrency(remaining)}</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className="bg-green-500 h-2 rounded-full transition-all"
+                          style={{ width: `${progressPct}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  {willBePartial && (
+                    <p className="mt-2 text-xs font-medium text-amber-600 bg-amber-50 rounded px-2 py-1 inline-block">
+                      Pagamento parcial - restara {formatCurrency(remaining - enteredAmount)}
+                    </p>
+                  )}
+                </div>
+              )
+            })()}
             <div className="space-y-3">
               <div>
                 <label htmlFor="baixa-amount-receivable" className="block text-sm text-gray-600 mb-1">Valor recebido (R$) *</label>

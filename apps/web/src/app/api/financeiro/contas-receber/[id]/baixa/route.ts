@@ -64,6 +64,28 @@ export async function POST(req: NextRequest, { params }: Params) {
       return updated
     })
 
+    // If this is a GROUPED receivable that was fully paid, mark all originals as RECEBIDO
+    if (isReceivedInFull && existing.group_id) {
+      const originals = await prisma.accountReceivable.findMany({
+        where: {
+          grouped_into_id: existing.id,
+          company_id: user.companyId,
+          deleted_at: null,
+        },
+      })
+
+      if (originals.length > 0) {
+        await prisma.accountReceivable.updateMany({
+          where: { grouped_into_id: existing.id },
+          data: {
+            status: 'RECEBIDO',
+            received_amount: undefined, // keep original amounts
+            updated_at: new Date(),
+          },
+        })
+      }
+    }
+
     logAudit({
       companyId: user.companyId,
       userId: user.id,
