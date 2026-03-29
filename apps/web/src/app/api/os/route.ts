@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
     const page = Math.max(1, Number(url.get('page') || '1'))
     const limit = Math.min(100, Math.max(1, Number(url.get('limit') || '20')))
     const search = url.get('search') || ''
-    const statusId = url.get('statusId') || null
+    const statusIds = url.getAll('statusId').filter(Boolean)
     const technicianId = url.get('assignedTo') || url.get('technicianId') || null
     const priority = url.get('priority') || null
     const osType = url.get('osType') || null
@@ -31,7 +31,16 @@ export async function GET(req: NextRequest) {
 
     const overdue = url.get('overdue') === 'true'
 
-    if (statusId) where.status_id = statusId
+    if (statusIds.length === 1) where.status_id = statusIds[0]
+    else if (statusIds.length > 1) where.status_id = { in: statusIds }
+
+    const dateFrom = url.get('dateFrom')
+    const dateTo = url.get('dateTo')
+    if (dateFrom || dateTo) {
+      where.created_at = {}
+      if (dateFrom) where.created_at.gte = new Date(dateFrom + 'T00:00:00.000Z')
+      if (dateTo) where.created_at.lte = new Date(dateTo + 'T23:59:59.999Z')
+    }
     if (technicianId) where.technician_id = technicianId
     if (priority) where.priority = priority
     if (osType) where.os_type = osType

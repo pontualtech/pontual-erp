@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
-import { Plus, Search, List, LayoutGrid, Settings2, Eye, EyeOff, Trash2, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Clock, AlertTriangle } from 'lucide-react'
+import { Plus, Search, List, LayoutGrid, Settings2, Eye, EyeOff, Trash2, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Clock, AlertTriangle, Printer, FileSpreadsheet, Mail, Columns3 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/lib/use-auth'
 
@@ -76,7 +76,10 @@ export default function OSListPage() {
   const [statusMap, setStatusMap] = useState<Record<string, { name: string; color: string }>>({})
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState<string[]>([])
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [totalFiltered, setTotalFiltered] = useState(0)
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [view, setView] = useState<'table' | 'kanban'>('table')
@@ -91,6 +94,9 @@ export default function OSListPage() {
   const [allowedColumns, setAllowedColumns] = useState<string[]>([])
   const [ownOnly, setOwnOnly] = useState(false)
   const [visibilityLoaded, setVisibilityLoaded] = useState(false)
+  const [hiddenByUser, setHiddenByUser] = useState<Set<string>>(new Set())
+  const [showColToggle, setShowColToggle] = useState(false)
+  const [showStatusFilter, setShowStatusFilter] = useState(false)
 
   // Load role-based visibility config
   useEffect(() => {
@@ -181,20 +187,24 @@ export default function OSListPage() {
     params.set('page', String(page))
     params.set('limit', '20')
     if (search) params.set('search', search)
-    if (statusFilter) params.set('statusId', statusFilter)
+    if (statusFilter.length === 1) params.set('statusId', statusFilter[0])
+    else if (statusFilter.length > 1) statusFilter.forEach(s => params.append('statusId', s))
     if (overdueFilter) params.set('overdue', 'true')
     if (ownOnly) params.set('own_only', 'true')
+    if (dateFrom) params.set('dateFrom', dateFrom)
+    if (dateTo) params.set('dateTo', dateTo)
     fetch(`/api/os?${params}`)
       .then(r => r.json())
       .then(d => {
         setOsList(d.data ?? [])
         setTotalPages(d.totalPages ?? 1)
+        setTotalFiltered(d.total ?? 0)
       })
       .catch(() => {})
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { loadOS(); setSelected(new Set()) }, [search, statusFilter, overdueFilter, page, visibilityLoaded, ownOnly])
+  useEffect(() => { loadOS(); setSelected(new Set()) }, [search, statusFilter, overdueFilter, page, visibilityLoaded, ownOnly, dateFrom, dateTo])
 
   function toggleSelect(id: string) {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -254,6 +264,120 @@ export default function OSListPage() {
     setShowBulkDelete(false); setSelected(new Set()); setBulkDeleting(false); loadOS()
   }
 
+  // Load user column preferences from localStorage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('os_hidden_columns')
+      if (saved) setHiddenByUser(new Set(JSON.parse(saved)))
+    } catch {}
+  }, [])
+
+  function toggleUserColumn(key: string) {
+    setHiddenByUser(prev => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      localStorage.setItem('os_hidden_columns', JSON.stringify([...next]))
+      return next
+    })
+  }
+
+  // Effective visible columns = allowed by role - hidden by user
+  const effectiveColumns = allowedColumns.filter(c => !hiddenByUser.has(c))
+
+  const allColumnLabels: Record<string, string> = {
+    os_number: 'Nº', created_at: 'Data', customer: 'Cliente', equipment_type: 'Equip.',
+    status: 'Status', total_cost: 'Valor', financeiro: 'Financeiro', technician: 'Técnico', priority: 'Prioridade',
+  }
+
+  // Export selected OS to CSV
+  function exportCSV() {
+    const selectedOS = osList.filter(os => selected.has(os.id))
+    if (selectedOS.length === 0) { toast.error('Selecione pelo menos uma OS'); return }
+
+    const headers = effectiveColumns.map(c => allColumnLabels[c] || c)
+    const rows = selectedOS.map(os => effectiveColumns.map(col => {
+      const st = statusMap[os.status_id]
+      switch (col) {
+        case 'os_number': return `OS-${String(os.os_number).padStart(4, '0')}`
+        case 'created_at': return new Date(os.created_at).toLocaleDateString('pt-BR')
+        case 'customer': return os.customers?.legal_name || ''
+        case 'equipment_type': return os.equipment_type || ''
+        case 'status': return st?.name || ''
+        case 'total_cost': return ((os.total_cost || 0) / 100).toFixed(2)
+        case 'financeiro': return getFinanceStatus(os)?.label || ''
+        case 'technician': return os.user_profiles?.name || ''
+        case 'priority': return priorityLabel[os.priority] || os.priority
+        default: return ''
+      }
+    }))
+
+    const csv = [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n')
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `os-selecionadas-${new Date().toISOString().split('T')[0]}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast.success(`${selectedOS.length} OS exportadas para CSV`)
+  }
+
+  // Print selected OS
+  function printOS() {
+    const selectedOS = osList.filter(os => selected.has(os.id))
+    if (selectedOS.length === 0) { toast.error('Selecione pelo menos uma OS'); return }
+
+    const headers = effectiveColumns.map(c => allColumnLabels[c] || c)
+    const rows = selectedOS.map(os => {
+      const st = statusMap[os.status_id]
+      return effectiveColumns.map(col => {
+        switch (col) {
+          case 'os_number': return `OS-${String(os.os_number).padStart(4, '0')}`
+          case 'created_at': return new Date(os.created_at).toLocaleDateString('pt-BR')
+          case 'customer': return os.customers?.legal_name || ''
+          case 'equipment_type': return os.equipment_type || ''
+          case 'status': return st?.name || ''
+          case 'total_cost': return fmt(os.total_cost || 0)
+          case 'financeiro': return getFinanceStatus(os)?.label || ''
+          case 'technician': return os.user_profiles?.name || ''
+          case 'priority': return priorityLabel[os.priority] || os.priority
+          default: return ''
+        }
+      })
+    })
+
+    const html = `<html><head><title>OS Selecionadas</title><style>
+      body{font-family:Arial,sans-serif;padding:20px}
+      h1{font-size:16px;margin-bottom:10px}
+      table{width:100%;border-collapse:collapse;font-size:12px}
+      th,td{border:1px solid #ddd;padding:6px 8px;text-align:left}
+      th{background:#f5f5f5;font-weight:bold}
+      @media print{button{display:none}}
+    </style></head><body>
+    <h1>PontualTech — ${selectedOS.length} OS Selecionadas (${new Date().toLocaleDateString('pt-BR')})</h1>
+    <table><thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>
+    <script>window.print()</script></body></html>`
+
+    const w = window.open('', '_blank')
+    if (w) { w.document.write(html); w.document.close() }
+  }
+
+  // Email selected OS (open mailto with summary)
+  function emailOS() {
+    const selectedOS = osList.filter(os => selected.has(os.id))
+    if (selectedOS.length === 0) { toast.error('Selecione pelo menos uma OS'); return }
+
+    const lines = selectedOS.map(os => {
+      const st = statusMap[os.status_id]
+      return `OS-${String(os.os_number).padStart(4, '0')} | ${os.customers?.legal_name || 'Sem cliente'} | ${st?.name || ''} | ${(os.total_cost || 0) > 0 ? fmt(os.total_cost || 0) : 'S/ valor'}`
+    })
+
+    const subject = encodeURIComponent(`PontualTech — ${selectedOS.length} OS Selecionadas`)
+    const body = encodeURIComponent(`Segue lista de OS:\n\n${lines.join('\n')}\n\nGerado em ${new Date().toLocaleString('pt-BR')}`)
+    window.open(`mailto:?subject=${subject}&body=${body}`)
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -285,17 +409,45 @@ export default function OSListPage() {
             className="w-full rounded-md border bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
           />
         </div>
-        <select
-          value={statusFilter}
-          onChange={e => { setStatusFilter(e.target.value); setPage(1) }}
-          title="Filtrar por status"
-          className="rounded-md border bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"
-        >
-          <option value="">Todos os status</option>
-          {kanbanColumns.map(col => (
-            <option key={col.id} value={col.id}>{col.name}</option>
-          ))}
-        </select>
+        {/* Multi-status filter */}
+        <div className="relative">
+          <button type="button" onClick={() => setShowStatusFilter(!showStatusFilter)}
+            className={cn(
+              'flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm',
+              statusFilter.length > 0 ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white text-gray-600'
+            )}>
+            Status {statusFilter.length > 0 && `(${statusFilter.length})`}
+          </button>
+          {showStatusFilter && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setShowStatusFilter(false)} />
+              <div className="absolute left-0 top-full mt-1 z-20 w-56 rounded-lg border bg-white shadow-lg p-1 max-h-64 overflow-y-auto">
+                <button type="button" onClick={() => { setStatusFilter([]); setPage(1) }}
+                  className="w-full text-left px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-50 rounded">Limpar filtros</button>
+                {kanbanColumns.map(col => (
+                  <button key={col.id} type="button"
+                    onClick={() => {
+                      setStatusFilter(prev => prev.includes(col.id) ? prev.filter(s => s !== col.id) : [...prev, col.id])
+                      setPage(1)
+                    }}
+                    className={cn(
+                      'w-full flex items-center gap-2 px-3 py-1.5 rounded text-sm text-left',
+                      statusFilter.includes(col.id) ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'
+                    )}>
+                    <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: col.color }} />
+                    {col.name}
+                    {statusFilter.includes(col.id) && <span className="ml-auto text-blue-500">✓</span>}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+        {/* Date filters */}
+        <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1) }}
+          title="Data de" placeholder="De" className="rounded-md border bg-white px-2 py-2 text-sm w-32" />
+        <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1) }}
+          title="Data ate" placeholder="Ate" className="rounded-md border bg-white px-2 py-2 text-sm w-32" />
         <button type="button"
           onClick={() => { setOverdueFilter(!overdueFilter); setPage(1) }}
           title="Filtrar OS em atraso"
@@ -306,6 +458,31 @@ export default function OSListPage() {
           <AlertTriangle className="h-4 w-4" />
           Em atraso
         </button>
+        {/* Column toggle */}
+        <div className="relative">
+          <button type="button" onClick={() => setShowColToggle(!showColToggle)}
+            title="Mostrar/esconder colunas"
+            className="flex items-center gap-1.5 rounded-md border bg-white px-3 py-2 text-sm text-gray-600 hover:bg-gray-50">
+            <Columns3 className="h-4 w-4" /> Colunas
+          </button>
+          {showColToggle && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setShowColToggle(false)} />
+              <div className="absolute right-0 top-full mt-1 z-20 w-52 rounded-lg border bg-white shadow-lg p-1">
+                {allowedColumns.map(key => (
+                  <button key={key} type="button" onClick={() => toggleUserColumn(key)}
+                    className={cn(
+                      'w-full flex items-center gap-2 px-3 py-1.5 rounded text-sm text-left',
+                      hiddenByUser.has(key) ? 'text-gray-400' : 'text-gray-700 bg-blue-50'
+                    )}>
+                    {hiddenByUser.has(key) ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                    {allColumnLabels[key] || key}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
         <div className="flex rounded-md border bg-white">
           <button type="button" onClick={() => setView('table')} title="Visualização em tabela" className={cn('p-2', view === 'table' && 'bg-gray-100')}>
             <List className="h-4 w-4" />
@@ -315,6 +492,17 @@ export default function OSListPage() {
           </button>
         </div>
       </div>
+
+      {/* Counter */}
+      {!loading && (
+        <div className="flex items-center gap-3 text-sm text-gray-500">
+          <span className="font-medium">{totalFiltered} OS{totalFiltered !== 1 ? 's' : ''}</span>
+          {(statusFilter.length > 0 || dateFrom || dateTo || overdueFilter || search) && (
+            <button type="button" onClick={() => { setStatusFilter([]); setDateFrom(''); setDateTo(''); setOverdueFilter(false); setSearch(''); setPage(1) }}
+              className="text-xs text-blue-600 hover:underline">Limpar filtros</button>
+          )}
+        </div>
+      )}
 
       {ownOnly && !isAdmin && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-700">
@@ -329,13 +517,11 @@ export default function OSListPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
-                  {isAdmin && (
-                    <th className="px-3 py-3 w-10">
-                      <input type="checkbox" title="Selecionar todos"
-                        checked={osList.length > 0 && selected.size === osList.length}
-                        onChange={toggleAll} className="rounded text-blue-600" />
-                    </th>
-                  )}
+                  <th className="px-3 py-3 w-10">
+                    <input type="checkbox" title="Selecionar todos"
+                      checked={osList.length > 0 && selected.size === osList.length}
+                      onChange={toggleAll} className="rounded text-blue-600" />
+                  </th>
                   {[
                     { key: 'os_number', label: 'Nº' },
                     { key: 'created_at', label: 'Data' },
@@ -346,7 +532,7 @@ export default function OSListPage() {
                     { key: 'financeiro', label: 'Financeiro' },
                     { key: 'technician', label: 'Técnico' },
                     { key: 'priority', label: 'Prioridade' },
-                  ].filter(col => allowedColumns.includes(col.key)).map(col => (
+                  ].filter(col => effectiveColumns.includes(col.key)).map(col => (
                     <th key={col.key} className="px-4 py-3">
                       <button type="button" onClick={() => handleSort(col.key)}
                         className="flex items-center gap-1 hover:text-gray-700 transition-colors"
@@ -359,9 +545,9 @@ export default function OSListPage() {
               </thead>
               <tbody className="divide-y">
                 {loading ? (
-                  <tr><td colSpan={allowedColumns.length + (isAdmin ? 1 : 0)} className="px-4 py-8 text-center text-gray-400">Carregando...</td></tr>
+                  <tr><td colSpan={effectiveColumns.length + (isAdmin ? 1 : 0)} className="px-4 py-8 text-center text-gray-400">Carregando...</td></tr>
                 ) : osList.length === 0 ? (
-                  <tr><td colSpan={allowedColumns.length + (isAdmin ? 1 : 0)} className="px-4 py-8 text-center text-gray-400">{overdueFilter ? 'Nenhuma OS em atraso' : 'Nenhuma OS encontrada'}</td></tr>
+                  <tr><td colSpan={effectiveColumns.length + (isAdmin ? 1 : 0)} className="px-4 py-8 text-center text-gray-400">{overdueFilter ? 'Nenhuma OS em atraso' : 'Nenhuma OS encontrada'}</td></tr>
                 ) : (
                   getSortedList().map(os => {
                     const st = statusMap[os.status_id]
@@ -371,32 +557,30 @@ export default function OSListPage() {
                         selected.has(os.id) && 'bg-blue-50',
                         isOverdue(os) && 'bg-red-50/50',
                       )}>
-                        {isAdmin && (
-                          <td className="px-3 py-3">
-                            <input type="checkbox" title={`Selecionar OS-${String(os.os_number).padStart(4, '0')}`}
-                              checked={selected.has(os.id)} onChange={() => toggleSelect(os.id)}
-                              className="rounded text-blue-600" />
-                          </td>
-                        )}
-                        {allowedColumns.includes('os_number') && (
+                        <td className="px-3 py-3">
+                          <input type="checkbox" title={`Selecionar OS-${String(os.os_number).padStart(4, '0')}`}
+                            checked={selected.has(os.id)} onChange={() => toggleSelect(os.id)}
+                            className="rounded text-blue-600" />
+                        </td>
+                        {effectiveColumns.includes('os_number') && (
                           <td className="px-4 py-3">
                             <Link href={`/os/${os.id}`} className="font-medium text-blue-600 hover:underline">
                               OS-{String(os.os_number).padStart(4, '0')}
                             </Link>
                           </td>
                         )}
-                        {allowedColumns.includes('created_at') && (
+                        {effectiveColumns.includes('created_at') && (
                           <td className="px-4 py-3 text-gray-500 text-xs">
                             {new Date(os.created_at).toLocaleDateString('pt-BR')}
                           </td>
                         )}
-                        {allowedColumns.includes('customer') && (
+                        {effectiveColumns.includes('customer') && (
                           <td className="px-4 py-3 text-gray-700 text-xs">{os.customers?.legal_name ?? '—'}</td>
                         )}
-                        {allowedColumns.includes('equipment_type') && (
+                        {effectiveColumns.includes('equipment_type') && (
                           <td className="px-4 py-3 text-gray-700 text-xs">{os.equipment_type ?? '—'}</td>
                         )}
-                        {allowedColumns.includes('status') && (
+                        {effectiveColumns.includes('status') && (
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-1.5">
                               <span
@@ -413,12 +597,12 @@ export default function OSListPage() {
                             </div>
                           </td>
                         )}
-                        {allowedColumns.includes('total_cost') && (
+                        {effectiveColumns.includes('total_cost') && (
                           <td className="px-4 py-3 text-right text-xs font-medium text-gray-900">
                             {(os.total_cost || 0) > 0 ? fmt(os.total_cost || 0) : '—'}
                           </td>
                         )}
-                        {allowedColumns.includes('financeiro') && (
+                        {effectiveColumns.includes('financeiro') && (
                           <td className="px-4 py-3">
                             {(() => {
                               const fin = getFinanceStatus(os)
@@ -431,10 +615,10 @@ export default function OSListPage() {
                             })()}
                           </td>
                         )}
-                        {allowedColumns.includes('technician') && (
+                        {effectiveColumns.includes('technician') && (
                           <td className="px-4 py-3 text-gray-500 text-xs">{os.user_profiles?.name ?? '—'}</td>
                         )}
-                        {allowedColumns.includes('priority') && (
+                        {effectiveColumns.includes('priority') && (
                           <td className={cn('px-4 py-3 text-xs', priorityColor[os.priority])}>
                             {priorityLabel[os.priority] ?? os.priority}
                           </td>
@@ -448,16 +632,30 @@ export default function OSListPage() {
           </div>
 
           {/* Selection bar */}
-          {isAdmin && selected.size > 0 && (
+          {selected.size > 0 && (
             <div className="flex items-center justify-between rounded-lg bg-blue-50 border border-blue-200 px-4 py-2">
               <span className="text-sm text-blue-700 font-medium">{selected.size} selecionado(s)</span>
               <div className="flex gap-2">
-                <button type="button" onClick={() => setSelected(new Set())}
-                  className="text-sm text-gray-500 hover:text-gray-700">Limpar seleção</button>
-                <button type="button" onClick={() => setShowBulkDelete(true)}
-                  className="flex items-center gap-1.5 px-3 py-1 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 font-medium">
-                  <Trash2 className="h-3.5 w-3.5" /> Excluir selecionados
+                <button type="button" onClick={printOS} title="Imprimir selecionadas"
+                  className="flex items-center gap-1.5 px-3 py-1 text-sm border rounded-md hover:bg-white text-gray-600">
+                  <Printer className="h-3.5 w-3.5" /> Imprimir
                 </button>
+                <button type="button" onClick={exportCSV} title="Exportar para planilha"
+                  className="flex items-center gap-1.5 px-3 py-1 text-sm border rounded-md hover:bg-white text-gray-600">
+                  <FileSpreadsheet className="h-3.5 w-3.5" /> CSV
+                </button>
+                <button type="button" onClick={emailOS} title="Enviar por email"
+                  className="flex items-center gap-1.5 px-3 py-1 text-sm border rounded-md hover:bg-white text-gray-600">
+                  <Mail className="h-3.5 w-3.5" /> Email
+                </button>
+                <button type="button" onClick={() => setSelected(new Set())}
+                  className="text-sm text-gray-500 hover:text-gray-700">Limpar</button>
+                {isAdmin && (
+                  <button type="button" onClick={() => setShowBulkDelete(true)}
+                    className="flex items-center gap-1.5 px-3 py-1 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 font-medium">
+                    <Trash2 className="h-3.5 w-3.5" /> Excluir
+                  </button>
+                )}
               </div>
             </div>
           )}
