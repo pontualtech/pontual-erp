@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Building2, Users, Shield, Tag, Wrench, Bell, Database, Palette, Landmark, FileText, PrinterIcon, FileKey, MessageSquare, Search, Layers, Eye } from 'lucide-react'
+import { Building2, Users, Shield, Tag, Wrench, Bell, Database, Palette, Landmark, FileText, PrinterIcon, FileKey, MessageSquare, Search, Layers, Eye, Mail } from 'lucide-react'
 
 const sections = [
   {
@@ -32,6 +32,7 @@ const sections = [
       { label: 'NFS-e / Fiscal', href: '/fiscal/config', icon: FileText, desc: 'Focus NFe, inscricao municipal, aliquota' },
       { label: 'Certificado A1', href: '/config/certificado', icon: FileKey, desc: 'Instalar certificado digital para NF-e/NFS-e' },
       { label: 'Chatwoot / WhatsApp', href: '/integracoes/chatwoot', icon: MessageSquare, desc: 'Conversas e mensagens via WhatsApp' },
+      { label: 'Cobrança Automática', href: '/config/cobranca', icon: Mail, desc: 'Lembrete de pagamento por email' },
     ],
   },
   {
