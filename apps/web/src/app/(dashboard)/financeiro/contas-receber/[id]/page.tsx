@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { ArrowLeft, DollarSign, Loader2, Trash2, CheckCircle } from 'lucide-react'
+import { ArrowLeft, DollarSign, Loader2, Trash2, CheckCircle, Pencil } from 'lucide-react'
+import { useAuth } from '@/lib/use-auth'
 
 interface ContaReceber {
   id: string; description: string; total_amount: number; received_amount: number
@@ -27,6 +28,7 @@ const statusColors: Record<string, string> = {
 export default function ContaReceberDetalhePage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
+  const { isAdmin } = useAuth()
   const [conta, setConta] = useState<ContaReceber | null>(null)
   const [loading, setLoading] = useState(true)
   const [showBaixa, setShowBaixa] = useState(false)
@@ -107,10 +109,18 @@ export default function ContaReceberDetalhePage() {
               <CheckCircle className="h-4 w-4" /> Registrar Recebimento
             </button>
           )}
-          <button type="button" onClick={() => setShowDelete(true)}
-            className="flex items-center gap-2 px-4 py-2 text-sm border border-red-200 rounded-md hover:bg-red-50 text-red-600">
-            <Trash2 className="h-4 w-4" />
-          </button>
+          {isAdmin && !isPaid && (
+            <button type="button" onClick={() => router.push(`/financeiro/contas-receber/${id}/editar`)}
+              className="flex items-center gap-2 px-4 py-2 text-sm border rounded-md hover:bg-gray-50 text-gray-700">
+              <Pencil className="h-4 w-4" /> Editar
+            </button>
+          )}
+          {isAdmin && (
+            <button type="button" title="Excluir" onClick={() => setShowDelete(true)}
+              className="flex items-center gap-2 px-4 py-2 text-sm border border-red-200 rounded-md hover:bg-red-50 text-red-600">
+              <Trash2 className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
 

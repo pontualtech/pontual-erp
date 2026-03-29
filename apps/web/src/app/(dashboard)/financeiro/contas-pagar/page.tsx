@@ -461,7 +461,7 @@ export default function ContasPagarPage() {
                             <DollarSign className="h-4 w-4" />
                           </button>
                         )}
-                        {conta.status !== 'PAGO' && (
+                        {isAdmin && conta.status !== 'PAGO' && (
                           <button
                             onClick={() => router.push(`/financeiro/contas-pagar/${conta.id}/editar`)}
                             title="Editar"
@@ -470,13 +470,15 @@ export default function ContasPagarPage() {
                             <Pencil className="h-4 w-4" />
                           </button>
                         )}
-                        <button
-                          onClick={() => setDeleteId(conta.id)}
-                          title="Excluir"
-                          className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-red-600"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        {isAdmin && (
+                          <button
+                            onClick={() => setDeleteId(conta.id)}
+                            title="Excluir"
+                            className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-red-600"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
