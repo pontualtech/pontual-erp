@@ -92,25 +92,15 @@ export async function POST(req: NextRequest) {
       `
       const nextNumber = result[0]?.next_number || 1
 
+      const { estimated_delivery, ...rest } = data
       const created = await tx.serviceOrder.create({
         data: {
+          ...rest,
           company_id: user.companyId,
           os_number: nextNumber,
-          customer_id: data.customer_id,
           status_id: initialStatus.id,
-          technician_id: data.technician_id,
-          priority: data.priority,
-          os_type: data.os_type,
-          equipment_type: data.equipment_type,
-          equipment_brand: data.equipment_brand,
-          equipment_model: data.equipment_model,
-          serial_number: data.serial_number,
-          reported_issue: data.reported_issue,
-          reception_notes: data.reception_notes,
-          internal_notes: data.internal_notes,
-          estimated_cost: data.estimated_cost,
-          estimated_delivery: data.estimated_delivery ? new Date(data.estimated_delivery) : undefined,
-        },
+          estimated_delivery: estimated_delivery ? new Date(estimated_delivery) : undefined,
+        } as any,
         include: { customers: true },
       })
 

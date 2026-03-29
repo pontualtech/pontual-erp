@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
         company_id: user.companyId,
         ...data,
         document_number: docDigits || data.document_number,
-      },
+      } as any,
     })
 
     return NextResponse.json({ data: customer }, { status: 201 })
