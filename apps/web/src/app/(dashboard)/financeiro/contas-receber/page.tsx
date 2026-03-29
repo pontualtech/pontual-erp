@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   Plus, Search, Eye, Pencil, Trash2, DollarSign,
-  AlertTriangle, Clock, CheckCircle2, CalendarClock, X, Loader2
+  AlertTriangle, Clock, CheckCircle2, CalendarClock, X, Loader2, Zap
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -36,8 +36,29 @@ interface ContaReceber {
   status: string
   payment_method: string | null
   notes: string | null
+  installment_count: number | null
+  anticipated_at: string | null
+  anticipation_fee: number | null
+  anticipated_amount: number | null
   customers: Customer | null
   categories: Category | null
+}
+
+interface AnticipationInstallment {
+  number: number
+  amount: number
+  due_date: string
+  days_remaining: number
+  fee: number
+  net_amount: number
+}
+
+interface AnticipationPreview {
+  installments: AnticipationInstallment[]
+  total_amount: number
+  total_fee: number
+  anticipated_amount: number
+  fee_pct_per_day: number
 }
 
 interface Summary {
@@ -94,6 +115,10 @@ export default function ContasReceberPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [showBulkDelete, setShowBulkDelete] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [antecipId, setAntecipId] = useState<string | null>(null)
+  const [antecipPreview, setAntecipPreview] = useState<AnticipationPreview | null>(null)
+  const [antecipLoading, setAntecipLoading] = useState(false)
+  const [antecipConfirming, setAntecipConfirming] = useState(false)
 
   const loadContas = useCallback(() => {
     setLoading(true)
@@ -218,6 +243,60 @@ export default function ContasReceberPage() {
     setStartDate('')
     setEndDate('')
     setPage(1)
+  }
+
+  function canAnticipate(conta: ContaReceber): boolean {
+    if (!isAdmin) return false
+    const displayStatus = getDisplayStatus(conta)
+    if (displayStatus !== 'PENDENTE' && displayStatus !== 'VENCIDO') return false
+    if (!conta.payment_method) return false
+    const pm = conta.payment_method.toLowerCase()
+    if (!pm.includes('cartão') && !pm.includes('cartao') && !pm.includes('credito') && !pm.includes('crédito')) return false
+    if (!conta.installment_count || conta.installment_count <= 1) return false
+    return true
+  }
+
+  async function openAntecipar(contaId: string) {
+    setAntecipId(contaId)
+    setAntecipPreview(null)
+    setAntecipLoading(true)
+    try {
+      const res = await fetch(`/api/financeiro/contas-receber/${contaId}/antecipar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: false }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Erro ao carregar preview')
+      setAntecipPreview(d.data)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao carregar preview')
+      setAntecipId(null)
+    } finally {
+      setAntecipLoading(false)
+    }
+  }
+
+  async function handleAntecipar() {
+    if (!antecipId) return
+    setAntecipConfirming(true)
+    try {
+      const res = await fetch(`/api/financeiro/contas-receber/${antecipId}/antecipar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: true }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Erro ao antecipar')
+      toast.success('Antecipacao realizada com sucesso!')
+      setAntecipId(null)
+      setAntecipPreview(null)
+      loadContas()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao antecipar')
+    } finally {
+      setAntecipConfirming(false)
+    }
   }
 
   const hasFilters = search || statusFilter || startDate || endDate
@@ -436,11 +515,21 @@ export default function ContasReceberPage() {
                       {(conta.received_amount || 0) > 0 && conta.status !== 'RECEBIDO' && (
                         <p className="text-xs text-green-600">Recebido: {formatCurrency(conta.received_amount || 0)}</p>
                       )}
+                      {conta.anticipated_at && conta.anticipation_fee != null && (
+                        <p className="text-xs text-purple-600">Taxa: -{formatCurrency(conta.anticipation_fee)}</p>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <span className={cn('inline-block rounded-full px-2.5 py-0.5 text-xs font-medium', config.color)}>
-                        {config.label}
-                      </span>
+                      <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                        <span className={cn('inline-block rounded-full px-2.5 py-0.5 text-xs font-medium', config.color)}>
+                          {config.label}
+                        </span>
+                        {conta.anticipated_at && (
+                          <span className="inline-block rounded-full px-2.5 py-0.5 text-xs font-medium bg-purple-100 text-purple-800">
+                            Antecipado
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -460,6 +549,16 @@ export default function ContasReceberPage() {
                             className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-green-600"
                           >
                             <DollarSign className="h-4 w-4" />
+                          </button>
+                        )}
+                        {canAnticipate(conta) && (
+                          <button
+                            type="button"
+                            onClick={() => openAntecipar(conta.id)}
+                            title="Antecipar recebiveis"
+                            className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-purple-600"
+                          >
+                            <Zap className="h-4 w-4" />
                           </button>
                         )}
                         {isAdmin && conta.status !== 'RECEBIDO' && (
@@ -582,6 +681,85 @@ export default function ContasReceberPage() {
                 {bulkDeleting ? 'Excluindo...' : `Excluir ${selected.size}`}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Anticipation Modal */}
+      {antecipId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => { setAntecipId(null); setAntecipPreview(null) }}>
+          <div className="w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <Zap className="h-5 w-5 text-purple-600" /> Antecipar Recebiveis
+            </h2>
+            {antecipLoading ? (
+              <div className="flex items-center justify-center py-8 gap-2 text-gray-400">
+                <Loader2 className="h-5 w-5 animate-spin" /> Calculando...
+              </div>
+            ) : antecipPreview ? (
+              <>
+                <div className="overflow-x-auto rounded-md border mb-4">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
+                        <th className="px-3 py-2">#</th>
+                        <th className="px-3 py-2">Valor</th>
+                        <th className="px-3 py-2">Vencimento</th>
+                        <th className="px-3 py-2 text-right">Dias restantes</th>
+                        <th className="px-3 py-2 text-right">Taxa</th>
+                        <th className="px-3 py-2 text-right">Valor liquido</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {antecipPreview.installments.map(inst => (
+                        <tr key={inst.number} className="hover:bg-gray-50">
+                          <td className="px-3 py-2 font-medium">{inst.number}</td>
+                          <td className="px-3 py-2">{formatCurrency(inst.amount)}</td>
+                          <td className="px-3 py-2">{formatDate(inst.due_date)}</td>
+                          <td className="px-3 py-2 text-right">{inst.days_remaining}</td>
+                          <td className="px-3 py-2 text-right text-red-600">-{formatCurrency(inst.fee)}</td>
+                          <td className="px-3 py-2 text-right font-medium">{formatCurrency(inst.net_amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="space-y-2 rounded-md bg-gray-50 p-4">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Valor total</span>
+                    <span className="font-medium">{formatCurrency(antecipPreview.total_amount)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Taxa de antecipacao ({antecipPreview.fee_pct_per_day}%/dia)</span>
+                    <span className="font-medium text-red-600">-{formatCurrency(antecipPreview.total_fee)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm border-t pt-2">
+                    <span className="font-semibold text-gray-900">Valor a receber</span>
+                    <span className="font-bold text-green-600 text-base">{formatCurrency(antecipPreview.anticipated_amount)}</span>
+                  </div>
+                </div>
+                <div className="flex gap-3 justify-end mt-5">
+                  <button
+                    type="button"
+                    onClick={() => { setAntecipId(null); setAntecipPreview(null) }}
+                    className="px-4 py-2 text-sm border rounded-md hover:bg-gray-50"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAntecipar}
+                    disabled={antecipConfirming}
+                    className="px-4 py-2 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {antecipConfirming && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    {antecipConfirming ? 'Antecipando...' : 'Confirmar Antecipacao'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-red-500 py-4">Erro ao carregar preview.</p>
+            )}
           </div>
         </div>
       )}
