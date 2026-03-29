@@ -27,6 +27,7 @@ export default function NovaContaReceberPage() {
 
   // Selects data
   const [categories, setCategories] = useState<Category[]>([])
+  const [cardFees, setCardFees] = useState<any[]>([])
 
   const [form, setForm] = useState({
     customer_id: '',
@@ -48,6 +49,10 @@ export default function NovaContaReceberPage() {
     fetch('/api/financeiro/categorias?limit=100')
       .then(r => r.json())
       .then(d => setCategories(d.data ?? []))
+      .catch(() => {})
+    fetch('/api/financeiro/card-fees')
+      .then(r => r.json())
+      .then(d => setCardFees(d.data ?? []))
       .catch(() => {})
   }, [])
 
@@ -243,6 +248,41 @@ export default function NovaContaReceberPage() {
               </select>
             </div>
           </div>
+
+          {/* Card fee preview */}
+          {(() => {
+            const isCard = /cart[aã]o|cr[eé]dito|credito/i.test(form.payment_method)
+            const installments = Number(form.installment_count) || 1
+            const amount = Number(form.total_amount) || 0
+            if (!isCard || installments <= 1 || amount <= 0 || cardFees.length === 0) return null
+            const amountCents = Math.round(amount * 100)
+            const range = cardFees[0]?.installments?.find((r: any) => installments >= r.from && installments <= r.to)
+            const feePct = range?.fee_pct || 0
+            if (feePct <= 0) return null
+            const feeAmount = Math.round(amountCents * (feePct / 100))
+            const netAmount = amountCents - feeAmount
+            const fmtBRL = (cents: number) => (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+            return (
+              <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Valor total:</span>
+                  <span className="font-medium text-gray-900">{fmtBRL(amountCents)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">{installments}x de</span>
+                  <span className="font-medium text-gray-900">{fmtBRL(Math.round(amountCents / installments))}</span>
+                </div>
+                <div className="flex justify-between text-red-600">
+                  <span>Taxa operadora ({feePct}%):</span>
+                  <span className="font-medium">-{fmtBRL(feeAmount)}</span>
+                </div>
+                <div className="flex justify-between border-t border-amber-200 pt-1">
+                  <span className="font-medium text-gray-700">Valor liquido:</span>
+                  <span className="font-bold text-green-700">{fmtBRL(netAmount)}</span>
+                </div>
+              </div>
+            )
+          })()}
         </div>
 
         {/* Classificacao */}

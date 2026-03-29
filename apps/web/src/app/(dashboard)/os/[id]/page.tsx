@@ -80,6 +80,8 @@ export default function OSDetailPage() {
   const [paymentNotes, setPaymentNotes] = useState('')
   const [paymentMethods, setPaymentMethods] = useState<{ id: string; name: string; icon: string; active: boolean }[]>([])
   const [paymentMethodsLoaded, setPaymentMethodsLoaded] = useState(false)
+  const [installmentCount, setInstallmentCount] = useState(1)
+  const [cardFees, setCardFees] = useState<any[]>([])
 
   // Print/Email modal
   const [showPrintModal, setShowPrintModal] = useState(false)
@@ -129,6 +131,7 @@ export default function OSDetailPage() {
       setPaymentMethods((d.data ?? []).filter((m: any) => m.active))
       setPaymentMethodsLoaded(true)
     }).catch(() => {})
+    fetch('/api/financeiro/card-fees').then(r => r.json()).then(d => setCardFees(d.data ?? [])).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -305,6 +308,7 @@ export default function OSDetailPage() {
     if (isDelivery && os.total_cost > 0) {
       setPaymentMethod('')
       setPaymentNotes('')
+      setInstallmentCount(1)
       setPendingStatusId(next.id)
       if (!paymentMethodsLoaded) {
         fetch('/api/financeiro/formas-pagamento').then(r => r.json()).then(d => {
@@ -319,12 +323,13 @@ export default function OSDetailPage() {
     }
   }
 
-  async function doTransition(toStatusId: string, payment_method?: string, notes?: string) {
+  async function doTransition(toStatusId: string, payment_method?: string, notes?: string, installments?: number) {
     setTransitioning(true)
     try {
       const body: any = { toStatusId }
       if (payment_method) body.payment_method = payment_method
       if (notes) body.notes = notes
+      if (installments && installments > 1) body.installment_count = installments
       const res = await fetch(`/api/os/${id}/transition`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -347,7 +352,17 @@ export default function OSDetailPage() {
     if (!paymentMethod) { toast.error('Selecione a forma de pagamento'); return }
     const targetId = pendingStatusId || getNextStatus()?.id
     if (!targetId) return
-    doTransition(targetId, paymentMethod, paymentNotes || undefined)
+    doTransition(targetId, paymentMethod, paymentNotes || undefined, installmentCount)
+  }
+
+  // Check if selected payment method is a card type
+  const isCardPayment = /cart[aã]o|cr[eé]dito|credito/i.test(paymentMethod)
+
+  // Calculate card fee for current installment selection
+  function getCardFeePct(): number {
+    if (!isCardPayment || cardFees.length === 0) return 0
+    const range = cardFees[0]?.installments?.find((r: any) => installmentCount >= r.from && installmentCount <= r.to)
+    return range?.fee_pct || 0
   }
 
   // Save all editable fields at once
@@ -429,6 +444,7 @@ export default function OSDetailPage() {
                 if (isDelivery && (os.total_cost ?? 0) > 0) {
                   setPaymentMethod('')
                   setPaymentNotes('')
+                  setInstallmentCount(1)
                   setPendingStatusId(targetId)
                   if (!paymentMethodsLoaded) {
                     fetch('/api/financeiro/formas-pagamento').then(r => r.json()).then(d => {
@@ -1042,6 +1058,56 @@ export default function OSDetailPage() {
                   </div>
                 )}
               </div>
+
+              {/* Installment selector for card payments */}
+              {isCardPayment && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Parcelas</label>
+                    <select
+                      value={installmentCount}
+                      onChange={e => setInstallmentCount(Number(e.target.value))}
+                      title="Parcelas"
+                      className="w-full px-3 py-2 border rounded-lg text-sm focus:border-green-500 focus:ring-1 focus:ring-green-200"
+                    >
+                      {Array.from({ length: 12 }, (_, i) => i + 1).map(n => (
+                        <option key={n} value={n}>
+                          {n}x de {fmt(Math.round(os.total_cost / n))}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {(() => {
+                    const feePct = getCardFeePct()
+                    if (feePct <= 0) return null
+                    const feeAmount = Math.round(os.total_cost * (feePct / 100))
+                    const netAmount = os.total_cost - feeAmount
+                    return (
+                      <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm space-y-1">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Valor total:</span>
+                          <span className="font-medium text-gray-900">{fmt(os.total_cost)}</span>
+                        </div>
+                        {installmentCount > 1 && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">{installmentCount}x de</span>
+                            <span className="font-medium text-gray-900">{fmt(Math.round(os.total_cost / installmentCount))}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between text-red-600">
+                          <span>Taxa operadora ({feePct}%):</span>
+                          <span className="font-medium">-{fmt(feeAmount)}</span>
+                        </div>
+                        <div className="flex justify-between border-t border-amber-200 pt-1">
+                          <span className="font-medium text-gray-700">Valor liquido:</span>
+                          <span className="font-bold text-green-700">{fmt(netAmount)}</span>
+                        </div>
+                      </div>
+                    )
+                  })()}
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Observacoes</label>

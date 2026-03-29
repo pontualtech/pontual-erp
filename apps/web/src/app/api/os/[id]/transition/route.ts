@@ -12,7 +12,8 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (result instanceof NextResponse) return result
     const user = result
 
-    const { toStatusId, notes, payment_method } = await req.json()
+    const { toStatusId, notes, payment_method, installment_count: rawInstallmentCount } = await req.json()
+    const installment_count = Math.max(1, Math.min(120, parseInt(rawInstallmentCount) || 1))
     if (!toStatusId) return error('toStatusId é obrigatório', 400)
 
     // Load current OS with customer
@@ -81,21 +82,90 @@ export async function POST(req: NextRequest, { params }: Params) {
         orderBy: { name: 'asc' },
       })
 
-      await prisma.accountReceivable.create({
+      const totalAmount = os.total_cost ?? 0
+      let cardFeeTotal = 0
+      let netAmount = totalAmount
+      let daysToReceive = 0
+      const isCard = payment_method && (payment_method.includes('Cartão') || payment_method.includes('Credito') || payment_method.includes('Crédito'))
+
+      // Look up card fee config if paying by card
+      if (isCard && installment_count >= 1) {
+        const feeSettings = await prisma.setting.findMany({
+          where: { company_id: user.companyId, key: { startsWith: 'card_fee.' } },
+        })
+
+        for (const setting of feeSettings) {
+          try {
+            const config = JSON.parse(setting.value)
+            // Check if payment_method matches this config name
+            if (payment_method.includes(config.name) || feeSettings.length === 1) {
+              daysToReceive = config.days_to_receive || 30
+
+              if (installment_count === 1 && payment_method.includes('Débito') && config.debit_fee_pct != null) {
+                // Debit card
+                cardFeeTotal = Math.round(totalAmount * config.debit_fee_pct / 100)
+              } else if (Array.isArray(config.installments)) {
+                // Credit card - find matching fee range
+                for (const range of config.installments) {
+                  if (installment_count >= range.from && installment_count <= range.to) {
+                    cardFeeTotal = Math.round(totalAmount * range.fee_pct / 100)
+                    break
+                  }
+                }
+              }
+              netAmount = totalAmount - cardFeeTotal
+              break
+            }
+          } catch { /* skip invalid config */ }
+        }
+      }
+
+      const receivable = await prisma.accountReceivable.create({
         data: {
           company_id: user.companyId,
           customer_id: os.customer_id,
           service_order_id: os.id,
           category_id: category?.id || null,
           description: `OS-${String(os.os_number).padStart(4, '0')} — ${os.equipment_type || 'Serviço'} ${os.equipment_brand || ''} ${os.equipment_model || ''}`.trim(),
-          total_amount: os.total_cost ?? 0,
+          total_amount: totalAmount,
           received_amount: 0,
           due_date: new Date(),
           status: 'PENDENTE',
           payment_method: payment_method,
+          installment_count: installment_count,
+          card_fee_total: cardFeeTotal,
+          net_amount: netAmount,
           notes: `Gerado automaticamente ao entregar OS-${String(os.os_number).padStart(4, '0')}`,
         },
       })
+
+      // Create installment records if count > 1
+      if (installment_count > 1) {
+        const baseAmount = Math.floor(netAmount / installment_count)
+        const remainder = netAmount - baseAmount * installment_count
+        const installments = []
+        const baseDate = new Date()
+
+        for (let i = 0; i < installment_count; i++) {
+          const dueDate = new Date(baseDate)
+          if (i === 0) {
+            dueDate.setDate(dueDate.getDate() + daysToReceive)
+          } else {
+            dueDate.setDate(dueDate.getDate() + daysToReceive + 30 * i)
+          }
+          installments.push({
+            company_id: user.companyId,
+            parent_type: 'RECEIVABLE',
+            parent_id: receivable.id,
+            installment_number: i + 1,
+            amount: i === 0 ? baseAmount + remainder : baseAmount,
+            due_date: dueDate,
+            status: 'PENDENTE',
+          })
+        }
+
+        await prisma.installment.createMany({ data: installments })
+      }
 
       logAudit({
         companyId: user.companyId,
@@ -107,6 +177,9 @@ export async function POST(req: NextRequest, { params }: Params) {
           os_number: os.os_number,
           total_cost: os.total_cost,
           payment_method,
+          installment_count,
+          card_fee_total: cardFeeTotal,
+          net_amount: netAmount,
           customer: os.customers?.legal_name,
         },
       })

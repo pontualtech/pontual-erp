@@ -138,6 +138,40 @@ export async function POST(request: NextRequest) {
     const data = createReceivableSchema.parse(body)
 
     const installmentCount = data.installment_count || 1
+    const isCard = data.payment_method && (data.payment_method.includes('Cartão') || data.payment_method.includes('Credito') || data.payment_method.includes('Crédito'))
+
+    let cardFeeTotal = 0
+    let netAmount = data.total_amount
+    let daysToReceive = 0
+
+    // Look up card fee config if paying by card with installments
+    if (isCard && installmentCount >= 1) {
+      const feeSettings = await prisma.setting.findMany({
+        where: { company_id: user.companyId, key: { startsWith: 'card_fee.' } },
+      })
+
+      for (const setting of feeSettings) {
+        try {
+          const config = JSON.parse(setting.value)
+          if ((data.payment_method && data.payment_method.includes(config.name)) || feeSettings.length === 1) {
+            daysToReceive = config.days_to_receive || 30
+
+            if (installmentCount === 1 && data.payment_method?.includes('Débito') && config.debit_fee_pct != null) {
+              cardFeeTotal = Math.round(data.total_amount * config.debit_fee_pct / 100)
+            } else if (Array.isArray(config.installments)) {
+              for (const range of config.installments) {
+                if (installmentCount >= range.from && installmentCount <= range.to) {
+                  cardFeeTotal = Math.round(data.total_amount * range.fee_pct / 100)
+                  break
+                }
+              }
+            }
+            netAmount = data.total_amount - cardFeeTotal
+            break
+          }
+        } catch { /* skip invalid config */ }
+      }
+    }
 
     const receivable = await prisma.accountReceivable.create({
       data: {
@@ -150,20 +184,33 @@ export async function POST(request: NextRequest) {
         due_date: new Date(data.due_date),
         category_id: data.category_id || null,
         payment_method: data.payment_method,
+        installment_count: installmentCount,
+        card_fee_total: cardFeeTotal,
+        net_amount: netAmount,
         status: 'PENDENTE',
       },
     })
 
     // Auto-generate installments if count > 1
     if (installmentCount > 1) {
-      const baseAmount = Math.floor(data.total_amount / installmentCount)
-      const remainder = data.total_amount - baseAmount * installmentCount
+      const baseAmount = Math.floor(netAmount / installmentCount)
+      const remainder = netAmount - baseAmount * installmentCount
       const installments = []
       const baseDate = new Date(data.due_date)
 
       for (let i = 0; i < installmentCount; i++) {
         const dueDate = new Date(baseDate)
-        dueDate.setMonth(dueDate.getMonth() + i)
+        if (isCard && daysToReceive > 0) {
+          // Card: first installment after days_to_receive, then +30 days each
+          if (i === 0) {
+            dueDate.setDate(dueDate.getDate() + daysToReceive)
+          } else {
+            dueDate.setDate(dueDate.getDate() + daysToReceive + 30 * i)
+          }
+        } else {
+          // Non-card: monthly from due date
+          dueDate.setMonth(dueDate.getMonth() + i)
+        }
         installments.push({
           company_id: user.companyId,
           parent_type: 'RECEIVABLE',

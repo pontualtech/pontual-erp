@@ -24,6 +24,7 @@ const sections = [
   {
     title: 'Integracoes',
     items: [
+      { label: 'Taxas de Cartao', href: '/config/taxas-cartao', icon: Landmark, desc: 'Taxas por operadora, faixa de parcelas' },
       { label: 'Integracoes Bancarias', href: '/config/integracoes', icon: Landmark, desc: 'Boletos: Inter, Itau, Stone' },
       { label: 'NFS-e / Fiscal', href: '/fiscal/config', icon: FileText, desc: 'Focus NFe, inscricao municipal, aliquota' },
       { label: 'Certificado A1', href: '/config/certificado', icon: FileKey, desc: 'Instalar certificado digital para NF-e/NFS-e' },
