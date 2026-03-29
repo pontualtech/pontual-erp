@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
-import { Plus, Search, List, LayoutGrid, Settings2, Eye, EyeOff, Trash2, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Clock, AlertTriangle, Printer, FileSpreadsheet, Mail, Columns3 } from 'lucide-react'
+import { Plus, Search, List, LayoutGrid, Settings2, Eye, EyeOff, Trash2, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Clock, AlertTriangle, Printer, FileSpreadsheet, Mail, Columns3, MoreVertical, Copy, Receipt, ChevronDown, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/lib/use-auth'
 
@@ -97,6 +97,9 @@ export default function OSListPage() {
   const [hiddenByUser, setHiddenByUser] = useState<Set<string>>(new Set())
   const [showColToggle, setShowColToggle] = useState(false)
   const [showStatusFilter, setShowStatusFilter] = useState(false)
+  const [actionMenuId, setActionMenuId] = useState<string | null>(null)
+  const [showBulkStatus, setShowBulkStatus] = useState(false)
+  const [bulkChanging, setBulkChanging] = useState(false)
 
   // Load role-based visibility config
   useEffect(() => {
@@ -279,6 +282,29 @@ export default function OSListPage() {
       localStorage.setItem('os_hidden_columns', JSON.stringify([...next]))
       return next
     })
+  }
+
+  // Quick actions for single OS
+  function printSingleOS(osId: string) {
+    window.open(`/os/${osId}?print=true`, '_blank')
+    setActionMenuId(null)
+  }
+
+  async function bulkChangeStatus(targetStatusId: string) {
+    setBulkChanging(true)
+    let ok = 0, fail = 0
+    for (const osId of selected) {
+      try {
+        const res = await fetch(`/api/os/${osId}/transition`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to_status_id: targetStatusId }),
+        })
+        if (res.ok) ok++; else fail++
+      } catch { fail++ }
+    }
+    toast.success(`${ok} OS alterada(s)${fail ? `, ${fail} erro(s)` : ''}`)
+    setShowBulkStatus(false); setBulkChanging(false); setSelected(new Set()); loadOS()
   }
 
   // Effective visible columns = allowed by role - hidden by user
@@ -541,6 +567,7 @@ export default function OSListPage() {
                       </button>
                     </th>
                   ))}
+                  <th className="px-2 py-3 w-10"></th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -623,6 +650,77 @@ export default function OSListPage() {
                             {priorityLabel[os.priority] ?? os.priority}
                           </td>
                         )}
+                        {/* Action dropdown */}
+                        <td className="px-2 py-3 text-right relative">
+                          <button type="button" onClick={e => { e.stopPropagation(); setActionMenuId(actionMenuId === os.id ? null : os.id) }}
+                            className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600">
+                            <MoreVertical className="h-4 w-4" />
+                          </button>
+                          {actionMenuId === os.id && (
+                            <>
+                              <div className="fixed inset-0 z-10" onClick={() => setActionMenuId(null)} />
+                              <div className="absolute right-4 top-full mt-1 z-20 w-52 rounded-lg border bg-white shadow-lg py-1">
+                                <Link href={`/os/${os.id}`} onClick={() => setActionMenuId(null)}
+                                  className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 w-full">
+                                  <Eye className="h-4 w-4 text-gray-400" /> Abrir OS
+                                </Link>
+                                <Link href={`/os/${os.id}/editar`} onClick={() => setActionMenuId(null)}
+                                  className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 w-full">
+                                  <Search className="h-4 w-4 text-gray-400" /> Editar
+                                </Link>
+                                <Link href={`/os/novo?clonar=${os.id}`} onClick={() => setActionMenuId(null)}
+                                  className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 w-full">
+                                  <Copy className="h-4 w-4 text-gray-400" /> Copiar Ordem
+                                </Link>
+                                <div className="border-t my-1" />
+                                <button type="button" onClick={() => printSingleOS(os.id)}
+                                  className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 w-full">
+                                  <Printer className="h-4 w-4 text-gray-400" /> Imprimir Ordem
+                                </button>
+                                <button type="button" onClick={() => {
+                                  const line = `OS-${String(os.os_number).padStart(4, '0')} | ${os.customers?.legal_name || ''} | ${st?.name || ''} | ${fmt(os.total_cost || 0)}`
+                                  window.open(`mailto:?subject=${encodeURIComponent(`OS-${String(os.os_number).padStart(4, '0')}`)}&body=${encodeURIComponent(line)}`)
+                                  setActionMenuId(null)
+                                }}
+                                  className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 w-full">
+                                  <Mail className="h-4 w-4 text-gray-400" /> Enviar e-mail
+                                </button>
+                                {effectiveColumns.includes('financeiro') && (
+                                  <>
+                                    <div className="border-t my-1" />
+                                    <Link href={`/financeiro/contas-receber?search=OS-${String(os.os_number).padStart(4, '0')}`} onClick={() => setActionMenuId(null)}
+                                      className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 w-full">
+                                      <Receipt className="h-4 w-4 text-gray-400" /> Ver Financeiro
+                                    </Link>
+                                  </>
+                                )}
+                                <div className="border-t my-1" />
+                                {/* Status change submenu */}
+                                <div className="px-3 py-1.5 text-xs font-medium text-gray-400 uppercase">Alterar Status</div>
+                                <div className="max-h-32 overflow-y-auto">
+                                  {kanbanColumns.slice(0, 8).map(col => (
+                                    <button key={col.id} type="button" onClick={async () => {
+                                      setActionMenuId(null)
+                                      const res = await fetch(`/api/os/${os.id}/transition`, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ to_status_id: col.id }),
+                                      })
+                                      if (res.ok) { toast.success(`Status alterado para ${col.name}`); loadOS() }
+                                      else { const d = await res.json(); toast.error(d.error || 'Erro') }
+                                    }}
+                                      className={cn('flex items-center gap-2 px-3 py-1.5 text-sm w-full hover:bg-gray-50',
+                                        os.status_id === col.id ? 'text-blue-700 bg-blue-50' : 'text-gray-600'
+                                      )}>
+                                      <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: col.color }} />
+                                      {col.name}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            </>
+                          )}
+                        </td>
                       </tr>
                     )
                   })
@@ -648,6 +746,28 @@ export default function OSListPage() {
                   className="flex items-center gap-1.5 px-3 py-1 text-sm border rounded-md hover:bg-white text-gray-600">
                   <Mail className="h-3.5 w-3.5" /> Email
                 </button>
+                <div className="relative">
+                  <button type="button" onClick={() => setShowBulkStatus(!showBulkStatus)}
+                    className="flex items-center gap-1.5 px-3 py-1 text-sm border rounded-md hover:bg-white text-gray-600">
+                    <RefreshCw className="h-3.5 w-3.5" /> Alterar Status <ChevronDown className="h-3 w-3" />
+                  </button>
+                  {showBulkStatus && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setShowBulkStatus(false)} />
+                      <div className="absolute right-0 bottom-full mb-1 z-20 w-52 rounded-lg border bg-white shadow-lg py-1 max-h-64 overflow-y-auto">
+                        <div className="px-3 py-1.5 text-xs font-medium text-gray-400 uppercase">Alterar {selected.size} OS para:</div>
+                        {kanbanColumns.map(col => (
+                          <button key={col.id} type="button" onClick={() => bulkChangeStatus(col.id)}
+                            disabled={bulkChanging}
+                            className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 w-full disabled:opacity-50">
+                            <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: col.color }} />
+                            {col.name}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
                 <button type="button" onClick={() => setSelected(new Set())}
                   className="text-sm text-gray-500 hover:text-gray-700">Limpar</button>
                 {isAdmin && (
