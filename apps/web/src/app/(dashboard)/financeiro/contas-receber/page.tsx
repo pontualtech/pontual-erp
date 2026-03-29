@@ -5,7 +5,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   Plus, Search, Eye, Pencil, Trash2, DollarSign,
-  AlertTriangle, Clock, CheckCircle2, CalendarClock, X, Loader2, Zap
+  AlertTriangle, Clock, CheckCircle2, CalendarClock, X, Loader2, Zap,
+  Filter, ChevronDown, ChevronUp
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -102,6 +103,17 @@ export default function ContasReceberPage() {
   const [statusFilter, setStatusFilter] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState('')
+  const [dateType, setDateType] = useState('vencimento')
+  const [valueMin, setValueMin] = useState('')
+  const [valueMax, setValueMax] = useState('')
+  const [showFilters, setShowFilters] = useState(false)
+  const [filteredSum, setFilteredSum] = useState(0)
+
+  // Filter options (loaded from API)
+  const [paymentMethods, setPaymentMethods] = useState<{ id: string; name: string }[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
 
   // Modals
   const [deleteId, setDeleteId] = useState<string | null>(null)
@@ -129,6 +141,11 @@ export default function ContasReceberPage() {
     if (statusFilter) params.set('status', statusFilter)
     if (startDate) params.set('startDate', startDate)
     if (endDate) params.set('endDate', endDate)
+    if (paymentMethodFilter) params.set('paymentMethod', paymentMethodFilter)
+    if (categoryFilter) params.set('categoryId', categoryFilter)
+    if (dateType !== 'vencimento') params.set('dateType', dateType)
+    if (valueMin) params.set('valueMin', String(Math.round(Number(valueMin) * 100)))
+    if (valueMax) params.set('valueMax', String(Math.round(Number(valueMax) * 100)))
 
     fetch(`/api/financeiro/contas-receber?${params}`)
       .then(r => r.json())
@@ -136,11 +153,12 @@ export default function ContasReceberPage() {
         setContas(d.data ?? [])
         setTotalPages(d.totalPages ?? 1)
         setTotal(d.total ?? 0)
+        setFilteredSum(d.filteredSum ?? 0)
         if (d.summary) setSummary(d.summary)
       })
       .catch(() => toast.error('Erro ao carregar contas'))
       .finally(() => setLoading(false))
-  }, [page, search, statusFilter, startDate, endDate])
+  }, [page, search, statusFilter, startDate, endDate, paymentMethodFilter, categoryFilter, dateType, valueMin, valueMax])
 
   useEffect(() => { loadContas(); setSelected(new Set()) }, [loadContas])
 
@@ -149,6 +167,18 @@ export default function ContasReceberPage() {
     fetch('/api/financeiro/contas-bancarias?limit=50')
       .then(r => r.json())
       .then(d => setBankAccounts(d.data ?? []))
+      .catch(() => {})
+  }, [])
+
+  // Load filter options (payment methods + categories)
+  useEffect(() => {
+    fetch('/api/financeiro/formas-pagamento?limit=50')
+      .then(r => r.json())
+      .then(d => setPaymentMethods(d.data ?? []))
+      .catch(() => {})
+    fetch('/api/financeiro/categorias?limit=50')
+      .then(r => r.json())
+      .then(d => setCategories(d.data ?? []))
       .catch(() => {})
   }, [])
 
@@ -242,6 +272,11 @@ export default function ContasReceberPage() {
     setStatusFilter('')
     setStartDate('')
     setEndDate('')
+    setPaymentMethodFilter('')
+    setCategoryFilter('')
+    setDateType('vencimento')
+    setValueMin('')
+    setValueMax('')
     setPage(1)
   }
 
@@ -299,7 +334,8 @@ export default function ContasReceberPage() {
     }
   }
 
-  const hasFilters = search || statusFilter || startDate || endDate
+  const hasFilters = search || statusFilter || startDate || endDate || paymentMethodFilter || categoryFilter || dateType !== 'vencimento' || valueMin || valueMax
+  const activeFilterCount = [statusFilter, paymentMethodFilter, categoryFilter, startDate || endDate ? 'date' : '', valueMin || valueMax ? 'value' : '', dateType !== 'vencimento' ? 'dateType' : ''].filter(Boolean).length
   const contaToDelete = contas.find(c => c.id === deleteId)
   const contaBaixa = contas.find(c => c.id === baixaId)
 
@@ -312,20 +348,6 @@ export default function ContasReceberPage() {
           <p className="text-sm text-gray-500 mt-1">
             <Link href="/financeiro" className="text-blue-600 hover:underline">Financeiro</Link> / Contas a Receber
           </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {isAdmin && selected.size > 0 && (
-            <button type="button" onClick={() => setShowBulkDelete(true)}
-              className="flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
-              <Trash2 className="h-4 w-4" /> Excluir {selected.size}
-            </button>
-          )}
-          <Link
-            href="/financeiro/contas-receber/novo"
-            className="flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
-          >
-            <Plus className="h-4 w-4" /> Nova Conta a Receber
-          </Link>
         </div>
       </div>
 
@@ -383,67 +405,179 @@ export default function ContasReceberPage() {
         </div>
       )}
 
-      {/* Filter Bar */}
-      <div className="rounded-lg border bg-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="flex-1 min-w-[200px]">
-            <label htmlFor="search-receivable" className="block text-xs font-medium text-gray-500 mb-1">Buscar</label>
+      {/* Row 1: Search + Counter + Actions */}
+      <div className="rounded-lg border bg-white p-4 shadow-sm space-y-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex-1 min-w-[250px]">
             <div className="relative">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
               <input
                 id="search-receivable"
-                placeholder="Descricao, cliente..."
+                placeholder="Buscar por descricao, cliente..."
                 value={search}
                 onChange={e => { setSearch(e.target.value); setPage(1) }}
                 className="w-full rounded-md border bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
               />
             </div>
           </div>
-          <div className="min-w-[150px]">
-            <label htmlFor="status-filter-receivable" className="block text-xs font-medium text-gray-500 mb-1">Status</label>
-            <select
-              id="status-filter-receivable"
-              value={statusFilter}
-              onChange={e => { setStatusFilter(e.target.value); setPage(1) }}
-              className="w-full rounded-md border bg-white py-2 px-3 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
-            >
-              <option value="">Todos</option>
-              <option value="PENDENTE">Pendente</option>
-              <option value="VENCIDO">Vencido</option>
-              <option value="RECEBIDO">Recebido</option>
-              <option value="CANCELADO">Cancelado</option>
-            </select>
-          </div>
-          <div className="min-w-[140px]">
-            <label htmlFor="start-date-receivable" className="block text-xs font-medium text-gray-500 mb-1">De</label>
-            <input
-              id="start-date-receivable"
-              type="date"
-              value={startDate}
-              onChange={e => { setStartDate(e.target.value); setPage(1) }}
-              className="w-full rounded-md border bg-white py-2 px-3 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
-            />
-          </div>
-          <div className="min-w-[140px]">
-            <label htmlFor="end-date-receivable" className="block text-xs font-medium text-gray-500 mb-1">Ate</label>
-            <input
-              id="end-date-receivable"
-              type="date"
-              value={endDate}
-              onChange={e => { setEndDate(e.target.value); setPage(1) }}
-              className="w-full rounded-md border bg-white py-2 px-3 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
-            />
-          </div>
-          {hasFilters && (
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-gray-500">
+              <strong className="text-gray-700">{total}</strong> conta{total !== 1 ? 's' : ''} {' '}
+              <span className="text-gray-400">—</span>{' '}
+              <strong className="text-gray-700">{formatCurrency(filteredSum)}</strong>
+            </span>
             <button
               type="button"
-              onClick={clearFilters}
-              className="flex items-center gap-1 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50"
+              onClick={() => setShowFilters(v => !v)}
+              className={cn(
+                'flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
+                showFilters ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+              )}
             >
-              <X className="h-3 w-3" /> Limpar
+              <Filter className="h-3.5 w-3.5" />
+              Filtros
+              {activeFilterCount > 0 && (
+                <span className="ml-1 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-[10px] font-bold text-white">
+                  {activeFilterCount}
+                </span>
+              )}
+              {showFilters ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
             </button>
-          )}
+            {isAdmin && selected.size > 0 && (
+              <button type="button" onClick={() => setShowBulkDelete(true)}
+                className="flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
+                <Trash2 className="h-4 w-4" /> Excluir {selected.size}
+              </button>
+            )}
+            <Link
+              href="/financeiro/contas-receber/novo"
+              className="flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+            >
+              <Plus className="h-4 w-4" /> Nova Conta
+            </Link>
+          </div>
         </div>
+
+        {/* Row 2: Advanced Filters (collapsible) */}
+        {showFilters && (
+          <div className="flex flex-wrap items-end gap-3 pt-3 border-t">
+            <div className="min-w-[130px]">
+              <label htmlFor="status-filter-receivable" className="block text-xs font-medium text-gray-500 mb-1">Status</label>
+              <select
+                id="status-filter-receivable"
+                value={statusFilter}
+                onChange={e => { setStatusFilter(e.target.value); setPage(1) }}
+                className="w-full rounded-md border bg-white py-1.5 px-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+              >
+                <option value="">Todos</option>
+                <option value="PENDENTE">Pendente</option>
+                <option value="VENCIDO">Vencido</option>
+                <option value="RECEBIDO">Recebido</option>
+                <option value="CANCELADO">Cancelado</option>
+              </select>
+            </div>
+            <div className="min-w-[150px]">
+              <label htmlFor="payment-method-filter" className="block text-xs font-medium text-gray-500 mb-1">Forma pgto</label>
+              <select
+                id="payment-method-filter"
+                value={paymentMethodFilter}
+                onChange={e => { setPaymentMethodFilter(e.target.value); setPage(1) }}
+                className="w-full rounded-md border bg-white py-1.5 px-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+              >
+                <option value="">Todas</option>
+                {paymentMethods.map(pm => (
+                  <option key={pm.id} value={pm.name}>{pm.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="min-w-[140px]">
+              <label htmlFor="category-filter" className="block text-xs font-medium text-gray-500 mb-1">Categoria</label>
+              <select
+                id="category-filter"
+                value={categoryFilter}
+                onChange={e => { setCategoryFilter(e.target.value); setPage(1) }}
+                className="w-full rounded-md border bg-white py-1.5 px-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+              >
+                <option value="">Todas</option>
+                {categories.map(cat => (
+                  <option key={cat.id} value={cat.id}>{cat.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-end gap-1.5">
+              <div className="min-w-[110px]">
+                <label htmlFor="date-type-filter" className="block text-xs font-medium text-gray-500 mb-1">Data tipo</label>
+                <select
+                  id="date-type-filter"
+                  value={dateType}
+                  onChange={e => { setDateType(e.target.value); setPage(1) }}
+                  className="w-full rounded-md border bg-white py-1.5 px-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                >
+                  <option value="vencimento">Vencimento</option>
+                  <option value="emissao">Emissao</option>
+                  <option value="pagamento">Pagamento</option>
+                </select>
+              </div>
+              <div className="min-w-[120px]">
+                <label htmlFor="start-date-receivable" className="block text-xs font-medium text-gray-500 mb-1">De</label>
+                <input
+                  id="start-date-receivable"
+                  type="date"
+                  value={startDate}
+                  onChange={e => { setStartDate(e.target.value); setPage(1) }}
+                  className="w-full rounded-md border bg-white py-1.5 px-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                />
+              </div>
+              <div className="min-w-[120px]">
+                <label htmlFor="end-date-receivable" className="block text-xs font-medium text-gray-500 mb-1">Ate</label>
+                <input
+                  id="end-date-receivable"
+                  type="date"
+                  value={endDate}
+                  onChange={e => { setEndDate(e.target.value); setPage(1) }}
+                  className="w-full rounded-md border bg-white py-1.5 px-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                />
+              </div>
+            </div>
+            <div className="flex items-end gap-1.5">
+              <div className="w-[100px]">
+                <label htmlFor="value-min-filter" className="block text-xs font-medium text-gray-500 mb-1">De R$</label>
+                <input
+                  id="value-min-filter"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0,00"
+                  value={valueMin}
+                  onChange={e => { setValueMin(e.target.value); setPage(1) }}
+                  className="w-full rounded-md border bg-white py-1.5 px-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                />
+              </div>
+              <div className="w-[100px]">
+                <label htmlFor="value-max-filter" className="block text-xs font-medium text-gray-500 mb-1">Ate R$</label>
+                <input
+                  id="value-max-filter"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0,00"
+                  value={valueMax}
+                  onChange={e => { setValueMax(e.target.value); setPage(1) }}
+                  className="w-full rounded-md border bg-white py-1.5 px-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                />
+              </div>
+            </div>
+            {hasFilters && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="flex items-center gap-1 rounded-md px-2 py-1.5 text-sm text-emerald-600 hover:text-emerald-700 hover:underline"
+              >
+                <X className="h-3 w-3" /> Limpar filtros
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Table */}

@@ -32,6 +32,11 @@ export async function GET(request: NextRequest) {
     const customerId = searchParams.get('customerId')
     const search = searchParams.get('search')
     const categoryId = searchParams.get('categoryId')
+    const paymentMethod = searchParams.get('paymentMethod')
+    const valueMin = searchParams.get('valueMin')
+    const valueMax = searchParams.get('valueMax')
+    const dateType = searchParams.get('dateType') || 'vencimento'
+    const bankAccountId = searchParams.get('bankAccountId')
 
     const where: any = { company_id: user.companyId, deleted_at: null }
 
@@ -46,6 +51,14 @@ export async function GET(request: NextRequest) {
 
     if (customerId) where.customer_id = customerId
     if (categoryId) where.category_id = categoryId
+    if (paymentMethod) where.payment_method = paymentMethod
+    if (bankAccountId) where.bank_account_id = bankAccountId
+
+    if (valueMin || valueMax) {
+      where.total_amount = {}
+      if (valueMin) where.total_amount.gte = Number(valueMin)
+      if (valueMax) where.total_amount.lte = Number(valueMax)
+    }
 
     if (search) {
       where.OR = [
@@ -55,13 +68,26 @@ export async function GET(request: NextRequest) {
       ]
     }
 
+    // Determine which date field to filter based on dateType
     if (startDate || endDate) {
-      if (!where.due_date) where.due_date = {}
-      if (startDate) where.due_date.gte = new Date(startDate)
-      if (endDate) where.due_date.lte = new Date(endDate)
+      if (dateType === 'emissao') {
+        if (!where.created_at) where.created_at = {}
+        if (startDate) where.created_at.gte = new Date(startDate)
+        if (endDate) where.created_at.lte = new Date(endDate)
+      } else if (dateType === 'pagamento') {
+        where.status = 'RECEBIDO'
+        if (!where.updated_at) where.updated_at = {}
+        if (startDate) where.updated_at.gte = new Date(startDate)
+        if (endDate) where.updated_at.lte = new Date(endDate)
+      } else {
+        // default: vencimento (due_date)
+        if (!where.due_date) where.due_date = {}
+        if (startDate) where.due_date.gte = new Date(startDate)
+        if (endDate) where.due_date.lte = new Date(endDate)
+      }
     }
 
-    const [receivables, total] = await Promise.all([
+    const [receivables, total, filteredAgg] = await Promise.all([
       prisma.accountReceivable.findMany({
         where,
         skip: (page - 1) * limit,
@@ -73,6 +99,10 @@ export async function GET(request: NextRequest) {
         },
       }),
       prisma.accountReceivable.count({ where }),
+      prisma.accountReceivable.aggregate({
+        where,
+        _sum: { total_amount: true },
+      }),
     ])
 
     // Compute summary for top cards
@@ -109,6 +139,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       data: receivables,
       total,
+      filteredSum: filteredAgg._sum.total_amount || 0,
       page,
       limit,
       totalPages: Math.ceil(total / limit),
