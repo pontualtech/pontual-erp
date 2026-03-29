@@ -65,7 +65,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
     const os = await prisma.serviceOrder.update({
       where: { id: params.id },
-      data: validatedData,
+      data: validatedData as any,
       include: { customers: true },
     })
 
