@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import { ArrowLeft, Edit, Camera, History, Info, Package, Plus, Trash2, Loader2, Search, Wrench, CreditCard, X, Printer, Mail, Send, Copy, FilePlus, User, Monitor, FileText, Clock, ChevronDown, AlertTriangle, Save, Check, Layers } from 'lucide-react'
+import { ArrowLeft, Edit, Camera, History, Info, Package, Plus, Trash2, Loader2, Search, Wrench, CreditCard, X, Printer, Mail, Send, Copy, FilePlus, User, Monitor, FileText, Clock, ChevronDown, ChevronUp, AlertTriangle, Save, Check, Layers, DollarSign, ExternalLink } from 'lucide-react'
 
 interface Customer {
   id: string; legal_name: string; trade_name: string | null; person_type: string
@@ -36,6 +36,33 @@ interface OSDetail {
   service_order_items: OSItem[]; service_order_photos: OSPhoto[]
   service_order_history: OSHistoryEntry[]
   customer_id: string
+  accounts_receivable?: AccountReceivable[]
+}
+interface AccountReceivableInstallment {
+  id: string
+  installment_number: number
+  amount: number
+  paid_amount: number | null
+  due_date: string
+  paid_at: string | null
+  status: string
+}
+interface AccountReceivable {
+  id: string
+  description: string
+  total_amount: number
+  received_amount: number
+  due_date: string
+  status: string
+  payment_method: string | null
+  installment_count: number | null
+  card_fee_total: number | null
+  net_amount: number | null
+  anticipated_at: string | null
+  anticipation_fee: number | null
+  anticipated_amount: number | null
+  created_at: string
+  installments: AccountReceivableInstallment[]
 }
 interface Produto { id: string; name: string; unit: string; sale_price: number; brand: string | null }
 
@@ -108,6 +135,7 @@ export default function OSDetailPage() {
   const [editEstimatedDelivery, setEditEstimatedDelivery] = useState('')
   const [editActualDelivery, setEditActualDelivery] = useState('')
   const [savingAll, setSavingAll] = useState(false)
+  const [financeiroExpanded, setFinanceiroExpanded] = useState(true)
 
   // Pending status transition (for payment modal)
   const [pendingStatusId, setPendingStatusId] = useState<string | null>(null)
@@ -1009,6 +1037,174 @@ export default function OSDetailPage() {
           {savingAll ? 'Salvando...' : 'Salvar OS'}
         </button>
       </div>
+
+      {/* ========== FINANCEIRO ========== */}
+      {(os.accounts_receivable ?? []).length > 0 && (
+        <div className="rounded-xl border bg-white shadow-sm">
+          <button
+            type="button"
+            onClick={() => setFinanceiroExpanded(!financeiroExpanded)}
+            className="flex items-center justify-between w-full p-4"
+          >
+            <div className="flex items-center gap-2">
+              <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-emerald-100">
+                <DollarSign className="h-4 w-4 text-emerald-600" />
+              </div>
+              <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                Financeiro ({os.accounts_receivable!.length})
+              </h2>
+            </div>
+            {financeiroExpanded ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
+          </button>
+
+          {financeiroExpanded && (
+            <div className="px-4 pb-4 space-y-3">
+              {os.accounts_receivable!.map(ar => {
+                const isOverdue = ar.status === 'PENDENTE' && new Date(ar.due_date) < new Date()
+                const isPaid = ar.status === 'RECEBIDO'
+                const isCancelled = ar.status === 'CANCELADO'
+                const remaining = ar.total_amount - ar.received_amount
+
+                const statusBadgeClass = isPaid
+                  ? 'bg-green-100 text-green-700'
+                  : isCancelled
+                    ? 'bg-gray-100 text-gray-500'
+                    : isOverdue
+                      ? 'bg-red-100 text-red-700'
+                      : 'bg-amber-100 text-amber-700'
+                const statusLabel = isPaid ? 'Pago' : isCancelled ? 'Cancelado' : isOverdue ? 'Vencido' : 'Pendente'
+
+                return (
+                  <div key={ar.id} className={cn(
+                    'rounded-lg border p-4 space-y-3',
+                    isPaid ? 'border-green-200 bg-green-50/30' : isOverdue ? 'border-red-200 bg-red-50/30' : 'border-gray-200'
+                  )}>
+                    {/* Header */}
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <span className={cn('text-xs font-semibold px-2 py-0.5 rounded-full', statusBadgeClass)}>
+                          {statusLabel}
+                        </span>
+                        <span className="text-sm font-medium text-gray-900">{ar.description}</span>
+                      </div>
+                      <Link href={`/financeiro/contas-receber/${ar.id}`}
+                        className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium">
+                        Ver no financeiro <ExternalLink className="h-3 w-3" />
+                      </Link>
+                    </div>
+
+                    {/* Payment info row */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                      <div>
+                        <p className="text-xs text-gray-400 uppercase">Forma</p>
+                        <p className="font-medium text-gray-700">{ar.payment_method || '--'}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-400 uppercase">Total</p>
+                        <p className="font-medium text-gray-900">{fmt(ar.total_amount)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-400 uppercase">Recebido</p>
+                        <p className="font-medium text-green-700">{fmt(ar.received_amount)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-400 uppercase">Restante</p>
+                        <p className={cn('font-medium', remaining > 0 ? 'text-red-600' : 'text-gray-500')}>
+                          {fmt(remaining)}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Card fee info */}
+                    {ar.card_fee_total != null && ar.card_fee_total > 0 && (
+                      <div className="flex flex-wrap gap-4 text-sm bg-amber-50 rounded-lg p-3 border border-amber-100">
+                        <div>
+                          <p className="text-xs text-gray-400 uppercase">Taxa operadora</p>
+                          <p className="font-medium text-red-600">-{fmt(ar.card_fee_total)}</p>
+                        </div>
+                        {ar.net_amount != null && (
+                          <div>
+                            <p className="text-xs text-gray-400 uppercase">Valor liquido</p>
+                            <p className="font-bold text-green-700">{fmt(ar.net_amount)}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Anticipation info */}
+                    {ar.anticipated_at && (
+                      <div className="flex flex-wrap items-center gap-3 text-sm">
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">
+                          Antecipado
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          em {new Date(ar.anticipated_at).toLocaleDateString('pt-BR')}
+                        </span>
+                        {ar.anticipation_fee != null && (
+                          <span className="text-xs text-red-600">
+                            Taxa: -{fmt(ar.anticipation_fee)}
+                          </span>
+                        )}
+                        {ar.anticipated_amount != null && (
+                          <span className="text-xs font-medium text-green-700">
+                            Recebido: {fmt(ar.anticipated_amount)}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Installments table */}
+                    {ar.installments && ar.installments.length > 0 && (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b text-left text-xs font-medium uppercase text-gray-400">
+                              <th className="pb-1.5 w-10">#</th>
+                              <th className="pb-1.5">Vencimento</th>
+                              <th className="pb-1.5 text-right">Valor</th>
+                              <th className="pb-1.5 text-center">Status</th>
+                              <th className="pb-1.5 text-right">Pago em</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y">
+                            {ar.installments.map(inst => {
+                              const instOverdue = inst.status === 'PENDENTE' && new Date(inst.due_date) < new Date()
+                              const instPaid = inst.status === 'RECEBIDO'
+                              const rowClass = instPaid
+                                ? 'bg-green-50/50 text-green-800'
+                                : instOverdue
+                                  ? 'bg-red-50/50 text-red-800'
+                                  : ''
+                              return (
+                                <tr key={inst.id} className={rowClass}>
+                                  <td className="py-1.5 text-gray-500">{inst.installment_number}</td>
+                                  <td className="py-1.5">{new Date(inst.due_date).toLocaleDateString('pt-BR')}</td>
+                                  <td className="py-1.5 text-right font-medium">{fmt(inst.amount)}</td>
+                                  <td className="py-1.5 text-center">
+                                    <span className={cn(
+                                      'text-xs font-semibold px-1.5 py-0.5 rounded-full',
+                                      instPaid ? 'bg-green-100 text-green-700' : instOverdue ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'
+                                    )}>
+                                      {instPaid ? 'Pago' : instOverdue ? 'Vencido' : 'Pendente'}
+                                    </span>
+                                  </td>
+                                  <td className="py-1.5 text-right text-gray-500">
+                                    {inst.paid_at ? new Date(inst.paid_at).toLocaleDateString('pt-BR') : '--'}
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ========== DETAILS + HISTORY (side by side) ========== */}
       <div className="grid gap-4 lg:grid-cols-2">

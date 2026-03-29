@@ -22,10 +22,33 @@ export async function GET(req: NextRequest, { params }: Params) {
         service_order_photos: { orderBy: { created_at: 'asc' } },
         service_order_history: { orderBy: { created_at: 'desc' }, take: 20 },
         quotes: { orderBy: { created_at: 'desc' } },
+        accounts_receivable: {
+          where: { deleted_at: null },
+          orderBy: { created_at: 'desc' },
+        },
       },
     })
 
     if (!os) return error('OS não encontrada', 404)
+
+    // Load installments for each receivable
+    const receivableIds = os.accounts_receivable.map(ar => ar.id)
+    const installments = receivableIds.length > 0
+      ? await prisma.installment.findMany({
+          where: { parent_type: 'RECEIVABLE', parent_id: { in: receivableIds } },
+          orderBy: { installment_number: 'asc' },
+        })
+      : []
+    const installmentsByReceivable = new Map<string, typeof installments>()
+    installments.forEach(i => {
+      const list = installmentsByReceivable.get(i.parent_id) || []
+      list.push(i)
+      installmentsByReceivable.set(i.parent_id, list)
+    })
+    const enrichedReceivables = os.accounts_receivable.map(ar => ({
+      ...ar,
+      installments: installmentsByReceivable.get(ar.id) || [],
+    }))
 
     // Enrich history with user names
     const changedByIds = [...new Set(os.service_order_history.map(h => h.changed_by).filter(Boolean))] as string[]
@@ -42,7 +65,7 @@ export async function GET(req: NextRequest, { params }: Params) {
       changed_by_name: h.changed_by ? userNameMap[h.changed_by] || null : null,
     }))
 
-    return success({ ...os, service_order_history: enrichedHistory })
+    return success({ ...os, service_order_history: enrichedHistory, accounts_receivable: enrichedReceivables })
   } catch (err) {
     return handleError(err)
   }
