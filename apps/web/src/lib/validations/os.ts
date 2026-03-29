@@ -46,6 +46,7 @@ export const updateOSSchema = z.object({
   estimated_value: z.number().int().nonnegative().nullable().optional(),
   estimated_cost: z.number().int().nonnegative().nullable().optional(),
   estimated_delivery: dateString,
+  actual_delivery: dateString,
   warranty_until: dateString,
   custom_data: z.record(z.unknown()).nullable().optional().refine(
     (v) => !v || JSON.stringify(v).length < 10000,

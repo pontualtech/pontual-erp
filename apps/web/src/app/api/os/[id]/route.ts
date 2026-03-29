@@ -66,6 +66,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
     // Converter strings de data para Date objects para o Prisma
     const data: any = { ...validated }
     if (data.estimated_delivery) data.estimated_delivery = new Date(data.estimated_delivery)
+    if (data.actual_delivery) data.actual_delivery = new Date(data.actual_delivery)
     if (data.warranty_until) data.warranty_until = new Date(data.warranty_until)
 
     const os = await prisma.serviceOrder.update({
