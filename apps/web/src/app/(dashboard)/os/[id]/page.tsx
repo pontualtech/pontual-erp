@@ -137,9 +137,17 @@ export default function OSDetailPage() {
   const [editActualDelivery, setEditActualDelivery] = useState('')
   const [savingAll, setSavingAll] = useState(false)
   const [financeiroExpanded, setFinanceiroExpanded] = useState(true)
+  const [headerScrolled, setHeaderScrolled] = useState(false)
   const [originalValues, setOriginalValues] = useState({
     diagnosis: '', notes: '', internalNotes: '', technicianId: '', paymentMethod: '', estimatedDelivery: '', actualDelivery: '',
   })
+
+  // Track scroll for header shadow
+  useEffect(() => {
+    function onScroll() { setHeaderScrolled(window.scrollY > 10) }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
 
   function hasUnsavedChanges() {
     return editDiagnosis !== originalValues.diagnosis ||
@@ -546,18 +554,14 @@ export default function OSDetailPage() {
   return (
     <div className="space-y-5 pb-8">
       {/* ========== HEADER (sticky) ========== */}
-      <div className="flex flex-wrap items-center justify-between gap-3 sticky top-0 z-10 bg-gray-50 dark:bg-gray-900 -mx-6 px-6 py-3 -mt-3 border-b border-transparent" style={{ backdropFilter: 'blur(8px)' }}>
+      <div className={cn(
+        'flex flex-wrap items-center justify-between gap-3 sticky top-0 z-10 bg-gray-50/95 dark:bg-gray-900/95 -mx-6 px-6 py-3 -mt-3 transition-shadow duration-200',
+        headerScrolled ? 'shadow-md border-b border-gray-200' : 'border-b border-transparent'
+      )} style={{ backdropFilter: 'blur(8px)' }}>
         <div className="flex items-center gap-3">
-          <button type="button" onClick={() => { if (confirmLeave()) router.push('/os') }}
-            className="rounded-lg border px-3 py-1.5 hover:bg-gray-100 transition-colors flex items-center gap-1.5 text-sm text-gray-600">
-            <ArrowLeft className="h-4 w-4" /> Voltar
-          </button>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
-              OS-{String(os.os_number).padStart(4, '0')}
-            </h1>
-            <p className="text-xs text-gray-500">{new Date(os.created_at).toLocaleDateString('pt-BR')} às {new Date(os.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</p>
-          </div>
+          <h1 className="text-xl font-bold text-gray-900 tracking-tight font-mono">
+            OS-{String(os.os_number).padStart(4, '0')}
+          </h1>
           {currentStatus && (
             <select
               value={os.status_id}
@@ -599,30 +603,47 @@ export default function OSDetailPage() {
           )}
           {transitioning && <Loader2 className="h-4 w-4 animate-spin text-gray-400" />}
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button type="button" onClick={openPrintModal}
-            className="flex items-center gap-1.5 rounded-lg border border-green-300 bg-green-50 px-3 py-2 text-sm font-medium text-green-700 hover:bg-green-100 transition-colors">
+            className="flex items-center gap-1.5 rounded-lg border border-green-300 bg-green-50 px-3 py-1.5 text-sm font-medium text-green-700 hover:bg-green-100 transition-colors">
             <Printer className="h-4 w-4" /> Imprimir
           </button>
           <Link href={`/os/novo?cliente=${os.customer_id || ''}`}
-            className="flex items-center gap-1.5 rounded-lg border border-green-300 bg-green-50 px-3 py-2 text-sm font-medium text-green-700 hover:bg-green-100 transition-colors"
+            className="flex items-center gap-1.5 rounded-lg border border-green-300 bg-green-50 px-3 py-1.5 text-sm font-medium text-green-700 hover:bg-green-100 transition-colors"
             title="Criar nova OS para o mesmo cliente">
             <FilePlus className="h-4 w-4" /> Nova OS
           </Link>
           <Link href={`/os/novo?clonar=${id}`}
-            className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100 transition-colors"
+            className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-100 transition-colors"
             title="Clonar esta OS com todos os dados">
             <Copy className="h-4 w-4" /> Clonar
           </Link>
           <Link href={`/os/${id}/editar`}
-            className="flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium hover:bg-gray-50 transition-colors">
+            className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-gray-50 transition-colors">
             <Edit className="h-4 w-4" /> Editar
           </Link>
+          <button type="button" onClick={() => { if (confirmLeave()) router.push('/os') }}
+            className="rounded-lg border px-3 py-1.5 hover:bg-gray-100 transition-colors flex items-center gap-1.5 text-sm text-gray-600">
+            <ArrowLeft className="h-4 w-4" /> Voltar
+          </button>
         </div>
       </div>
 
+      {/* ========== PAID BANNER (if OS is paid) ========== */}
+      {(() => {
+        const ar = (os.accounts_receivable ?? [])[0]
+        if (!ar || (ar.status !== 'RECEBIDO' && ar.status !== 'PAGO')) return null
+        const paidDate = ar.updated_at ? new Date(ar.updated_at).toLocaleDateString('pt-BR') : ''
+        return (
+          <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 flex items-center gap-2 text-sm font-medium text-green-800">
+            <Check className="h-5 w-5 text-green-600 shrink-0" />
+            <span>OS paga {ar.payment_method ? `\u2014 ${ar.payment_method}` : ''} {fmt(ar.total_amount)} {paidDate ? `em ${paidDate}` : ''}</span>
+          </div>
+        )
+      })()}
+
       {/* ========== CLIENT + EQUIPMENT (side by side) ========== */}
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
         {/* Client */}
         <div className="rounded-xl border bg-white p-4 shadow-sm">
           <div className="flex items-center gap-2 mb-3">
@@ -714,7 +735,7 @@ export default function OSDetailPage() {
               value={editDiagnosis}
               onChange={e => setEditDiagnosis(e.target.value)}
               placeholder="Descreva o diagnostico..."
-              rows={2}
+              rows={4}
               className="w-full px-3 py-2 border rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-200 resize-y transition-colors"
             />
           </div>
@@ -729,7 +750,7 @@ export default function OSDetailPage() {
               value={editNotes}
               onChange={e => setEditNotes(e.target.value)}
               placeholder="Observacoes gerais..."
-              rows={2}
+              rows={4}
               className="w-full px-3 py-2 border rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-200 resize-y transition-colors"
             />
           </div>
@@ -744,7 +765,7 @@ export default function OSDetailPage() {
               value={editInternalNotes}
               onChange={e => setEditInternalNotes(e.target.value)}
               placeholder="Anotacoes internas..."
-              rows={2}
+              rows={4}
               className="w-full px-3 py-2 border border-yellow-300 rounded-lg text-sm bg-yellow-50 focus:border-yellow-500 focus:ring-1 focus:ring-yellow-200 resize-y transition-colors"
             />
           </div>

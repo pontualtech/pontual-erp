@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
-import { Plus, Search, List, LayoutGrid, Settings2, Eye, EyeOff, Trash2, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Clock, AlertTriangle, Printer, FileSpreadsheet, Mail, Columns3, MoreVertical, Copy, Receipt, ChevronDown, RefreshCw } from 'lucide-react'
+import { Plus, Search, List, LayoutGrid, Settings2, Eye, EyeOff, Trash2, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Clock, AlertTriangle, Printer, FileSpreadsheet, Mail, Columns3, MoreVertical, Copy, Receipt, ChevronDown, RefreshCw, SearchX } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/lib/use-auth'
 
@@ -405,41 +405,44 @@ export default function OSListPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Ordens de Servico</h1>
-        <div className="flex items-center gap-2">
-          {isAdmin && selected.size > 0 && (
-            <button type="button" onClick={() => setShowBulkDelete(true)}
-              className="flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
-              <Trash2 className="h-4 w-4" /> Excluir {selected.size}
-            </button>
-          )}
-          <Link
-            href="/os/novo"
-            className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            <Plus className="h-4 w-4" /> Nova OS
-          </Link>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
+    <div className="space-y-3">
+      {/* Row 1: Search + counter + Nova OS */}
+      <div className="flex items-center gap-3">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
           <input
             placeholder="Buscar por numero, cliente, equipamento..."
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(1) }}
-            className="w-full rounded-md border bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            className="w-full rounded-lg border bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
           />
         </div>
+        {!loading && (
+          <span className="text-sm text-gray-500 font-medium whitespace-nowrap">
+            Ordens de Servico ({totalFiltered})
+          </span>
+        )}
+        {isAdmin && selected.size > 0 && (
+          <button type="button" onClick={() => setShowBulkDelete(true)}
+            className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 whitespace-nowrap">
+            <Trash2 className="h-4 w-4" /> Excluir {selected.size}
+          </button>
+        )}
+        <Link
+          href="/os/novo"
+          className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 whitespace-nowrap"
+        >
+          <Plus className="h-4 w-4" /> Nova OS
+        </Link>
+      </div>
+
+      {/* Row 2: Compact filters */}
+      <div className="flex flex-wrap items-center gap-2">
         {/* Multi-status filter */}
         <div className="relative">
           <button type="button" onClick={() => setShowStatusFilter(!showStatusFilter)}
             className={cn(
-              'flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm',
+              'flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium',
               statusFilter.length > 0 ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white text-gray-600'
             )}>
             Status {statusFilter.length > 0 && `(${statusFilter.length})`}
@@ -462,34 +465,37 @@ export default function OSListPage() {
                     )}>
                     <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: col.color }} />
                     {col.name}
-                    {statusFilter.includes(col.id) && <span className="ml-auto text-blue-500">✓</span>}
+                    {statusFilter.includes(col.id) && <span className="ml-auto text-blue-500">&#10003;</span>}
                   </button>
                 ))}
               </div>
             </>
           )}
         </div>
+        <span className="text-gray-300">|</span>
         {/* Date filters */}
         <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1) }}
-          title="Data de" placeholder="De" className="rounded-md border bg-white px-2 py-2 text-sm w-32" />
+          title="Data de" placeholder="De" className="rounded-md border bg-white px-2 py-1.5 text-xs w-[120px]" />
         <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1) }}
-          title="Data ate" placeholder="Ate" className="rounded-md border bg-white px-2 py-2 text-sm w-32" />
+          title="Data ate" placeholder="Ate" className="rounded-md border bg-white px-2 py-1.5 text-xs w-[120px]" />
+        <span className="text-gray-300">|</span>
         <button type="button"
           onClick={() => { setOverdueFilter(!overdueFilter); setPage(1) }}
           title="Filtrar OS em atraso"
           className={cn(
-            'flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
+            'flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors',
             overdueFilter ? 'bg-red-50 border-red-300 text-red-700' : 'bg-white text-gray-600 hover:bg-gray-50'
           )}>
-          <AlertTriangle className="h-4 w-4" />
+          <AlertTriangle className="h-3.5 w-3.5" />
           Em atraso
         </button>
+        <span className="text-gray-300">|</span>
         {/* Column toggle */}
         <div className="relative">
           <button type="button" onClick={() => setShowColToggle(!showColToggle)}
             title="Mostrar/esconder colunas"
-            className="flex items-center gap-1.5 rounded-md border bg-white px-3 py-2 text-sm text-gray-600 hover:bg-gray-50">
-            <Columns3 className="h-4 w-4" /> Colunas
+            className="flex items-center gap-1 rounded-md border bg-white px-2.5 py-1.5 text-xs text-gray-600 hover:bg-gray-50">
+            <Columns3 className="h-3.5 w-3.5" /> Colunas
           </button>
           {showColToggle && (
             <>
@@ -510,25 +516,18 @@ export default function OSListPage() {
           )}
         </div>
         <div className="flex rounded-md border bg-white">
-          <button type="button" onClick={() => setView('table')} title="Visualização em tabela" className={cn('p-2', view === 'table' && 'bg-gray-100')}>
-            <List className="h-4 w-4" />
+          <button type="button" onClick={() => setView('table')} title="Tabela" className={cn('p-1.5', view === 'table' && 'bg-gray-100')}>
+            <List className="h-3.5 w-3.5" />
           </button>
-          <button type="button" onClick={() => setView('kanban')} title="Visualização kanban" className={cn('p-2', view === 'kanban' && 'bg-gray-100')}>
-            <LayoutGrid className="h-4 w-4" />
+          <button type="button" onClick={() => setView('kanban')} title="Kanban" className={cn('p-1.5', view === 'kanban' && 'bg-gray-100')}>
+            <LayoutGrid className="h-3.5 w-3.5" />
           </button>
         </div>
+        {(statusFilter.length > 0 || dateFrom || dateTo || overdueFilter || search) && (
+          <button type="button" onClick={() => { setStatusFilter([]); setDateFrom(''); setDateTo(''); setOverdueFilter(false); setSearch(''); setPage(1) }}
+            className="text-xs text-blue-600 hover:underline ml-1">Limpar filtros</button>
+        )}
       </div>
-
-      {/* Counter */}
-      {!loading && (
-        <div className="flex items-center gap-3 text-sm text-gray-500">
-          <span className="font-medium">{totalFiltered} OS{totalFiltered !== 1 ? 's' : ''}</span>
-          {(statusFilter.length > 0 || dateFrom || dateTo || overdueFilter || search) && (
-            <button type="button" onClick={() => { setStatusFilter([]); setDateFrom(''); setDateTo(''); setOverdueFilter(false); setSearch(''); setPage(1) }}
-              className="text-xs text-blue-600 hover:underline">Limpar filtros</button>
-          )}
-        </div>
-      )}
 
       {ownOnly && !isAdmin && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-700">
@@ -543,23 +542,23 @@ export default function OSListPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
-                  <th className="px-3 py-3 w-10">
+                  <th className="px-3 py-2.5 w-10">
                     <input type="checkbox" title="Selecionar todos"
                       checked={osList.length > 0 && selected.size === osList.length}
                       onChange={toggleAll} className="rounded text-blue-600" />
                   </th>
                   {[
-                    { key: 'os_number', label: 'Nº' },
+                    { key: 'os_number', label: 'N\u00ba' },
                     { key: 'created_at', label: 'Data' },
                     { key: 'customer', label: 'Cliente' },
                     { key: 'equipment_type', label: 'Equip.' },
                     { key: 'status', label: 'Status' },
                     { key: 'total_cost', label: 'Valor' },
                     { key: 'financeiro', label: 'Financeiro' },
-                    { key: 'technician', label: 'Técnico' },
+                    { key: 'technician', label: 'T\u00e9cnico' },
                     { key: 'priority', label: 'Prioridade' },
                   ].filter(col => effectiveColumns.includes(col.key)).map(col => (
-                    <th key={col.key} className="px-4 py-3">
+                    <th key={col.key} className="px-3 py-2.5 text-nowrap">
                       <button type="button" onClick={() => handleSort(col.key)}
                         className="flex items-center gap-1 hover:text-gray-700 transition-colors"
                         title={`Ordenar por ${col.label}`}>
@@ -567,14 +566,20 @@ export default function OSListPage() {
                       </button>
                     </th>
                   ))}
-                  <th className="px-2 py-3 w-10"></th>
+                  <th className="px-2 py-2.5 w-10"></th>
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {loading ? (
                   <tr><td colSpan={effectiveColumns.length + (isAdmin ? 1 : 0)} className="px-4 py-8 text-center text-gray-400">Carregando...</td></tr>
                 ) : osList.length === 0 ? (
-                  <tr><td colSpan={effectiveColumns.length + (isAdmin ? 1 : 0)} className="px-4 py-8 text-center text-gray-400">{overdueFilter ? 'Nenhuma OS em atraso' : 'Nenhuma OS encontrada'}</td></tr>
+                  <tr><td colSpan={effectiveColumns.length + 2} className="px-4 py-12 text-center">
+                    <div className="flex flex-col items-center gap-2">
+                      <SearchX className="h-10 w-10 text-gray-300" />
+                      <p className="text-sm font-medium text-gray-500">{overdueFilter ? 'Nenhuma OS em atraso' : 'Nenhuma OS encontrada'}</p>
+                      <p className="text-xs text-gray-400">{search ? `Nenhum resultado para "${search}". Tente outro termo.` : 'Ajuste os filtros ou crie uma nova OS.'}</p>
+                    </div>
+                  </td></tr>
                 ) : (
                   getSortedList().map(os => {
                     const st = statusMap[os.status_id]
@@ -584,40 +589,40 @@ export default function OSListPage() {
                         selected.has(os.id) && 'bg-blue-50',
                         isOverdue(os) && 'bg-red-50/50',
                       )}>
-                        <td className="px-3 py-3">
+                        <td className="px-3 py-2.5">
                           <input type="checkbox" title={`Selecionar OS-${String(os.os_number).padStart(4, '0')}`}
                             checked={selected.has(os.id)} onChange={() => toggleSelect(os.id)}
                             className="rounded text-blue-600" />
                         </td>
                         {effectiveColumns.includes('os_number') && (
-                          <td className="px-4 py-3">
-                            <Link href={`/os/${os.id}`} className="font-medium text-blue-600 hover:underline">
+                          <td className="px-3 py-2.5">
+                            <Link href={`/os/${os.id}`} className="font-semibold text-blue-600 hover:underline font-mono text-xs tracking-tight">
                               OS-{String(os.os_number).padStart(4, '0')}
                             </Link>
                           </td>
                         )}
                         {effectiveColumns.includes('created_at') && (
-                          <td className="px-4 py-3 text-gray-500 text-xs">
+                          <td className="px-3 py-2.5 text-gray-500 text-xs text-nowrap">
                             {new Date(os.created_at).toLocaleDateString('pt-BR')}
                           </td>
                         )}
                         {effectiveColumns.includes('customer') && (
-                          <td className="px-4 py-3 text-gray-700 text-xs">{os.customers?.legal_name ?? '—'}</td>
+                          <td className="px-3 py-2.5 text-gray-700 text-xs max-w-[200px] truncate">{os.customers?.legal_name ?? '\u2014'}</td>
                         )}
                         {effectiveColumns.includes('equipment_type') && (
-                          <td className="px-4 py-3 text-gray-700 text-xs">{os.equipment_type ?? '—'}</td>
+                          <td className="px-3 py-2.5 text-gray-700 text-xs">{os.equipment_type ?? '\u2014'}</td>
                         )}
                         {effectiveColumns.includes('status') && (
-                          <td className="px-4 py-3">
+                          <td className="px-3 py-2.5">
                             <div className="flex items-center gap-1.5">
                               <span
-                                className="rounded-full px-2 py-0.5 text-xs font-medium"
+                                className="rounded-full px-2 py-0.5 text-xs font-medium text-nowrap"
                                 style={st ? { backgroundColor: st.color + '20', color: st.color } : {}}
                               >
                                 {st?.name ?? os.status_id}
                               </span>
                               {isOverdue(os) && (
-                                <span className="rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-600 flex items-center gap-0.5">
+                                <span className="rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-600 flex items-center gap-0.5 text-nowrap">
                                   <Clock className="h-2.5 w-2.5" /> Atraso
                                 </span>
                               )}
@@ -625,15 +630,15 @@ export default function OSListPage() {
                           </td>
                         )}
                         {effectiveColumns.includes('total_cost') && (
-                          <td className="px-4 py-3 text-right text-xs font-medium text-gray-900">
-                            {(os.total_cost || 0) > 0 ? fmt(os.total_cost || 0) : '—'}
+                          <td className="px-3 py-2.5 text-right text-xs font-medium text-gray-900 text-nowrap">
+                            {(os.total_cost || 0) > 0 ? fmt(os.total_cost || 0) : '\u2014'}
                           </td>
                         )}
                         {effectiveColumns.includes('financeiro') && (
-                          <td className="px-4 py-3">
+                          <td className="px-3 py-2.5">
                             {(() => {
                               const fin = getFinanceStatus(os)
-                              if (!fin) return <span className="text-xs text-gray-400">—</span>
+                              if (!fin) return <span className="text-xs text-gray-400">{'\u2014'}</span>
                               return (
                                 <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-medium', fin.color)}>
                                   {fin.label}
@@ -643,17 +648,17 @@ export default function OSListPage() {
                           </td>
                         )}
                         {effectiveColumns.includes('technician') && (
-                          <td className="px-4 py-3 text-gray-500 text-xs">{os.user_profiles?.name ?? '—'}</td>
+                          <td className="px-3 py-2.5 text-gray-500 text-xs">{os.user_profiles?.name ?? '\u2014'}</td>
                         )}
                         {effectiveColumns.includes('priority') && (
-                          <td className={cn('px-4 py-3 text-xs', priorityColor[os.priority])}>
+                          <td className={cn('px-3 py-2.5 text-xs text-nowrap', priorityColor[os.priority])}>
                             {priorityLabel[os.priority] ?? os.priority}
                           </td>
                         )}
                         {/* Action dropdown */}
-                        <td className="px-2 py-3 text-right relative">
+                        <td className="px-2 py-2.5 text-right relative">
                           <button type="button" onClick={e => { e.stopPropagation(); setActionMenuId(actionMenuId === os.id ? null : os.id) }}
-                            className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600">
+                            className="p-2 rounded-md hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors">
                             <MoreVertical className="h-4 w-4" />
                           </button>
                           {actionMenuId === os.id && (
@@ -729,10 +734,16 @@ export default function OSListPage() {
             </table>
           </div>
 
-          {/* Selection bar */}
+          {/* Selection bar (sticky bottom) */}
           {selected.size > 0 && (
-            <div className="flex items-center justify-between rounded-lg bg-blue-50 border border-blue-200 px-4 py-2">
-              <span className="text-sm text-blue-700 font-medium">{selected.size} selecionado(s)</span>
+            <div className="flex items-center justify-between rounded-lg bg-blue-50 border border-blue-200 px-4 py-2 sticky bottom-4 z-10 shadow-lg">
+              <span className="text-sm text-blue-700 font-medium">
+                {selected.size} selecionada{selected.size !== 1 ? 's' : ''}
+                {(() => {
+                  const totalValue = osList.filter(o => selected.has(o.id)).reduce((sum, o) => sum + (o.total_cost || 0), 0)
+                  return totalValue > 0 ? ` \u2014 Total: ${fmt(totalValue)}` : ''
+                })()}
+              </span>
               <div className="flex gap-2">
                 <button type="button" onClick={printOS} title="Imprimir selecionadas"
                   className="flex items-center gap-1.5 px-3 py-1 text-sm border rounded-md hover:bg-white text-gray-600">
