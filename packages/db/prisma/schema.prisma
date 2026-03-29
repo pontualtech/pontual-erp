@@ -396,6 +396,7 @@ model ServiceOrder {
   warranty_until        DateTime?             @db.Timestamptz(6)
   estimated_delivery    DateTime?             @db.Timestamptz(6)
   actual_delivery       DateTime?             @db.Timestamptz(6)
+  payment_method        String?
   custom_data           Json?                 @default("{}")
   created_at            DateTime?             @default(now()) @db.Timestamptz(6)
   updated_at            DateTime?             @default(now()) @db.Timestamptz(6)
