@@ -3,15 +3,9 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
-import { z } from 'zod'
+import { baixaSchema } from '@/lib/validations/financeiro'
 
 type Params = { params: { id: string } }
-
-const baixaSchema = z.object({
-  received_amount: z.number().int().positive('Valor recebido deve ser positivo'),
-  received_at: z.string().optional(),
-  account_id: z.string().optional(),
-})
 
 export async function POST(req: NextRequest, { params }: Params) {
   try {

@@ -16,6 +16,7 @@ export interface ApiKeyUser {
   name: string
   permissions: string[]
   rateLimit: number
+  rateLimitRemaining: number
 }
 
 /**
@@ -32,6 +33,11 @@ export async function authenticateApiKey(
       { error: 'API key e secret são obrigatórios (headers X-API-Key e X-API-Secret)' },
       { status: 401 }
     )
+  }
+
+  // Validar formato da API key (alfanumérico + hífens, 16-64 chars)
+  if (!/^[a-zA-Z0-9\-]{16,64}$/.test(apiKey)) {
+    return NextResponse.json({ error: 'Formato de API key inválido' }, { status: 401 })
   }
 
   // Buscar a API key no banco
@@ -108,7 +114,18 @@ export async function authenticateApiKey(
     name: keyConfig.name,
     permissions: keyConfig.permissions || [],
     rateLimit: keyConfig.rate_limit || 100,
+    rateLimitRemaining: rl.remaining,
   }
+}
+
+/**
+ * Cria NextResponse com headers de rate limit
+ */
+export function apiResponse(data: any, user: ApiKeyUser, status = 200): NextResponse {
+  const res = NextResponse.json(data, { status })
+  res.headers.set('X-RateLimit-Limit', String(user.rateLimit))
+  res.headers.set('X-RateLimit-Remaining', String(user.rateLimitRemaining))
+  return res
 }
 
 /**

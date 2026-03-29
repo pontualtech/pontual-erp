@@ -28,7 +28,7 @@ export function handleError(err: unknown) {
   }
 
   if (err instanceof Error) {
-    console.error('[API Error]', err.message)
+    console.error('[API Error]', err.stack || err.message)
     // Em produção, não expor detalhes do erro interno
     const message = process.env.NODE_ENV === 'production'
       ? 'Erro interno do servidor'

@@ -39,7 +39,10 @@ export const updateOSSchema = z.object({
   estimated_cost: z.number().int().nonnegative().nullable().optional(),
   estimated_delivery: z.string().datetime().nullable().optional(),
   warranty_until: z.string().datetime().nullable().optional(),
-  custom_data: z.record(z.unknown()).nullable().optional(),
+  custom_data: z.record(z.unknown()).nullable().optional().refine(
+    (v) => !v || JSON.stringify(v).length < 10000,
+    { message: 'custom_data excede o limite de 10KB' }
+  ),
   reception_notes: z.string().max(5000).optional(),
   os_type: z.enum(['BALCAO', 'COLETA', 'REMOTO', 'CAMPO']).optional(),
   customer_id: z.string().uuid().optional(),

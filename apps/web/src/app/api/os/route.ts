@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
     if (osType) where.os_type = osType
     if (search) {
       where.OR = [
-        { os_number: isNaN(Number(search)) ? undefined : Number(search) },
+        { os_number: !isNaN(Number(search)) && Number(search) > 0 ? Number(search) : undefined },
         { equipment_type: { contains: search, mode: 'insensitive' } },
         { reported_issue: { contains: search, mode: 'insensitive' } },
         { customers: { legal_name: { contains: search, mode: 'insensitive' } } },

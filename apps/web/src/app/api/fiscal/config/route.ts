@@ -37,12 +37,20 @@ export async function GET(_request: NextRequest) {
       })
     }
 
-    // Mask API key for security (show only last 4 chars)
+    // Mask API key — mostrar últimos 4 chars do texto decriptado (não do texto encriptado)
+    let maskedKey: string | null = null
+    if (config.api_key) {
+      try {
+        const decrypted = decrypt(config.api_key)
+        maskedKey = `${'*'.repeat(Math.max(0, decrypted.length - 4))}${decrypted.slice(-4)}`
+      } catch {
+        // Key em plaintext (migração pendente)
+        maskedKey = `${'*'.repeat(Math.max(0, config.api_key.length - 4))}${config.api_key.slice(-4)}`
+      }
+    }
     const safeConfig = {
       ...config,
-      api_key: config.api_key
-        ? `${'*'.repeat(Math.max(0, config.api_key.length - 4))}${config.api_key.slice(-4)}`
-        : null,
+      api_key: maskedKey,
       has_api_key: !!config.api_key,
     }
 
