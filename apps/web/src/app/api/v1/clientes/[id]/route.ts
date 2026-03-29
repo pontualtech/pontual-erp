@@ -64,7 +64,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
     const customer = await prisma.customer.update({
       where: { id: params.id },
-      data: validatedData,
+      data: validatedData as any,
     })
 
     return NextResponse.json({ data: customer })
