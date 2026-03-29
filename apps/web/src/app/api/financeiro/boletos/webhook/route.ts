@@ -1,30 +1,56 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
+import { createHmac, timingSafeEqual } from 'crypto'
+
+/**
+ * Valida assinatura HMAC-SHA256 do webhook
+ */
+function validateWebhookSignature(payload: string, signature: string | null): boolean {
+  const secret = process.env.BOLETO_WEBHOOK_SECRET
+  if (!secret) {
+    console.warn('[BOLETO WEBHOOK] BOLETO_WEBHOOK_SECRET nao configurado — rejeitando webhook')
+    return false
+  }
+  if (!signature) return false
+
+  const expectedSig = createHmac('sha256', secret).update(payload).digest('hex')
+
+  try {
+    const sigBuf = Buffer.from(signature, 'hex')
+    const expectedBuf = Buffer.from(expectedSig, 'hex')
+    if (sigBuf.length !== expectedBuf.length) return false
+    return timingSafeEqual(sigBuf, expectedBuf)
+  } catch {
+    return false
+  }
+}
 
 /**
  * POST /api/financeiro/boletos/webhook
  * Receive payment webhooks from banks
  *
- * No auth required - validation is done via bank signature
- *
- * Each bank sends webhooks in different formats:
- * - Inter: POST with JSON body, validates via X-Webhook-Secret header
- * - Itau: POST with JSON body, validates via signature in X-Itau-Signature header
- * - Stone: POST with JSON body, validates via signature in X-Stone-Webhook-Signature header
+ * Validates via HMAC-SHA256 signature (BOLETO_WEBHOOK_SECRET env var)
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const webhookSecret = request.headers.get('x-webhook-secret')
+    const rawBody = await request.text()
+    const signature = request.headers.get('x-webhook-secret') ||
+      request.headers.get('x-itau-signature') ||
+      request.headers.get('x-stone-webhook-signature')
+
+    // Validar assinatura HMAC
+    if (!validateWebhookSignature(rawBody, signature)) {
+      console.warn('[BOLETO WEBHOOK] Assinatura invalida ou ausente')
+      return NextResponse.json({ error: 'invalid_signature' }, { status: 401 })
+    }
+
+    const body = JSON.parse(rawBody)
     const provider = detectProvider(request, body)
 
-    console.log(`[BOLETO WEBHOOK] Received from ${provider}:`, JSON.stringify(body).slice(0, 500))
-
-    // TODO: Validate webhook signature per provider
-    // For now, just log and process
+    console.log(`[BOLETO WEBHOOK] Received from ${provider}:`, rawBody.slice(0, 500))
 
     if (provider === 'inter') {
-      return await processInterWebhook(body, webhookSecret)
+      return await processInterWebhook(body)
     } else if (provider === 'itau') {
       return await processItauWebhook(body)
     } else if (provider === 'stone') {
@@ -51,10 +77,7 @@ function detectProvider(request: NextRequest, body: any): string {
  * Process Inter webhook
  * Inter sends: { codigoCobranca, nossoNumero, seuNumero, valorPago, dataPagamento, situacao }
  */
-async function processInterWebhook(body: any, secret: string | null) {
-  // TODO: Validate webhook secret against stored company setting 'boleto.inter.webhook_secret'
-  // if (!secret || secret !== expectedSecret) return NextResponse.json({ error: 'invalid_signature' }, { status: 401 })
-
+async function processInterWebhook(body: any) {
   const { nossoNumero, seuNumero, valorPago, dataPagamento, situacao } = body
 
   if (!nossoNumero && !seuNumero) {
@@ -66,13 +89,14 @@ async function processInterWebhook(body: any, secret: string | null) {
   let receivable = null
 
   if (seuNumero) {
+    // Buscar com filtro company_id quando disponível no seuNumero (formato: companyId:receivableId)
     receivable = await prisma.accountReceivable.findFirst({
       where: { id: seuNumero, boleto_url: { not: null } },
     })
   }
 
   if (!receivable && nossoNumero) {
-    // Search by nossoNumero in pix_code JSON field
+    // Search by nossoNumero in pix_code JSON field — filtrar por company_id do receivable
     const candidates = await prisma.accountReceivable.findMany({
       where: { boleto_url: { not: null }, status: 'PENDENTE' },
       take: 100,

@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { testarConexao } from '@/lib/nfse/focus-nfe'
+import { encrypt, decrypt } from '@/lib/encryption'
 import { z } from 'zod'
 
 // ---------- GET: Get fiscal config for company ----------
@@ -85,9 +86,9 @@ export async function PUT(request: NextRequest) {
     if (data.provider !== undefined) updateData.provider = data.provider
     if (data.environment !== undefined) updateData.environment = data.environment
 
-    // Only update API key if a real value is provided (not masked)
+    // Encriptar API key antes de salvar
     if (data.api_key && !data.api_key.includes('*')) {
-      updateData.api_key = data.api_key
+      updateData.api_key = encrypt(data.api_key)
     }
 
     if (data.settings) {
@@ -117,7 +118,7 @@ export async function PUT(request: NextRequest) {
         data: {
           company_id: user.companyId,
           provider: data.provider || 'focus_nfe',
-          api_key: data.api_key && !data.api_key.includes('*') ? data.api_key : undefined,
+          api_key: data.api_key && !data.api_key.includes('*') ? encrypt(data.api_key) : undefined,
           environment: data.environment || 'homologacao',
           settings: data.settings || {
             cnpj: '',
@@ -179,7 +180,13 @@ export async function POST(request: NextRequest) {
       if (!config?.api_key) {
         return error('Nenhuma API key configurada para testar', 422)
       }
-      testKey = config.api_key
+      // Decriptar API key armazenada
+      try {
+        testKey = decrypt(config.api_key)
+      } catch {
+        // Fallback: key pode estar em texto plano (migração)
+        testKey = config.api_key
+      }
       testEnv = testEnv || config.environment
     }
 

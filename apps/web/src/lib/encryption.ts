@@ -5,7 +5,8 @@ const ALGORITHM = 'aes-256-gcm'
 function getKey(): Buffer {
   const key = process.env.ENCRYPTION_KEY
   if (!key) throw new Error('ENCRYPTION_KEY não configurada')
-  return scryptSync(key, 'pontual-erp-salt', 32)
+  const salt = process.env.ENCRYPTION_SALT || 'pontual-erp-salt'
+  return scryptSync(key, salt, 32)
 }
 
 /**

@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
+import { updateOSSchema } from '@/lib/validations/os'
 
 type Params = { params: { id: string } }
 
@@ -59,26 +60,12 @@ export async function PUT(req: NextRequest, { params }: Params) {
     if (!existing) return error('OS não encontrada', 404)
 
     const body = await req.json()
-    // Don't allow changing these via PUT
-    delete body.status_id
-    delete body.statusId
-    delete body.company_id
-    delete body.companyId
-    delete body.os_number
-    delete body.osNumber
-    // Remove fields that don't exist in schema
-    delete body.payment_method
-    delete body.customer_id
-    delete body.customers
-    delete body.user_profiles
-    delete body.service_order_items
-    delete body.service_order_history
-    delete body.service_order_photos
-    delete body.quotes
+    // Validar com Zod strict — rejeita campos não permitidos
+    const validatedData = updateOSSchema.parse(body)
 
     const os = await prisma.serviceOrder.update({
       where: { id: params.id },
-      data: body,
+      data: validatedData,
       include: { customers: true },
     })
 
@@ -89,7 +76,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
       action: 'update',
       entityId: os.id,
       oldValue: existing as any,
-      newValue: body,
+      newValue: validatedData,
     })
 
     return success(os)

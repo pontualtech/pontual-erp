@@ -41,14 +41,16 @@ export default function AvisosPage() {
 
   const loadAvisos = async () => {
     try {
-      const res = await fetch('/api/avisos?showExpired=true')
+      // Only admins see expired announcements
+      const params = isAdmin ? '?showExpired=true' : ''
+      const res = await fetch(`/api/avisos${params}`)
       const json = await res.json()
       if (json.data) setAvisos(json.data)
     } catch {}
     setLoading(false)
   }
 
-  useEffect(() => { loadAvisos() }, [])
+  useEffect(() => { loadAvisos() }, [isAdmin])
 
   const resetForm = () => {
     setForm({ title: '', message: '', priority: 'NORMAL', pinned: false, expires_at: '' })

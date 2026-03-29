@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { createPortalToken } from '@/lib/portal-auth'
+import { compare } from 'bcryptjs'
+import { rateLimit } from '@/lib/rate-limit'
 
 export async function POST(req: NextRequest) {
   try {
@@ -15,6 +17,16 @@ export async function POST(req: NextRequest) {
 
     // Limpar documento (remover pontos, tracos, barras)
     const cleanDoc = document.replace(/[.\-\/]/g, '')
+
+    // Rate limiting: 5 tentativas por documento a cada 15 minutos
+    const rateLimitKey = `portal-auth:${cleanDoc}`
+    const rl = rateLimit(rateLimitKey, 5, 15 * 60 * 1000)
+    if (!rl.success) {
+      return NextResponse.json(
+        { error: 'Muitas tentativas. Tente novamente em 15 minutos.' },
+        { status: 429 }
+      )
+    }
 
     // Encontrar empresa pelo slug
     const company = await prisma.company.findUnique({
@@ -58,10 +70,13 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Para MVP: senha = primeiros 5 digitos do documento
-    const expectedPassword = cleanDoc.replace(/\D/g, '').substring(0, 5)
+    // Verificar senha com bcrypt (sem fallback inseguro)
+    if (!access.password_hash) {
+      return NextResponse.json({ error: 'Senha nao configurada. Entre em contato com a empresa.' }, { status: 401 })
+    }
 
-    if (password !== access.password_hash && password !== expectedPassword) {
+    const isValidPassword = await compare(password, access.password_hash)
+    if (!isValidPassword) {
       return NextResponse.json({ error: 'Senha incorreta' }, { status: 401 })
     }
 

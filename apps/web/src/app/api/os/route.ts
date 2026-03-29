@@ -71,44 +71,53 @@ export async function POST(req: NextRequest) {
     })
     if (!initialStatus) return error('Status inicial não configurado para OS', 500)
 
-    // Auto-increment OS number
-    const lastOs = await prisma.serviceOrder.findFirst({
-      where: { company_id: user.companyId },
-      orderBy: { os_number: 'desc' },
-      select: { os_number: true },
-    })
+    // Criar OS com número atômico (prevenir race condition)
+    const os = await prisma.$transaction(async (tx) => {
+      // Advisory lock por company_id para evitar race condition na numeração
+      // pg_advisory_xact_lock é liberado automaticamente ao fim da transação
+      const lockKey = Buffer.from(user.companyId).reduce((acc, b) => acc + b, 0)
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey})`
+      const result = await tx.$queryRaw<{ next_number: number }[]>`
+        SELECT COALESCE(MAX(os_number), 0) + 1 as next_number
+        FROM service_orders
+        WHERE company_id = ${user.companyId}
+      `
+      const nextNumber = result[0]?.next_number || 1
 
-    const os = await prisma.serviceOrder.create({
-      data: {
-        company_id: user.companyId,
-        os_number: (lastOs?.os_number || 0) + 1,
-        customer_id: body.customer_id || body.customerId,
-        status_id: initialStatus.id,
-        technician_id: body.technician_id || body.technicianId,
-        priority: body.priority || 'MEDIUM',
-        os_type: body.os_type || body.osType || 'BALCAO',
-        equipment_type: body.equipment_type || body.equipmentType || body.equipment,
-        equipment_brand: body.equipment_brand || body.equipmentBrand,
-        equipment_model: body.equipment_model || body.equipmentModel,
-        serial_number: body.serial_number || body.serialNumber,
-        reported_issue: body.reported_issue || body.reportedIssue,
-        reception_notes: body.reception_notes || body.receptionNotes,
-        internal_notes: body.internal_notes || body.internalNotes || undefined,
-        estimated_cost: body.estimated_cost || body.estimatedCost,
-        estimated_delivery: body.estimated_delivery || body.estimatedDelivery ? new Date(body.estimated_delivery || body.estimatedDelivery) : undefined,
-      },
-      include: { customers: true },
-    })
+      const created = await tx.serviceOrder.create({
+        data: {
+          company_id: user.companyId,
+          os_number: nextNumber,
+          customer_id: body.customer_id || body.customerId,
+          status_id: initialStatus.id,
+          technician_id: body.technician_id || body.technicianId,
+          priority: body.priority || 'MEDIUM',
+          os_type: body.os_type || body.osType || 'BALCAO',
+          equipment_type: body.equipment_type || body.equipmentType || body.equipment,
+          equipment_brand: body.equipment_brand || body.equipmentBrand,
+          equipment_model: body.equipment_model || body.equipmentModel,
+          serial_number: body.serial_number || body.serialNumber,
+          reported_issue: body.reported_issue || body.reportedIssue,
+          reception_notes: body.reception_notes || body.receptionNotes,
+          internal_notes: body.internal_notes || body.internalNotes || undefined,
+          estimated_cost: body.estimated_cost || body.estimatedCost,
+          estimated_delivery: body.estimated_delivery || body.estimatedDelivery ? new Date(body.estimated_delivery || body.estimatedDelivery) : undefined,
+        },
+        include: { customers: true },
+      })
 
-    // Log initial status in history
-    await prisma.serviceOrderHistory.create({
-      data: {
-        company_id: user.companyId,
-        service_order_id: os.id,
-        to_status_id: initialStatus.id,
-        changed_by: user.id,
-        notes: 'OS criada',
-      },
+      // Log initial status in history dentro da mesma transação
+      await tx.serviceOrderHistory.create({
+        data: {
+          company_id: user.companyId,
+          service_order_id: created.id,
+          to_status_id: initialStatus.id,
+          changed_by: user.id,
+          notes: 'OS criada',
+        },
+      })
+
+      return created
     })
 
     logAudit({

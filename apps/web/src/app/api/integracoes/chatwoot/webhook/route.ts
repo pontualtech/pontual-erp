@@ -1,12 +1,48 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
+import { createHmac, timingSafeEqual } from 'crypto'
+
+/**
+ * Valida assinatura do webhook Chatwoot (HMAC-SHA256)
+ */
+function validateChatwootSignature(rawBody: string, signature: string | null): boolean {
+  const secret = process.env.CHATWOOT_WEBHOOK_SECRET
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[Chatwoot Webhook] CHATWOOT_WEBHOOK_SECRET obrigatorio em producao — rejeitando')
+      return false
+    }
+    console.warn('[Chatwoot Webhook] CHATWOOT_WEBHOOK_SECRET nao configurado — aceitando apenas em dev')
+    return true
+  }
+  if (!signature) return false
+
+  const expectedSig = createHmac('sha256', secret).update(rawBody).digest('hex')
+  try {
+    return timingSafeEqual(
+      Buffer.from(signature),
+      Buffer.from(expectedSig)
+    )
+  } catch {
+    return false
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
+    const rawBody = await req.text()
+
+    // Validar assinatura do webhook
+    const signature = req.headers.get('x-chatwoot-signature')
+    if (!validateChatwootSignature(rawBody, signature)) {
+      console.warn('[Chatwoot Webhook] Assinatura invalida')
+      return NextResponse.json({ error: 'invalid_signature' }, { status: 401 })
+    }
+
+    const body = JSON.parse(rawBody)
     const event = body.event
 
-    console.log(`[Chatwoot Webhook] Event: ${event}`, JSON.stringify(body).slice(0, 500))
+    console.log(`[Chatwoot Webhook] Event: ${event}`, rawBody.slice(0, 500))
 
     if (event === 'message_created') {
       await handleMessageCreated(body)

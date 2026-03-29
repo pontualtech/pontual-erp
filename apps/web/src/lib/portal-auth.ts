@@ -1,4 +1,4 @@
-import { createHmac } from 'crypto'
+import { createHmac, timingSafeEqual } from 'crypto'
 import { cookies } from 'next/headers'
 import { NextRequest } from 'next/server'
 
@@ -42,7 +42,9 @@ export function verifyPortalToken(token: string): PortalUser | null {
     if (!payloadB64 || !signature) return null
 
     const expectedSig = createHmac('sha256', getSecret()).update(payloadB64).digest('base64url')
-    if (signature !== expectedSig) return null
+    const sigBuf = Buffer.from(signature)
+    const expectedBuf = Buffer.from(expectedSig)
+    if (sigBuf.length !== expectedBuf.length || !timingSafeEqual(sigBuf, expectedBuf)) return null
 
     const payload: PortalUser = JSON.parse(
       Buffer.from(payloadB64, 'base64url').toString('utf8')

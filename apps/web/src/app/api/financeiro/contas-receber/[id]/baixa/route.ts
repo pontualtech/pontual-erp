@@ -33,37 +33,42 @@ export async function POST(req: NextRequest, { params }: Params) {
     const newReceivedTotal = previousReceived + data.received_amount
     const isReceivedInFull = newReceivedTotal >= existing.total_amount
 
-    const receivable = await prisma.accountReceivable.update({
-      where: { id: params.id },
-      data: {
-        received_amount: newReceivedTotal,
-        status: isReceivedInFull ? 'RECEBIDO' : 'PENDENTE',
-        updated_at: new Date(),
-      },
-    })
-
-    // Record transaction in bank account if specified
-    if (data.account_id) {
-      await prisma.transaction.create({
+    // Operação atômica: atualizar status + criar transação + atualizar saldo
+    const receivable = await prisma.$transaction(async (tx) => {
+      const updated = await tx.accountReceivable.update({
+        where: { id: params.id },
         data: {
-          company_id: user.companyId,
-          account_id: data.account_id,
-          transaction_type: 'CREDIT',
-          amount: data.received_amount,
-          description: `Recebimento: ${existing.description}`,
-          transaction_date: data.received_at ? new Date(data.received_at) : new Date(),
-        },
-      })
-
-      // Update bank account balance
-      await prisma.account.update({
-        where: { id: data.account_id },
-        data: {
-          current_balance: { increment: data.received_amount },
+          received_amount: newReceivedTotal,
+          status: isReceivedInFull ? 'RECEBIDO' : 'PENDENTE',
           updated_at: new Date(),
         },
       })
-    }
+
+      // Registrar transação na conta bancária se especificada
+      if (data.account_id) {
+        await tx.transaction.create({
+          data: {
+            company_id: user.companyId,
+            account_id: data.account_id,
+            transaction_type: 'CREDIT',
+            amount: data.received_amount,
+            description: `Recebimento: ${existing.description}`,
+            transaction_date: data.received_at ? new Date(data.received_at) : new Date(),
+          },
+        })
+
+        // Atualizar saldo da conta bancária
+        await tx.account.update({
+          where: { id: data.account_id },
+          data: {
+            current_balance: { increment: data.received_amount },
+            updated_at: new Date(),
+          },
+        })
+      }
+
+      return updated
+    })
 
     logAudit({
       companyId: user.companyId,

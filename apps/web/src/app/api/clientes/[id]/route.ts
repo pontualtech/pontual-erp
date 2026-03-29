@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
+import { updateCustomerSchema, normalizeDocument } from '@/lib/validations/clientes'
 
 type Params = { params: { id: string } }
 
@@ -46,12 +47,12 @@ export async function PUT(req: NextRequest, { params }: Params) {
     if (!existing) return error('Cliente não encontrado', 404)
 
     const body = await req.json()
-    delete body.company_id
-    delete body.companyId
+    // Validar com Zod strict — rejeita campos não permitidos
+    const validatedData = updateCustomerSchema.parse(body)
 
     const customer = await prisma.customer.update({
       where: { id: params.id },
-      data: body,
+      data: validatedData,
     })
 
     logAudit({
@@ -61,7 +62,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
       action: 'update',
       entityId: customer.id,
       oldValue: existing as any,
-      newValue: body,
+      newValue: validatedData,
     })
 
     return success(customer)

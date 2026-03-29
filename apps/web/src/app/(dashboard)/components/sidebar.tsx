@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/lib/use-auth'
 import type { AuthUser } from '@/lib/auth'
 import {
   ClipboardList, Users, Package, DollarSign, FileText,
@@ -37,7 +38,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
   {
     title: 'Estoque',
     items: [
-      { label: 'Produtos', href: '/produtos', icon: Package, module: 'estoque' },
+      { label: 'Estoque', href: '/produtos', icon: Package, module: 'estoque' },
     ],
   },
   {
@@ -55,24 +56,18 @@ const navGroups: { title: string; items: NavItem[] }[] = [
   },
 ]
 
-const ADMIN_ROLES = ['admin', 'owner']
-
-function canAccess(roleName: string, module?: string) {
-  if (!module) return true
-  if (ADMIN_ROLES.includes(roleName)) return true
-  // Non-admin: hide config
-  if (module === 'config') return false
-  return true
-}
-
 export function Sidebar({ user }: { user: AuthUser }) {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
+  const { hasPermission } = useAuth()
 
   const filteredGroups = navGroups
     .map(g => ({
       ...g,
-      items: g.items.filter(i => canAccess(user.roleName, i.module)),
+      items: g.items.filter(i => {
+        if (!i.module) return true
+        return hasPermission(i.module, 'view')
+      }),
     }))
     .filter(g => g.items.length > 0)
 

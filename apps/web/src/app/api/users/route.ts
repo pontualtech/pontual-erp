@@ -5,6 +5,7 @@ import { requirePermission } from '@/lib/auth'
 import { success, paginated, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { paginationSchema, createUserSchema } from '@pontual/utils/validation'
+import { randomBytes } from 'crypto'
 
 export async function GET(request: NextRequest) {
   try {
@@ -61,7 +62,7 @@ export async function POST(request: NextRequest) {
     // Criar no Supabase Auth (requer service_role key)
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: data.email,
-      password: data.password || Math.random().toString(36).slice(-12) + 'A1!',
+      password: data.password || randomBytes(16).toString('base64url') + 'A1!',
       email_confirm: true,
       app_metadata: { company_id: admin.companyId, user_role: role.name.toLowerCase() },
     })

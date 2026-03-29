@@ -2,7 +2,10 @@
   "name": "pontual-erp",
   "version": "1.0.0",
   "private": true,
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "npm run dev --workspace=apps/web",
     "build": "npm run build --workspace=apps/web",
@@ -10,5 +13,14 @@
     "db:migrate": "npm run migrate --workspace=packages/db",
     "db:seed": "npm run seed --workspace=packages/db",
     "migrate:vhsys": "npx tsx scripts/migrate-vhsys/run.ts"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "isomorphic-dompurify": "^3.7.1"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@vitest/coverage-v8": "^4.1.2",
+    "vitest": "^4.1.2"
   }
 }

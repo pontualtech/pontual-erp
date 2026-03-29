@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import { ArrowLeft, Plus, Star, Trash2, Eye, Loader2, X, FileText, Copy } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import DOMPurify from 'dompurify'
 
 interface Template {
   id: string
@@ -212,8 +213,14 @@ export default function TemplatesPage() {
       if (iframe) {
         const doc = iframe.contentDocument || iframe.contentWindow?.document
         if (doc) {
+          const rawHtml = renderPreview()
+          const sanitized = DOMPurify.sanitize(rawHtml, {
+            WHOLE_DOCUMENT: true,
+            ADD_TAGS: ['style', 'head', 'meta', 'title', 'body', 'html'],
+            ADD_ATTR: ['charset', 'lang'],
+          })
           doc.open()
-          doc.write(renderPreview())
+          doc.write(sanitized)
           doc.close()
         }
       }

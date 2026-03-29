@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, paginated, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
+import { createCustomerSchema, normalizeDocument } from '@/lib/validations/clientes'
 
 export async function GET(req: NextRequest) {
   try {
@@ -22,7 +23,11 @@ export async function GET(req: NextRequest) {
       deleted_at: null,
     }
 
-    if (personType) where.person_type = personType
+    // Mapear PF/PJ para FISICA/JURIDICA
+    if (personType) {
+      const personTypeMap: Record<string, string> = { PF: 'FISICA', PJ: 'JURIDICA', FISICA: 'FISICA', JURIDICA: 'JURIDICA' }
+      where.person_type = personTypeMap[personType] || personType
+    }
     if (customerType) where.customer_type = customerType
     if (search) {
       where.OR = [
@@ -56,11 +61,16 @@ export async function POST(req: NextRequest) {
     if (result instanceof NextResponse) return result
     const user = result
 
-    const body = await req.json()
+    const rawBody = await req.json()
+    const parseResult = createCustomerSchema.safeParse(rawBody)
+    if (!parseResult.success) {
+      return error(`Dados inválidos: ${parseResult.error.errors.map(e => e.message).join(', ')}`, 400)
+    }
+    const body = { ...parseResult.data, _update: rawBody._update }
 
     // Check for duplicates by document, mobile, or email
     const dupConditions: any[] = []
-    const docDigits = (body.document_number || '').replace(/\D/g, '')
+    const docDigits = body.document_number || ''
     const mobileDigits = (body.mobile || '').replace(/\D/g, '')
     const phoneDigits = (body.phone || '').replace(/\D/g, '')
     const email = (body.email || '').trim().toLowerCase()
@@ -134,7 +144,7 @@ export async function POST(req: NextRequest) {
         trade_name: body.trade_name,
         person_type: body.person_type || 'FISICA',
         customer_type: body.customer_type || 'CLIENTE',
-        document_number: body.document_number,
+        document_number: docDigits || body.document_number,
         email: body.email,
         phone: body.phone,
         mobile: body.mobile,

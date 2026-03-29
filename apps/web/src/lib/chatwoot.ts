@@ -1,20 +1,29 @@
-const CHATWOOT_URL = process.env.CHATWOOT_URL || 'https://chat.pontualtech.work'
-const CHATWOOT_TOKEN = process.env.CHATWOOT_API_TOKEN || ''
-const CHATWOOT_ACCOUNT = process.env.CHATWOOT_ACCOUNT_ID || '1'
+// Leitura das env vars no nível da função para pegar atualizações em runtime
+function getChatwootUrl(): string {
+  return process.env.CHATWOOT_URL || 'https://chat.pontualtech.work'
+}
+
+function getChatwootToken(): string {
+  return process.env.CHATWOOT_API_TOKEN || ''
+}
+
+function getChatwootAccount(): string {
+  return process.env.CHATWOOT_ACCOUNT_ID || '1'
+}
 
 function baseUrl() {
-  return `${CHATWOOT_URL}/api/v1/accounts/${CHATWOOT_ACCOUNT}`
+  return `${getChatwootUrl()}/api/v1/accounts/${getChatwootAccount()}`
 }
 
 function headers() {
   return {
     'Content-Type': 'application/json',
-    api_access_token: CHATWOOT_TOKEN,
+    api_access_token: getChatwootToken(),
   }
 }
 
 async function chatwootFetch<T = any>(path: string, options?: RequestInit): Promise<T> {
-  if (!CHATWOOT_TOKEN) {
+  if (!getChatwootToken()) {
     throw new Error('CHATWOOT_API_TOKEN not configured')
   }
 
@@ -139,5 +148,5 @@ export async function sendMessageToPhone(
 }
 
 export function isChatwootConfigured(): boolean {
-  return !!CHATWOOT_TOKEN
+  return !!getChatwootToken()
 }
