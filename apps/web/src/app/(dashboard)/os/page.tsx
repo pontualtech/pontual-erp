@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
-import { Plus, Search, List, LayoutGrid, Settings2, Eye, EyeOff, Trash2, Loader2, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { Plus, Search, List, LayoutGrid, Settings2, Eye, EyeOff, Trash2, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Clock, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/lib/use-auth'
 
@@ -26,12 +26,33 @@ interface OS {
   equipment_brand: string | null
   equipment_model: string | null
   reported_issue: string | null
+  total_cost: number | null
   approved_cost: number | null
   estimated_delivery: string | null
   actual_delivery: string | null
   created_at: string
   customers: { id: string; legal_name: string; phone: string | null } | null
   user_profiles: { id: string; name: string } | null
+  accounts_receivable: { id: string; status: string; total_amount: number; received_amount: number | null }[]
+}
+
+function fmt(cents: number) {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cents / 100)
+}
+
+function getFinanceStatus(os: OS) {
+  const ar = os.accounts_receivable?.[0]
+  if (!ar) return null
+  if (ar.status === 'RECEBIDO' || ar.status === 'PAGO') return { label: 'Pago', color: 'bg-green-100 text-green-700' }
+  if (ar.status === 'CANCELADO') return { label: 'Cancelado', color: 'bg-gray-100 text-gray-500' }
+  const now = new Date()
+  // Vencido se passou da data
+  return { label: 'Pendente', color: 'bg-amber-100 text-amber-700' }
+}
+
+function isOverdue(os: OS) {
+  if (!os.estimated_delivery || os.actual_delivery) return false
+  return new Date(os.estimated_delivery) < new Date()
 }
 
 const priorityLabel: Record<string, string> = {
@@ -66,6 +87,7 @@ export default function OSListPage() {
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [sortField, setSortField] = useState<string>('os_number')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [overdueFilter, setOverdueFilter] = useState(false)
 
   // Load status definitions from kanban endpoint
   useEffect(() => {
@@ -134,6 +156,7 @@ export default function OSListPage() {
     params.set('limit', '20')
     if (search) params.set('search', search)
     if (statusFilter) params.set('statusId', statusFilter)
+    if (overdueFilter) params.set('overdue', 'true')
     fetch(`/api/os?${params}`)
       .then(r => r.json())
       .then(d => {
@@ -144,7 +167,7 @@ export default function OSListPage() {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { loadOS(); setSelected(new Set()) }, [search, statusFilter, page])
+  useEffect(() => { loadOS(); setSelected(new Set()) }, [search, statusFilter, overdueFilter, page])
 
   function toggleSelect(id: string) {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -246,6 +269,16 @@ export default function OSListPage() {
             <option key={col.id} value={col.id}>{col.name}</option>
           ))}
         </select>
+        <button type="button"
+          onClick={() => { setOverdueFilter(!overdueFilter); setPage(1) }}
+          title="Filtrar OS em atraso"
+          className={cn(
+            'flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
+            overdueFilter ? 'bg-red-50 border-red-300 text-red-700' : 'bg-white text-gray-600 hover:bg-gray-50'
+          )}>
+          <AlertTriangle className="h-4 w-4" />
+          Em atraso
+        </button>
         <div className="flex rounded-md border bg-white">
           <button type="button" onClick={() => setView('table')} title="Visualização em tabela" className={cn('p-2', view === 'table' && 'bg-gray-100')}>
             <List className="h-4 w-4" />
@@ -275,12 +308,11 @@ export default function OSListPage() {
                     { key: 'created_at', label: 'Data' },
                     { key: 'customer', label: 'Cliente' },
                     { key: 'equipment_type', label: 'Equip.' },
-                    { key: 'equipment_brand', label: 'Marca' },
-                    { key: 'equipment_model', label: 'Modelo' },
                     { key: 'status', label: 'Status' },
+                    { key: 'total_cost', label: 'Valor' },
+                    { key: 'financeiro', label: 'Financeiro' },
                     { key: 'technician', label: 'Técnico' },
                     { key: 'priority', label: 'Prioridade' },
-                    { key: 'os_type', label: 'Tipo' },
                   ].map(col => (
                     <th key={col.key} className="px-4 py-3">
                       <button type="button" onClick={() => handleSort(col.key)}
@@ -294,14 +326,18 @@ export default function OSListPage() {
               </thead>
               <tbody className="divide-y">
                 {loading ? (
-                  <tr><td colSpan={isAdmin ? 11 : 10} className="px-4 py-8 text-center text-gray-400">Carregando...</td></tr>
+                  <tr><td colSpan={isAdmin ? 10 : 9} className="px-4 py-8 text-center text-gray-400">Carregando...</td></tr>
                 ) : osList.length === 0 ? (
-                  <tr><td colSpan={isAdmin ? 11 : 10} className="px-4 py-8 text-center text-gray-400">Nenhuma OS encontrada</td></tr>
+                  <tr><td colSpan={isAdmin ? 10 : 9} className="px-4 py-8 text-center text-gray-400">{overdueFilter ? 'Nenhuma OS em atraso' : 'Nenhuma OS encontrada'}</td></tr>
                 ) : (
                   getSortedList().map(os => {
                     const st = statusMap[os.status_id]
                     return (
-                      <tr key={os.id} className={`hover:bg-gray-50 ${selected.has(os.id) ? 'bg-blue-50' : ''}`}>
+                      <tr key={os.id} className={cn(
+                        'hover:bg-gray-50',
+                        selected.has(os.id) && 'bg-blue-50',
+                        isOverdue(os) && 'bg-red-50/50',
+                      )}>
                         {isAdmin && (
                           <td className="px-3 py-3">
                             <input type="checkbox" title={`Selecionar OS-${String(os.os_number).padStart(4, '0')}`}
@@ -317,23 +353,41 @@ export default function OSListPage() {
                         <td className="px-4 py-3 text-gray-500 text-xs">
                           {new Date(os.created_at).toLocaleDateString('pt-BR')}
                         </td>
-                        <td className="px-4 py-3 text-gray-700">{os.customers?.legal_name ?? '—'}</td>
+                        <td className="px-4 py-3 text-gray-700 text-xs">{os.customers?.legal_name ?? '—'}</td>
                         <td className="px-4 py-3 text-gray-700 text-xs">{os.equipment_type ?? '—'}</td>
-                        <td className="px-4 py-3 text-gray-500 text-xs">{os.equipment_brand ?? '—'}</td>
-                        <td className="px-4 py-3 text-gray-500 text-xs">{os.equipment_model ?? '—'}</td>
                         <td className="px-4 py-3">
-                          <span
-                            className="rounded-full px-2 py-0.5 text-xs font-medium"
-                            style={st ? { backgroundColor: st.color + '20', color: st.color } : {}}
-                          >
-                            {st?.name ?? os.status_id}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className="rounded-full px-2 py-0.5 text-xs font-medium"
+                              style={st ? { backgroundColor: st.color + '20', color: st.color } : {}}
+                            >
+                              {st?.name ?? os.status_id}
+                            </span>
+                            {isOverdue(os) && (
+                              <span className="rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-600 flex items-center gap-0.5">
+                                <Clock className="h-2.5 w-2.5" /> Atraso
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-right text-xs font-medium text-gray-900">
+                          {(os.total_cost || 0) > 0 ? fmt(os.total_cost || 0) : '—'}
+                        </td>
+                        <td className="px-4 py-3">
+                          {(() => {
+                            const fin = getFinanceStatus(os)
+                            if (!fin) return <span className="text-xs text-gray-400">—</span>
+                            return (
+                              <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-medium', fin.color)}>
+                                {fin.label}
+                              </span>
+                            )
+                          })()}
                         </td>
                         <td className="px-4 py-3 text-gray-500 text-xs">{os.user_profiles?.name ?? '—'}</td>
                         <td className={cn('px-4 py-3 text-xs', priorityColor[os.priority])}>
                           {priorityLabel[os.priority] ?? os.priority}
                         </td>
-                        <td className="px-4 py-3 text-gray-500 text-xs">{os.os_type}</td>
                       </tr>
                     )
                   })
@@ -451,6 +505,21 @@ export default function OSListPage() {
                     </div>
                     <p className="mt-1 text-xs text-gray-500">{os.customers?.legal_name ?? 'Sem cliente'}</p>
                     {os.equipment_type && <p className="mt-0.5 text-xs text-gray-400">{os.equipment_type}</p>}
+                    <div className="mt-1.5 flex items-center justify-between">
+                      {(os.total_cost || 0) > 0 && (
+                        <span className="text-xs font-medium text-gray-700">{fmt(os.total_cost || 0)}</span>
+                      )}
+                      {(() => {
+                        const fin = getFinanceStatus(os)
+                        if (!fin) return null
+                        return <span className={cn('rounded-full px-1.5 py-0.5 text-[10px] font-medium', fin.color)}>{fin.label}</span>
+                      })()}
+                      {isOverdue(os) && (
+                        <span className="text-[10px] font-medium text-red-600 flex items-center gap-0.5">
+                          <Clock className="h-2.5 w-2.5" /> Atraso
+                        </span>
+                      )}
+                    </div>
                   </Link>
                 ))}
               </div>

@@ -24,10 +24,18 @@ export async function GET(req: NextRequest) {
       deleted_at: null,
     }
 
+    const overdue = url.get('overdue') === 'true'
+
     if (statusId) where.status_id = statusId
     if (technicianId) where.technician_id = technicianId
     if (priority) where.priority = priority
     if (osType) where.os_type = osType
+
+    // Filtro de OS em atraso: tem data de previsão e passou, e não está em status final
+    if (overdue) {
+      where.estimated_delivery = { lt: new Date() }
+      where.actual_delivery = null
+    }
     if (search) {
       where.OR = [
         { os_number: !isNaN(Number(search)) && Number(search) > 0 ? Number(search) : undefined },
@@ -46,6 +54,12 @@ export async function GET(req: NextRequest) {
         include: {
           customers: { select: { id: true, legal_name: true, phone: true } },
           user_profiles: { select: { id: true, name: true } },
+          accounts_receivable: {
+            where: { deleted_at: null },
+            select: { id: true, status: true, total_amount: true, received_amount: true },
+            take: 1,
+            orderBy: { created_at: 'desc' },
+          },
         },
       }),
       prisma.serviceOrder.count({ where }),
