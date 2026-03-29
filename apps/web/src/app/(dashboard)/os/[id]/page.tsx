@@ -138,6 +138,17 @@ export default function OSDetailPage() {
   const [savingAll, setSavingAll] = useState(false)
   const [financeiroExpanded, setFinanceiroExpanded] = useState(true)
 
+  // Esc = voltar para lista
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape' && !showAddItem && !showPaymentModal) {
+        router.push('/os')
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [router, showAddItem, showPaymentModal])
+
   // Pending status transition (for payment modal)
   const [pendingStatusId, setPendingStatusId] = useState<string | null>(null)
 
@@ -494,11 +505,11 @@ export default function OSDetailPage() {
 
   return (
     <div className="space-y-5 pb-8">
-      {/* ========== HEADER ========== */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {/* ========== HEADER (sticky) ========== */}
+      <div className="flex flex-wrap items-center justify-between gap-3 sticky top-0 z-10 bg-gray-50 dark:bg-gray-900 -mx-6 px-6 py-3 -mt-3 border-b border-transparent" style={{ backdropFilter: 'blur(8px)' }}>
         <div className="flex items-center gap-3">
-          <Link href="/os" className="rounded-lg p-2 hover:bg-gray-100 transition-colors">
-            <ArrowLeft className="h-5 w-5 text-gray-500" />
+          <Link href="/os" className="rounded-lg border px-3 py-1.5 hover:bg-gray-100 transition-colors flex items-center gap-1.5 text-sm text-gray-600">
+            <ArrowLeft className="h-4 w-4" /> Voltar
           </Link>
           <div>
             <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
