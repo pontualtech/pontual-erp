@@ -24,6 +24,11 @@ export async function GET(req: NextRequest) {
       deleted_at: null,
     }
 
+    const ownOnly = url.get('own_only') === 'true'
+    if (ownOnly) {
+      where.technician_id = user.id
+    }
+
     const overdue = url.get('overdue') === 'true'
 
     if (statusId) where.status_id = statusId

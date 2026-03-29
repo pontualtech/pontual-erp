@@ -88,6 +88,31 @@ export default function OSListPage() {
   const [sortField, setSortField] = useState<string>('os_number')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [overdueFilter, setOverdueFilter] = useState(false)
+  const [allowedColumns, setAllowedColumns] = useState<string[]>([])
+  const [ownOnly, setOwnOnly] = useState(false)
+  const [visibilityLoaded, setVisibilityLoaded] = useState(false)
+
+  // Load role-based visibility config
+  useEffect(() => {
+    if (isAdmin) {
+      setAllowedColumns(['os_number', 'created_at', 'customer', 'equipment_type', 'status', 'total_cost', 'financeiro', 'technician', 'priority'])
+      setOwnOnly(false)
+      setVisibilityLoaded(true)
+      return
+    }
+    fetch('/api/os/visibility')
+      .then(r => r.json())
+      .then(d => {
+        if (d.data) {
+          setAllowedColumns(d.data.columns ?? [])
+          setOwnOnly(d.data.own_only ?? false)
+        }
+      })
+      .catch(() => {
+        setAllowedColumns(['os_number', 'created_at', 'customer', 'equipment_type', 'status', 'technician', 'priority'])
+      })
+      .finally(() => setVisibilityLoaded(true))
+  }, [isAdmin])
 
   // Load status definitions from kanban endpoint
   useEffect(() => {
@@ -150,6 +175,7 @@ export default function OSListPage() {
   }
 
   function loadOS() {
+    if (!visibilityLoaded) return
     setLoading(true)
     const params = new URLSearchParams()
     params.set('page', String(page))
@@ -157,6 +183,7 @@ export default function OSListPage() {
     if (search) params.set('search', search)
     if (statusFilter) params.set('statusId', statusFilter)
     if (overdueFilter) params.set('overdue', 'true')
+    if (ownOnly) params.set('own_only', 'true')
     fetch(`/api/os?${params}`)
       .then(r => r.json())
       .then(d => {
@@ -167,7 +194,7 @@ export default function OSListPage() {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { loadOS(); setSelected(new Set()) }, [search, statusFilter, overdueFilter, page])
+  useEffect(() => { loadOS(); setSelected(new Set()) }, [search, statusFilter, overdueFilter, page, visibilityLoaded, ownOnly])
 
   function toggleSelect(id: string) {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -289,6 +316,12 @@ export default function OSListPage() {
         </div>
       </div>
 
+      {ownOnly && !isAdmin && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-700">
+          Exibindo apenas suas OS atribuidas.
+        </div>
+      )}
+
       {view === 'table' ? (
         <>
           {/* Table view */}
@@ -313,7 +346,7 @@ export default function OSListPage() {
                     { key: 'financeiro', label: 'Financeiro' },
                     { key: 'technician', label: 'Técnico' },
                     { key: 'priority', label: 'Prioridade' },
-                  ].map(col => (
+                  ].filter(col => allowedColumns.includes(col.key)).map(col => (
                     <th key={col.key} className="px-4 py-3">
                       <button type="button" onClick={() => handleSort(col.key)}
                         className="flex items-center gap-1 hover:text-gray-700 transition-colors"
@@ -326,9 +359,9 @@ export default function OSListPage() {
               </thead>
               <tbody className="divide-y">
                 {loading ? (
-                  <tr><td colSpan={isAdmin ? 10 : 9} className="px-4 py-8 text-center text-gray-400">Carregando...</td></tr>
+                  <tr><td colSpan={allowedColumns.length + (isAdmin ? 1 : 0)} className="px-4 py-8 text-center text-gray-400">Carregando...</td></tr>
                 ) : osList.length === 0 ? (
-                  <tr><td colSpan={isAdmin ? 10 : 9} className="px-4 py-8 text-center text-gray-400">{overdueFilter ? 'Nenhuma OS em atraso' : 'Nenhuma OS encontrada'}</td></tr>
+                  <tr><td colSpan={allowedColumns.length + (isAdmin ? 1 : 0)} className="px-4 py-8 text-center text-gray-400">{overdueFilter ? 'Nenhuma OS em atraso' : 'Nenhuma OS encontrada'}</td></tr>
                 ) : (
                   getSortedList().map(os => {
                     const st = statusMap[os.status_id]
@@ -345,49 +378,67 @@ export default function OSListPage() {
                               className="rounded text-blue-600" />
                           </td>
                         )}
-                        <td className="px-4 py-3">
-                          <Link href={`/os/${os.id}`} className="font-medium text-blue-600 hover:underline">
-                            OS-{String(os.os_number).padStart(4, '0')}
-                          </Link>
-                        </td>
-                        <td className="px-4 py-3 text-gray-500 text-xs">
-                          {new Date(os.created_at).toLocaleDateString('pt-BR')}
-                        </td>
-                        <td className="px-4 py-3 text-gray-700 text-xs">{os.customers?.legal_name ?? '—'}</td>
-                        <td className="px-4 py-3 text-gray-700 text-xs">{os.equipment_type ?? '—'}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-1.5">
-                            <span
-                              className="rounded-full px-2 py-0.5 text-xs font-medium"
-                              style={st ? { backgroundColor: st.color + '20', color: st.color } : {}}
-                            >
-                              {st?.name ?? os.status_id}
-                            </span>
-                            {isOverdue(os) && (
-                              <span className="rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-600 flex items-center gap-0.5">
-                                <Clock className="h-2.5 w-2.5" /> Atraso
+                        {allowedColumns.includes('os_number') && (
+                          <td className="px-4 py-3">
+                            <Link href={`/os/${os.id}`} className="font-medium text-blue-600 hover:underline">
+                              OS-{String(os.os_number).padStart(4, '0')}
+                            </Link>
+                          </td>
+                        )}
+                        {allowedColumns.includes('created_at') && (
+                          <td className="px-4 py-3 text-gray-500 text-xs">
+                            {new Date(os.created_at).toLocaleDateString('pt-BR')}
+                          </td>
+                        )}
+                        {allowedColumns.includes('customer') && (
+                          <td className="px-4 py-3 text-gray-700 text-xs">{os.customers?.legal_name ?? '—'}</td>
+                        )}
+                        {allowedColumns.includes('equipment_type') && (
+                          <td className="px-4 py-3 text-gray-700 text-xs">{os.equipment_type ?? '—'}</td>
+                        )}
+                        {allowedColumns.includes('status') && (
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                className="rounded-full px-2 py-0.5 text-xs font-medium"
+                                style={st ? { backgroundColor: st.color + '20', color: st.color } : {}}
+                              >
+                                {st?.name ?? os.status_id}
                               </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-right text-xs font-medium text-gray-900">
-                          {(os.total_cost || 0) > 0 ? fmt(os.total_cost || 0) : '—'}
-                        </td>
-                        <td className="px-4 py-3">
-                          {(() => {
-                            const fin = getFinanceStatus(os)
-                            if (!fin) return <span className="text-xs text-gray-400">—</span>
-                            return (
-                              <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-medium', fin.color)}>
-                                {fin.label}
-                              </span>
-                            )
-                          })()}
-                        </td>
-                        <td className="px-4 py-3 text-gray-500 text-xs">{os.user_profiles?.name ?? '—'}</td>
-                        <td className={cn('px-4 py-3 text-xs', priorityColor[os.priority])}>
-                          {priorityLabel[os.priority] ?? os.priority}
-                        </td>
+                              {isOverdue(os) && (
+                                <span className="rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-600 flex items-center gap-0.5">
+                                  <Clock className="h-2.5 w-2.5" /> Atraso
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        )}
+                        {allowedColumns.includes('total_cost') && (
+                          <td className="px-4 py-3 text-right text-xs font-medium text-gray-900">
+                            {(os.total_cost || 0) > 0 ? fmt(os.total_cost || 0) : '—'}
+                          </td>
+                        )}
+                        {allowedColumns.includes('financeiro') && (
+                          <td className="px-4 py-3">
+                            {(() => {
+                              const fin = getFinanceStatus(os)
+                              if (!fin) return <span className="text-xs text-gray-400">—</span>
+                              return (
+                                <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-medium', fin.color)}>
+                                  {fin.label}
+                                </span>
+                              )
+                            })()}
+                          </td>
+                        )}
+                        {allowedColumns.includes('technician') && (
+                          <td className="px-4 py-3 text-gray-500 text-xs">{os.user_profiles?.name ?? '—'}</td>
+                        )}
+                        {allowedColumns.includes('priority') && (
+                          <td className={cn('px-4 py-3 text-xs', priorityColor[os.priority])}>
+                            {priorityLabel[os.priority] ?? os.priority}
+                          </td>
+                        )}
                       </tr>
                     )
                   })
