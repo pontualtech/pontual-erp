@@ -361,6 +361,7 @@ export default function OSDetailPage() {
         reception_notes: editNotes || null,
         internal_notes: editInternalNotes || null,
         technician_id: editTechnicianId || null,
+        payment_method: editPaymentMethod || null,
         estimated_delivery: editEstimatedDelivery ? new Date(editEstimatedDelivery).toISOString() : null,
         actual_delivery: editActualDelivery ? new Date(editActualDelivery).toISOString() : null,
       }

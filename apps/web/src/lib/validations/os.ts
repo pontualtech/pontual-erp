@@ -53,6 +53,7 @@ export const updateOSSchema = z.object({
     { message: 'custom_data excede o limite de 10KB' }
   ),
   reception_notes: z.string().max(5000).nullable().optional(),
+  payment_method: z.string().max(255).nullable().optional(),
   os_type: z.enum(['BALCAO', 'COLETA', 'REMOTO', 'CAMPO', 'ENTREGA']).optional(),
   customer_id: z.string().uuid().optional(),
 }).strict()
