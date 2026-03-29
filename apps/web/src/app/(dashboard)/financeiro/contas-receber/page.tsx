@@ -6,7 +6,8 @@ import { useRouter } from 'next/navigation'
 import {
   Plus, Search, Eye, Pencil, Trash2, DollarSign,
   AlertTriangle, Clock, CheckCircle2, CalendarClock, X, Loader2, Zap,
-  Filter, ChevronDown, ChevronUp, Combine, Unlink
+  Filter, ChevronDown, ChevronUp, Combine, Unlink,
+  Columns3, Printer, FileSpreadsheet, Mail
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -134,6 +135,121 @@ export default function ContasReceberPage() {
   const [antecipPreview, setAntecipPreview] = useState<AnticipationPreview | null>(null)
   const [antecipLoading, setAntecipLoading] = useState(false)
   const [antecipConfirming, setAntecipConfirming] = useState(false)
+
+  // Column toggle
+  const [showColToggle, setShowColToggle] = useState(false)
+  const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('cr_hidden_columns')
+        if (stored) return new Set(JSON.parse(stored))
+      } catch {}
+    }
+    return new Set()
+  })
+
+  const allColumns = [
+    { key: 'description', label: 'Descricao' },
+    { key: 'customer', label: 'Cliente' },
+    { key: 'category', label: 'Categoria' },
+    { key: 'due_date', label: 'Vencimento' },
+    { key: 'total_amount', label: 'Valor' },
+    { key: 'status', label: 'Status' },
+  ] as const
+
+  function toggleColumn(key: string) {
+    setHiddenColumns(prev => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      localStorage.setItem('cr_hidden_columns', JSON.stringify(Array.from(next)))
+      return next
+    })
+  }
+
+  function isColVisible(key: string) {
+    return !hiddenColumns.has(key)
+  }
+
+  // Export helpers
+  function handlePrint() {
+    const rows = selectedContas.length > 0 ? selectedContas : contas
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Contas a Receber</title>
+      <style>body{font-family:Arial,sans-serif;margin:20px}table{border-collapse:collapse;width:100%}
+      th,td{border:1px solid #ccc;padding:8px 12px;text-align:left;font-size:13px}
+      th{background:#f5f5f5;font-weight:600}h1{font-size:18px;margin-bottom:4px}
+      .right{text-align:right}.total-row{font-weight:bold;background:#f9f9f9}
+      @media print{button{display:none}}</style></head><body>
+      <h1>Contas a Receber</h1>
+      <p style="color:#666;font-size:12px;margin-bottom:12px">Gerado em ${new Date().toLocaleString('pt-BR')}</p>
+      <table><thead><tr>
+      ${isColVisible('description') ? '<th>Descricao</th>' : ''}
+      ${isColVisible('customer') ? '<th>Cliente</th>' : ''}
+      ${isColVisible('category') ? '<th>Categoria</th>' : ''}
+      ${isColVisible('due_date') ? '<th>Vencimento</th>' : ''}
+      ${isColVisible('total_amount') ? '<th class="right">Valor</th>' : ''}
+      ${isColVisible('status') ? '<th>Status</th>' : ''}
+      </tr></thead><tbody>
+      ${rows.map(c => `<tr>
+        ${isColVisible('description') ? `<td>${c.description}</td>` : ''}
+        ${isColVisible('customer') ? `<td>${c.customers?.legal_name || '--'}</td>` : ''}
+        ${isColVisible('category') ? `<td>${c.categories?.name || '--'}</td>` : ''}
+        ${isColVisible('due_date') ? `<td>${formatDate(c.due_date)}</td>` : ''}
+        ${isColVisible('total_amount') ? `<td class="right">${formatCurrency(c.total_amount)}</td>` : ''}
+        ${isColVisible('status') ? `<td>${(statusConfig[getDisplayStatus(c)] || statusConfig.PENDENTE).label}</td>` : ''}
+      </tr>`).join('')}
+      <tr class="total-row">
+        <td colspan="${allColumns.filter(col => isColVisible(col.key)).length - (isColVisible('total_amount') ? 1 : 0)}">Total</td>
+        ${isColVisible('total_amount') ? `<td class="right">${formatCurrency(rows.reduce((s, c) => s + c.total_amount, 0))}</td>` : ''}
+        ${isColVisible('status') ? '<td></td>' : ''}
+      </tr>
+      </tbody></table></body></html>`
+    const w = window.open('', '_blank')
+    if (w) { w.document.write(html); w.document.close(); w.print() }
+  }
+
+  function handleCSV() {
+    const rows = selectedContas.length > 0 ? selectedContas : contas
+    const sep = ';'
+    const headers: string[] = []
+    if (isColVisible('description')) headers.push('Descricao')
+    if (isColVisible('customer')) headers.push('Cliente')
+    if (isColVisible('category')) headers.push('Categoria')
+    if (isColVisible('due_date')) headers.push('Vencimento')
+    if (isColVisible('total_amount')) headers.push('Valor')
+    if (isColVisible('status')) headers.push('Status')
+
+    const csvRows = [headers.join(sep)]
+    for (const c of rows) {
+      const cells: string[] = []
+      if (isColVisible('description')) cells.push(`"${c.description.replace(/"/g, '""')}"`)
+      if (isColVisible('customer')) cells.push(`"${(c.customers?.legal_name || '--').replace(/"/g, '""')}"`)
+      if (isColVisible('category')) cells.push(`"${(c.categories?.name || '--').replace(/"/g, '""')}"`)
+      if (isColVisible('due_date')) cells.push(formatDate(c.due_date))
+      if (isColVisible('total_amount')) cells.push((c.total_amount / 100).toFixed(2).replace('.', ','))
+      if (isColVisible('status')) cells.push((statusConfig[getDisplayStatus(c)] || statusConfig.PENDENTE).label)
+      csvRows.push(cells.join(sep))
+    }
+
+    const BOM = '\uFEFF'
+    const blob = new Blob([BOM + csvRows.join('\r\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `contas-receber-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function handleEmail() {
+    const rows = selectedContas.length > 0 ? selectedContas : contas
+    const total = rows.reduce((s, c) => s + c.total_amount, 0)
+    const subject = encodeURIComponent(`Contas a Receber - ${formatCurrency(total)}`)
+    const lines = rows.map(c =>
+      `- ${c.description} | ${c.customers?.legal_name || '--'} | ${formatDate(c.due_date)} | ${formatCurrency(c.total_amount)} | ${(statusConfig[getDisplayStatus(c)] || statusConfig.PENDENTE).label}`
+    )
+    const body = encodeURIComponent(`Contas a Receber\nGerado em ${new Date().toLocaleString('pt-BR')}\n\n${lines.join('\n')}\n\nTotal: ${formatCurrency(total)}`)
+    window.open(`mailto:?subject=${subject}&body=${body}`)
+  }
 
   // Agrupar modal
   const [showAgrupar, setShowAgrupar] = useState(false)
@@ -512,6 +628,37 @@ export default function ContasReceberPage() {
               )}
               {showFilters ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
             </button>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowColToggle(v => !v)}
+                className={cn(
+                  'flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
+                  showColToggle ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                )}
+              >
+                <Columns3 className="h-3.5 w-3.5" />
+                Colunas
+              </button>
+              {showColToggle && (
+                <>
+                <div className="fixed inset-0 z-10" onClick={() => setShowColToggle(false)} />
+                <div className="absolute right-0 top-full mt-1 z-20 w-48 rounded-md border bg-white shadow-lg py-1">
+                  {allColumns.map(col => (
+                    <label key={col.key} className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={isColVisible(col.key)}
+                        onChange={() => toggleColumn(col.key)}
+                        className="rounded text-emerald-600"
+                      />
+                      {col.label}
+                    </label>
+                  ))}
+                </div>
+                </>
+              )}
+            </div>
             {isAdmin && selected.size > 0 && (
               <button type="button" onClick={() => setShowBulkDelete(true)}
                 className="flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
@@ -662,19 +809,19 @@ export default function ContasReceberPage() {
                     onChange={toggleAll} className="rounded text-blue-600" />
                 </th>
               )}
-              <th className="px-4 py-3">Descricao</th>
-              <th className="px-4 py-3">Cliente</th>
-              <th className="px-4 py-3">Categoria</th>
-              <th className="px-4 py-3">Vencimento</th>
-              <th className="px-4 py-3 text-right">Valor</th>
-              <th className="px-4 py-3 text-center">Status</th>
+              {isColVisible('description') && <th className="px-4 py-3">Descricao</th>}
+              {isColVisible('customer') && <th className="px-4 py-3">Cliente</th>}
+              {isColVisible('category') && <th className="px-4 py-3">Categoria</th>}
+              {isColVisible('due_date') && <th className="px-4 py-3">Vencimento</th>}
+              {isColVisible('total_amount') && <th className="px-4 py-3 text-right">Valor</th>}
+              {isColVisible('status') && <th className="px-4 py-3 text-center">Status</th>}
               <th className="px-4 py-3 text-right">Acoes</th>
             </tr>
           </thead>
           <tbody className="divide-y">
             {loading ? (
               <tr>
-                <td colSpan={isAdmin ? 8 : 7} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={99} className="px-4 py-8 text-center text-gray-400">
                   <div className="flex items-center justify-center gap-2">
                     <Clock className="h-4 w-4 animate-spin" /> Carregando...
                   </div>
@@ -682,7 +829,7 @@ export default function ContasReceberPage() {
               </tr>
             ) : contas.length === 0 ? (
               <tr>
-                <td colSpan={isAdmin ? 8 : 7} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={99} className="px-4 py-8 text-center text-gray-400">
                   {hasFilters ? 'Nenhuma conta encontrada com os filtros aplicados' : 'Nenhuma conta a receber cadastrada'}
                 </td>
               </tr>
@@ -699,21 +846,30 @@ export default function ContasReceberPage() {
                           className="rounded text-blue-600" />
                       </td>
                     )}
+                    {isColVisible('description') && (
                     <td className="px-4 py-3">
                       <p className="font-medium text-gray-900">{conta.description}</p>
                       {conta.notes && (
                         <p className="text-xs text-gray-400 truncate max-w-[200px]">{conta.notes}</p>
                       )}
                     </td>
+                    )}
+                    {isColVisible('customer') && (
                     <td className="px-4 py-3 text-gray-500">
                       {conta.customers?.legal_name || '--'}
                     </td>
+                    )}
+                    {isColVisible('category') && (
                     <td className="px-4 py-3 text-gray-500">
                       {conta.categories?.name || '--'}
                     </td>
+                    )}
+                    {isColVisible('due_date') && (
                     <td className="px-4 py-3 text-gray-700">
                       {formatDate(conta.due_date)}
                     </td>
+                    )}
+                    {isColVisible('total_amount') && (
                     <td className="px-4 py-3 text-right">
                       <p className="font-medium text-gray-900">{formatCurrency(conta.total_amount)}</p>
                       {(conta.received_amount || 0) > 0 && conta.status !== 'RECEBIDO' && (
@@ -723,6 +879,8 @@ export default function ContasReceberPage() {
                         <p className="text-xs text-purple-600">Taxa: -{formatCurrency(conta.anticipation_fee)}</p>
                       )}
                     </td>
+                    )}
+                    {isColVisible('status') && (
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-1.5 flex-wrap">
                         <span className={cn('inline-block rounded-full px-2.5 py-0.5 text-xs font-medium', config.color)}>
@@ -749,6 +907,7 @@ export default function ContasReceberPage() {
                         )}
                       </div>
                     </td>
+                    )}
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
@@ -850,11 +1009,28 @@ export default function ContasReceberPage() {
 
       {/* Selection bar */}
       {isAdmin && selected.size > 0 && (
-        <div className="flex items-center justify-between rounded-lg bg-blue-50 border border-blue-200 px-4 py-2">
-          <span className="text-sm text-blue-700 font-medium">{selected.size} selecionado(s)</span>
+        <div className="sticky bottom-0 z-10 flex items-center justify-between rounded-lg bg-blue-50 border border-blue-200 px-4 py-2 shadow-lg">
+          <span className="text-sm text-blue-700 font-medium">
+            {selected.size} selecionada{selected.size !== 1 ? 's' : ''} — {formatCurrency(selectedTotal)}
+          </span>
           <div className="flex gap-2">
             <button type="button" onClick={() => setSelected(new Set())}
               className="text-sm text-gray-500 hover:text-gray-700">Limpar selecao</button>
+            <button type="button" onClick={handlePrint}
+              title="Imprimir selecionadas"
+              className="flex items-center gap-1.5 px-3 py-1 text-sm bg-gray-600 text-white rounded-md hover:bg-gray-700 font-medium">
+              <Printer className="h-3.5 w-3.5" /> Imprimir
+            </button>
+            <button type="button" onClick={handleCSV}
+              title="Exportar CSV"
+              className="flex items-center gap-1.5 px-3 py-1 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 font-medium">
+              <FileSpreadsheet className="h-3.5 w-3.5" /> CSV
+            </button>
+            <button type="button" onClick={handleEmail}
+              title="Enviar por e-mail"
+              className="flex items-center gap-1.5 px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium">
+              <Mail className="h-3.5 w-3.5" /> Email
+            </button>
             {canGroup && (
               <button type="button" onClick={openAgrupar}
                 className="flex items-center gap-1.5 px-3 py-1 text-sm bg-purple-600 text-white rounded-md hover:bg-purple-700 font-medium">
