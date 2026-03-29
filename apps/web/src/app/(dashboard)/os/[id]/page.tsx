@@ -62,6 +62,7 @@ interface AccountReceivable {
   anticipation_fee: number | null
   anticipated_amount: number | null
   created_at: string
+  updated_at: string | null
   installments: AccountReceivableInstallment[]
 }
 interface Produto { id: string; name: string; unit: string; sale_price: number; brand: string | null }
@@ -1094,7 +1095,7 @@ export default function OSDetailPage() {
                     </div>
 
                     {/* Payment info row */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-sm">
                       <div>
                         <p className="text-xs text-gray-400 uppercase">Forma</p>
                         <p className="font-medium text-gray-700">{ar.payment_method || '--'}</p>
@@ -1111,6 +1112,20 @@ export default function OSDetailPage() {
                         <p className="text-xs text-gray-400 uppercase">Restante</p>
                         <p className={cn('font-medium', remaining > 0 ? 'text-red-600' : 'text-gray-500')}>
                           {fmt(remaining)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-400 uppercase">Vencimento</p>
+                        <p className="font-medium text-gray-700">
+                          {ar.due_date ? new Date(ar.due_date + 'T12:00:00').toLocaleDateString('pt-BR') : '--'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-400 uppercase">Pago em</p>
+                        <p className={cn('font-medium', ar.status === 'RECEBIDO' ? 'text-green-700' : 'text-gray-400')}>
+                          {ar.status === 'RECEBIDO' && ar.updated_at
+                            ? new Date(ar.updated_at).toLocaleDateString('pt-BR')
+                            : '--'}
                         </p>
                       </div>
                     </div>
