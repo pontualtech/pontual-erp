@@ -61,11 +61,16 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
     const body = await req.json()
     // Validar com Zod strict — rejeita campos não permitidos
-    const validatedData = updateOSSchema.parse(body)
+    const validated = updateOSSchema.parse(body)
+
+    // Converter strings de data para Date objects para o Prisma
+    const data: any = { ...validated }
+    if (data.estimated_delivery) data.estimated_delivery = new Date(data.estimated_delivery)
+    if (data.warranty_until) data.warranty_until = new Date(data.warranty_until)
 
     const os = await prisma.serviceOrder.update({
       where: { id: params.id },
-      data: validatedData as any,
+      data,
       include: { customers: true },
     })
 
@@ -76,7 +81,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
       action: 'update',
       entityId: os.id,
       oldValue: existing as any,
-      newValue: validatedData,
+      newValue: validated,
     })
 
     return success(os)
