@@ -1392,8 +1392,8 @@ export default function OSDetailPage() {
 
       {/* ========== PAYMENT MODAL ========== */}
       {showPaymentModal && os && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => { setShowPaymentModal(false); setPendingStatusId(null) }}>
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 overflow-y-auto py-8" onClick={() => { setShowPaymentModal(false); setPendingStatusId(null) }}>
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl my-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold flex items-center gap-2">
                 <CreditCard className="h-5 w-5 text-green-600" />
