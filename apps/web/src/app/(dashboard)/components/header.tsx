@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import type { AuthUser } from '@/lib/auth'
 import { Search, ChevronRight, LogOut, User, Settings } from 'lucide-react'
+import { NotificationBell } from './notification-bell'
 
 const breadcrumbMap: Record<string, string> = {
   os: 'Ordens de Servico',
@@ -87,6 +88,9 @@ export function Header({ user }: { user: AuthUser }) {
             Ctrl+K
           </kbd>
         </button>
+
+        {/* Notifications */}
+        <NotificationBell />
 
         {/* User menu */}
         <div className="relative" ref={menuRef}>

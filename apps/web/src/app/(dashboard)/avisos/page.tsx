@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/lib/use-auth'
 import { cn } from '@/lib/utils'
-import { Bell, Pin, PinOff, Pencil, Trash2, Plus, X } from 'lucide-react'
+import { Bell, Pin, PinOff, Pencil, Trash2, Plus, X, Eye } from 'lucide-react'
 
 interface Aviso {
   id: string
@@ -12,8 +12,10 @@ interface Aviso {
   priority: string
   author_name: string | null
   pinned: boolean
+  require_read: boolean
   expires_at: string | null
   created_at: string
+  _count?: { reads: number }
 }
 
 const priorityOptions = [
@@ -37,7 +39,7 @@ export default function AvisosPage() {
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [form, setForm] = useState({ title: '', message: '', priority: 'NORMAL', pinned: false, expires_at: '' })
+  const [form, setForm] = useState({ title: '', message: '', priority: 'NORMAL', pinned: false, require_read: false, expires_at: '' })
 
   const loadAvisos = async () => {
     try {
@@ -53,7 +55,7 @@ export default function AvisosPage() {
   useEffect(() => { loadAvisos() }, [isAdmin])
 
   const resetForm = () => {
-    setForm({ title: '', message: '', priority: 'NORMAL', pinned: false, expires_at: '' })
+    setForm({ title: '', message: '', priority: 'NORMAL', pinned: false, require_read: false, expires_at: '' })
     setEditingId(null)
     setShowForm(false)
   }
@@ -66,6 +68,7 @@ export default function AvisosPage() {
       message: form.message,
       priority: form.priority,
       pinned: form.pinned,
+      require_read: form.require_read,
       expires_at: form.expires_at || null,
     }
 
@@ -108,6 +111,7 @@ export default function AvisosPage() {
       message: aviso.message,
       priority: aviso.priority || 'NORMAL',
       pinned: aviso.pinned || false,
+      require_read: aviso.require_read || false,
       expires_at: aviso.expires_at ? aviso.expires_at.slice(0, 16) : '',
     })
     setEditingId(aviso.id)
@@ -191,7 +195,7 @@ export default function AvisosPage() {
                   className="rounded-lg border px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
                 />
               </div>
-              <div className="flex items-end">
+              <div className="flex items-end gap-4">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -200,6 +204,15 @@ export default function AvisosPage() {
                     className="rounded border-gray-300"
                   />
                   <span className="text-sm text-gray-700">Fixar</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.require_read}
+                    onChange={e => setForm(f => ({ ...f, require_read: e.target.checked }))}
+                    className="rounded border-gray-300"
+                  />
+                  <span className="text-sm text-gray-700">Exigir confirmacao de leitura</span>
                 </label>
               </div>
             </div>
@@ -248,6 +261,12 @@ export default function AvisosPage() {
                     <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', getPriorityStyle(aviso.priority))}>
                       {getPriorityLabel(aviso.priority)}
                     </span>
+                    {aviso.require_read && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">
+                        <Eye className="h-3 w-3" />
+                        Leitura obrigatoria
+                      </span>
+                    )}
                     {isExpired(aviso) && (
                       <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-500">Expirado</span>
                     )}
@@ -258,6 +277,12 @@ export default function AvisosPage() {
                     <span>{formatDate(aviso.created_at)}</span>
                     {aviso.expires_at && (
                       <span>Expira: {formatDate(aviso.expires_at)}</span>
+                    )}
+                    {aviso._count?.reads !== undefined && aviso._count.reads > 0 && (
+                      <span className="inline-flex items-center gap-1">
+                        <Eye className="h-3 w-3" />
+                        {aviso._count.reads} {aviso._count.reads === 1 ? 'leitura' : 'leituras'}
+                      </span>
                     )}
                   </div>
                 </div>

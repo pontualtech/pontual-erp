@@ -3,6 +3,7 @@ import { getServerUser } from '@/lib/auth'
 import { Sidebar } from './components/sidebar'
 import { Header } from './components/header'
 import { ThemeProvider } from './components/theme-provider'
+import { AnnouncementModal } from './components/announcement-modal'
 
 export default async function DashboardLayout({
   children,
@@ -25,6 +26,7 @@ export default async function DashboardLayout({
             {children}
           </main>
         </div>
+        <AnnouncementModal />
       </div>
     </ThemeProvider>
   )

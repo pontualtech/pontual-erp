@@ -886,18 +886,33 @@ model ChatMessage {
 }
 
 model Announcement {
-  id          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
-  company_id  String
-  title       String
-  message     String
-  priority    String?   @default("NORMAL")
-  created_by  String?
-  author_name String?
-  pinned      Boolean?  @default(false)
-  expires_at  DateTime? @db.Timestamptz(6)
-  created_at  DateTime? @default(now()) @db.Timestamptz(6)
-  companies   Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  id           String               @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id   String
+  title        String
+  message      String
+  priority     String?              @default("NORMAL")
+  created_by   String?
+  author_name  String?
+  pinned       Boolean?             @default(false)
+  require_read Boolean?             @default(false)
+  expires_at   DateTime?            @db.Timestamptz(6)
+  created_at   DateTime?            @default(now()) @db.Timestamptz(6)
+  companies    Company              @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  reads        AnnouncementRead[]
 
   @@index([company_id], map: "idx_announcements_company")
   @@map("announcements")
+}
+
+model AnnouncementRead {
+  id              String       @id @default(dbgenerated("(gen_random_uuid())::text"))
+  announcement_id String
+  user_id         String
+  company_id      String
+  read_at         DateTime     @default(now()) @db.Timestamptz(6)
+  announcement    Announcement @relation(fields: [announcement_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([announcement_id, user_id])
+  @@index([user_id, company_id], map: "idx_announcement_reads_user")
+  @@map("announcement_reads")
 }

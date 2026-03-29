@@ -27,6 +27,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (body.message !== undefined) data.message = body.message.trim()
     if (body.priority !== undefined) data.priority = body.priority
     if (body.pinned !== undefined) data.pinned = body.pinned
+    if (body.require_read !== undefined) data.require_read = body.require_read
     if (body.expires_at !== undefined) data.expires_at = body.expires_at ? new Date(body.expires_at) : null
 
     const announcement = await prisma.announcement.update({

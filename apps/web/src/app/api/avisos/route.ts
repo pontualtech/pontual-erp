@@ -28,9 +28,27 @@ export async function GET(req: NextRequest) {
         { pinned: 'desc' },
         { created_at: 'desc' },
       ],
+      include: {
+        reads: {
+          where: { user_id: user.id },
+          select: { read_at: true },
+        },
+        _count: {
+          select: { reads: true },
+        },
+      },
     })
 
-    return success(announcements)
+    // Mapeia resultados com status de leitura
+    const mapped = announcements.map((a) => ({
+      ...a,
+      is_read: a.reads.length > 0,
+      read_count: a._count.reads,
+      reads: undefined,
+      _count: undefined,
+    }))
+
+    return success(mapped)
   } catch (err) {
     return handleError(err)
   }
@@ -61,6 +79,7 @@ export async function POST(req: NextRequest) {
         created_by: user.id,
         author_name: user.name,
         pinned: body.pinned || false,
+        require_read: body.require_read || false,
         expires_at: body.expires_at ? new Date(body.expires_at) : null,
       },
     })
