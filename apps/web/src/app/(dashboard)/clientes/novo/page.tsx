@@ -178,7 +178,27 @@ export default function NovoClientePage() {
         }
       }
 
-      // 3) CPF — no public API, just mark as new
+      // 3) CPF — consultar via API paga (se habilitada)
+      if (digits.length === 11) {
+        try {
+          const cpfRes = await fetch(`/api/consulta/cpf/${digits}`)
+          const cpfData = await cpfRes.json()
+          if (cpfRes.ok && cpfData.data) {
+            setForm(prev => ({
+              ...prev,
+              person_type: 'FISICA',
+              legal_name: cpfData.data.legal_name || prev.legal_name,
+            }))
+            setDocStatus('cnpj-filled')
+            setDocMessage(`${cpfData.data.situacao || 'Regular'} — ${cpfData.data.legal_name || ''}`)
+            toast.success('Nome preenchido automaticamente!')
+            return
+          }
+        } catch {
+          // API nao habilitada ou erro — seguir sem preencher
+        }
+      }
+
       setDocStatus('not-found')
       setDocMessage('Novo cliente — preencha os dados abaixo')
     } catch {

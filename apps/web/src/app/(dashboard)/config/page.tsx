@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Building2, Users, Shield, Tag, Wrench, Bell, Database, Palette, Landmark, FileText, PrinterIcon, FileKey, MessageSquare } from 'lucide-react'
+import { Building2, Users, Shield, Tag, Wrench, Bell, Database, Palette, Landmark, FileText, PrinterIcon, FileKey, MessageSquare, Search } from 'lucide-react'
 
 const sections = [
   {
@@ -24,6 +24,7 @@ const sections = [
   {
     title: 'Integracoes',
     items: [
+      { label: 'Consulta CPF', href: '/config/consulta-cpf', icon: Search, desc: 'Auto-preencher nome pelo CPF (API paga)' },
       { label: 'Taxas de Cartao', href: '/config/taxas-cartao', icon: Landmark, desc: 'Taxas por operadora, faixa de parcelas' },
       { label: 'Integracoes Bancarias', href: '/config/integracoes', icon: Landmark, desc: 'Boletos: Inter, Itau, Stone' },
       { label: 'NFS-e / Fiscal', href: '/fiscal/config', icon: FileText, desc: 'Focus NFe, inscricao municipal, aliquota' },

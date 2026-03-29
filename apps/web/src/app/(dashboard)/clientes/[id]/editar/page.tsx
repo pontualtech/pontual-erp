@@ -37,6 +37,7 @@ export default function EditarClientePage() {
   const [saving, setSaving] = useState(false)
   const [cepLoading, setCepLoading] = useState(false)
   const [cnpjLoading, setCnpjLoading] = useState(false)
+  const [cpfLoading, setCpfLoading] = useState(false)
 
   const [form, setForm] = useState({
     legal_name: '', trade_name: '', person_type: 'FISICA', customer_type: 'CLIENTE',
@@ -105,6 +106,22 @@ export default function EditarClientePage() {
         toast.error(data.error || 'CNPJ não encontrado')
       }
     } catch { toast.error('Erro ao consultar CNPJ') } finally { setCnpjLoading(false) }
+  }
+
+  async function searchCPF() {
+    const digits = form.document_number.replace(/\D/g, '')
+    if (digits.length !== 11) { toast.error('CPF deve ter 11 digitos'); return }
+    setCpfLoading(true)
+    try {
+      const res = await fetch(`/api/consulta/cpf/${digits}`)
+      const data = await res.json()
+      if (res.ok && data.data) {
+        setForm(prev => ({ ...prev, person_type: 'FISICA', legal_name: data.data.legal_name || prev.legal_name }))
+        toast.success(`Nome preenchido — ${data.data.situacao || 'Regular'}`)
+      } else {
+        toast.error(data.error || 'CPF nao encontrado')
+      }
+    } catch { toast.error('Erro ao consultar CPF') } finally { setCpfLoading(false) }
   }
 
   async function searchCEP() {
@@ -217,6 +234,13 @@ export default function EditarClientePage() {
                   className="px-3 py-2 text-sm bg-amber-50 border border-amber-200 rounded-md hover:bg-amber-100 disabled:opacity-50 flex items-center gap-1.5 text-amber-700 whitespace-nowrap">
                   {cnpjLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Building2 className="w-3.5 h-3.5" />}
                   Consultar Receita
+                </button>
+              )}
+              {form.document_number.replace(/\D/g, '').length === 11 && (
+                <button type="button" onClick={searchCPF} disabled={cpfLoading}
+                  className="px-3 py-2 text-sm bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 disabled:opacity-50 flex items-center gap-1.5 text-blue-700 whitespace-nowrap">
+                  {cpfLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                  Consultar CPF
                 </button>
               )}
             </div>
