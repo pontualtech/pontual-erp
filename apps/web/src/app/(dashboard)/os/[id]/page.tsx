@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import { ArrowLeft, Edit, Camera, History, Info, Package, Plus, Trash2, Loader2, Search, Wrench, CreditCard, X, Printer, Mail, Send, Copy, FilePlus, User, Monitor, FileText, Clock, ChevronDown, AlertTriangle, Save } from 'lucide-react'
+import { ArrowLeft, Edit, Camera, History, Info, Package, Plus, Trash2, Loader2, Search, Wrench, CreditCard, X, Printer, Mail, Send, Copy, FilePlus, User, Monitor, FileText, Clock, ChevronDown, AlertTriangle, Save, Check, Layers } from 'lucide-react'
 
 interface Customer {
   id: string; legal_name: string; trade_name: string | null; person_type: string
@@ -70,6 +70,13 @@ export default function OSDetailPage() {
   const [quickName, setQuickName] = useState('')
   const [quickPrice, setQuickPrice] = useState('')
   const [quickSaving, setQuickSaving] = useState(false)
+  const [itemsAddedCount, setItemsAddedCount] = useState(0)
+  const [showAddedCheck, setShowAddedCheck] = useState(false)
+
+  // Kits
+  const [kits, setKits] = useState<{ id: string; key: string; value: any }[]>([])
+  const [showKitsPopover, setShowKitsPopover] = useState(false)
+  const [applyingKit, setApplyingKit] = useState<string | null>(null)
 
   // Which section to add item to (serviços or peças)
   const [addItemSection, setAddItemSection] = useState<'SERVICO' | 'PECA'>('SERVICO')
@@ -172,7 +179,7 @@ export default function OSDetailPage() {
     setItemSearch('')
   }
 
-  async function handleAddItem() {
+  async function handleAddItem(closeAfter: boolean = false) {
     if (!itemDesc.trim()) { toast.error('Descricao e obrigatoria'); return }
     const qty = parseInt(itemQty) || 1
     const price = Math.round(parseFloat(itemPrice || '0') * 100)
@@ -193,9 +200,19 @@ export default function OSDetailPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Erro ao adicionar item')
 
-      toast.success('Item adicionado!')
+      setItemsAddedCount(prev => prev + 1)
       setItemDesc(''); setItemQty('1'); setItemPrice(''); setItemProductId(null)
-      setShowAddItem(false)
+      setItemSearch(''); setItemResults([])
+
+      // Show green check briefly
+      setShowAddedCheck(true)
+      setTimeout(() => setShowAddedCheck(false), 2000)
+
+      if (closeAfter) {
+        setShowAddItem(false)
+        setItemsAddedCount(0)
+        toast.success('Item adicionado!')
+      }
       loadOS()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro')
@@ -252,6 +269,33 @@ export default function OSDetailPage() {
       toast.error(err instanceof Error ? err.message : 'Erro')
     } finally {
       setQuickSaving(false)
+    }
+  }
+
+  function loadKits() {
+    fetch('/api/kits').then(r => r.json()).then(d => setKits(d.data ?? [])).catch(() => {})
+  }
+
+  useEffect(() => { loadKits() }, [])
+
+  async function handleApplyKit(kitKey: string, kitName: string) {
+    setApplyingKit(kitKey)
+    try {
+      const res = await fetch(`/api/os/${id}/apply-kit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kit_id: kitKey }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao aplicar kit')
+      const count = data.data?.length ?? 0
+      toast.success(`Kit aplicado: ${count} ${count === 1 ? 'item adicionado' : 'itens adicionados'}`)
+      setShowKitsPopover(false)
+      loadOS()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao aplicar kit')
+    } finally {
+      setApplyingKit(null)
     }
   }
 
@@ -406,6 +450,8 @@ export default function OSDetailPage() {
     setItemPrice('')
     setItemProductId(null)
     setShowQuickRegister(false)
+    setItemsAddedCount(0)
+    setShowAddedCheck(false)
   }
 
   if (loading) return <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-blue-500" /></div>
@@ -633,12 +679,57 @@ export default function OSDetailPage() {
             </div>
             <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Servicos ({servicos.length})</h2>
           </div>
-          {(!showAddItem || addItemSection !== 'SERVICO') && (
-            <button type="button" onClick={() => openAddItem('SERVICO')}
-              className="flex items-center gap-1.5 rounded-lg bg-amber-50 border border-amber-200 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100 transition-colors">
-              <Plus className="h-3.5 w-3.5" /> Adicionar servico
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {(!showAddItem || addItemSection !== 'SERVICO') && (
+              <button type="button" onClick={() => openAddItem('SERVICO')}
+                className="flex items-center gap-1.5 rounded-lg bg-amber-50 border border-amber-200 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100 transition-colors">
+                <Plus className="h-3.5 w-3.5" /> Adicionar servico
+              </button>
+            )}
+            <div className="relative">
+              <button type="button" onClick={() => setShowKitsPopover(!showKitsPopover)}
+                className="flex items-center gap-1.5 rounded-lg bg-purple-50 border border-purple-200 px-3 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-100 transition-colors">
+                <Layers className="h-3.5 w-3.5" /> Aplicar Kit
+              </button>
+              {showKitsPopover && (
+                <div className="absolute right-0 z-20 mt-1 w-72 bg-white border rounded-lg shadow-lg">
+                  <div className="p-2 border-b">
+                    <p className="text-xs font-semibold text-gray-500 uppercase">Kits disponiveis</p>
+                  </div>
+                  {kits.length === 0 ? (
+                    <div className="p-4 text-center text-sm text-gray-400">
+                      Nenhum kit cadastrado.
+                      <a href="/config/kits" className="block mt-1 text-purple-600 hover:underline text-xs">Criar kit</a>
+                    </div>
+                  ) : (
+                    <div className="max-h-64 overflow-y-auto">
+                      {kits.map(kit => {
+                        const kitData = typeof kit.value === 'string' ? JSON.parse(kit.value) : kit.value
+                        const itemCount = kitData.items?.length ?? 0
+                        const totalValue = (kitData.items ?? []).reduce((s: number, i: any) => s + (i.unit_price * (i.quantity || 1)), 0)
+                        return (
+                          <button key={kit.id} type="button"
+                            onClick={() => handleApplyKit(kit.key, kitData.name)}
+                            disabled={applyingKit === kit.key}
+                            className="w-full text-left px-3 py-2.5 hover:bg-purple-50 text-sm flex items-center justify-between border-b last:border-b-0 disabled:opacity-50">
+                            <div>
+                              <p className="font-medium text-gray-900">{kitData.name}</p>
+                              <p className="text-xs text-gray-500">{itemCount} {itemCount === 1 ? 'item' : 'itens'} &middot; {fmt(totalValue)}</p>
+                            </div>
+                            {applyingKit === kit.key ? (
+                              <Loader2 className="h-4 w-4 animate-spin text-purple-500" />
+                            ) : (
+                              <Plus className="h-4 w-4 text-purple-400" />
+                            )}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Servicos table */}
@@ -718,8 +809,10 @@ export default function OSDetailPage() {
               setItemProductId={setItemProductId}
               addingItem={addingItem}
               handleAddItem={handleAddItem}
-              onCancel={() => setShowAddItem(false)}
+              onCancel={() => { setShowAddItem(false); setItemsAddedCount(0) }}
               sectionType="SERVICO"
+              itemsAddedCount={itemsAddedCount}
+              showAddedCheck={showAddedCheck}
             />
           </div>
         )}
@@ -819,8 +912,10 @@ export default function OSDetailPage() {
               setItemProductId={setItemProductId}
               addingItem={addingItem}
               handleAddItem={handleAddItem}
-              onCancel={() => setShowAddItem(false)}
+              onCancel={() => { setShowAddItem(false); setItemsAddedCount(0) }}
               sectionType="PECA"
+              itemsAddedCount={itemsAddedCount}
+              showAddedCheck={showAddedCheck}
             />
           </div>
         )}
@@ -1213,9 +1308,11 @@ interface InlineAddItemFormProps {
   setItemPrice: (v: string) => void
   setItemProductId: (v: string | null) => void
   addingItem: boolean
-  handleAddItem: () => void
+  handleAddItem: (closeAfter?: boolean) => void
   onCancel: () => void
   sectionType: 'SERVICO' | 'PECA'
+  itemsAddedCount: number
+  showAddedCheck: boolean
 }
 
 function InlineAddItemForm({
@@ -1234,6 +1331,8 @@ function InlineAddItemForm({
   addingItem, handleAddItem,
   onCancel,
   sectionType,
+  itemsAddedCount,
+  showAddedCheck,
 }: InlineAddItemFormProps) {
   const isServico = sectionType === 'SERVICO'
   const borderColor = isServico ? 'border-amber-200' : 'border-blue-200'
@@ -1243,9 +1342,21 @@ function InlineAddItemForm({
   return (
     <div className={`rounded-lg border-2 ${borderColor} ${bgColor} p-4 space-y-3`}>
       <div className="flex items-center justify-between">
-        <h3 className="font-semibold text-gray-900 text-sm">
-          {isServico ? 'Adicionar Servico' : 'Adicionar Produto'}
-        </h3>
+        <div className="flex items-center gap-2">
+          <h3 className="font-semibold text-gray-900 text-sm">
+            {isServico ? 'Adicionar Servico' : 'Adicionar Produto'}
+          </h3>
+          {showAddedCheck && (
+            <span className="flex items-center gap-1 text-xs font-medium text-green-600 bg-green-100 px-2 py-0.5 rounded-full animate-pulse">
+              <Check className="h-3 w-3" /> Adicionado!
+            </span>
+          )}
+          {itemsAddedCount > 0 && (
+            <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+              {itemsAddedCount} {itemsAddedCount === 1 ? 'item adicionado' : 'itens adicionados'}
+            </span>
+          )}
+        </div>
         <button type="button" onClick={onCancel} title="Cancelar" className="text-gray-400 hover:text-gray-600 text-sm">
           <X className="h-4 w-4" />
         </button>
@@ -1341,11 +1452,17 @@ function InlineAddItemForm({
         </div>
       </div>
 
-      <button type="button" onClick={handleAddItem} disabled={addingItem}
-        className={`w-full py-2.5 ${btnColor} text-white rounded-lg disabled:opacity-50 text-sm font-medium flex items-center justify-center gap-2 transition-colors`}>
-        {addingItem && <Loader2 className="h-4 w-4 animate-spin" />}
-        {addingItem ? 'Adicionando...' : `Adicionar ao Orcamento`}
-      </button>
+      <div className="flex gap-2">
+        <button type="button" onClick={() => handleAddItem(false)} disabled={addingItem}
+          className={`flex-1 py-2.5 ${btnColor} text-white rounded-lg disabled:opacity-50 text-sm font-medium flex items-center justify-center gap-2 transition-colors`}>
+          {addingItem && <Loader2 className="h-4 w-4 animate-spin" />}
+          {addingItem ? 'Adicionando...' : 'Adicionar e Continuar'}
+        </button>
+        <button type="button" onClick={() => handleAddItem(true)} disabled={addingItem}
+          className="px-4 py-2.5 border-2 border-gray-300 text-gray-700 rounded-lg disabled:opacity-50 text-sm font-medium hover:bg-gray-50 transition-colors whitespace-nowrap">
+          Adicionar e Fechar
+        </button>
+      </div>
     </div>
   )
 }
