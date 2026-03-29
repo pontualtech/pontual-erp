@@ -40,42 +40,55 @@ export async function GET(
     const token = tokenSetting.value
 
     // Consultar API cpfcnpj.com.br
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 10000)
+    const url = `https://api.cpfcnpj.com.br/${token}/1/${cpf}`
+    console.log('[CPF API] Consultando:', url.replace(token, '***'))
 
-    const res = await fetch(`https://api.cpfcnpj.com.br/${token}/1/${cpf}`, {
-      signal: controller.signal,
-      cache: 'no-store',
-      headers: { 'Accept': 'application/json' },
-    })
-    clearTimeout(timeout)
-
-    if (!res.ok) {
-      return error('Erro ao consultar API CPF. Verifique seu token.', 502)
+    let res: Response
+    try {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 15000)
+      res = await fetch(url, {
+        signal: controller.signal,
+        cache: 'no-store',
+      })
+      clearTimeout(timeout)
+    } catch (fetchErr: any) {
+      console.error('[CPF API] Fetch error:', fetchErr?.message || fetchErr)
+      return error(`Erro de conexao com API CPF: ${fetchErr?.message || 'desconhecido'}`, 502)
     }
 
-    const data = await res.json()
+    let data: any
+    try {
+      const text = await res.text()
+      console.log('[CPF API] Response:', res.status, text.slice(0, 200))
+      data = JSON.parse(text)
+    } catch {
+      return error('Resposta invalida da API CPF', 502)
+    }
 
     // API retorna status=1 para sucesso, status=0 para erro
-    if (data.status !== 1 && data.status !== '1') {
-      if (data.erroCodigo === 100 || data.erroCodigo === 101) {
-        return error('CPF invalido', 400)
-      }
-      if (data.erroCodigo === 1000) {
-        return error('Token da API CPF invalido ou expirado. Verifique em Configuracoes.', 401)
-      }
-      return error(data.erro || 'CPF nao encontrado', 404)
+    if (data.status === 1 || data.status === '1') {
+      return success({
+        legal_name: data.nome || '',
+        document_number: cpf,
+        situacao: data.situacao || data.situacao_cadastral || '',
+        date_of_birth: data.data_nascimento || null,
+      })
     }
 
-    return success({
-      legal_name: data.nome || '',
-      document_number: cpf,
-      situacao: data.situacao || data.situacao_cadastral || '',
-      // A API basica retorna apenas nome e situacao
-      // Campos extras se disponíveis (plano avançado)
-      date_of_birth: data.data_nascimento || null,
-    })
+    // Erros conhecidos
+    if (data.erroCodigo === 100 || data.erroCodigo === 101) {
+      return error('CPF invalido', 400)
+    }
+    if (data.erroCodigo === 1000) {
+      return error('Token da API CPF invalido ou IP nao autorizado', 401)
+    }
+    if (data.erroCodigo === 102) {
+      return error('CPF nao encontrado na base de dados', 404)
+    }
+    return error(data.erro || 'Erro na consulta CPF', 400)
   } catch (err: any) {
+    console.error('[CPF API] Unexpected error:', err)
     if (err?.name === 'AbortError') {
       return error('Timeout na consulta CPF. Tente novamente.', 504)
     }
