@@ -86,6 +86,10 @@ export async function GET(
     if (data.erroCodigo === 102) {
       return error('CPF nao encontrado na base de dados', 404)
     }
+    // Créditos insuficientes ou saldo zerado
+    if (data.erro?.toLowerCase().includes('cr') && data.erro?.toLowerCase().includes('insuficiente')) {
+      return error('Creditos da API CPF esgotados. Recarregue em cpfcnpj.com.br', 402)
+    }
     return error(data.erro || 'Erro na consulta CPF', 400)
   } catch (err: any) {
     console.error('[CPF API] Unexpected error:', err)
