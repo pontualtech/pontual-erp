@@ -49,14 +49,27 @@ export async function POST(req: NextRequest, { params }: Params) {
       return error('Forma de pagamento é obrigatória para finalizar a OS', 400)
     }
 
+    // Se status destino é "Pronta", exigir técnico atribuído
+    const isPronta = toStatus.name.toLowerCase().includes('pronta')
+    if (isPronta && !os.technician_id) {
+      return error('É obrigatório atribuir um técnico antes de marcar como Pronta', 400)
+    }
+
     // Execute transition
+    const updateData: any = {
+      status_id: toStatusId,
+      ...(toStatus.is_final ? { actual_delivery: new Date() } : {}),
+    }
+
+    // Se Pronta, atualizar data de execução para agora
+    if (isPronta) {
+      updateData.actual_delivery = new Date()
+    }
+
     const [updated] = await prisma.$transaction([
       prisma.serviceOrder.update({
         where: { id: params.id },
-        data: {
-          status_id: toStatusId,
-          ...(toStatus.is_final ? { actual_delivery: new Date() } : {}),
-        },
+        data: updateData,
         include: { customers: true },
       }),
       prisma.serviceOrderHistory.create({
@@ -70,6 +83,29 @@ export async function POST(req: NextRequest, { params }: Params) {
         },
       }),
     ])
+
+    // Notificar atendentes quando OS fica "Pronta"
+    if (isPronta) {
+      const osNum = String(os.os_number).padStart(4, '0')
+      const customerName = os.customers?.legal_name || 'Cliente'
+      const techProfile = os.technician_id
+        ? await prisma.userProfile.findFirst({ where: { id: os.technician_id }, select: { name: true } })
+        : null
+      const techName = techProfile?.name || 'Não atribuído'
+      const equipDesc = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ')
+
+      await prisma.announcement.create({
+        data: {
+          company_id: user.companyId,
+          title: `🔧 OS-${osNum} PRONTA para entrega`,
+          message: `A OS-${osNum} do cliente ${customerName} (${equipDesc}) foi concluída pelo técnico ${techName} e está pronta para entrega/retirada.`,
+          priority: 'IMPORTANTE',
+          require_read: true,
+          author_name: 'Sistema',
+          created_by: user.id,
+        },
+      })
+    }
 
     // Auto-create AccountReceivable when delivering (final status, not cancelled)
     if (isFinalDelivery) {
