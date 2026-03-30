@@ -180,6 +180,34 @@ export async function POST(request: NextRequest, { params }: Params) {
         },
       })
 
+      // Notificar equipe via aviso interno
+      const osNum = String(os.os_number).padStart(4, '0')
+      const customerName = os.customers?.legal_name || 'Cliente'
+      const fmtValue = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format((os.total_cost || 0) / 100)
+      await prisma.announcement.create({
+        data: {
+          company_id: os.company_id,
+          title: `✅ Orçamento OS-${osNum} APROVADO`,
+          message: `O cliente ${customerName} aprovou o orçamento da OS-${osNum} no valor de ${fmtValue} pelo portal. A OS foi movida para "${approvedStatus.name}". Iniciar o reparo!`,
+          priority: 'IMPORTANTE',
+          require_read: true,
+          author_name: 'Sistema',
+          created_by: 'portal',
+        },
+      })
+
+      // Notificar via Chatwoot/WhatsApp se configurado (fire-and-forget)
+      try {
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || ''
+        if (appUrl) {
+          fetch(`${appUrl}/api/os/${os.id}/transition/notify`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: `Orçamento OS-${osNum} aprovado pelo cliente via portal. Valor: ${fmtValue}` }),
+          }).catch(() => {})
+        }
+      } catch {}
+
       return success({ action: 'approved', message: 'Orçamento aprovado com sucesso!' })
     }
 
@@ -241,6 +269,21 @@ export async function POST(request: NextRequest, { params }: Params) {
           total_cost: os.total_cost,
           reason: reason || null,
           rejected_via: 'portal',
+        },
+      })
+
+      // Notificar equipe via aviso interno
+      const osNum2 = String(os.os_number).padStart(4, '0')
+      const customerName2 = os.customers?.legal_name || 'Cliente'
+      await prisma.announcement.create({
+        data: {
+          company_id: os.company_id,
+          title: `❌ Orçamento OS-${osNum2} RECUSADO`,
+          message: `O cliente ${customerName2} recusou o orçamento da OS-${osNum2} pelo portal.${reason ? ` Motivo: "${reason}"` : ''} Entrar em contato para negociar.`,
+          priority: 'URGENTE',
+          require_read: true,
+          author_name: 'Sistema',
+          created_by: 'portal',
         },
       })
 
