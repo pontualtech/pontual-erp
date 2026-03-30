@@ -12,7 +12,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (result instanceof NextResponse) return result
     const user = result
 
-    const { toStatusId, notes, payment_method, installment_count: rawInstallmentCount } = await req.json()
+    const { toStatusId, notes, payment_method, installment_count: rawInstallmentCount, technician_id: bodyTechnicianId } = await req.json()
     const installment_count = Math.max(1, Math.min(120, parseInt(rawInstallmentCount) || 1))
     if (!toStatusId) return error('toStatusId é obrigatório', 400)
 
@@ -51,7 +51,8 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     // Se status destino é "Pronta", exigir técnico atribuído
     const isPronta = toStatus.name.toLowerCase().includes('pronta')
-    if (isPronta && !os.technician_id) {
+    const effectiveTechnicianId = os.technician_id || bodyTechnicianId || null
+    if (isPronta && !effectiveTechnicianId) {
       return error('É obrigatório atribuir um técnico antes de marcar como Pronta', 400)
     }
 
@@ -61,9 +62,12 @@ export async function POST(req: NextRequest, { params }: Params) {
       ...(toStatus.is_final ? { actual_delivery: new Date() } : {}),
     }
 
-    // Se Pronta, atualizar data de execução para agora
+    // Se Pronta, atualizar data de execução e técnico
     if (isPronta) {
       updateData.actual_delivery = new Date()
+      if (bodyTechnicianId && !os.technician_id) {
+        updateData.technician_id = bodyTechnicianId
+      }
     }
 
     const [updated] = await prisma.$transaction([

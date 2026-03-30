@@ -505,6 +505,7 @@ export default function OSDetailPage() {
       if (payment_method) body.payment_method = payment_method
       if (notes) body.notes = notes
       if (installments && installments > 1) body.installment_count = installments
+      if (editTechnicianId) body.technician_id = editTechnicianId
       const res = await fetch(`/api/os/${id}/transition`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
