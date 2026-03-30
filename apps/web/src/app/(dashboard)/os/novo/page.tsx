@@ -476,8 +476,8 @@ export default function NovaOSPage() {
 
       {/* Modal Novo Cliente */}
       {showNovoCliente && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowNovoCliente(false)}>
-          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 overflow-y-auto py-6">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl my-auto">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-gray-900">Cadastro Rapido de Cliente</h2>
               <button type="button" onClick={() => setShowNovoCliente(false)} className="rounded p-1 text-gray-400 hover:bg-gray-100">
@@ -590,6 +590,19 @@ function NovoClienteForm({ onCreated }: { onCreated: (c: Cliente) => void }) {
           toast.success('Dados da Receita Federal preenchidos!')
           return
         }
+      }
+      // CPF — consultar API paga (se habilitada)
+      if (digits.length === 11) {
+        try {
+          const cpfRes = await fetch(`/api/consulta/cpf/${digits}`)
+          const cpfData = await cpfRes.json()
+          if (cpfRes.ok && cpfData.data && cpfData.data.legal_name) {
+            setF(prev => ({ ...prev, person_type: 'FISICA', legal_name: cpfData.data.legal_name }))
+            setDocStatus('cnpj-filled'); setDocMessage(`${cpfData.data.situacao || 'Regular'} — ${cpfData.data.legal_name}`)
+            toast.success('Nome preenchido automaticamente!')
+            return
+          }
+        } catch { /* API nao habilitada — continuar sem preencher */ }
       }
       setDocStatus('not-found'); setDocMessage('Novo cliente — preencha os dados')
     } catch { setDocStatus('error'); setDocMessage('Erro ao consultar') }
