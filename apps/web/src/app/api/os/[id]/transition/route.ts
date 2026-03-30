@@ -62,9 +62,8 @@ export async function POST(req: NextRequest, { params }: Params) {
       ...(toStatus.is_final ? { actual_delivery: new Date() } : {}),
     }
 
-    // Se Pronta, atualizar data de execução e técnico
+    // Se Pronta, salvar técnico (data de conclusão fica no histórico de status)
     if (isPronta) {
-      updateData.actual_delivery = new Date()
       if (bodyTechnicianId && !os.technician_id) {
         updateData.technician_id = bodyTechnicianId
       }

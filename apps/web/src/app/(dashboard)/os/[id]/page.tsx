@@ -1378,8 +1378,21 @@ export default function OSDetailPage() {
             <DetailRow label="Criada em">
               <span className="text-sm text-gray-900">{new Date(os.created_at).toLocaleDateString('pt-BR')}</span>
             </DetailRow>
+            {(() => {
+              // Data de conclusão = quando transitou para status "Pronta" (do histórico)
+              const prontaEntry = os.service_order_history?.find(h => {
+                const st = statusList.find(s => s.id === h.to_status_id)
+                return st?.name?.toLowerCase().includes('pronta')
+              })
+              if (!prontaEntry) return null
+              return (
+                <DetailRow label="Concluida em">
+                  <span className="text-sm text-blue-700 font-medium">{new Date(prontaEntry.created_at).toLocaleDateString('pt-BR')}</span>
+                </DetailRow>
+              )
+            })()}
             {os.actual_delivery && (
-              <DetailRow label="Entregue">
+              <DetailRow label="Entregue em">
                 <span className="text-sm text-green-700 font-medium">{new Date(os.actual_delivery).toLocaleDateString('pt-BR')}</span>
               </DetailRow>
             )}
