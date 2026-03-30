@@ -123,6 +123,13 @@ export default function OSDetailPage() {
   const [printEmail, setPrintEmail] = useState('')
   const [sendingEmail, setSendingEmail] = useState(false)
 
+  // Quote email modal
+  const [showQuoteModal, setShowQuoteModal] = useState(false)
+  const [quoteEmail, setQuoteEmail] = useState('')
+  const [quotePreviewHtml, setQuotePreviewHtml] = useState('')
+  const [loadingQuotePreview, setLoadingQuotePreview] = useState(false)
+  const [sendingQuote, setSendingQuote] = useState(false)
+
   // Editable text fields (auto-save on blur)
   const [editDiagnosis, setEditDiagnosis] = useState('')
   const [editNotes, setEditNotes] = useState('')
@@ -421,6 +428,47 @@ export default function OSDetailPage() {
     setShowPrintModal(true)
   }
 
+  async function openQuoteModal() {
+    setQuoteEmail(os?.customers?.email || '')
+    setQuotePreviewHtml('')
+    setShowQuoteModal(true)
+    setLoadingQuotePreview(true)
+    try {
+      const res = await fetch(`/api/os/${id}/enviar-orcamento`)
+      if (res.ok) {
+        const html = await res.text()
+        setQuotePreviewHtml(html)
+      } else {
+        toast.error('Erro ao carregar preview do orcamento')
+      }
+    } catch {
+      toast.error('Erro ao carregar preview')
+    } finally {
+      setLoadingQuotePreview(false)
+    }
+  }
+
+  async function handleSendQuote() {
+    if (!quoteEmail) { toast.error('Informe o email do destinatario'); return }
+    setSendingQuote(true)
+    try {
+      const res = await fetch(`/api/os/${id}/enviar-orcamento`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: quoteEmail }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao enviar orcamento')
+      toast.success(`Orcamento enviado para ${quoteEmail}!`)
+      setShowQuoteModal(false)
+      loadOS()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao enviar orcamento')
+    } finally {
+      setSendingQuote(false)
+    }
+  }
+
   function getNextStatus(): StatusDef | null {
     if (!os) return null
     const current = statusMap[os.status_id]
@@ -604,6 +652,12 @@ export default function OSDetailPage() {
           {transitioning && <Loader2 className="h-4 w-4 animate-spin text-gray-400" />}
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {os.total_cost > 0 && os.customers?.email && (
+            <button type="button" onClick={openQuoteModal}
+              className="flex items-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors">
+              <Send className="h-4 w-4" /> Enviar Orcamento
+            </button>
+          )}
           <button type="button" onClick={openPrintModal}
             className="flex items-center gap-1.5 rounded-lg border border-green-300 bg-green-50 px-3 py-1.5 text-sm font-medium text-green-700 hover:bg-green-100 transition-colors">
             <Printer className="h-4 w-4" /> Imprimir
@@ -1511,6 +1565,62 @@ export default function OSDetailPage() {
       )}
 
       {/* ========== PRINT / EMAIL MODAL ========== */}
+      {/* ========== QUOTE EMAIL MODAL ========== */}
+      {showQuoteModal && os && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowQuoteModal(false)}>
+          <div className="w-full max-w-3xl max-h-[90vh] rounded-xl bg-white shadow-xl flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b shrink-0">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <Send className="h-5 w-5 text-blue-600" />
+                Enviar Orcamento - OS-{String(os.os_number).padStart(4, '0')}
+              </h2>
+              <button type="button" onClick={() => setShowQuoteModal(false)} title="Fechar" className="p-1 rounded-lg hover:bg-gray-100 text-gray-400">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-4 border-b shrink-0">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                <Mail className="h-3.5 w-3.5 inline mr-1" /> Para:
+              </label>
+              <input type="email" value={quoteEmail} onChange={e => setQuoteEmail(e.target.value)}
+                placeholder="email@exemplo.com"
+                className="w-full px-3 py-2 border rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-200" />
+            </div>
+
+            <div className="flex-1 overflow-auto p-4 bg-gray-50">
+              {loadingQuotePreview ? (
+                <div className="flex items-center justify-center py-20">
+                  <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+                  <span className="ml-2 text-sm text-gray-500">Carregando preview...</span>
+                </div>
+              ) : quotePreviewHtml ? (
+                <iframe
+                  srcDoc={quotePreviewHtml}
+                  className="w-full border rounded-lg bg-white"
+                  style={{ minHeight: '600px' }}
+                  title="Preview do orcamento"
+                />
+              ) : (
+                <p className="text-center text-gray-500 py-10">Erro ao carregar preview</p>
+              )}
+            </div>
+
+            <div className="flex gap-2 p-4 border-t shrink-0">
+              <button type="button" onClick={handleSendQuote} disabled={sendingQuote || !quoteEmail}
+                className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors">
+                {sendingQuote ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                {sendingQuote ? 'Enviando...' : 'Enviar Orcamento'}
+              </button>
+              <button type="button" onClick={() => setShowQuoteModal(false)}
+                className="px-4 py-2.5 border rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showPrintModal && os && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowPrintModal(false)}>
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
