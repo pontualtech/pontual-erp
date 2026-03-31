@@ -753,6 +753,22 @@ export default function OSDetailPage() {
             </span>
           ) : null}
           {transitioning && <Loader2 className="h-4 w-4 animate-spin text-gray-400" />}
+          {canEditType ? (
+            <select value={os.os_type || 'BALCAO'} title="Tipo de OS"
+              onChange={async e => {
+                await fetch(`/api/os/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ os_type: e.target.value }) })
+                loadOS()
+              }}
+              className="rounded-full px-3 py-1 text-xs font-medium border bg-gray-100 text-gray-700">
+              <option value="BALCAO">Balcao</option>
+              <option value="COLETA">Coleta</option>
+              <option value="ENTREGA">Entrega</option>
+              <option value="CAMPO">Campo</option>
+              <option value="REMOTO">Remoto</option>
+            </select>
+          ) : (
+            <span className="rounded-full px-3 py-1 text-xs font-medium bg-gray-100 text-gray-700">{os.os_type || 'BALCAO'}</span>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" onClick={openQuoteModal}
