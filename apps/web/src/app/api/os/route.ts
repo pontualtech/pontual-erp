@@ -34,6 +34,9 @@ export async function GET(req: NextRequest) {
     if (statusIds.length === 1) where.status_id = statusIds[0]
     else if (statusIds.length > 1) where.status_id = { in: statusIds }
 
+    const filterOsType = url.get('osType')
+    if (filterOsType) where.os_type = filterOsType
+
     const dateFrom = url.get('dateFrom')
     const dateTo = url.get('dateTo')
     if (dateFrom || dateTo) {

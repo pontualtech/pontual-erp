@@ -69,6 +69,22 @@ const priorityColor: Record<string, string> = {
   URGENT: 'text-red-600 font-semibold',
 }
 
+const osTypeLabel: Record<string, string> = {
+  BALCAO: 'Balcao',
+  COLETA: 'Coleta',
+  ENTREGA: 'Entrega',
+  CAMPO: 'Campo',
+  REMOTO: 'Remoto',
+}
+
+const osTypeColor: Record<string, string> = {
+  BALCAO: 'bg-blue-100 text-blue-700',
+  COLETA: 'bg-purple-100 text-purple-700',
+  ENTREGA: 'bg-green-100 text-green-700',
+  CAMPO: 'bg-amber-100 text-amber-700',
+  REMOTO: 'bg-cyan-100 text-cyan-700',
+}
+
 export default function OSListPage() {
   const { isAdmin } = useAuth()
   const [osList, setOsList] = useState<OS[]>([])
@@ -77,6 +93,7 @@ export default function OSListPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string[]>([])
+  const [typeFilter, setTypeFilter] = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [totalFiltered, setTotalFiltered] = useState(0)
@@ -107,7 +124,7 @@ export default function OSListPage() {
   // Load role-based visibility config
   useEffect(() => {
     if (isAdmin) {
-      setAllowedColumns(['os_number', 'created_at', 'customer', 'equipment_type', 'status', 'total_cost', 'financeiro', 'technician', 'priority'])
+      setAllowedColumns(['os_number', 'created_at', 'customer', 'equipment_type', 'os_type', 'status', 'total_cost', 'financeiro', 'technician', 'priority'])
       setOwnOnly(false)
       setVisibilityLoaded(true)
       return
@@ -195,6 +212,7 @@ export default function OSListPage() {
     if (search) params.set('search', search)
     if (statusFilter.length === 1) params.set('statusId', statusFilter[0])
     else if (statusFilter.length > 1) statusFilter.forEach(s => params.append('statusId', s))
+    if (typeFilter) params.set('osType', typeFilter)
     if (overdueFilter) params.set('overdue', 'true')
     if (ownOnly) params.set('own_only', 'true')
     if (dateFrom) params.set('dateFrom', dateFrom)
@@ -210,7 +228,7 @@ export default function OSListPage() {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { loadOS(); setSelected(new Set()) }, [search, statusFilter, overdueFilter, page, visibilityLoaded, ownOnly, dateFrom, dateTo])
+  useEffect(() => { loadOS(); setSelected(new Set()) }, [search, statusFilter, typeFilter, overdueFilter, page, visibilityLoaded, ownOnly, dateFrom, dateTo])
 
   function toggleSelect(id: string) {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -382,7 +400,7 @@ export default function OSListPage() {
 
   const allColumnLabels: Record<string, string> = {
     os_number: 'Nº', created_at: 'Data', customer: 'Cliente', equipment_type: 'Equip.',
-    status: 'Status', total_cost: 'Valor', financeiro: 'Financeiro', technician: 'Técnico', priority: 'Prioridade',
+    os_type: 'Tipo', status: 'Status', total_cost: 'Valor', financeiro: 'Financeiro', technician: 'Técnico', priority: 'Prioridade',
   }
 
   // Export selected OS to CSV
@@ -398,6 +416,7 @@ export default function OSListPage() {
         case 'created_at': return new Date(os.created_at).toLocaleDateString('pt-BR')
         case 'customer': return os.customers?.legal_name || ''
         case 'equipment_type': return os.equipment_type || ''
+        case 'os_type': return osTypeLabel[os.os_type] || os.os_type
         case 'status': return st?.name || ''
         case 'total_cost': return ((os.total_cost || 0) / 100).toFixed(2)
         case 'financeiro': return getFinanceStatus(os)?.label || ''
@@ -432,6 +451,7 @@ export default function OSListPage() {
           case 'created_at': return new Date(os.created_at).toLocaleDateString('pt-BR')
           case 'customer': return os.customers?.legal_name || ''
           case 'equipment_type': return os.equipment_type || ''
+          case 'os_type': return osTypeLabel[os.os_type] || os.os_type
           case 'status': return st?.name || ''
           case 'total_cost': return fmt(os.total_cost || 0)
           case 'financeiro': return getFinanceStatus(os)?.label || ''
@@ -542,6 +562,11 @@ export default function OSListPage() {
             </>
           )}
         </div>
+        <select title="Filtrar por tipo" value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setPage(1) }}
+          className={cn('rounded-md border px-2 py-1.5 text-xs', typeFilter ? 'bg-purple-50 border-purple-300 text-purple-700' : 'bg-white text-gray-600')}>
+          <option value="">Todos os Tipos</option>
+          {Object.entries(osTypeLabel).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
         <span className="text-gray-300">|</span>
         {/* Date filters */}
         <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1) }}
@@ -622,6 +647,7 @@ export default function OSListPage() {
                     { key: 'created_at', label: 'Data' },
                     { key: 'customer', label: 'Cliente' },
                     { key: 'equipment_type', label: 'Equip.' },
+                    { key: 'os_type', label: 'Tipo' },
                     { key: 'status', label: 'Status' },
                     { key: 'total_cost', label: 'Valor' },
                     { key: 'financeiro', label: 'Financeiro' },
@@ -681,6 +707,13 @@ export default function OSListPage() {
                         )}
                         {effectiveColumns.includes('equipment_type') && (
                           <td className="px-3 py-2.5 text-gray-700 text-xs">{os.equipment_type ?? '\u2014'}</td>
+                        )}
+                        {effectiveColumns.includes('os_type') && (
+                          <td className="px-3 py-2.5">
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${osTypeColor[os.os_type] || 'bg-gray-100 text-gray-700'}`}>
+                              {osTypeLabel[os.os_type] || os.os_type}
+                            </span>
+                          </td>
                         )}
                         {effectiveColumns.includes('status') && (
                           <td className="px-3 py-2.5">
