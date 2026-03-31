@@ -99,6 +99,9 @@ export default function OSListPage() {
   const [showStatusFilter, setShowStatusFilter] = useState(false)
   const [actionMenuId, setActionMenuId] = useState<string | null>(null)
   const [showBulkStatus, setShowBulkStatus] = useState(false)
+  const [nfseModalOS, setNfseModalOS] = useState<any>(null)
+  const [nfseDesc, setNfseDesc] = useState('')
+  const [emittingNfse, setEmittingNfse] = useState(false)
   const [bulkChanging, setBulkChanging] = useState(false)
 
   // Load role-based visibility config
@@ -288,6 +291,72 @@ export default function OSListPage() {
   function printSingleOS(osId: string) {
     window.open(`/os/${osId}?print=true`, '_blank')
     setActionMenuId(null)
+  }
+
+  async function openNfseFromList(os: any) {
+    setActionMenuId(null)
+    // Buscar template
+    let template = 'Reparo em {{equipamento}} marca {{marca}} modelo {{modelo}}, numero de serie {{serie}}, conforme ordem de servico numero {{os_number}}. Garantia {{garantia}} dias.'
+    let garantiaDias = '90'
+    try {
+      const res = await fetch('/api/settings/nfse-template')
+      if (res.ok) {
+        const data = await res.json()
+        if (data.template) template = data.template
+        if (data.garantia_dias) garantiaDias = data.garantia_dias
+      }
+    } catch {}
+
+    const desc = template
+      .replace(/\{\{equipamento\}\}/g, os.equipment_type || 'Impressora')
+      .replace(/\{\{marca\}\}/g, os.equipment_brand || '')
+      .replace(/\{\{modelo\}\}/g, os.equipment_model || '')
+      .replace(/\{\{serie\}\}/g, os.serial_number || 'N/A')
+      .replace(/\{\{os_number\}\}/g, String(os.os_number))
+      .replace(/\{\{garantia\}\}/g, garantiaDias)
+      .replace(/\{\{cliente\}\}/g, os.customers?.legal_name || '')
+      .replace(/\{\{itens\}\}/g, '')
+      .replace(/\{\{valor\}\}/g, `R$ ${((os.total_cost || 0) / 100).toFixed(2)}`)
+      .replace(/\s+/g, ' ').trim()
+
+    setNfseDesc(desc)
+    setNfseModalOS(os)
+  }
+
+  async function handleEmitirNfseFromList() {
+    const os = nfseModalOS
+    if (!os || emittingNfse) return
+    if ((os.total_cost || 0) <= 0) { toast.error('OS sem valor'); return }
+    if (!os.customers?.document_number) { toast.error('Cliente sem CPF/CNPJ'); return }
+
+    setEmittingNfse(true)
+    try {
+      const res = await fetch('/api/fiscal/emitir-nfse-sp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer_id: os.customer_id,
+          service_order_id: os.id,
+          description: nfseDesc,
+          service_code: '07498',
+          total_amount: os.total_cost,
+          aliquota_iss: 0.05,
+          iss_retido: false,
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success(`NFS-e #${data.numero_nfse} emitida!`)
+        setNfseModalOS(null)
+        if (data.link_nfse) window.open(data.link_nfse, '_blank')
+      } else {
+        toast.error(data.erros?.map((e: any) => `[${e.codigo}] ${e.mensagem}`).join('\n') || data.error || 'Erro')
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao emitir NFS-e')
+    } finally {
+      setEmittingNfse(false)
+    }
   }
 
   async function bulkChangeStatus(targetStatusId: string) {
@@ -682,6 +751,10 @@ export default function OSListPage() {
                                   className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 w-full">
                                   <Printer className="h-4 w-4 text-gray-400" /> Imprimir Ordem
                                 </button>
+                                <button type="button" onClick={() => openNfseFromList(os)}
+                                  className="flex items-center gap-2 px-3 py-2 text-sm text-purple-700 hover:bg-purple-50 w-full">
+                                  <Receipt className="h-4 w-4 text-purple-400" /> Emitir NFS-e
+                                </button>
                                 <button type="button" onClick={() => {
                                   const line = `OS-${String(os.os_number).padStart(4, '0')} | ${os.customers?.legal_name || ''} | ${st?.name || ''} | ${fmt(os.total_cost || 0)}`
                                   window.open(`mailto:?subject=${encodeURIComponent(`OS-${String(os.os_number).padStart(4, '0')}`)}&body=${encodeURIComponent(line)}`)
@@ -930,6 +1003,46 @@ export default function OSListPage() {
                 {bulkDeleting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 {bulkDeleting ? 'Excluindo...' : `Excluir ${selected.size}`}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* NFS-e Quick Modal */}
+      {nfseModalOS && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => !emittingNfse && setNfseModalOS(null)}>
+          <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <Receipt className="h-5 w-5 text-purple-600" />
+                Emitir NFS-e - OS-{String(nfseModalOS.os_number).padStart(4, '0')}
+              </h2>
+              <button type="button" title="Fechar" onClick={() => setNfseModalOS(null)} disabled={emittingNfse} className="p-1 rounded-lg hover:bg-gray-100 text-gray-400">
+                <SearchX className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div className="rounded-lg bg-gray-50 p-3 text-sm space-y-1">
+                <div className="flex justify-between"><span className="text-gray-500">Cliente:</span><span className="font-medium">{nfseModalOS.customers?.legal_name}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">CPF/CNPJ:</span><span className="font-medium">{nfseModalOS.customers?.document_number || 'Nao informado'}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Equipamento:</span><span className="font-medium">{nfseModalOS.equipment_type || '-'}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Valor:</span><span className="font-bold text-green-700">{fmt(nfseModalOS.total_cost || 0)}</span></div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Discriminacao do Servico</label>
+                <textarea value={nfseDesc} onChange={e => setNfseDesc(e.target.value)} rows={4}
+                  placeholder="Descricao do servico prestado..."
+                  className="w-full rounded-lg border px-3 py-2 text-sm focus:border-purple-500 focus:ring-1 focus:ring-purple-500" />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-4">
+              <button type="button" onClick={handleEmitirNfseFromList} disabled={emittingNfse || !nfseDesc || (nfseModalOS.total_cost || 0) <= 0}
+                className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50">
+                {emittingNfse ? <Loader2 className="h-4 w-4 animate-spin" /> : <Receipt className="h-4 w-4" />}
+                {emittingNfse ? 'Emitindo...' : 'Emitir NFS-e'}
+              </button>
+              <button type="button" onClick={() => setNfseModalOS(null)} disabled={emittingNfse}
+                className="px-4 py-2.5 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
             </div>
           </div>
         </div>
