@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Building2, Users, Shield, Tag, Wrench, Bell, Database, Palette, Landmark, FileText, PrinterIcon, FileKey, MessageSquare, Search, Layers, Eye, Mail, Clock } from 'lucide-react'
+import { Building2, Users, Shield, Tag, Wrench, Bell, Database, Palette, Landmark, FileText, PrinterIcon, FileKey, MessageSquare, Search, Layers, Eye, Mail, Clock, RefreshCw } from 'lucide-react'
 
 const sections = [
   {
@@ -32,6 +32,7 @@ const sections = [
       { label: 'NFS-e / Fiscal', href: '/fiscal/config', icon: FileText, desc: 'Focus NFe, inscricao municipal, aliquota' },
       { label: 'Certificado A1', href: '/config/certificado', icon: FileKey, desc: 'Instalar certificado digital para NF-e/NFS-e' },
       { label: 'Chatwoot / WhatsApp', href: '/integracoes/chatwoot', icon: MessageSquare, desc: 'Conversas e mensagens via WhatsApp' },
+      { label: 'Sincronizar VHSys', href: '/config/sync-vhsys', icon: RefreshCw, desc: 'Importar OS, clientes e servicos do VHSys' },
       { label: 'Cobrança Automática', href: '/config/cobranca', icon: Mail, desc: 'Lembrete de pagamento por email' },
       { label: 'Email de Orcamento', href: '/config/orcamento-email', icon: FileText, desc: 'Template e condicoes do orcamento por email' },
       { label: 'Lembrete Orcamento', href: '/config/lembrete-orcamento', icon: Clock, desc: 'Lembrete automatico para orcamentos pendentes' },
