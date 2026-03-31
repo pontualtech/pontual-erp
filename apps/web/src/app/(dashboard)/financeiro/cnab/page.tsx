@@ -33,6 +33,8 @@ export default function CNABPage() {
   const [conta, setConta] = useState('')
   const [convenio, setConvenio] = useState('')
   const [carteira, setCarteira] = useState('112')
+  const [interClientId, setInterClientId] = useState('')
+  const [interClientSecret, setInterClientSecret] = useState('')
 
   useEffect(() => {
     fetch('/api/settings/cnab-config')
@@ -44,6 +46,8 @@ export default function CNABPage() {
         if (d.conta) setConta(d.conta)
         if (d.convenio) setConvenio(d.convenio)
         if (d.carteira) setCarteira(d.carteira)
+        if (d.inter_client_id) setInterClientId(d.inter_client_id)
+        if (d.inter_client_secret) setInterClientSecret(d.inter_client_secret)
       })
       .finally(() => setLoading(false))
   }, [])
@@ -107,7 +111,7 @@ export default function CNABPage() {
       const res = await fetch('/api/settings/cnab-config', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cnpj, razao_social: razaoSocial, agencia, conta, convenio, carteira }),
+        body: JSON.stringify({ cnpj, razao_social: razaoSocial, agencia, conta, convenio, carteira, inter_client_id: interClientId, inter_client_secret: interClientSecret }),
       })
       if (res.ok) toast.success('Configuracao salva!')
       else toast.error('Erro ao salvar')
@@ -284,6 +288,23 @@ export default function CNABPage() {
                       className="w-full rounded-lg border px-3 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500" />
                     <p className="mt-1 text-xs text-gray-400">112 = Cobranca registrada Inter</p>
                   </div>
+                </div>
+
+                <div className="border-t pt-4 mt-4">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">API Banco Inter (para emissao online de boletos)</h3>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Client ID</label>
+                      <input value={interClientId} onChange={e => setInterClientId(e.target.value)} placeholder="Client ID da API Inter"
+                        className="w-full rounded-lg border px-3 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Client Secret</label>
+                      <input type="password" value={interClientSecret} onChange={e => setInterClientSecret(e.target.value)} placeholder="Client Secret da API Inter"
+                        className="w-full rounded-lg border px-3 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500" />
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs text-gray-400">Obtido no painel de desenvolvedores do Banco Inter. Usa o mesmo certificado A1 do modulo fiscal (mTLS).</p>
                 </div>
                 <div className="flex justify-end pt-2">
                   <button onClick={handleSaveConfig} disabled={saving}

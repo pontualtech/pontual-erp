@@ -5,29 +5,30 @@ import { StoneBoletoProvider } from './provider-stone'
 
 export type { BoletoProvider, BoletoInput, BoletoResult, BoletoStatus, BoletoRecord } from './types'
 
-const providers: Record<string, () => BoletoProvider> = {
-  inter: () => new InterBoletoProvider(),
-  itau: () => new ItauBoletoProvider(),
-  stone: () => new StoneBoletoProvider(),
+export interface InterConfig {
+  clientId: string
+  clientSecret: string
+  pfxBase64: string
+  pfxPassword: string
 }
 
 /**
  * Factory function to get the appropriate boleto provider
- * Provider name should match a setting stored in the Settings table
- * with key 'boleto.provider'
  */
-export function getBoletoProvider(providerName: string): BoletoProvider {
-  const factory = providers[providerName.toLowerCase()]
-  if (!factory) {
-    const available = Object.keys(providers).join(', ')
-    throw new Error(
-      `Provedor de boleto "${providerName}" nao encontrado. Disponiveis: ${available}`
-    )
+export function getBoletoProvider(providerName: string, config?: InterConfig): BoletoProvider {
+  switch (providerName.toLowerCase()) {
+    case 'inter':
+      return new InterBoletoProvider(config)
+    case 'itau':
+      return new ItauBoletoProvider()
+    case 'stone':
+      return new StoneBoletoProvider()
+    default:
+      throw new Error(`Provedor de boleto "${providerName}" nao encontrado. Disponiveis: inter, itau, stone`)
   }
-  return factory()
 }
 
 /** List all available provider names */
 export function listBoletoProviders(): string[] {
-  return Object.keys(providers)
+  return ['inter', 'itau', 'stone']
 }

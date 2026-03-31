@@ -32,7 +32,7 @@ function parseDate(dateStr: string | null | undefined): Date | null {
 // ====== Main sync ======
 
 export async function POST(req: NextRequest) {
-  const auth = await requirePermission('config', 'manage')
+  const auth = await requirePermission('config', 'edit')
   if (auth instanceof NextResponse) return auth
   const user = auth
 

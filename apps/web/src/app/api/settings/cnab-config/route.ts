@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { getServerUser, requirePermission } from '@/lib/auth'
 
-const KEYS = ['cnab.cnpj', 'cnab.razao_social', 'cnab.agencia', 'cnab.conta', 'cnab.convenio', 'cnab.carteira']
+const KEYS = ['cnab.cnpj', 'cnab.razao_social', 'cnab.agencia', 'cnab.conta', 'cnab.convenio', 'cnab.carteira', 'inter.client_id', 'inter.client_secret']
 const KEY_MAP: Record<string, string> = {
   cnpj: 'cnab.cnpj',
   razao_social: 'cnab.razao_social',
@@ -10,6 +10,8 @@ const KEY_MAP: Record<string, string> = {
   conta: 'cnab.conta',
   convenio: 'cnab.convenio',
   carteira: 'cnab.carteira',
+  inter_client_id: 'inter.client_id',
+  inter_client_secret: 'inter.client_secret',
 }
 
 export async function GET() {
@@ -30,7 +32,7 @@ export async function GET() {
 }
 
 export async function PUT(req: NextRequest) {
-  const auth = await requirePermission('config', 'manage')
+  const auth = await requirePermission('config', 'edit')
   if (auth instanceof NextResponse) return auth
   const user = auth
 

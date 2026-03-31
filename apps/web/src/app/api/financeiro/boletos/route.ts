@@ -187,8 +187,39 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    const providerName = providerSetting?.value || 'inter'
-    const provider = getBoletoProvider(providerName)
+    const providerName = body.provider || providerSetting?.value || 'inter'
+
+    // Buscar credenciais do Inter do certificado fiscal + settings
+    let interConfig: any = undefined
+    if (providerName === 'inter') {
+      const fiscalCfg = await prisma.fiscalConfig.findUnique({ where: { company_id: user.companyId } })
+      const settings = (fiscalCfg?.settings || {}) as Record<string, any>
+      const interSettings = await prisma.setting.findMany({
+        where: { company_id: user.companyId, key: { in: ['inter.client_id', 'inter.client_secret'] } },
+      })
+      const interMap: Record<string, string> = {}
+      interSettings.forEach(s => { interMap[s.key] = s.value })
+
+      const clientId = interMap['inter.client_id'] || process.env.INTER_CLIENT_ID || ''
+      const clientSecret = interMap['inter.client_secret'] || process.env.INTER_CLIENT_SECRET || ''
+
+      if (!clientId || !clientSecret) {
+        return NextResponse.json({ error: 'Client ID e Client Secret do Banco Inter não configurados. Vá em Financeiro > CNAB > Configuração.' }, { status: 400 })
+      }
+      if (!settings.certificate_base64) {
+        return NextResponse.json({ error: 'Certificado A1 não instalado. Vá em Configurações > Certificado A1.' }, { status: 400 })
+      }
+
+      let certPassword = ''
+      if (settings.certificate_password) {
+        const { decrypt } = await import('@/lib/encryption')
+        certPassword = decrypt(settings.certificate_password)
+      }
+
+      interConfig = { clientId, clientSecret, pfxBase64: settings.certificate_base64, pfxPassword: certPassword }
+    }
+
+    const provider = getBoletoProvider(providerName, interConfig)
 
     // Generate boleto
     const boletoResult = await provider.generateBoleto({
