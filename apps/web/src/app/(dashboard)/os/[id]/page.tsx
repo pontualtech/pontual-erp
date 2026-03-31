@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
+import { useAuth } from '@/lib/use-auth'
 import { ArrowLeft, Edit, Camera, History, Info, Package, Plus, Trash2, Loader2, Search, Wrench, CreditCard, X, Printer, Mail, Send, Copy, FilePlus, User, Monitor, FileText, Clock, ChevronDown, ChevronUp, AlertTriangle, Save, Check, Layers, DollarSign, ExternalLink, Receipt } from 'lucide-react'
 
 interface Customer {
@@ -78,6 +79,9 @@ function fmt(cents: number) {
 export default function OSDetailPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
+  const { isAdmin, hasPermission } = useAuth()
+  const canTransition = isAdmin || hasPermission('os', 'transition')
+  const canEditType = isAdmin || hasPermission('os', 'edit_type')
   const [os, setOs] = useState<OSDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [statusMap, setStatusMap] = useState<Record<string, StatusDef>>({})
@@ -704,7 +708,7 @@ export default function OSDetailPage() {
           <h1 className="text-xl font-bold text-gray-900 tracking-tight font-mono">
             OS-{String(os.os_number).padStart(4, '0')}
           </h1>
-          {currentStatus && (
+          {currentStatus && canTransition ? (
             <select
               value={os.status_id}
               disabled={transitioning}
@@ -742,7 +746,11 @@ export default function OSDetailPage() {
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}
             </select>
-          )}
+          ) : currentStatus ? (
+            <span className="rounded-full px-3 py-1.5 text-xs font-semibold text-white" style={{ backgroundColor: currentStatus.color }}>
+              {currentStatus.name}
+            </span>
+          ) : null}
           {transitioning && <Loader2 className="h-4 w-4 animate-spin text-gray-400" />}
         </div>
         <div className="flex flex-wrap items-center gap-2">
