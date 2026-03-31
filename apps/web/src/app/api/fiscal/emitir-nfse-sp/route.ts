@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
-import { emitirNfseSP, type PrefeituraSPConfig } from '@/lib/nfse/prefeitura-sp'
 import { decrypt } from '@/lib/encryption'
 import { z } from 'zod'
 
@@ -17,6 +16,7 @@ const emitirSchema = z.object({
 })
 
 export async function POST(req: NextRequest) {
+  try {
   const auth = await requirePermission('fiscal', 'manage')
   if (auth instanceof NextResponse) return auth
   const user = auth
@@ -94,7 +94,8 @@ export async function POST(req: NextRequest) {
   })
 
   // 5. Emitir via Prefeitura SP
-  const spConfig: PrefeituraSPConfig = {
+  const { emitirNfseSP } = await import('@/lib/nfse/prefeitura-sp')
+  const spConfig = {
     environment: (config.environment as 'homologacao' | 'producao') || 'homologacao',
     cnpj: settings.cnpj,
     inscricaoMunicipal: settings.inscricaoMunicipal,
@@ -178,4 +179,8 @@ export async function POST(req: NextRequest) {
     status: resultado.sucesso ? 'AUTHORIZED' : 'REJECTED',
     erros: resultado.erros,
   })
+  } catch (e: any) {
+    console.error('ERRO emitir-nfse-sp:', e)
+    return NextResponse.json({ success: false, error: e.message || 'Erro interno ao emitir NFS-e' }, { status: 500 })
+  }
 }
