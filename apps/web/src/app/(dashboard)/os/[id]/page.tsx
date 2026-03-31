@@ -79,9 +79,10 @@ function fmt(cents: number) {
 export default function OSDetailPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
-  const { isAdmin, hasPermission } = useAuth()
-  const canTransition = isAdmin || hasPermission('os', 'transition')
-  const canEditType = isAdmin || hasPermission('os', 'edit_type')
+  const { user, isAdmin, hasPermission } = useAuth()
+  // Enquanto user nao carregou, mostrar select (API valida no backend)
+  const canTransition = !user || isAdmin || hasPermission('os', 'transition')
+  const canEditType = !user || isAdmin || hasPermission('os', 'edit_type')
   const [os, setOs] = useState<OSDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [statusMap, setStatusMap] = useState<Record<string, StatusDef>>({})
