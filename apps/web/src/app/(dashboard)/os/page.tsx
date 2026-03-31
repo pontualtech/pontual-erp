@@ -835,7 +835,7 @@ export default function OSListPage() {
                                 {effectiveColumns.includes('financeiro') && (
                                   <>
                                     <div className="border-t my-1" />
-                                    <Link href={`/financeiro/contas-receber?search=OS-${String(os.os_number).padStart(4, '0')}`} onClick={() => setActionMenuId(null)}
+                                    <Link href={`/financeiro/contas-receber?customerId=${os.customer_id || ''}&search=${os.customers?.legal_name || ''}`} onClick={() => setActionMenuId(null)}
                                       className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 w-full">
                                       <Receipt className="h-4 w-4 text-gray-400" /> Ver Financeiro
                                     </Link>

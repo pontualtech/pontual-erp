@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   Plus, Search, Eye, Pencil, Trash2, DollarSign,
   AlertTriangle, Clock, CheckCircle2, CalendarClock, X, Loader2, Zap,
@@ -96,6 +96,7 @@ const statusConfig: Record<string, { label: string; color: string }> = {
 
 export default function ContasReceberPage() {
   const router = useRouter()
+  const urlParams = useSearchParams()
   const { isAdmin } = useAuth()
   const [contas, setContas] = useState<ContaReceber[]>([])
   const [loading, setLoading] = useState(true)
@@ -104,8 +105,9 @@ export default function ContasReceberPage() {
   const [total, setTotal] = useState(0)
   const [summary, setSummary] = useState<Summary | null>(null)
 
-  // Filters
-  const [search, setSearch] = useState('')
+  // Filters (inicializar da URL se vier de outra pagina)
+  const [search, setSearch] = useState(urlParams.get('search') || '')
+  const [customerIdFilter] = useState(urlParams.get('customerId') || '')
   const [statusFilter, setStatusFilter] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
@@ -279,6 +281,7 @@ export default function ContasReceberPage() {
     if (dateType !== 'vencimento') params.set('dateType', dateType)
     if (valueMin) params.set('valueMin', String(Math.round(Number(valueMin) * 100)))
     if (valueMax) params.set('valueMax', String(Math.round(Number(valueMax) * 100)))
+    if (customerIdFilter) params.set('customerId', customerIdFilter)
 
     fetch(`/api/financeiro/contas-receber?${params}`)
       .then(r => r.json())
@@ -291,7 +294,7 @@ export default function ContasReceberPage() {
       })
       .catch(() => toast.error('Erro ao carregar contas'))
       .finally(() => setLoading(false))
-  }, [page, search, statusFilter, startDate, endDate, paymentMethodFilter, categoryFilter, dateType, valueMin, valueMax])
+  }, [page, search, statusFilter, startDate, endDate, paymentMethodFilter, categoryFilter, dateType, valueMin, valueMax, customerIdFilter])
 
   useEffect(() => { loadContas(); setSelected(new Set()) }, [loadContas])
 
