@@ -307,8 +307,20 @@ export default function OSListPage() {
 
   // Quick actions for single OS
   function printSingleOS(osId: string) {
-    window.open(`/os/${osId}?print=true`, '_blank')
     setActionMenuId(null)
+    const printWindow = window.open('', '_blank')
+    if (!printWindow) { toast.error('Popup bloqueado — permita popups'); return }
+    printWindow.document.write('<html><body><p>Carregando...</p></body></html>')
+
+    fetch(`/api/os/${osId}/print`)
+      .then(r => r.text())
+      .then(html => {
+        printWindow.document.open()
+        printWindow.document.write(html)
+        printWindow.document.close()
+        printWindow.onload = () => { printWindow.print() }
+      })
+      .catch(() => { printWindow.close(); toast.error('Erro ao carregar impressao') })
   }
 
   async function openNfseFromList(os: any) {
