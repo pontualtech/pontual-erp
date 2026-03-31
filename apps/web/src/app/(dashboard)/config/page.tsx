@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Building2, Users, Shield, Tag, Wrench, Bell, Database, Palette, Landmark, FileText, PrinterIcon, FileKey, MessageSquare, Search, Layers, Eye, Mail, Clock, RefreshCw } from 'lucide-react'
+import { Building2, Users, Shield, Tag, Wrench, Bell, Database, Palette, Landmark, FileText, PrinterIcon, FileKey, MessageSquare, Search, Layers, Eye, Mail, Clock, RefreshCw, Receipt } from 'lucide-react'
 
 const sections = [
   {
@@ -36,6 +36,7 @@ const sections = [
       { label: 'Cobrança Automática', href: '/config/cobranca', icon: Mail, desc: 'Lembrete de pagamento por email' },
       { label: 'Email de Orcamento', href: '/config/orcamento-email', icon: FileText, desc: 'Template e condicoes do orcamento por email' },
       { label: 'Lembrete Orcamento', href: '/config/lembrete-orcamento', icon: Clock, desc: 'Lembrete automatico para orcamentos pendentes' },
+      { label: 'Template NFS-e', href: '/config/nfse-template', icon: Receipt, desc: 'Texto da discriminacao do servico na nota fiscal' },
     ],
   },
   {

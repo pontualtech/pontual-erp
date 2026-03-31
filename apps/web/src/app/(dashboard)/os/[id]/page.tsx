@@ -433,13 +433,40 @@ export default function OSDetailPage() {
     setShowPrintModal(true)
   }
 
-  function openNfseModal() {
+  async function openNfseModal() {
     if (!os) return
-    // Montar discriminação a partir dos itens da OS
+
+    // Buscar template de discriminação e garantia das configurações
+    let template = 'Reparo em {{equipamento}} marca {{marca}} modelo {{modelo}}, numero de serie {{serie}}, conforme ordem de servico numero {{os_number}}. Garantia {{garantia}} dias.'
+    let garantiaDias = '90'
+    try {
+      const res = await fetch('/api/settings/nfse-template')
+      if (res.ok) {
+        const data = await res.json()
+        if (data.template) template = data.template
+        if (data.garantia_dias) garantiaDias = data.garantia_dias
+      }
+    } catch {}
+
+    // Montar itens da OS
     const itens = (os.service_order_items || [])
-      .map((i: OSItem) => `${i.description} (${i.quantity}x R$ ${(i.unit_price / 100).toFixed(2)})`)
-      .join('; ')
-    setNfseDescription(itens || `Servico de assistencia tecnica - OS ${os.os_number}`)
+      .map((i: OSItem) => `- ${i.description} (${i.quantity}x R$ ${(i.unit_price / 100).toFixed(2)})`)
+      .join('\n')
+
+    // Substituir variáveis no template
+    const discriminacao = template
+      .replace(/\{\{equipamento\}\}/g, os.equipment_type || 'Impressora')
+      .replace(/\{\{marca\}\}/g, os.equipment_brand || '')
+      .replace(/\{\{modelo\}\}/g, os.equipment_model || '')
+      .replace(/\{\{serie\}\}/g, os.serial_number || 'N/A')
+      .replace(/\{\{os_number\}\}/g, String(os.os_number))
+      .replace(/\{\{garantia\}\}/g, garantiaDias)
+      .replace(/\{\{cliente\}\}/g, os.customers?.legal_name || '')
+      .replace(/\{\{itens\}\}/g, itens)
+      .replace(/\{\{valor\}\}/g, `R$ ${(os.total_cost / 100).toFixed(2)}`)
+      .replace(/\s+/g, ' ').trim()
+
+    setNfseDescription(discriminacao)
     setShowNfseModal(true)
   }
 
