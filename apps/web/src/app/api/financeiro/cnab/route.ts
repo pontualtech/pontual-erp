@@ -12,7 +12,7 @@ import { gerarRemessaCNAB240, parsearRetornoCNAB240, type BoletoRemessa, type Ce
  */
 export async function GET(req: NextRequest) {
   try {
-    const auth = await requirePermission('fiscal', 'manage')
+    const auth = await requirePermission('fiscal', 'create')
     if (auth instanceof NextResponse) return auth
     const user = auth
 
@@ -137,7 +137,7 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   try {
-    const auth = await requirePermission('fiscal', 'manage')
+    const auth = await requirePermission('fiscal', 'create')
     if (auth instanceof NextResponse) return auth
     const user = auth
 

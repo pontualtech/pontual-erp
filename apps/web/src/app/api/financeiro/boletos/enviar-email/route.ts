@@ -5,7 +5,7 @@ import { sendEmail } from '@/lib/send-email'
 
 export async function POST(req: NextRequest) {
   try {
-    const auth = await requirePermission('fiscal', 'manage')
+    const auth = await requirePermission('fiscal', 'create')
     if (auth instanceof NextResponse) return auth
     const user = auth
 
