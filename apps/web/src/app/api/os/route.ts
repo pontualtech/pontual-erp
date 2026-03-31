@@ -70,6 +70,7 @@ export async function GET(req: NextRequest) {
         orderBy: { created_at: 'desc' },
         include: {
           customers: { select: { id: true, legal_name: true, phone: true, document_number: true } },
+          module_statuses: { select: { id: true, name: true, color: true } },
           user_profiles: { select: { id: true, name: true } },
           accounts_receivable: {
             where: { deleted_at: null },

@@ -31,7 +31,8 @@ interface OS {
   estimated_delivery: string | null
   actual_delivery: string | null
   created_at: string
-  customers: { id: string; legal_name: string; phone: string | null } | null
+  customers: { id: string; legal_name: string; phone: string | null; document_number: string | null } | null
+  module_statuses: { id: string; name: string; color: string } | null
   user_profiles: { id: string; name: string } | null
   accounts_receivable: { id: string; status: string; total_amount: number; received_amount: number | null }[]
 }
@@ -690,7 +691,7 @@ export default function OSListPage() {
                   </td></tr>
                 ) : (
                   getSortedList().map(os => {
-                    const st = statusMap[os.status_id]
+                    const st = os.module_statuses || statusMap[os.status_id]
                     return (
                       <tr key={os.id} className={cn(
                         'hover:bg-gray-50',
