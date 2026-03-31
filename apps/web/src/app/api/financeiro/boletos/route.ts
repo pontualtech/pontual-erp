@@ -219,7 +219,23 @@ export async function POST(request: NextRequest) {
       interConfig = { clientId, clientSecret, pfxBase64: settings.certificate_base64, pfxPassword: certPassword }
     }
 
-    const provider = getBoletoProvider(providerName, interConfig)
+    // Buscar credenciais da Stone
+    let stoneConfig: any = undefined
+    if (providerName === 'stone') {
+      const stoneSettings = await prisma.setting.findMany({
+        where: { company_id: user.companyId, key: { in: ['stone.api_key', 'stone.account_id'] } },
+      })
+      const stoneMap: Record<string, string> = {}
+      stoneSettings.forEach(s => { stoneMap[s.key] = s.value })
+
+      const apiKey = stoneMap['stone.api_key'] || process.env.STONE_API_KEY || ''
+      if (!apiKey) {
+        return NextResponse.json({ error: 'API Key da Stone nao configurada. Va em Financeiro > CNAB > Configuracao.' }, { status: 400 })
+      }
+      stoneConfig = { apiKey, accountId: stoneMap['stone.account_id'] || '' }
+    }
+
+    const provider = getBoletoProvider(providerName, interConfig || stoneConfig)
 
     // Generate boleto
     const boletoResult = await provider.generateBoleto({

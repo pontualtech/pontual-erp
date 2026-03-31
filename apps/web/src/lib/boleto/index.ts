@@ -12,17 +12,22 @@ export interface InterConfig {
   pfxPassword: string
 }
 
+export interface StoneConfig {
+  apiKey: string
+  accountId: string
+}
+
 /**
  * Factory function to get the appropriate boleto provider
  */
-export function getBoletoProvider(providerName: string, config?: InterConfig): BoletoProvider {
+export function getBoletoProvider(providerName: string, config?: InterConfig | StoneConfig): BoletoProvider {
   switch (providerName.toLowerCase()) {
     case 'inter':
-      return new InterBoletoProvider(config)
+      return new InterBoletoProvider(config as InterConfig)
     case 'itau':
       return new ItauBoletoProvider()
     case 'stone':
-      return new StoneBoletoProvider()
+      return new StoneBoletoProvider(config as StoneConfig)
     default:
       throw new Error(`Provedor de boleto "${providerName}" nao encontrado. Disponiveis: inter, itau, stone`)
   }
