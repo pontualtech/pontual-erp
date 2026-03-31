@@ -140,7 +140,7 @@ export default function OSListPage() {
         }
       })
       .catch(() => {
-        setAllowedColumns(['os_number', 'created_at', 'customer', 'equipment_type', 'status', 'technician', 'priority'])
+        setAllowedColumns(['os_number', 'created_at', 'customer', 'equipment_type', 'os_type', 'status', 'total_cost', 'financeiro', 'technician', 'priority'])
       })
       .finally(() => setVisibilityLoaded(true))
   }, [isAdmin])

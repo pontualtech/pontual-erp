@@ -4,14 +4,14 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 
 const ALL_COLUMNS = [
-  'os_number', 'created_at', 'customer', 'equipment_type',
+  'os_number', 'created_at', 'customer', 'equipment_type', 'os_type',
   'status', 'total_cost', 'financeiro', 'technician', 'priority',
 ]
 
 const DEFAULT_HIDDEN: Record<string, string[]> = {
   admin: [],
-  atendente: ['total_cost', 'financeiro'],
-  tecnico: ['total_cost', 'financeiro'],
+  atendente: [],
+  tecnico: ['financeiro'],
   motorista: ['total_cost', 'financeiro'],
   financeiro: [],
 }
