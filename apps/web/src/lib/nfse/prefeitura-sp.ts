@@ -34,16 +34,20 @@ const SOAP_ACTIONS = {
 
 // ====== SOAP Envelope ======
 
+// Mapeamento de SOAP action → nome da tag do request
+const SOAP_TAG: Record<string, string> = {
+  'http://www.prefeitura.sp.gov.br/nfe/ws/envioRPS': 'EnvioRPSRequest',
+  'http://www.prefeitura.sp.gov.br/nfe/ws/envioLoteRPS': 'EnvioLoteRPSRequest',
+  'http://www.prefeitura.sp.gov.br/nfe/ws/testeEnvioLoteRPS': 'TesteEnvioLoteRPSRequest',
+  'http://www.prefeitura.sp.gov.br/nfe/ws/consultaNFe': 'ConsultaNFeRequest',
+  'http://www.prefeitura.sp.gov.br/nfe/ws/cancelamentoNFe': 'CancelamentoNFeRequest',
+  'http://www.prefeitura.sp.gov.br/nfe/ws/consultaLote': 'ConsultaLoteRequest',
+  'http://www.prefeitura.sp.gov.br/nfe/ws/consultaCNPJ': 'ConsultaCNPJRequest',
+}
+
 function wrapSOAP(soapAction: string, xmlContent: string): string {
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-  <soap:Body>
-    <${soapAction.split('/').pop()}Request xmlns="http://www.prefeitura.sp.gov.br/nfe">
-      <VersaoSchema>1</VersaoSchema>
-      <MensagemXML><![CDATA[${xmlContent}]]></MensagemXML>
-    </${soapAction.split('/').pop()}Request>
-  </soap:Body>
-</soap:Envelope>`
+  const tag = SOAP_TAG[soapAction] || `${soapAction.split('/').pop()}Request`
+  return `<?xml version="1.0" encoding="UTF-8"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><${tag} xmlns="http://www.prefeitura.sp.gov.br/nfe"><VersaoSchema>1</VersaoSchema><MensagemXML><![CDATA[${xmlContent}]]></MensagemXML></${tag}></soap:Body></soap:Envelope>`
 }
 
 // ====== Enviar requisição SOAP ======
@@ -270,7 +274,14 @@ export async function emitirNfseSP(
       config.certificateBase64,
       config.certificatePassword
     )
+    console.log('[NFS-e] XML RPS gerado:', xmlRPS.length, 'chars')
+    console.log('[NFS-e] XML assinado:', xmlAssinado.length, 'chars')
+    if (!xmlAssinado || xmlAssinado.length < 100) {
+      console.error('[NFS-e] ALERTA: XML assinado muito curto ou vazio!')
+      console.error('[NFS-e] XML RPS:', xmlRPS.substring(0, 200))
+    }
   } catch (e: any) {
+    console.error('[NFS-e] Erro ao assinar:', e.message)
     return {
       sucesso: false,
       status: 'erro_assinatura',
