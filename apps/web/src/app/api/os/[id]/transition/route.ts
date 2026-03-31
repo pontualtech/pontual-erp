@@ -62,6 +62,19 @@ export async function POST(req: NextRequest, { params }: Params) {
       ...(toStatus.is_final ? { actual_delivery: new Date() } : {}),
     }
 
+    // Se Aprovado, calcular previsão de 10 dias úteis
+    const isAprovado = toStatus.name.toLowerCase().includes('aprovado')
+    if (isAprovado) {
+      let diasUteis = 0
+      const data = new Date()
+      while (diasUteis < 10) {
+        data.setDate(data.getDate() + 1)
+        const dow = data.getDay()
+        if (dow !== 0 && dow !== 6) diasUteis++ // pula sab/dom
+      }
+      updateData.estimated_delivery = data
+    }
+
     // Se Pronta, salvar técnico (data de conclusão fica no histórico de status)
     if (isPronta) {
       if (bodyTechnicianId && !os.technician_id) {

@@ -112,7 +112,7 @@ export default function OSDetailPage() {
 
   // Payment modal (for delivery/final status)
   const [showPaymentModal, setShowPaymentModal] = useState(false)
-  const [paymentMethod, setPaymentMethod] = useState('')
+  const [paymentMethod, setPaymentMethod] = useState('Pix')
   const [paymentNotes, setPaymentNotes] = useState('')
   const [paymentMethods, setPaymentMethods] = useState<{ id: string; name: string; icon: string; active: boolean }[]>([])
   const [paymentMethodsLoaded, setPaymentMethodsLoaded] = useState(false)
