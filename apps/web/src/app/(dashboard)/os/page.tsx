@@ -782,18 +782,31 @@ export default function OSListPage() {
                           </td>
                         )}
                         {/* Action dropdown */}
-                        <td className="px-2 py-2.5 text-right relative">
-                          <button type="button" onClick={e => { e.stopPropagation(); setActionMenuId(actionMenuId === os.id ? null : os.id) }}
+                        <td className="px-2 py-2.5 text-right">
+                          <button type="button" id={`action-btn-${os.id}`} onClick={e => { e.stopPropagation(); setActionMenuId(actionMenuId === os.id ? null : os.id) }}
                             className="p-2 rounded-md hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors">
                             <MoreVertical className="h-4 w-4" />
                           </button>
                           {actionMenuId === os.id && (
                             <>
-                              <div className="fixed inset-0 z-10" onClick={() => setActionMenuId(null)} />
-                              <div className={cn(
-                                'absolute right-4 z-30 w-56 rounded-lg border bg-white shadow-xl py-1 max-h-[70vh] overflow-y-auto',
-                                rowIndex < 3 ? 'top-full mt-1' : 'bottom-full mb-1'
-                              )}>
+                              <div className="fixed inset-0 z-40" onClick={() => setActionMenuId(null)} />
+                              <div className="fixed z-50 w-56 rounded-lg border bg-white shadow-xl py-1 max-h-[70vh] overflow-y-auto"
+                                ref={el => {
+                                  if (!el) return
+                                  const btn = document.getElementById(`action-btn-${os.id}`)
+                                  if (!btn) return
+                                  const rect = btn.getBoundingClientRect()
+                                  const spaceBelow = window.innerHeight - rect.bottom
+                                  const menuH = el.scrollHeight
+                                  el.style.right = `${window.innerWidth - rect.right}px`
+                                  if (spaceBelow > menuH + 8) {
+                                    el.style.top = `${rect.bottom + 4}px`
+                                    el.style.bottom = 'auto'
+                                  } else {
+                                    el.style.bottom = `${window.innerHeight - rect.top + 4}px`
+                                    el.style.top = 'auto'
+                                  }
+                                }}>
                                 <Link href={`/os/${os.id}`} onClick={() => setActionMenuId(null)}
                                   className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 w-full">
                                   <Eye className="h-4 w-4 text-gray-400" /> Abrir OS
