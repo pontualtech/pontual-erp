@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
         take: limit,
         orderBy: { created_at: 'desc' },
         include: {
-          customers: { select: { id: true, legal_name: true, phone: true } },
+          customers: { select: { id: true, legal_name: true, phone: true, document_number: true } },
           user_profiles: { select: { id: true, name: true } },
           accounts_receivable: {
             where: { deleted_at: null },

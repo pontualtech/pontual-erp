@@ -51,6 +51,7 @@ COPY --from=builder /app/node_modules/xml2js ./node_modules/xml2js
 COPY --from=builder /app/node_modules/xmlbuilder ./node_modules/xmlbuilder
 COPY --from=builder /app/node_modules/sax ./node_modules/sax
 COPY --from=builder /app/node_modules/xpath ./node_modules/xpath
+COPY --from=builder /app/node_modules/@xmldom ./node_modules/@xmldom
 
 # Copy startup script
 COPY --from=builder /app/start.sh ./start.sh

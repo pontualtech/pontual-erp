@@ -278,9 +278,8 @@ export async function emitirNfseSP(
     }
   }
 
-  // 3. Enviar via SOAP
-  const isTest = config.environment === 'homologacao'
-  const soapAction = isTest ? SOAP_ACTIONS.testeEnvioLoteRPS : SOAP_ACTIONS.envioRPS
+  // 3. Enviar via SOAP (SP não tem ambiente de homologação separado — sempre usa EnvioRPS)
+  const soapAction = SOAP_ACTIONS.envioRPS
 
   let respostaXml: string
   try {
