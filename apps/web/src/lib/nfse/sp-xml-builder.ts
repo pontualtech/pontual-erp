@@ -133,24 +133,6 @@ export function gerarXmlRPS(input: RPSInput): string {
   const docTomador = limparCpfCnpj(input.tomador.cpfCnpj)
   const isCPF = docTomador.length <= 11
 
-  let enderecoXml = ''
-  if (input.tomador.logradouro) {
-    enderecoXml = `
-    <EnderecoTomador>
-      <Logradouro>${escaparXml(input.tomador.logradouro || '')}</Logradouro>
-      <NumeroEndereco>${escaparXml(input.tomador.numero || 'S/N')}</NumeroEndereco>
-      <Bairro>${escaparXml(input.tomador.bairro || '')}</Bairro>
-      <Cidade>${input.tomador.cidade || '3550308'}</Cidade>
-      <UF>${input.tomador.uf || 'SP'}</UF>
-      <CEP>${limparCpfCnpj(input.tomador.cep || '')}</CEP>
-    </EnderecoTomador>`
-  }
-
-  let emailXml = ''
-  if (input.tomador.email) {
-    emailXml = `\n    <EmailTomador>${escaparXml(input.tomador.email)}</EmailTomador>`
-  }
-
   // XML compacto sem whitespace (canonicalização é sensível a espaços)
   // xmlns="" nos filhos Cabecalho e RPS (layout paulistano)
   let xml = `<PedidoEnvioRPS xmlns="http://www.prefeitura.sp.gov.br/nfe">`
