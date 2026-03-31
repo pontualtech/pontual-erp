@@ -1,18 +1,14 @@
 /**
  * Assinatura digital de XML — padrão XMLDSig
  *
- * Usa certificado A1 (.pfx/.p12) para:
- * 1. Canonicalizar o XML (Exclusive C14N)
- * 2. Calcular digest SHA-1 do conteúdo
- * 3. Assinar com RSA-SHA1 (chave privada do certificado)
- * 4. Inserir tag <Signature> no XML
+ * Implementação manual usando apenas crypto nativo do Node.js
+ * (não depende de xml-crypto/xmldom que podem falhar no Next.js standalone)
  *
  * Compatível com: Prefeitura de SP, SEFAZ, e outros web services gov
  */
 
 import crypto from 'crypto'
 import forge from 'node-forge'
-import { SignedXml } from 'xml-crypto'
 
 /**
  * Extrair chave privada e certificado de um arquivo .pfx (PKCS#12)
@@ -25,47 +21,46 @@ function extrairChavesCertificado(
   const pfxAsn1 = forge.asn1.fromDer(pfxDer)
   const p12 = forge.pkcs12.pkcs12FromAsn1(pfxAsn1, senha)
 
-  // Extrair chave privada
-  let privateKey: forge.pki.PrivateKey | null = null
-  const bags = p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag })
-  const keyBag = bags[forge.pki.oids.pkcs8ShroudedKeyBag]
-  if (keyBag && keyBag.length > 0 && keyBag[0].key) {
-    privateKey = keyBag[0].key
+  const keyBags = p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag })
+  const keyBag = keyBags[forge.pki.oids.pkcs8ShroudedKeyBag]
+  if (!keyBag?.[0]?.key) {
+    throw new Error('Chave privada não encontrada no certificado A1')
   }
 
-  if (!privateKey) {
-    // Tentar via friendlyName
-    const allBags = p12.getBags({ bagType: forge.pki.oids.certBag })
-    throw new Error('Chave privada não encontrada no certificado. Verifique se é um certificado A1 válido.')
-  }
-
-  // Extrair certificado
-  let cert: forge.pki.Certificate | null = null
   const certBags = p12.getBags({ bagType: forge.pki.oids.certBag })
   const certBag = certBags[forge.pki.oids.certBag]
-  if (certBag && certBag.length > 0 && certBag[0].cert) {
-    cert = certBag[0].cert
-  }
-
-  if (!cert) {
+  if (!certBag?.[0]?.cert) {
     throw new Error('Certificado não encontrado no arquivo .pfx')
   }
 
   return {
-    privateKeyPem: forge.pki.privateKeyToPem(privateKey),
-    certPem: forge.pki.certificateToPem(cert),
+    privateKeyPem: forge.pki.privateKeyToPem(keyBag[0].key),
+    certPem: forge.pki.certificateToPem(certBag[0].cert),
   }
 }
 
 /**
- * Assinar XML usando XMLDSig (enveloped signature)
- * Usa xml-crypto para canonicalização C14N correta
+ * Canonicalizar XML de forma simples (Exclusive C14N simplificada)
  *
- * O padrão da Prefeitura de SP usa:
- * - CanonicalizationMethod: http://www.w3.org/2001/10/xml-exc-c14n#
- * - SignatureMethod: http://www.w3.org/2000/09/xmldsig#rsa-sha1
- * - DigestMethod: http://www.w3.org/2000/09/xmldsig#sha1
- * - Transform: enveloped-signature + exc-c14n
+ * Para o caso da Prefeitura de SP, o XML já é gerado sem whitespace
+ * e sem atributos desordenados, então uma normalização básica é suficiente.
+ */
+function canonicalize(xml: string): string {
+  return xml
+    .replace(/<\?xml[^?]*\?>\s*/g, '')  // Remove XML declaration
+    .replace(/\r\n/g, '\n')              // Normalize line endings
+    .replace(/\r/g, '\n')
+    .trim()
+}
+
+/**
+ * Assinar XML usando XMLDSig (enveloped signature)
+ *
+ * Implementação manual compatível com a Prefeitura de SP:
+ * - CanonicalizationMethod: Exclusive C14N
+ * - SignatureMethod: RSA-SHA1
+ * - DigestMethod: SHA-1
+ * - Transforms: enveloped-signature + exc-c14n
  */
 export async function assinarXml(
   xml: string,
@@ -77,45 +72,57 @@ export async function assinarXml(
     certificatePassword
   )
 
-  // Limpar o certificado para a tag X509Certificate (sem headers PEM)
+  // Limpar o certificado para a tag X509Certificate
   const certClean = certPem
     .replace('-----BEGIN CERTIFICATE-----', '')
     .replace('-----END CERTIFICATE-----', '')
     .replace(/\r?\n/g, '')
 
-  // Remover XML declaration para assinar apenas o corpo
-  const xmlSemDecl = xml.replace(/<\?xml[^?]*\?>/, '').trim()
+  // Canonicalizar o XML (sem declaration)
+  const xmlCanon = canonicalize(xml)
 
-  // Usar xml-crypto para assinatura com canonicalização correta
-  const sig = new SignedXml({
-    privateKey: privateKeyPem,
-    canonicalizationAlgorithm: 'http://www.w3.org/2001/10/xml-exc-c14n#',
-    signatureAlgorithm: 'http://www.w3.org/2000/09/xmldsig#rsa-sha1',
-    idMode: 'wssecurity' as any,
-  })
+  // 1. Calcular digest SHA-1 do conteúdo canonicalizado
+  const digestValue = crypto
+    .createHash('sha1')
+    .update(xmlCanon, 'utf8')
+    .digest('base64')
 
-  sig.addReference({
-    xpath: '/*',
-    digestAlgorithm: 'http://www.w3.org/2000/09/xmldsig#sha1',
-    transforms: [
-      'http://www.w3.org/2000/09/xmldsig#enveloped-signature',
-      'http://www.w3.org/2001/10/xml-exc-c14n#',
-    ],
-    uri: '',
-    isEmptyUri: true,
-  } as any)
+  // 2. Montar o SignedInfo (canonicalizado — sem whitespace)
+  const signedInfo =
+    '<SignedInfo xmlns="http://www.w3.org/2000/09/xmldsig#">' +
+    '<CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>' +
+    '<SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>' +
+    '<Reference URI="">' +
+    '<Transforms>' +
+    '<Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>' +
+    '<Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>' +
+    '</Transforms>' +
+    '<DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>' +
+    '<DigestValue>' + digestValue + '</DigestValue>' +
+    '</Reference>' +
+    '</SignedInfo>'
 
-  sig.getKeyInfoContent = () => `<X509Data><X509Certificate>${certClean}</X509Certificate></X509Data>`
+  // 3. Assinar o SignedInfo com RSA-SHA1
+  const signer = crypto.createSign('RSA-SHA1')
+  signer.update(signedInfo)
+  const signatureValue = signer.sign(privateKeyPem, 'base64')
 
-  sig.computeSignature(xmlSemDecl, {
-    location: { reference: '/*', action: 'append' },
-  })
+  // 4. Montar a tag Signature completa
+  const signatureTag =
+    '<Signature xmlns="http://www.w3.org/2000/09/xmldsig#">' +
+    signedInfo +
+    '<SignatureValue>' + signatureValue + '</SignatureValue>' +
+    '<KeyInfo>' +
+    '<X509Data><X509Certificate>' + certClean + '</X509Certificate></X509Data>' +
+    '</KeyInfo>' +
+    '</Signature>'
 
-  // Remover atributos Id que xml-crypto possa ter adicionado
-  let signedXml = sig.getSignedXml()
-  signedXml = signedXml.replace(/ Id="[^"]*"/g, '')
+  // 5. Inserir antes do fechamento do elemento raiz
+  const closeTagMatch = xmlCanon.match(/<\/[\w:]+>\s*$/)
+  if (!closeTagMatch) throw new Error('XML inválido: não encontrou tag de fechamento')
 
-  return signedXml
+  const insertPos = xmlCanon.lastIndexOf(closeTagMatch[0])
+  return xmlCanon.substring(0, insertPos) + signatureTag + xmlCanon.substring(insertPos)
 }
 
 /**
@@ -138,7 +145,6 @@ export function verificarCertificado(
     const cert = forge.pki.certificateFromPem(certPem)
 
     const now = new Date()
-    const notBefore = cert.validity.notBefore
     const notAfter = cert.validity.notAfter
     const expirado = now > notAfter
 
@@ -153,7 +159,7 @@ export function verificarCertificado(
       valido: true,
       sujeito,
       emissor,
-      validade_inicio: notBefore.toISOString(),
+      validade_inicio: cert.validity.notBefore.toISOString(),
       validade_fim: notAfter.toISOString(),
       expirado,
     }

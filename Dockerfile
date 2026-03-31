@@ -44,14 +44,11 @@ COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 COPY --from=builder /app/packages/db/prisma ./packages/db/prisma
 
-# Copy NFS-e dependencies (xml signing, certificate handling)
-COPY --from=builder /app/node_modules/xml-crypto ./node_modules/xml-crypto
+# Copy NFS-e dependencies (certificate handling, XML parsing)
 COPY --from=builder /app/node_modules/node-forge ./node_modules/node-forge
 COPY --from=builder /app/node_modules/xml2js ./node_modules/xml2js
 COPY --from=builder /app/node_modules/xmlbuilder ./node_modules/xmlbuilder
 COPY --from=builder /app/node_modules/sax ./node_modules/sax
-COPY --from=builder /app/node_modules/xpath ./node_modules/xpath
-COPY --from=builder /app/node_modules/@xmldom ./node_modules/@xmldom
 
 # Copy startup script
 COPY --from=builder /app/start.sh ./start.sh
