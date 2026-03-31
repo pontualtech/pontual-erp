@@ -205,15 +205,29 @@ export default function FiscalConfigPage() {
               </p>
             </button>
 
-            <div className="rounded-lg border-2 border-dashed border-gray-200 p-4 text-left opacity-50">
+            <button
+              type="button"
+              onClick={() => setProvider('prefeitura_sp')}
+              className={cn(
+                'rounded-lg border-2 p-4 text-left transition-all',
+                provider === 'prefeitura_sp'
+                  ? 'border-green-500 bg-green-50/50 ring-1 ring-green-200'
+                  : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+              )}
+            >
               <div className="flex items-center gap-2 mb-1">
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-gray-200 text-xs font-bold text-gray-400">
-                  +
+                <div className={cn(
+                  'flex h-8 w-8 items-center justify-center rounded-md text-xs font-bold',
+                  provider === 'prefeitura_sp' ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600'
+                )}>
+                  SP
                 </div>
-                <span className="font-medium text-gray-400">Outros provedores</span>
+                <span className="font-medium text-gray-900">Prefeitura de SP</span>
               </div>
-              <p className="text-xs text-gray-400 mt-1">Em breve: eNotas, Nuvem Fiscal...</p>
-            </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Web Service oficial gratuito. Requer certificado A1. Apenas Sao Paulo.
+              </p>
+            </button>
           </div>
         </div>
       </div>
@@ -223,29 +237,43 @@ export default function FiscalConfigPage() {
         <div className="border-b px-6 py-4">
           <h2 className="font-semibold text-gray-900 flex items-center gap-2">
             <Key className="h-5 w-5 text-amber-600" />
-            Credenciais da API
+            {provider === 'prefeitura_sp' ? 'Certificado e Ambiente' : 'Credenciais da API'}
           </h2>
           <p className="text-sm text-gray-500 mt-1">
-            Token de acesso e ambiente do Focus NFe
+            {provider === 'prefeitura_sp'
+              ? 'Certificado A1 e ambiente da Prefeitura de SP'
+              : 'Token de acesso e ambiente do Focus NFe'}
           </p>
         </div>
         <div className="p-6 space-y-4">
-          <div>
-            <label htmlFor="apiKey" className="block text-sm font-medium text-gray-700 mb-1">
-              API Key / Token
-            </label>
-            <input
-              id="apiKey"
-              type="password"
-              placeholder={hasApiKey ? 'API key configurada (digite para alterar)' : 'Cole sua API key do Focus NFe aqui'}
-              value={apiKey}
-              onChange={e => { setApiKey(e.target.value); setTestResult(null) }}
-              className="w-full rounded-md border bg-white py-2 px-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-            />
-            <p className="mt-1 text-xs text-gray-400">
-              Obtida no painel Focus NFe: app.focusnfe.com.br
-            </p>
-          </div>
+          {provider === 'prefeitura_sp' ? (
+            <div className="rounded-lg border border-green-200 bg-green-50 p-4">
+              <p className="text-sm font-medium text-green-800">Integracao direta com a Prefeitura de SP</p>
+              <p className="text-xs text-green-700 mt-1">
+                Nao precisa de API key. Requer certificado digital A1 (.pfx) instalado.
+              </p>
+              <Link href="/config/certificado" className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-green-700 hover:text-green-900 underline">
+                <Shield className="h-3.5 w-3.5" /> Gerenciar Certificado A1
+              </Link>
+            </div>
+          ) : (
+            <div>
+              <label htmlFor="apiKey" className="block text-sm font-medium text-gray-700 mb-1">
+                API Key / Token
+              </label>
+              <input
+                id="apiKey"
+                type="password"
+                placeholder={hasApiKey ? 'API key configurada (digite para alterar)' : 'Cole sua API key do Focus NFe aqui'}
+                value={apiKey}
+                onChange={e => { setApiKey(e.target.value); setTestResult(null) }}
+                className="w-full rounded-md border bg-white py-2 px-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              />
+              <p className="mt-1 text-xs text-gray-400">
+                Obtida no painel Focus NFe: app.focusnfe.com.br
+              </p>
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">

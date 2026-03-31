@@ -108,3 +108,35 @@ export const NFSE_STATUS_CONFIG: Record<string, { label: string; color: string }
   REJECTED: { label: 'Rejeitada', color: 'bg-red-100 text-red-700' },
   CANCELLED: { label: 'Cancelada', color: 'bg-gray-100 text-gray-600' },
 } as const
+
+// ====== Tipos para Prefeitura de SP (integração direta SOAP) ======
+
+export interface PrefeituraSPNfseInput {
+  numero_rps?: number
+  valor_servicos: number       // em reais (ex: 150.00)
+  valor_deducoes?: number
+  codigo_servico: string       // ex: "02496"
+  aliquota_iss?: number        // ex: 0.05
+  iss_retido?: boolean
+  discriminacao: string        // descrição do serviço
+  tomador_cpf_cnpj: string
+  tomador_razao_social: string
+  tomador_email?: string
+  tomador_logradouro?: string
+  tomador_numero?: string
+  tomador_bairro?: string
+  tomador_cidade?: string      // codigo IBGE
+  tomador_uf?: string
+  tomador_cep?: string
+}
+
+export interface PrefeituraSPNfseResult {
+  sucesso: boolean
+  status: string
+  numero_nfse?: string
+  codigo_verificacao?: string
+  data_emissao?: string
+  link_nfse?: string
+  xml_resposta?: string
+  erros?: Array<{ codigo: string; mensagem: string }>
+}
