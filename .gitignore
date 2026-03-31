@@ -6,3 +6,6 @@ node_modules/
 *.p12
 dist/
 .turbo/
+emit-test.js
+migration-cache/
+migration-*.json
