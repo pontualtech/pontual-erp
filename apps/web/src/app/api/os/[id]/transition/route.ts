@@ -138,7 +138,8 @@ export async function POST(req: NextRequest, { params }: Params) {
       let cardFeeTotal = 0
       let netAmount = totalAmount
       let daysToReceive = 0
-      const isCard = payment_method && (payment_method.includes('Cartão') || payment_method.includes('Credito') || payment_method.includes('Crédito'))
+      const pmLower = (payment_method || '').toLowerCase()
+      const isCard = pmLower.includes('cart') || pmLower.includes('credito') || pmLower.includes('crédito') || pmLower.includes('debito') || pmLower.includes('débito')
 
       // Look up card fee config if paying by card
       if (isCard && installment_count >= 1) {
@@ -153,9 +154,12 @@ export async function POST(req: NextRequest, { params }: Params) {
             if (payment_method.includes(config.name) || feeSettings.length === 1) {
               daysToReceive = config.days_to_receive || 30
 
-              if (installment_count === 1 && payment_method.includes('Débito') && config.debit_fee_pct != null) {
+              const isDebit = pmLower.includes('debito') || pmLower.includes('débito')
+              const debitPct = config.debit?.fee_pct ?? config.debit_fee_pct
+              if (installment_count === 1 && isDebit && debitPct != null) {
                 // Debit card
-                cardFeeTotal = Math.round(totalAmount * config.debit_fee_pct / 100)
+                cardFeeTotal = Math.round(totalAmount * debitPct / 100)
+                daysToReceive = config.debit?.days_to_receive ?? config.days_to_receive ?? 1
               } else if (Array.isArray(config.installments)) {
                 // Credit card - find matching fee range
                 for (const range of config.installments) {
@@ -217,6 +221,27 @@ export async function POST(req: NextRequest, { params }: Params) {
         }
 
         await prisma.installment.createMany({ data: installments })
+      }
+
+      // Auto-create AccountPayable for card fees (taxa da operadora)
+      if (cardFeeTotal > 0) {
+        const feeCategory = await prisma.category.findFirst({
+          where: { company_id: user.companyId, module: 'financeiro_despesa', name: { contains: 'Taxas de Cartao' } },
+        })
+
+        await prisma.accountPayable.create({
+          data: {
+            company_id: user.companyId,
+            category_id: feeCategory?.id || null,
+            description: `Taxa cartão OS-${String(os.os_number).padStart(4, '0')} — ${payment_method} ${installment_count > 1 ? installment_count + 'x' : ''}`.trim(),
+            total_amount: cardFeeTotal,
+            paid_amount: 0,
+            due_date: new Date(),
+            status: 'PENDENTE',
+            payment_method: 'Desconto automático',
+            notes: `Taxa operadora Rede: R$ ${(cardFeeTotal / 100).toFixed(2)} sobre R$ ${(totalAmount / 100).toFixed(2)} (${installment_count}x) — OS-${String(os.os_number).padStart(4, '0')}`,
+          },
+        })
       }
 
       logAudit({
