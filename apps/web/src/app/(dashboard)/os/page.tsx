@@ -692,7 +692,7 @@ export default function OSListPage() {
                     </div>
                   </td></tr>
                 ) : (
-                  getSortedList().map(os => {
+                  getSortedList().map((os, rowIndex) => {
                     const st = os.module_statuses || statusMap[os.status_id]
                     return (
                       <tr key={os.id} className={cn(
@@ -790,7 +790,10 @@ export default function OSListPage() {
                           {actionMenuId === os.id && (
                             <>
                               <div className="fixed inset-0 z-10" onClick={() => setActionMenuId(null)} />
-                              <div className="absolute right-4 bottom-0 z-30 w-56 rounded-lg border bg-white shadow-xl py-1 max-h-[80vh] overflow-y-auto" style={{ transform: 'translateY(-40px)' }}>
+                              <div className={cn(
+                                'absolute right-4 z-30 w-56 rounded-lg border bg-white shadow-xl py-1 max-h-[70vh] overflow-y-auto',
+                                rowIndex < 3 ? 'top-full mt-1' : 'bottom-full mb-1'
+                              )}>
                                 <Link href={`/os/${os.id}`} onClick={() => setActionMenuId(null)}
                                   className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 w-full">
                                   <Eye className="h-4 w-4 text-gray-400" /> Abrir OS
