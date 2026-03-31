@@ -1471,7 +1471,23 @@ export default function OSDetailPage() {
               </span>
             </DetailRow>
             <DetailRow label="Tipo">
-              <span className="text-sm text-gray-900">{os.os_type}</span>
+              {canEditType ? (
+                <select value={os.os_type || 'BALCAO'} title="Tipo de OS"
+                  onChange={async e => {
+                    const newType = e.target.value
+                    await fetch(`/api/os/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ os_type: newType }) })
+                    loadOS()
+                  }}
+                  className="text-sm rounded border px-2 py-0.5 bg-white">
+                  <option value="BALCAO">Balcao</option>
+                  <option value="COLETA">Coleta</option>
+                  <option value="ENTREGA">Entrega</option>
+                  <option value="CAMPO">Campo</option>
+                  <option value="REMOTO">Remoto</option>
+                </select>
+              ) : (
+                <span className="text-sm text-gray-900">{os.os_type}</span>
+              )}
             </DetailRow>
             <DetailRow label="Tecnico">
               <span className="text-sm text-gray-900">{os.user_profiles?.name || '--'}</span>
