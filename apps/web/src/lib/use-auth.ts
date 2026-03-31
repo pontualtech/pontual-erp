@@ -14,17 +14,20 @@ interface AuthInfo {
 }
 
 let cached: AuthInfo | null = null
+let cacheTime = 0
+const CACHE_TTL = 60000 // 1 minuto — recarrega permissões periodicamente
 
 export function useAuth() {
   const [user, setUser] = useState<AuthInfo | null>(cached)
 
   useEffect(() => {
-    if (cached) { setUser(cached); return }
+    // Usar cache se ainda válido
+    if (cached && Date.now() - cacheTime < CACHE_TTL) { setUser(cached); return }
     fetch('/api/auth/me').then(r => r.json()).then(d => {
       if (d.data) {
-        // Ensure permissions array exists for backwards compatibility
         d.data.permissions = d.data.permissions ?? []
         cached = d.data
+        cacheTime = Date.now()
         setUser(d.data)
       }
     }).catch(() => {})
