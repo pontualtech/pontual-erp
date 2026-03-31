@@ -213,10 +213,14 @@ export async function emitirNfseSP(
 ): Promise<PrefeituraSPNfseResult> {
   const endpoint = ENDPOINTS[config.environment]
 
+  // 0. Extrair chave privada PEM (para assinar RPS hash)
+  const { keyPem } = pfxToPem(config.certificateBase64, config.certificatePassword)
+
   // 1. Gerar XML do RPS
   const xmlRPS = gerarXmlRPS({
     inscricaoPrestador: config.inscricaoMunicipal,
     cnpjPrestador: config.cnpj,
+    privateKeyPem: keyPem,
     serieRPS: 'NF',
     numeroRPS: input.numero_rps || 1,
     dataEmissao: new Date().toISOString().substring(0, 10),

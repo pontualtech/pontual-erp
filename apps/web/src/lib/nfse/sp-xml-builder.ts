@@ -12,6 +12,7 @@ import crypto from 'crypto'
 export interface RPSInput {
   inscricaoPrestador: string
   cnpjPrestador: string
+  privateKeyPem: string  // chave privada PEM para assinar o RPS
   serieRPS: string
   numeroRPS: number
   dataEmissao: string  // YYYY-MM-DD
@@ -108,8 +109,17 @@ function gerarAssinaturaRPS(input: RPSInput): string {
     issRetido + valorServicos + valorDeducoes + codigoServico +
     indicador + cpfCnpj
 
-  // SHA-1 hash (hexadecimal)
-  return crypto.createHash('sha1').update(stringParaHash, 'ascii').digest('hex')
+  return stringParaHash
+}
+
+/**
+ * Assinar a string do RPS com RSA-SHA1 (não apenas hash SHA1!)
+ * A Prefeitura de SP exige assinatura RSA, não apenas digest.
+ */
+function assinarStringRPS(stringParaHash: string, privateKeyPem: string): string {
+  const signer = crypto.createSign('RSA-SHA1')
+  signer.update(stringParaHash, 'ascii')
+  return signer.sign(privateKeyPem, 'base64')
 }
 
 // ====== Geradores de XML ======
@@ -118,7 +128,8 @@ function gerarAssinaturaRPS(input: RPSInput): string {
  * Gerar XML do PedidoEnvioRPS (envio de RPS individual)
  */
 export function gerarXmlRPS(input: RPSInput): string {
-  const assinatura = gerarAssinaturaRPS(input)
+  const stringHash = gerarAssinaturaRPS(input)
+  const assinatura = assinarStringRPS(stringHash, input.privateKeyPem)
   const docTomador = limparCpfCnpj(input.tomador.cpfCnpj)
   const isCPF = docTomador.length <= 11
 
@@ -140,36 +151,41 @@ export function gerarXmlRPS(input: RPSInput): string {
     emailXml = `\n    <EmailTomador>${escaparXml(input.tomador.email)}</EmailTomador>`
   }
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<PedidoEnvioRPS xmlns="http://www.prefeitura.sp.gov.br/nfe">
-  <Cabecalho Versao="1">
-    <CPFCNPJRemetente>
-      <CNPJ>${limparCpfCnpj(input.cnpjPrestador)}</CNPJ>
-    </CPFCNPJRemetente>
-  </Cabecalho>
-  <RPS>
-    <Assinatura>${assinatura}</Assinatura>
-    <ChaveRPS>
-      <InscricaoPrestador>${pad(input.inscricaoPrestador, 8)}</InscricaoPrestador>
-      <SerieRPS>${escaparXml(input.serieRPS)}</SerieRPS>
-      <NumeroRPS>${input.numeroRPS}</NumeroRPS>
-    </ChaveRPS>
-    <TipoRPS>RPS</TipoRPS>
-    <DataEmissao>${input.dataEmissao}</DataEmissao>
-    <StatusRPS>N</StatusRPS>
-    <TributacaoRPS>T</TributacaoRPS>
-    <ValorServicos>${formatarValor(input.valorServicos)}</ValorServicos>
-    <ValorDeducoes>${formatarValor(input.valorDeducoes)}</ValorDeducoes>
-    <CodigoServico>${pad(input.codigoServico, 5)}</CodigoServico>
-    <AliquotaServicos>${input.aliquota.toFixed(4)}</AliquotaServicos>
-    <ISSRetido>${input.issRetido ? 'true' : 'false'}</ISSRetido>
-    <CPFCNPJTomador>
-      <${isCPF ? 'CPF' : 'CNPJ'}>${docTomador}</${isCPF ? 'CPF' : 'CNPJ'}>
-    </CPFCNPJTomador>
-    <RazaoSocialTomador>${escaparXml(input.tomador.razaoSocial)}</RazaoSocialTomador>${enderecoXml}${emailXml}
-    <Discriminacao>${escaparXml(input.discriminacao)}</Discriminacao>
-  </RPS>
-</PedidoEnvioRPS>`
+  // XML compacto sem whitespace (canonicalização é sensível a espaços)
+  // xmlns="" nos filhos Cabecalho e RPS (layout paulistano)
+  let xml = `<PedidoEnvioRPS xmlns="http://www.prefeitura.sp.gov.br/nfe">`
+  xml += `<Cabecalho xmlns="" Versao="1"><CPFCNPJRemetente><CNPJ>${limparCpfCnpj(input.cnpjPrestador)}</CNPJ></CPFCNPJRemetente></Cabecalho>`
+  xml += `<RPS xmlns="">`
+  xml += `<Assinatura>${assinatura}</Assinatura>`
+  xml += `<ChaveRPS><InscricaoPrestador>${pad(input.inscricaoPrestador, 8)}</InscricaoPrestador><SerieRPS>${escaparXml(input.serieRPS)}</SerieRPS><NumeroRPS>${input.numeroRPS}</NumeroRPS></ChaveRPS>`
+  xml += `<TipoRPS>RPS</TipoRPS>`
+  xml += `<DataEmissao>${input.dataEmissao}</DataEmissao>`
+  xml += `<StatusRPS>N</StatusRPS>`
+  xml += `<TributacaoRPS>T</TributacaoRPS>`
+  xml += `<ValorServicos>${formatarValor(input.valorServicos)}</ValorServicos>`
+  xml += `<ValorDeducoes>${formatarValor(input.valorDeducoes)}</ValorDeducoes>`
+  xml += `<CodigoServico>${pad(input.codigoServico, 5)}</CodigoServico>`
+  xml += `<AliquotaServicos>${input.aliquota.toFixed(4)}</AliquotaServicos>`
+  xml += `<ISSRetido>${input.issRetido ? 'true' : 'false'}</ISSRetido>`
+  xml += `<CPFCNPJTomador><${isCPF ? 'CPF' : 'CNPJ'}>${docTomador}</${isCPF ? 'CPF' : 'CNPJ'}></CPFCNPJTomador>`
+  xml += `<RazaoSocialTomador>${escaparXml(input.tomador.razaoSocial)}</RazaoSocialTomador>`
+  if (input.tomador.logradouro) {
+    xml += `<EnderecoTomador>`
+    xml += `<Logradouro>${escaparXml(input.tomador.logradouro)}</Logradouro>`
+    xml += `<NumeroEndereco>${escaparXml(input.tomador.numero || 'S/N')}</NumeroEndereco>`
+    xml += `<Bairro>${escaparXml(input.tomador.bairro || '')}</Bairro>`
+    xml += `<Cidade>${input.tomador.cidade || '3550308'}</Cidade>`
+    xml += `<UF>${input.tomador.uf || 'SP'}</UF>`
+    xml += `<CEP>${limparCpfCnpj(input.tomador.cep || '')}</CEP>`
+    xml += `</EnderecoTomador>`
+  }
+  if (input.tomador.email) {
+    xml += `<EmailTomador>${escaparXml(input.tomador.email)}</EmailTomador>`
+  }
+  xml += `<Discriminacao>${escaparXml(input.discriminacao)}</Discriminacao>`
+  xml += `</RPS></PedidoEnvioRPS>`
+
+  return xml
 }
 
 /**
