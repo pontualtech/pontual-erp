@@ -308,13 +308,14 @@ export default function OSListPage() {
   }
 
   // Quick actions for single OS
-  function printSingleOS(osId: string) {
+  function printSingleOS(osId: string, template?: string) {
     setActionMenuId(null)
     const printWindow = window.open('', '_blank')
     if (!printWindow) { toast.error('Popup bloqueado — permita popups'); return }
     printWindow.document.write('<html><body><p>Carregando...</p></body></html>')
 
-    fetch(`/api/os/${osId}/print`)
+    const url = template ? `/api/os/${osId}/print?template=${template}` : `/api/os/${osId}/print`
+    fetch(url)
       .then(r => r.text())
       .then(html => {
         printWindow.document.open()
@@ -803,10 +804,31 @@ export default function OSListPage() {
                                   <Copy className="h-4 w-4 text-gray-400" /> Copiar Ordem
                                 </Link>
                                 <div className="border-t my-1" />
-                                <button type="button" onClick={() => printSingleOS(os.id)}
-                                  className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 w-full">
-                                  <Printer className="h-4 w-4 text-gray-400" /> Imprimir Ordem
-                                </button>
+                                <div className="px-3 py-1.5 text-xs font-medium text-gray-400 uppercase">Imprimir</div>
+                                {(() => {
+                                  const statusName = (st?.name || '').toLowerCase()
+                                  const options: { label: string; template: string }[] = []
+                                  // Sempre disponivel
+                                  options.push({ label: 'OS Completa', template: 'os_full' })
+                                  options.push({ label: 'Etiqueta', template: 'os_label' })
+                                  // Por status
+                                  if (os.os_type === 'COLETA' || statusName.includes('colet'))
+                                    options.push({ label: 'Ordem de Coleta', template: 'os_pickup' })
+                                  if (statusName.includes('abert') || statusName.includes('triag') || statusName.includes('analis'))
+                                    options.push({ label: 'Comprovante Recebimento', template: 'os_receipt' })
+                                  if (statusName.includes('or') || statusName.includes('aprov') || statusName.includes('negoc'))
+                                    options.push({ label: 'Orcamento', template: 'os_budget' })
+                                  if (statusName.includes('pronta') || statusName.includes('entreg') || statusName.includes('finaliz'))
+                                    options.push({ label: 'Comprovante Entrega', template: 'os_delivery' })
+                                  if (statusName.includes('entreg') || statusName.includes('pronta') || statusName.includes('finaliz'))
+                                    options.push({ label: 'Termo de Garantia', template: 'os_warranty' })
+                                  return options.map(opt => (
+                                    <button key={opt.template} type="button" onClick={() => printSingleOS(os.id, opt.template)}
+                                      className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 w-full">
+                                      <Printer className="h-3.5 w-3.5 text-gray-400" /> {opt.label}
+                                    </button>
+                                  ))
+                                })()}
                                 {os.invoices?.length > 0 ? (
                                   <>
                                     <a href={os.invoices[0].danfe_url || '#'} target="_blank" rel="noopener noreferrer"
