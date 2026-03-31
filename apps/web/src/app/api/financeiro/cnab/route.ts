@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
-import { gerarRemessaCNAB240, parsearRetornoCNAB240, type BoletoRemessa, type CedenteConfig } from '@/lib/boleto/cnab/cnab240-inter'
+import { gerarRemessaCNAB400, parsearRetornoCNAB400, type BoletoRemessa400, type CedenteConfig400 } from '@/lib/boleto/cnab/cnab400-inter'
 
 /**
  * GET /api/financeiro/cnab — Gerar arquivo de remessa CNAB 240
@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
     const receivables = await prisma.accountReceivable.findMany({
       where: whereClause,
       include: {
-        customers: { select: { legal_name: true, document_number: true, address_street: true, address_number: true, address_neighborhood: true, address_city: true, address_state: true, address_zip: true } },
+        customers: { select: { legal_name: true, document_number: true, email: true, address_street: true, address_number: true, address_neighborhood: true, address_city: true, address_state: true, address_zip: true } },
       },
       orderBy: { due_date: 'asc' },
     })
@@ -56,26 +56,29 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Nenhuma conta a receber encontrada para gerar remessa' }, { status: 404 })
     }
 
-    // Montar boletos
-    const boletos: BoletoRemessa[] = []
+    // Montar boletos CNAB 400
+    const boletos: BoletoRemessa400[] = []
     for (const r of receivables) {
       if (!r.customers?.document_number) continue
 
+      const vencDiaSeguinte = new Date(r.due_date)
+      vencDiaSeguinte.setDate(vencDiaSeguinte.getDate() + 1)
+
       boletos.push({
-        nossoNumero: r.id.substring(0, 15).replace(/-/g, ''),
-        seuNumero: r.id.substring(0, 15),
+        seuNumero: r.id.substring(0, 10),
         dataVencimento: r.due_date,
         valorNominal: r.total_amount,
-        dataEmissao: r.created_at || new Date(),
+        diasAposVencimento: 30,
         sacadoNome: r.customers.legal_name,
         sacadoDocumento: r.customers.document_number,
         sacadoEndereco: `${r.customers.address_street || ''} ${r.customers.address_number || ''}`.trim() || 'NAO INFORMADO',
-        sacadoBairro: r.customers.address_neighborhood || 'NAO INFORMADO',
-        sacadoCidade: r.customers.address_city || 'SAO PAULO',
         sacadoUF: r.customers.address_state || 'SP',
         sacadoCEP: r.customers.address_zip || '00000000',
-        juros: 1.0,  // 1% ao mês
-        multa: 2.0,  // 2%
+        sacadoEmail: r.customers.email || undefined,
+        multa: { tipo: '2', percentual: 2.00, data: vencDiaSeguinte },
+        juros: { tipo: '2', taxaMensal: 1.00, data: vencDiaSeguinte },
+        mensagem: r.description || '',
+        controleParticipante: r.id.substring(0, 25),
       })
     }
 
@@ -91,16 +94,15 @@ export async function GET(req: NextRequest) {
       update: { value: String(seqAtual) },
     })
 
-    const cedente: CedenteConfig = {
-      cnpj: cfg['cnab.cnpj'],
+    const cedente: CedenteConfig400 = {
       razaoSocial: cfg['cnab.razao_social'] || 'EMPRESA',
-      agencia: cfg['cnab.agencia'],
-      conta: cfg['cnab.conta'],
-      convenio: cfg['cnab.convenio'] || '',
+      agencia: cfg['cnab.agencia'] || '0001',
+      conta: cfg['cnab.conta']?.replace(/\D/g, '').substring(0, 9) || '',
+      contaDV: cfg['cnab.conta']?.slice(-1) || '0',
       carteira: cfg['cnab.carteira'] || '112',
     }
 
-    const conteudo = gerarRemessaCNAB240(cedente, boletos, seqAtual)
+    const { conteudo, nomeArquivo } = gerarRemessaCNAB400(cedente, boletos, seqAtual)
 
     // Marcar as contas como tendo boleto em processamento
     for (const r of receivables) {
@@ -114,14 +116,12 @@ export async function GET(req: NextRequest) {
       })
     }
 
-    // Retornar como arquivo para download
-    const filename = `REMESSA_INTER_${seqAtual.toString().padStart(4, '0')}_${new Date().toISOString().substring(0, 10).replace(/-/g, '')}.rem`
-
+    // Retornar como arquivo para download (CNAB 400 Inter)
     return new NextResponse(conteudo, {
       status: 200,
       headers: {
         'Content-Type': 'text/plain; charset=utf-8',
-        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Disposition': `attachment; filename="${nomeArquivo}"`,
       },
     })
   } catch (e: any) {
@@ -148,7 +148,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Arquivo de retorno vazio ou inválido' }, { status: 400 })
     }
 
-    const retornos = parsearRetornoCNAB240(content)
+    const retornos = parsearRetornoCNAB400(content)
 
     let pagos = 0, rejeitados = 0, outros = 0
 
@@ -176,7 +176,6 @@ export async function POST(req: NextRequest) {
             pix_code: JSON.stringify({
               ...(receivable.pix_code ? JSON.parse(receivable.pix_code) : {}),
               boletoStatus: 'PAID',
-              dataPagamento: ret.dataPagamento?.toISOString(),
               dataCredito: ret.dataCredito?.toISOString(),
               valorPago: ret.valorPago,
             }),
