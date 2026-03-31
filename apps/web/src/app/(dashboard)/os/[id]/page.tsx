@@ -222,6 +222,12 @@ export default function OSDetailPage() {
           setEditPaymentMethod(data.payment_method || '')
           setEditEstimatedDelivery(data.estimated_delivery ? new Date(data.estimated_delivery).toISOString().split('T')[0] : '')
           setEditActualDelivery(data.actual_delivery ? new Date(data.actual_delivery).toISOString().split('T')[0] : '')
+          // Inicializar desconto a partir do total_cost salvo
+          const subtotal = (data.total_services ?? 0) + (data.total_parts ?? 0)
+          if (subtotal > 0 && data.total_cost != null && data.total_cost < subtotal) {
+            setDiscountValue(((subtotal - data.total_cost) / 100).toFixed(2))
+            setDiscountType('reais')
+          }
         }
       })
       .catch(() => {})
@@ -626,7 +632,13 @@ export default function OSDetailPage() {
     if (!os) return
     setSavingAll(true)
     try {
-      // Only send fields that exist in the ServiceOrder schema
+      // Calcular total com desconto
+      const subtotal = (os.total_services ?? 0) + (os.total_parts ?? 0)
+      const discountAmt = discountType === 'percent'
+        ? Math.round(subtotal * (parseFloat(discountValue || '0') / 100))
+        : Math.round(parseFloat(discountValue || '0') * 100)
+      const totalFinal = Math.max(0, subtotal - discountAmt)
+
       const payload: any = {
         diagnosis: editDiagnosis || null,
         reception_notes: editNotes || null,
@@ -635,6 +647,7 @@ export default function OSDetailPage() {
         payment_method: editPaymentMethod || null,
         estimated_delivery: editEstimatedDelivery ? new Date(editEstimatedDelivery).toISOString() : null,
         actual_delivery: editActualDelivery ? new Date(editActualDelivery).toISOString() : null,
+        total_cost: totalFinal,
       }
       const res = await fetch(`/api/os/${id}`, {
         method: 'PUT',
