@@ -7,7 +7,7 @@ type Params = { params: { id: string } }
 
 export async function GET(req: NextRequest, { params }: Params) {
   try {
-    const result = await requirePermission('financeiro', 'read')
+    const result = await requirePermission('financeiro', 'view')
     if (result instanceof NextResponse) return result
     const user = result
 

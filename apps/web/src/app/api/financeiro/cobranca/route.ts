@@ -251,7 +251,7 @@ export async function sendOverdueReminders(companyId: string, userId: string, sp
  */
 export async function GET(request: NextRequest) {
   try {
-    const result = await requirePermission('financeiro', 'read')
+    const result = await requirePermission('financeiro', 'view')
     if (result instanceof NextResponse) return result
     const user = result
 

@@ -14,7 +14,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const result = await requirePermission('financeiro', 'read')
+    const result = await requirePermission('financeiro', 'view')
     if (result instanceof NextResponse) return result
     const user = result
 

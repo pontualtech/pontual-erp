@@ -5,7 +5,7 @@ import { success, handleError } from '@/lib/api-response'
 
 export async function GET(request: NextRequest) {
   try {
-    const result = await requirePermission('financeiro', 'read')
+    const result = await requirePermission('financeiro', 'view')
     if (result instanceof NextResponse) return result
     const user = result
 
