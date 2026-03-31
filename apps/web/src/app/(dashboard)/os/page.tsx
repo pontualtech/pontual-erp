@@ -346,9 +346,10 @@ export default function OSListPage() {
       })
       const data = await res.json()
       if (data.success) {
-        toast.success(`NFS-e #${data.numero_nfse} emitida!`)
+        toast.success(`NFS-e #${data.numero_nfse} emitida e enviada por email!`)
         setNfseModalOS(null)
         if (data.link_nfse) window.open(data.link_nfse, '_blank')
+        loadOS()
       } else {
         toast.error(data.erros?.map((e: any) => `[${e.codigo}] ${e.mensagem}`).join('\n') || data.error || 'Erro')
       }

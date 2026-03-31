@@ -492,9 +492,10 @@ export default function OSDetailPage() {
       })
       const data = await res.json()
       if (data.success) {
-        toast.success(`NFS-e #${data.numero_nfse} emitida com sucesso!`)
+        toast.success(`NFS-e #${data.numero_nfse} emitida e enviada por email ao cliente!`)
         setShowNfseModal(false)
         if (data.link_nfse) window.open(data.link_nfse, '_blank')
+        loadOS() // recarregar para atualizar status
       } else {
         const erroMsg = data.erros?.map((e: any) => `[${e.codigo}] ${e.mensagem}`).join('\n') || data.error || 'Erro ao emitir NFS-e'
         toast.error(erroMsg)
