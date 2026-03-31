@@ -138,7 +138,7 @@ export async function POST(req: NextRequest) {
         tomador_logradouro: customer.address_street || undefined,
         tomador_numero: customer.address_number || undefined,
         tomador_bairro: customer.address_neighborhood || undefined,
-        tomador_cidade: settings.codigoMunicipio || '3550308',
+        tomador_cidade: undefined, // omitir endereço — evita erro CEP/município
         tomador_uf: customer.address_state || 'SP',
         tomador_cep: customer.address_zip || undefined,
       },

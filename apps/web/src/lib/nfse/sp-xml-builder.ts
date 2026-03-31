@@ -169,14 +169,16 @@ export function gerarXmlRPS(input: RPSInput): string {
   xml += `<ISSRetido>${input.issRetido ? 'true' : 'false'}</ISSRetido>`
   xml += `<CPFCNPJTomador><${isCPF ? 'CPF' : 'CNPJ'}>${docTomador}</${isCPF ? 'CPF' : 'CNPJ'}></CPFCNPJTomador>`
   xml += `<RazaoSocialTomador>${escaparXml(input.tomador.razaoSocial)}</RazaoSocialTomador>`
-  if (input.tomador.logradouro) {
+  // Endereço do tomador é opcional na NFS-e SP
+  // Só envia se tiver CEP E código IBGE da cidade (para evitar erro de CEP/município)
+  if (input.tomador.logradouro && input.tomador.cep && input.tomador.cidade) {
     xml += `<EnderecoTomador>`
     xml += `<Logradouro>${escaparXml(input.tomador.logradouro)}</Logradouro>`
     xml += `<NumeroEndereco>${escaparXml(input.tomador.numero || 'S/N')}</NumeroEndereco>`
     xml += `<Bairro>${escaparXml(input.tomador.bairro || '')}</Bairro>`
-    xml += `<Cidade>${input.tomador.cidade || '3550308'}</Cidade>`
+    xml += `<Cidade>${input.tomador.cidade}</Cidade>`
     xml += `<UF>${input.tomador.uf || 'SP'}</UF>`
-    xml += `<CEP>${limparCpfCnpj(input.tomador.cep || '')}</CEP>`
+    xml += `<CEP>${limparCpfCnpj(input.tomador.cep)}</CEP>`
     xml += `</EnderecoTomador>`
   }
   if (input.tomador.email) {
