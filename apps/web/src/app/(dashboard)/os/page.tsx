@@ -790,7 +790,7 @@ export default function OSListPage() {
                           {actionMenuId === os.id && (
                             <>
                               <div className="fixed inset-0 z-10" onClick={() => setActionMenuId(null)} />
-                              <div className="absolute right-4 top-full mt-1 z-20 w-52 rounded-lg border bg-white shadow-lg py-1">
+                              <div className="absolute right-4 bottom-0 z-30 w-56 rounded-lg border bg-white shadow-xl py-1 max-h-[80vh] overflow-y-auto" style={{ transform: 'translateY(-40px)' }}>
                                 <Link href={`/os/${os.id}`} onClick={() => setActionMenuId(null)}
                                   className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 w-full">
                                   <Eye className="h-4 w-4 text-gray-400" /> Abrir OS
