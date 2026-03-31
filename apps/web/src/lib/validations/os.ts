@@ -37,6 +37,7 @@ export const updateOSSchema = z.object({
   equipment_model: z.string().max(255).nullable().optional(),
   equipment_serial: z.string().max(255).nullable().optional(),
   serial_number: z.string().max(255).nullable().optional(),
+  reference: z.string().max(500).nullable().optional(),
   reported_issue: z.string().max(5000).nullable().optional(),
   diagnosis: z.string().max(5000).nullable().optional(),
   solution: z.string().max(5000).nullable().optional(),

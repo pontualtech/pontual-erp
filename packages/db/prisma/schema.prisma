@@ -384,6 +384,7 @@ model ServiceOrder {
   equipment_brand       String?
   equipment_model       String?
   serial_number         String?
+  reference             String?
   reported_issue        String
   diagnosis             String?
   reception_notes       String?

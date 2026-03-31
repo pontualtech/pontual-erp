@@ -179,22 +179,35 @@ export async function POST(req: NextRequest) {
       const totalPecas = parseDecimalToCents(vos.valor_total_pecas)
       const createdAt = parseDate(vos.data_cad_pedido)
 
+      const deliveryDate = parseDate(vos.data_entrega)
+      const realizationDate = parseDate(vos.data_realizacao)
+
       const osData = {
         status_id: statusMap[vos.status_pedido] || defaultStatusId,
+        os_type: vos.tipo_atendimento === 1 ? 'BALCAO' : 'COLETA',
+        equipment_type: equip || 'Impressora',
+        equipment_brand: parts.length >= 2 ? parts[0] : null,
+        equipment_model: parts.length >= 2 ? parts.slice(1).join(' ') : null,
+        reference: (vos.referencia_ordem || '').trim() || null,
         reported_issue: (vos.problema_ordem || 'Sem descricao').trim(),
         diagnosis: (vos.laudo_ordem || '').trim() || null,
+        reception_notes: (vos.recebimento_ordem || '').trim() || null,
         internal_notes: (vos.obs_interno_pedido || '').trim() || null,
         estimated_cost: totalOS || (totalServ + totalPecas),
         approved_cost: (vos.status_pedido === 'Finalizado' || vos.status_pedido === 'Faturado') ? totalOS : 0,
         total_parts: totalPecas,
         total_services: totalServ,
         total_cost: totalOS || (totalServ + totalPecas),
+        estimated_delivery: deliveryDate,
+        actual_delivery: vos.status_pedido === 'Faturado' ? (deliveryDate || realizationDate) : null,
         custom_data: {
           vhsys_id_ordem: vos.id_ordem,
           vhsys_id_pedido: vos.id_pedido,
           vhsys_referencia: vos.referencia_ordem,
           vhsys_obs_pedido: vos.obs_pedido,
+          vhsys_garantia: vos.garantia_ordem,
           vhsys_nome_tecnico: vos.nome_tecnico,
+          vhsys_tipo_servico: vos.tipo_servico,
           migrated_from: 'vhsys',
           migrated_at: new Date().toISOString(),
         } as any,
@@ -248,12 +261,6 @@ export async function POST(req: NextRequest) {
             os_number: vos.id_pedido,
             customer_id: customerId,
             priority: 'MEDIUM',
-            os_type: vos.tipo_atendimento === 1 ? 'BALCAO' : 'COLETA',
-            equipment_type: equip || 'Impressora',
-            equipment_brand: parts.length >= 2 ? parts[0] : null,
-            equipment_model: parts.length >= 2 ? parts.slice(1).join(' ') : null,
-            estimated_delivery: parseDate(vos.data_entrega),
-            actual_delivery: vos.status_pedido === 'Faturado' ? (parseDate(vos.data_entrega) || parseDate(vos.data_realizacao)) : null,
             created_at: createdAt || new Date(),
             updated_at: parseDate(vos.data_mod_pedido) || createdAt || new Date(),
           },

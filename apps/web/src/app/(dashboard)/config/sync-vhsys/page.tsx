@@ -90,6 +90,7 @@ export default function SyncVHSysPage() {
               disabled={syncing}
               className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
             >
+              <option value={50}>Ultimas 50 OS (atualizacao completa)</option>
               <option value={100}>Ultimas 100 OS</option>
               <option value={250}>Ultimas 250 OS</option>
               <option value={500}>Ultimas 500 OS</option>
