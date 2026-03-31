@@ -653,12 +653,10 @@ export default function OSDetailPage() {
           {transitioning && <Loader2 className="h-4 w-4 animate-spin text-gray-400" />}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {os.total_cost > 0 && os.customers?.email && (
-            <button type="button" onClick={openQuoteModal}
-              className="flex items-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors">
-              <Send className="h-4 w-4" /> Enviar Orcamento
-            </button>
-          )}
+          <button type="button" onClick={openQuoteModal}
+            className="flex items-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors">
+            <Send className="h-4 w-4" /> Enviar Orcamento
+          </button>
           <button type="button" onClick={openPrintModal}
             className="flex items-center gap-1.5 rounded-lg border border-green-300 bg-green-50 px-3 py-1.5 text-sm font-medium text-green-700 hover:bg-green-100 transition-colors">
             <Printer className="h-4 w-4" /> Imprimir
