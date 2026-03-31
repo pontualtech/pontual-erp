@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
-import { Plus, Search, List, LayoutGrid, Settings2, Eye, EyeOff, Trash2, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Clock, AlertTriangle, Printer, FileSpreadsheet, Mail, Columns3, MoreVertical, Copy, Receipt, ChevronDown, RefreshCw, SearchX } from 'lucide-react'
+import { Plus, Search, List, LayoutGrid, Settings2, Eye, EyeOff, Trash2, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Clock, AlertTriangle, Printer, FileSpreadsheet, Mail, Columns3, MoreVertical, Copy, Receipt, ChevronDown, RefreshCw, SearchX, Send } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/lib/use-auth'
 
@@ -35,6 +35,7 @@ interface OS {
   module_statuses: { id: string; name: string; color: string } | null
   user_profiles: { id: string; name: string } | null
   accounts_receivable: { id: string; status: string; total_amount: number; received_amount: number | null }[]
+  invoices: { id: string; invoice_number: number | null; danfe_url: string | null; access_key: string | null }[]
 }
 
 function fmt(cents: number) {
@@ -752,6 +753,7 @@ export default function OSListPage() {
                         )}
                         {effectiveColumns.includes('financeiro') && (
                           <td className="px-3 py-2.5">
+                            <div className="flex items-center gap-1">
                             {(() => {
                               const fin = getFinanceStatus(os)
                               if (!fin) return <span className="text-xs text-gray-400">{'\u2014'}</span>
@@ -761,6 +763,13 @@ export default function OSListPage() {
                                 </span>
                               )
                             })()}
+                            {os.invoices?.length > 0 && (
+                              <a href={os.invoices[0].danfe_url || '#'} target="_blank" rel="noopener noreferrer" title={`NFS-e #${os.invoices[0].invoice_number}`}
+                                className="rounded-full bg-purple-100 text-purple-700 px-1.5 py-0.5 text-[9px] font-bold hover:bg-purple-200">
+                                NF
+                              </a>
+                            )}
+                            </div>
                           </td>
                         )}
                         {effectiveColumns.includes('technician') && (
@@ -798,10 +807,23 @@ export default function OSListPage() {
                                   className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 w-full">
                                   <Printer className="h-4 w-4 text-gray-400" /> Imprimir Ordem
                                 </button>
-                                <button type="button" onClick={() => openNfseFromList(os)}
-                                  className="flex items-center gap-2 px-3 py-2 text-sm text-purple-700 hover:bg-purple-50 w-full">
-                                  <Receipt className="h-4 w-4 text-purple-400" /> Emitir NFS-e
-                                </button>
+                                {os.invoices?.length > 0 ? (
+                                  <>
+                                    <a href={os.invoices[0].danfe_url || '#'} target="_blank" rel="noopener noreferrer"
+                                      className="flex items-center gap-2 px-3 py-2 text-sm text-green-700 hover:bg-green-50 w-full">
+                                      <Receipt className="h-4 w-4 text-green-500" /> Ver NFS-e #{os.invoices[0].invoice_number}
+                                    </a>
+                                    <button type="button" onClick={() => { setActionMenuId(null); fetch(`/api/fiscal/nfse/${os.invoices[0].id}/reenviar`, { method: 'POST' }).then(() => toast.success('NFS-e reenviada por email!')) }}
+                                      className="flex items-center gap-2 px-3 py-2 text-sm text-purple-700 hover:bg-purple-50 w-full">
+                                      <Send className="h-4 w-4 text-purple-400" /> Reenviar NFS-e por Email
+                                    </button>
+                                  </>
+                                ) : (
+                                  <button type="button" onClick={() => openNfseFromList(os)}
+                                    className="flex items-center gap-2 px-3 py-2 text-sm text-purple-700 hover:bg-purple-50 w-full">
+                                    <Receipt className="h-4 w-4 text-purple-400" /> Emitir NFS-e
+                                  </button>
+                                )}
                                 <button type="button" onClick={() => {
                                   const line = `OS-${String(os.os_number).padStart(4, '0')} | ${os.customers?.legal_name || ''} | ${st?.name || ''} | ${fmt(os.total_cost || 0)}`
                                   window.open(`mailto:?subject=${encodeURIComponent(`OS-${String(os.os_number).padStart(4, '0')}`)}&body=${encodeURIComponent(line)}`)

@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import {
   FileText, Plus, Download, XCircle,
   Eye, BarChart3, Loader2, RefreshCw, Filter,
+  Printer, Send,
 } from 'lucide-react'
 
 interface FiscalDashboard {
@@ -72,6 +73,24 @@ export default function FiscalPage() {
   const [cancelJustificativa, setCancelJustificativa] = useState('')
   const [showCancelModal, setShowCancelModal] = useState(false)
   const [selectedNota, setSelectedNota] = useState<Nota | null>(null)
+  const [resendingId, setResendingId] = useState<string | null>(null)
+
+  async function handleResendEmail(nota: Nota) {
+    if (!nota.customers) return
+    setResendingId(nota.id)
+    try {
+      const res = await fetch(`/api/fiscal/nfse/${nota.id}/reenviar`, { method: 'POST' })
+      if (res.ok) {
+        const toast = (await import('sonner')).toast
+        toast.success(`NFS-e #${nota.invoice_number} reenviada por email!`)
+      }
+    } catch {} finally { setResendingId(null) }
+  }
+
+  function handlePrintNfse(nota: Nota) {
+    if (!nota.danfe_url) return
+    window.open(nota.danfe_url, '_blank')
+  }
 
   // Load dashboard
   useEffect(() => {
@@ -340,34 +359,27 @@ export default function FiscalPage() {
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1">
                       {n.danfe_url && (
-                        <a
-                          href={n.danfe_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          title="Ver PDF"
-                          className="rounded p-1.5 text-gray-400 hover:bg-blue-50 hover:text-blue-600"
-                        >
+                        <a href={n.danfe_url} target="_blank" rel="noopener noreferrer" title="Ver NFS-e"
+                          className="rounded p-1.5 text-gray-400 hover:bg-blue-50 hover:text-blue-600">
                           <Eye className="h-4 w-4" />
                         </a>
                       )}
-                      {n.xml_url && (
-                        <a
-                          href={n.xml_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          title="Baixar XML"
-                          className="rounded p-1.5 text-gray-400 hover:bg-green-50 hover:text-green-600"
-                        >
-                          <Download className="h-4 w-4" />
-                        </a>
+                      {n.danfe_url && (
+                        <button type="button" onClick={() => handlePrintNfse(n)} title="Imprimir NFS-e"
+                          className="rounded p-1.5 text-gray-400 hover:bg-green-50 hover:text-green-600">
+                          <Printer className="h-4 w-4" />
+                        </button>
+                      )}
+                      {n.status === 'AUTHORIZED' && n.customers && (
+                        <button type="button" onClick={() => handleResendEmail(n)} title="Reenviar por email"
+                          disabled={resendingId === n.id}
+                          className="rounded p-1.5 text-gray-400 hover:bg-purple-50 hover:text-purple-600 disabled:opacity-50">
+                          {resendingId === n.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                        </button>
                       )}
                       {(n.status === 'AUTHORIZED' || n.status === 'PROCESSING') && (
-                        <button
-                          type="button"
-                          onClick={() => openCancelModal(n)}
-                          title="Cancelar NFS-e"
-                          className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
-                        >
+                        <button type="button" onClick={() => openCancelModal(n)} title="Cancelar NFS-e"
+                          className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600">
                           <XCircle className="h-4 w-4" />
                         </button>
                       )}

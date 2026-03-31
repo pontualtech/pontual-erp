@@ -26,6 +26,11 @@ export async function GET(req: NextRequest, { params }: Params) {
           where: { deleted_at: null },
           orderBy: { created_at: 'desc' },
         },
+        invoices: {
+          where: { invoice_type: 'NFSE' },
+          select: { id: true, invoice_number: true, status: true, danfe_url: true, access_key: true, total_amount: true, created_at: true },
+          orderBy: { created_at: 'desc' },
+        },
       },
     })
 

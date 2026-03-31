@@ -78,6 +78,11 @@ export async function GET(req: NextRequest) {
             take: 1,
             orderBy: { created_at: 'desc' },
           },
+          invoices: {
+            where: { invoice_type: 'NFSE', status: 'AUTHORIZED' },
+            select: { id: true, invoice_number: true, danfe_url: true, access_key: true },
+            take: 1,
+          },
         },
       }),
       prisma.serviceOrder.count({ where }),

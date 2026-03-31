@@ -35,6 +35,7 @@ interface OSDetail {
   user_profiles: { id: string; name: string } | null
   service_order_items: OSItem[]; service_order_photos: OSPhoto[]
   service_order_history: OSHistoryEntry[]
+  invoices: { id: string; invoice_number: number | null; status: string; danfe_url: string | null; access_key: string | null; total_amount: number; created_at: string }[]
   customer_id: string
   accounts_receivable?: AccountReceivable[]
 }
@@ -1518,6 +1519,55 @@ export default function OSDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* ========== NFS-e VINCULADAS ========== */}
+      {(os.invoices ?? []).length > 0 && (
+        <div className="rounded-xl border bg-white p-4 shadow-sm">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-purple-100">
+              <Receipt className="h-4 w-4 text-purple-600" />
+            </div>
+            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">NFS-e ({os.invoices.length})</h2>
+          </div>
+          <div className="space-y-2">
+            {os.invoices.map((inv: any) => (
+              <div key={inv.id} className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2">
+                <div className="flex items-center gap-3">
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${inv.status === 'AUTHORIZED' ? 'bg-green-100 text-green-700' : inv.status === 'CANCELLED' ? 'bg-gray-100 text-gray-600' : 'bg-red-100 text-red-700'}`}>
+                    {inv.status === 'AUTHORIZED' ? 'Autorizada' : inv.status === 'CANCELLED' ? 'Cancelada' : 'Rejeitada'}
+                  </span>
+                  <span className="text-sm font-medium">NFS-e #{inv.invoice_number || '?'}</span>
+                  <span className="text-xs text-gray-500">Cod: {inv.access_key || '-'}</span>
+                  <span className="text-xs text-gray-400">R$ {((inv.total_amount || 0) / 100).toFixed(2)}</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  {inv.danfe_url && (
+                    <a href={inv.danfe_url} target="_blank" rel="noopener noreferrer" title="Ver NFS-e"
+                      className="rounded p-1.5 text-gray-400 hover:bg-blue-50 hover:text-blue-600">
+                      <ExternalLink className="h-4 w-4" />
+                    </a>
+                  )}
+                  {inv.danfe_url && (
+                    <button type="button" title="Imprimir" onClick={() => window.open(inv.danfe_url, '_blank')}
+                      className="rounded p-1.5 text-gray-400 hover:bg-green-50 hover:text-green-600">
+                      <Printer className="h-4 w-4" />
+                    </button>
+                  )}
+                  {inv.status === 'AUTHORIZED' && (
+                    <button type="button" title="Reenviar por email" onClick={async () => {
+                      await fetch(`/api/fiscal/nfse/${inv.id}/reenviar`, { method: 'POST' })
+                      toast.success(`NFS-e #${inv.invoice_number} reenviada por email!`)
+                    }}
+                      className="rounded p-1.5 text-gray-400 hover:bg-purple-50 hover:text-purple-600">
+                      <Send className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ========== FOTOS (collapsed if none) ========== */}
       {(os.service_order_photos ?? []).length > 0 && (
