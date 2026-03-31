@@ -128,6 +128,7 @@ export default function FinanceiroPage() {
             { label: 'DRE', href: '/financeiro/dre', icon: FileSpreadsheet, desc: 'Demonstrativo de resultados', color: 'text-indigo-600 bg-indigo-50' },
             { label: 'Conciliação', href: '/financeiro/conciliacao', icon: Receipt, desc: 'Importar OFX', color: 'text-teal-600 bg-teal-50' },
             { label: 'Boletos', href: '/financeiro/boletos', icon: Receipt, desc: 'Emitir e gerenciar', color: 'text-orange-600 bg-orange-50' },
+            { label: 'CNAB Inter', href: '/financeiro/cnab', icon: FileSpreadsheet, desc: 'Remessa e retorno CNAB 240', color: 'text-amber-600 bg-amber-50' },
           ].map(item => {
             const Icon = item.icon
             return (
