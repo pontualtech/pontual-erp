@@ -142,6 +142,7 @@ export async function POST(req: NextRequest) {
         status: resultado.status,
         numero_nfse: resultado.numero_nfse,
         erros: resultado.erros,
+        xml_resposta: resultado.xml_resposta?.substring(0, 2000),
       } as any,
       status_code: resultado.sucesso ? 200 : 400,
     },

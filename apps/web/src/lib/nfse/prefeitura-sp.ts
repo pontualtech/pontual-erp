@@ -130,17 +130,30 @@ async function enviarSOAP(
 
 // ====== Parsear resposta SOAP ======
 
-async function parsearRespostaSP(xml: string): Promise<any> {
-  const parsed = await parseStringPromise(xml, {
+async function parsearRespostaSP(soapXml: string): Promise<any> {
+  // A prefeitura retorna o XML real dentro de <RetornoXML> como HTML-escaped string
+  // Extrair e decodificar o conteúdo de RetornoXML
+  const retornoMatch = soapXml.match(/<RetornoXML>([\s\S]*?)<\/RetornoXML>/)
+  if (!retornoMatch) {
+    // Tentar parsear o SOAP inteiro
+    const parsed = await parseStringPromise(soapXml, { explicitArray: false, ignoreAttrs: false })
+    return parsed
+  }
+
+  // Decodificar HTML entities
+  let retornoXml = retornoMatch[1]
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+
+  const parsed = await parseStringPromise(retornoXml, {
     explicitArray: false,
     ignoreAttrs: false,
-    tagNameProcessors: [(name: string) => name.replace(/.*:/, '')], // remove ns prefix
+    tagNameProcessors: [(name: string) => name.replace(/.*:/, '')],
   })
 
-  // Navegar na estrutura SOAP para encontrar o body
-  const envelope = parsed.Envelope || parsed['soap:Envelope'] || parsed
-  const body = envelope.Body || envelope['soap:Body'] || envelope
-  return body
+  return parsed
 }
 
 function extrairRetornoNFSe(body: any): {
@@ -152,15 +165,20 @@ function extrairRetornoNFSe(body: any): {
   erros?: Array<{ codigo: string; mensagem: string }>
 } {
   try {
-    // Tentar extrair do retorno padrão SP
+    // Após parsearRespostaSP, body é o conteúdo de RetornoXML (ex: RetornoEnvioRPS)
     const retorno =
-      body.EnvioRPSResponse?.RetornoEnvioRPS ||
-      body.EnvioLoteRPSResponse?.RetornoEnvioLoteRPS ||
-      body.TesteEnvioLoteRPSResponse?.RetornoEnvioLoteRPS ||
+      body.RetornoEnvioRPS ||
+      body.RetornoEnvioLoteRPS ||
+      body.RetornoConsultaNFe ||
+      body.RetornoCancelamentoNFe ||
+      body.RetornoConsultaCNPJ ||
       body
 
     // Verificar sucesso
-    if (retorno.Cabecalho?.Sucesso === 'true' || retorno.ChaveNFeRPS) {
+    const cabecalho = retorno.Cabecalho || retorno['Cabecalho']
+    const sucesso = cabecalho?.Sucesso === 'true' || cabecalho?.['$']?.Sucesso === 'true'
+
+    if (sucesso || retorno.ChaveNFeRPS) {
       const chave = retorno.ChaveNFeRPS?.ChaveNFe || retorno.ChaveNFeRPS
       return {
         sucesso: true,
