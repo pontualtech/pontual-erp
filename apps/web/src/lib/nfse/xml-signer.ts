@@ -12,6 +12,7 @@
 
 import crypto from 'crypto'
 import forge from 'node-forge'
+import { SignedXml } from 'xml-crypto'
 
 /**
  * Extrair chave privada e certificado de um arquivo .pfx (PKCS#12)
@@ -58,6 +59,7 @@ function extrairChavesCertificado(
 
 /**
  * Assinar XML usando XMLDSig (enveloped signature)
+ * Usa xml-crypto para canonicalização C14N correta
  *
  * O padrão da Prefeitura de SP usa:
  * - CanonicalizationMethod: http://www.w3.org/2001/10/xml-exc-c14n#
@@ -81,38 +83,39 @@ export async function assinarXml(
     .replace('-----END CERTIFICATE-----', '')
     .replace(/\r?\n/g, '')
 
-  // Encontrar o elemento raiz para referenciar
-  const rootMatch = xml.match(/<(\w+:)?(\w+)[\s>]/)
-  if (!rootMatch) throw new Error('XML inválido: não encontrou elemento raiz')
+  // Remover XML declaration para assinar apenas o corpo
+  const xmlSemDecl = xml.replace(/<\?xml[^?]*\?>/, '').trim()
 
-  // Para SP: a referência é vazia (URI="") = assinar documento inteiro
-  const xmlSemDeclaration = xml.replace(/<\?xml[^?]*\?>/, '').trim()
+  // Usar xml-crypto para assinatura com canonicalização correta
+  const sig = new SignedXml({
+    privateKey: privateKeyPem,
+    canonicalizationAlgorithm: 'http://www.w3.org/2001/10/xml-exc-c14n#',
+    signatureAlgorithm: 'http://www.w3.org/2000/09/xmldsig#rsa-sha1',
+    idMode: 'wssecurity' as any,
+  })
 
-  // 1. Calcular digest do conteúdo (sem a Signature que será adicionada)
-  const digestValue = crypto
-    .createHash('sha1')
-    .update(xmlSemDeclaration, 'utf8')
-    .digest('base64')
+  sig.addReference({
+    xpath: '/*',
+    digestAlgorithm: 'http://www.w3.org/2000/09/xmldsig#sha1',
+    transforms: [
+      'http://www.w3.org/2000/09/xmldsig#enveloped-signature',
+      'http://www.w3.org/2001/10/xml-exc-c14n#',
+    ],
+    uri: '',
+    isEmptyUri: true,
+  } as any)
 
-  // 2. Montar o SignedInfo (que será assinado)
-  const signedInfo = `<SignedInfo xmlns="http://www.w3.org/2000/09/xmldsig#"><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/><Reference URI=""><Transforms><Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/><Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/></Transforms><DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/><DigestValue>${digestValue}</DigestValue></Reference></SignedInfo>`
+  sig.getKeyInfoContent = () => `<X509Data><X509Certificate>${certClean}</X509Certificate></X509Data>`
 
-  // 3. Assinar o SignedInfo com RSA-SHA1
-  const signer = crypto.createSign('RSA-SHA1')
-  signer.update(signedInfo)
-  const signatureValue = signer.sign(privateKeyPem, 'base64')
+  sig.computeSignature(xmlSemDecl, {
+    location: { reference: '/*', action: 'append' },
+  })
 
-  // 4. Montar a tag Signature completa
-  const signatureTag = `<Signature xmlns="http://www.w3.org/2000/09/xmldsig#">${signedInfo}<SignatureValue>${signatureValue}</SignatureValue><KeyInfo><X509Data><X509Certificate>${certClean}</X509Certificate></X509Data></KeyInfo></Signature>`
+  // Remover atributos Id que xml-crypto possa ter adicionado
+  let signedXml = sig.getSignedXml()
+  signedXml = signedXml.replace(/ Id="[^"]*"/g, '')
 
-  // 5. Inserir antes do fechamento do elemento raiz
-  const closeTagMatch = xml.match(/<\/(\w+:)?\w+>\s*$/)
-  if (!closeTagMatch) throw new Error('XML inválido: não encontrou tag de fechamento')
-
-  const insertPos = xml.lastIndexOf(closeTagMatch[0])
-  const xmlAssinado = xml.substring(0, insertPos) + signatureTag + xml.substring(insertPos)
-
-  return xmlAssinado
+  return signedXml
 }
 
 /**

@@ -10,6 +10,8 @@
 import { gerarXmlRPS, gerarXmlCancelamento, gerarXmlConsulta } from './sp-xml-builder'
 import { assinarXml } from './xml-signer'
 import { parseStringPromise } from 'xml2js'
+import https from 'https'
+import forge from 'node-forge'
 import type { PrefeituraSPNfseInput, PrefeituraSPNfseResult, PrestadorConfig } from './types'
 
 // ====== Endpoints da Prefeitura de SP ======
@@ -46,29 +48,84 @@ function wrapSOAP(soapAction: string, xmlContent: string): string {
 
 // ====== Enviar requisição SOAP ======
 
+/**
+ * Converter PFX (base64) → PEM (key + cert) via node-forge
+ * Node.js nativo pode não suportar certos formatos .pfx,
+ * então convertemos para PEM primeiro.
+ */
+function pfxToPem(pfxBase64: string, password: string): { keyPem: string; certPem: string } {
+  const pfxDer = forge.util.decode64(pfxBase64)
+  const pfxAsn1 = forge.asn1.fromDer(pfxDer)
+  const p12 = forge.pkcs12.pkcs12FromAsn1(pfxAsn1, password)
+
+  const keyBags = p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag })
+  const key = keyBags[forge.pki.oids.pkcs8ShroudedKeyBag]?.[0]?.key
+  if (!key) throw new Error('Chave privada não encontrada no certificado')
+
+  const certBags = p12.getBags({ bagType: forge.pki.oids.certBag })
+  const cert = certBags[forge.pki.oids.certBag]?.[0]?.cert
+  if (!cert) throw new Error('Certificado não encontrado no arquivo .pfx')
+
+  return {
+    keyPem: forge.pki.privateKeyToPem(key),
+    certPem: forge.pki.certificateToPem(cert),
+  }
+}
+
+/**
+ * Enviar requisição SOAP com mTLS (certificado do cliente)
+ *
+ * A Prefeitura de SP exige autenticação mútua (mTLS):
+ * o certificado A1 precisa ser enviado na conexão HTTPS,
+ * não apenas para assinar o XML.
+ */
 async function enviarSOAP(
   endpoint: string,
   soapAction: string,
-  xmlContent: string
+  xmlContent: string,
+  pfxBase64: string,
+  pfxPassword: string
 ): Promise<string> {
   const soapEnvelope = wrapSOAP(soapAction, xmlContent)
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'text/xml; charset=utf-8',
-      SOAPAction: soapAction,
-    },
-    body: soapEnvelope,
-    cache: 'no-store',
+  // Converter PFX → PEM (compatibilidade garantida)
+  const { keyPem, certPem } = pfxToPem(pfxBase64, pfxPassword)
+
+  return new Promise((resolve, reject) => {
+    const url = new URL(endpoint)
+
+    const options: https.RequestOptions = {
+      hostname: url.hostname,
+      port: 443,
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/xml; charset=utf-8',
+        'Content-Length': Buffer.byteLength(soapEnvelope, 'utf8'),
+        SOAPAction: soapAction,
+      },
+      key: keyPem,
+      cert: certPem,
+      rejectUnauthorized: false,
+    }
+
+    const req = https.request(options, (res) => {
+      const chunks: Buffer[] = []
+      res.on('data', (chunk) => chunks.push(chunk))
+      res.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8')
+        if (res.statusCode && res.statusCode >= 400) {
+          reject(new Error(`SOAP Error ${res.statusCode}: ${body.substring(0, 500)}`))
+        } else {
+          resolve(body)
+        }
+      })
+    })
+
+    req.on('error', (e) => reject(new Error(`Erro de conexão com a Prefeitura: ${e.message}`)))
+    req.write(soapEnvelope)
+    req.end()
   })
-
-  if (!response.ok) {
-    const text = await response.text()
-    throw new Error(`SOAP Error ${response.status}: ${text.substring(0, 500)}`)
-  }
-
-  return await response.text()
 }
 
 // ====== Parsear resposta SOAP ======
@@ -205,7 +262,7 @@ export async function emitirNfseSP(
 
   let respostaXml: string
   try {
-    respostaXml = await enviarSOAP(endpoint, soapAction, xmlAssinado)
+    respostaXml = await enviarSOAP(endpoint, soapAction, xmlAssinado, config.certificateBase64, config.certificatePassword)
   } catch (e: any) {
     return {
       sucesso: false,
@@ -260,7 +317,9 @@ export async function consultarNfseSP(
   const respostaXml = await enviarSOAP(
     ENDPOINTS[config.environment],
     SOAP_ACTIONS.consultaNFe,
-    xmlAssinado
+    xmlAssinado,
+    config.certificateBase64,
+    config.certificatePassword
   )
 
   const body = await parsearRespostaSP(respostaXml)
@@ -297,7 +356,9 @@ export async function cancelarNfseSP(
   const respostaXml = await enviarSOAP(
     ENDPOINTS[config.environment],
     SOAP_ACTIONS.cancelamentoNFe,
-    xmlAssinado
+    xmlAssinado,
+    config.certificateBase64,
+    config.certificatePassword
   )
 
   const body = await parsearRespostaSP(respostaXml)
@@ -335,7 +396,9 @@ export async function testarConexaoSP(
     await enviarSOAP(
       ENDPOINTS[config.environment],
       SOAP_ACTIONS.consultaCNPJ,
-      xmlAssinado
+      xmlAssinado,
+      config.certificateBase64,
+      config.certificatePassword
     )
 
     return { ok: true, message: 'Conexão com a Prefeitura de SP estabelecida com sucesso!' }
