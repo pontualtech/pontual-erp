@@ -7,7 +7,7 @@ import {
   Plus, Search, Eye, Pencil, Trash2, DollarSign,
   AlertTriangle, Clock, CheckCircle2, CalendarClock, X, Loader2, Zap,
   Filter, ChevronDown, ChevronUp, Combine, Unlink,
-  Columns3, Printer, FileSpreadsheet, Mail
+  Columns3, Printer, FileSpreadsheet, Mail, Receipt, Send
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -44,6 +44,8 @@ interface ContaReceber {
   anticipated_amount: number | null
   group_id: string | null
   grouped_into_id: string | null
+  boleto_url: string | null
+  customer_id: string | null
   customers: Customer | null
   categories: Category | null
 }
@@ -132,6 +134,11 @@ export default function ContasReceberPage() {
   const [showBulkDelete, setShowBulkDelete] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [antecipId, setAntecipId] = useState<string | null>(null)
+
+  // Boleto modal
+  const [boletoModalConta, setBoletoModalConta] = useState<ContaReceber | null>(null)
+  const [boletoBank, setBoletoBank] = useState('inter')
+  const [boletoGenerating, setBoletoGenerating] = useState(false)
   const [antecipPreview, setAntecipPreview] = useState<AnticipationPreview | null>(null)
   const [antecipLoading, setAntecipLoading] = useState(false)
   const [antecipConfirming, setAntecipConfirming] = useState(false)
@@ -352,6 +359,46 @@ export default function ContasReceberPage() {
       toast.error(err instanceof Error ? err.message : 'Erro ao excluir')
     } finally {
       setDeleting(false)
+    }
+  }
+
+  async function handleGerarBoleto() {
+    const conta = boletoModalConta
+    if (!conta || boletoGenerating) return
+
+    setBoletoGenerating(true)
+    try {
+      // 1. Gerar boleto
+      const res = await fetch('/api/financeiro/boletos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ receivable_id: conta.id, provider: boletoBank }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao gerar boleto')
+
+      // 2. Enviar por email ao cliente
+      if (conta.customers) {
+        try {
+          await fetch('/api/financeiro/boletos/enviar-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ receivable_id: conta.id }),
+          })
+          toast.success(`Boleto gerado e enviado por email para ${conta.customers.legal_name}!`)
+        } catch {
+          toast.success('Boleto gerado! (email nao enviado)')
+        }
+      } else {
+        toast.success('Boleto gerado com sucesso!')
+      }
+
+      setBoletoModalConta(null)
+      loadContas()
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao gerar boleto')
+    } finally {
+      setBoletoGenerating(false)
     }
   }
 
@@ -949,6 +996,16 @@ export default function ContasReceberPage() {
                             <Unlink className="h-4 w-4" />
                           </button>
                         )}
+                        {conta.status === 'PENDENTE' && !conta.boleto_url && (
+                          <button
+                            type="button"
+                            onClick={() => setBoletoModalConta(conta)}
+                            title="Gerar Boleto e Enviar"
+                            className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-orange-600"
+                          >
+                            <Receipt className="h-4 w-4" />
+                          </button>
+                        )}
                         {isAdmin && conta.status !== 'RECEBIDO' && (
                           <button
                             type="button"
@@ -1356,6 +1413,67 @@ export default function ContasReceberPage() {
               >
                 {baixaLoading ? 'Registrando...' : 'Confirmar Recebimento'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== BOLETO MODAL ===== */}
+      {boletoModalConta && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => !boletoGenerating && setBoletoModalConta(null)}>
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <Receipt className="h-5 w-5 text-orange-600" />
+                Gerar Boleto e Enviar
+              </h2>
+              <button type="button" title="Fechar" onClick={() => setBoletoModalConta(null)} disabled={boletoGenerating}
+                className="p-1 rounded-lg hover:bg-gray-100 text-gray-400"><X className="h-5 w-5" /></button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-lg bg-gray-50 p-3 text-sm space-y-1">
+                <div className="flex justify-between"><span className="text-gray-500">Cliente:</span><span className="font-medium">{boletoModalConta.customers?.legal_name}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Valor:</span><span className="font-bold text-green-700">{formatCurrency(boletoModalConta.total_amount)}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Vencimento:</span><span>{new Date(boletoModalConta.due_date).toLocaleDateString('pt-BR')}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Descricao:</span><span>{boletoModalConta.description}</span></div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Banco para Emissao</label>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {[
+                    { id: 'inter', label: 'Banco Inter', color: 'orange' },
+                    { id: 'itau', label: 'Itau', color: 'blue' },
+                    { id: 'stone', label: 'Stone', color: 'green' },
+                  ].map(bank => (
+                    <button key={bank.id} type="button" onClick={() => setBoletoBank(bank.id)}
+                      className={cn(
+                        'rounded-lg border-2 p-3 text-center text-sm font-medium transition-all',
+                        boletoBank === bank.id
+                          ? `border-${bank.color}-500 bg-${bank.color}-50 text-${bank.color}-700`
+                          : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                      )}>
+                      {bank.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800">
+                <Send className="h-3.5 w-3.5 inline mr-1" />
+                Apos gerar, o boleto sera enviado automaticamente por email ao cliente.
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-4">
+              <button type="button" onClick={handleGerarBoleto} disabled={boletoGenerating}
+                className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-orange-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-orange-700 disabled:opacity-50">
+                {boletoGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Receipt className="h-4 w-4" />}
+                {boletoGenerating ? 'Gerando...' : 'Gerar Boleto e Enviar'}
+              </button>
+              <button type="button" onClick={() => setBoletoModalConta(null)} disabled={boletoGenerating}
+                className="px-4 py-2.5 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
             </div>
           </div>
         </div>
