@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import { ArrowLeft, Edit, Camera, History, Info, Package, Plus, Trash2, Loader2, Search, Wrench, CreditCard, X, Printer, Mail, Send, Copy, FilePlus, User, Monitor, FileText, Clock, ChevronDown, ChevronUp, AlertTriangle, Save, Check, Layers, DollarSign, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Edit, Camera, History, Info, Package, Plus, Trash2, Loader2, Search, Wrench, CreditCard, X, Printer, Mail, Send, Copy, FilePlus, User, Monitor, FileText, Clock, ChevronDown, ChevronUp, AlertTriangle, Save, Check, Layers, DollarSign, ExternalLink, Receipt } from 'lucide-react'
 
 interface Customer {
   id: string; legal_name: string; trade_name: string | null; person_type: string
@@ -122,6 +122,11 @@ export default function OSDetailPage() {
   const [showPrintModal, setShowPrintModal] = useState(false)
   const [printEmail, setPrintEmail] = useState('')
   const [sendingEmail, setSendingEmail] = useState(false)
+
+  // NFS-e modal
+  const [showNfseModal, setShowNfseModal] = useState(false)
+  const [nfseDescription, setNfseDescription] = useState('')
+  const [emittingNfse, setEmittingNfse] = useState(false)
 
   // Quote email modal
   const [showQuoteModal, setShowQuoteModal] = useState(false)
@@ -428,6 +433,52 @@ export default function OSDetailPage() {
     setShowPrintModal(true)
   }
 
+  function openNfseModal() {
+    if (!os) return
+    // Montar discriminação a partir dos itens da OS
+    const itens = (os.service_order_items || [])
+      .map((i: OSItem) => `${i.description} (${i.quantity}x R$ ${(i.unit_price / 100).toFixed(2)})`)
+      .join('; ')
+    setNfseDescription(itens || `Servico de assistencia tecnica - OS ${os.os_number}`)
+    setShowNfseModal(true)
+  }
+
+  async function handleEmitirNfse() {
+    if (!os || emittingNfse) return
+    if (os.total_cost <= 0) { toast.error('OS sem valor. Adicione itens antes de emitir NFS-e.'); return }
+    if (!os.customers?.document_number) { toast.error('Cliente sem CPF/CNPJ cadastrado.'); return }
+
+    setEmittingNfse(true)
+    try {
+      const res = await fetch('/api/fiscal/emitir-nfse-sp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer_id: os.customer_id,
+          service_order_id: id,
+          description: nfseDescription,
+          service_code: '07498',
+          total_amount: os.total_cost,
+          aliquota_iss: 0.05,
+          iss_retido: false,
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success(`NFS-e #${data.numero_nfse} emitida com sucesso!`)
+        setShowNfseModal(false)
+        if (data.link_nfse) window.open(data.link_nfse, '_blank')
+      } else {
+        const erroMsg = data.erros?.map((e: any) => `[${e.codigo}] ${e.mensagem}`).join('\n') || data.error || 'Erro ao emitir NFS-e'
+        toast.error(erroMsg)
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao emitir NFS-e')
+    } finally {
+      setEmittingNfse(false)
+    }
+  }
+
   async function openQuoteModal() {
     setQuoteEmail(os?.customers?.email || '')
     setQuotePreviewHtml('')
@@ -656,6 +707,10 @@ export default function OSDetailPage() {
           <button type="button" onClick={openQuoteModal}
             className="flex items-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors">
             <Send className="h-4 w-4" /> Enviar Orcamento
+          </button>
+          <button type="button" onClick={openNfseModal}
+            className="flex items-center gap-1.5 rounded-lg border border-purple-300 bg-purple-50 px-3 py-1.5 text-sm font-medium text-purple-700 hover:bg-purple-100 transition-colors">
+            <Receipt className="h-4 w-4" /> Emitir NFS-e
           </button>
           <button type="button" onClick={openPrintModal}
             className="flex items-center gap-1.5 rounded-lg border border-green-300 bg-green-50 px-3 py-1.5 text-sm font-medium text-green-700 hover:bg-green-100 transition-colors">
@@ -1682,6 +1737,58 @@ export default function OSDetailPage() {
               className="w-full mt-3 px-4 py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors">
               Cancelar
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ========== NFSE MODAL ========== */}
+      {showNfseModal && os && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => !emittingNfse && setShowNfseModal(false)}>
+          <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <Receipt className="h-5 w-5 text-purple-600" />
+                Emitir NFS-e - OS-{String(os.os_number).padStart(4, '0')}
+              </h2>
+              <button type="button" title="Fechar" onClick={() => setShowNfseModal(false)} disabled={emittingNfse} className="p-1 rounded-lg hover:bg-gray-100 text-gray-400">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-lg bg-gray-50 p-3 text-sm space-y-1">
+                <div className="flex justify-between"><span className="text-gray-500">Cliente:</span><span className="font-medium">{os.customers?.legal_name}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">CPF/CNPJ:</span><span className="font-medium">{os.customers?.document_number || 'Nao informado'}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Valor:</span><span className="font-bold text-green-700">R$ {(os.total_cost / 100).toFixed(2)}</span></div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Discriminacao do Servico</label>
+                <textarea
+                  value={nfseDescription}
+                  onChange={e => setNfseDescription(e.target.value)}
+                  rows={4}
+                  className="w-full rounded-lg border px-3 py-2 text-sm focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+                  placeholder="Descricao detalhada do servico prestado..."
+                />
+              </div>
+
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                <strong>Atencion:</strong> A NFS-e sera emitida diretamente na Prefeitura de SP. Esta acao nao pode ser desfeita facilmente.
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-4">
+              <button type="button" onClick={handleEmitirNfse} disabled={emittingNfse || !nfseDescription || os.total_cost <= 0}
+                className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50 transition-colors">
+                {emittingNfse ? <Loader2 className="h-4 w-4 animate-spin" /> : <Receipt className="h-4 w-4" />}
+                {emittingNfse ? 'Emitindo...' : 'Emitir NFS-e'}
+              </button>
+              <button type="button" onClick={() => setShowNfseModal(false)} disabled={emittingNfse}
+                className="px-4 py-2.5 border rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+                Cancelar
+              </button>
+            </div>
           </div>
         </div>
       )}

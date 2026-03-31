@@ -4,6 +4,8 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { consultarNfse, cancelarNfse, mapToInternalStatus } from '@/lib/nfse/focus-nfe'
+import { cancelarNfseSP, type PrefeituraSPConfig } from '@/lib/nfse/prefeitura-sp'
+import { decrypt } from '@/lib/encryption'
 import { z } from 'zod'
 
 type RouteParams = { params: { id: string } }
@@ -139,38 +141,57 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       where: { company_id: user.companyId },
     })
 
-    if (!config?.api_key) {
+    if (!config) {
       return error('Configuracao fiscal nao encontrada', 422)
     }
 
-    // If authorized, cancel with Focus NFe
-    if (invoice.status === 'AUTHORIZED' && invoice.provider_ref) {
-      try {
-        await cancelarNfse(
-          invoice.provider_ref,
-          justificativa,
-          config.api_key,
-          config.environment || undefined,
-        )
+    const settings = (config.settings || {}) as Record<string, any>
+    const isSP = config.provider === 'prefeitura_sp' || invoice.provider_name === 'prefeitura_sp'
 
-        // Log cancellation
+    // Cancel with the appropriate provider
+    if (invoice.status === 'AUTHORIZED') {
+      try {
+        if (isSP && invoice.invoice_number) {
+          // Cancelar via Prefeitura de SP
+          const certPassword = settings.certificate_password ? decrypt(settings.certificate_password) : ''
+          const spConfig: PrefeituraSPConfig = {
+            environment: (config.environment as 'homologacao' | 'producao') || 'producao',
+            cnpj: settings.cnpj,
+            inscricaoMunicipal: settings.inscricaoMunicipal,
+            certificateBase64: settings.certificate_base64,
+            certificatePassword: certPassword,
+          }
+          const resultado = await cancelarNfseSP(String(invoice.invoice_number), spConfig)
+          if (!resultado.sucesso) {
+            const erroMsg = resultado.erros?.map(e => `[${e.codigo}] ${e.mensagem}`).join('; ') || 'Erro ao cancelar'
+            throw new Error(erroMsg)
+          }
+        } else if (config.api_key && invoice.provider_ref) {
+          // Cancelar via Focus NFe
+          await cancelarNfse(
+            invoice.provider_ref,
+            justificativa,
+            config.api_key,
+            config.environment || undefined,
+          )
+        }
+
         await prisma.fiscalLog.create({
           data: {
             company_id: user.companyId,
             invoice_id: invoice.id,
             action: 'nfse.cancelar',
-            request: { justificativa },
+            request: { justificativa } as any,
             status_code: 200,
           },
         }).catch(() => {})
       } catch (apiErr: any) {
-        // Log error
         await prisma.fiscalLog.create({
           data: {
             company_id: user.companyId,
             invoice_id: invoice.id,
             action: 'nfse.cancelar.error',
-            response: { error: apiErr.message },
+            response: { error: apiErr.message } as any,
             status_code: 422,
           },
         }).catch(() => {})
