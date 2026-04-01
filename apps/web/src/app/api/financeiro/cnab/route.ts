@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
     const settings = await prisma.setting.findMany({
       where: {
         company_id: user.companyId,
-        key: { in: ['cnab.cnpj', 'cnab.razao_social', 'cnab.agencia', 'cnab.conta', 'cnab.convenio', 'cnab.carteira', 'cnab.sequencial'] },
+        key: { in: ['cnab.cnpj', 'cnab.razao_social', 'cnab.agencia', 'cnab.conta', 'cnab.convenio', 'cnab.carteira', 'cnab.sequencial', 'cnab.endereco', 'cnab.bairro', 'cnab.cidade', 'cnab.uf', 'cnab.cep'] },
       },
     })
     const cfg: Record<string, string> = {}
@@ -97,10 +97,16 @@ export async function GET(req: NextRequest) {
 
     const cedente: CedenteConfig400 = {
       razaoSocial: cfg['cnab.razao_social'] || 'EMPRESA',
+      cnpj: cfg['cnab.cnpj'] || '',
       agencia: cfg['cnab.agencia'] || '0001',
       conta: cfg['cnab.conta']?.replace(/\D/g, '').substring(0, 9) || '',
       contaDV: cfg['cnab.conta']?.slice(-1) || '0',
       carteira: cfg['cnab.carteira'] || '112',
+      endereco: cfg['cnab.endereco'] || '',
+      bairro: cfg['cnab.bairro'] || '',
+      cidade: cfg['cnab.cidade'] || '',
+      uf: cfg['cnab.uf'] || '',
+      cep: cfg['cnab.cep'] || '',
     }
 
     const { conteudo, nomeArquivo } = gerarRemessaCNAB400(cedente, boletos, seqAtual)

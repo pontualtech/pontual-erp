@@ -41,10 +41,17 @@ export interface BoletoRemessa400 {
 
 export interface CedenteConfig400 {
   razaoSocial: string
+  cnpj: string                  // "32772178000147" (só números)
   agencia: string               // "0001"
   conta: string                 // sem DV (ex: "004025073")
   contaDV: string               // DV (ex: "3")
   carteira: string              // "112"
+  // Endereço do beneficiário (obrigatório no Tipo 3)
+  endereco: string              // ex: "RUA DAS FLORES 123"
+  bairro: string                // ex: "CENTRO"
+  cidade: string                // ex: "SAO PAULO"
+  uf: string                    // ex: "SP"
+  cep: string                   // ex: "01310100"
 }
 
 export interface RetornoBoleto400 {
@@ -218,15 +225,24 @@ export function gerarRemessaCNAB400(
     t1 += padNum(seqRegistro, 6)                    // 395-400: Seq. registro
     lines.push(t1)
 
-    // ------ TIPO 3 (opcional — email do pagador) ------
+    // ------ TIPO 3 (opcional — email do pagador + dados do beneficiário) ------
     if (boleto.sacadoEmail) {
       seqRegistro++
+      const cnpjLimpo = limparDoc(cedente.cnpj || '')
       let t3 = ''
       t3 += '3'                                     // 001: Tipo registro
       t3 += padAlfa(boleto.sacadoEmail, 50)         // 002-051: Email pagador
       t3 += padAlfa('', 10)                         // 052-061: Branco
-      t3 += padAlfa('', 236)                        // 062-297: Campos beneficiário (vazio)
-      t3 += padAlfa('', 97)                         // 298-394: Branco
+      // Dados do beneficiário (cedente) — obrigatórios no Inter
+      t3 += cnpjLimpo.length <= 11 ? '01' : '02'   // 062-063: Tipo doc beneficiário (01=CPF, 02=CNPJ)
+      t3 += padNum(cnpjLimpo, 14)                   // 064-077: CNPJ/CPF beneficiário
+      t3 += padAlfa(cedente.razaoSocial, 60)        // 078-137: Nome beneficiário
+      t3 += padAlfa(cedente.endereco || 'NAO INFORMADO', 60) // 138-197: Endereço beneficiário
+      t3 += padAlfa(cedente.bairro || 'CENTRO', 45) // 198-242: Bairro beneficiário
+      t3 += padNum(limparDoc(cedente.cep || '00000000'), 8) // 243-250: CEP beneficiário
+      t3 += padAlfa(cedente.cidade || 'SAO PAULO', 30) // 251-280: Cidade beneficiário
+      t3 += padAlfa(cedente.uf || 'SP', 2)          // 281-282: UF beneficiário
+      t3 += padAlfa('', 112)                        // 283-394: Branco
       t3 += padNum(seqRegistro, 6)                  // 395-400: Seq. registro
       lines.push(t3)
     }
