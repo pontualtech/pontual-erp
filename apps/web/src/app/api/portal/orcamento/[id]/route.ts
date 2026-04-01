@@ -132,10 +132,11 @@ export async function POST(request: NextRequest, { params }: Params) {
     if (os.companies.slug !== slug) return error('Token inválido', 401)
 
     if (action === 'approve') {
-      // Bloquear dupla aprovação
+      // Bloquear se já aprovado ou em execução (mas permitir se recusado — cliente mudou de ideia)
       const currentStatusName = os.module_statuses?.name?.toLowerCase() || ''
-      if (currentStatusName.includes('aprovad') || currentStatusName.includes('execu') || currentStatusName.includes('pronta') || currentStatusName.includes('reparad') || os.module_statuses?.is_final) {
-        return error('Este orçamento já foi aprovado anteriormente.', 410)
+      const jaAprovado = currentStatusName.includes('aprovad') || currentStatusName.includes('execu') || currentStatusName.includes('pronta') || currentStatusName.includes('reparad')
+      if (jaAprovado || os.module_statuses?.is_final) {
+        return error('Este orçamento já foi aprovado e está em andamento. Para dúvidas, entre em contato com nosso suporte.', 410)
       }
 
       // Find "Aprovado" status
@@ -284,9 +285,16 @@ export async function POST(request: NextRequest, { params }: Params) {
     }
 
     if (action === 'reject') {
-      // Bloquear dupla recusa
       const currentStatusName2 = os.module_statuses?.name?.toLowerCase() || ''
-      if (currentStatusName2.includes('recusad') || currentStatusName2.includes('cancelad') || os.module_statuses?.is_final) {
+
+      // Bloquear recusa se já aprovado ou em andamento — precisa contatar suporte
+      const jaEmAndamento = currentStatusName2.includes('aprovad') || currentStatusName2.includes('execu') || currentStatusName2.includes('pronta') || currentStatusName2.includes('reparad')
+      if (jaEmAndamento || os.module_statuses?.is_final) {
+        return error('Este orçamento já foi aprovado e o serviço está em andamento. Para cancelar, entre em contato com nosso suporte pelo WhatsApp: https://wa.me/551126263841', 410)
+      }
+
+      // Bloquear dupla recusa
+      if (currentStatusName2.includes('recusad') || currentStatusName2.includes('cancelad')) {
         return error('Este orçamento já foi recusado anteriormente.', 410)
       }
 
