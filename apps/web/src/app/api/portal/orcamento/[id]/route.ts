@@ -139,11 +139,17 @@ export async function POST(request: NextRequest, { params }: Params) {
     if (os.companies.slug !== slug) return error('Token inválido', 401)
 
     if (action === 'approve') {
-      // Bloquear se já aprovado ou em execução (mas permitir se recusado — cliente mudou de ideia)
       const currentStatusName = os.module_statuses?.name?.toLowerCase() || ''
-      const jaAprovado = currentStatusName.includes('aprovad') || currentStatusName.includes('execu') || currentStatusName.includes('pronta') || currentStatusName.includes('reparad')
-      if (jaAprovado || os.module_statuses?.is_final) {
-        return error('Este orçamento já foi aprovado e está em andamento. Para dúvidas, entre em contato com nosso suporte.', 410)
+
+      // Só pode aprovar se está "Aguardando Aprovação" ou "Recusado" (mudou de ideia)
+      const podeAprovar = currentStatusName.includes('aguardando aprov') || currentStatusName.includes('recusad')
+      if (!podeAprovar) {
+        return error('Este orçamento não está disponível para aprovação. Status atual: ' + (os.module_statuses?.name || '—') + '. Entre em contato com nosso suporte.', 410)
+      }
+
+      // Bloquear se valor é zero
+      if (!os.total_cost || os.total_cost <= 0) {
+        return error('Orçamento sem valor definido. Aguarde a equipe técnica finalizar o laudo.', 400)
       }
 
       // Find "Aprovado" status
@@ -302,15 +308,13 @@ export async function POST(request: NextRequest, { params }: Params) {
     if (action === 'reject') {
       const currentStatusName2 = os.module_statuses?.name?.toLowerCase() || ''
 
-      // Bloquear recusa se já aprovado ou em andamento — precisa contatar suporte
-      const jaEmAndamento = currentStatusName2.includes('aprovad') || currentStatusName2.includes('execu') || currentStatusName2.includes('pronta') || currentStatusName2.includes('reparad')
-      if (jaEmAndamento || os.module_statuses?.is_final) {
-        return error('Este orçamento já foi aprovado e o serviço está em andamento. Para cancelar, entre em contato com nosso suporte pelo WhatsApp: https://wa.me/551126263841', 410)
-      }
-
-      // Bloquear dupla recusa
-      if (currentStatusName2.includes('recusad') || currentStatusName2.includes('cancelad')) {
-        return error('Este orçamento já foi recusado anteriormente.', 410)
+      // Só pode recusar se está "Aguardando Aprovação"
+      const podeRecusar = currentStatusName2.includes('aguardando aprov')
+      if (!podeRecusar) {
+        if (currentStatusName2.includes('recusad')) {
+          return error('Este orçamento já foi recusado anteriormente.', 410)
+        }
+        return error('Este orçamento não pode ser recusado no status atual (' + (os.module_statuses?.name || '—') + '). Entre em contato com nosso suporte pelo WhatsApp: https://wa.me/551126263841', 410)
       }
 
       // Buscar status "Recusado" — NUNCA usar Cancelada (são coisas diferentes)

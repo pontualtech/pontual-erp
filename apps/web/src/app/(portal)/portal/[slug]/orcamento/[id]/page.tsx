@@ -395,18 +395,46 @@ function OrcamentoContent() {
         )}
 
         {/* Action Buttons */}
-        {!showRejectForm && !showApproveForm && (
-          <div className="space-y-3 mb-6">
-            <button type="button" onClick={() => setShowApproveForm(true)} disabled={submitting}
-              className="w-full rounded-2xl bg-green-600 py-4 text-lg font-bold text-white shadow-lg hover:bg-green-700 disabled:opacity-50 transition-colors">
-              ✅ Aprovar Orcamento
-            </button>
-            <button type="button" onClick={() => setShowRejectForm(true)} disabled={submitting}
-              className="w-full rounded-2xl border-2 border-red-300 bg-white py-3 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors">
-              Recusar Orcamento
-            </button>
-          </div>
-        )}
+        {!showRejectForm && !showApproveForm && (() => {
+          const st = (data.status || '').toLowerCase()
+          const podeAprovar = st.includes('aguardando aprov') || st.includes('recusad')
+          const valorValido = data.total_cost > 0
+
+          if (!podeAprovar) {
+            return (
+              <div className="mb-6 rounded-2xl bg-gray-100 p-6 text-center">
+                <p className="text-sm text-gray-500">Este orcamento nao esta disponivel para aprovacao no momento.</p>
+                <p className="text-xs text-gray-400 mt-1">Status atual: {data.status}</p>
+                <a href={whatsappUrl} target="_blank" rel="noopener noreferrer"
+                  className="mt-3 inline-flex items-center gap-2 rounded-lg bg-green-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-green-700">
+                  Falar com Suporte
+                </a>
+              </div>
+            )
+          }
+
+          if (!valorValido) {
+            return (
+              <div className="mb-6 rounded-2xl bg-amber-50 border border-amber-200 p-6 text-center">
+                <p className="text-sm text-amber-800 font-medium">Orcamento ainda sem valor definido.</p>
+                <p className="text-xs text-amber-600 mt-1">Aguarde a equipe tecnica finalizar o laudo e definir o valor.</p>
+              </div>
+            )
+          }
+
+          return (
+            <div className="space-y-3 mb-6">
+              <button type="button" onClick={() => setShowApproveForm(true)} disabled={submitting}
+                className="w-full rounded-2xl bg-green-600 py-4 text-lg font-bold text-white shadow-lg hover:bg-green-700 disabled:opacity-50 transition-colors">
+                ✅ Aprovar Orcamento
+              </button>
+              <button type="button" onClick={() => setShowRejectForm(true)} disabled={submitting}
+                className="w-full rounded-2xl border-2 border-red-300 bg-white py-3 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors">
+                Recusar Orcamento
+              </button>
+            </div>
+          )
+        })()}
 
         {/* WhatsApp Suporte — flutuante elegante */}
         <div className="fixed bottom-6 right-6 z-50">
