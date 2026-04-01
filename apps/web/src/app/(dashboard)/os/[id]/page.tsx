@@ -1730,25 +1730,85 @@ export default function OSDetailPage() {
         </div>
       )}
 
-      {/* ========== FOTOS (collapsed if none) ========== */}
-      {(os.service_order_photos ?? []).length > 0 && (
-        <div className="rounded-xl border bg-white p-4 shadow-sm">
-          <div className="flex items-center gap-2 mb-3">
+      {/* ========== ARQUIVOS / FOTOS ========== */}
+      <div className="rounded-xl border bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
             <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-pink-100">
               <Camera className="h-4 w-4 text-pink-600" />
             </div>
-            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Fotos ({os.service_order_photos.length})</h2>
+            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+              Arquivos ({(os.service_order_photos ?? []).length})
+            </h2>
           </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            {os.service_order_photos.map(f => (
-              <div key={f.id} className="overflow-hidden rounded-lg border">
-                <img src={f.photo_url} alt={f.description || ''} className="aspect-square w-full object-cover" />
-                <p className="p-1.5 text-xs text-gray-500 truncate">{f.description || new Date(f.created_at).toLocaleDateString('pt-BR')}</p>
-              </div>
-            ))}
-          </div>
+          <label className="flex items-center gap-1.5 rounded-lg border border-pink-300 bg-pink-50 px-3 py-1.5 text-sm font-medium text-pink-700 hover:bg-pink-100 cursor-pointer transition-colors">
+            <Plus className="h-4 w-4" /> Anexar
+            <input type="file" className="hidden"
+              accept=".jpg,.jpeg,.gif,.png,.pdf,.doc,.docx,.xls,.xlsx,.csv,.zip"
+              onChange={async (e) => {
+                const file = e.target.files?.[0]
+                if (!file) return
+                if (file.size > 2 * 1024 * 1024) { toast.error('Arquivo muito grande. Maximo: 2MB'); return }
+                const form = new FormData()
+                form.append('file', file)
+                form.append('description', file.name)
+                try {
+                  const res = await fetch(`/api/os/${id}/photos`, { method: 'POST', body: form })
+                  const data = await res.json()
+                  if (!res.ok) throw new Error(data.error || 'Erro no upload')
+                  toast.success('Arquivo anexado!')
+                  loadOS()
+                } catch (err: any) { toast.error(err.message) }
+                e.target.value = ''
+              }} />
+          </label>
         </div>
-      )}
+
+        {(os.service_order_photos ?? []).length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-4">Nenhum arquivo anexado</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            {os.service_order_photos.map(f => {
+              const url = (f as any).url || f.photo_url || ''
+              const name = (f as any).label || f.description || ''
+              const ext = url.split('.').pop()?.toLowerCase() || ''
+              const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)
+
+              return (
+                <div key={f.id} className="group relative overflow-hidden rounded-lg border hover:shadow-md transition-shadow">
+                  {isImage ? (
+                    <a href={url} target="_blank" rel="noopener noreferrer">
+                      <img src={url} alt={name} className="aspect-square w-full object-cover" />
+                    </a>
+                  ) : (
+                    <a href={url} target="_blank" rel="noopener noreferrer"
+                      className="flex flex-col items-center justify-center aspect-square bg-gray-50 hover:bg-gray-100">
+                      <FileText className="h-8 w-8 text-gray-400 mb-1" />
+                      <span className="text-xs font-bold text-gray-500 uppercase">{ext}</span>
+                    </a>
+                  )}
+                  <div className="flex items-center justify-between p-1.5">
+                    <p className="text-xs text-gray-500 truncate flex-1">{name || new Date(f.created_at).toLocaleDateString('pt-BR')}</p>
+                    <button type="button" title="Remover" onClick={async () => {
+                      if (!confirm('Remover este arquivo?')) return
+                      try {
+                        const res = await fetch(`/api/os/${id}/photos?photoId=${f.id}`, { method: 'DELETE' })
+                        if (!res.ok) { const d = await res.json(); throw new Error(d.error) }
+                        toast.success('Arquivo removido')
+                        loadOS()
+                      } catch (err: any) { toast.error(err.message) }
+                    }}
+                      className="p-1 rounded text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+        <p className="text-xs text-gray-400 mt-2">Max 2MB: JPG, PNG, GIF, PDF, DOC, XLS, CSV, ZIP</p>
+      </div>
 
       {/* ========== EQUIPAMENTO PRONTO MODAL ========== */}
       {showProntoModal && os && (
