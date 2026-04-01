@@ -141,17 +141,21 @@ export async function POST(req: NextRequest, { params }: Params) {
           for (const setting of feeSettings) {
             try {
               const config = JSON.parse(setting.value)
+              // Aceitar se: nome da forma inclui nome da operadora, OU só tem uma operadora cadastrada
               if (payment_method.includes(config.name) || feeSettings.length === 1) {
-                daysToReceive = config.days_to_receive || 30
                 const isDebit = pmLower.includes('debito') || pmLower.includes('débito')
                 const debitPct = config.debit?.fee_pct ?? config.debit_fee_pct
                 if (installment_count === 1 && isDebit && debitPct != null) {
+                  // Débito: taxa fixa, recebe em D+1
                   cardFeeTotal = Math.round(totalAmount * debitPct / 100)
-                  daysToReceive = config.debit?.days_to_receive ?? config.days_to_receive ?? 1
-                } else if (Array.isArray(config.installments)) {
-                  for (const range of config.installments) {
+                  daysToReceive = config.debit?.days_to_receive ?? 1
+                } else {
+                  // Crédito: buscar faixa pela quantidade de parcelas
+                  const ranges = config.credit?.installments || config.installments || []
+                  for (const range of ranges) {
                     if (installment_count >= range.from && installment_count <= range.to) {
                       cardFeeTotal = Math.round(totalAmount * range.fee_pct / 100)
+                      daysToReceive = range.days_to_receive ?? 1
                       break
                     }
                   }
@@ -160,6 +164,19 @@ export async function POST(req: NextRequest, { params }: Params) {
                 break
               }
             } catch { /* skip invalid config */ }
+          }
+        }
+
+        // Data de vencimento: para cartão com recebimento rápido (D+1), vence amanhã
+        // Para boleto/PIX/dinheiro, vence hoje (recebimento imediato)
+        const dueDate = new Date()
+        if (daysToReceive > 0) {
+          // Calcular próximo dia útil
+          let dias = 0
+          while (dias < daysToReceive) {
+            dueDate.setDate(dueDate.getDate() + 1)
+            const dow = dueDate.getDay()
+            if (dow !== 0 && dow !== 6) dias++
           }
         }
 
@@ -172,36 +189,34 @@ export async function POST(req: NextRequest, { params }: Params) {
             description: `OS-${String(os.os_number).padStart(4, '0')} — ${os.equipment_type || 'Serviço'} ${os.equipment_brand || ''} ${os.equipment_model || ''}`.trim(),
             total_amount: totalAmount,
             received_amount: 0,
-            due_date: new Date(),
+            due_date: dueDate,
             status: 'PENDENTE',
             payment_method: payment_method,
             installment_count: installment_count,
             card_fee_total: cardFeeTotal,
             net_amount: netAmount,
-            notes: `Gerado automaticamente ao entregar OS-${String(os.os_number).padStart(4, '0')}`,
+            notes: isCard
+              ? `Cartao ${installment_count}x — Taxa ${((cardFeeTotal / totalAmount) * 100).toFixed(2)}% (R$ ${(cardFeeTotal / 100).toFixed(2)}) — Liquido R$ ${(netAmount / 100).toFixed(2)} — Recebe em D+${daysToReceive} — OS-${String(os.os_number).padStart(4, '0')}`
+              : `Gerado automaticamente ao entregar OS-${String(os.os_number).padStart(4, '0')}`,
           },
         })
 
-        // Parcelas
-        if (installment_count > 1) {
-          const baseAmount = Math.floor(netAmount / installment_count)
-          const remainder = netAmount - baseAmount * installment_count
+        // Parcelas — só para boleto parcelado (não para cartão, onde a Rede paga tudo junto)
+        if (installment_count > 1 && !isCard) {
+          const baseAmount = Math.floor(totalAmount / installment_count)
+          const remainder = totalAmount - baseAmount * installment_count
           const installments = []
           const baseDate = new Date()
           for (let i = 0; i < installment_count; i++) {
-            const dueDate = new Date(baseDate)
-            if (i === 0) {
-              dueDate.setDate(dueDate.getDate() + daysToReceive)
-            } else {
-              dueDate.setDate(dueDate.getDate() + daysToReceive + 30 * i)
-            }
+            const instDueDate = new Date(baseDate)
+            instDueDate.setDate(instDueDate.getDate() + 30 * (i + 1))
             installments.push({
               company_id: user.companyId,
               parent_type: 'RECEIVABLE',
               parent_id: receivable.id,
               installment_number: i + 1,
               amount: i === 0 ? baseAmount + remainder : baseAmount,
-              due_date: dueDate,
+              due_date: instDueDate,
               status: 'PENDENTE',
             })
           }
