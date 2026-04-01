@@ -380,6 +380,7 @@ model ServiceOrder {
   status_id             String
   priority              String?               @default("MEDIUM")
   os_type               String?               @default("BALCAO")
+  os_location           String?
   equipment_type        String
   equipment_brand       String?
   equipment_model       String?

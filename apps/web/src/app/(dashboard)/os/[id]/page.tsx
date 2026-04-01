@@ -126,6 +126,7 @@ export default function OSDetailPage() {
   const [coletaChannels, setColetaChannels] = useState<Set<string>>(new Set(['email', 'whatsapp']))
   const [sendingColeta, setSendingColeta] = useState(false)
   const [tiposOS, setTiposOS] = useState<{ key: string; label: string }[]>([])
+  const [locaisOS, setLocaisOS] = useState<{ key: string; label: string }[]>([])
   const [paymentMethod, setPaymentMethod] = useState('Pix')
   const [paymentNotes, setPaymentNotes] = useState('')
   const [paymentMethods, setPaymentMethods] = useState<{ id: string; name: string; icon: string; active: boolean }[]>([])
@@ -256,6 +257,7 @@ export default function OSDetailPage() {
   useEffect(() => {
     fetch('/api/users').then(r => r.json()).then(d => setUsers(d.data ?? [])).catch(() => toast.error('Erro ao carregar usuarios'))
     fetch('/api/settings/tipos-os').then(r => r.json()).then(d => setTiposOS(d.data ?? [])).catch(() => {})
+    fetch('/api/settings/locais-os').then(r => r.json()).then(d => setLocaisOS(d.data ?? [])).catch(() => {})
     fetch('/api/financeiro/formas-pagamento').then(r => r.json()).then(d => {
       setPaymentMethods((d.data ?? []).filter((m: any) => m.active))
       setPaymentMethodsLoaded(true)
@@ -796,6 +798,26 @@ export default function OSDetailPage() {
           ) : (
             <span className="rounded-full px-3 py-1 text-xs font-medium bg-gray-100 text-gray-700">{os.os_type || 'BALCAO'}</span>
           )}
+          {canEditType ? (
+            <select value={(os as any).os_location || ''} title="Local da OS"
+              onChange={async e => {
+                await fetch(`/api/os/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ os_location: e.target.value }) })
+                loadOS()
+              }}
+              className="rounded-full px-3 py-1 text-xs font-medium border bg-blue-50 text-blue-700">
+              <option value="">Sem local</option>
+              {locaisOS.length > 0 ? locaisOS.map(l => (
+                <option key={l.key} value={l.key}>{l.label}</option>
+              )) : (
+                <>
+                  <option value="LOJA">Loja</option>
+                  <option value="EXTERNO">Externo</option>
+                </>
+              )}
+            </select>
+          ) : (os as any).os_location ? (
+            <span className="rounded-full px-3 py-1 text-xs font-medium bg-blue-50 text-blue-700">{(os as any).os_location}</span>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {currentStatus?.name?.toLowerCase().includes('oletar') && (

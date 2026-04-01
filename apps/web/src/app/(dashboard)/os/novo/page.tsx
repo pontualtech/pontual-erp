@@ -31,8 +31,10 @@ export default function NovaOSPage() {
   // Technicians
   const [tecnicos, setTecnicos] = useState<UserProfile[]>([])
   const [tiposOS, setTiposOS] = useState<{ key: string; label: string }[]>([])
+  const [locaisOS, setLocaisOS] = useState<{ key: string; label: string }[]>([])
   useEffect(() => {
     fetch('/api/settings/tipos-os').then(r => r.json()).then(d => setTiposOS(d.data ?? [])).catch(() => {})
+    fetch('/api/settings/locais-os').then(r => r.json()).then(d => setLocaisOS(d.data ?? [])).catch(() => {})
   }, [])
 
   const [form, setForm] = useState({
@@ -46,6 +48,7 @@ export default function NovaOSPage() {
     internal_notes: '',
     priority: 'MEDIUM',
     os_type: 'BALCAO',
+    os_location: 'LOJA',
     technician_id: '',
     estimated_delivery: '',
   })
@@ -98,6 +101,7 @@ export default function NovaOSPage() {
             internal_notes: os.internal_notes || '',
             priority: os.priority || 'MEDIUM',
             os_type: os.os_type || 'BALCAO',
+            os_location: os.os_location || 'LOJA',
             technician_id: os.technician_id || '',
             estimated_delivery: '',
           })
@@ -201,6 +205,7 @@ export default function NovaOSPage() {
         internal_notes: form.internal_notes || undefined,
         priority: form.priority,
         os_type: form.os_type,
+        os_location: form.os_location || undefined,
         technician_id: form.technician_id || undefined,
         estimated_delivery: form.estimated_delivery || undefined,
       }
@@ -457,6 +462,20 @@ export default function NovaOSPage() {
                   <>
                     <option value="BALCAO">Balcao</option>
                     <option value="COLETA">Coleta</option>
+                  </>
+                )}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">Local</label>
+              <select value={form.os_location} onChange={e => updateForm('os_location', e.target.value)}
+                title="Local da OS" className="w-full px-3 py-2 border rounded-md">
+                {locaisOS.length > 0 ? locaisOS.map(l => (
+                  <option key={l.key} value={l.key}>{l.label}</option>
+                )) : (
+                  <>
+                    <option value="LOJA">Loja</option>
+                    <option value="EXTERNO">Externo</option>
                   </>
                 )}
               </select>

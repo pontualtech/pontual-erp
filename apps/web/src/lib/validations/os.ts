@@ -7,7 +7,8 @@ export const createOSSchema = z.object({
   customer_id: z.string().uuid(),
   technician_id: z.string().uuid().optional(),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).default('MEDIUM'),
-  os_type: z.enum(['BALCAO', 'COLETA', 'REMOTO', 'CAMPO', 'ENTREGA']).default('BALCAO'),
+  os_type: z.string().max(50).default('BALCAO'),
+  os_location: z.string().max(50).optional(),
   equipment_type: z.string().max(255).optional(),
   equipment_brand: z.string().max(255).optional(),
   equipment_model: z.string().max(255).optional(),
@@ -59,6 +60,7 @@ export const updateOSSchema = z.object({
   ),
   reception_notes: z.string().max(5000).nullable().optional(),
   payment_method: z.string().max(255).nullable().optional(),
-  os_type: z.enum(['BALCAO', 'COLETA', 'REMOTO', 'CAMPO', 'ENTREGA']).optional(),
+  os_type: z.string().max(50).optional(),
+  os_location: z.string().max(50).nullable().optional(),
   customer_id: z.string().uuid().optional(),
 }).strict()
