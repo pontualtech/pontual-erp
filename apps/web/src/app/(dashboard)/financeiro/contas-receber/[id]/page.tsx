@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { ArrowLeft, DollarSign, Loader2, Trash2, CheckCircle, Pencil, Zap } from 'lucide-react'
+import { ArrowLeft, DollarSign, Loader2, Trash2, CheckCircle, Pencil, Zap, FileText, Download, Printer, RefreshCw } from 'lucide-react'
 import { useAuth } from '@/lib/use-auth'
 
 function safeDate(v: any, utc = false): string {
@@ -18,6 +18,7 @@ interface ContaReceber {
   id: string; description: string; total_amount: number; received_amount: number
   due_date: string; status: string; payment_method: string | null; notes: string | null
   installment_count: number | null
+  boleto_url: string | null; pix_code: string | null
   anticipated_at: string | null; anticipation_fee: number | null; anticipated_amount: number | null
   created_at: string; categories: { name: string } | null
   customers: { legal_name: string } | null
@@ -69,6 +70,7 @@ export default function ContaReceberDetalhePage() {
   const [antecipPreview, setAntecipPreview] = useState<AnticipationPreview | null>(null)
   const [antecipLoading, setAntecipLoading] = useState(false)
   const [antecipConfirming, setAntecipConfirming] = useState(false)
+  const [reenvioLoading, setReenvioLoading] = useState(false)
 
   useEffect(() => {
     fetch(`/api/financeiro/contas-receber/${id}/parcelas`).then(r => r.json())
@@ -118,6 +120,40 @@ export default function ContaReceberDetalhePage() {
       toast.success('Conta excluída'); router.push('/financeiro/contas-receber')
     } catch (err) { toast.error(err instanceof Error ? err.message : 'Erro') }
     finally { setDeleting(false) }
+  }
+
+  // Parsear metadata do boleto
+  function getBoletoMeta(): any {
+    if (!conta?.pix_code) return null
+    try { return JSON.parse(conta.pix_code) } catch { return null }
+  }
+
+  async function handleReenviarRemessa() {
+    if (!conta) return
+    setReenvioLoading(true)
+    try {
+      const res = await fetch(`/api/financeiro/cnab?ids=${conta.id}`)
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Erro ao gerar remessa')
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = res.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1] || 'remessa.rem'
+      a.click()
+      URL.revokeObjectURL(url)
+      toast.success('Arquivo de remessa gerado! Faca upload no Internet Banking do Inter.')
+      // Recarregar conta
+      const r2 = await fetch(`/api/financeiro/contas-receber/${id}`)
+      const d2 = await r2.json()
+      setConta(d2.data)
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao gerar remessa')
+    } finally {
+      setReenvioLoading(false)
+    }
   }
 
   function canAnticipate(): boolean {
@@ -255,6 +291,65 @@ export default function ContaReceberDetalhePage() {
           <Row label="Restante" value={fmt(remaining)} />
         </div>
       </div>
+
+      {/* Boleto / CNAB */}
+      {(() => {
+        const meta = getBoletoMeta()
+        const hasBoleto = !!conta.boleto_url
+        const isCnab = conta.boleto_url?.startsWith('cnab://')
+        return (
+          <div className={`rounded-lg border p-5 space-y-3 ${hasBoleto ? 'border-orange-200 bg-orange-50/50' : 'border-gray-200 bg-white'}`}>
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold text-gray-900 flex items-center gap-2">
+                <FileText className="h-4 w-4 text-orange-600" />
+                Boleto / Remessa CNAB
+              </h2>
+              {hasBoleto && (
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">
+                  {meta?.boletoStatus === 'PAID' ? 'Pago' : meta?.boletoStatus === 'REJECTED' ? 'Rejeitado' : meta?.boletoStatus === 'CANCELLED' ? 'Cancelado' : 'Registrando'}
+                </span>
+              )}
+            </div>
+
+            {hasBoleto ? (
+              <div className="space-y-2">
+                <Row label="Status" value={meta?.boletoStatus === 'PAID' ? 'Pago pelo banco' : meta?.boletoStatus === 'REJECTED' ? 'Rejeitado pelo banco' : meta?.boletoStatus === 'REGISTRANDO' ? 'Aguardando upload no banco' : meta?.boletoStatus || 'Em processamento'} />
+                <Row label="Banco" value="Banco Inter (077)" />
+                <Row label="Metodo" value={isCnab ? 'CNAB 400 — Troca de arquivo' : 'API direta'} />
+                {isCnab && <Row label="Remessa" value={conta.boleto_url?.replace('cnab://remessa-', 'Arquivo #') || '--'} />}
+                {meta?.generatedAt && <Row label="Data emissao" value={safeDate(meta.generatedAt)} />}
+                {meta?.nossoNumero && <Row label="Nosso numero" value={meta.nossoNumero} />}
+                {meta?.dataCredito && <Row label="Data credito" value={safeDate(meta.dataCredito)} />}
+                {meta?.valorPago && <Row label="Valor pago" value={fmt(meta.valorPago)} />}
+                {meta?.ocorrenciaDescricao && <Row label="Ocorrencia" value={meta.ocorrenciaDescricao} />}
+
+                <div className="flex flex-wrap gap-2 pt-2">
+                  <button type="button" onClick={handleReenviarRemessa} disabled={reenvioLoading}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-orange-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-orange-700 disabled:opacity-50">
+                    {reenvioLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                    Reenviar Remessa
+                  </button>
+                  <button type="button" onClick={() => window.open(`/boleto-print?ids=${conta.id}`, '_blank')}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-gray-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-900">
+                    <Printer className="h-3.5 w-3.5" /> Imprimir
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-sm text-gray-500">Nenhum boleto gerado para esta conta.</p>
+                {conta.status === 'PENDENTE' && (
+                  <button type="button" onClick={handleReenviarRemessa} disabled={reenvioLoading}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-orange-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-orange-700 disabled:opacity-50">
+                    {reenvioLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                    Gerar Remessa CNAB
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {conta.notes && (
         <div className="rounded-lg border bg-white p-5">
