@@ -24,6 +24,12 @@ interface FluxoItem {
   acumulado: number
 }
 
+interface ContaBancaria {
+  id: string
+  name: string
+  balance: number
+}
+
 interface FluxoData {
   data: FluxoItem[]
   totais: {
@@ -31,6 +37,8 @@ interface FluxoData {
     saidas: number
     saldo: number
   }
+  saldoBancario: number
+  contas: ContaBancaria[]
 }
 
 function formatCurrency(cents: number) {
@@ -61,11 +69,12 @@ export default function FluxoCaixaPage() {
   const [data, setData] = useState<FluxoData | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Default: 6 months back from now
+  // Default: mês corrente até 11 meses à frente
   const now = new Date()
-  const defaultFrom = new Date(now.getFullYear(), now.getMonth() - 5, 1)
+  const defaultFrom = new Date(now.getFullYear(), now.getMonth(), 1)
+  const defaultTo = new Date(now.getFullYear(), now.getMonth() + 12, 0)
   const [fromDate, setFromDate] = useState(defaultFrom.toISOString().slice(0, 10))
-  const [toDate, setToDate] = useState(now.toISOString().slice(0, 10))
+  const [toDate, setToDate] = useState(defaultTo.toISOString().slice(0, 10))
 
   const loadData = useCallback(() => {
     setLoading(true)
@@ -132,6 +141,28 @@ export default function FluxoCaixaPage() {
           </div>
         </div>
       </div>
+
+      {/* Saldo Bancário */}
+      {data && data.contas && data.contas.length > 0 && (
+        <div className="rounded-lg border bg-gradient-to-r from-blue-50 to-indigo-50 p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-gray-700">Saldo Bancario Atual</h2>
+            <span className={cn('text-2xl font-bold', (data.saldoBancario ?? 0) >= 0 ? 'text-blue-700' : 'text-red-600')}>
+              {formatCurrency(data.saldoBancario ?? 0)}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-4">
+            {data.contas.map(c => (
+              <div key={c.id} className="flex items-center gap-2 text-sm">
+                <span className="text-gray-500">{c.name}:</span>
+                <span className={cn('font-medium', c.balance >= 0 ? 'text-blue-700' : 'text-red-600')}>
+                  {formatCurrency(c.balance)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Summary Cards */}
       {totais && (
