@@ -3,20 +3,14 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
-import { createClient } from '@/lib/supabase/server'
+import { writeFile, mkdir, unlink } from 'fs/promises'
+import { join } from 'path'
+import { existsSync } from 'fs'
 
 type Params = { params: { id: string } }
 
 const MAX_SIZE = 2 * 1024 * 1024 // 2MB
 const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'gif', 'png', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'zip']
-const ALLOWED_MIMES = [
-  'image/jpeg', 'image/jpg', 'image/gif', 'image/png',
-  'application/pdf',
-  'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'text/csv',
-  'application/zip', 'application/x-zip-compressed',
-]
 
 export async function GET(req: NextRequest, { params }: Params) {
   try {
@@ -54,47 +48,42 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     const formData = await req.formData()
     const file = formData.get('file') as File | null
-    const label = (formData.get('label') as string) || ''
     const description = (formData.get('description') as string) || file?.name || ''
 
     if (!file) return error('Arquivo é obrigatório', 400)
 
-    // Validar tamanho
     if (file.size > MAX_SIZE) {
       return error(`Arquivo muito grande (${(file.size / 1024 / 1024).toFixed(1)}MB). Máximo: 2MB`, 400)
     }
 
-    // Validar extensão
     const ext = (file.name.split('.').pop() || '').toLowerCase()
     if (!ALLOWED_EXTENSIONS.includes(ext)) {
-      return error(`Tipo de arquivo não permitido (.${ext}). Permitidos: ${ALLOWED_EXTENSIONS.join(', ')}`, 400)
+      return error(`Tipo não permitido (.${ext}). Permitidos: ${ALLOWED_EXTENSIONS.join(', ')}`, 400)
     }
 
-    // Validar MIME type
-    if (!ALLOWED_MIMES.includes(file.type) && file.type !== 'application/octet-stream') {
-      return error(`Tipo MIME não permitido (${file.type})`, 400)
+    // Salvar no filesystem (/app/uploads no Docker, ./uploads local)
+    const baseDir = existsSync('/app/uploads') ? '/app/uploads' : join(process.cwd(), 'uploads')
+    const uploadsDir = join(baseDir, 'os', params.id)
+    if (!existsSync(uploadsDir)) {
+      await mkdir(uploadsDir, { recursive: true })
     }
 
-    // Upload to Supabase Storage
-    const supabase = createClient()
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-    const path = `os/${user.companyId}/${params.id}/${Date.now()}_${safeName}`
+    const fileName = `${Date.now()}_${safeName}`
+    const filePath = join(uploadsDir, fileName)
     const buffer = Buffer.from(await file.arrayBuffer())
 
-    const { error: uploadErr } = await supabase.storage
-      .from('os-photos')
-      .upload(path, buffer, { contentType: file.type, upsert: false })
+    await writeFile(filePath, buffer)
 
-    if (uploadErr) return error(`Falha no upload: ${uploadErr.message}`, 500)
-
-    const { data: urlData } = supabase.storage.from('os-photos').getPublicUrl(path)
+    // URL servida via API
+    const publicUrl = `/api/os/${params.id}/photos/file/${fileName}`
 
     const photo = await prisma.serviceOrderPhoto.create({
       data: {
         company_id: user.companyId,
         service_order_id: params.id,
-        url: urlData.publicUrl,
-        label: description || label,
+        url: publicUrl,
+        label: description,
         uploaded_by: user.id,
       },
     })
@@ -105,7 +94,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       module: 'os',
       action: 'upload_file',
       entityId: params.id,
-      newValue: { photoId: photo.id, fileName: file.name, fileSize: file.size, fileType: file.type },
+      newValue: { photoId: photo.id, fileName: file.name, fileSize: file.size },
     })
 
     return success(photo, 201)
@@ -120,8 +109,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     if (result instanceof NextResponse) return result
     const user = result
 
-    const { searchParams } = new URL(req.url)
-    const photoId = searchParams.get('photoId')
+    const photoId = req.nextUrl.searchParams.get('photoId')
     if (!photoId) return error('photoId obrigatório', 400)
 
     const photo = await prisma.serviceOrderPhoto.findFirst({
@@ -129,13 +117,13 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     })
     if (!photo) return error('Arquivo não encontrado', 404)
 
-    // Remover do Supabase Storage
+    // Remover do filesystem
     try {
-      const supabase = createClient()
-      const urlPath = new URL(photo.url).pathname
-      const storagePath = urlPath.split('/os-photos/')[1]
-      if (storagePath) {
-        await supabase.storage.from('os-photos').remove([storagePath])
+      const fileName = photo.url.split('/').pop()
+      if (fileName) {
+        const baseDir = existsSync('/app/uploads') ? '/app/uploads' : join(process.cwd(), 'uploads')
+        const filePath = join(baseDir, 'os', params.id, fileName)
+        if (existsSync(filePath)) await unlink(filePath)
       }
     } catch {} // Best-effort
 

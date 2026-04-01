@@ -56,6 +56,9 @@ COPY --from=builder /app/node_modules/@xmldom ./node_modules/@xmldom
 # Copy startup script
 COPY --from=builder /app/start.sh ./start.sh
 
+# Diretório de uploads (montado como volume persistente)
+RUN mkdir -p /app/uploads && chown nextjs:nodejs /app/uploads
+
 USER nextjs
 
 EXPOSE 3000
