@@ -36,6 +36,8 @@ export async function GET(req: NextRequest) {
 
     const filterOsType = url.get('osType')
     if (filterOsType) where.os_type = filterOsType
+    const filterOsLocation = url.get('osLocation')
+    if (filterOsLocation) where.os_location = filterOsLocation
 
     const dateFrom = url.get('dateFrom')
     const dateTo = url.get('dateTo')

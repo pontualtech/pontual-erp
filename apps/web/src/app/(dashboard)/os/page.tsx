@@ -98,12 +98,22 @@ export default function OSListPage() {
         setOsTypeLabel(map)
       }
     }).catch(() => {})
+    fetch('/api/settings/locais-os').then(r => r.json()).then(d => {
+      const locais = d.data ?? []
+      if (locais.length > 0) {
+        const map: Record<string, string> = {}
+        locais.forEach((l: { key: string; label: string }) => { map[l.key] = l.label })
+        setOsLocationLabel(map)
+      }
+    }).catch(() => {})
   }, [])
   const [statusMap, setStatusMap] = useState<Record<string, { name: string; color: string }>>({})
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string[]>([])
   const [typeFilter, setTypeFilter] = useState('')
+  const [locationFilter, setLocationFilter] = useState('')
+  const [osLocationLabel, setOsLocationLabel] = useState<Record<string, string>>({ LOJA: 'Loja', EXTERNO: 'Externo' })
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [totalFiltered, setTotalFiltered] = useState(0)
@@ -238,6 +248,7 @@ export default function OSListPage() {
     if (statusFilter.length === 1) params.set('statusId', statusFilter[0])
     else if (statusFilter.length > 1) statusFilter.forEach(s => params.append('statusId', s))
     if (typeFilter) params.set('osType', typeFilter)
+    if (locationFilter) params.set('osLocation', locationFilter)
     if (overdueFilter) params.set('overdue', 'true')
     if (ownOnly) params.set('own_only', 'true')
     if (dateFrom) params.set('dateFrom', dateFrom)
@@ -253,7 +264,7 @@ export default function OSListPage() {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { loadOS(); setSelected(new Set()) }, [search, statusFilter, typeFilter, overdueFilter, page, visibilityLoaded, ownOnly, dateFrom, dateTo])
+  useEffect(() => { loadOS(); setSelected(new Set()) }, [search, statusFilter, typeFilter, locationFilter, overdueFilter, page, visibilityLoaded, ownOnly, dateFrom, dateTo])
 
   function toggleSelect(id: string) {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -604,6 +615,11 @@ export default function OSListPage() {
           className={cn('rounded-md border px-2 py-1.5 text-xs', typeFilter ? 'bg-purple-50 border-purple-300 text-purple-700' : 'bg-white text-gray-600')}>
           <option value="">Todos os Tipos</option>
           {Object.entries(osTypeLabel).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+        <select title="Filtrar por local" value={locationFilter} onChange={e => { setLocationFilter(e.target.value); setPage(1) }}
+          className={cn('rounded-md border px-2 py-1.5 text-xs', locationFilter ? 'bg-sky-50 border-sky-300 text-sky-700' : 'bg-white text-gray-600')}>
+          <option value="">Todos os Locais</option>
+          {Object.entries(osLocationLabel).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
         <span className="text-gray-300">|</span>
         {/* Date filters */}
