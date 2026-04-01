@@ -107,6 +107,11 @@ export async function POST(request: NextRequest, { params }: Params) {
       reason?: string
     }
 
+    // Capturar IP do cliente
+    const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+      || request.headers.get('x-real-ip')
+      || 'IP desconhecido'
+
     if (!token || !slug) {
       return error('Token e slug são obrigatórios', 400)
     }
@@ -161,6 +166,12 @@ export async function POST(request: NextRequest, { params }: Params) {
         if (dow !== 0 && dow !== 6) diasUteis++
       }
 
+      // Nota interna com data, hora e IP
+      const now = new Date()
+      const dataHora = now.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+      const notaAprovacao = `[${dataHora}] Orcamento APROVADO pelo cliente via portal (IP: ${clientIp})`
+      const currentNotes = os.internal_notes || ''
+
       // Transição atômica
       await prisma.$transaction(async (tx) => {
         await tx.serviceOrder.update({
@@ -169,6 +180,7 @@ export async function POST(request: NextRequest, { params }: Params) {
             status_id: approvedStatus.id,
             approved_cost: os.total_cost || 0,
             estimated_delivery: estimatedDelivery,
+            internal_notes: currentNotes ? `${currentNotes}\n${notaAprovacao}` : notaAprovacao,
             updated_at: new Date(),
           },
         })
@@ -303,8 +315,9 @@ export async function POST(request: NextRequest, { params }: Params) {
         where: { company_id: os.company_id, module: 'os', name: { contains: 'Recusad', mode: 'insensitive' } },
       })
 
-      const today = new Date().toLocaleDateString('pt-BR')
-      const rejectionNote = `Orçamento recusado pelo cliente em ${today} (via portal)${reason ? ': ' + reason : ''}`
+      const now2 = new Date()
+      const dataHora2 = now2.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+      const rejectionNote = `[${dataHora2}] Orcamento RECUSADO pelo cliente via portal (IP: ${clientIp})${reason ? ' — Motivo: ' + reason : ''}`
       const osNum2 = String(os.os_number).padStart(4, '0')
       const customerName2 = os.customers?.legal_name || 'Cliente'
       const equipment2 = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ')
