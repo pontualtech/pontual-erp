@@ -131,6 +131,7 @@ export default function OSListPage() {
   const [sortField, setSortField] = useState<string>('os_number')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [overdueFilter, setOverdueFilter] = useState(false)
+  const [showCancelled, setShowCancelled] = useState(false)
   const [allowedColumns, setAllowedColumns] = useState<string[]>([])
   const [ownOnly, setOwnOnly] = useState(false)
   const [visibilityLoaded, setVisibilityLoaded] = useState(false)
@@ -254,6 +255,7 @@ export default function OSListPage() {
     if (locationFilter) params.set('osLocation', locationFilter)
     if (equipFilter) params.set('equipmentType', equipFilter)
     if (overdueFilter) params.set('overdue', 'true')
+    if (!showCancelled) params.set('hideCancelled', 'true')
     if (ownOnly) params.set('own_only', 'true')
     if (dateFrom) params.set('dateFrom', dateFrom)
     if (dateTo) params.set('dateTo', dateTo)
@@ -268,7 +270,7 @@ export default function OSListPage() {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { loadOS(); setSelected(new Set()) }, [search, statusFilter, typeFilter, locationFilter, equipFilter, overdueFilter, page, visibilityLoaded, ownOnly, dateFrom, dateTo])
+  useEffect(() => { loadOS(); setSelected(new Set()) }, [search, statusFilter, typeFilter, locationFilter, equipFilter, overdueFilter, showCancelled, page, visibilityLoaded, ownOnly, dateFrom, dateTo])
 
   function toggleSelect(id: string) {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -664,6 +666,11 @@ export default function OSListPage() {
           <AlertTriangle className="h-3.5 w-3.5" />
           Em atraso
         </button>
+        <label className="flex items-center gap-1.5 cursor-pointer text-xs text-gray-500 hover:text-gray-700">
+          <input type="checkbox" checked={showCancelled} onChange={e => { setShowCancelled(e.target.checked); setPage(1) }}
+            className="rounded border-gray-300 h-3.5 w-3.5" />
+          Canceladas
+        </label>
         <span className="text-gray-300">|</span>
         {/* Column toggle */}
         <div className="relative">

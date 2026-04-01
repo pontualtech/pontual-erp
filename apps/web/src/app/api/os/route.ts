@@ -41,6 +41,18 @@ export async function GET(req: NextRequest) {
     const filterEquipType = url.get('equipmentType')
     if (filterEquipType) where.equipment_type = filterEquipType
 
+    // Ocultar canceladas por padrão (status is_final = true)
+    const hideCancelled = url.get('hideCancelled') === 'true'
+    if (hideCancelled && !statusIds.length) {
+      const finalStatuses = await prisma.moduleStatus.findMany({
+        where: { company_id: user.companyId, module: 'os', is_final: true },
+        select: { id: true },
+      })
+      if (finalStatuses.length > 0) {
+        where.status_id = { ...where.status_id, notIn: finalStatuses.map(s => s.id) }
+      }
+    }
+
     const dateFrom = url.get('dateFrom')
     const dateTo = url.get('dateTo')
     if (dateFrom || dateTo) {
