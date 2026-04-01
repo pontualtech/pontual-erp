@@ -11,6 +11,8 @@ interface RetornoResult {
   pagos: number
   rejeitados: number
   outros: number
+  totalRecebido: number
+  contaBancaria: string | null
   detalhes: Array<{ nossoNumero: string; seuNumero: string; status: string; valorPago: number; ocorrencia: string }>
 }
 
@@ -232,7 +234,7 @@ export default function CNABPage() {
             <ul className="mt-2 space-y-1 text-sm text-green-800">
               <li>1. Baixe o arquivo de retorno (.ret) no Internet Banking do Banco Inter</li>
               <li>2. Importe o arquivo abaixo</li>
-              <li>3. O sistema atualiza automaticamente as contas: pagas, rejeitadas ou canceladas</li>
+              <li>3. O sistema atualiza as contas, gera os lancamentos financeiros e atualiza o saldo bancario</li>
             </ul>
           </div>
 
@@ -252,7 +254,27 @@ export default function CNABPage() {
           {/* Resultado do retorno */}
           {retornoResult && (
             <div className="rounded-lg border bg-white p-6 shadow-sm">
-              <h3 className="font-semibold text-gray-900 mb-4">Resultado do Processamento</h3>
+              <h3 className="font-semibold text-gray-900 mb-2">Resultado do Processamento</h3>
+
+              {/* Total recebido destaque */}
+              {retornoResult.totalRecebido > 0 && (
+                <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-4 mb-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-emerald-700 font-medium">Total recebido</p>
+                      <p className="text-3xl font-bold text-emerald-700">
+                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(retornoResult.totalRecebido / 100)}
+                      </p>
+                    </div>
+                    <div className="text-right text-sm text-emerald-600">
+                      <p>{retornoResult.pagos} boleto(s) pago(s)</p>
+                      {retornoResult.contaBancaria && <p>Lancamento gerado na conta bancaria</p>}
+                      {!retornoResult.contaBancaria && <p className="text-amber-600">Sem conta bancaria vinculada — cadastre em Contas</p>}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-3 gap-4 mb-4">
                 <div className="rounded-lg bg-green-50 p-3 text-center">
                   <CheckCircle className="h-6 w-6 text-green-600 mx-auto mb-1" />

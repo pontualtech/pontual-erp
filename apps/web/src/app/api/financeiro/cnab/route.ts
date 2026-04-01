@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
+import { logAudit } from '@/lib/audit'
 import { gerarRemessaCNAB400, parsearRetornoCNAB400, type BoletoRemessa400, type CedenteConfig400 } from '@/lib/boleto/cnab/cnab400-inter'
 
 /**
@@ -141,6 +142,12 @@ export async function GET(req: NextRequest) {
  * POST /api/financeiro/cnab — Processar arquivo de retorno CNAB 400
  *
  * Body: { content: string } (conteúdo do arquivo .ret)
+ *
+ * Para cada boleto PAGO:
+ * 1. Atualiza AccountReceivable → status RECEBIDO
+ * 2. Cria Transaction CREDIT na conta bancária do Inter
+ * 3. Atualiza saldo (Account.current_balance)
+ * 4. Registra auditoria
  */
 export async function POST(req: NextRequest) {
   try {
@@ -157,7 +164,51 @@ export async function POST(req: NextRequest) {
 
     const retornos = parsearRetornoCNAB400(content)
 
+    // Buscar conta bancária do Inter para lançamentos
+    // Prioridade: 1) Setting cnab.account_id  2) Auto-detect por agência+conta  3) null (sem lançamento)
+    const cnabAccountSetting = await prisma.setting.findUnique({
+      where: { company_id_key: { company_id: user.companyId, key: 'cnab.account_id' } },
+    })
+
+    let interAccountId = cnabAccountSetting?.value || null
+
+    if (!interAccountId) {
+      // Auto-detect: buscar conta bancária que bate com agência/conta do CNAB
+      const cnabSettings = await prisma.setting.findMany({
+        where: {
+          company_id: user.companyId,
+          key: { in: ['cnab.agencia', 'cnab.conta'] },
+        },
+      })
+      const cfg: Record<string, string> = {}
+      for (const s of cnabSettings) cfg[s.key] = s.value
+
+      if (cfg['cnab.agencia'] && cfg['cnab.conta']) {
+        const contaNum = cfg['cnab.conta'].replace(/\D/g, '')
+        const interAccount = await prisma.account.findFirst({
+          where: {
+            company_id: user.companyId,
+            is_active: true,
+            OR: [
+              { bank_name: { contains: 'Inter', mode: 'insensitive' } },
+              { account_number: { contains: contaNum } },
+            ],
+          },
+        })
+        if (interAccount) {
+          interAccountId = interAccount.id
+          // Salvar para próximas vezes
+          await prisma.setting.upsert({
+            where: { company_id_key: { company_id: user.companyId, key: 'cnab.account_id' } },
+            create: { company_id: user.companyId, key: 'cnab.account_id', value: interAccount.id, type: 'string' },
+            update: { value: interAccount.id },
+          })
+        }
+      }
+    }
+
     let pagos = 0, rejeitados = 0, outros = 0
+    let totalRecebido = 0
 
     for (const ret of retornos) {
       // Buscar conta a receber pelo seuNumero (ID parcial) ou nossoNumero
@@ -174,20 +225,66 @@ export async function POST(req: NextRequest) {
       if (!receivable) continue
 
       if (ret.status === 'PAGO') {
-        await prisma.accountReceivable.update({
-          where: { id: receivable.id },
-          data: {
-            status: 'RECEBIDO',
-            received_amount: ret.valorPago || receivable.total_amount,
-            payment_method: 'Boleto',
-            pix_code: JSON.stringify({
-              ...(receivable.pix_code ? JSON.parse(receivable.pix_code) : {}),
-              boletoStatus: 'PAID',
-              dataCredito: ret.dataCredito?.toISOString(),
-              valorPago: ret.valorPago,
-            }),
-          },
+        const valorRecebido = ret.valorPago || receivable.total_amount
+        const dataCredito = ret.dataCredito || new Date()
+
+        // Operação atômica: receivable + transaction + saldo
+        await prisma.$transaction(async (tx) => {
+          // 1. Atualizar conta a receber
+          await tx.accountReceivable.update({
+            where: { id: receivable.id },
+            data: {
+              status: 'RECEBIDO',
+              received_amount: valorRecebido,
+              payment_method: 'Boleto',
+              updated_at: new Date(),
+              pix_code: JSON.stringify({
+                ...(receivable.pix_code ? JSON.parse(receivable.pix_code) : {}),
+                boletoStatus: 'PAID',
+                nossoNumero: ret.nossoNumero,
+                dataCredito: dataCredito.toISOString(),
+                valorPago: valorRecebido,
+              }),
+            },
+          })
+
+          // 2. Criar lançamento financeiro (Transaction CREDIT)
+          if (interAccountId) {
+            await tx.transaction.create({
+              data: {
+                company_id: user.companyId,
+                account_id: interAccountId,
+                transaction_type: 'CREDIT',
+                amount: valorRecebido,
+                description: `Recebimento boleto: ${receivable.description}`,
+                bank_ref: ret.nossoNumero || undefined,
+                transaction_date: dataCredito,
+              },
+            })
+
+            // 3. Atualizar saldo da conta bancária
+            await tx.account.update({
+              where: { id: interAccountId },
+              data: {
+                current_balance: { increment: valorRecebido },
+                updated_at: new Date(),
+              },
+            })
+          }
         })
+
+        // Audit log
+        logAudit({
+          companyId: user.companyId,
+          userId: user.id,
+          module: 'financeiro',
+          action: 'cnab.retorno.pago',
+          entityId: receivable.id,
+          oldValue: { status: receivable.status, received_amount: receivable.received_amount },
+          newValue: { status: 'RECEBIDO', received_amount: valorRecebido, nossoNumero: ret.nossoNumero, accountId: interAccountId },
+        })
+
+        totalRecebido += valorRecebido
         pagos++
       } else if (ret.status === 'REJEITADO') {
         await prisma.accountReceivable.update({
@@ -226,6 +323,8 @@ export async function POST(req: NextRequest) {
       pagos,
       rejeitados,
       outros,
+      totalRecebido,
+      contaBancaria: interAccountId || null,
       detalhes: retornos.map(r => ({
         nossoNumero: r.nossoNumero,
         seuNumero: r.seuNumero,
