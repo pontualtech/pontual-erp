@@ -3,7 +3,8 @@
 import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Search, Loader2, CheckCircle, AlertCircle, Building2, User } from 'lucide-react'
+import { Search, Loader2, CheckCircle, AlertCircle, Building2, User, ArrowLeft } from 'lucide-react'
+import Link from 'next/link'
 
 // ── Masks ──────────────────────────────────────
 function maskCPF(v: string) {
@@ -311,9 +312,19 @@ export default function NovoClientePage() {
 
   return (
     <div className="max-w-2xl mx-auto">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">
-        {isEditing ? 'Editar Cliente' : 'Novo Cliente'}
-      </h1>
+      <div className="flex items-center gap-3 mb-6">
+        <Link href="/clientes" className="rounded-lg p-2 hover:bg-gray-100">
+          <ArrowLeft className="h-5 w-5 text-gray-500" />
+        </Link>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {isEditing ? 'Editar Cliente' : 'Novo Cliente'}
+          </h1>
+          <p className="text-sm text-gray-500">
+            <Link href="/clientes" className="text-blue-600 hover:underline">Clientes</Link> / {isEditing ? 'Editar' : 'Novo'}
+          </p>
+        </div>
+      </div>
 
       <form onSubmit={handleSubmit} className="space-y-5">
 

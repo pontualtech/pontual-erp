@@ -3,6 +3,8 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
+import { ArrowLeft } from 'lucide-react'
+import Link from 'next/link'
 
 interface ProdutoBusca {
   id: string
@@ -82,7 +84,17 @@ export default function MovimentarEstoquePage() {
 
   return (
     <div className="max-w-2xl mx-auto">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Movimentar Estoque</h1>
+      <div className="flex items-center gap-3 mb-6">
+        <Link href="/estoque" className="rounded-lg p-2 hover:bg-gray-100">
+          <ArrowLeft className="h-5 w-5 text-gray-500" />
+        </Link>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Movimentar Estoque</h1>
+          <p className="text-sm text-gray-500">
+            <Link href="/estoque" className="text-blue-600 hover:underline">Estoque</Link> / Movimentar
+          </p>
+        </div>
+      </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Produto */}

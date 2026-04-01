@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
-import { Plus, X, Search, Loader2, CheckCircle, Building2, User, ChevronDown } from 'lucide-react'
+import { Plus, X, Search, Loader2, CheckCircle, Building2, User, ChevronDown, ArrowLeft } from 'lucide-react'
+import Link from 'next/link'
 
 interface Cliente { id: string; legal_name: string; trade_name: string | null }
 interface UserProfile { id: string; name: string }
@@ -221,7 +222,17 @@ export default function NovaOSPage() {
 
   return (
     <div className="max-w-2xl mx-auto">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Nova Ordem de Servico</h1>
+      <div className="flex items-center gap-3 mb-6">
+        <Link href="/os" className="rounded-lg p-2 hover:bg-gray-100">
+          <ArrowLeft className="h-5 w-5 text-gray-500" />
+        </Link>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Nova Ordem de Servico</h1>
+          <p className="text-sm text-gray-500">
+            <Link href="/os" className="text-blue-600 hover:underline">Ordens de Servico</Link> / Nova
+          </p>
+        </div>
+      </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Cliente */}

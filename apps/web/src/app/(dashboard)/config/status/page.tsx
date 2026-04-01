@@ -47,6 +47,17 @@ export default function StatusPage() {
 
   useEffect(() => { loadStatuses() }, [])
 
+  useEffect(() => {
+    function handleEsc(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        if (showModal) { setShowModal(false); return }
+        if (deleteId) { setDeleteId(null); return }
+      }
+    }
+    document.addEventListener('keydown', handleEsc)
+    return () => document.removeEventListener('keydown', handleEsc)
+  }, [showModal, deleteId])
+
   function openCreate() {
     setEditingStatus(null)
     setFormName('')

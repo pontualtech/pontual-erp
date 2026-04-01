@@ -195,13 +195,18 @@ export default function OSDetailPage() {
   // Esc = voltar para lista (com confirmação)
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape' && !showAddItem && !showPaymentModal) {
+      if (e.key === 'Escape') {
+        if (showPaymentModal) { setShowPaymentModal(false); setPendingStatusId(null); return }
+        if (showQuoteModal) { setShowQuoteModal(false); return }
+        if (showPrintModal) { setShowPrintModal(false); return }
+        if (showNfseModal && !emittingNfse) { setShowNfseModal(false); return }
+        if (showAddItem) { setShowAddItem(false); return }
         if (confirmLeave()) router.push('/os')
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [router, showAddItem, showPaymentModal, originalValues, editDiagnosis, editNotes, editInternalNotes, editTechnicianId, editPaymentMethod, editEstimatedDelivery, editActualDelivery])
+  }, [router, showAddItem, showPaymentModal, showQuoteModal, showPrintModal, showNfseModal, emittingNfse, originalValues, editDiagnosis, editNotes, editInternalNotes, editTechnicianId, editPaymentMethod, editEstimatedDelivery, editActualDelivery])
 
   // Pending status transition (for payment modal)
   const [pendingStatusId, setPendingStatusId] = useState<string | null>(null)
@@ -236,17 +241,17 @@ export default function OSDetailPage() {
           }
         }
       })
-      .catch(() => {})
+      .catch(() => toast.error('Erro ao carregar ordem de servico'))
       .finally(() => setLoading(false))
   }
 
   useEffect(() => {
-    fetch('/api/users').then(r => r.json()).then(d => setUsers(d.data ?? [])).catch(() => {})
+    fetch('/api/users').then(r => r.json()).then(d => setUsers(d.data ?? [])).catch(() => toast.error('Erro ao carregar usuarios'))
     fetch('/api/financeiro/formas-pagamento').then(r => r.json()).then(d => {
       setPaymentMethods((d.data ?? []).filter((m: any) => m.active))
       setPaymentMethodsLoaded(true)
-    }).catch(() => {})
-    fetch('/api/financeiro/card-fees').then(r => r.json()).then(d => setCardFees(d.data ?? [])).catch(() => {})
+    }).catch(() => toast.error('Erro ao carregar formas de pagamento'))
+    fetch('/api/financeiro/card-fees').then(r => r.json()).then(d => setCardFees(d.data ?? [])).catch(() => toast.error('Erro ao carregar taxas de cartao'))
   }, [])
 
   useEffect(() => {
@@ -259,7 +264,7 @@ export default function OSDetailPage() {
         cols.forEach(col => { map[col.id] = col })
         setStatusMap(map)
       })
-      .catch(() => {})
+      .catch(() => toast.error('Erro ao carregar status'))
   }, [])
 
   useEffect(() => { loadOS() }, [id])
@@ -271,7 +276,7 @@ export default function OSDetailPage() {
     fetch(`/api/produtos?search=${encodeURIComponent(q)}&type=${type}&limit=8`)
       .then(r => r.json())
       .then(d => setItemResults(d.data ?? []))
-      .catch(() => {})
+      .catch(() => toast.error('Erro ao buscar produtos'))
   }, [itemType])
 
   useEffect(() => {
@@ -381,7 +386,7 @@ export default function OSDetailPage() {
   }
 
   function loadKits() {
-    fetch('/api/kits').then(r => r.json()).then(d => setKits(d.data ?? [])).catch(() => {})
+    fetch('/api/kits').then(r => r.json()).then(d => setKits(d.data ?? [])).catch(() => toast.error('Erro ao carregar kits'))
   }
 
   useEffect(() => { loadKits() }, [])
@@ -582,7 +587,7 @@ export default function OSDetailPage() {
           const methods = (d.data ?? []).filter((m: any) => m.active)
           setPaymentMethods(methods)
           setPaymentMethodsLoaded(true)
-        }).catch(() => {})
+        }).catch(() => toast.error('Erro ao carregar formas de pagamento'))
       }
       setShowPaymentModal(true)
     } else {
@@ -729,7 +734,7 @@ export default function OSDetailPage() {
                     fetch('/api/financeiro/formas-pagamento').then(r => r.json()).then(d => {
                       setPaymentMethods((d.data ?? []).filter((m: any) => m.active))
                       setPaymentMethodsLoaded(true)
-                    }).catch(() => {})
+                    }).catch(() => toast.error('Erro ao carregar formas de pagamento'))
                   }
                   setShowPaymentModal(true)
                 } else {

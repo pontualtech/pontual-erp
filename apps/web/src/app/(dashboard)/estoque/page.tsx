@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Package, AlertTriangle, TrendingDown, DollarSign } from 'lucide-react'
+import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
 interface EstoqueDashboard {
@@ -38,7 +39,7 @@ export default function EstoquePage() {
         setStats(dashData.data ?? dashData)
         setAlertas(alertData.data ?? alertData ?? [])
       })
-      .catch(() => {})
+      .catch(() => toast.error('Erro ao carregar dados de estoque'))
       .finally(() => setLoading(false))
   }, [])
 

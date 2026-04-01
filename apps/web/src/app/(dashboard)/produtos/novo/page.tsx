@@ -3,7 +3,8 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Loader2, Package, Wrench } from 'lucide-react'
+import { Loader2, Package, Wrench, ArrowLeft } from 'lucide-react'
+import Link from 'next/link'
 
 export default function NovoProdutoPage() {
   const router = useRouter()
@@ -74,9 +75,19 @@ export default function NovoProdutoPage() {
 
   return (
     <div className="max-w-2xl mx-auto">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">
-        {tipo === 'servico' ? 'Novo Serviço' : 'Novo Produto'}
-      </h1>
+      <div className="flex items-center gap-3 mb-6">
+        <Link href="/produtos" className="rounded-lg p-2 hover:bg-gray-100">
+          <ArrowLeft className="h-5 w-5 text-gray-500" />
+        </Link>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {tipo === 'servico' ? 'Novo Serviço' : 'Novo Produto'}
+          </h1>
+          <p className="text-sm text-gray-500">
+            <Link href="/produtos" className="text-blue-600 hover:underline">Produtos</Link> / Novo
+          </p>
+        </div>
+      </div>
 
       <form onSubmit={handleSubmit} className="space-y-5">
 

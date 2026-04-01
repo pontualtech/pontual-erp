@@ -112,10 +112,15 @@ export default function NovoTicketPage() {
   return (
     <div className="max-w-2xl mx-auto">
       <div className="flex items-center gap-3 mb-6">
-        <Link href="/tickets" className="rounded-md p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700">
+        <Link href="/tickets" className="rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-gray-700">
           <ArrowLeft className="h-5 w-5 text-gray-500" />
         </Link>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Novo Ticket</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Novo Ticket</h1>
+          <p className="text-sm text-gray-500">
+            <Link href="/tickets" className="text-blue-600 hover:underline">Tickets</Link> / Novo
+          </p>
+        </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-5">

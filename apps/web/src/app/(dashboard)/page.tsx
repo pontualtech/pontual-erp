@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/use-auth'
 import { ClipboardList, Users, DollarSign, AlertTriangle, Package, Bell, Pin, Plus, X } from 'lucide-react'
+import { toast } from 'sonner'
 
 interface Aviso {
   id: string
@@ -68,17 +69,23 @@ export default function DashboardPage() {
   const [avisoForm, setAvisoForm] = useState({ title: '', message: '', priority: 'NORMAL', pinned: false, expires_at: '' })
 
   const loadAvisos = () => {
-    fetch('/api/avisos').then(r => r.json()).then(d => setAvisos(d.data ?? [])).catch(() => {})
+    fetch('/api/avisos').then(r => r.json()).then(d => setAvisos(d.data ?? [])).catch(() => toast.error('Erro ao carregar avisos'))
   }
 
   useEffect(() => {
     Promise.all([
-      fetch('/api/os/dashboard').then(r => r.json()).then(d => setOsDash(d.data)).catch(() => {}),
-      fetch('/api/estoque/dashboard').then(r => r.json()).then(d => setEstoqueDash(d.data)).catch(() => {}),
-      fetch('/api/financeiro/dashboard').then(r => r.json()).then(d => setFinanceiroDash(d.data)).catch(() => {}),
-      fetch('/api/os?limit=5').then(r => r.json()).then(d => setRecentOs(d.data ?? [])).catch(() => {}),
+      fetch('/api/os/dashboard').then(r => r.json()).then(d => setOsDash(d.data)).catch(() => toast.error('Erro ao carregar dados de OS')),
+      fetch('/api/estoque/dashboard').then(r => r.json()).then(d => setEstoqueDash(d.data)).catch(() => toast.error('Erro ao carregar dados de estoque')),
+      fetch('/api/financeiro/dashboard').then(r => r.json()).then(d => setFinanceiroDash(d.data)).catch(() => toast.error('Erro ao carregar dados financeiros')),
+      fetch('/api/os?limit=5').then(r => r.json()).then(d => setRecentOs(d.data ?? [])).catch(() => toast.error('Erro ao carregar OS recentes')),
     ]).finally(() => setLoading(false))
     loadAvisos()
+  }, [])
+
+  useEffect(() => {
+    function handleEsc(e: KeyboardEvent) { if (e.key === 'Escape') { setShowAvisoModal(false) } }
+    document.addEventListener('keydown', handleEsc)
+    return () => document.removeEventListener('keydown', handleEsc)
   }, [])
 
   const createAviso = async () => {
@@ -188,8 +195,8 @@ export default function DashboardPage() {
 
       {/* Inline create announcement modal */}
       {showAvisoModal && isAdmin && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowAvisoModal(false)}>
+          <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-gray-900">Novo Aviso</h3>
               <button type="button" title="Fechar" onClick={() => setShowAvisoModal(false)} className="text-gray-400 hover:text-gray-600">

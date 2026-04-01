@@ -153,6 +153,12 @@ function CreateUserModal({ roles, onClose, onCreated }: { roles: Role[]; onClose
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({ name: '', email: '', phone: '', roleId: '', password: '' })
 
+  useEffect(() => {
+    function handleEsc(e: KeyboardEvent) { if (e.key === 'Escape') { onClose() } }
+    document.addEventListener('keydown', handleEsc)
+    return () => document.removeEventListener('keydown', handleEsc)
+  }, [onClose])
+
   function update(field: string, value: string) {
     setForm(prev => ({ ...prev, [field]: value }))
   }
@@ -294,6 +300,12 @@ function EditUserModal({ user, roles, onClose, onUpdated }: { user: User; roles:
     roleId: user.role_id || user.roles?.id || '',
     is_active: user.is_active,
   })
+
+  useEffect(() => {
+    function handleEsc(e: KeyboardEvent) { if (e.key === 'Escape') { onClose() } }
+    document.addEventListener('keydown', handleEsc)
+    return () => document.removeEventListener('keydown', handleEsc)
+  }, [onClose])
 
   function update(field: string, value: string | boolean) {
     setForm(prev => ({ ...prev, [field]: value }))

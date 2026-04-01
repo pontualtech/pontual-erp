@@ -123,6 +123,21 @@ export default function OSListPage() {
   const [emittingNfse, setEmittingNfse] = useState(false)
   const [bulkChanging, setBulkChanging] = useState(false)
 
+  useEffect(() => {
+    function handleEsc(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        if (showBulkDelete) { setShowBulkDelete(false); return }
+        if (nfseModalOS && !emittingNfse) { setNfseModalOS(null); return }
+        if (showBulkStatus) { setShowBulkStatus(false); return }
+        if (showColumnPicker) { setShowColumnPicker(false); return }
+        if (showStatusFilter) { setShowStatusFilter(false); return }
+        if (actionMenuId) { setActionMenuId(null); return }
+      }
+    }
+    document.addEventListener('keydown', handleEsc)
+    return () => document.removeEventListener('keydown', handleEsc)
+  }, [showBulkDelete, nfseModalOS, emittingNfse, showBulkStatus, showColumnPicker, showStatusFilter, actionMenuId])
+
   // Load role-based visibility config
   useEffect(() => {
     if (isAdmin) {
@@ -173,7 +188,7 @@ export default function OSListPage() {
         // Default: show all columns
         setVisibleColumns(new Set(cols.map(c => c.id)))
       })
-      .catch(() => {})
+      .catch(() => toast.error('Erro ao carregar status do kanban'))
   }, [])
 
   function toggleColumn(id: string) {
@@ -226,7 +241,7 @@ export default function OSListPage() {
         setTotalPages(d.totalPages ?? 1)
         setTotalFiltered(d.total ?? 0)
       })
-      .catch(() => {})
+      .catch(() => toast.error('Erro ao carregar ordens de servico'))
       .finally(() => setLoading(false))
   }
 

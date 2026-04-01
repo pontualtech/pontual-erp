@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { useAuth } from '@/lib/use-auth'
 import { cn } from '@/lib/utils'
 import { Send, Plus, Hash, MessageCircle } from 'lucide-react'
+import { toast } from 'sonner'
 
 interface ChatMsg {
   id: string
@@ -56,7 +57,7 @@ export default function ChatPage() {
         }
         setChannels(merged)
       }
-    } catch {}
+    } catch { toast.error('Erro ao carregar canais') }
   }, [])
 
   // Load messages for active channel
@@ -67,7 +68,7 @@ export default function ChatPage() {
       if (json.data) {
         setMessages(json.data)
       }
-    } catch {}
+    } catch { toast.error('Erro ao carregar mensagens') }
   }, [activeChannel])
 
   useEffect(() => {
@@ -100,7 +101,7 @@ export default function ChatPage() {
       setInput('')
       await loadMessages()
       loadChannels()
-    } catch {}
+    } catch { toast.error('Erro ao enviar mensagem') }
     setSending(false)
   }
 

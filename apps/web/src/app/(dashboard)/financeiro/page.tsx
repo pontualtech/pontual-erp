@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import Link from 'next/link'
 import { TrendingUp, TrendingDown, DollarSign, AlertTriangle, Landmark, FolderTree, Target, CreditCard, BarChart3, FileSpreadsheet, Receipt } from 'lucide-react'
+import { toast } from 'sonner'
 
 interface FinanceiroDashboard {
   totalBalanceCents: number
@@ -24,7 +25,7 @@ export default function FinanceiroPage() {
     fetch('/api/financeiro/dashboard')
       .then(r => r.json())
       .then(d => setData(d.data ?? null))
-      .catch(() => {})
+      .catch(() => toast.error('Erro ao carregar dados financeiros'))
       .finally(() => setLoading(false))
   }, [])
 
