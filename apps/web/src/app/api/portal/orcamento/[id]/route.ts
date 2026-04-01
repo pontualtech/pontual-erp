@@ -100,11 +100,12 @@ export async function GET(request: NextRequest, { params }: Params) {
 export async function POST(request: NextRequest, { params }: Params) {
   try {
     const body = await request.json()
-    const { token, slug, action, reason } = body as {
+    const { token, slug, action, reason, payment_method } = body as {
       token?: string
       slug?: string
       action?: 'approve' | 'reject'
       reason?: string
+      payment_method?: string
     }
 
     // Capturar IP do cliente
@@ -169,7 +170,7 @@ export async function POST(request: NextRequest, { params }: Params) {
       // Nota interna com data, hora e IP
       const now = new Date()
       const dataHora = now.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
-      const notaAprovacao = `[${dataHora}] Orcamento APROVADO pelo cliente via portal (IP: ${clientIp})`
+      const notaAprovacao = `[${dataHora}] Orcamento APROVADO pelo cliente via portal (IP: ${clientIp})${payment_method ? ' — Pagamento: ' + payment_method : ''}`
       const currentNotes = os.internal_notes || ''
 
       // Transição atômica
@@ -180,6 +181,7 @@ export async function POST(request: NextRequest, { params }: Params) {
             status_id: approvedStatus.id,
             approved_cost: os.total_cost || 0,
             estimated_delivery: estimatedDelivery,
+            payment_method: payment_method || os.payment_method || null,
             internal_notes: currentNotes ? `${currentNotes}\n${notaAprovacao}` : notaAprovacao,
             updated_at: new Date(),
           },
