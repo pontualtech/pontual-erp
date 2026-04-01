@@ -230,7 +230,7 @@ export default function ContaReceberDetalhePage() {
           <Row label="Cliente" value={conta.customers?.legal_name || '—'} />
           <Row label="Categoria" value={conta.categories?.name || '—'} />
           <Row label="Forma Pagamento" value={conta.payment_method || '—'} />
-          <Row label="Vencimento" value={new Date(conta.due_date + 'T12:00:00').toLocaleDateString('pt-BR')} />
+          <Row label="Vencimento" value={new Date(conta.due_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })} />
           <Row label="Cadastrada em" value={new Date(conta.created_at).toLocaleDateString('pt-BR')} />
           {conta.service_orders && (
             <div className="flex justify-between text-sm">
@@ -301,7 +301,7 @@ export default function ContaReceberDetalhePage() {
                     <tr key={inst.id} className="hover:bg-gray-50">
                       <td className="px-3 py-2 font-medium">{inst.number}</td>
                       <td className="px-3 py-2">{fmt(inst.amount)}</td>
-                      <td className="px-3 py-2">{new Date(inst.due_date).toLocaleDateString('pt-BR')}</td>
+                      <td className="px-3 py-2">{new Date(inst.due_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</td>
                       <td className="px-3 py-2">
                         <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColors[inst.status] || 'bg-gray-100 text-gray-500'}`}>
                           {inst.status}
@@ -349,7 +349,7 @@ export default function ContaReceberDetalhePage() {
                         <tr key={inst.number} className="hover:bg-gray-50">
                           <td className="px-3 py-2 font-medium">{inst.number}</td>
                           <td className="px-3 py-2">{fmt(inst.amount)}</td>
-                          <td className="px-3 py-2">{new Date(inst.due_date).toLocaleDateString('pt-BR')}</td>
+                          <td className="px-3 py-2">{new Date(inst.due_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</td>
                           <td className="px-3 py-2 text-right">{inst.days_remaining}</td>
                           <td className="px-3 py-2 text-right text-red-600">-{fmt(inst.fee)}</td>
                           <td className="px-3 py-2 text-right font-medium">{fmt(inst.net_amount)}</td>

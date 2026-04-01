@@ -131,7 +131,7 @@ export default function ContaPagarDetalhePage() {
           <Row label="Categoria" value={conta.categories?.name || '—'} />
           <Row label="Centro de Custo" value={conta.cost_centers?.name || '—'} />
           <Row label="Forma Pagamento" value={conta.payment_method || '—'} />
-          <Row label="Vencimento" value={new Date(conta.due_date + 'T12:00:00').toLocaleDateString('pt-BR')} />
+          <Row label="Vencimento" value={new Date(conta.due_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })} />
           <Row label="Cadastrada em" value={new Date(conta.created_at).toLocaleDateString('pt-BR')} />
         </div>
         <div className="rounded-lg border bg-white p-5 space-y-2">

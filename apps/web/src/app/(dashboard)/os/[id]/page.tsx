@@ -1372,7 +1372,7 @@ export default function OSDetailPage() {
                       <div>
                         <p className="text-xs text-gray-400 uppercase">Vencimento</p>
                         <p className="font-medium text-gray-700">
-                          {ar.due_date ? new Date(ar.due_date + 'T12:00:00').toLocaleDateString('pt-BR') : '--'}
+                          {ar.due_date ? new Date(ar.due_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '--'}
                         </p>
                       </div>
                       <div>

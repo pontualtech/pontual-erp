@@ -83,7 +83,10 @@ function formatCurrency(cents: number) {
 }
 
 function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString('pt-BR')
+  if (!dateStr) return '--'
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return '--'
+  return d.toLocaleDateString('pt-BR', { timeZone: 'UTC' })
 }
 
 const statusConfig: Record<string, { label: string; color: string }> = {
@@ -1438,7 +1441,7 @@ export default function ContasReceberPage() {
               <div className="rounded-lg bg-gray-50 p-3 text-sm space-y-1">
                 <div className="flex justify-between"><span className="text-gray-500">Cliente:</span><span className="font-medium">{boletoModalConta.customers?.legal_name}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Valor:</span><span className="font-bold text-green-700">{formatCurrency(boletoModalConta.total_amount)}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">Vencimento:</span><span>{new Date(boletoModalConta.due_date).toLocaleDateString('pt-BR')}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Vencimento:</span><span>{formatDate(boletoModalConta.due_date)}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Descricao:</span><span>{boletoModalConta.description}</span></div>
               </div>
 

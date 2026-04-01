@@ -48,7 +48,10 @@ function formatCurrency(cents: number) {
 }
 
 function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString('pt-BR')
+  if (!dateStr) return '--'
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return '--'
+  return d.toLocaleDateString('pt-BR', { timeZone: 'UTC' })
 }
 
 const statusConfig: Record<string, { label: string; color: string; icon: React.ElementType }> = {
