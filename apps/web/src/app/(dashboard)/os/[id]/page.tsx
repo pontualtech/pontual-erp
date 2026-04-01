@@ -125,6 +125,9 @@ export default function OSDetailPage() {
   const [showColetaModal, setShowColetaModal] = useState(false)
   const [coletaChannels, setColetaChannels] = useState<Set<string>>(new Set(['email', 'whatsapp']))
   const [sendingColeta, setSendingColeta] = useState(false)
+  const [showProntoModal, setShowProntoModal] = useState(false)
+  const [prontoChannels, setProntoChannels] = useState<Set<string>>(new Set(['email', 'whatsapp']))
+  const [sendingPronto, setSendingPronto] = useState(false)
   const [tiposOS, setTiposOS] = useState<{ key: string; label: string }[]>([])
   const [locaisOS, setLocaisOS] = useState<{ key: string; label: string }[]>([])
   const [paymentMethod, setPaymentMethod] = useState('Pix')
@@ -824,6 +827,12 @@ export default function OSDetailPage() {
             <button type="button" onClick={() => setShowColetaModal(true)}
               className="flex items-center gap-1.5 rounded-lg border border-sky-300 bg-sky-50 px-3 py-1.5 text-sm font-medium text-sky-700 hover:bg-sky-100 transition-colors">
               <Truck className="h-4 w-4" /> Notificar Coleta
+            </button>
+          )}
+          {(currentStatus?.name?.toLowerCase().includes('reparad') || currentStatus?.name?.toLowerCase().includes('pronta')) && (
+            <button type="button" onClick={() => setShowProntoModal(true)}
+              className="flex items-center gap-1.5 rounded-lg border border-green-300 bg-green-50 px-3 py-1.5 text-sm font-medium text-green-700 hover:bg-green-100 transition-colors">
+              <Check className="h-4 w-4" /> Notificar Cliente — Pronto
             </button>
           )}
           <button type="button" onClick={openQuoteModal}
@@ -1737,6 +1746,94 @@ export default function OSDetailPage() {
                 <p className="p-1.5 text-xs text-gray-500 truncate">{f.description || new Date(f.created_at).toLocaleDateString('pt-BR')}</p>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* ========== EQUIPAMENTO PRONTO MODAL ========== */}
+      {showProntoModal && os && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => !sendingPronto && setShowProntoModal(false)}>
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <Check className="h-5 w-5 text-green-600" />
+                Notificar — Equipamento Pronto
+              </h2>
+              <button type="button" onClick={() => setShowProntoModal(false)} disabled={sendingPronto}
+                title="Fechar" className="p-1 rounded-lg hover:bg-gray-100 text-gray-400">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-lg bg-green-50 border border-green-200 p-4">
+                <p className="text-sm font-medium text-green-900">
+                  OS {os.os_number} — {[os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ')}
+                </p>
+                <p className="text-sm text-green-700 mt-1">{os.customers?.legal_name}</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Enviar por:</label>
+                <div className="flex gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={prontoChannels.has('email')}
+                      onChange={e => setProntoChannels(prev => { const n = new Set(prev); e.target.checked ? n.add('email') : n.delete('email'); return n })}
+                      className="rounded border-gray-300 h-4 w-4 text-green-600" />
+                    <Mail className="h-4 w-4 text-gray-500" />
+                    <span className="text-sm text-gray-700">Email</span>
+                    {os.customers?.email
+                      ? <span className="text-xs text-gray-400">{os.customers.email}</span>
+                      : <span className="text-xs text-red-400">Sem email</span>}
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={prontoChannels.has('whatsapp')}
+                      onChange={e => setProntoChannels(prev => { const n = new Set(prev); e.target.checked ? n.add('whatsapp') : n.delete('whatsapp'); return n })}
+                      className="rounded border-gray-300 h-4 w-4 text-green-600" />
+                    <MessageCircle className="h-4 w-4 text-gray-500" />
+                    <span className="text-sm text-gray-700">WhatsApp</span>
+                    {(os.customers?.mobile || os.customers?.phone)
+                      ? <span className="text-xs text-gray-400">{os.customers.mobile || os.customers.phone}</span>
+                      : <span className="text-xs text-red-400">Sem telefone</span>}
+                  </label>
+                </div>
+              </div>
+
+              <div className="rounded-lg border bg-gray-50 p-3 text-xs text-gray-600">
+                <p className="font-medium text-gray-700 mb-1">O cliente vai receber:</p>
+                <p>Seu equipamento esta pronto para retirada!</p>
+                <p>Horario: Seg a Sex, 09:00 as 17:00</p>
+                <p>Link do portal + WhatsApp do suporte</p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-5">
+              <button type="button" onClick={() => setShowProntoModal(false)} disabled={sendingPronto}
+                className="flex-1 px-4 py-2.5 text-sm border rounded-lg hover:bg-gray-50">Cancelar</button>
+              <button type="button" disabled={sendingPronto || prontoChannels.size === 0} onClick={async () => {
+                setSendingPronto(true)
+                try {
+                  const res = await fetch(`/api/os/${id}/notificar-pronto`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ channels: Array.from(prontoChannels) }),
+                  })
+                  const data = await res.json()
+                  if (!res.ok) throw new Error(data.error || 'Erro')
+                  const enviados = (data.data?.results || []).filter((r: any) => r.status === 'enviado')
+                  if (enviados.length > 0) toast.success(`Notificacao enviada via ${enviados.map((r: any) => r.channel).join(' e ')}!`)
+                  const erros = (data.data?.results || []).filter((r: any) => r.status !== 'enviado')
+                  erros.forEach((r: any) => toast.error(`${r.channel}: ${r.status === 'sem_email' ? 'Sem email' : r.status === 'sem_telefone' ? 'Sem telefone' : 'Erro'}`))
+                  setShowProntoModal(false)
+                  loadOS()
+                } catch (err: any) { toast.error(err.message) }
+                finally { setSendingPronto(false) }
+              }}
+                className="flex-1 px-4 py-2.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium flex items-center justify-center gap-2">
+                {sendingPronto ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                {sendingPronto ? 'Enviando...' : 'Enviar Notificacao'}
+              </button>
+            </div>
           </div>
         </div>
       )}
