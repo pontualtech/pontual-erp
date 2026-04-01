@@ -298,15 +298,10 @@ export async function POST(request: NextRequest, { params }: Params) {
         return error('Este orçamento já foi recusado anteriormente.', 410)
       }
 
-      // Buscar status "Recusado" (prioridade) ou "Cancelada"
-      let targetStatus = await prisma.moduleStatus.findFirst({
+      // Buscar status "Recusado" — NUNCA usar Cancelada (são coisas diferentes)
+      const targetStatus = await prisma.moduleStatus.findFirst({
         where: { company_id: os.company_id, module: 'os', name: { contains: 'Recusad', mode: 'insensitive' } },
       })
-      if (!targetStatus) {
-        targetStatus = await prisma.moduleStatus.findFirst({
-          where: { company_id: os.company_id, module: 'os', name: { contains: 'Cancelad', mode: 'insensitive' } },
-        })
-      }
 
       const today = new Date().toLocaleDateString('pt-BR')
       const rejectionNote = `Orçamento recusado pelo cliente em ${today} (via portal)${reason ? ': ' + reason : ''}`
