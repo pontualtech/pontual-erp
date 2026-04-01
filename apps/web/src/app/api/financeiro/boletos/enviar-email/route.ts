@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
       }
 
       const valor = (receivable.total_amount / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
-      const vencimento = new Date(receivable.due_date).toLocaleDateString('pt-BR')
+      const vencimento = new Date(receivable.due_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })
       const linhaDigitavel = boletoData.digitableLine || boletoData.linhaDigitavel || ''
       const pixCode = boletoData.pixCode || ''
       const nossoNumero = boletoData.nossoNumero || ''

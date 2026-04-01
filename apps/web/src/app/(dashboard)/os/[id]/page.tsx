@@ -1470,7 +1470,7 @@ export default function OSDetailPage() {
                               return (
                                 <tr key={inst.id} className={rowClass}>
                                   <td className="py-1.5 text-gray-500">{inst.installment_number}</td>
-                                  <td className="py-1.5">{new Date(inst.due_date).toLocaleDateString('pt-BR')}</td>
+                                  <td className="py-1.5">{new Date(inst.due_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</td>
                                   <td className="py-1.5 text-right font-medium">{fmt(inst.amount)}</td>
                                   <td className="py-1.5 text-center">
                                     <span className={cn(
