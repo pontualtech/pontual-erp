@@ -106,6 +106,7 @@ export default function OSListPage() {
         setOsLocationLabel(map)
       }
     }).catch(() => {})
+    fetch('/api/settings/equipamentos-os').then(r => r.json()).then(d => setEquipTypes(d.data ?? [])).catch(() => {})
   }, [])
   const [statusMap, setStatusMap] = useState<Record<string, { name: string; color: string }>>({})
   const [loading, setLoading] = useState(true)
@@ -113,6 +114,8 @@ export default function OSListPage() {
   const [statusFilter, setStatusFilter] = useState<string[]>([])
   const [typeFilter, setTypeFilter] = useState('')
   const [locationFilter, setLocationFilter] = useState('')
+  const [equipFilter, setEquipFilter] = useState('')
+  const [equipTypes, setEquipTypes] = useState<string[]>([])
   const [osLocationLabel, setOsLocationLabel] = useState<Record<string, string>>({ LOJA: 'Loja', EXTERNO: 'Externo' })
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
@@ -249,6 +252,7 @@ export default function OSListPage() {
     else if (statusFilter.length > 1) statusFilter.forEach(s => params.append('statusId', s))
     if (typeFilter) params.set('osType', typeFilter)
     if (locationFilter) params.set('osLocation', locationFilter)
+    if (equipFilter) params.set('equipmentType', equipFilter)
     if (overdueFilter) params.set('overdue', 'true')
     if (ownOnly) params.set('own_only', 'true')
     if (dateFrom) params.set('dateFrom', dateFrom)
@@ -264,7 +268,7 @@ export default function OSListPage() {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { loadOS(); setSelected(new Set()) }, [search, statusFilter, typeFilter, locationFilter, overdueFilter, page, visibilityLoaded, ownOnly, dateFrom, dateTo])
+  useEffect(() => { loadOS(); setSelected(new Set()) }, [search, statusFilter, typeFilter, locationFilter, equipFilter, overdueFilter, page, visibilityLoaded, ownOnly, dateFrom, dateTo])
 
   function toggleSelect(id: string) {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -620,6 +624,11 @@ export default function OSListPage() {
           className={cn('rounded-md border px-2 py-1.5 text-xs', locationFilter ? 'bg-sky-50 border-sky-300 text-sky-700' : 'bg-white text-gray-600')}>
           <option value="">Todos os Locais</option>
           {Object.entries(osLocationLabel).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+        <select title="Filtrar por equipamento" value={equipFilter} onChange={e => { setEquipFilter(e.target.value); setPage(1) }}
+          className={cn('rounded-md border px-2 py-1.5 text-xs', equipFilter ? 'bg-teal-50 border-teal-300 text-teal-700' : 'bg-white text-gray-600')}>
+          <option value="">Todos Equipamentos</option>
+          {equipTypes.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
         <span className="text-gray-300">|</span>
         {/* Date filters */}

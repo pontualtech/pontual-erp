@@ -19,6 +19,7 @@ const sections = [
       { label: 'Status de OS', href: '/config/status', icon: Tag, desc: 'Configurar fluxo de status das OS' },
       { label: 'Tipos de OS', href: '/config/tipos-os', icon: Tag, desc: 'Balcao, Coleta, Campo, Remoto, etc.' },
       { label: 'Locais de OS', href: '/config/locais-os', icon: Tag, desc: 'Loja, Externo, Cliente, etc.' },
+      { label: 'Equipamentos', href: '/config/equipamentos-os', icon: Tag, desc: 'Impressora, Notebook, Termica, etc.' },
       { label: 'Tipos de Servico', href: '/config/tipos-servico', icon: Wrench, desc: 'Categorias e tipos de servico' },
       { label: 'Templates', href: '/config/templates', icon: PrinterIcon, desc: 'Templates de impressao e email de OS' },
       { label: 'Marcas e Modelos', href: '/config/marcas-modelos', icon: Wrench, desc: 'Marcas e modelos de equipamentos para OS' },

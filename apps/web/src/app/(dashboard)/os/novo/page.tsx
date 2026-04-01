@@ -32,9 +32,11 @@ export default function NovaOSPage() {
   const [tecnicos, setTecnicos] = useState<UserProfile[]>([])
   const [tiposOS, setTiposOS] = useState<{ key: string; label: string }[]>([])
   const [locaisOS, setLocaisOS] = useState<{ key: string; label: string }[]>([])
+  const [equipTypes, setEquipTypes] = useState<string[]>([])
   useEffect(() => {
     fetch('/api/settings/tipos-os').then(r => r.json()).then(d => setTiposOS(d.data ?? [])).catch(() => {})
     fetch('/api/settings/locais-os').then(r => r.json()).then(d => setLocaisOS(d.data ?? [])).catch(() => {})
+    fetch('/api/settings/equipamentos-os').then(r => r.json()).then(d => setEquipTypes(d.data ?? [])).catch(() => {})
   }, [])
 
   const [form, setForm] = useState({
@@ -296,11 +298,16 @@ export default function NovaOSPage() {
               <label className="block text-sm text-gray-600 mb-1">Tipo</label>
               <select value={form.equipment_type} onChange={e => updateForm('equipment_type', e.target.value)}
                 title="Tipo de equipamento" className="w-full px-3 py-2 border rounded-md">
-                <option>Impressora</option>
-                <option>Notebook</option>
-                <option>Monitor</option>
-                <option>Scanner</option>
-                <option>Outro</option>
+                {equipTypes.length > 0 ? equipTypes.map(t => (
+                  <option key={t} value={t}>{t}</option>
+                )) : (
+                  <>
+                    <option>Impressora</option>
+                    <option>Notebook</option>
+                    <option>Termica</option>
+                    <option>Outro</option>
+                  </>
+                )}
               </select>
             </div>
             {/* Marca - searchable select */}
