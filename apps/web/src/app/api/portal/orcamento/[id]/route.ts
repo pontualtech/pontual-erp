@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
+import { sendEmail } from '@/lib/send-email'
 import { createHmac } from 'crypto'
 
 type Params = { params: { id: string } }
@@ -131,6 +132,12 @@ export async function POST(request: NextRequest, { params }: Params) {
     if (os.companies.slug !== slug) return error('Token inválido', 401)
 
     if (action === 'approve') {
+      // Bloquear dupla aprovação
+      const currentStatusName = os.module_statuses?.name?.toLowerCase() || ''
+      if (currentStatusName.includes('aprovad') || currentStatusName.includes('execu') || currentStatusName.includes('pronta') || currentStatusName.includes('reparad') || os.module_statuses?.is_final) {
+        return error('Este orçamento já foi aprovado anteriormente.', 410)
+      }
+
       // Find "Aprovado" status
       const approvedStatus = await prisma.moduleStatus.findFirst({
         where: {
@@ -144,27 +151,53 @@ export async function POST(request: NextRequest, { params }: Params) {
         return error('Status "Aprovado" não configurado. Entre em contato com a empresa.', 400)
       }
 
-      // Transition OS
-      await prisma.serviceOrder.update({
-        where: { id: os.id },
-        data: {
-          status_id: approvedStatus.id,
-          approved_cost: os.total_cost || 0,
-          updated_at: new Date(),
-        },
+      // Calcular previsão: 10 dias úteis a partir de hoje
+      const estimatedDelivery = new Date()
+      let diasUteis = 0
+      while (diasUteis < 10) {
+        estimatedDelivery.setDate(estimatedDelivery.getDate() + 1)
+        const dow = estimatedDelivery.getDay()
+        if (dow !== 0 && dow !== 6) diasUteis++
+      }
+
+      // Transição atômica
+      await prisma.$transaction(async (tx) => {
+        await tx.serviceOrder.update({
+          where: { id: os.id },
+          data: {
+            status_id: approvedStatus.id,
+            approved_cost: os.total_cost || 0,
+            estimated_delivery: estimatedDelivery,
+            updated_at: new Date(),
+          },
+        })
+
+        await tx.serviceOrderHistory.create({
+          data: {
+            company_id: os.company_id,
+            service_order_id: os.id,
+            from_status_id: os.status_id,
+            to_status_id: approvedStatus.id,
+            changed_by: 'portal',
+            notes: 'Orçamento aprovado pelo cliente via portal',
+          },
+        })
       })
 
-      // Create history entry
-      await prisma.serviceOrderHistory.create({
-        data: {
-          company_id: os.company_id,
-          service_order_id: os.id,
-          from_status_id: os.status_id,
-          to_status_id: approvedStatus.id,
-          changed_by: 'portal',
-          notes: 'Orçamento aprovado pelo cliente via portal',
-        },
-      })
+      const osNum = String(os.os_number).padStart(4, '0')
+      const customerName = os.customers?.legal_name || 'Cliente'
+      const customerFirstName = customerName.split(' ')[0]
+      const fmtValue = fmtCents(os.total_cost || 0)
+      const previsaoStr = estimatedDelivery.toLocaleDateString('pt-BR')
+
+      // Carregar settings para WhatsApp e template
+      const settings = await prisma.setting.findMany({ where: { company_id: os.company_id } })
+      const cfg: Record<string, string> = {}
+      for (const s of settings) cfg[s.key] = s.value
+      const whatsappUrl = `https://wa.me/${(cfg['company.whatsapp'] || '551126263841').replace(/\D/g, '')}`
+      const companyPhone = cfg['company.phone'] || '(11) 2626-3841'
+      const companyName = os.companies.name || 'Empresa'
+      const equipment = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ')
 
       logAudit({
         companyId: os.company_id,
@@ -172,41 +205,80 @@ export async function POST(request: NextRequest, { params }: Params) {
         module: 'os',
         action: 'quote_approved_by_customer',
         entityId: os.id,
-        newValue: {
-          customer_name: os.customers?.legal_name,
-          os_number: os.os_number,
-          total_cost: os.total_cost,
-          approved_via: 'portal',
-        },
+        newValue: { customer_name: customerName, os_number: os.os_number, total_cost: os.total_cost, estimated_delivery: previsaoStr },
       })
 
-      // Notificar equipe via aviso interno
-      const osNum = String(os.os_number).padStart(4, '0')
-      const customerName = os.customers?.legal_name || 'Cliente'
-      const fmtValue = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format((os.total_cost || 0) / 100)
+      // 1. Aviso interno URGENTE para técnicos
       await prisma.announcement.create({
         data: {
           company_id: os.company_id,
-          title: `✅ Orçamento OS-${osNum} APROVADO`,
-          message: `O cliente ${customerName} aprovou o orçamento da OS-${osNum} no valor de ${fmtValue} pelo portal. A OS foi movida para "${approvedStatus.name}". Iniciar o reparo!`,
-          priority: 'IMPORTANTE',
+          title: `✅ OS ${osNum} APROVADA — ${customerName}`,
+          message: `O cliente ${customerName} aprovou o orçamento da OS ${osNum} (${equipment}) no valor de ${fmtValue}.\n\nPrevisão de entrega: ${previsaoStr} (10 dias úteis).\n\nIniciar o reparo imediatamente!`,
+          priority: 'URGENTE',
           require_read: true,
           author_name: 'Sistema',
           created_by: 'portal',
         },
       })
 
-      // Notificar via Chatwoot/WhatsApp se configurado (fire-and-forget)
-      try {
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL || ''
-        if (appUrl) {
-          fetch(`${appUrl}/api/os/${os.id}/transition/notify`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: `Orçamento OS-${osNum} aprovado pelo cliente via portal. Valor: ${fmtValue}` }),
-          }).catch(() => {})
-        }
-      } catch {}
+      // 2. Email de confirmação ao cliente
+      const customerEmail = os.customers?.email
+      if (customerEmail) {
+        const emailHtml = `
+<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#333;">
+  <div style="background:linear-gradient(135deg,#22c55e,#16a34a);padding:28px;border-radius:12px 12px 0 0;text-align:center;">
+    <p style="margin:0;font-size:40px;">✅</p>
+    <h1 style="color:#fff;margin:8px 0 0;font-size:22px;">Orcamento Aprovado!</h1>
+  </div>
+  <div style="background:#fff;border:1px solid #e5e7eb;border-top:none;padding:28px;border-radius:0 0 12px 12px;">
+    <p style="font-size:16px;margin:0 0 16px;">Ola <strong>${customerFirstName}</strong>,</p>
+    <p style="font-size:14px;color:#555;margin:0 0 20px;line-height:1.6;">
+      Seu orcamento para a OS <strong>#${osNum}</strong> foi aprovado com sucesso!
+      Nossa equipe tecnica ja esta ciente e o reparo comeca a partir de agora.
+    </p>
+
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:16px;margin:0 0 20px;">
+      <table style="width:100%;font-size:14px;color:#166534;">
+        <tr><td style="padding:4px 0;font-weight:600;">Equipamento:</td><td style="padding:4px 0;">${equipment}</td></tr>
+        <tr><td style="padding:4px 0;font-weight:600;">Valor aprovado:</td><td style="padding:4px 0;font-weight:700;font-size:18px;">${fmtValue}</td></tr>
+        <tr><td style="padding:4px 0;font-weight:600;">Previsao de entrega:</td><td style="padding:4px 0;font-weight:700;">${previsaoStr}</td></tr>
+        <tr><td style="padding:4px 0;font-weight:600;">Prazo:</td><td style="padding:4px 0;">10 dias uteis a partir de hoje</td></tr>
+      </table>
+    </div>
+
+    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px;margin:0 0 20px;">
+      <p style="margin:0;font-size:13px;color:#1e40af;line-height:1.5;">
+        <strong>Proximo passo:</strong> Nossa equipe vai iniciar o reparo e voce sera notificado quando o equipamento estiver pronto para retirada/entrega.
+      </p>
+    </div>
+
+    <div style="text-align:center;margin:0 0 20px;">
+      <a href="${whatsappUrl}" style="display:inline-block;background:#25d366;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:14px;">
+        Falar com o Suporte via WhatsApp
+      </a>
+    </div>
+
+    <div style="border-top:1px solid #e5e7eb;padding-top:16px;">
+      <p style="font-size:13px;color:#555;margin:0 0 4px;">${companyName}</p>
+      <p style="font-size:12px;color:#999;margin:0;">Tel: ${companyPhone} | <a href="${whatsappUrl}" style="color:#16a34a;">WhatsApp</a></p>
+    </div>
+  </div>
+</div>`
+        sendEmail(customerEmail, `Orcamento Aprovado — OS #${osNum} — ${companyName}`, emailHtml).catch(() => {})
+      }
+
+      // 3. WhatsApp/Chatwoot para equipe (fire-and-forget)
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || ''
+      if (appUrl) {
+        fetch(`${appUrl}/api/integracoes/chatwoot/enviar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            phone: cfg['company.whatsapp'] || '551126263841',
+            message: `✅ OS ${osNum} APROVADA!\nCliente: ${customerName}\nEquipamento: ${equipment}\nValor: ${fmtValue}\nPrevisao: ${previsaoStr}\n\nIniciar reparo!`,
+          }),
+        }).catch(() => {})
+      }
 
       return success({ action: 'approved', message: 'Orçamento aprovado com sucesso!' })
     }
