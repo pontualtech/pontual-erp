@@ -747,7 +747,7 @@ export default function OSListPage() {
                         {effectiveColumns.includes('os_number') && (
                           <td className="px-3 py-2.5">
                             <Link href={`/os/${os.id}`} className="font-semibold text-blue-600 hover:underline font-mono text-xs tracking-tight">
-                              OS-{String(os.os_number).padStart(4, '0')}
+                              {os.os_number}
                             </Link>
                             {(os as any).is_warranty && (
                               <span className="ml-1.5 rounded bg-amber-100 text-amber-800 px-1.5 py-0.5 text-[10px] font-bold border border-amber-300">GAR</span>
@@ -1047,7 +1047,7 @@ export default function OSListPage() {
                   >
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium text-gray-900">
-                        OS-{String(os.os_number).padStart(4, '0')}
+                        {os.os_number}
                         {(os as any).is_warranty && <span className="ml-1 rounded bg-amber-100 text-amber-800 px-1 py-0.5 text-[9px] font-bold">GAR</span>}
                       </span>
                       <span className={cn('text-xs', priorityColor[os.priority])}>
