@@ -43,10 +43,25 @@ export async function POST(req: NextRequest, { params }: Params) {
       return error(`Transição não permitida: ${currentStatus.name} → ${toStatus.name}`, 422)
     }
 
+    // Bloquear reversão de status final (Entregue, Fechada) para qualquer outro — só admin pode
+    if (currentStatus.is_final && !toStatus.is_final) {
+      return error(`OS já foi finalizada (${currentStatus.name}). Não é possível reverter o status.`, 422)
+    }
+
     // If target is a final status (Entregue) and OS has a total, require payment_method
     const isFinalDelivery = toStatus.is_final && toStatus.name !== 'Cancelada' && (os.total_cost ?? 0) > 0
     if (isFinalDelivery && !payment_method) {
       return error('Forma de pagamento é obrigatória para finalizar a OS', 400)
+    }
+
+    // Bloquear duplicação de conta a receber — se já tem, não gerar outra
+    if (isFinalDelivery) {
+      const existingAR = await prisma.accountReceivable.findFirst({
+        where: { service_order_id: os.id, company_id: user.companyId, deleted_at: null },
+      })
+      if (existingAR) {
+        return error('Esta OS já possui uma conta a receber gerada. Não é possível gerar duplicata.', 422)
+      }
     }
 
     // Se status destino é "Pronta", exigir técnico atribuído
