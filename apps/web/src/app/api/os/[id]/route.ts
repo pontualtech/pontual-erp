@@ -31,6 +31,7 @@ export async function GET(req: NextRequest, { params }: Params) {
           select: { id: true, invoice_number: true, status: true, danfe_url: true, access_key: true, total_amount: true, created_at: true },
           orderBy: { created_at: 'desc' },
         },
+        warranty_original: { select: { id: true, os_number: true } },
       },
     })
 

@@ -30,6 +30,8 @@ interface OSDetail {
   reception_notes: string | null; internal_notes: string | null
   estimated_cost: number; approved_cost: number; total_parts: number
   total_services: number; total_cost: number; warranty_until: string | null
+  is_warranty: boolean | null; warranty_os_id: string | null
+  warranty_original?: { id: string; os_number: number } | null
   estimated_delivery: string | null; actual_delivery: string | null
   technician_id: string | null; payment_method: string | null
   created_at: string; updated_at: string; customers: Customer | null
@@ -715,6 +717,16 @@ export default function OSDetailPage() {
           <h1 className="text-xl font-bold text-gray-900 tracking-tight font-mono">
             OS-{String(os.os_number).padStart(4, '0')}
           </h1>
+          {os.is_warranty && (
+            <span className="rounded-full bg-amber-100 text-amber-800 px-2.5 py-0.5 text-xs font-bold border border-amber-300">
+              GARANTIA
+            </span>
+          )}
+          {os.is_warranty && os.warranty_original && (
+            <Link href={`/os/${os.warranty_original.id}`} className="text-xs text-amber-700 hover:underline">
+              (OS original #{os.warranty_original.os_number})
+            </Link>
+          )}
           {currentStatus && canTransition ? (
             <select
               value={os.status_id}
@@ -799,6 +811,27 @@ export default function OSDetailPage() {
             title="Clonar esta OS com todos os dados">
             <Copy className="h-4 w-4" /> Clonar
           </Link>
+          {currentStatus?.is_final && currentStatus.name !== 'Cancelada' && !os.is_warranty && (
+            <button type="button" onClick={async () => {
+              const issue = prompt('Descreva o problema (garantia):')
+              if (!issue) return
+              try {
+                const res = await fetch(`/api/os/${id}/garantia`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ reported_issue: issue }),
+                })
+                const data = await res.json()
+                if (!res.ok) throw new Error(data.error || 'Erro')
+                toast.success(`OS de garantia #${data.data.os_number} criada!`)
+                router.push(`/os/${data.data.id}`)
+              } catch (err: any) { toast.error(err.message) }
+            }}
+              className="flex items-center gap-1.5 rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100 transition-colors"
+              title="Reabrir OS em garantia">
+              <AlertTriangle className="h-4 w-4" /> Garantia
+            </button>
+          )}
           <Link href={`/os/${id}/editar`}
             className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-gray-50 transition-colors">
             <Edit className="h-4 w-4" /> Editar

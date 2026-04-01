@@ -395,10 +395,14 @@ model ServiceOrder {
   total_services        Int?                  @default(0)
   total_cost            Int?                  @default(0)
   warranty_until        DateTime?             @db.Timestamptz(6)
+  is_warranty           Boolean?              @default(false)
+  warranty_os_id        String?
   estimated_delivery    DateTime?             @db.Timestamptz(6)
   actual_delivery       DateTime?             @db.Timestamptz(6)
   payment_method        String?
   custom_data           Json?                 @default("{}")
+  warranty_original     ServiceOrder?         @relation("warranty_chain", fields: [warranty_os_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  warranty_children     ServiceOrder[]        @relation("warranty_chain")
   created_at            DateTime?             @default(now()) @db.Timestamptz(6)
   updated_at            DateTime?             @default(now()) @db.Timestamptz(6)
   deleted_at            DateTime?             @db.Timestamptz(6)

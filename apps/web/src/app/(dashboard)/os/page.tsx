@@ -725,6 +725,9 @@ export default function OSListPage() {
                             <Link href={`/os/${os.id}`} className="font-semibold text-blue-600 hover:underline font-mono text-xs tracking-tight">
                               OS-{String(os.os_number).padStart(4, '0')}
                             </Link>
+                            {(os as any).is_warranty && (
+                              <span className="ml-1.5 rounded bg-amber-100 text-amber-800 px-1.5 py-0.5 text-[10px] font-bold border border-amber-300">GAR</span>
+                            )}
                           </td>
                         )}
                         {effectiveColumns.includes('created_at') && (
@@ -1073,7 +1076,10 @@ export default function OSListPage() {
                     className="block rounded-lg border bg-white p-3 shadow-sm hover:shadow-md transition-shadow"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-gray-900">OS-{String(os.os_number).padStart(4, '0')}</span>
+                      <span className="text-sm font-medium text-gray-900">
+                        OS-{String(os.os_number).padStart(4, '0')}
+                        {(os as any).is_warranty && <span className="ml-1 rounded bg-amber-100 text-amber-800 px-1 py-0.5 text-[9px] font-bold">GAR</span>}
+                      </span>
                       <span className={cn('text-xs', priorityColor[os.priority])}>
                         {priorityLabel[os.priority] ?? os.priority}
                       </span>
