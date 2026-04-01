@@ -47,8 +47,8 @@ export default function NovaOSPage() {
     reception_notes: '',
     internal_notes: '',
     priority: 'MEDIUM',
-    os_type: 'BALCAO',
-    os_location: 'LOJA',
+    os_type: 'AVULSO',
+    os_location: 'EXTERNO',
     technician_id: '',
     estimated_delivery: '',
   })

@@ -7,7 +7,7 @@ export const createOSSchema = z.object({
   customer_id: z.string().uuid(),
   technician_id: z.string().uuid().optional(),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).default('MEDIUM'),
-  os_type: z.string().max(50).default('BALCAO'),
+  os_type: z.string().max(50).default('AVULSO'),
   os_location: z.string().max(50).optional(),
   equipment_type: z.string().max(255).optional(),
   equipment_brand: z.string().max(255).optional(),
