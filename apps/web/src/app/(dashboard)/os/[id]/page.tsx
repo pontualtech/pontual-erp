@@ -120,6 +120,8 @@ export default function OSDetailPage() {
 
   // Payment modal (for delivery/final status)
   const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const [showTechModal, setShowTechModal] = useState(false)
+  const [techModalStatusId, setTechModalStatusId] = useState<string | null>(null)
   const [paymentMethod, setPaymentMethod] = useState('Pix')
   const [paymentNotes, setPaymentNotes] = useState('')
   const [paymentMethods, setPaymentMethods] = useState<{ id: string; name: string; icon: string; active: boolean }[]>([])
@@ -575,15 +577,19 @@ export default function OSDetailPage() {
     return statusList.find(s => s.order === current.order + 1) ?? null
   }
 
-  function handleAdvanceClick() {
-    const next = getNextStatus()
-    if (!os || !next) return
-    const isDelivery = (next.is_final && !next.name.toLowerCase().includes('cancel'))
+  function needsTechnician(statusName: string): boolean {
+    const n = statusName.toLowerCase()
+    return n.includes('reparad') || n.includes('pronta')
+  }
+
+  function openTransitionFor(target: StatusDef) {
+    if (!os) return
+    const isDelivery = (target.is_final && !target.name.toLowerCase().includes('cancel'))
     if (isDelivery && (os.total_cost ?? 0) > 0) {
       setPaymentMethod('')
       setPaymentNotes('')
       setInstallmentCount(1)
-      setPendingStatusId(next.id)
+      setPendingStatusId(target.id)
       if (!paymentMethodsLoaded) {
         fetch('/api/financeiro/formas-pagamento').then(r => r.json()).then(d => {
           const methods = (d.data ?? []).filter((m: any) => m.active)
@@ -592,9 +598,19 @@ export default function OSDetailPage() {
         }).catch(() => toast.error('Erro ao carregar formas de pagamento'))
       }
       setShowPaymentModal(true)
+    } else if (needsTechnician(target.name) && !os.technician_id && !editTechnicianId) {
+      // Exigir técnico antes de transicionar
+      setTechModalStatusId(target.id)
+      setShowTechModal(true)
     } else {
-      doTransition(next.id)
+      doTransition(target.id)
     }
+  }
+
+  function handleAdvanceClick() {
+    const next = getNextStatus()
+    if (!os || !next) return
+    openTransitionFor(next)
   }
 
   async function doTransition(toStatusId: string, payment_method?: string, notes?: string, installments?: number) {
@@ -736,22 +752,7 @@ export default function OSDetailPage() {
                 const targetId = e.target.value
                 const target = statusList.find(s => s.id === targetId)
                 if (!target || targetId === os.status_id) return
-                const isDelivery = (target.is_final && !target.name.toLowerCase().includes('cancel'))
-                if (isDelivery && (os.total_cost ?? 0) > 0) {
-                  setPaymentMethod('')
-                  setPaymentNotes('')
-                  setInstallmentCount(1)
-                  setPendingStatusId(targetId)
-                  if (!paymentMethodsLoaded) {
-                    fetch('/api/financeiro/formas-pagamento').then(r => r.json()).then(d => {
-                      setPaymentMethods((d.data ?? []).filter((m: any) => m.active))
-                      setPaymentMethodsLoaded(true)
-                    }).catch(() => toast.error('Erro ao carregar formas de pagamento'))
-                  }
-                  setShowPaymentModal(true)
-                } else {
-                  doTransition(targetId)
-                }
+                openTransitionFor(target)
               }}
               className="rounded-full px-3 py-1.5 text-xs font-semibold text-white border-0 cursor-pointer appearance-none pr-7 shadow-sm"
               style={{
@@ -1700,6 +1701,45 @@ export default function OSDetailPage() {
                 <p className="p-1.5 text-xs text-gray-500 truncate">{f.description || new Date(f.created_at).toLocaleDateString('pt-BR')}</p>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* ========== TECHNICIAN MODAL (Entregar Reparado) ========== */}
+      {showTechModal && os && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => { setShowTechModal(false); setTechModalStatusId(null) }}>
+          <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <User className="h-5 w-5 text-blue-600" />
+              Tecnico Responsavel
+            </h2>
+            <p className="text-sm text-gray-500 mb-4">
+              Selecione o tecnico que realizou o reparo antes de marcar como reparado.
+            </p>
+            <select
+              title="Selecionar tecnico"
+              value={editTechnicianId}
+              onChange={e => setEditTechnicianId(e.target.value)}
+              className="w-full px-3 py-2.5 border rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-200 mb-4"
+            >
+              <option value="">Selecione o tecnico...</option>
+              {users.map(u => (
+                <option key={u.id} value={u.id}>{u.name}</option>
+              ))}
+            </select>
+            <div className="flex gap-3">
+              <button type="button" onClick={() => { setShowTechModal(false); setTechModalStatusId(null) }}
+                className="flex-1 px-4 py-2.5 text-sm border rounded-lg hover:bg-gray-50">Cancelar</button>
+              <button type="button" disabled={!editTechnicianId || transitioning} onClick={() => {
+                if (!techModalStatusId || !editTechnicianId) return
+                setShowTechModal(false)
+                doTransition(techModalStatusId)
+                setTechModalStatusId(null)
+              }}
+                className="flex-1 px-4 py-2.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium">
+                {transitioning ? 'Salvando...' : 'Confirmar'}
+              </button>
+            </div>
           </div>
         </div>
       )}

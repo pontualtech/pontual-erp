@@ -64,12 +64,16 @@ export async function POST(req: NextRequest, { params }: Params) {
       }
     }
 
-    const isPronta = toStatus.name.toLowerCase().includes('pronta')
     const effectiveTechnicianId = os.technician_id || bodyTechnicianId || null
+    const toNameLower = toStatus.name.toLowerCase()
 
-    // Se entrega final (reparada), exigir técnico obrigatório
-    if (isFinalDelivery && !effectiveTechnicianId) {
-      return error('É obrigatório atribuir um técnico para entregar a OS', 400)
+    // Detectar status que exige técnico + data de execução:
+    // "Entregar Reparado", "Pronta", ou qualquer status final de entrega
+    const isReparado = toNameLower.includes('reparad') || toNameLower.includes('pronta')
+    const exigeTecnico = isReparado || isFinalDelivery
+
+    if (exigeTecnico && !effectiveTechnicianId) {
+      return error('É obrigatório atribuir um técnico para esta transição', 400)
     }
 
     // Execute transition
@@ -77,14 +81,14 @@ export async function POST(req: NextRequest, { params }: Params) {
       status_id: toStatusId,
     }
 
-    // Data de execução: preencher na ENTREGA (máquina reparada entregue)
-    if (isFinalDelivery) {
+    // Data de execução + técnico: ao marcar como reparado ou entrega final
+    if (isReparado || isFinalDelivery) {
       updateData.actual_delivery = new Date()
       if (bodyTechnicianId) updateData.technician_id = bodyTechnicianId
     }
 
     // Se Aprovado, calcular previsão de 10 dias úteis
-    const isAprovado = toStatus.name.toLowerCase().includes('aprovado')
+    const isAprovado = toNameLower.includes('aprovado')
     if (isAprovado) {
       let diasUteis = 0
       const data = new Date()
@@ -94,11 +98,6 @@ export async function POST(req: NextRequest, { params }: Params) {
         if (dow !== 0 && dow !== 6) diasUteis++ // pula sab/dom
       }
       updateData.estimated_delivery = data
-    }
-
-    // Se Pronta, salvar técnico se ainda não tem
-    if (isPronta && bodyTechnicianId && !os.technician_id) {
-      updateData.technician_id = bodyTechnicianId
     }
 
     // ====== TRANSAÇÃO ATÔMICA: OS + Histórico + Conta a Receber + Parcelas ======
@@ -270,7 +269,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     })
 
     // Fora da transação: notificações (fire and forget, não precisa ser atômica)
-    if (isPronta) {
+    if (isReparado) {
       const osNum = String(os.os_number).padStart(4, '0')
       const customerName = os.customers?.legal_name || 'Cliente'
       const techProfile = os.technician_id
