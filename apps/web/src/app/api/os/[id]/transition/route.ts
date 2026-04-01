@@ -82,13 +82,19 @@ export async function POST(req: NextRequest, { params }: Params) {
       }
     }
 
-    const [updated] = await prisma.$transaction([
-      prisma.serviceOrder.update({
+    // ====== TRANSAÇÃO ATÔMICA: OS + Histórico + Conta a Receber + Parcelas ======
+    let receivableCreated = false
+
+    const updated = await prisma.$transaction(async (tx) => {
+      // 1. Atualizar OS
+      const updatedOS = await tx.serviceOrder.update({
         where: { id: params.id },
         data: updateData,
         include: { customers: true },
-      }),
-      prisma.serviceOrderHistory.create({
+      })
+
+      // 2. Registrar histórico
+      await tx.serviceOrderHistory.create({
         data: {
           company_id: user.companyId,
           service_order_id: params.id,
@@ -97,10 +103,139 @@ export async function POST(req: NextRequest, { params }: Params) {
           changed_by: user.id,
           notes: notes || null,
         },
-      }),
-    ])
+      })
 
-    // Notificar atendentes quando OS fica "Pronta"
+      // 3. Auto-criar AccountReceivable quando é entrega final
+      if (isFinalDelivery) {
+        const category = await tx.category.findFirst({
+          where: { company_id: user.companyId, module: 'financeiro_receita' },
+          orderBy: { name: 'asc' },
+        })
+
+        const totalAmount = os.total_cost ?? 0
+        let cardFeeTotal = 0
+        let netAmount = totalAmount
+        let daysToReceive = 0
+        const pmLower = (payment_method || '').toLowerCase()
+        const isCard = pmLower.includes('cart') || pmLower.includes('credito') || pmLower.includes('crédito') || pmLower.includes('debito') || pmLower.includes('débito')
+
+        if (isCard && installment_count >= 1) {
+          const feeSettings = await tx.setting.findMany({
+            where: { company_id: user.companyId, key: { startsWith: 'card_fee.' } },
+          })
+          for (const setting of feeSettings) {
+            try {
+              const config = JSON.parse(setting.value)
+              if (payment_method.includes(config.name) || feeSettings.length === 1) {
+                daysToReceive = config.days_to_receive || 30
+                const isDebit = pmLower.includes('debito') || pmLower.includes('débito')
+                const debitPct = config.debit?.fee_pct ?? config.debit_fee_pct
+                if (installment_count === 1 && isDebit && debitPct != null) {
+                  cardFeeTotal = Math.round(totalAmount * debitPct / 100)
+                  daysToReceive = config.debit?.days_to_receive ?? config.days_to_receive ?? 1
+                } else if (Array.isArray(config.installments)) {
+                  for (const range of config.installments) {
+                    if (installment_count >= range.from && installment_count <= range.to) {
+                      cardFeeTotal = Math.round(totalAmount * range.fee_pct / 100)
+                      break
+                    }
+                  }
+                }
+                netAmount = totalAmount - cardFeeTotal
+                break
+              }
+            } catch { /* skip invalid config */ }
+          }
+        }
+
+        const receivable = await tx.accountReceivable.create({
+          data: {
+            company_id: user.companyId,
+            customer_id: os.customer_id,
+            service_order_id: os.id,
+            category_id: category?.id || null,
+            description: `OS-${String(os.os_number).padStart(4, '0')} — ${os.equipment_type || 'Serviço'} ${os.equipment_brand || ''} ${os.equipment_model || ''}`.trim(),
+            total_amount: totalAmount,
+            received_amount: 0,
+            due_date: new Date(),
+            status: 'PENDENTE',
+            payment_method: payment_method,
+            installment_count: installment_count,
+            card_fee_total: cardFeeTotal,
+            net_amount: netAmount,
+            notes: `Gerado automaticamente ao entregar OS-${String(os.os_number).padStart(4, '0')}`,
+          },
+        })
+
+        // Parcelas
+        if (installment_count > 1) {
+          const baseAmount = Math.floor(netAmount / installment_count)
+          const remainder = netAmount - baseAmount * installment_count
+          const installments = []
+          const baseDate = new Date()
+          for (let i = 0; i < installment_count; i++) {
+            const dueDate = new Date(baseDate)
+            if (i === 0) {
+              dueDate.setDate(dueDate.getDate() + daysToReceive)
+            } else {
+              dueDate.setDate(dueDate.getDate() + daysToReceive + 30 * i)
+            }
+            installments.push({
+              company_id: user.companyId,
+              parent_type: 'RECEIVABLE',
+              parent_id: receivable.id,
+              installment_number: i + 1,
+              amount: i === 0 ? baseAmount + remainder : baseAmount,
+              due_date: dueDate,
+              status: 'PENDENTE',
+            })
+          }
+          await tx.installment.createMany({ data: installments })
+        }
+
+        // Taxa do cartão
+        if (cardFeeTotal > 0) {
+          const feeCategory = await tx.category.findFirst({
+            where: { company_id: user.companyId, module: 'financeiro_despesa', name: { contains: 'Taxas de Cartao' } },
+          })
+          await tx.accountPayable.create({
+            data: {
+              company_id: user.companyId,
+              category_id: feeCategory?.id || null,
+              description: `Taxa cartão OS-${String(os.os_number).padStart(4, '0')} — ${payment_method} ${installment_count > 1 ? installment_count + 'x' : ''}`.trim(),
+              total_amount: cardFeeTotal,
+              paid_amount: 0,
+              due_date: new Date(),
+              status: 'PENDENTE',
+              payment_method: 'Desconto automático',
+            },
+          })
+        }
+
+        receivableCreated = true
+
+        logAudit({
+          companyId: user.companyId,
+          userId: user.id,
+          module: 'financeiro',
+          action: 'auto_receivable',
+          entityId: params.id,
+          newValue: {
+            os_number: os.os_number,
+            total_cost: os.total_cost,
+            payment_method,
+            installment_count,
+            card_fee_total: cardFeeTotal,
+            net_amount: netAmount,
+            customer: os.customers?.legal_name,
+          },
+        })
+      }
+
+      return updatedOS
+    })
+
+    // Fora da transação: notificações (fire and forget, não precisa ser atômica)
     if (isPronta) {
       const osNum = String(os.os_number).padStart(4, '0')
       const customerName = os.customers?.legal_name || 'Cliente'
@@ -110,7 +245,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       const techName = techProfile?.name || 'Não atribuído'
       const equipDesc = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ')
 
-      await prisma.announcement.create({
+      prisma.announcement.create({
         data: {
           company_id: user.companyId,
           title: `🔧 OS-${osNum} PRONTA para entrega`,
@@ -120,146 +255,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           author_name: 'Sistema',
           created_by: user.id,
         },
-      })
-    }
-
-    // Auto-create AccountReceivable when delivering (final status, not cancelled)
-    if (isFinalDelivery) {
-      // Find "Venda de Servicos" category or first receita category
-      const category = await prisma.category.findFirst({
-        where: {
-          company_id: user.companyId,
-          module: 'financeiro_receita',
-        },
-        orderBy: { name: 'asc' },
-      })
-
-      const totalAmount = os.total_cost ?? 0
-      let cardFeeTotal = 0
-      let netAmount = totalAmount
-      let daysToReceive = 0
-      const pmLower = (payment_method || '').toLowerCase()
-      const isCard = pmLower.includes('cart') || pmLower.includes('credito') || pmLower.includes('crédito') || pmLower.includes('debito') || pmLower.includes('débito')
-
-      // Look up card fee config if paying by card
-      if (isCard && installment_count >= 1) {
-        const feeSettings = await prisma.setting.findMany({
-          where: { company_id: user.companyId, key: { startsWith: 'card_fee.' } },
-        })
-
-        for (const setting of feeSettings) {
-          try {
-            const config = JSON.parse(setting.value)
-            // Check if payment_method matches this config name
-            if (payment_method.includes(config.name) || feeSettings.length === 1) {
-              daysToReceive = config.days_to_receive || 30
-
-              const isDebit = pmLower.includes('debito') || pmLower.includes('débito')
-              const debitPct = config.debit?.fee_pct ?? config.debit_fee_pct
-              if (installment_count === 1 && isDebit && debitPct != null) {
-                // Debit card
-                cardFeeTotal = Math.round(totalAmount * debitPct / 100)
-                daysToReceive = config.debit?.days_to_receive ?? config.days_to_receive ?? 1
-              } else if (Array.isArray(config.installments)) {
-                // Credit card - find matching fee range
-                for (const range of config.installments) {
-                  if (installment_count >= range.from && installment_count <= range.to) {
-                    cardFeeTotal = Math.round(totalAmount * range.fee_pct / 100)
-                    break
-                  }
-                }
-              }
-              netAmount = totalAmount - cardFeeTotal
-              break
-            }
-          } catch { /* skip invalid config */ }
-        }
-      }
-
-      const receivable = await prisma.accountReceivable.create({
-        data: {
-          company_id: user.companyId,
-          customer_id: os.customer_id,
-          service_order_id: os.id,
-          category_id: category?.id || null,
-          description: `OS-${String(os.os_number).padStart(4, '0')} — ${os.equipment_type || 'Serviço'} ${os.equipment_brand || ''} ${os.equipment_model || ''}`.trim(),
-          total_amount: totalAmount,
-          received_amount: 0,
-          due_date: new Date(),
-          status: 'PENDENTE',
-          payment_method: payment_method,
-          installment_count: installment_count,
-          card_fee_total: cardFeeTotal,
-          net_amount: netAmount,
-          notes: `Gerado automaticamente ao entregar OS-${String(os.os_number).padStart(4, '0')}`,
-        },
-      })
-
-      // Create installment records if count > 1
-      if (installment_count > 1) {
-        const baseAmount = Math.floor(netAmount / installment_count)
-        const remainder = netAmount - baseAmount * installment_count
-        const installments = []
-        const baseDate = new Date()
-
-        for (let i = 0; i < installment_count; i++) {
-          const dueDate = new Date(baseDate)
-          if (i === 0) {
-            dueDate.setDate(dueDate.getDate() + daysToReceive)
-          } else {
-            dueDate.setDate(dueDate.getDate() + daysToReceive + 30 * i)
-          }
-          installments.push({
-            company_id: user.companyId,
-            parent_type: 'RECEIVABLE',
-            parent_id: receivable.id,
-            installment_number: i + 1,
-            amount: i === 0 ? baseAmount + remainder : baseAmount,
-            due_date: dueDate,
-            status: 'PENDENTE',
-          })
-        }
-
-        await prisma.installment.createMany({ data: installments })
-      }
-
-      // Auto-create AccountPayable for card fees (taxa da operadora)
-      if (cardFeeTotal > 0) {
-        const feeCategory = await prisma.category.findFirst({
-          where: { company_id: user.companyId, module: 'financeiro_despesa', name: { contains: 'Taxas de Cartao' } },
-        })
-
-        await prisma.accountPayable.create({
-          data: {
-            company_id: user.companyId,
-            category_id: feeCategory?.id || null,
-            description: `Taxa cartão OS-${String(os.os_number).padStart(4, '0')} — ${payment_method} ${installment_count > 1 ? installment_count + 'x' : ''}`.trim(),
-            total_amount: cardFeeTotal,
-            paid_amount: 0,
-            due_date: new Date(),
-            status: 'PENDENTE',
-            payment_method: 'Desconto automático',
-            notes: `Taxa operadora Rede: R$ ${(cardFeeTotal / 100).toFixed(2)} sobre R$ ${(totalAmount / 100).toFixed(2)} (${installment_count}x) — OS-${String(os.os_number).padStart(4, '0')}`,
-          },
-        })
-      }
-
-      logAudit({
-        companyId: user.companyId,
-        userId: user.id,
-        module: 'financeiro',
-        action: 'auto_receivable',
-        entityId: params.id,
-        newValue: {
-          os_number: os.os_number,
-          total_cost: os.total_cost,
-          payment_method,
-          installment_count,
-          card_fee_total: cardFeeTotal,
-          net_amount: netAmount,
-          customer: os.customers?.legal_name,
-        },
-      })
+      }).catch(() => {}) // fire and forget
     }
 
     logAudit({
@@ -287,7 +283,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       }).catch(() => {}) // fire and forget
     }
 
-    return success({ ...updated, receivable_created: isFinalDelivery })
+    return success({ ...updated, receivable_created: receivableCreated })
   } catch (err) {
     return handleError(err)
   }

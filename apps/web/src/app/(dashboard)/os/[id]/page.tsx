@@ -22,7 +22,7 @@ interface OSHistoryEntry {
   id: string; from_status_id: string | null; to_status_id: string | null
   changed_by: string | null; changed_by_name: string | null; notes: string | null; created_at: string
 }
-interface StatusDef { id: string; name: string; color: string; order: number }
+interface StatusDef { id: string; name: string; color: string; order: number; is_final?: boolean }
 interface OSDetail {
   id: string; os_number: number; status_id: string; priority: string; os_type: string
   equipment_type: string | null; equipment_brand: string | null; equipment_model: string | null
@@ -57,6 +57,7 @@ interface AccountReceivable {
   due_date: string
   status: string
   payment_method: string | null
+  boleto_url: string | null
   installment_count: number | null
   card_fee_total: number | null
   net_amount: number | null
@@ -570,8 +571,8 @@ export default function OSDetailPage() {
   function handleAdvanceClick() {
     const next = getNextStatus()
     if (!os || !next) return
-    const isDelivery = next.name.toLowerCase().includes('entreg') && !next.name.toLowerCase().includes('recusado')
-    if (isDelivery && os.total_cost > 0) {
+    const isDelivery = (next.is_final && !next.name.toLowerCase().includes('cancel'))
+    if (isDelivery && (os.total_cost ?? 0) > 0) {
       setPaymentMethod('')
       setPaymentNotes('')
       setInstallmentCount(1)
@@ -718,7 +719,7 @@ export default function OSDetailPage() {
                 const targetId = e.target.value
                 const target = statusList.find(s => s.id === targetId)
                 if (!target || targetId === os.status_id) return
-                const isDelivery = target.name.toLowerCase().includes('entreg') && !target.name.toLowerCase().includes('recusado')
+                const isDelivery = (target.is_final && !target.name.toLowerCase().includes('cancel'))
                 if (isDelivery && (os.total_cost ?? 0) > 0) {
                   setPaymentMethod('')
                   setPaymentNotes('')
@@ -1414,6 +1415,28 @@ export default function OSDetailPage() {
                             Recebido: {fmt(ar.anticipated_amount)}
                           </span>
                         )}
+                      </div>
+                    )}
+
+                    {/* Ações financeiras */}
+                    {ar.status === 'PENDENTE' && (
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        {!ar.boleto_url && (
+                          <a href="/financeiro/boletos" target="_blank"
+                            className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700">
+                            <Receipt className="h-3.5 w-3.5" /> Gerar Boleto
+                          </a>
+                        )}
+                        {ar.boleto_url && (
+                          <button type="button" onClick={() => window.open(`/boleto-print?ids=${ar.id}`, '_blank')}
+                            className="inline-flex items-center gap-1.5 rounded-md bg-gray-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-900">
+                            <Printer className="h-3.5 w-3.5" /> Imprimir Boleto
+                          </button>
+                        )}
+                        <a href="/financeiro/cnab" target="_blank"
+                          className="inline-flex items-center gap-1.5 rounded-md border border-orange-300 bg-orange-50 px-3 py-1.5 text-xs font-medium text-orange-700 hover:bg-orange-100">
+                          CNAB Inter
+                        </a>
                       </div>
                     )}
 
