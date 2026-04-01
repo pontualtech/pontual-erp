@@ -1427,9 +1427,9 @@ export default function OSDetailPage() {
                     {ar.status === 'PENDENTE' && (
                       <div className="flex flex-wrap gap-2 pt-1">
                         {!ar.boleto_url && (
-                          <a href="/financeiro/boletos" target="_blank"
-                            className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700">
-                            <Receipt className="h-3.5 w-3.5" /> Gerar Boleto
+                          <a href="/financeiro/cnab" target="_blank"
+                            className="inline-flex items-center gap-1.5 rounded-md bg-orange-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-orange-700">
+                            <Receipt className="h-3.5 w-3.5" /> Gerar Remessa CNAB
                           </a>
                         )}
                         {ar.boleto_url && (

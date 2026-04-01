@@ -148,18 +148,27 @@ export default function BoletosPage() {
   async function handleGenerate(receivableId: string) {
     setGenerating(receivableId)
     try {
-      const res = await fetch('/api/financeiro/boletos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ receivable_id: receivableId }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Erro ao gerar boleto')
-      toast.success('Boleto gerado com sucesso!')
+      // Gerar remessa CNAB 400 para esta conta
+      const res = await fetch(`/api/financeiro/cnab?ids=${receivableId}`)
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Erro ao gerar remessa')
+      }
+
+      // Download do arquivo .REM
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = res.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1] || 'remessa.rem'
+      a.click()
+      URL.revokeObjectURL(url)
+
+      toast.success('Remessa CNAB gerada! Faca upload no Internet Banking do Inter.')
       setShowGenerateModal(false)
       loadBoletos()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Erro ao gerar boleto')
+      toast.error(err instanceof Error ? err.message : 'Erro ao gerar remessa')
     } finally {
       setGenerating(null)
     }
@@ -238,7 +247,7 @@ export default function BoletosPage() {
           onClick={openGenerateModal}
           className="flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
         >
-          <Plus className="h-4 w-4" /> Gerar Boleto
+          <Plus className="h-4 w-4" /> Gerar Remessa CNAB
         </button>
       </div>
 
@@ -507,7 +516,7 @@ export default function BoletosPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowGenerateModal(false)}>
           <div className="w-full max-w-lg rounded-lg bg-white shadow-xl" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b px-6 py-4">
-              <h2 className="text-lg font-semibold text-gray-900">Gerar Boleto</h2>
+              <h2 className="text-lg font-semibold text-gray-900">Gerar Remessa CNAB</h2>
               <button type="button" onClick={() => setShowGenerateModal(false)} className="text-gray-400 hover:text-gray-600">
                 <X className="h-5 w-5" />
               </button>

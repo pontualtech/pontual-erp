@@ -374,16 +374,23 @@ export default function ContasReceberPage() {
 
     setBoletoGenerating(true)
     try {
-      // 1. Gerar boleto
-      const res = await fetch('/api/financeiro/boletos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ receivable_id: conta.id, provider: boletoBank }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Erro ao gerar boleto')
+      // Gerar remessa CNAB 400 para esta conta específica
+      const res = await fetch(`/api/financeiro/cnab?ids=${conta.id}`)
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Erro ao gerar remessa')
+      }
 
-      // 2. Enviar por email ao cliente
+      // Download do arquivo .REM
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = res.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1] || 'remessa.rem'
+      a.click()
+      URL.revokeObjectURL(url)
+
+      // Enviar por email ao cliente
       if (conta.customers) {
         try {
           await fetch('/api/financeiro/boletos/enviar-email', {
@@ -391,18 +398,18 @@ export default function ContasReceberPage() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ receivable_id: conta.id }),
           })
-          toast.success(`Boleto gerado e enviado por email para ${conta.customers.legal_name}!`)
+          toast.success(`Remessa gerada e email enviado para ${conta.customers.legal_name}!`)
         } catch {
-          toast.success('Boleto gerado! (email nao enviado)')
+          toast.success('Remessa gerada! (email nao enviado)')
         }
       } else {
-        toast.success('Boleto gerado com sucesso!')
+        toast.success('Arquivo de remessa CNAB gerado! Faca upload no Internet Banking do Inter.')
       }
 
       setBoletoModalConta(null)
       loadContas()
     } catch (err: any) {
-      toast.error(err.message || 'Erro ao gerar boleto')
+      toast.error(err.message || 'Erro ao gerar remessa')
     } finally {
       setBoletoGenerating(false)
     }
@@ -1445,30 +1452,12 @@ export default function ContasReceberPage() {
                 <div className="flex justify-between"><span className="text-gray-500">Descricao:</span><span>{boletoModalConta.description}</span></div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Banco para Emissao</label>
-                <div className="grid gap-2 sm:grid-cols-3">
-                  {[
-                    { id: 'inter', label: 'Banco Inter', color: 'orange' },
-                    { id: 'itau', label: 'Itau', color: 'blue' },
-                    { id: 'stone', label: 'Stone', color: 'green' },
-                  ].map(bank => (
-                    <button key={bank.id} type="button" onClick={() => setBoletoBank(bank.id)}
-                      className={cn(
-                        'rounded-lg border-2 p-3 text-center text-sm font-medium transition-all',
-                        boletoBank === bank.id
-                          ? `border-${bank.color}-500 bg-${bank.color}-50 text-${bank.color}-700`
-                          : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                      )}>
-                      {bank.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800">
-                <Send className="h-3.5 w-3.5 inline mr-1" />
-                Apos gerar, o boleto sera enviado automaticamente por email ao cliente.
+              <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-800">
+                <strong>Banco Inter — CNAB 400</strong>
+                <p className="mt-1 text-xs text-orange-700">
+                  Sera gerado um arquivo .REM para upload no Internet Banking do Inter.
+                  O banco registra o boleto e envia por email ao pagador automaticamente.
+                </p>
               </div>
             </div>
 
@@ -1476,7 +1465,7 @@ export default function ContasReceberPage() {
               <button type="button" onClick={handleGerarBoleto} disabled={boletoGenerating}
                 className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-orange-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-orange-700 disabled:opacity-50">
                 {boletoGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Receipt className="h-4 w-4" />}
-                {boletoGenerating ? 'Gerando...' : 'Gerar Boleto e Enviar'}
+                {boletoGenerating ? 'Gerando...' : 'Gerar Remessa CNAB'}
               </button>
               <button type="button" onClick={() => setBoletoModalConta(null)} disabled={boletoGenerating}
                 className="px-4 py-2.5 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
