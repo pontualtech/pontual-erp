@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 
 interface BoletoData {
@@ -51,6 +51,14 @@ function formatDoc(doc: string) {
 }
 
 export default function BoletoPrintPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><p className="text-gray-500">Carregando...</p></div>}>
+      <BoletoPrintContent />
+    </Suspense>
+  )
+}
+
+function BoletoPrintContent() {
   const searchParams = useSearchParams()
   const [boletos, setBoletos] = useState<BoletoData[]>([])
   const [loading, setLoading] = useState(true)
