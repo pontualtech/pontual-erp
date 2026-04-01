@@ -746,7 +746,7 @@ export default function OSListPage() {
                         </td>
                         {effectiveColumns.includes('os_number') && (
                           <td className="px-3 py-2.5">
-                            <Link href={`/os/${os.id}`} className="font-semibold text-blue-600 hover:underline font-mono text-xs tracking-tight">
+                            <Link href={`/os/${os.id}`} className="font-bold text-blue-600 hover:underline font-mono text-sm tracking-tight">
                               {os.os_number}
                             </Link>
                             {(os as any).is_warranty && (
