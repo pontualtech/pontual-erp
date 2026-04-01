@@ -42,15 +42,19 @@ export async function POST(req: NextRequest, { params }: Params) {
     const whatsappNum = (cfg['company.whatsapp'] || '551126263841').replace(/\D/g, '')
     const whatsappUrl = `https://wa.me/${whatsappNum}`
     const portalUrl = cfg['portal.url'] || 'https://pontualtech.com.br/#consulta-os'
+    const osLocation = ((os as any).os_location || '').toUpperCase()
+    const isLoja = osLocation === 'LOJA' || osLocation === 'BALCAO'
+
+    const instrucaoRetirada = isLoja
+      ? 'Voce pode retirar no nosso endereco.\nHorario de funcionamento: Seg a Sex, 09:00 as 17:00'
+      : 'Passaremos as informacoes para nossa logistica, que entrara em contato para informar o dia da entrega.'
 
     // ===== WHATSAPP =====
     const whatsappMsg = `Ola ${customerFirstName}! Tudo bem?
 
 Temos uma otima noticia! Seu equipamento ${equipment} (OS #${osNum}) esta pronto!
 
-Voce pode retirar no nosso endereco ou, se preferir, agendamos a entrega.
-
-Horario de funcionamento: Seg a Sex, 09:00 as 17:00
+${instrucaoRetirada}
 
 Acompanhe pelo portal: ${portalUrl}
 
@@ -78,15 +82,17 @@ ${companyName}`
       <table style="width:100%;font-size:14px;color:#166534;">
         <tr><td style="padding:4px 0;font-weight:600;">Equipamento:</td><td style="padding:4px 0;">${equipment}</td></tr>
         <tr><td style="padding:4px 0;font-weight:600;">OS:</td><td style="padding:4px 0;">#${osNum}</td></tr>
-        <tr><td style="padding:4px 0;font-weight:600;">Status:</td><td style="padding:4px 0;font-weight:700;color:#16a34a;">Pronto para retirada</td></tr>
+        <tr><td style="padding:4px 0;font-weight:600;">Status:</td><td style="padding:4px 0;font-weight:700;color:#16a34a;">${isLoja ? 'Pronto para retirada' : 'Pronto — aguardando entrega'}</td></tr>
       </table>
     </div>
 
     <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px;margin:0 0 20px;">
-      <p style="margin:0 0 6px;font-size:13px;color:#1e40af;font-weight:600;">COMO RETIRAR</p>
+      <p style="margin:0 0 6px;font-size:13px;color:#1e40af;font-weight:600;">${isLoja ? 'COMO RETIRAR' : 'ENTREGA'}</p>
       <p style="margin:0;font-size:14px;color:#1e40af;line-height:1.5;">
-        Voce pode retirar no nosso endereco ou, se preferir, agendamos a entrega.<br/>
-        <strong>Horario:</strong> Seg a Sex, 09:00 as 17:00
+        ${isLoja
+          ? `Voce pode retirar no nosso endereco.<br/><strong>Horario:</strong> Seg a Sex, 09:00 as 17:00`
+          : `Passaremos as informacoes para nossa <strong>logistica</strong>, que entrara em contato para informar o dia da entrega.`
+        }
       </p>
     </div>
 
