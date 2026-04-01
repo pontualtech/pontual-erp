@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Pencil, Trash2 } from 'lucide-react'
+import { ArrowLeft, Pencil, Trash2, DollarSign, Download, Printer, Loader2, RefreshCw, FileText } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface Cliente {
@@ -36,6 +36,26 @@ interface OS {
   created_at: string
 }
 
+interface ContaReceber {
+  id: string
+  description: string
+  total_amount: number
+  received_amount: number
+  due_date: string
+  status: string
+  payment_method: string | null
+  boleto_url: string | null
+  pix_code: string | null
+  service_order_id: string | null
+}
+
+function safeDate(v: any, utc = false): string {
+  if (!v) return '--'
+  const d = new Date(v)
+  if (isNaN(d.getTime())) return '--'
+  return d.toLocaleDateString('pt-BR', utc ? { timeZone: 'UTC' } : undefined)
+}
+
 function formatCurrency(cents: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cents / 100)
 }
@@ -50,6 +70,8 @@ export default function ClienteDetalhePage() {
   const [error, setError] = useState('')
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [contas, setContas] = useState<ContaReceber[]>([])
+  const [gerando, setGerando] = useState<string | null>(null)
 
   useEffect(() => {
     setLoading(true)
@@ -63,6 +85,12 @@ export default function ClienteDetalhePage() {
       })
       .catch(() => setError('Erro ao carregar cliente'))
       .finally(() => setLoading(false))
+
+    // Carregar contas a receber do cliente
+    fetch(`/api/financeiro/contas-receber?customer_id=${id}&limit=50`)
+      .then(r => r.json())
+      .then(d => setContas(d.data ?? []))
+      .catch(() => {})
   }, [id])
 
   async function handleDelete() {
@@ -235,6 +263,104 @@ export default function ClienteDetalhePage() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Financeiro — Contas a Receber */}
+      <div className="rounded-lg border bg-white shadow-sm">
+        <div className="border-b px-5 py-3 flex items-center justify-between">
+          <h2 className="font-semibold text-gray-900 flex items-center gap-2">
+            <DollarSign className="h-4 w-4 text-emerald-600" />
+            Financeiro
+          </h2>
+          <span className="text-xs text-gray-400">{contas.length} conta(s)</span>
+        </div>
+
+        {contas.length === 0 ? (
+          <div className="px-5 py-8 text-center text-gray-400 text-sm">Nenhuma conta a receber para este cliente</div>
+        ) : (
+          <div className="divide-y">
+            {contas.map(c => {
+              let meta: any = null
+              try { if (c.pix_code) meta = JSON.parse(c.pix_code) } catch {}
+              const hasBoleto = !!c.boleto_url
+              const isPaid = c.status === 'RECEBIDO'
+              const isOverdue = c.status === 'PENDENTE' && new Date(c.due_date) < new Date()
+
+              return (
+                <div key={c.id} className="px-5 py-4 space-y-2">
+                  {/* Linha principal */}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <Link href={`/financeiro/contas-receber/${c.id}`} className="text-sm font-medium text-gray-900 hover:text-blue-600">
+                        {c.description}
+                      </Link>
+                      <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-500">
+                        <span>Venc: {safeDate(c.due_date, true)}</span>
+                        <span>{c.payment_method || '--'}</span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-gray-900">{formatCurrency(c.total_amount)}</p>
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                        isPaid ? 'bg-green-100 text-green-700'
+                        : isOverdue ? 'bg-red-100 text-red-700'
+                        : 'bg-amber-100 text-amber-700'
+                      }`}>
+                        {isPaid ? 'Pago' : isOverdue ? 'Vencido' : 'Pendente'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Status do boleto + ações */}
+                  {hasBoleto && (
+                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                      <FileText className="h-3.5 w-3.5 text-orange-500" />
+                      <span>Banco Inter — CNAB 400</span>
+                      <span className="text-gray-300">|</span>
+                      <span>{meta?.boletoStatus === 'PAID' ? 'Pago' : meta?.boletoStatus === 'REGISTRANDO' ? 'Aguardando envio ao banco' : meta?.boletoStatus || 'Processando'}</span>
+                      {meta?.generatedAt && (
+                        <>
+                          <span className="text-gray-300">|</span>
+                          <span>Emitido: {safeDate(meta.generatedAt)}</span>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Botões de ação */}
+                  {!isPaid && (
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" disabled={gerando === c.id} onClick={async () => {
+                        setGerando(c.id)
+                        try {
+                          const res = await fetch(`/api/financeiro/cnab?ids=${c.id}`)
+                          if (!res.ok) { const d = await res.json(); throw new Error(d.error) }
+                          const blob = await res.blob()
+                          const url = URL.createObjectURL(blob)
+                          const a = document.createElement('a'); a.href = url
+                          a.download = res.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1] || 'remessa.rem'
+                          a.click(); URL.revokeObjectURL(url)
+                          toast.success('Remessa gerada!')
+                          // Reload contas
+                          fetch(`/api/financeiro/contas-receber?customer_id=${id}&limit=50`).then(r => r.json()).then(d => setContas(d.data ?? []))
+                        } catch (err: any) { toast.error(err.message || 'Erro') }
+                        finally { setGerando(null) }
+                      }}
+                        className="inline-flex items-center gap-1.5 rounded-md bg-orange-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-orange-700 disabled:opacity-50">
+                        {gerando === c.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                        {hasBoleto ? 'Reenviar Remessa' : 'Gerar Remessa CNAB'}
+                      </button>
+                      <button type="button" onClick={() => window.open(`/boleto-print?ids=${c.id}`, '_blank')}
+                        className="inline-flex items-center gap-1.5 rounded-md bg-gray-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-900">
+                        <Printer className="h-3.5 w-3.5" /> Imprimir Boleto
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {/* Delete confirmation modal */}

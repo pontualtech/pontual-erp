@@ -49,6 +49,7 @@ export async function GET(req: NextRequest) {
       where: whereClause,
       include: {
         customers: { select: { legal_name: true, document_number: true, email: true, address_street: true, address_number: true, address_neighborhood: true, address_city: true, address_state: true, address_zip: true } },
+        service_orders: { select: { os_number: true, equipment_type: true, equipment_brand: true, equipment_model: true, serial_number: true } },
       },
       orderBy: { due_date: 'asc' },
     })
@@ -65,20 +66,27 @@ export async function GET(req: NextRequest) {
       const vencDiaSeguinte = new Date(r.due_date)
       vencDiaSeguinte.setDate(vencDiaSeguinte.getDate() + 1)
 
+      // Usar número da OS como "seu número" (identificador no boleto)
+      const osNum = r.service_orders?.os_number
+        ? String(r.service_orders.os_number)
+        : r.id.substring(0, 10)
+
       boletos.push({
-        seuNumero: r.id.substring(0, 10),
+        seuNumero: osNum.substring(0, 10),
         dataVencimento: r.due_date,
         valorNominal: r.total_amount,
         diasAposVencimento: 30,
         sacadoNome: r.customers.legal_name,
         sacadoDocumento: r.customers.document_number,
-        sacadoEndereco: `${r.customers.address_street || ''} ${r.customers.address_number || ''}`.trim() || 'NAO INFORMADO',
+        sacadoEndereco: `${r.customers.address_street || ''} ${r.customers.address_number || ''} ${r.customers.address_neighborhood || ''}`.trim() || 'NAO INFORMADO',
         sacadoUF: r.customers.address_state || 'SP',
         sacadoCEP: r.customers.address_zip || '00000000',
         sacadoEmail: r.customers.email || undefined,
         multa: { tipo: '2', percentual: 2.00, data: vencDiaSeguinte },
         juros: { tipo: '2', taxaMensal: 1.00, data: vencDiaSeguinte },
-        mensagem: r.description || '',
+        mensagem: r.service_orders
+          ? `OS ${osNum} - ${[r.service_orders.equipment_type, r.service_orders.equipment_brand, r.service_orders.equipment_model].filter(Boolean).join(' ')}`.substring(0, 70)
+          : (r.description || '').substring(0, 70),
         controleParticipante: r.id.substring(0, 25),
       })
     }
