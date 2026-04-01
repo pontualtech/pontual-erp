@@ -82,6 +82,7 @@ export async function GET(request: NextRequest, { params }: Params) {
       status: os.module_statuses?.name || '—',
       items,
       customer_name: os.customers?.legal_name || '—',
+      customer_person_type: os.customers?.person_type || 'FISICA',
       company: {
         name: os.companies.name,
         phone: settingsMap['company.phone'] || settingsMap['telefone'] || null,

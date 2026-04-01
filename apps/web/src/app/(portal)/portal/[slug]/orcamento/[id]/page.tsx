@@ -14,6 +14,7 @@ interface OrcamentoData {
   serial_number: string | null; reported_issue: string; diagnosis: string | null
   total_cost: number; total_parts: number; total_services: number
   status: string; items: OsItem[]; customer_name: string
+  customer_person_type: string
   company: { name: string; phone: string | null; email: string | null; whatsapp: string | null }
 }
 
@@ -313,33 +314,73 @@ function OrcamentoContent() {
         )}
 
         {/* Approve Form — selecionar pagamento */}
-        {showApproveForm && !showRejectForm && (
+        {showApproveForm && !showRejectForm && data && (
           <div className="mb-4 rounded-2xl border-2 border-green-200 bg-green-50 p-6 shadow-sm">
-            <h3 className="mb-4 font-bold text-green-800">Como deseja pagar?</h3>
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              {[
-                { key: 'PIX', label: 'PIX', icon: '⚡', desc: 'A vista' },
-                { key: 'Dinheiro', label: 'Dinheiro', icon: '💵', desc: 'A vista' },
-                { key: 'Cartao Credito 1x', label: 'Credito 1x', icon: '💳', desc: 'A vista' },
-                { key: 'Cartao Credito 2x', label: 'Credito 2x', icon: '💳', desc: fmt(Math.ceil(data.total_cost / 2)) + '/parcela' },
-                { key: 'Cartao Credito 3x', label: 'Credito 3x', icon: '💳', desc: fmt(Math.ceil(data.total_cost / 3)) + '/parcela' },
-                { key: 'Cartao Debito', label: 'Debito', icon: '💳', desc: 'A vista' },
-              ].map(opt => (
-                <button key={opt.key} type="button" onClick={() => setPaymentMethod(opt.key)}
-                  className={`rounded-lg border-2 p-3 text-left transition-all ${
-                    paymentMethod === opt.key
-                      ? 'border-green-500 bg-green-100 shadow-sm'
-                      : 'border-gray-200 bg-white hover:border-green-300'
-                  }`}>
-                  <p className="text-sm font-semibold text-gray-900">{opt.icon} {opt.label}</p>
-                  <p className="text-xs text-gray-500">{opt.desc}</p>
+            <h3 className="mb-2 font-bold text-green-800">Como deseja pagar?</h3>
+            <p className="text-xs text-gray-500 mb-4">O pagamento sera realizado no momento da entrega do equipamento.</p>
+
+            <div className="space-y-3 mb-4">
+              {/* PIX */}
+              <button type="button" onClick={() => setPaymentMethod('PIX')}
+                className={`w-full rounded-lg border-2 p-4 text-left transition-all ${paymentMethod === 'PIX' ? 'border-green-500 bg-green-100' : 'border-gray-200 bg-white hover:border-green-300'}`}>
+                <div className="flex items-center justify-between">
+                  <div><p className="text-sm font-semibold text-gray-900">⚡ PIX</p><p className="text-xs text-gray-500">Pagamento a vista na entrega</p></div>
+                  <p className="text-lg font-bold text-green-700">{fmt(data.total_cost)}</p>
+                </div>
+              </button>
+
+              {/* Dinheiro */}
+              <button type="button" onClick={() => setPaymentMethod('Dinheiro')}
+                className={`w-full rounded-lg border-2 p-4 text-left transition-all ${paymentMethod === 'Dinheiro' ? 'border-green-500 bg-green-100' : 'border-gray-200 bg-white hover:border-green-300'}`}>
+                <div className="flex items-center justify-between">
+                  <div><p className="text-sm font-semibold text-gray-900">💵 Dinheiro</p><p className="text-xs text-gray-500">Pagamento a vista na entrega</p></div>
+                  <p className="text-lg font-bold text-green-700">{fmt(data.total_cost)}</p>
+                </div>
+              </button>
+
+              {/* Cartão Crédito com dropdown */}
+              <div className={`rounded-lg border-2 p-4 transition-all ${paymentMethod.startsWith('Cartao Credito') ? 'border-green-500 bg-green-100' : 'border-gray-200 bg-white'}`}>
+                <div className="flex items-center justify-between">
+                  <div><p className="text-sm font-semibold text-gray-900">💳 Cartao de Credito</p><p className="text-xs text-gray-500">Ate 3x sem juros na entrega</p></div>
+                  <select title="Parcelas" value={paymentMethod.startsWith('Cartao Credito') ? paymentMethod : ''}
+                    onChange={e => { if (e.target.value) setPaymentMethod(e.target.value) }}
+                    className="rounded-md border bg-white px-3 py-1.5 text-sm font-medium text-gray-700">
+                    <option value="">Parcelas</option>
+                    <option value="Cartao Credito 1x">1x de {fmt(data.total_cost)}</option>
+                    <option value="Cartao Credito 2x">2x de {fmt(Math.ceil(data.total_cost / 2))}</option>
+                    <option value="Cartao Credito 3x">3x de {fmt(Math.ceil(data.total_cost / 3))}</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Cartão Débito */}
+              <button type="button" onClick={() => setPaymentMethod('Cartao Debito')}
+                className={`w-full rounded-lg border-2 p-4 text-left transition-all ${paymentMethod === 'Cartao Debito' ? 'border-green-500 bg-green-100' : 'border-gray-200 bg-white hover:border-green-300'}`}>
+                <div className="flex items-center justify-between">
+                  <div><p className="text-sm font-semibold text-gray-900">💳 Cartao de Debito</p><p className="text-xs text-gray-500">Pagamento a vista na entrega</p></div>
+                  <p className="text-lg font-bold text-green-700">{fmt(data.total_cost)}</p>
+                </div>
+              </button>
+
+              {/* Boleto — só PJ */}
+              {data.customer_person_type === 'JURIDICA' && (
+                <button type="button" onClick={() => setPaymentMethod('Boleto 7 dias')}
+                  className={`w-full rounded-lg border-2 p-4 text-left transition-all ${paymentMethod === 'Boleto 7 dias' ? 'border-green-500 bg-green-100' : 'border-gray-200 bg-white hover:border-green-300'}`}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">🏦 Boleto Bancario</p>
+                      <p className="text-xs text-gray-500">Vencimento em 7 dias — sujeito a analise de credito</p>
+                    </div>
+                    <p className="text-lg font-bold text-green-700">{fmt(data.total_cost)}</p>
+                  </div>
                 </button>
-              ))}
+              )}
             </div>
-            <p className="text-xs text-gray-500 mb-4">
-              Boleto bancario disponivel apenas para pessoa juridica mediante aprovacao de cadastro.
-              Entre em contato pelo WhatsApp para solicitar.
-            </p>
+
+            <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 mb-4">
+              <p className="text-xs text-blue-800 font-medium">Importante: o pagamento sera realizado no momento da entrega/retirada do equipamento.</p>
+            </div>
+
             <div className="flex gap-3">
               <button type="button" onClick={() => handleAction('approve')} disabled={submitting || !paymentMethod}
                 className="flex-1 rounded-lg bg-green-600 py-3 text-sm font-bold text-white hover:bg-green-700 disabled:opacity-50">
