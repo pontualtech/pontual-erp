@@ -1341,6 +1341,9 @@ export default function OSDetailPage() {
                   className="w-full px-2 py-1.5 border rounded text-sm bg-white">
                   <option value="">—</option>
                   {paymentMethods.map(pm => <option key={pm.id} value={pm.name}>{pm.icon} {pm.name}</option>)}
+                  {editPaymentMethod && !paymentMethods.some(pm => pm.name === editPaymentMethod) && (
+                    <option value={editPaymentMethod}>{editPaymentMethod}</option>
+                  )}
                 </select>
               </div>
               <div>
@@ -1615,6 +1618,11 @@ export default function OSDetailPage() {
             <DetailRow label="Tecnico">
               <span className="text-sm text-gray-900">{os.user_profiles?.name || '--'}</span>
             </DetailRow>
+            {os.payment_method && (
+              <DetailRow label="Pagamento">
+                <span className="text-sm font-medium text-blue-700 bg-blue-50 rounded px-2 py-0.5">{os.payment_method}</span>
+              </DetailRow>
+            )}
             <DetailRow label="Previsao">
               <span className="text-sm text-gray-900">{os.estimated_delivery ? new Date(os.estimated_delivery).toLocaleDateString('pt-BR') : '--'}</span>
             </DetailRow>
