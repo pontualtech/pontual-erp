@@ -64,17 +64,23 @@ export async function POST(req: NextRequest, { params }: Params) {
       }
     }
 
-    // Se status destino é "Pronta", exigir técnico atribuído
     const isPronta = toStatus.name.toLowerCase().includes('pronta')
     const effectiveTechnicianId = os.technician_id || bodyTechnicianId || null
-    if (isPronta && !effectiveTechnicianId) {
-      return error('É obrigatório atribuir um técnico antes de marcar como Pronta', 400)
+
+    // Se entrega final (reparada), exigir técnico obrigatório
+    if (isFinalDelivery && !effectiveTechnicianId) {
+      return error('É obrigatório atribuir um técnico para entregar a OS', 400)
     }
 
     // Execute transition
     const updateData: any = {
       status_id: toStatusId,
-      ...(toStatus.is_final ? { actual_delivery: new Date() } : {}),
+    }
+
+    // Data de execução: preencher na ENTREGA (máquina reparada entregue)
+    if (isFinalDelivery) {
+      updateData.actual_delivery = new Date()
+      if (bodyTechnicianId) updateData.technician_id = bodyTechnicianId
     }
 
     // Se Aprovado, calcular previsão de 10 dias úteis
@@ -90,12 +96,9 @@ export async function POST(req: NextRequest, { params }: Params) {
       updateData.estimated_delivery = data
     }
 
-    // Se Pronta, salvar técnico e data de execução
-    if (isPronta) {
-      if (bodyTechnicianId && !os.technician_id) {
-        updateData.technician_id = bodyTechnicianId
-      }
-      updateData.actual_delivery = new Date()
+    // Se Pronta, salvar técnico se ainda não tem
+    if (isPronta && bodyTechnicianId && !os.technician_id) {
+      updateData.technician_id = bodyTechnicianId
     }
 
     // ====== TRANSAÇÃO ATÔMICA: OS + Histórico + Conta a Receber + Parcelas ======

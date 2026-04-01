@@ -1770,6 +1770,25 @@ export default function OSDetailPage() {
                 </div>
               )}
 
+              {/* Técnico obrigatório */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Tecnico responsavel *</label>
+                <select
+                  title="Tecnico responsavel"
+                  value={editTechnicianId}
+                  onChange={e => setEditTechnicianId(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:border-green-500 focus:ring-1 focus:ring-green-200"
+                >
+                  <option value="">Selecione o tecnico...</option>
+                  {users.map(u => (
+                    <option key={u.id} value={u.id}>{u.name}</option>
+                  ))}
+                </select>
+                {!editTechnicianId && !os.technician_id && (
+                  <p className="text-xs text-red-500 mt-1">Obrigatorio para finalizar a entrega</p>
+                )}
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Observacoes</label>
                 <input type="text" value={paymentNotes} onChange={e => setPaymentNotes(e.target.value)}
@@ -1781,7 +1800,7 @@ export default function OSDetailPage() {
             <div className="flex gap-3 mt-6">
               <button type="button" onClick={() => { setShowPaymentModal(false); setPendingStatusId(null) }}
                 className="px-4 py-2.5 text-sm border rounded-lg hover:bg-gray-50 flex-1">Cancelar</button>
-              <button type="button" onClick={handleConfirmDelivery} disabled={transitioning || !paymentMethod}
+              <button type="button" onClick={handleConfirmDelivery} disabled={transitioning || !paymentMethod || (!editTechnicianId && !os.technician_id)}
                 className="px-4 py-2.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex-1 font-medium flex items-center justify-center gap-2">
                 {transitioning && <Loader2 className="h-4 w-4 animate-spin" />}
                 {transitioning ? 'Finalizando...' : 'Confirmar Entrega'}
