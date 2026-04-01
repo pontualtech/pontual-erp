@@ -117,10 +117,12 @@ const DEFAULT_QUOTE_TEMPLATE = `<!DOCTYPE html>
                 &#128075; Ola <strong>{{customer_name}}</strong>,
               </p>
               <p style="margin:0 0 20px;font-size:14px;color:#475569;line-height:1.6;">
-                Otima noticia! Nossos tecnicos finalizaram o diagnostico do seu equipamento
-                <strong>{{equipment}}</strong> (OS #{{os_number}}) — {{reported_issue}},
-                e temos a solucao completa para voce.
+                Otima noticia! Nossos tecnicos finalizaram o laudo do seu equipamento
+                <strong>{{equipment}}</strong> (OS #{{os_number}}) e temos a solucao completa para voce.
               </p>
+
+              <!-- Laudo tecnico -->
+              {{laudo_section}}
 
               <!-- Eco tip -->
               <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 16px;margin-bottom:24px;">
@@ -296,13 +298,23 @@ function buildTemplateVars(os: any, settings: Record<string, string>, approvalLi
   const items = os.service_order_items || []
   const itemsTable = buildItemsTable(items)
 
+  const laudo = os.diagnosis || ''
+  const laudoSection = laudo
+    ? `<div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:16px;margin-bottom:24px;">
+        <p style="margin:0 0 8px;font-size:13px;color:#92400e;font-weight:600;">LAUDO TECNICO</p>
+        <p style="margin:0 0 8px;font-size:14px;color:#78350f;"><strong>Problema relatado:</strong> ${os.reported_issue || '—'}</p>
+        <p style="margin:0;font-size:14px;color:#78350f;"><strong>Laudo:</strong> ${laudo}</p>
+      </div>`
+    : ''
+
   return {
     customer_name: c?.legal_name || c?.trade_name || 'Cliente',
     equipment,
     equipment_serial: os.serial_number || '',
     os_number: osNumber,
     reported_issue: os.reported_issue || '',
-    diagnosis: os.diagnosis || '',
+    laudo,
+    laudo_section: laudoSection,
     items_table: itemsTable,
     total_cost: fmtCents(totalCost),
     installment_info: installmentInfo,

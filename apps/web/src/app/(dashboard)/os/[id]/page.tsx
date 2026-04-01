@@ -965,7 +965,7 @@ export default function OSDetailPage() {
           <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-red-100">
             <AlertTriangle className="h-4 w-4 text-red-600" />
           </div>
-          <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Problema / Diagnostico</h2>
+          <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Problema / Laudo</h2>
         </div>
         <div className="space-y-3">
           {/* Reported issue (read-only) */}
@@ -979,13 +979,13 @@ export default function OSDetailPage() {
           {/* Diagnosis (editable) */}
           <div>
             <label className="flex items-center gap-1.5 text-xs font-medium text-gray-400 uppercase mb-1">
-              Diagnostico
+              Laudo Tecnico
               {savingField === 'diagnosis' && <Loader2 className="h-3 w-3 animate-spin text-blue-500" />}
             </label>
             <textarea
               value={editDiagnosis}
               onChange={e => setEditDiagnosis(e.target.value)}
-              placeholder="Descreva o diagnostico..."
+              placeholder="Descreva o laudo tecnico..."
               rows={4}
               className="w-full px-3 py-2 border rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-200 resize-y transition-colors"
             />
