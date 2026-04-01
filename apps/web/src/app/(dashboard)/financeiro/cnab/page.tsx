@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Download, Upload, Loader2, CheckCircle, XCircle, FileText, Settings, Save, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, Download, Upload, Loader2, CheckCircle, XCircle, FileText, Settings, Save, AlertTriangle, Printer, Mail } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface RetornoResult {
@@ -19,6 +19,8 @@ export default function CNABPage() {
 
   // Remessa
   const [generating, setGenerating] = useState(false)
+  const [lastRemessaIds, setLastRemessaIds] = useState<string[]>([])
+  const [sendingEmails, setSendingEmails] = useState(false)
 
   // Retorno
   const [processing, setProcessing] = useState(false)
@@ -61,6 +63,11 @@ export default function CNABPage() {
         toast.error(data.error || 'Erro ao gerar remessa')
         return
       }
+
+      // Capturar IDs dos boletos gerados (header customizado)
+      const ids = res.headers.get('X-Boleto-Ids')
+      if (ids) setLastRemessaIds(ids.split(','))
+
       // Download do arquivo
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
@@ -74,6 +81,31 @@ export default function CNABPage() {
       toast.error(err.message || 'Erro ao gerar remessa')
     } finally {
       setGenerating(false)
+    }
+  }
+
+  function handlePrintAll() {
+    if (lastRemessaIds.length > 0) {
+      window.open(`/boleto-print?ids=${lastRemessaIds.join(',')}`, '_blank')
+    }
+  }
+
+  async function handleEmailAll() {
+    if (lastRemessaIds.length === 0) return
+    setSendingEmails(true)
+    try {
+      const res = await fetch('/api/financeiro/boletos/enviar-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: lastRemessaIds }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao enviar emails')
+      toast.success(`${data.enviados} email(s) enviado(s)${data.erros > 0 ? `, ${data.erros} erro(s)` : ''}`)
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao enviar emails')
+    } finally {
+      setSendingEmails(false)
     }
   }
 
@@ -127,7 +159,7 @@ export default function CNABPage() {
         </Link>
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Boletos CNAB — Banco Inter</h1>
-          <p className="text-sm text-gray-500">Gerar remessa e importar retorno (CNAB 240)</p>
+          <p className="text-sm text-gray-500">Gerar remessa e importar retorno (CNAB 400)</p>
         </div>
       </div>
 
@@ -156,7 +188,7 @@ export default function CNABPage() {
 
           <div className="rounded-lg border bg-white p-6 shadow-sm text-center">
             <FileText className="h-12 w-12 text-orange-500 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Arquivo de Remessa CNAB 240</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Arquivo de Remessa CNAB 400</h3>
             <p className="text-sm text-gray-500 mb-6">
               Gera arquivo com todas as contas a receber pendentes que ainda nao tem boleto registrado
             </p>
@@ -166,6 +198,29 @@ export default function CNABPage() {
               {generating ? 'Gerando...' : 'Gerar Arquivo de Remessa'}
             </button>
           </div>
+
+          {/* Acoes pos-remessa */}
+          {lastRemessaIds.length > 0 && (
+            <div className="rounded-lg border bg-white p-6 shadow-sm">
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">
+                Remessa gerada — {lastRemessaIds.length} boleto(s)
+              </h3>
+              <p className="text-sm text-gray-500 mb-4">
+                Agora voce pode imprimir os boletos ou enviar por email para os clientes:
+              </p>
+              <div className="flex gap-3">
+                <button type="button" onClick={handlePrintAll}
+                  className="inline-flex items-center gap-2 rounded-lg bg-gray-800 px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-900">
+                  <Printer className="h-4 w-4" /> Imprimir Todos
+                </button>
+                <button type="button" onClick={handleEmailAll} disabled={sendingEmails}
+                  className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+                  {sendingEmails ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+                  {sendingEmails ? 'Enviando...' : 'Enviar Todos por Email'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -249,7 +304,7 @@ export default function CNABPage() {
               <Settings className="h-5 w-5 text-orange-600" />
               Dados Bancarios — Banco Inter
             </h2>
-            <p className="text-sm text-gray-500 mt-1">Configuracao do cedente para geracao de boletos CNAB 240</p>
+            <p className="text-sm text-gray-500 mt-1">Configuracao do cedente para geracao de boletos CNAB 400</p>
           </div>
           <div className="p-6 space-y-4">
             {loading ? (

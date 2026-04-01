@@ -5,7 +5,7 @@ import Link from 'next/link'
 import {
   ArrowLeft, Plus, Search, Copy, ExternalLink, X, XCircle,
   Clock, CheckCircle2, AlertTriangle, Ban, FileText, QrCode,
-  Barcode, Receipt
+  Barcode, Receipt, Printer, Mail, Loader2
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -91,6 +91,9 @@ export default function BoletosPage() {
 
   // Detail modal
   const [detailBoleto, setDetailBoleto] = useState<Boleto | null>(null)
+
+  // Email
+  const [sendingEmail, setSendingEmail] = useState<string | null>(null)
 
   const loadBoletos = useCallback(() => {
     setLoading(true)
@@ -181,6 +184,32 @@ export default function BoletosPage() {
     setStartDate('')
     setEndDate('')
     setPage(1)
+  }
+
+  function handlePrint(id: string) {
+    window.open(`/boleto-print?ids=${id}`, '_blank')
+  }
+
+  async function handleSendEmail(id: string) {
+    setSendingEmail(id)
+    try {
+      const res = await fetch('/api/financeiro/boletos/enviar-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ receivable_id: id }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao enviar email')
+      if (data.enviados > 0) {
+        toast.success('Email enviado com sucesso!')
+      } else {
+        toast.error(data.detalhes?.[0]?.status === 'SEM_EMAIL' ? 'Cliente sem email cadastrado' : 'Falha ao enviar email')
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao enviar email')
+    } finally {
+      setSendingEmail(null)
+    }
   }
 
   const hasFilters = statusFilter || startDate || endDate
@@ -374,12 +403,29 @@ export default function BoletosPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          type="button"
+                          onClick={() => handlePrint(boleto.id)}
+                          title="Imprimir boleto"
+                          className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-orange-600"
+                        >
+                          <Printer className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSendEmail(boleto.id)}
+                          disabled={sendingEmail === boleto.id}
+                          title="Enviar por email"
+                          className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-blue-600 disabled:opacity-50"
+                        >
+                          {sendingEmail === boleto.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+                        </button>
                         {boleto.digitableLine && (
                           <button
                             type="button"
                             onClick={() => copyToClipboard(boleto.digitableLine, 'Linha digitavel')}
                             title="Copiar linha digitavel"
-                            className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-blue-600"
+                            className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-emerald-600"
                           >
                             <Barcode className="h-4 w-4" />
                           </button>
@@ -661,13 +707,29 @@ export default function BoletosPage() {
               </div>
 
               {/* Actions */}
-              <div className="flex gap-2 pt-2">
+              <div className="flex flex-wrap gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => handlePrint(detailBoleto.id)}
+                  className="flex items-center gap-1.5 rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700"
+                >
+                  <Printer className="h-4 w-4" /> Imprimir
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSendEmail(detailBoleto.id)}
+                  disabled={sendingEmail === detailBoleto.id}
+                  className="flex items-center gap-1.5 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {sendingEmail === detailBoleto.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+                  {sendingEmail === detailBoleto.id ? 'Enviando...' : 'Enviar Email'}
+                </button>
                 {detailBoleto.boletoUrl && detailBoleto.boletoUrl.startsWith('http') && (
                   <a
                     href={detailBoleto.boletoUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-1.5 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                    className="flex items-center gap-1.5 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
                   >
                     <ExternalLink className="h-4 w-4" /> Ver PDF
                   </a>

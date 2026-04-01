@@ -4,7 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { gerarRemessaCNAB400, parsearRetornoCNAB400, type BoletoRemessa400, type CedenteConfig400 } from '@/lib/boleto/cnab/cnab400-inter'
 
 /**
- * GET /api/financeiro/cnab — Gerar arquivo de remessa CNAB 240
+ * GET /api/financeiro/cnab — Gerar arquivo de remessa CNAB 400
  *
  * Query params:
  * - ids: comma-separated list of AccountReceivable IDs
@@ -116,12 +116,19 @@ export async function GET(req: NextRequest) {
       })
     }
 
+    // IDs dos boletos gerados (para frontend usar em print/email)
+    const boletoIds = receivables
+      .filter(r => r.customers?.document_number)
+      .map(r => r.id)
+
     // Retornar como arquivo para download (CNAB 400 Inter)
     return new NextResponse(conteudo, {
       status: 200,
       headers: {
         'Content-Type': 'text/plain; charset=utf-8',
         'Content-Disposition': `attachment; filename="${nomeArquivo}"`,
+        'X-Boleto-Ids': boletoIds.join(','),
+        'Access-Control-Expose-Headers': 'X-Boleto-Ids',
       },
     })
   } catch (e: any) {
@@ -131,7 +138,7 @@ export async function GET(req: NextRequest) {
 }
 
 /**
- * POST /api/financeiro/cnab — Processar arquivo de retorno CNAB 240
+ * POST /api/financeiro/cnab — Processar arquivo de retorno CNAB 400
  *
  * Body: { content: string } (conteúdo do arquivo .ret)
  */
