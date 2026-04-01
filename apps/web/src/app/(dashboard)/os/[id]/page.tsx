@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { useAuth } from '@/lib/use-auth'
-import { ArrowLeft, Edit, Camera, History, Info, Package, Plus, Trash2, Loader2, Search, Wrench, CreditCard, X, Printer, Mail, Send, Copy, FilePlus, User, Monitor, FileText, Clock, ChevronDown, ChevronUp, AlertTriangle, Save, Check, Layers, DollarSign, ExternalLink, Receipt } from 'lucide-react'
+import { ArrowLeft, Edit, Camera, History, Info, Package, Plus, Trash2, Loader2, Search, Wrench, CreditCard, X, Printer, Mail, Send, Copy, FilePlus, User, Monitor, FileText, Clock, ChevronDown, ChevronUp, AlertTriangle, Save, Check, Layers, DollarSign, ExternalLink, Receipt, Truck, MessageCircle } from 'lucide-react'
 
 interface Customer {
   id: string; legal_name: string; trade_name: string | null; person_type: string
@@ -122,6 +122,9 @@ export default function OSDetailPage() {
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [showTechModal, setShowTechModal] = useState(false)
   const [techModalStatusId, setTechModalStatusId] = useState<string | null>(null)
+  const [showColetaModal, setShowColetaModal] = useState(false)
+  const [coletaChannels, setColetaChannels] = useState<Set<string>>(new Set(['email', 'whatsapp']))
+  const [sendingColeta, setSendingColeta] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState('Pix')
   const [paymentNotes, setPaymentNotes] = useState('')
   const [paymentMethods, setPaymentMethods] = useState<{ id: string; name: string; icon: string; active: boolean }[]>([])
@@ -790,6 +793,12 @@ export default function OSDetailPage() {
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {currentStatus?.name?.toLowerCase().includes('oletar') && (
+            <button type="button" onClick={() => setShowColetaModal(true)}
+              className="flex items-center gap-1.5 rounded-lg border border-sky-300 bg-sky-50 px-3 py-1.5 text-sm font-medium text-sky-700 hover:bg-sky-100 transition-colors">
+              <Truck className="h-4 w-4" /> Notificar Coleta
+            </button>
+          )}
           <button type="button" onClick={openQuoteModal}
             className="flex items-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors">
             <Send className="h-4 w-4" /> Enviar Orcamento
@@ -1701,6 +1710,107 @@ export default function OSDetailPage() {
                 <p className="p-1.5 text-xs text-gray-500 truncate">{f.description || new Date(f.created_at).toLocaleDateString('pt-BR')}</p>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* ========== COLETA NOTIFICATION MODAL ========== */}
+      {showColetaModal && os && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => !sendingColeta && setShowColetaModal(false)}>
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <Truck className="h-5 w-5 text-sky-600" />
+                Notificar Coleta
+              </h2>
+              <button type="button" onClick={() => setShowColetaModal(false)} disabled={sendingColeta}
+                title="Fechar" className="p-1 rounded-lg hover:bg-gray-100 text-gray-400">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Info da OS */}
+              <div className="rounded-lg bg-sky-50 border border-sky-200 p-4">
+                <p className="text-sm font-medium text-sky-900">
+                  OS-{String(os.os_number).padStart(4, '0')} — {[os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ')}
+                </p>
+                <p className="text-sm text-sky-700 mt-1">{os.customers?.legal_name}</p>
+              </div>
+
+              {/* Canais de envio */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Enviar por:</label>
+                <div className="flex gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={coletaChannels.has('email')}
+                      onChange={e => setColetaChannels(prev => { const n = new Set(prev); e.target.checked ? n.add('email') : n.delete('email'); return n })}
+                      className="rounded border-gray-300 h-4 w-4 text-sky-600" />
+                    <Mail className="h-4 w-4 text-gray-500" />
+                    <span className="text-sm text-gray-700">Email</span>
+                    {os.customers?.email ? (
+                      <span className="text-xs text-gray-400">{os.customers.email}</span>
+                    ) : (
+                      <span className="text-xs text-red-400">Sem email</span>
+                    )}
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={coletaChannels.has('whatsapp')}
+                      onChange={e => setColetaChannels(prev => { const n = new Set(prev); e.target.checked ? n.add('whatsapp') : n.delete('whatsapp'); return n })}
+                      className="rounded border-gray-300 h-4 w-4 text-green-600" />
+                    <MessageCircle className="h-4 w-4 text-gray-500" />
+                    <span className="text-sm text-gray-700">WhatsApp</span>
+                    {(os.customers?.mobile || os.customers?.phone) ? (
+                      <span className="text-xs text-gray-400">{os.customers.mobile || os.customers.phone}</span>
+                    ) : (
+                      <span className="text-xs text-red-400">Sem telefone</span>
+                    )}
+                  </label>
+                </div>
+              </div>
+
+              {/* Preview */}
+              <div className="rounded-lg border bg-gray-50 p-3 text-xs text-gray-600 max-h-40 overflow-y-auto">
+                <p className="font-medium text-gray-700 mb-1">Preview da mensagem:</p>
+                <p>Tudo certo, {os.customers?.legal_name?.split(' ')[0]}!</p>
+                <p>OS #{os.os_number} aberta com sucesso!</p>
+                <p>Equipamento: {[os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ')}</p>
+                <p className="mt-1">Coleta no horario comercial (09:00-17:00)</p>
+                <p>Mantenha cabos de energia e fontes</p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-5">
+              <button type="button" onClick={() => setShowColetaModal(false)} disabled={sendingColeta}
+                className="flex-1 px-4 py-2.5 text-sm border rounded-lg hover:bg-gray-50">Cancelar</button>
+              <button type="button" disabled={sendingColeta || coletaChannels.size === 0} onClick={async () => {
+                setSendingColeta(true)
+                try {
+                  const res = await fetch(`/api/os/${id}/notificar-coleta`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ channels: Array.from(coletaChannels) }),
+                  })
+                  const data = await res.json()
+                  if (!res.ok) throw new Error(data.error || 'Erro ao enviar')
+                  const results = data.data?.results || []
+                  const enviados = results.filter((r: any) => r.status === 'enviado')
+                  const erros = results.filter((r: any) => r.status !== 'enviado')
+                  if (enviados.length > 0) {
+                    toast.success(`Notificacao enviada via ${enviados.map((r: any) => r.channel).join(' e ')}!`)
+                  }
+                  if (erros.length > 0) {
+                    erros.forEach((r: any) => toast.error(`${r.channel}: ${r.status === 'sem_email' ? 'Cliente sem email' : r.status === 'sem_telefone' ? 'Cliente sem telefone' : 'Erro no envio'}`))
+                  }
+                  setShowColetaModal(false)
+                } catch (err: any) { toast.error(err.message) }
+                finally { setSendingColeta(false) }
+              }}
+                className="flex-1 px-4 py-2.5 text-sm bg-sky-600 text-white rounded-lg hover:bg-sky-700 disabled:opacity-50 font-medium flex items-center justify-center gap-2">
+                {sendingColeta ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                {sendingColeta ? 'Enviando...' : 'Enviar Notificacao'}
+              </button>
+            </div>
           </div>
         </div>
       )}
