@@ -352,7 +352,7 @@ export default function OSListPage() {
     if (!printWindow) { toast.error('Popup bloqueado — permita popups'); return }
     printWindow.document.write('<html><body><p>Carregando...</p></body></html>')
 
-    const url = template ? `/api/os/${osId}/print?template=${template}` : `/api/os/${osId}/print`
+    const url = template ? `/api/os/${osId}/pdf?template=${template}` : `/api/os/${osId}/pdf`
     fetch(url)
       .then(r => r.text())
       .then(html => {
@@ -565,11 +565,28 @@ export default function OSListPage() {
             Ordens de Servico ({totalFiltered})
           </span>
         )}
-        {isAdmin && selected.size > 0 && (
-          <button type="button" onClick={() => setShowBulkDelete(true)}
-            className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 whitespace-nowrap">
-            <Trash2 className="h-4 w-4" /> Excluir {selected.size}
-          </button>
+        {selected.size > 0 && (
+          <>
+            <select title="Imprimir selecionados" onChange={e => {
+              if (!e.target.value) return
+              const ids = Array.from(selected)
+              ids.forEach(osId => printSingleOS(osId, e.target.value))
+              e.target.value = ''
+            }}
+              className="rounded-lg border bg-white px-3 py-2 text-sm text-gray-700 cursor-pointer">
+              <option value="">Imprimir {selected.size}...</option>
+              <option value="os_pickup">Coleta</option>
+              <option value="os_delivery_repair">Entrega Reparado</option>
+              <option value="os_delivery_norepair">Entrega sem Reparo</option>
+              <option value="os_full">OS Completa</option>
+            </select>
+            {isAdmin && (
+              <button type="button" onClick={() => setShowBulkDelete(true)}
+                className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 whitespace-nowrap">
+                <Trash2 className="h-4 w-4" /> Excluir {selected.size}
+              </button>
+            )}
+          </>
         )}
         <Link
           href="/os/novo"
@@ -870,10 +887,24 @@ export default function OSListPage() {
                                   <Copy className="h-4 w-4 text-gray-400" /> Clonar
                                 </Link>
                                 <div className="border-t my-1" />
-                                <button type="button" onClick={() => { printSingleOS(os.id, 'os_full'); setActionMenuId(null) }}
-                                  className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 w-full">
-                                  <Printer className="h-4 w-4 text-gray-400" /> Imprimir
+                                <div className="px-3 py-1 text-xs font-semibold text-gray-400 uppercase">Imprimir</div>
+                                <button type="button" onClick={() => printSingleOS(os.id, 'os_full')}
+                                  className="flex items-center gap-2.5 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 w-full">
+                                  <Printer className="h-3.5 w-3.5 text-gray-400" /> OS Completa
                                 </button>
+                                <button type="button" onClick={() => printSingleOS(os.id, 'os_pickup')}
+                                  className="flex items-center gap-2.5 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 w-full">
+                                  <Printer className="h-3.5 w-3.5 text-gray-400" /> Ordem de Coleta
+                                </button>
+                                <button type="button" onClick={() => printSingleOS(os.id, 'os_delivery_repair')}
+                                  className="flex items-center gap-2.5 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 w-full">
+                                  <Printer className="h-3.5 w-3.5 text-gray-400" /> Entrega Reparado
+                                </button>
+                                <button type="button" onClick={() => printSingleOS(os.id, 'os_delivery_norepair')}
+                                  className="flex items-center gap-2.5 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 w-full">
+                                  <Printer className="h-3.5 w-3.5 text-gray-400" /> Entrega sem Reparo
+                                </button>
+                                <div className="border-t my-1" />
                                 <button type="button" onClick={() => {
                                   const line = `OS-${String(os.os_number).padStart(4, '0')} | ${os.customers?.legal_name || ''} | ${st?.name || ''} | ${fmt(os.total_cost || 0)}`
                                   window.open(`mailto:?subject=${encodeURIComponent(`OS-${String(os.os_number).padStart(4, '0')}`)}&body=${encodeURIComponent(line)}`)
