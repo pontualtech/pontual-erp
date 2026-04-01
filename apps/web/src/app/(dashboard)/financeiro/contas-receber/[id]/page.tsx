@@ -7,6 +7,13 @@ import { toast } from 'sonner'
 import { ArrowLeft, DollarSign, Loader2, Trash2, CheckCircle, Pencil, Zap } from 'lucide-react'
 import { useAuth } from '@/lib/use-auth'
 
+function safeDate(v: any, utc = false): string {
+  if (!v) return '--'
+  const d = new Date(v)
+  if (isNaN(d.getTime())) return '--'
+  return d.toLocaleDateString('pt-BR', utc ? { timeZone: 'UTC' } : undefined)
+}
+
 interface ContaReceber {
   id: string; description: string; total_amount: number; received_amount: number
   due_date: string; status: string; payment_method: string | null; notes: string | null
@@ -230,8 +237,8 @@ export default function ContaReceberDetalhePage() {
           <Row label="Cliente" value={conta.customers?.legal_name || '—'} />
           <Row label="Categoria" value={conta.categories?.name || '—'} />
           <Row label="Forma Pagamento" value={conta.payment_method || '—'} />
-          <Row label="Vencimento" value={new Date(conta.due_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })} />
-          <Row label="Cadastrada em" value={new Date(conta.created_at).toLocaleDateString('pt-BR')} />
+          <Row label="Vencimento" value={safeDate(conta.due_date, true)} />
+          <Row label="Cadastrada em" value={safeDate(conta.created_at)} />
           {conta.service_orders && (
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">OS Vinculada</span>
@@ -262,7 +269,7 @@ export default function ContaReceberDetalhePage() {
           <h2 className="font-semibold text-purple-900 flex items-center gap-2">
             <Zap className="h-4 w-4" /> Antecipacao
           </h2>
-          <Row label="Antecipado em" value={new Date(conta.anticipated_at).toLocaleDateString('pt-BR')} />
+          <Row label="Antecipado em" value={safeDate(conta.anticipated_at)} />
           {conta.anticipation_fee != null && <Row label="Taxa de antecipacao" value={`-${fmt(conta.anticipation_fee)}`} />}
           {conta.anticipated_amount != null && <Row label="Valor antecipado" value={fmt(conta.anticipated_amount)} />}
         </div>
@@ -301,14 +308,14 @@ export default function ContaReceberDetalhePage() {
                     <tr key={inst.id} className="hover:bg-gray-50">
                       <td className="px-3 py-2 font-medium">{inst.number}</td>
                       <td className="px-3 py-2">{fmt(inst.amount)}</td>
-                      <td className="px-3 py-2">{new Date(inst.due_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</td>
+                      <td className="px-3 py-2">{safeDate(inst.due_date, true)}</td>
                       <td className="px-3 py-2">
                         <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColors[inst.status] || 'bg-gray-100 text-gray-500'}`}>
                           {inst.status}
                         </span>
                       </td>
                       <td className="px-3 py-2 text-gray-500">
-                        {inst.paid_at ? new Date(inst.paid_at).toLocaleDateString('pt-BR') : '--'}
+                        {safeDate(inst.paid_at)}
                       </td>
                     </tr>
                   ))}
@@ -349,7 +356,7 @@ export default function ContaReceberDetalhePage() {
                         <tr key={inst.number} className="hover:bg-gray-50">
                           <td className="px-3 py-2 font-medium">{inst.number}</td>
                           <td className="px-3 py-2">{fmt(inst.amount)}</td>
-                          <td className="px-3 py-2">{new Date(inst.due_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</td>
+                          <td className="px-3 py-2">{safeDate(inst.due_date, true)}</td>
                           <td className="px-3 py-2 text-right">{inst.days_remaining}</td>
                           <td className="px-3 py-2 text-right text-red-600">-{fmt(inst.fee)}</td>
                           <td className="px-3 py-2 text-right font-medium">{fmt(inst.net_amount)}</td>

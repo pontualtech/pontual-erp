@@ -6,6 +6,13 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import { ArrowLeft, DollarSign, Loader2, Trash2, CheckCircle } from 'lucide-react'
 
+function safeDate(v: any, utc = false): string {
+  if (!v) return '--'
+  const d = new Date(v)
+  if (isNaN(d.getTime())) return '--'
+  return d.toLocaleDateString('pt-BR', utc ? { timeZone: 'UTC' } : undefined)
+}
+
 interface ContaPagar {
   id: string; description: string; total_amount: number; paid_amount: number
   due_date: string; status: string; payment_method: string | null; notes: string | null
@@ -131,8 +138,8 @@ export default function ContaPagarDetalhePage() {
           <Row label="Categoria" value={conta.categories?.name || '—'} />
           <Row label="Centro de Custo" value={conta.cost_centers?.name || '—'} />
           <Row label="Forma Pagamento" value={conta.payment_method || '—'} />
-          <Row label="Vencimento" value={new Date(conta.due_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })} />
-          <Row label="Cadastrada em" value={new Date(conta.created_at).toLocaleDateString('pt-BR')} />
+          <Row label="Vencimento" value={safeDate(conta.due_date, true)} />
+          <Row label="Cadastrada em" value={safeDate(conta.created_at)} />
         </div>
         <div className="rounded-lg border bg-white p-5 space-y-2">
           <h2 className="font-semibold text-gray-900">Valores</h2>
