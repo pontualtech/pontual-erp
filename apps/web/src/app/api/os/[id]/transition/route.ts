@@ -90,11 +90,12 @@ export async function POST(req: NextRequest, { params }: Params) {
       updateData.estimated_delivery = data
     }
 
-    // Se Pronta, salvar técnico (data de conclusão fica no histórico de status)
+    // Se Pronta, salvar técnico e data de execução
     if (isPronta) {
       if (bodyTechnicianId && !os.technician_id) {
         updateData.technician_id = bodyTechnicianId
       }
+      updateData.actual_delivery = new Date()
     }
 
     // ====== TRANSAÇÃO ATÔMICA: OS + Histórico + Conta a Receber + Parcelas ======
