@@ -134,17 +134,14 @@ const DEFAULT_QUOTE_TEMPLATE = `<!DOCTYPE html>
               <!-- Items table -->
               {{items_table}}
 
-              <!-- Installment info -->
-              <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px 16px;margin-bottom:16px;text-align:center;">
-                <p style="margin:0;font-size:15px;color:#1e40af;font-weight:700;">
+              <!-- Installment info (DESTAQUE) -->
+              <div style="background:linear-gradient(135deg,#1e40af 0%,#2563eb 100%);border-radius:10px;padding:24px;margin-bottom:16px;text-align:center;">
+                <p style="margin:0 0 6px;font-size:28px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">
                   &#128179; {{installment_info}}
                 </p>
-              </div>
-
-              <!-- Total -->
-              <div style="background:#1e293b;border-radius:8px;padding:18px;margin-bottom:20px;text-align:center;">
-                <p style="margin:0 0 4px;font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;">Valor total</p>
-                <p style="margin:0;font-size:28px;font-weight:800;color:#ffffff;">{{total_cost}}</p>
+                <p style="margin:0;font-size:14px;color:#bfdbfe;">
+                  Valor total: {{total_cost}}
+                </p>
               </div>
 
               <!-- Execution time -->
@@ -284,9 +281,9 @@ function buildTemplateVars(os: any, settings: Record<string, string>, approvalLi
   let installmentInfo = ''
   if (totalCost > 0 && maxInstallments > 1) {
     const installmentValue = fmtCents(Math.ceil(totalCost / maxInstallments))
-    installmentInfo = `PARCELE EM ATE ${maxInstallments}x de ${installmentValue} no cartao de credito — sem juros!`
+    installmentInfo = `${maxInstallments}x de ${installmentValue} sem juros!`
   } else {
-    installmentInfo = `Pagamento a vista: ${fmtCents(totalCost)}`
+    installmentInfo = `A vista: ${fmtCents(totalCost)}`
   }
 
   const warrantyPeriod = settings['quote.warranty'] || '3 MESES'
