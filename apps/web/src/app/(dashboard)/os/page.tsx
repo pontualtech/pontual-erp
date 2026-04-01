@@ -71,12 +71,9 @@ const priorityColor: Record<string, string> = {
   URGENT: 'text-red-600 font-semibold',
 }
 
-const osTypeLabel: Record<string, string> = {
+const defaultOsTypeLabel: Record<string, string> = {
   BALCAO: 'Balcao',
   COLETA: 'Coleta',
-  ENTREGA: 'Entrega',
-  CAMPO: 'Campo',
-  REMOTO: 'Remoto',
 }
 
 const osTypeColor: Record<string, string> = {
@@ -91,6 +88,17 @@ export default function OSListPage() {
   const { isAdmin } = useAuth()
   const [osList, setOsList] = useState<OS[]>([])
   const [kanbanColumns, setKanbanColumns] = useState<KanbanColumn[]>([])
+  const [osTypeLabel, setOsTypeLabel] = useState<Record<string, string>>(defaultOsTypeLabel)
+  useEffect(() => {
+    fetch('/api/settings/tipos-os').then(r => r.json()).then(d => {
+      const tipos = d.data ?? []
+      if (tipos.length > 0) {
+        const map: Record<string, string> = {}
+        tipos.forEach((t: { key: string; label: string }) => { map[t.key] = t.label })
+        setOsTypeLabel(map)
+      }
+    }).catch(() => {})
+  }, [])
   const [statusMap, setStatusMap] = useState<Record<string, { name: string; color: string }>>({})
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')

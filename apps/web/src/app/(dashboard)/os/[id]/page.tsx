@@ -125,6 +125,7 @@ export default function OSDetailPage() {
   const [showColetaModal, setShowColetaModal] = useState(false)
   const [coletaChannels, setColetaChannels] = useState<Set<string>>(new Set(['email', 'whatsapp']))
   const [sendingColeta, setSendingColeta] = useState(false)
+  const [tiposOS, setTiposOS] = useState<{ key: string; label: string }[]>([])
   const [paymentMethod, setPaymentMethod] = useState('Pix')
   const [paymentNotes, setPaymentNotes] = useState('')
   const [paymentMethods, setPaymentMethods] = useState<{ id: string; name: string; icon: string; active: boolean }[]>([])
@@ -254,6 +255,7 @@ export default function OSDetailPage() {
 
   useEffect(() => {
     fetch('/api/users').then(r => r.json()).then(d => setUsers(d.data ?? [])).catch(() => toast.error('Erro ao carregar usuarios'))
+    fetch('/api/settings/tipos-os').then(r => r.json()).then(d => setTiposOS(d.data ?? [])).catch(() => {})
     fetch('/api/financeiro/formas-pagamento').then(r => r.json()).then(d => {
       setPaymentMethods((d.data ?? []).filter((m: any) => m.active))
       setPaymentMethodsLoaded(true)
@@ -782,11 +784,14 @@ export default function OSDetailPage() {
                 loadOS()
               }}
               className="rounded-full px-3 py-1 text-xs font-medium border bg-gray-100 text-gray-700">
-              <option value="BALCAO">Balcao</option>
-              <option value="COLETA">Coleta</option>
-              <option value="ENTREGA">Entrega</option>
-              <option value="CAMPO">Campo</option>
-              <option value="REMOTO">Remoto</option>
+              {tiposOS.length > 0 ? tiposOS.map(t => (
+                <option key={t.key} value={t.key}>{t.label}</option>
+              )) : (
+                <>
+                  <option value="BALCAO">Balcao</option>
+                  <option value="COLETA">Coleta</option>
+                </>
+              )}
             </select>
           ) : (
             <span className="rounded-full px-3 py-1 text-xs font-medium bg-gray-100 text-gray-700">{os.os_type || 'BALCAO'}</span>

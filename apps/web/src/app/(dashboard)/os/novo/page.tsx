@@ -30,6 +30,10 @@ export default function NovaOSPage() {
 
   // Technicians
   const [tecnicos, setTecnicos] = useState<UserProfile[]>([])
+  const [tiposOS, setTiposOS] = useState<{ key: string; label: string }[]>([])
+  useEffect(() => {
+    fetch('/api/settings/tipos-os').then(r => r.json()).then(d => setTiposOS(d.data ?? [])).catch(() => {})
+  }, [])
 
   const [form, setForm] = useState({
     customer_id: '',
@@ -447,9 +451,14 @@ export default function NovaOSPage() {
               <label className="block text-sm text-gray-600 mb-1">Tipo de OS</label>
               <select value={form.os_type} onChange={e => updateForm('os_type', e.target.value)}
                 title="Tipo de OS" className="w-full px-3 py-2 border rounded-md">
-                <option value="BALCAO">Balcao</option>
-                <option value="COLETA">Coleta</option>
-                <option value="ENTREGA">Entrega</option>
+                {tiposOS.length > 0 ? tiposOS.map(t => (
+                  <option key={t.key} value={t.key}>{t.label}</option>
+                )) : (
+                  <>
+                    <option value="BALCAO">Balcao</option>
+                    <option value="COLETA">Coleta</option>
+                  </>
+                )}
               </select>
             </div>
           </div>
