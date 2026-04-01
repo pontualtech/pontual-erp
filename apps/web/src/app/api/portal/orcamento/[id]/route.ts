@@ -284,50 +284,52 @@ export async function POST(request: NextRequest, { params }: Params) {
     }
 
     if (action === 'reject') {
-      // Find "Cancelada" or similar status
-      const cancelledStatus = await prisma.moduleStatus.findFirst({
-        where: {
-          company_id: os.company_id,
-          module: 'os',
-          OR: [
-            { name: { contains: 'Cancelad', mode: 'insensitive' } },
-            { name: { contains: 'Recusad', mode: 'insensitive' } },
-          ],
-        },
-      })
-
-      // Add rejection notes regardless
-      const today = new Date().toLocaleDateString('pt-BR')
-      const currentNotes = os.internal_notes || ''
-      const rejectionNote = `Orçamento recusado pelo cliente em ${today} (via portal)${reason ? ': ' + reason : ''}`
-
-      const updateData: any = {
-        internal_notes: currentNotes ? `${currentNotes}\n${rejectionNote}` : rejectionNote,
-        updated_at: new Date(),
+      // Bloquear dupla recusa
+      const currentStatusName2 = os.module_statuses?.name?.toLowerCase() || ''
+      if (currentStatusName2.includes('recusad') || currentStatusName2.includes('cancelad') || os.module_statuses?.is_final) {
+        return error('Este orçamento já foi recusado anteriormente.', 410)
       }
 
-      if (cancelledStatus) {
-        updateData.status_id = cancelledStatus.id
-      }
-
-      await prisma.serviceOrder.update({
-        where: { id: os.id },
-        data: updateData,
+      // Buscar status "Recusado" (prioridade) ou "Cancelada"
+      let targetStatus = await prisma.moduleStatus.findFirst({
+        where: { company_id: os.company_id, module: 'os', name: { contains: 'Recusad', mode: 'insensitive' } },
       })
-
-      // Create history entry if status changed
-      if (cancelledStatus) {
-        await prisma.serviceOrderHistory.create({
-          data: {
-            company_id: os.company_id,
-            service_order_id: os.id,
-            from_status_id: os.status_id,
-            to_status_id: cancelledStatus.id,
-            changed_by: 'portal',
-            notes: rejectionNote,
-          },
+      if (!targetStatus) {
+        targetStatus = await prisma.moduleStatus.findFirst({
+          where: { company_id: os.company_id, module: 'os', name: { contains: 'Cancelad', mode: 'insensitive' } },
         })
       }
+
+      const today = new Date().toLocaleDateString('pt-BR')
+      const rejectionNote = `Orçamento recusado pelo cliente em ${today} (via portal)${reason ? ': ' + reason : ''}`
+      const osNum2 = String(os.os_number).padStart(4, '0')
+      const customerName2 = os.customers?.legal_name || 'Cliente'
+      const equipment2 = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ')
+      const fmtValue2 = fmtCents(os.total_cost || 0)
+
+      // Transação atômica
+      await prisma.$transaction(async (tx) => {
+        const updateData: any = {
+          internal_notes: os.internal_notes ? `${os.internal_notes}\n${rejectionNote}` : rejectionNote,
+          updated_at: new Date(),
+        }
+        if (targetStatus) updateData.status_id = targetStatus.id
+
+        await tx.serviceOrder.update({ where: { id: os.id }, data: updateData })
+
+        if (targetStatus) {
+          await tx.serviceOrderHistory.create({
+            data: {
+              company_id: os.company_id,
+              service_order_id: os.id,
+              from_status_id: os.status_id,
+              to_status_id: targetStatus.id,
+              changed_by: 'portal',
+              notes: rejectionNote,
+            },
+          })
+        }
+      })
 
       logAudit({
         companyId: os.company_id,
@@ -335,29 +337,80 @@ export async function POST(request: NextRequest, { params }: Params) {
         module: 'os',
         action: 'quote_rejected_by_customer',
         entityId: os.id,
-        newValue: {
-          customer_name: os.customers?.legal_name,
-          os_number: os.os_number,
-          total_cost: os.total_cost,
-          reason: reason || null,
-          rejected_via: 'portal',
-        },
+        newValue: { customer_name: customerName2, os_number: os.os_number, total_cost: os.total_cost, reason: reason || null },
       })
 
-      // Notificar equipe via aviso interno
-      const osNum2 = String(os.os_number).padStart(4, '0')
-      const customerName2 = os.customers?.legal_name || 'Cliente'
+      // Carregar settings
+      const settings2 = await prisma.setting.findMany({ where: { company_id: os.company_id } })
+      const cfg2: Record<string, string> = {}
+      for (const s of settings2) cfg2[s.key] = s.value
+      const whatsappUrl2 = `https://wa.me/${(cfg2['company.whatsapp'] || '551126263841').replace(/\D/g, '')}`
+      const companyPhone2 = cfg2['company.phone'] || '(11) 2626-3841'
+      const companyName2 = os.companies.name || 'Empresa'
+
+      // 1. Aviso interno URGENTE para atendimento + financeiro
       await prisma.announcement.create({
         data: {
           company_id: os.company_id,
-          title: `❌ Orçamento OS-${osNum2} RECUSADO`,
-          message: `O cliente ${customerName2} recusou o orçamento da OS-${osNum2} pelo portal.${reason ? ` Motivo: "${reason}"` : ''} Entrar em contato para negociar.`,
+          title: `❌ OS ${osNum2} RECUSADA — ${customerName2}`,
+          message: `O cliente ${customerName2} recusou o orçamento da OS ${osNum2} (${equipment2}) no valor de ${fmtValue2}.${reason ? `\n\nMotivo: "${reason}"` : ''}\n\nAÇÕES NECESSÁRIAS:\n• Atendimento: entrar em contato para negociar\n• Financeiro: verificar se há custos a recuperar\n• Logística: agendar devolução do equipamento`,
           priority: 'URGENTE',
           require_read: true,
           author_name: 'Sistema',
           created_by: 'portal',
         },
       })
+
+      // 2. Email ao cliente confirmando a recusa
+      const customerEmail2 = os.customers?.email
+      if (customerEmail2) {
+        const emailHtml2 = `
+<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#333;">
+  <div style="background:linear-gradient(135deg,#dc2626,#b91c1c);padding:28px;border-radius:12px 12px 0 0;text-align:center;">
+    <p style="margin:0;font-size:40px;">📋</p>
+    <h1 style="color:#fff;margin:8px 0 0;font-size:22px;">Orcamento Recusado</h1>
+  </div>
+  <div style="background:#fff;border:1px solid #e5e7eb;border-top:none;padding:28px;border-radius:0 0 12px 12px;">
+    <p style="font-size:16px;margin:0 0 16px;">Ola <strong>${customerName2.split(' ')[0]}</strong>,</p>
+    <p style="font-size:14px;color:#555;margin:0 0 20px;line-height:1.6;">
+      Recebemos sua decisao sobre o orcamento da OS <strong>#${osNum2}</strong>.
+      Entendemos e respeitamos sua escolha.
+    </p>
+
+    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:16px;margin:0 0 20px;">
+      <table style="width:100%;font-size:14px;color:#991b1b;">
+        <tr><td style="padding:4px 0;font-weight:600;">Equipamento:</td><td style="padding:4px 0;">${equipment2}</td></tr>
+        <tr><td style="padding:4px 0;font-weight:600;">Valor orcado:</td><td style="padding:4px 0;">${fmtValue2}</td></tr>
+        ${reason ? `<tr><td style="padding:4px 0;font-weight:600;">Motivo:</td><td style="padding:4px 0;">${reason}</td></tr>` : ''}
+      </table>
+    </div>
+
+    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px;margin:0 0 20px;">
+      <p style="margin:0;font-size:13px;color:#1e40af;line-height:1.5;">
+        <strong>Quer negociar?</strong> Nossa equipe esta disponivel para revisar o orcamento ou esclarecer duvidas. Entre em contato pelo WhatsApp!
+      </p>
+    </div>
+
+    <div style="text-align:center;margin:0 0 20px;">
+      <a href="${whatsappUrl2}" style="display:inline-block;background:#25d366;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:14px;">
+        Falar com o Suporte via WhatsApp
+      </a>
+    </div>
+
+    <div style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:14px;margin:0 0 20px;">
+      <p style="margin:0;font-size:13px;color:#92400e;line-height:1.5;">
+        <strong>Importante:</strong> Seu equipamento esta conosco. Entraremos em contato para combinar a devolucao.
+      </p>
+    </div>
+
+    <div style="border-top:1px solid #e5e7eb;padding-top:16px;">
+      <p style="font-size:13px;color:#555;margin:0 0 4px;">${companyName2}</p>
+      <p style="font-size:12px;color:#999;margin:0;">Tel: ${companyPhone2} | <a href="${whatsappUrl2}" style="color:#16a34a;">WhatsApp</a></p>
+    </div>
+  </div>
+</div>`
+        sendEmail(customerEmail2, `Orcamento OS #${osNum2} — ${companyName2}`, emailHtml2).catch(() => {})
+      }
 
       return success({ action: 'rejected', message: 'Orçamento recusado. A empresa foi notificada.' })
     }
