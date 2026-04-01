@@ -808,16 +808,15 @@ export default function OSListPage() {
                           {actionMenuId === os.id && (
                             <>
                               <div className="fixed inset-0 z-40" onClick={() => setActionMenuId(null)} />
-                              <div className="fixed z-50 w-56 rounded-lg border bg-white shadow-xl py-1 max-h-[70vh] overflow-y-auto"
+                              <div className="fixed z-50 w-52 rounded-lg border bg-white shadow-xl py-1"
                                 ref={el => {
                                   if (!el) return
                                   const btn = document.getElementById(`action-btn-${os.id}`)
                                   if (!btn) return
                                   const rect = btn.getBoundingClientRect()
                                   const spaceBelow = window.innerHeight - rect.bottom
-                                  const menuH = el.scrollHeight
                                   el.style.right = `${window.innerWidth - rect.right}px`
-                                  if (spaceBelow > menuH + 8) {
+                                  if (spaceBelow > el.scrollHeight + 8) {
                                     el.style.top = `${rect.bottom + 4}px`
                                     el.style.bottom = 'auto'
                                   } else {
@@ -826,100 +825,47 @@ export default function OSListPage() {
                                   }
                                 }}>
                                 <Link href={`/os/${os.id}`} onClick={() => setActionMenuId(null)}
-                                  className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 w-full">
-                                  <Eye className="h-4 w-4 text-gray-400" /> Abrir OS
+                                  className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 w-full">
+                                  <Eye className="h-4 w-4 text-gray-400" /> Abrir
                                 </Link>
                                 <Link href={`/os/${os.id}/editar`} onClick={() => setActionMenuId(null)}
-                                  className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 w-full">
+                                  className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 w-full">
                                   <Search className="h-4 w-4 text-gray-400" /> Editar
                                 </Link>
                                 <Link href={`/os/novo?clonar=${os.id}`} onClick={() => setActionMenuId(null)}
-                                  className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 w-full">
-                                  <Copy className="h-4 w-4 text-gray-400" /> Copiar Ordem
+                                  className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 w-full">
+                                  <Copy className="h-4 w-4 text-gray-400" /> Clonar
                                 </Link>
                                 <div className="border-t my-1" />
-                                <div className="px-3 py-1.5 text-xs font-medium text-gray-400 uppercase">Imprimir</div>
-                                {(() => {
-                                  const statusName = (st?.name || '').toLowerCase()
-                                  const options: { label: string; template: string }[] = []
-                                  // Sempre disponivel
-                                  options.push({ label: 'OS Completa', template: 'os_full' })
-                                  options.push({ label: 'Etiqueta', template: 'os_label' })
-                                  // Por status
-                                  if (os.os_type === 'COLETA' || statusName.includes('colet'))
-                                    options.push({ label: 'Ordem de Coleta', template: 'os_pickup' })
-                                  if (statusName.includes('abert') || statusName.includes('triag') || statusName.includes('analis'))
-                                    options.push({ label: 'Comprovante Recebimento', template: 'os_receipt' })
-                                  if (statusName.includes('or') || statusName.includes('aprov') || statusName.includes('negoc'))
-                                    options.push({ label: 'Orcamento', template: 'os_budget' })
-                                  if (statusName.includes('pronta') || statusName.includes('entreg') || statusName.includes('finaliz'))
-                                    options.push({ label: 'Comprovante Entrega', template: 'os_delivery' })
-                                  if (statusName.includes('entreg') || statusName.includes('pronta') || statusName.includes('finaliz'))
-                                    options.push({ label: 'Termo de Garantia', template: 'os_warranty' })
-                                  return options.map(opt => (
-                                    <button key={opt.template} type="button" onClick={() => printSingleOS(os.id, opt.template)}
-                                      className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 w-full">
-                                      <Printer className="h-3.5 w-3.5 text-gray-400" /> {opt.label}
-                                    </button>
-                                  ))
-                                })()}
-                                {os.invoices?.length > 0 ? (
-                                  <>
-                                    <a href={os.invoices[0].danfe_url || '#'} target="_blank" rel="noopener noreferrer"
-                                      className="flex items-center gap-2 px-3 py-2 text-sm text-green-700 hover:bg-green-50 w-full">
-                                      <Receipt className="h-4 w-4 text-green-500" /> Ver NFS-e #{os.invoices[0].invoice_number}
-                                    </a>
-                                    <button type="button" onClick={() => { setActionMenuId(null); fetch(`/api/fiscal/nfse/${os.invoices[0].id}/reenviar`, { method: 'POST' }).then(() => toast.success('NFS-e reenviada por email!')) }}
-                                      className="flex items-center gap-2 px-3 py-2 text-sm text-purple-700 hover:bg-purple-50 w-full">
-                                      <Send className="h-4 w-4 text-purple-400" /> Reenviar NFS-e por Email
-                                    </button>
-                                  </>
-                                ) : (
-                                  <button type="button" onClick={() => openNfseFromList(os)}
-                                    className="flex items-center gap-2 px-3 py-2 text-sm text-purple-700 hover:bg-purple-50 w-full">
-                                    <Receipt className="h-4 w-4 text-purple-400" /> Emitir NFS-e
-                                  </button>
-                                )}
+                                <button type="button" onClick={() => { printSingleOS(os.id, 'os_full'); setActionMenuId(null) }}
+                                  className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 w-full">
+                                  <Printer className="h-4 w-4 text-gray-400" /> Imprimir
+                                </button>
                                 <button type="button" onClick={() => {
                                   const line = `OS-${String(os.os_number).padStart(4, '0')} | ${os.customers?.legal_name || ''} | ${st?.name || ''} | ${fmt(os.total_cost || 0)}`
                                   window.open(`mailto:?subject=${encodeURIComponent(`OS-${String(os.os_number).padStart(4, '0')}`)}&body=${encodeURIComponent(line)}`)
                                   setActionMenuId(null)
                                 }}
-                                  className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 w-full">
-                                  <Mail className="h-4 w-4 text-gray-400" /> Enviar e-mail
+                                  className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 w-full">
+                                  <Mail className="h-4 w-4 text-gray-400" /> Enviar Email
                                 </button>
-                                {effectiveColumns.includes('financeiro') && (
-                                  <>
-                                    <div className="border-t my-1" />
-                                    <Link href={`/financeiro/contas-receber?customerId=${os.customer_id || ''}&search=${os.customers?.legal_name || ''}`} onClick={() => setActionMenuId(null)}
-                                      className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 w-full">
-                                      <Receipt className="h-4 w-4 text-gray-400" /> Ver Financeiro
-                                    </Link>
-                                  </>
-                                )}
+                                {os.invoices?.length > 0 ? (
+                                  <a href={os.invoices[0].danfe_url || '#'} target="_blank" rel="noopener noreferrer"
+                                    onClick={() => setActionMenuId(null)}
+                                    className="flex items-center gap-2.5 px-3 py-2 text-sm text-green-700 hover:bg-green-50 w-full">
+                                    <Receipt className="h-4 w-4 text-green-500" /> NFS-e #{os.invoices[0].invoice_number}
+                                  </a>
+                                ) : (os.total_cost || 0) > 0 ? (
+                                  <button type="button" onClick={() => openNfseFromList(os)}
+                                    className="flex items-center gap-2.5 px-3 py-2 text-sm text-purple-700 hover:bg-purple-50 w-full">
+                                    <Receipt className="h-4 w-4 text-purple-400" /> Emitir NFS-e
+                                  </button>
+                                ) : null}
                                 <div className="border-t my-1" />
-                                {/* Status change submenu */}
-                                <div className="px-3 py-1.5 text-xs font-medium text-gray-400 uppercase">Alterar Status</div>
-                                <div className="max-h-32 overflow-y-auto">
-                                  {kanbanColumns.slice(0, 8).map(col => (
-                                    <button key={col.id} type="button" onClick={async () => {
-                                      setActionMenuId(null)
-                                      const res = await fetch(`/api/os/${os.id}/transition`, {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ to_status_id: col.id }),
-                                      })
-                                      if (res.ok) { toast.success(`Status alterado para ${col.name}`); loadOS() }
-                                      else { const d = await res.json(); toast.error(d.error || 'Erro') }
-                                    }}
-                                      className={cn('flex items-center gap-2 px-3 py-1.5 text-sm w-full hover:bg-gray-50',
-                                        os.status_id === col.id ? 'text-blue-700 bg-blue-50' : 'text-gray-600'
-                                      )}>
-                                      <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: col.color }} />
-                                      {col.name}
-                                    </button>
-                                  ))}
-                                </div>
+                                <Link href={`/financeiro/contas-receber?search=${encodeURIComponent(os.customers?.legal_name || '')}`} onClick={() => setActionMenuId(null)}
+                                  className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 w-full">
+                                  <Receipt className="h-4 w-4 text-gray-400" /> Financeiro
+                                </Link>
                               </div>
                             </>
                           )}
