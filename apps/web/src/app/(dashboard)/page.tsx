@@ -329,27 +329,36 @@ export default function DashboardPage() {
           ) : (stats?.pipeline?.length ?? 0) === 0 ? (
             <p className="flex h-52 items-center justify-center text-sm text-gray-400">Sem dados</p>
           ) : (
-            <ResponsiveContainer width="100%" height={220}>
+            <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
-                  data={stats!.pipeline}
+                  data={stats!.pipeline.filter(p => p.count > 0)}
                   dataKey="count"
                   nameKey="name"
                   cx="50%"
-                  cy="50%"
-                  innerRadius={50}
-                  outerRadius={85}
+                  cy="40%"
+                  innerRadius={45}
+                  outerRadius={75}
                   paddingAngle={2}
-                  label={({ name, count }) => `${name} (${count})`}
-                  labelLine={false}
+                  label={false}
                 >
-                  {stats!.pipeline.map((entry, index) => (
+                  {stats!.pipeline.filter(p => p.count > 0).map((entry, index) => (
                     <Cell key={index} fill={entry.color} />
                   ))}
                 </Pie>
                 <Tooltip
                   contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '13px' }}
                   formatter={(value: number) => [`${value} OS`, '']}
+                />
+                <Legend
+                  verticalAlign="bottom"
+                  align="center"
+                  layout="horizontal"
+                  wrapperStyle={{ fontSize: '11px', lineHeight: '18px', paddingTop: '8px' }}
+                  formatter={(value: string) => {
+                    const item = stats!.pipeline.find(p => p.name === value)
+                    return `${value} (${item?.count ?? 0})`
+                  }}
                 />
               </PieChart>
             </ResponsiveContainer>

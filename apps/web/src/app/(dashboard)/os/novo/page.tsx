@@ -189,10 +189,21 @@ export default function NovaOSPage() {
     m.toLowerCase().includes(modeloSearch.toLowerCase())
   )
 
+  const [errors, setErrors] = useState<Record<string, string>>({})
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!form.customer_id) { toast.error('Selecione um cliente'); return }
-    if (!form.reported_issue) { toast.error('Descreva o problema'); return }
+    const newErrors: Record<string, string> = {}
+    if (!form.customer_id) newErrors.customer_id = 'Selecione um cliente'
+    if (!form.equipment_type) newErrors.equipment_type = 'Informe o tipo de equipamento'
+    if (!form.reported_issue) newErrors.reported_issue = 'Descreva o problema relatado'
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors)
+      toast.error(Object.values(newErrors)[0])
+      return
+    }
+    setErrors({})
 
     setLoading(true)
     try {
@@ -249,7 +260,7 @@ export default function NovaOSPage() {
         {/* Cliente */}
         <div className="rounded-lg border bg-white p-5 space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-gray-900">Cliente</h2>
+            <h2 className="font-semibold text-gray-900">Cliente <span className="text-red-500">*</span></h2>
             <button
               type="button"
               onClick={() => setShowNovoCliente(true)}
@@ -287,6 +298,7 @@ export default function NovaOSPage() {
                 <CheckCircle className="h-3.5 w-3.5" /> {selectedCliente.legal_name}
               </p>
             )}
+            {errors.customer_id && <p className="mt-1 text-sm text-red-500">{errors.customer_id}</p>}
           </div>
         </div>
 
@@ -421,7 +433,7 @@ export default function NovaOSPage() {
             <div>
               <label className="block text-sm text-gray-600 mb-1">N Serie</label>
               <input type="text" value={form.serial_number} onChange={e => updateForm('serial_number', e.target.value)}
-                placeholder="VNC1234567" className="w-full px-3 py-2 border rounded-md" />
+                placeholder="Ex: ABC1234567" className="w-full px-3 py-2 border rounded-md" />
             </div>
           </div>
         </div>
@@ -433,7 +445,8 @@ export default function NovaOSPage() {
             <label className="block text-sm text-gray-600 mb-1">Defeito relatado pelo cliente *</label>
             <textarea value={form.reported_issue} onChange={e => updateForm('reported_issue', e.target.value)}
               rows={3} placeholder="Descreva o problema..." required
-              className="w-full px-3 py-2 border rounded-md resize-none" />
+              className={`w-full px-3 py-2 border rounded-md resize-none ${errors.reported_issue ? 'border-red-400' : ''}`} />
+            {errors.reported_issue && <p className="mt-1 text-sm text-red-500">{errors.reported_issue}</p>}
           </div>
           <div>
             <label className="block text-sm text-gray-600 mb-1">Observacoes</label>

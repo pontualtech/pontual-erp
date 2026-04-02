@@ -84,10 +84,16 @@ export async function GET(req: NextRequest) {
     `, cid, `${dateFrom}T00:00:00Z`, dateTo)
 
     const created = Number(totalCreated[0]?.count || 0)
-    const quoted = Number(totalQuoted[0]?.count || 0)
-    const approved = Number(totalApproved[0]?.count || 0)
-    const completed = totalCompleted
-    const paid = Number(totalPaid[0]?.count || 0)
+    // Enforce monotonically decreasing: each step <= previous step
+    const rawQuoted = Number(totalQuoted[0]?.count || 0)
+    const rawApproved = Number(totalApproved[0]?.count || 0)
+    const rawCompleted = totalCompleted
+    const rawPaid = Number(totalPaid[0]?.count || 0)
+
+    const quoted = Math.min(rawQuoted, created)
+    const approved = Math.min(rawApproved, quoted)
+    const completed = Math.min(rawCompleted, approved)
+    const paid = Math.min(rawPaid, completed)
 
     const steps = [
       { name: 'Criadas', count: created, percent: 100 },
@@ -97,12 +103,12 @@ export async function GET(req: NextRequest) {
       { name: 'Pagas', count: paid, percent: created > 0 ? Math.round((paid / created) * 10000) / 100 : 0 },
     ]
 
-    // Conversion rates between steps
+    // Conversion rates between steps (capped at 100%)
     const conversions = [
-      { from: 'Criadas', to: 'Orcadas', rate: created > 0 ? Math.round((quoted / created) * 10000) / 100 : 0 },
-      { from: 'Orcadas', to: 'Aprovadas', rate: quoted > 0 ? Math.round((approved / quoted) * 10000) / 100 : 0 },
-      { from: 'Aprovadas', to: 'Concluidas', rate: approved > 0 ? Math.round((completed / approved) * 10000) / 100 : 0 },
-      { from: 'Concluidas', to: 'Pagas', rate: completed > 0 ? Math.round((paid / completed) * 10000) / 100 : 0 },
+      { from: 'Criadas', to: 'Orcadas', rate: created > 0 ? Math.min(100, Math.round((quoted / created) * 10000) / 100) : 0 },
+      { from: 'Orcadas', to: 'Aprovadas', rate: quoted > 0 ? Math.min(100, Math.round((approved / quoted) * 10000) / 100) : 0 },
+      { from: 'Aprovadas', to: 'Concluidas', rate: approved > 0 ? Math.min(100, Math.round((completed / approved) * 10000) / 100) : 0 },
+      { from: 'Concluidas', to: 'Pagas', rate: completed > 0 ? Math.min(100, Math.round((paid / completed) * 10000) / 100) : 0 },
     ]
 
     return success({ steps, conversions })

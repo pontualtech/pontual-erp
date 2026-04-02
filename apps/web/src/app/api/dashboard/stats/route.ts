@@ -18,6 +18,11 @@ export async function GET() {
     })
     const finalIds = allStatuses.filter(s => s.is_final).map(s => s.id)
 
+    // Find the "Em Execução" status id (match status name containing "Execu", case-insensitive)
+    const execStatusIds = allStatuses
+      .filter(s => /execu[çc]/i.test(s.name))
+      .map(s => s.id)
+
     // ---- Date boundaries (use UTC to avoid timezone mismatches with DB) ----
     const now = new Date()
     // Use Sao Paulo offset (UTC-3) to determine "today" in local time
@@ -31,7 +36,7 @@ export async function GET() {
       osAbertasHoje,
       osEmExecucao,
       osProntas,
-      faturamentoMes,
+      faturamentoMesCents,
     ] = await Promise.all([
       // OS abertas hoje (excluindo finalizadas)
       prisma.serviceOrder.count({
@@ -43,10 +48,12 @@ export async function GET() {
         },
       }),
 
-      // OS em execucao (nao-finais, excluindo a primeira etapa/default)
-      prisma.serviceOrder.count({
-        where: { company_id: cid, deleted_at: null, status_id: { notIn: finalIds } },
-      }),
+      // D-01 FIX: OS em execução — only those with status name matching "Execu*"
+      execStatusIds.length > 0
+        ? prisma.serviceOrder.count({
+            where: { company_id: cid, deleted_at: null, status_id: { in: execStatusIds } },
+          })
+        : Promise.resolve(0),
 
       // OS prontas para entrega (status final)
       prisma.serviceOrder.count({
@@ -58,27 +65,17 @@ export async function GET() {
         },
       }),
 
-      // Faturamento do mes: contas recebidas OR OS com status final
-      Promise.all([
-        prisma.accountReceivable.aggregate({
-          where: {
-            company_id: cid,
-            deleted_at: null,
-            status: { in: ['RECEBIDO', 'PAGO'] },
-            updated_at: { gte: monthStart },
-          },
-          _sum: { received_amount: true },
-        }),
-        prisma.serviceOrder.aggregate({
-          where: {
-            company_id: cid,
-            deleted_at: null,
-            ...(finalIds.length > 0 ? { status_id: { in: finalIds } } : {}),
-            created_at: { gte: monthStart },
-          },
-          _sum: { total_cost: true },
-        }),
-      ]),
+      // D-04 FIX: Faturamento do mes — same logic as BI Comissão:
+      // sum total_cost from OS with is_final=true status, updated this month
+      prisma.serviceOrder.aggregate({
+        where: {
+          company_id: cid,
+          deleted_at: null,
+          ...(finalIds.length > 0 ? { status_id: { in: finalIds } } : {}),
+          updated_at: { gte: monthStart },
+        },
+        _sum: { total_cost: true },
+      }),
     ])
 
     // ---- 2. OS por Semana (ultimas 8 semanas) ----
@@ -99,20 +96,20 @@ export async function GET() {
     `, cid, eightWeeksAgo)
 
     // ---- 3. Pipeline de OS (count by status) ----
+    // D-03 FIX: Include ALL statuses (even with 0 count), only count non-deleted OS
     const pipeline = await prisma.serviceOrder.groupBy({
       by: ['status_id'],
       where: { company_id: cid, deleted_at: null },
       _count: { id: true },
     })
 
-    const pipelineData = pipeline.map(p => {
-      const status = allStatuses.find(s => s.id === p.status_id)
-      return {
-        name: status?.name ?? 'Desconhecido',
-        color: status?.color ?? '#6B7280',
-        count: p._count.id,
-      }
-    }).sort((a, b) => {
+    const pipelineCounts = new Map(pipeline.map(p => [p.status_id, p._count.id]))
+
+    const pipelineData = allStatuses.map(status => ({
+      name: status.name,
+      color: status.color ?? '#6B7280',
+      count: pipelineCounts.get(status.id) ?? 0,
+    })).sort((a, b) => {
       const orderA = allStatuses.find(s => s.name === a.name)?.order ?? 99
       const orderB = allStatuses.find(s => s.name === b.name)?.order ?? 99
       return (orderA ?? 0) - (orderB ?? 0)
@@ -130,15 +127,36 @@ export async function GET() {
         AND created_at >= $2
     `, cid, monthStart)
 
-    // Taxa de aprovacao de orcamentos
-    const [quotesTotal, quotesApproved] = await Promise.all([
-      prisma.quote.count({
-        where: { company_id: cid, sent_at: { not: null } },
-      }),
-      prisma.quote.count({
-        where: { company_id: cid, approved_at: { not: null } },
-      }),
-    ])
+    // D-06 FIX: Taxa de aprovação based on status transitions in service_order_history
+    // Denominator: OS that passed through any status containing "orç" or "aguardando aprovação"
+    // Numerator: OS that passed through any status containing "aprovad"
+    const approvalStatuses = allStatuses.filter(s => /aprovad/i.test(s.name)).map(s => s.id)
+    const quoteStatuses = allStatuses.filter(s => /or[çc]|aguardando\s*aprova/i.test(s.name)).map(s => s.id)
+
+    let quotesTotal = 0
+    let quotesApproved = 0
+
+    if (quoteStatuses.length > 0) {
+      // OS that went through a quote/budget status
+      const quotedOs: { cnt: string }[] = await prisma.$queryRawUnsafe(`
+        SELECT COUNT(DISTINCT service_order_id)::text AS cnt
+        FROM service_order_history
+        WHERE company_id = $1
+          AND to_status_id = ANY($2::text[])
+      `, cid, quoteStatuses)
+      quotesTotal = Number(quotedOs[0]?.cnt ?? 0)
+    }
+
+    if (approvalStatuses.length > 0) {
+      // OS that went through an approved status
+      const approvedOs: { cnt: string }[] = await prisma.$queryRawUnsafe(`
+        SELECT COUNT(DISTINCT service_order_id)::text AS cnt
+        FROM service_order_history
+        WHERE company_id = $1
+          AND to_status_id = ANY($2::text[])
+      `, cid, approvalStatuses)
+      quotesApproved = Number(approvedOs[0]?.cnt ?? 0)
+    }
 
     // Ticket medio (valor medio das OS entregues no mes)
     const avgTicket: { avg_ticket: number | null }[] = await prisma.$queryRawUnsafe(`
@@ -178,13 +196,7 @@ export async function GET() {
         osAbertasHoje,
         osEmExecucao,
         osProntas,
-        faturamentoMesCents: (() => {
-          const [arAgg, osAgg] = faturamentoMes
-          const arTotal = arAgg._sum.received_amount ?? 0
-          const osTotal = osAgg._sum.total_cost ?? 0
-          // Use accounts receivable if available, otherwise fallback to OS total_cost
-          return arTotal > 0 ? arTotal : osTotal
-        })(),
+        faturamentoMesCents: faturamentoMesCents._sum.total_cost ?? 0,
       },
       osPerWeek: osPerWeek.map(w => ({ week: w.week, count: Number(w.count) })),
       pipeline: pipelineData,

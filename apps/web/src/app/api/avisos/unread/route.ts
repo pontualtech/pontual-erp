@@ -29,7 +29,6 @@ export async function GET(req: NextRequest) {
         { pinned: 'desc' },
         { created_at: 'desc' },
       ],
-      distinct: ['id'],
     })
 
     return success({
@@ -37,6 +36,12 @@ export async function GET(req: NextRequest) {
       announcements,
     })
   } catch (err) {
-    return handleError(err)
+    // Fallback para evitar 503 intermitente — retorna lista vazia em caso de erro de DB
+    console.error('[avisos/unread] Error:', err)
+    try {
+      return handleError(err)
+    } catch {
+      return NextResponse.json({ data: { count: 0, announcements: [] } })
+    }
   }
 }

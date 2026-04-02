@@ -42,8 +42,9 @@ export async function GET(req: NextRequest) {
     if (filterEquipType) where.equipment_type = filterEquipType
 
     // Ocultar canceladas por padrão (status is_final = true)
+    // Quando um statusId específico é fornecido, ignorar hideCancelled (evita conflito)
     const hideCancelled = url.get('hideCancelled') === 'true'
-    if (hideCancelled && !statusIds.length) {
+    if (hideCancelled && statusIds.length === 0) {
       const finalStatuses = await prisma.moduleStatus.findMany({
         where: { company_id: user.companyId, module: 'os', is_final: true },
         select: { id: true },

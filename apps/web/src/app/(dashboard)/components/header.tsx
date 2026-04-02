@@ -20,6 +20,7 @@ const breadcrumbMap: Record<string, string> = {
   financeiro: 'Financeiro',
   fiscal: 'Fiscal',
   config: 'Configuracoes',
+  perfil: 'Perfil',
   novo: 'Nova',
 }
 
@@ -159,10 +160,16 @@ export function Header({ user }: { user: AuthUser }) {
                 <p className="text-sm font-medium">{user.name}</p>
                 <p className="text-xs text-gray-500">{user.email}</p>
               </div>
-              <button className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+              <button
+                onClick={() => { setMenuOpen(false); router.push('/perfil') }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
                 <User className="h-4 w-4" /> Perfil
               </button>
-              <button className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+              <button
+                onClick={() => { setMenuOpen(false); router.push('/config') }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
                 <Settings className="h-4 w-4" /> Configuracoes
               </button>
               <button

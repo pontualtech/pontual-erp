@@ -204,7 +204,7 @@ export default function FiscalPage() {
                 <BarChart3 className="h-5 w-5 text-green-600" />
               </div>
               <div>
-                <p className="text-sm text-gray-500">Faturamento (mes)</p>
+                <p className="text-sm text-gray-500">Faturamento (mes atual)</p>
                 <p className="text-2xl font-bold text-gray-900">{formatCurrency(dashboard.currentMonth.revenueCents)}</p>
               </div>
             </div>

@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
 import { AlertTriangle, Info, Bell, ShieldAlert } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useAvisos } from '@/lib/use-avisos'
 
 interface RequiredAnnouncement {
   id: string
@@ -25,36 +26,9 @@ function getPriority(p: string) {
 }
 
 export function AnnouncementModal() {
-  const [announcements, setAnnouncements] = useState<RequiredAnnouncement[]>([])
+  const { requiredAnnouncements: announcements, removeAnnouncement } = useAvisos()
   const [currentIndex, setCurrentIndex] = useState(0)
   const [confirming, setConfirming] = useState(false)
-
-  const fetchRequired = useCallback(async () => {
-    try {
-      const res = await fetch('/api/avisos/unread')
-      const json = await res.json()
-      if (json.data?.announcements) {
-        const required = json.data.announcements.filter(
-          (a: RequiredAnnouncement & { require_read?: boolean }) => a.require_read
-        )
-        // Deduplica por id (precaucao contra dados duplicados)
-        const seen = new Set<string>()
-        const unique = required.filter((a: RequiredAnnouncement) => {
-          if (seen.has(a.id)) return false
-          seen.add(a.id)
-          return true
-        })
-        if (unique.length > 0) {
-          setAnnouncements(unique)
-          setCurrentIndex(0)
-        }
-      }
-    } catch {}
-  }, [])
-
-  useEffect(() => {
-    fetchRequired()
-  }, [fetchRequired])
 
   const handleConfirm = async () => {
     const current = announcements[currentIndex]
@@ -63,11 +37,10 @@ export function AnnouncementModal() {
     setConfirming(true)
     try {
       await fetch(`/api/avisos/${current.id}/read`, { method: 'POST' })
+      removeAnnouncement(current.id)
 
-      if (currentIndex < announcements.length - 1) {
-        setCurrentIndex(prev => prev + 1)
-      } else {
-        setAnnouncements([])
+      if (currentIndex >= announcements.length - 1) {
+        setCurrentIndex(0)
       }
     } catch {}
     setConfirming(false)

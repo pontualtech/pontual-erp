@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Bell, Check, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import Link from 'next/link'
+import { useAvisos } from '@/lib/use-avisos'
 
 interface Announcement {
   id: string
@@ -26,39 +27,9 @@ function getPriorityStyle(p: string) {
 }
 
 export function NotificationBell() {
-  const [count, setCount] = useState(0)
-  const [announcements, setAnnouncements] = useState<Announcement[]>([])
+  const { bellAnnouncements: announcements, bellCount: count, removeAnnouncement } = useAvisos()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
-
-  const fetchUnread = useCallback(async () => {
-    try {
-      const res = await fetch('/api/avisos/unread')
-      const json = await res.json()
-      if (json.data) {
-        // Filtra os que exigem leitura obrigatoria — esses sao mostrados pelo AnnouncementModal
-        const nonRequired = (json.data.announcements || []).filter(
-          (a: Announcement & { require_read?: boolean }) => !a.require_read
-        )
-        // Deduplica por id (precaucao contra dados duplicados)
-        const seen = new Set<string>()
-        const unique = nonRequired.filter((a: Announcement) => {
-          if (seen.has(a.id)) return false
-          seen.add(a.id)
-          return true
-        })
-        setCount(unique.length)
-        setAnnouncements(unique)
-      }
-    } catch {}
-  }, [])
-
-  // Poll every 30 seconds
-  useEffect(() => {
-    fetchUnread()
-    const interval = setInterval(fetchUnread, 30000)
-    return () => clearInterval(interval)
-  }, [fetchUnread])
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -74,8 +45,7 @@ export function NotificationBell() {
   const markAsRead = async (id: string) => {
     try {
       await fetch(`/api/avisos/${id}/read`, { method: 'POST' })
-      setAnnouncements(prev => prev.filter(a => a.id !== id))
-      setCount(prev => Math.max(0, prev - 1))
+      removeAnnouncement(id)
     } catch {}
   }
 

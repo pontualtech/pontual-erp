@@ -969,7 +969,7 @@ export default function ContasReceberPage() {
                     </td>
                     )}
                     <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center justify-end gap-1">
                         <button
                           type="button"
                           onClick={() => router.push(`/financeiro/contas-receber/${conta.id}`)}
@@ -978,11 +978,11 @@ export default function ContasReceberPage() {
                         >
                           <Eye className="h-4 w-4" />
                         </button>
-                        {conta.status === 'PENDENTE' && (
+                        {(displayStatus === 'PENDENTE' || displayStatus === 'VENCIDO') && (
                           <button
                             type="button"
                             onClick={() => openBaixa(conta)}
-                            title="Registrar recebimento"
+                            title="Registrar recebimento (Baixar)"
                             className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-green-600"
                           >
                             <DollarSign className="h-4 w-4" />
@@ -1009,7 +1009,7 @@ export default function ContasReceberPage() {
                             <Unlink className="h-4 w-4" />
                           </button>
                         )}
-                        {conta.status === 'PENDENTE' && !conta.boleto_url && (
+                        {(displayStatus === 'PENDENTE' || displayStatus === 'VENCIDO') && !conta.boleto_url && (
                           <button
                             type="button"
                             onClick={() => setBoletoModalConta(conta)}

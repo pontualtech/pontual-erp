@@ -220,7 +220,7 @@ export default function ChatPage() {
             </div>
           ) : (
             messages.map(msg => {
-              const isOwn = msg.sender_id === user?.id
+              const isOwn = !!(user?.id && msg.sender_id === user.id)
               return (
                 <div
                   key={msg.id}
@@ -230,13 +230,18 @@ export default function ChatPage() {
                     className={cn(
                       'max-w-[70%] rounded-lg px-3 py-2 shadow-sm',
                       isOwn
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 text-gray-900'
+                        ? 'bg-blue-600 text-white rounded-br-sm'
+                        : 'bg-gray-100 text-gray-900 rounded-bl-sm'
                     )}
                   >
                     {!isOwn && (
                       <p className="text-xs font-semibold text-blue-600 mb-0.5">
                         {msg.sender_name}
+                      </p>
+                    )}
+                    {isOwn && (
+                      <p className="text-xs font-semibold text-blue-200 mb-0.5 text-right">
+                        Voce
                       </p>
                     )}
                     <p className="text-sm whitespace-pre-wrap break-words">{msg.message}</p>
@@ -271,6 +276,8 @@ export default function ChatPage() {
               className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
             <button
+              type="button"
+              title="Enviar mensagem"
               onClick={sendMessage}
               disabled={!input.trim() || sending}
               className={cn(

@@ -153,7 +153,7 @@ export default function RelatoriosBIPage() {
 
       {/* Tab content */}
       {!loading && tab === 'produtividade' && prodData && <ProdutividadeTab data={prodData} />}
-      {!loading && tab === 'sla' && slaData && <SlaTab data={slaData} />}
+      {!loading && tab === 'sla' && <SlaTab data={slaData} />}
       {!loading && tab === 'margem' && margemData && <MargemTab data={margemData} />}
       {!loading && tab === 'comissao' && comissaoData && (
         <ComissaoTab data={comissaoData} commissionPct={commissionPct} setCommissionPct={setCommissionPct} onRefresh={() => fetchTab('comissao')} />
@@ -206,7 +206,7 @@ function ProdutividadeTab({ data }: { data: any }) {
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={technicians} layout="vertical" margin={{ left: 20 }}>
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis type="number" />
+              <XAxis type="number" allowDecimals={false} />
               <YAxis dataKey="technicianName" type="category" width={120} tick={{ fontSize: 12 }} />
               <Tooltip formatter={(v: number, name: string) => {
                 if (name === 'totalCompleted') return [v, 'OS']
@@ -297,7 +297,9 @@ function GaugeChart({ percent, label, color }: { percent: number; label: string;
 }
 
 function SlaTab({ data }: { data: any }) {
-  const { statusTimes, sla, overdueList } = data
+  const statusTimes = data?.statusTimes ?? []
+  const sla = data?.sla ?? { totalOs: 0, totalCompleted: 0, withinSlaRepair: 0, slaRepairPercent: 0, overdueCount: 0 }
+  const overdueList = data?.overdueList ?? []
 
   function exportCSV() {
     downloadCSV(overdueList.map((o: any) => ({
@@ -422,12 +424,16 @@ function MargemTab({ data }: { data: any }) {
         <div className="rounded-lg border bg-white dark:bg-gray-800 dark:border-gray-700 p-6 shadow-sm">
           <h3 className="mb-4 text-sm font-semibold text-gray-700 dark:text-gray-300">Margem Media por Tipo de Equipamento</h3>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={byEquipmentType}>
+            <BarChart data={byEquipmentType.map((d: any) => ({
+              ...d,
+              displayMargin: Math.max(d.avgMarginPercent, 0.5),
+              actualMargin: d.avgMarginPercent,
+            }))}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="equipmentType" tick={{ fontSize: 11 }} />
               <YAxis tick={{ fontSize: 11 }} unit="%" />
-              <Tooltip formatter={(v: number) => [`${v}%`, 'Margem']} />
-              <Bar dataKey="avgMarginPercent" name="Margem %" radius={[4, 4, 0, 0]}>
+              <Tooltip formatter={(_v: number, _name: string, props: any) => [`${props.payload.actualMargin}%`, 'Margem']} />
+              <Bar dataKey="displayMargin" name="Margem %" radius={[4, 4, 0, 0]} minPointSize={3}>
                 {byEquipmentType.map((_: any, i: number) => (
                   <Cell key={i} fill={COLORS[i % COLORS.length]} />
                 ))}
@@ -637,9 +643,12 @@ function FunilTab({ data }: { data: any }) {
                     <ChevronDown className="h-3.5 w-3.5 text-gray-300" />
                     <span className={cn(
                       'text-xs font-medium',
-                      conversions[i].rate >= 70 ? 'text-emerald-600' : conversions[i].rate >= 40 ? 'text-amber-600' : 'text-red-500'
+                      Math.min(conversions[i].rate, 100) >= 70 ? 'text-emerald-600' : Math.min(conversions[i].rate, 100) >= 40 ? 'text-amber-600' : 'text-red-500'
                     )}>
-                      {conversions[i].rate}% conversao
+                      {Math.min(conversions[i].rate, 100)}% conversao
+                      {conversions[i].rate > 100 && (
+                        <span className="ml-1 text-amber-500" title="Dados inconsistentes: taxa original era maior que 100%">*</span>
+                      )}
                     </span>
                   </div>
                 )}
@@ -669,11 +678,14 @@ function FunilTab({ data }: { data: any }) {
                 <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
                   <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">{c.from}</td>
                   <td className="px-4 py-3">{c.to}</td>
-                  <td className="px-4 py-3 text-right font-bold">{c.rate}%</td>
+                  <td className="px-4 py-3 text-right font-bold">
+                    {Math.min(c.rate, 100)}%
+                    {c.rate > 100 && <span className="ml-1 text-amber-500 text-xs" title="Dados inconsistentes">*</span>}
+                  </td>
                   <td className="px-4 py-3">
                     <div className="w-full max-w-[200px] rounded-full bg-gray-200 dark:bg-gray-600 h-2.5">
                       <div
-                        className={cn('h-2.5 rounded-full', c.rate >= 70 ? 'bg-emerald-500' : c.rate >= 40 ? 'bg-amber-500' : 'bg-red-500')}
+                        className={cn('h-2.5 rounded-full', Math.min(c.rate, 100) >= 70 ? 'bg-emerald-500' : Math.min(c.rate, 100) >= 40 ? 'bg-amber-500' : 'bg-red-500')}
                         style={{ width: `${Math.min(c.rate, 100)}%` }}
                       />
                     </div>

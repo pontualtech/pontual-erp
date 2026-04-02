@@ -66,7 +66,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
   {
     title: 'Sistema',
     items: [
-      { label: 'Configuracoes', href: '/config', icon: Settings, module: 'config' },
+      { label: 'Configuracoes', href: '/config', icon: Settings },
     ],
   },
 ]

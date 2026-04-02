@@ -1884,11 +1884,11 @@ export default function OSDetailPage() {
                 </DetailRow>
               )
             })()}
-            {os.actual_delivery && (
+            {os.actual_delivery && (currentStatus?.is_final || currentStatus?.name?.toLowerCase().includes('entregue')) ? (
               <DetailRow label="Entregue em">
                 <span className="text-sm text-green-700 font-medium">{new Date(os.actual_delivery).toLocaleDateString('pt-BR')}</span>
               </DetailRow>
-            )}
+            ) : null}
             {os.warranty_until && (
               <DetailRow label="Garantia ate">
                 <span className="text-sm text-gray-900">{new Date(os.warranty_until).toLocaleDateString('pt-BR')}</span>

@@ -45,6 +45,17 @@ export async function GET(req: NextRequest) {
       },
     })
 
+    // Count total per status (not limited by take: 500)
+    const countsByStatus = await prisma.serviceOrder.groupBy({
+      by: ['status_id'],
+      where,
+      _count: { id: true },
+    })
+    const countMap: Record<string, number> = {}
+    for (const c of countsByStatus) {
+      countMap[c.status_id] = c._count.id
+    }
+
     // Group by status_id
     const columns = statuses.map(status => ({
       id: status.id,
@@ -52,6 +63,7 @@ export async function GET(req: NextRequest) {
       color: status.color,
       order: status.order,
       items: orders.filter(o => o.status_id === status.id),
+      totalCount: countMap[status.id] || 0,
     }))
 
     return success(columns)

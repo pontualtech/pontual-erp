@@ -28,7 +28,15 @@ export async function GET(_request: NextRequest) {
       prisma.invoice.count({ where: { ...base, invoice_type: 'NFSE' } }),
 
       prisma.invoice.count({
-        where: { ...base, status: 'AUTHORIZED', authorized_at: { gte: startOfMonth, lte: endOfMonth } },
+        where: {
+          ...base,
+          status: 'AUTHORIZED',
+          OR: [
+            { authorized_at: { gte: startOfMonth, lte: endOfMonth } },
+            { authorized_at: null, issued_at: { gte: startOfMonth, lte: endOfMonth } },
+            { authorized_at: null, issued_at: null, created_at: { gte: startOfMonth, lte: endOfMonth } },
+          ],
+        },
       }),
 
       prisma.invoice.count({
@@ -40,12 +48,28 @@ export async function GET(_request: NextRequest) {
       }),
 
       prisma.invoice.aggregate({
-        where: { ...base, status: 'AUTHORIZED', authorized_at: { gte: startOfMonth, lte: endOfMonth } },
+        where: {
+          ...base,
+          status: 'AUTHORIZED',
+          OR: [
+            { authorized_at: { gte: startOfMonth, lte: endOfMonth } },
+            { authorized_at: null, issued_at: { gte: startOfMonth, lte: endOfMonth } },
+            { authorized_at: null, issued_at: null, created_at: { gte: startOfMonth, lte: endOfMonth } },
+          ],
+        },
         _sum: { total_amount: true },
       }),
 
       prisma.invoice.aggregate({
-        where: { ...base, status: 'AUTHORIZED', authorized_at: { gte: startOfMonth, lte: endOfMonth } },
+        where: {
+          ...base,
+          status: 'AUTHORIZED',
+          OR: [
+            { authorized_at: { gte: startOfMonth, lte: endOfMonth } },
+            { authorized_at: null, issued_at: { gte: startOfMonth, lte: endOfMonth } },
+            { authorized_at: null, issued_at: null, created_at: { gte: startOfMonth, lte: endOfMonth } },
+          ],
+        },
         _sum: { tax_amount: true },
       }),
     ])
@@ -55,7 +79,15 @@ export async function GET(_request: NextRequest) {
     for (let i = 5; i >= 0; i--) {
       const mStart = new Date(now.getFullYear(), now.getMonth() - i, 1)
       const mEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59)
-      const mWhere: any = { ...base, status: 'AUTHORIZED', authorized_at: { gte: mStart, lte: mEnd } }
+      const mWhere: any = {
+        ...base,
+        status: 'AUTHORIZED',
+        OR: [
+          { authorized_at: { gte: mStart, lte: mEnd } },
+          { authorized_at: null, issued_at: { gte: mStart, lte: mEnd } },
+          { authorized_at: null, issued_at: null, created_at: { gte: mStart, lte: mEnd } },
+        ],
+      }
 
       const [nfeCount, nfseCount, mTotal] = await Promise.all([
         prisma.invoice.count({ where: { ...mWhere, invoice_type: 'NFE' } }),

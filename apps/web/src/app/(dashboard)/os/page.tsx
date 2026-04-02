@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
 import { cn, formatDocument } from '@/lib/utils'
 import { Plus, Search, List, LayoutGrid, Settings2, Eye, EyeOff, Trash2, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Clock, AlertTriangle, Printer, FileSpreadsheet, Mail, Columns3, MoreVertical, Copy, Receipt, ChevronDown, RefreshCw, SearchX, Send, UserPlus } from 'lucide-react'
@@ -13,6 +13,7 @@ interface KanbanColumn {
   color: string
   order: number
   items: OS[]
+  totalCount?: number
 }
 
 interface OS {
@@ -111,6 +112,8 @@ export default function OSListPage() {
   const [statusMap, setStatusMap] = useState<Record<string, { name: string; color: string }>>({})
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [statusFilter, setStatusFilter] = useState<string[]>([])
   const [typeFilter, setTypeFilter] = useState('')
   const [locationFilter, setLocationFilter] = useState('')
@@ -147,6 +150,16 @@ export default function OSListPage() {
   const [tecnicos, setTecnicos] = useState<{ id: string; name: string }[]>([])
   const [showBulkAssign, setShowBulkAssign] = useState(false)
   const [bulkAssigning, setBulkAssigning] = useState(false)
+
+  // Debounce search: wait 300ms after user stops typing
+  useEffect(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+    searchTimerRef.current = setTimeout(() => {
+      setDebouncedSearch(search)
+      setPage(1)
+    }, 300)
+    return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current) }
+  }, [search])
 
   // Load technicians list
   useEffect(() => {
@@ -257,7 +270,7 @@ export default function OSListPage() {
     const params = new URLSearchParams()
     params.set('page', String(page))
     params.set('limit', '20')
-    if (search) params.set('search', search)
+    if (debouncedSearch) params.set('search', debouncedSearch)
     if (statusFilter.length === 1) params.set('statusId', statusFilter[0])
     else if (statusFilter.length > 1) statusFilter.forEach(s => params.append('statusId', s))
     if (typeFilter) params.set('osType', typeFilter)
@@ -279,7 +292,7 @@ export default function OSListPage() {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { loadOS(); setSelected(new Set()) }, [search, statusFilter, typeFilter, locationFilter, equipFilter, overdueFilter, showCancelled, page, visibilityLoaded, ownOnly, dateFrom, dateTo])
+  useEffect(() => { loadOS(); setSelected(new Set()) }, [debouncedSearch, statusFilter, typeFilter, locationFilter, equipFilter, overdueFilter, showCancelled, page, visibilityLoaded, ownOnly, dateFrom, dateTo])
 
   function toggleSelect(id: string) {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -596,7 +609,7 @@ export default function OSListPage() {
           <input
             placeholder="Buscar por numero, cliente, equipamento..."
             value={search}
-            onChange={e => { setSearch(e.target.value); setPage(1) }}
+            onChange={e => setSearch(e.target.value)}
             className="w-full rounded-lg border bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
           />
         </div>
@@ -1128,7 +1141,7 @@ export default function OSListPage() {
                           {visible ? <Eye className="h-3.5 w-3.5 shrink-0" /> : <EyeOff className="h-3.5 w-3.5 shrink-0" />}
                           <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: col.color }} />
                           <span className="truncate">{col.name}</span>
-                          <span className="ml-auto text-xs text-gray-400">{col.items.length}</span>
+                          <span className="ml-auto text-xs text-gray-400">{col.totalCount ?? col.items.length}</span>
                         </button>
                       )
                     })}
@@ -1144,7 +1157,7 @@ export default function OSListPage() {
               <div className="mb-2 flex items-center gap-2 rounded-t-lg px-3 py-2" style={{ backgroundColor: col.color + '15' }}>
                 <div className="h-3 w-3 rounded-full" style={{ backgroundColor: col.color }} />
                 <span className="text-sm font-semibold" style={{ color: col.color }}>{col.name}</span>
-                <span className="ml-auto text-xs text-gray-400">{col.items.length}</span>
+                <span className="ml-auto text-xs text-gray-400">{col.totalCount ?? col.items.length}</span>
               </div>
               <div className="space-y-2">
                 {col.items.length === 0 ? (
