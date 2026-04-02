@@ -113,28 +113,26 @@ export async function GET(request: NextRequest) {
     const tomorrow = new Date(today)
     tomorrow.setDate(tomorrow.getDate() + 1)
 
-    const [totalAberto, totalVencidas, vencendoHoje, recebidasMes] = await Promise.all([
-      prisma.accountReceivable.aggregate({
-        where: { company_id: user.companyId, deleted_at: null, status: 'PENDENTE' },
-        _sum: { total_amount: true },
-        _count: true,
-      }),
-      prisma.accountReceivable.aggregate({
-        where: { company_id: user.companyId, deleted_at: null, status: 'PENDENTE', due_date: { lt: today } },
-        _sum: { total_amount: true },
-        _count: true,
-      }),
-      prisma.accountReceivable.aggregate({
-        where: { company_id: user.companyId, deleted_at: null, status: 'PENDENTE', due_date: { gte: today, lt: tomorrow } },
-        _sum: { total_amount: true },
-        _count: true,
-      }),
-      prisma.accountReceivable.aggregate({
-        where: { company_id: user.companyId, deleted_at: null, status: 'RECEBIDO', updated_at: { gte: startOfMonth, lte: endOfMonth } },
-        _sum: { total_amount: true },
-        _count: true,
-      }),
-    ])
+    // Single raw query for all 4 summaries (1 scan instead of 4)
+    const summaryRows = await prisma.$queryRawUnsafe(`
+      SELECT
+        COALESCE(SUM(CASE WHEN status = 'PENDENTE' THEN total_amount ELSE 0 END), 0) as aberto_sum,
+        COUNT(CASE WHEN status = 'PENDENTE' THEN 1 END) as aberto_count,
+        COALESCE(SUM(CASE WHEN status = 'PENDENTE' AND due_date < $1 THEN total_amount ELSE 0 END), 0) as vencidas_sum,
+        COUNT(CASE WHEN status = 'PENDENTE' AND due_date < $1 THEN 1 END) as vencidas_count,
+        COALESCE(SUM(CASE WHEN status = 'PENDENTE' AND due_date >= $1 AND due_date < $2 THEN total_amount ELSE 0 END), 0) as hoje_sum,
+        COUNT(CASE WHEN status = 'PENDENTE' AND due_date >= $1 AND due_date < $2 THEN 1 END) as hoje_count,
+        COALESCE(SUM(CASE WHEN status = 'RECEBIDO' AND updated_at >= $3 AND updated_at <= $4 THEN total_amount ELSE 0 END), 0) as recebidas_sum,
+        COUNT(CASE WHEN status = 'RECEBIDO' AND updated_at >= $3 AND updated_at <= $4 THEN 1 END) as recebidas_count
+      FROM accounts_receivable
+      WHERE company_id = $5 AND deleted_at IS NULL
+    `, today, tomorrow, startOfMonth, endOfMonth, user.companyId) as any[]
+
+    const s = summaryRows[0] || {}
+    const totalAberto = { _sum: { total_amount: Number(s.aberto_sum) || 0 }, _count: Number(s.aberto_count) || 0 }
+    const totalVencidas = { _sum: { total_amount: Number(s.vencidas_sum) || 0 }, _count: Number(s.vencidas_count) || 0 }
+    const vencendoHoje = { _sum: { total_amount: Number(s.hoje_sum) || 0 }, _count: Number(s.hoje_count) || 0 }
+    const recebidasMes = { _sum: { total_amount: Number(s.recebidas_sum) || 0 }, _count: Number(s.recebidas_count) || 0 }
 
     return NextResponse.json({
       data: receivables,

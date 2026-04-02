@@ -86,28 +86,25 @@ export async function GET(request: NextRequest) {
     const tomorrow = new Date(today)
     tomorrow.setDate(tomorrow.getDate() + 1)
 
-    const [totalAberto, totalVencidas, vencendoHoje, pagasMes] = await Promise.all([
-      prisma.accountPayable.aggregate({
-        where: { company_id: user.companyId, deleted_at: null, status: 'PENDENTE' },
-        _sum: { total_amount: true },
-        _count: true,
-      }),
-      prisma.accountPayable.aggregate({
-        where: { company_id: user.companyId, deleted_at: null, status: 'PENDENTE', due_date: { lt: today } },
-        _sum: { total_amount: true },
-        _count: true,
-      }),
-      prisma.accountPayable.aggregate({
-        where: { company_id: user.companyId, deleted_at: null, status: 'PENDENTE', due_date: { gte: today, lt: tomorrow } },
-        _sum: { total_amount: true },
-        _count: true,
-      }),
-      prisma.accountPayable.aggregate({
-        where: { company_id: user.companyId, deleted_at: null, status: 'PAGO', updated_at: { gte: startOfMonth, lte: endOfMonth } },
-        _sum: { total_amount: true },
-        _count: true,
-      }),
-    ])
+    const summaryRows = await prisma.$queryRawUnsafe(`
+      SELECT
+        COALESCE(SUM(CASE WHEN status = 'PENDENTE' THEN total_amount ELSE 0 END), 0) as aberto_sum,
+        COUNT(CASE WHEN status = 'PENDENTE' THEN 1 END) as aberto_count,
+        COALESCE(SUM(CASE WHEN status = 'PENDENTE' AND due_date < $1 THEN total_amount ELSE 0 END), 0) as vencidas_sum,
+        COUNT(CASE WHEN status = 'PENDENTE' AND due_date < $1 THEN 1 END) as vencidas_count,
+        COALESCE(SUM(CASE WHEN status = 'PENDENTE' AND due_date >= $1 AND due_date < $2 THEN total_amount ELSE 0 END), 0) as hoje_sum,
+        COUNT(CASE WHEN status = 'PENDENTE' AND due_date >= $1 AND due_date < $2 THEN 1 END) as hoje_count,
+        COALESCE(SUM(CASE WHEN status = 'PAGO' AND updated_at >= $3 AND updated_at <= $4 THEN total_amount ELSE 0 END), 0) as pagas_sum,
+        COUNT(CASE WHEN status = 'PAGO' AND updated_at >= $3 AND updated_at <= $4 THEN 1 END) as pagas_count
+      FROM accounts_payable
+      WHERE company_id = $5 AND deleted_at IS NULL
+    `, today, tomorrow, startOfMonth, endOfMonth, user.companyId) as any[]
+
+    const s = summaryRows[0] || {}
+    const totalAberto = { _sum: { total_amount: Number(s.aberto_sum) || 0 }, _count: Number(s.aberto_count) || 0 }
+    const totalVencidas = { _sum: { total_amount: Number(s.vencidas_sum) || 0 }, _count: Number(s.vencidas_count) || 0 }
+    const vencendoHoje = { _sum: { total_amount: Number(s.hoje_sum) || 0 }, _count: Number(s.hoje_count) || 0 }
+    const pagasMes = { _sum: { total_amount: Number(s.pagas_sum) || 0 }, _count: Number(s.pagas_count) || 0 }
 
     return NextResponse.json({
       data: payables,
