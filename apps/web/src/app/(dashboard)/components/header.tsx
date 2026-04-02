@@ -20,14 +20,17 @@ const breadcrumbMap: Record<string, string> = {
 function Breadcrumb() {
   const pathname = usePathname()
   const segments = pathname.split('/').filter(Boolean)
+  // Hide UUID segments (e.g. OS detail pages — the OS number is shown in the page header)
+  const isUuid = (s: string) => /^[0-9a-f]{8}-/.test(s)
+  const visibleSegments = segments.filter(s => !isUuid(s))
 
   return (
     <nav className="flex items-center gap-1 text-sm text-gray-500">
       <span className="font-medium text-gray-700">Inicio</span>
-      {segments.map((seg, i) => (
+      {visibleSegments.map((seg, i) => (
         <span key={i} className="flex items-center gap-1">
           <ChevronRight className="h-3 w-3" />
-          <span className={cn(i === segments.length - 1 && 'text-gray-700 font-medium')}>
+          <span className={cn(i === visibleSegments.length - 1 && 'text-gray-700 font-medium')}>
             {breadcrumbMap[seg] ?? seg}
           </span>
         </span>

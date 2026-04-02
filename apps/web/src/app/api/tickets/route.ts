@@ -44,6 +44,7 @@ export async function GET(req: NextRequest) {
         orderBy: { created_at: 'desc' },
         include: {
           customers: { select: { id: true, legal_name: true } },
+          service_orders: { select: { id: true, os_number: true } },
           ticket_messages: { select: { id: true } },
         },
       }),
@@ -66,7 +67,10 @@ export async function GET(req: NextRequest) {
       ...t,
       assigned_user_name: t.assigned_to ? userMap[t.assigned_to] || null : null,
       customer_name: t.customers?.legal_name || null,
+      os_number: t.service_orders?.os_number || null,
+      os_id: t.service_orders?.id || null,
       message_count: t.ticket_messages.length,
+      service_orders: undefined,
       ticket_messages: undefined,
     }))
 

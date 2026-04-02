@@ -17,6 +17,9 @@ interface Ticket {
   assigned_to: string | null
   assigned_user_name: string | null
   customer_name: string | null
+  os_number: number | null
+  os_id: string | null
+  service_order_id: string | null
   message_count: number
   created_at: string
 }
@@ -199,6 +202,7 @@ export default function TicketsPage() {
               <th className="px-4 py-3">Assunto</th>
               <th className="px-4 py-3">Prioridade</th>
               <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">OS</th>
               <th className="px-4 py-3">Responsavel</th>
               <th className="px-4 py-3">Origem</th>
               <th className="px-4 py-3">Data</th>
@@ -207,9 +211,9 @@ export default function TicketsPage() {
           </thead>
           <tbody className="divide-y dark:divide-gray-700">
             {loading ? (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">Carregando...</td></tr>
+              <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-400">Carregando...</td></tr>
             ) : tickets.length === 0 ? (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">Nenhum ticket encontrado</td></tr>
+              <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-400">Nenhum ticket encontrado</td></tr>
             ) : (
               tickets.map(ticket => (
                 <tr key={ticket.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer">
@@ -232,6 +236,15 @@ export default function TicketsPage() {
                     <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', statusColor[ticket.status])}>
                       {statusLabel[ticket.status] ?? ticket.status}
                     </span>
+                  </td>
+                  <td className="px-4 py-3 text-xs">
+                    {ticket.os_id ? (
+                      <Link href={`/ordens/${ticket.os_id}`} className="font-medium text-blue-600 hover:underline">
+                        OS #{String(ticket.os_number).padStart(4, '0')}
+                      </Link>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-gray-600 dark:text-gray-400 text-xs">
                     {ticket.assigned_user_name ?? '—'}

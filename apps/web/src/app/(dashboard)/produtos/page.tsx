@@ -141,16 +141,18 @@ export default function ProdutosPage() {
               <th className="px-4 py-3">Tipo</th>
               <th className="px-4 py-3">Nome</th>
               <th className="px-4 py-3">Código</th>
-              <th className="px-4 py-3">Estoque</th>
+              <th className="px-4 py-3">Estoque Atual</th>
+              <th className="px-4 py-3">Estoque Mín</th>
+              <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Custo</th>
               <th className="px-4 py-3">Venda</th>
             </tr>
           </thead>
           <tbody className="divide-y">
             {loading ? (
-              <tr><td colSpan={isAdmin ? 7 : 6} className="px-4 py-8 text-center text-gray-400">Carregando...</td></tr>
+              <tr><td colSpan={isAdmin ? 9 : 8} className="px-4 py-8 text-center text-gray-400">Carregando...</td></tr>
             ) : produtos.length === 0 ? (
-              <tr><td colSpan={isAdmin ? 7 : 6} className="px-4 py-8 text-center text-gray-400">Nenhum item encontrado</td></tr>
+              <tr><td colSpan={isAdmin ? 9 : 8} className="px-4 py-8 text-center text-gray-400">Nenhum item encontrado</td></tr>
             ) : (
               produtos.map(p => {
                 const isServico = p.unit === 'SV'
@@ -186,13 +188,27 @@ export default function ProdutosPage() {
                       {isServico ? (
                         <span className="text-gray-400">—</span>
                       ) : (
-                        <>
-                          <span className={cn('flex items-center gap-1', baixo && 'text-red-600 font-medium')}>
-                            {baixo && <AlertTriangle className="h-3.5 w-3.5" />}
-                            {p.current_stock} {p.unit}
-                          </span>
-                          {baixo && <span className="text-xs text-gray-400">Mín: {p.min_stock}</span>}
-                        </>
+                        <span className="font-medium text-gray-900">{p.current_stock} {p.unit}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-gray-500">
+                      {isServico ? '—' : p.min_stock}
+                    </td>
+                    <td className="px-4 py-3">
+                      {isServico ? (
+                        <span className="text-gray-400">—</span>
+                      ) : p.current_stock === 0 ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                          <AlertTriangle className="h-3 w-3" /> Zerado
+                        </span>
+                      ) : p.current_stock <= p.min_stock ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-700">
+                          <AlertTriangle className="h-3 w-3" /> Baixo
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                          OK
+                        </span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-gray-500">{formatCurrency(p.cost_price)}</td>

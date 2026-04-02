@@ -12,6 +12,7 @@ interface Cliente {
   id: string; legal_name: string; trade_name: string | null; person_type: string
   customer_type: string; document_number: string | null; email: string | null
   phone: string | null; mobile: string | null; address_city: string | null; address_state: string | null
+  os_count: number; recent_os_count: number; last_os_at: string | null; total_os: number | null
 }
 
 const personTypeLabel: Record<string, string> = { FISICA: 'PF', JURIDICA: 'PJ' }
@@ -121,14 +122,16 @@ export default function ClientesPage() {
               <th className="px-4 py-3">Celular</th>
               <th className="px-4 py-3">Email</th>
               <th className="px-4 py-3">Cidade</th>
+              <th className="px-4 py-3 text-center">Qtd OS</th>
+              <th className="px-4 py-3">Última OS</th>
               <th className="px-4 py-3 text-right">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y">
             {loading ? (
-              <tr><td colSpan={isAdmin ? 8 : 7} className="px-4 py-8 text-center text-gray-400">Carregando...</td></tr>
+              <tr><td colSpan={isAdmin ? 10 : 9} className="px-4 py-8 text-center text-gray-400">Carregando...</td></tr>
             ) : clientes.length === 0 ? (
-              <tr><td colSpan={isAdmin ? 8 : 7} className="px-4 py-8 text-center text-gray-400">Nenhum cliente encontrado</td></tr>
+              <tr><td colSpan={isAdmin ? 10 : 9} className="px-4 py-8 text-center text-gray-400">Nenhum cliente encontrado</td></tr>
             ) : (
               clientes.map(c => (
                 <tr key={c.id} className={`hover:bg-gray-50 group ${selected.has(c.id) ? 'bg-blue-50' : ''}`}>
@@ -149,6 +152,17 @@ export default function ClientesPage() {
                   <td className="px-4 py-3 text-gray-500">{c.email || '—'}</td>
                   <td className="px-4 py-3 text-gray-500">
                     {c.address_city ? `${c.address_city}${c.address_state ? '/' + c.address_state : ''}` : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <span className="font-medium text-gray-700">{c.os_count ?? 0}</span>
+                    {c.recent_os_count >= 3 && (
+                      <span className="ml-1.5 inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-semibold text-purple-700">
+                        Recorrente
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-gray-500 text-xs">
+                    {c.last_os_at ? new Date(c.last_os_at).toLocaleDateString('pt-BR') : '—'}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

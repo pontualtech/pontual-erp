@@ -45,11 +45,40 @@ export async function GET(req: NextRequest) {
         skip: (page - 1) * limit,
         take: limit,
         orderBy: { legal_name: 'asc' },
+        include: {
+          _count: { select: { service_orders: true } },
+        },
       }),
       prisma.customer.count({ where }),
     ])
 
-    return paginated(data, total, page, limit)
+    // Calculate recent OS count (last 12 months) for recurrence badge
+    const twelveMonthsAgo = new Date()
+    twelveMonthsAgo.setFullYear(twelveMonthsAgo.getFullYear() - 1)
+
+    const customerIds = data.map(c => c.id)
+    const recentOsCounts = customerIds.length > 0
+      ? await prisma.serviceOrder.groupBy({
+          by: ['customer_id'],
+          where: {
+            customer_id: { in: customerIds },
+            created_at: { gte: twelveMonthsAgo },
+          },
+          _count: { id: true },
+        })
+      : []
+    const recentOsMap = Object.fromEntries(
+      recentOsCounts.map(r => [r.customer_id, r._count.id])
+    )
+
+    const enriched = data.map(c => ({
+      ...c,
+      os_count: c._count?.service_orders ?? c.total_os ?? 0,
+      recent_os_count: recentOsMap[c.id] ?? 0,
+      _count: undefined,
+    }))
+
+    return paginated(enriched, total, page, limit)
   } catch (err) {
     return handleError(err)
   }

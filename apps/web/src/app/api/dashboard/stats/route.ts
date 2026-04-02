@@ -30,9 +30,14 @@ export async function GET() {
       osProntas,
       faturamentoMes,
     ] = await Promise.all([
-      // OS abertas hoje
+      // OS abertas hoje (excluindo finalizadas)
       prisma.serviceOrder.count({
-        where: { company_id: cid, deleted_at: null, created_at: { gte: todayStart } },
+        where: {
+          company_id: cid,
+          deleted_at: null,
+          created_at: { gte: todayStart, lt: new Date(todayStart.getTime() + 86400000) },
+          ...(finalIds.length > 0 ? { status_id: { notIn: finalIds } } : {}),
+        },
       }),
 
       // OS em execucao (nao-finais, excluindo a primeira etapa/default)
@@ -102,11 +107,12 @@ export async function GET() {
     // Tempo medio de reparo (dias entre abertura e entrega)
     const avgRepair: { avg_days: number | null }[] = await prisma.$queryRawUnsafe(`
       SELECT
-        AVG(EXTRACT(EPOCH FROM (actual_delivery - created_at)) / 86400)::numeric(10,1) as avg_days
+        AVG(GREATEST(EXTRACT(EPOCH FROM (actual_delivery - created_at)) / 86400, 0))::numeric(10,1) as avg_days
       FROM service_orders
       WHERE company_id = $1
         AND deleted_at IS NULL
         AND actual_delivery IS NOT NULL
+        AND actual_delivery > created_at
         AND created_at >= $2
     `, cid, monthStart)
 
@@ -164,7 +170,7 @@ export async function GET() {
       pipeline: pipelineData,
       metrics: {
         avgRepairDays: avgRepair[0]?.avg_days ? Number(avgRepair[0].avg_days) : null,
-        approvalRate: quotesTotal > 0 ? Math.round((quotesApproved / quotesTotal) * 100) : null,
+        approvalRate: quotesTotal > 0 ? Math.round((quotesApproved / quotesTotal) * 100) : 0,
         avgTicketCents: avgTicket[0]?.avg_ticket ? Number(avgTicket[0].avg_ticket) : null,
       },
       recentOs: recentOs.map(o => ({
