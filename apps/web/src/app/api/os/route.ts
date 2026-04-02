@@ -24,15 +24,53 @@ export async function GET(req: NextRequest) {
       deleted_at: null,
     }
 
+    // Data-level RBAC: filter OS by role unless showAll=true
+    const showAll = url.get('showAll') === 'true'
     const ownOnly = url.get('own_only') === 'true'
+
     if (ownOnly) {
       where.technician_id = user.id
+    } else if (!showAll) {
+      const role = user.roleName // e.g. 'tecnico', 'motorista', 'admin', 'atendente', 'financeiro'
+      if (role === 'tecnico') {
+        where.technician_id = user.id
+      } else if (role === 'motorista') {
+        // Motorista only sees OS in delivery/collection-related statuses
+        const deliveryStatuses = await prisma.moduleStatus.findMany({
+          where: {
+            company_id: user.companyId,
+            module: 'os',
+            OR: [
+              { name: { contains: 'coletar', mode: 'insensitive' } },
+              { name: { contains: 'entregar', mode: 'insensitive' } },
+              { name: { contains: 'coleta', mode: 'insensitive' } },
+              { name: { contains: 'entrega', mode: 'insensitive' } },
+            ],
+          },
+          select: { id: true },
+        })
+        if (deliveryStatuses.length > 0) {
+          where.status_id = { in: deliveryStatuses.map(s => s.id) }
+        }
+      }
+      // admin, atendente, financeiro -> no filter (see all)
     }
 
     const overdue = url.get('overdue') === 'true'
 
-    if (statusIds.length === 1) where.status_id = statusIds[0]
-    else if (statusIds.length > 1) where.status_id = { in: statusIds }
+    // Apply explicit status filter — intersect with role-based filter if present
+    if (statusIds.length > 0) {
+      const roleStatusFilter = where.status_id // may be set by motorista role filter
+      if (roleStatusFilter?.in && Array.isArray(roleStatusFilter.in)) {
+        // Intersect: only keep statusIds that are also in the role-allowed set
+        const allowedSet = new Set(roleStatusFilter.in as string[])
+        const intersected = statusIds.filter(id => allowedSet.has(id))
+        where.status_id = intersected.length === 1 ? intersected[0] : { in: intersected }
+      } else {
+        if (statusIds.length === 1) where.status_id = statusIds[0]
+        else where.status_id = { in: statusIds }
+      }
+    }
 
     const filterOsType = url.get('osType')
     if (filterOsType) where.os_type = filterOsType

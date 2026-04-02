@@ -7,6 +7,14 @@ import { updateOSSchema } from '@/lib/validations/os'
 
 type Params = { params: { id: string } }
 
+/** Resolve OS lookup: UUID by id, otherwise by os_number */
+function buildOsWhere(id: string, companyId: string) {
+  const isUuid = id.includes('-') || id.length > 20
+  return isUuid
+    ? { id, company_id: companyId, deleted_at: null }
+    : { os_number: parseInt(id, 10), company_id: companyId, deleted_at: null }
+}
+
 export async function GET(req: NextRequest, { params }: Params) {
   try {
     const result = await requirePermission('os', 'view')
@@ -14,7 +22,7 @@ export async function GET(req: NextRequest, { params }: Params) {
     const user = result
 
     const os = await prisma.serviceOrder.findFirst({
-      where: { id: params.id, company_id: user.companyId, deleted_at: null },
+      where: buildOsWhere(params.id, user.companyId) as any,
       include: {
         customers: true,
         user_profiles: { select: { id: true, name: true } },
@@ -99,7 +107,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
     const user = result
 
     const existing = await prisma.serviceOrder.findFirst({
-      where: { id: params.id, company_id: user.companyId, deleted_at: null },
+      where: buildOsWhere(params.id, user.companyId) as any,
     })
     if (!existing) return error('OS não encontrada', 404)
 
@@ -114,7 +122,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
     if (data.warranty_until) data.warranty_until = new Date(data.warranty_until)
 
     const os = await prisma.serviceOrder.update({
-      where: { id: params.id },
+      where: { id: existing.id },
       data,
       include: { customers: true },
     })
@@ -142,12 +150,12 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     const user = result
 
     const existing = await prisma.serviceOrder.findFirst({
-      where: { id: params.id, company_id: user.companyId, deleted_at: null },
+      where: buildOsWhere(params.id, user.companyId) as any,
     })
     if (!existing) return error('OS não encontrada', 404)
 
     await prisma.serviceOrder.update({
-      where: { id: params.id },
+      where: { id: existing.id },
       data: { deleted_at: new Date() },
     })
 

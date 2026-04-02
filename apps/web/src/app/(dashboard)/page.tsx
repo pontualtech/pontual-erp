@@ -109,7 +109,8 @@ const priorityLabel: Record<string, string> = {
 /* ---------- Component ---------- */
 
 export default function DashboardPage() {
-  const { user, isAdmin } = useAuth()
+  const { user, isAdmin, hasPermission } = useAuth()
+  const canViewFinanceiro = hasPermission('financeiro', 'view')
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [avisos, setAvisos] = useState<Aviso[]>([])
   const [loading, setLoading] = useState(true)
@@ -155,7 +156,7 @@ export default function DashboardPage() {
     { label: 'OS Abertas Hoje', value: stats?.cards.osAbertasHoje ?? 0, icon: ClipboardList, color: 'text-blue-600 bg-blue-50' },
     { label: 'OS em Execucao', value: stats?.cards.osEmExecucao ?? 0, icon: Wrench, color: 'text-amber-600 bg-amber-50' },
     { label: 'Prontas p/ Entrega', value: stats?.cards.osProntas ?? 0, icon: Truck, color: 'text-emerald-600 bg-emerald-50' },
-    { label: 'Faturamento do Mes', value: formatCurrency(stats?.cards.faturamentoMesCents ?? 0), icon: DollarSign, color: 'text-green-600 bg-green-50' },
+    ...(canViewFinanceiro ? [{ label: 'Faturamento do Mes', value: formatCurrency(stats?.cards.faturamentoMesCents ?? 0), icon: DollarSign, color: 'text-green-600 bg-green-50' }] : []),
   ]
 
   return (

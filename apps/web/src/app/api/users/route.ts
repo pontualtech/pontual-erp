@@ -9,9 +9,14 @@ import { randomBytes } from 'crypto'
 
 export async function GET(request: NextRequest) {
   try {
-    const result = await requirePermission('core', 'view')
+    const result = await requirePermission('config', 'view')
     if (result instanceof NextResponse) return result
     const user = result
+
+    // Only admins can list all users
+    if (user.role !== 'admin') {
+      return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
+    }
 
     const params = Object.fromEntries(request.nextUrl.searchParams)
     const { page, limit, search, sortBy, sortOrder } = paginationSchema.parse(params)

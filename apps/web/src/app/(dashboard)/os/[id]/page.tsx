@@ -94,6 +94,9 @@ export default function OSDetailPage() {
   // Enquanto user nao carregou, mostrar select (API valida no backend)
   const canTransition = !user || isAdmin || hasPermission('os', 'transition')
   const canEditType = !user || isAdmin || hasPermission('os', 'edit_type')
+  const canEditOs = hasPermission('os', 'edit')
+  const canCreateOs = hasPermission('os', 'create')
+  const canCreateFiscal = hasPermission('fiscal', 'create')
   const [os, setOs] = useState<OSDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [statusMap, setStatusMap] = useState<Record<string, StatusDef>>({})
@@ -955,29 +958,37 @@ export default function OSDetailPage() {
               <Check className="h-4 w-4" /> Notificar Cliente — Pronto
             </button>
           )}
-          <button type="button" onClick={openQuoteModal}
-            className="flex items-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors">
-            <Send className="h-4 w-4" /> Enviar Orcamento
-          </button>
-          <button type="button" onClick={openNfseModal}
-            className="flex items-center gap-1.5 rounded-lg border border-purple-300 bg-purple-50 px-3 py-1.5 text-sm font-medium text-purple-700 hover:bg-purple-100 transition-colors">
-            <Receipt className="h-4 w-4" /> Emitir NFS-e
-          </button>
+          {canEditOs && (
+            <button type="button" onClick={openQuoteModal}
+              className="flex items-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors">
+              <Send className="h-4 w-4" /> Enviar Orcamento
+            </button>
+          )}
+          {canCreateFiscal && (
+            <button type="button" onClick={openNfseModal}
+              className="flex items-center gap-1.5 rounded-lg border border-purple-300 bg-purple-50 px-3 py-1.5 text-sm font-medium text-purple-700 hover:bg-purple-100 transition-colors">
+              <Receipt className="h-4 w-4" /> Emitir NFS-e
+            </button>
+          )}
           <button type="button" onClick={openPrintModal}
             className="flex items-center gap-1.5 rounded-lg border border-green-300 bg-green-50 px-3 py-1.5 text-sm font-medium text-green-700 hover:bg-green-100 transition-colors">
             <Printer className="h-4 w-4" /> Imprimir
           </button>
-          <Link href={`/os/novo?cliente=${os.customer_id || ''}`}
-            className="flex items-center gap-1.5 rounded-lg border border-green-300 bg-green-50 px-3 py-1.5 text-sm font-medium text-green-700 hover:bg-green-100 transition-colors"
-            title="Criar nova OS para o mesmo cliente">
-            <FilePlus className="h-4 w-4" /> Nova OS
-          </Link>
-          <Link href={`/os/novo?clonar=${id}`}
-            className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-100 transition-colors"
-            title="Clonar esta OS com todos os dados">
-            <Copy className="h-4 w-4" /> Clonar
-          </Link>
-          {currentStatus?.is_final && currentStatus.name !== 'Cancelada' && !os.is_warranty && (
+          {canCreateOs && (
+            <Link href={`/os/novo?cliente=${os.customer_id || ''}`}
+              className="flex items-center gap-1.5 rounded-lg border border-green-300 bg-green-50 px-3 py-1.5 text-sm font-medium text-green-700 hover:bg-green-100 transition-colors"
+              title="Criar nova OS para o mesmo cliente">
+              <FilePlus className="h-4 w-4" /> Nova OS
+            </Link>
+          )}
+          {canCreateOs && (
+            <Link href={`/os/novo?clonar=${id}`}
+              className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-100 transition-colors"
+              title="Clonar esta OS com todos os dados">
+              <Copy className="h-4 w-4" /> Clonar
+            </Link>
+          )}
+          {canCreateOs && currentStatus?.is_final && currentStatus.name !== 'Cancelada' && !os.is_warranty && (
             <button type="button" onClick={async () => {
               const issue = prompt('Descreva o problema (garantia):')
               if (!issue) return
@@ -998,10 +1009,12 @@ export default function OSDetailPage() {
               <AlertTriangle className="h-4 w-4" /> Garantia
             </button>
           )}
-          <Link href={`/os/${id}/editar`}
-            className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-gray-50 transition-colors">
-            <Edit className="h-4 w-4" /> Editar
-          </Link>
+          {canEditOs && (
+            <Link href={`/os/${id}/editar`}
+              className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-gray-50 transition-colors">
+              <Edit className="h-4 w-4" /> Editar
+            </Link>
+          )}
           <button type="button" onClick={() => { if (confirmLeave()) router.push('/os') }}
             className="rounded-lg border px-3 py-1.5 hover:bg-gray-100 transition-colors flex items-center gap-1.5 text-sm text-gray-600">
             <ArrowLeft className="h-4 w-4" /> Voltar

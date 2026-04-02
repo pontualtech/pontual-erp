@@ -86,7 +86,10 @@ const osTypeColor: Record<string, string> = {
 }
 
 export default function OSListPage() {
-  const { isAdmin } = useAuth()
+  const { isAdmin, user: authUser, hasPermission } = useAuth()
+  const isTecnico = authUser?.role === 'tecnico'
+  const isMotorista = authUser?.role === 'motorista'
+  const canCreateOs = hasPermission('os', 'create')
   const [osList, setOsList] = useState<OS[]>([])
   const [kanbanColumns, setKanbanColumns] = useState<KanbanColumn[]>([])
   const [osTypeLabel, setOsTypeLabel] = useState<Record<string, string>>(defaultOsTypeLabel)
@@ -137,6 +140,7 @@ export default function OSListPage() {
   const [showCancelled, setShowCancelled] = useState(false)
   const [allowedColumns, setAllowedColumns] = useState<string[]>([])
   const [ownOnly, setOwnOnly] = useState(false)
+  const [myOsFilter, setMyOsFilter] = useState(false) // "Minhas OS" toggle, default set after auth loads
   const [visibilityLoaded, setVisibilityLoaded] = useState(false)
   const [hiddenByUser, setHiddenByUser] = useState<Set<string>>(new Set())
   const [showColToggle, setShowColToggle] = useState(false)
@@ -150,6 +154,15 @@ export default function OSListPage() {
   const [tecnicos, setTecnicos] = useState<{ id: string; name: string }[]>([])
   const [showBulkAssign, setShowBulkAssign] = useState(false)
   const [bulkAssigning, setBulkAssigning] = useState(false)
+
+  // Default "Minhas OS" on for tecnico role
+  const [myOsInitialized, setMyOsInitialized] = useState(false)
+  useEffect(() => {
+    if (authUser && !myOsInitialized) {
+      if (isTecnico) setMyOsFilter(true)
+      setMyOsInitialized(true)
+    }
+  }, [authUser, myOsInitialized, isTecnico])
 
   // Debounce search: wait 300ms after user stops typing
   useEffect(() => {
@@ -279,6 +292,13 @@ export default function OSListPage() {
     if (overdueFilter) params.set('overdue', 'true')
     if (!showCancelled) params.set('hideCancelled', 'true')
     if (ownOnly) params.set('own_only', 'true')
+    // "Minhas OS" toggle: when active, explicitly send technicianId for any role
+    if (myOsFilter && authUser) {
+      params.set('technicianId', authUser.id)
+    } else if (!myOsFilter && (isTecnico || isMotorista)) {
+      // tecnico/motorista explicitly asked to see all
+      params.set('showAll', 'true')
+    }
     if (dateFrom) params.set('dateFrom', dateFrom)
     if (dateTo) params.set('dateTo', dateTo)
     fetch(`/api/os?${params}`)
@@ -292,7 +312,7 @@ export default function OSListPage() {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { loadOS(); setSelected(new Set()) }, [debouncedSearch, statusFilter, typeFilter, locationFilter, equipFilter, overdueFilter, showCancelled, page, visibilityLoaded, ownOnly, dateFrom, dateTo])
+  useEffect(() => { loadOS(); setSelected(new Set()) }, [debouncedSearch, statusFilter, typeFilter, locationFilter, equipFilter, overdueFilter, showCancelled, page, visibilityLoaded, ownOnly, myOsFilter, dateFrom, dateTo])
 
   function toggleSelect(id: string) {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -641,12 +661,14 @@ export default function OSListPage() {
             )}
           </>
         )}
-        <Link
-          href="/os/novo"
-          className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 whitespace-nowrap"
-        >
-          <Plus className="h-4 w-4" /> Nova OS
-        </Link>
+        {canCreateOs && (
+          <Link
+            href="/os/novo"
+            className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 whitespace-nowrap"
+          >
+            <Plus className="h-4 w-4" /> Nova OS
+          </Link>
+        )}
       </div>
 
       {/* Row 2: Compact filters */}
@@ -723,6 +745,16 @@ export default function OSListPage() {
           Canceladas
         </label>
         <span className="text-gray-300">|</span>
+        <button type="button"
+          onClick={() => { setMyOsFilter(!myOsFilter); setPage(1) }}
+          title="Filtrar apenas OS atribuidas a mim"
+          className={cn(
+            'flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors',
+            myOsFilter ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white text-gray-600 hover:bg-gray-50'
+          )}>
+          Minhas OS
+        </button>
+        <span className="text-gray-300">|</span>
         {/* Column toggle */}
         <div className="relative">
           <button type="button" onClick={() => setShowColToggle(!showColToggle)}
@@ -762,9 +794,13 @@ export default function OSListPage() {
         )}
       </div>
 
-      {ownOnly && !isAdmin && (
+      {(ownOnly || myOsFilter) && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-700">
-          Exibindo apenas suas OS atribuidas.
+          Exibindo apenas suas OS atribuidas.{' '}
+          {myOsFilter && (
+            <button type="button" onClick={() => { setMyOsFilter(false); setPage(1) }}
+              className="underline text-amber-800 hover:text-amber-900">Ver todas</button>
+          )}
         </div>
       )}
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { updateUserSchema, assignRoleSchema } from '@pontual/utils/validation'
@@ -58,6 +59,18 @@ export async function PUT(request: NextRequest, { params }: Params) {
       ...(data.preferences ? { preferences: data.preferences as any } : {}),
       ...(body.roleId ? { role_id: body.roleId } : {}),
       ...(body.isActive !== undefined ? { is_active: body.isActive } : {}),
+    }
+
+    // Update password in Supabase Auth if provided
+    if (body.password) {
+      const supabaseAdmin = createAdminClient()
+      const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(
+        params.id,
+        { password: body.password }
+      )
+      if (authError) {
+        return error(authError.message || 'Erro ao atualizar senha', 500)
+      }
     }
 
     const updated = await prisma.userProfile.update({

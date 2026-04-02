@@ -7,9 +7,14 @@ import { createRoleSchema } from '@pontual/utils/validation'
 
 export async function GET() {
   try {
-    const result = await requirePermission('core', 'view')
+    const result = await requirePermission('config', 'view')
     if (result instanceof NextResponse) return result
     const user = result
+
+    // Only admins can list roles
+    if (user.role !== 'admin') {
+      return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
+    }
 
     const roles = await prisma.role.findMany({
       where: { company_id: user.companyId },

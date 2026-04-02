@@ -17,6 +17,8 @@ interface NavItem {
   href: string
   icon: React.ElementType
   module?: string
+  action?: string
+  adminOnly?: boolean
   children?: { label: string; href: string; icon: React.ElementType }[]
 }
 
@@ -32,11 +34,11 @@ const navGroups: { title: string; items: NavItem[] }[] = [
     items: [
       { label: 'Ordens de Servico', href: '/os', icon: ClipboardList, module: 'os' },
       { label: 'Clientes', href: '/clientes', icon: Users, module: 'clientes' },
-      { label: 'Tickets', href: '/tickets', icon: MessageSquare, module: 'core' },
-      { label: 'Chat', href: '/chat', icon: MessageCircle, module: 'core' },
-      { label: 'WhatsApp', href: '/integracoes/chatwoot', icon: Phone, module: 'core' },
-      { label: 'Logistica', href: '/logistica', icon: Truck, module: 'core' },
-      { label: 'Contratos', href: '/contratos', icon: FileText, module: 'contratos' },
+      { label: 'Tickets', href: '/tickets', icon: MessageSquare, module: 'os' },
+      { label: 'Chat', href: '/chat', icon: MessageCircle, adminOnly: true },
+      { label: 'WhatsApp', href: '/integracoes/chatwoot', icon: Phone, adminOnly: true },
+      { label: 'Logistica', href: '/logistica', icon: Truck, module: 'os' },
+      { label: 'Contratos', href: '/contratos', icon: FileText, adminOnly: true },
     ],
   },
   {
@@ -47,6 +49,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
         href: '/produtos',
         icon: Package,
         module: 'estoque',
+        action: 'read',
         children: [
           { label: 'Fornecedores', href: '/estoque/fornecedores', icon: Building2 },
           { label: 'Compras', href: '/estoque/compras', icon: ShoppingCart },
@@ -60,13 +63,13 @@ const navGroups: { title: string; items: NavItem[] }[] = [
     items: [
       { label: 'Financeiro', href: '/financeiro', icon: DollarSign, module: 'financeiro' },
       { label: 'Fiscal', href: '/fiscal', icon: FileText, module: 'fiscal' },
-      { label: 'BI / Relatorios', href: '/relatorios-bi', icon: BarChart3, module: 'os' },
+      { label: 'BI / Relatorios', href: '/relatorios-bi', icon: BarChart3, module: 'financeiro' },
     ],
   },
   {
     title: 'Sistema',
     items: [
-      { label: 'Configuracoes', href: '/config', icon: Settings },
+      { label: 'Configuracoes', href: '/config', icon: Settings, adminOnly: true },
     ],
   },
 ]
@@ -75,14 +78,15 @@ export function Sidebar({ user }: { user: AuthUser }) {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
-  const { hasPermission } = useAuth()
+  const { isAdmin, hasPermission } = useAuth()
 
   const filteredGroups = navGroups
     .map(g => ({
       ...g,
       items: g.items.filter(i => {
+        if (i.adminOnly) return isAdmin
         if (!i.module) return true
-        return hasPermission(i.module, 'view')
+        return hasPermission(i.module, i.action ?? 'view')
       }),
     }))
     .filter(g => g.items.length > 0)
