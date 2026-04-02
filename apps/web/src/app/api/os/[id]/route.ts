@@ -111,6 +111,11 @@ export async function PUT(req: NextRequest, { params }: Params) {
     })
     if (!existing) return error('OS não encontrada', 404)
 
+    // Técnico só pode editar OS atribuídas a ele
+    if (user.roleName === 'tecnico' && existing.technician_id !== user.id) {
+      return error('Você só pode editar OS atribuídas a você', 403)
+    }
+
     const body = await req.json()
     // Validar com Zod strict — rejeita campos não permitidos
     const validated = updateOSSchema.parse(body)

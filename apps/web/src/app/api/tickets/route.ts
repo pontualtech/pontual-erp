@@ -82,7 +82,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const result = await requirePermission('core', 'create')
+    const result = await requirePermission('os', 'edit')
     if (result instanceof NextResponse) return result
     const user = result
 

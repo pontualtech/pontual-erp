@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const result = await requirePermission('core', 'edit')
+    const result = await requirePermission('config', 'edit')
     if (result instanceof NextResponse) return result
     const admin = result
 
