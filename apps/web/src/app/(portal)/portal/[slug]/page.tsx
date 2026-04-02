@@ -136,6 +136,19 @@ export default function PortalDashboardPage() {
           <p className="text-gray-500 mt-1">Acompanhe suas ordens de servico</p>
         </div>
 
+        {/* Action button */}
+        <div className="mb-6">
+          <Link
+            href={`/portal/${slug}/nova-os`}
+            className="inline-flex items-center gap-2 bg-blue-600 text-white font-medium py-2.5 px-4 rounded-lg hover:bg-blue-700 transition-colors text-sm"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Nova Ordem de Servico
+          </Link>
+        </div>
+
         {/* Summary cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
           <div className="bg-white rounded-xl border border-gray-200 p-5">

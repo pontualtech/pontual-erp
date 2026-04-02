@@ -162,6 +162,12 @@ export default function OSDetailPage() {
   const [loadingQuotePreview, setLoadingQuotePreview] = useState(false)
   const [sendingQuote, setSendingQuote] = useState(false)
 
+  // Quote versions
+  const [quoteVersions, setQuoteVersions] = useState<any[]>([])
+  const [selectedQuoteVersion, setSelectedQuoteVersion] = useState<number | null>(null)
+  const [creatingVersion, setCreatingVersion] = useState(false)
+  const [loadingVersions, setLoadingVersions] = useState(false)
+
   // Editable text fields (auto-save on blur)
   const [editDiagnosis, setEditDiagnosis] = useState('')
   const [editNotes, setEditNotes] = useState('')
@@ -269,6 +275,36 @@ export default function OSDetailPage() {
       .finally(() => setLoading(false))
   }
 
+  function loadQuoteVersions() {
+    setLoadingVersions(true)
+    fetch(`/api/os/${id}/orcamento/versao`)
+      .then(r => r.json())
+      .then(d => {
+        const versions = d.data ?? []
+        setQuoteVersions(versions)
+        if (versions.length > 0 && selectedQuoteVersion === null) {
+          setSelectedQuoteVersion(versions[0].version)
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoadingVersions(false))
+  }
+
+  async function handleCreateNewVersion() {
+    setCreatingVersion(true)
+    try {
+      const res = await fetch(`/api/os/${id}/orcamento/versao`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao criar versao')
+      toast.success(`Versao v${data.data.version} do orcamento criada!`)
+      loadQuoteVersions()
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao criar nova versao')
+    } finally {
+      setCreatingVersion(false)
+    }
+  }
+
   useEffect(() => {
     fetch('/api/users').then(r => r.json()).then(d => setUsers(d.data ?? [])).catch(() => toast.error('Erro ao carregar usuarios'))
     fetch('/api/settings/tipos-os').then(r => r.json()).then(d => setTiposOS(d.data ?? [])).catch(() => {})
@@ -293,7 +329,7 @@ export default function OSDetailPage() {
       .catch(() => toast.error('Erro ao carregar status'))
   }, [])
 
-  useEffect(() => { loadOS() }, [id])
+  useEffect(() => { loadOS(); loadQuoteVersions() }, [id])
 
   // Search products/services for items
   const searchProdutos = useCallback((q: string) => {

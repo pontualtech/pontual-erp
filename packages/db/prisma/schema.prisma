@@ -51,6 +51,7 @@ model Company {
   chatbot_logs        ChatbotLog[]
   contracts           Contract[]
   price_table         PriceTable[]
+  nps_surveys         NpsSurvey[]
 
   @@map("companies")
 }
@@ -370,6 +371,7 @@ model Customer {
   tickets              Ticket[]
   customer_access      CustomerAccess[]
   contracts            Contract[]
+  nps_surveys          NpsSurvey[]
 
   @@unique([company_id, vhsys_id])
   @@index([company_id], map: "idx_customers_company")
@@ -425,6 +427,7 @@ model ServiceOrder {
   module_statuses       ModuleStatus          @relation(fields: [status_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   user_profiles         UserProfile?          @relation(fields: [technician_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   tickets               Ticket[]
+  nps_surveys           NpsSurvey[]
 
   @@unique([company_id, os_number])
   @@index([company_id], map: "idx_os_company")
@@ -485,6 +488,7 @@ model Quote {
   company_id       String
   service_order_id String
   quote_number     Int
+  version          Int          @default(1)
   status           String?      @default("DRAFT")
   total_amount     Int?         @default(0)
   valid_until      DateTime?    @db.Timestamptz(6)
@@ -1203,6 +1207,27 @@ model ContractVisit {
 
   @@index([contract_id], map: "idx_contract_visits")
   @@map("contract_visits")
+}
+
+// ========== NPS / PESQUISA DE SATISFAÇÃO ==========
+
+model NpsSurvey {
+  id               String       @id @default(cuid())
+  company_id       String
+  service_order_id String
+  customer_id      String
+  score            Int          // 0-10
+  comment          String?
+  created_at       DateTime     @default(now()) @db.Timestamptz(6)
+
+  companies        Company      @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  service_orders   ServiceOrder @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customers        Customer     @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([service_order_id, customer_id])
+  @@index([company_id], map: "idx_nps_surveys_company")
+  @@index([service_order_id], map: "idx_nps_surveys_os")
+  @@map("nps_surveys")
 }
 
 model PriceTable {

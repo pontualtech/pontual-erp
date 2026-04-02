@@ -66,6 +66,11 @@ export default function PortalOSDetailPage() {
   const [actionLoading, setActionLoading] = useState(false)
   const [company, setCompany] = useState<{ name: string } | null>(null)
   const [customer, setCustomer] = useState<{ name: string } | null>(null)
+  const [npsScore, setNpsScore] = useState<number | null>(null)
+  const [npsComment, setNpsComment] = useState('')
+  const [npsSubmitted, setNpsSubmitted] = useState(false)
+  const [npsExisting, setNpsExisting] = useState<{ score: number; comment?: string } | null>(null)
+  const [npsLoading, setNpsLoading] = useState(false)
 
   function loadOS() {
     // Auth token is sent automatically via httpOnly cookie
@@ -84,12 +89,51 @@ export default function PortalOSDetailPage() {
       .finally(() => setLoading(false))
   }
 
+  function loadNps() {
+    fetch(`/api/portal/nps?service_order_id=${osId}`)
+      .then(r => r.json())
+      .then(res => {
+        if (res?.data) {
+          setNpsExisting(res.data)
+        }
+      })
+      .catch(() => {})
+  }
+
+  async function handleNpsSubmit() {
+    if (npsScore === null) return
+    setNpsLoading(true)
+    try {
+      const res = await fetch('/api/portal/nps', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          service_order_id: osId,
+          score: npsScore,
+          comment: npsComment.trim() || undefined,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data.error || 'Erro ao enviar avaliacao')
+        return
+      }
+      toast.success(data.data.message)
+      setNpsSubmitted(true)
+    } catch {
+      toast.error('Erro de conexao')
+    } finally {
+      setNpsLoading(false)
+    }
+  }
+
   useEffect(() => {
     const savedCompany = localStorage.getItem('portal_company')
     const savedCustomer = localStorage.getItem('portal_customer')
     if (savedCompany) setCompany(JSON.parse(savedCompany))
     if (savedCustomer) setCustomer(JSON.parse(savedCustomer))
     loadOS()
+    loadNps()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [osId])
 
@@ -132,6 +176,9 @@ export default function PortalOSDetailPage() {
 
   const isProntaOuEntregue = os?.status.name.toLowerCase().includes('pronta') ||
     os?.status.name.toLowerCase().includes('entregue')
+
+  const isEntregue = os?.status.name.toLowerCase().includes('entregue')
+  const showNpsSurvey = isEntregue && !npsExisting && !npsSubmitted
 
   if (loading) {
     return (
@@ -441,6 +488,105 @@ export default function PortalOSDetailPage() {
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* NPS Survey - Already answered */}
+        {isEntregue && npsExisting && (
+          <div className="bg-green-50 border border-green-200 rounded-xl p-6 mb-6">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="font-semibold text-green-900">Obrigado pela sua avaliacao!</h3>
+                <p className="text-green-700 text-sm">Voce deu nota <strong>{npsExisting.score}</strong> para esta OS.</p>
+              </div>
+            </div>
+            {npsExisting.comment && (
+              <p className="text-green-700 text-sm mt-2 ml-13 italic">&quot;{npsExisting.comment}&quot;</p>
+            )}
+          </div>
+        )}
+
+        {/* NPS Survey - Submitted just now */}
+        {isEntregue && npsSubmitted && !npsExisting && (
+          <div className="bg-green-50 border border-green-200 rounded-xl p-6 mb-6 text-center">
+            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+              <svg className="w-6 h-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <h3 className="font-semibold text-green-900 text-lg">Obrigado!</h3>
+            <p className="text-green-700 mt-1">Sua avaliacao foi registrada com sucesso.</p>
+          </div>
+        )}
+
+        {/* NPS Survey Widget */}
+        {showNpsSurvey && (
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-6 mb-6">
+            <h3 className="font-semibold text-blue-900 text-lg mb-2">Como foi sua experiencia?</h3>
+            <p className="text-blue-700 text-sm mb-4">
+              Avalie de 0 a 10: qual a probabilidade de voce recomendar nossos servicos?
+            </p>
+
+            {/* Score buttons */}
+            <div className="flex flex-wrap gap-2 mb-4">
+              {Array.from({ length: 11 }, (_, i) => {
+                let btnColor = 'bg-red-100 text-red-700 hover:bg-red-200 border-red-200'
+                if (i >= 7 && i <= 8) btnColor = 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200 border-yellow-200'
+                if (i >= 9) btnColor = 'bg-green-100 text-green-700 hover:bg-green-200 border-green-200'
+
+                let selectedColor = 'bg-red-600 text-white border-red-600'
+                if (i >= 7 && i <= 8) selectedColor = 'bg-yellow-500 text-white border-yellow-500'
+                if (i >= 9) selectedColor = 'bg-green-600 text-white border-green-600'
+
+                const isSelected = npsScore === i
+
+                return (
+                  <button
+                    key={i}
+                    onClick={() => setNpsScore(i)}
+                    className={`w-11 h-11 rounded-lg border-2 font-bold text-sm transition-all ${
+                      isSelected ? selectedColor : btnColor
+                    }`}
+                  >
+                    {i}
+                  </button>
+                )
+              })}
+            </div>
+
+            <div className="flex justify-between text-xs text-gray-500 mb-4 px-1">
+              <span>Nada provavel</span>
+              <span>Muito provavel</span>
+            </div>
+
+            {/* Comment */}
+            {npsScore !== null && (
+              <div className="mb-4">
+                <textarea
+                  value={npsComment}
+                  onChange={e => setNpsComment(e.target.value)}
+                  placeholder="Deixe um comentario (opcional)..."
+                  rows={2}
+                  className="w-full px-4 py-3 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-400 resize-none bg-white"
+                />
+              </div>
+            )}
+
+            {/* Submit */}
+            {npsScore !== null && (
+              <button
+                onClick={handleNpsSubmit}
+                disabled={npsLoading}
+                className="w-full py-3 px-6 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold rounded-xl transition-colors"
+              >
+                {npsLoading ? 'Enviando...' : 'Enviar Avaliacao'}
+              </button>
+            )}
           </div>
         )}
 

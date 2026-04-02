@@ -111,7 +111,18 @@ export default function PortalOSListPage() {
       <main className="max-w-5xl mx-auto px-4 py-6">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-gray-900">Minhas Ordens de Servico</h1>
-          <span className="text-sm text-gray-500">{total} OS encontradas</span>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-gray-500 hidden sm:block">{total} OS encontradas</span>
+            <Link
+              href={`/portal/${slug}/nova-os`}
+              className="inline-flex items-center gap-1.5 bg-blue-600 text-white font-medium py-2 px-3.5 rounded-lg hover:bg-blue-700 transition-colors text-sm"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Nova OS
+            </Link>
+          </div>
         </div>
 
         {loading ? (
