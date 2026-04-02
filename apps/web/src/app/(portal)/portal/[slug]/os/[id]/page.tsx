@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
@@ -67,21 +67,9 @@ export default function PortalOSDetailPage() {
   const [company, setCompany] = useState<{ name: string } | null>(null)
   const [customer, setCustomer] = useState<{ name: string } | null>(null)
 
-  const getToken = useCallback(() => {
-    if (typeof window === 'undefined') return null
-    return localStorage.getItem('portal_token')
-  }, [])
-
   function loadOS() {
-    const token = getToken()
-    if (!token) {
-      router.push(`/portal/${slug}/login`)
-      return
-    }
-
-    fetch(`/api/portal/os/${osId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    // Auth token is sent automatically via httpOnly cookie
+    fetch(`/api/portal/os/${osId}`)
       .then(r => {
         if (r.status === 401) {
           router.push(`/portal/${slug}/login`)
@@ -106,16 +94,12 @@ export default function PortalOSDetailPage() {
   }, [osId])
 
   async function handleAction(action: 'approve' | 'reject' | 'comment', message?: string) {
-    const token = getToken()
-    if (!token) return
-
     setActionLoading(true)
     try {
       const res = await fetch(`/api/portal/os/${osId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ action, message }),
       })
@@ -137,10 +121,10 @@ export default function PortalOSDetailPage() {
   }
 
   function handleLogout() {
-    localStorage.removeItem('portal_token')
     localStorage.removeItem('portal_customer')
     localStorage.removeItem('portal_company')
-    router.push(`/portal/${slug}/login`)
+    fetch('/api/portal/logout', { method: 'POST' })
+      .finally(() => router.push(`/portal/${slug}/login`))
   }
 
   const isAguardandoAprovacao = os?.status.name.toLowerCase().includes('aguardando') &&

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
@@ -39,21 +39,9 @@ export default function PortalTicketDetailPage() {
   const [customer, setCustomer] = useState<{ name: string } | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  const getToken = useCallback(() => {
-    if (typeof window === 'undefined') return null
-    return localStorage.getItem('portal_token')
-  }, [])
-
   function loadTicket() {
-    const token = getToken()
-    if (!token) {
-      router.push(`/portal/${slug}/login`)
-      return
-    }
-
-    fetch(`/api/portal/tickets/${ticketId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    // Auth token is sent automatically via httpOnly cookie
+    fetch(`/api/portal/tickets/${ticketId}`)
       .then(r => {
         if (r.status === 401) {
           router.push(`/portal/${slug}/login`)
@@ -85,16 +73,12 @@ export default function PortalTicketDetailPage() {
     e.preventDefault()
     if (!message.trim()) return
 
-    const token = getToken()
-    if (!token) return
-
     setSending(true)
     try {
       const res = await fetch(`/api/portal/tickets/${ticketId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ message }),
       })
@@ -115,10 +99,10 @@ export default function PortalTicketDetailPage() {
   }
 
   function handleLogout() {
-    localStorage.removeItem('portal_token')
     localStorage.removeItem('portal_customer')
     localStorage.removeItem('portal_company')
-    router.push(`/portal/${slug}/login`)
+    fetch('/api/portal/logout', { method: 'POST' })
+      .finally(() => router.push(`/portal/${slug}/login`))
   }
 
   const statusColors: Record<string, string> = {

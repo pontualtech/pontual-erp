@@ -3,35 +3,40 @@
  * Para produção com múltiplas instâncias, migrar para Redis
  */
 
-const windows = new Map<string, { count: number; resetAt: number }>()
+const rateMap = new Map<string, { count: number; resetAt: number }>()
 
-export function rateLimit(
-  key: string,
-  limit: number,
-  windowMs: number
-): { success: boolean; remaining: number } {
-  const now = Date.now()
-  const record = windows.get(key)
-
-  if (!record || now > record.resetAt) {
-    windows.set(key, { count: 1, resetAt: now + windowMs })
-    return { success: true, remaining: limit - 1 }
-  }
-
-  if (record.count >= limit) {
-    return { success: false, remaining: 0 }
-  }
-
-  record.count++
-  return { success: true, remaining: limit - record.count }
-}
-
-// Cleanup a cada 60s para evitar memory leak
+// Cleanup expired entries every 5 minutes
 if (typeof setInterval !== 'undefined') {
   setInterval(() => {
     const now = Date.now()
-    for (const [key, record] of windows) {
-      if (now > record.resetAt) windows.delete(key)
+    for (const [key, val] of rateMap) {
+      if (val.resetAt < now) rateMap.delete(key)
     }
-  }, 60_000)
+  }, 5 * 60 * 1000)
+}
+
+export function rateLimit(
+  ip: string,
+  maxRequests: number = 100,
+  windowMs: number = 60000
+): { allowed: boolean; remaining: number } {
+  const now = Date.now()
+  const entry = rateMap.get(ip)
+
+  if (!entry || entry.resetAt < now) {
+    rateMap.set(ip, { count: 1, resetAt: now + windowMs })
+    return { allowed: true, remaining: maxRequests - 1 }
+  }
+
+  entry.count++
+  if (entry.count > maxRequests) {
+    return { allowed: false, remaining: 0 }
+  }
+
+  return { allowed: true, remaining: maxRequests - entry.count }
+}
+
+export function getClientIp(req: Request): string {
+  const forwarded = req.headers.get('x-forwarded-for')
+  return forwarded?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || 'unknown'
 }

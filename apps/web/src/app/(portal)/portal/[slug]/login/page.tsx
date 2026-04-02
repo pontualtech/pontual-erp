@@ -70,8 +70,8 @@ export default function PortalLoginPage() {
         return
       }
 
-      // Salvar token no localStorage tambem (para uso no client)
-      localStorage.setItem('portal_token', data.data.token)
+      // Token is stored in httpOnly cookie by the server (secure, not accessible via JS)
+      // Only store non-sensitive display data in localStorage
       localStorage.setItem('portal_customer', JSON.stringify(data.data.customer))
       localStorage.setItem('portal_company', JSON.stringify(data.data.company))
 

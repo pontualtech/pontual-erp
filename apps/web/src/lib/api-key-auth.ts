@@ -101,7 +101,7 @@ export async function authenticateApiKey(
     60 * 1000 // 1 minuto
   )
 
-  if (!rl.success) {
+  if (!rl.allowed) {
     return NextResponse.json(
       { error: 'Rate limit excedido. Tente novamente em 1 minuto.' },
       { status: 429 }

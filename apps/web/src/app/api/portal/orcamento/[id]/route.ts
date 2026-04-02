@@ -4,6 +4,7 @@ import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { sendEmail } from '@/lib/send-email'
 import { createHmac } from 'crypto'
+import { rateLimit, getClientIp } from '@/lib/rate-limit'
 
 type Params = { params: { id: string } }
 
@@ -100,6 +101,12 @@ export async function GET(request: NextRequest, { params }: Params) {
  */
 export async function POST(request: NextRequest, { params }: Params) {
   try {
+    const ip = getClientIp(request)
+    const { allowed } = rateLimit(ip, 10, 60000) // 10 per minute
+    if (!allowed) {
+      return NextResponse.json({ error: 'Muitas tentativas. Aguarde um momento.' }, { status: 429 })
+    }
+
     const body = await request.json()
     const { token, slug, action, reason, payment_method } = body as {
       token?: string

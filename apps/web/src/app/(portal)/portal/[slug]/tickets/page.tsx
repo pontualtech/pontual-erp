@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
@@ -40,21 +40,9 @@ export default function PortalTicketsPage() {
   const [company, setCompany] = useState<{ name: string } | null>(null)
   const [customer, setCustomer] = useState<{ name: string } | null>(null)
 
-  const getToken = useCallback(() => {
-    if (typeof window === 'undefined') return null
-    return localStorage.getItem('portal_token')
-  }, [])
-
   function loadTickets() {
-    const token = getToken()
-    if (!token) {
-      router.push(`/portal/${slug}/login`)
-      return
-    }
-
-    fetch('/api/portal/tickets', {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    // Auth token is sent automatically via httpOnly cookie
+    fetch('/api/portal/tickets')
       .then(r => {
         if (r.status === 401) {
           router.push(`/portal/${slug}/login`)
@@ -78,17 +66,12 @@ export default function PortalTicketsPage() {
     loadTickets()
 
     // Carregar OS para vincular ao ticket
-    const token = getToken()
-    if (token) {
-      fetch('/api/portal/os?limit=50', {
-        headers: { Authorization: `Bearer ${token}` },
+    fetch('/api/portal/os?limit=50')
+      .then(r => r.json())
+      .then(res => {
+        if (res?.data) setOsList(res.data)
       })
-        .then(r => r.json())
-        .then(res => {
-          if (res?.data) setOsList(res.data)
-        })
-        .catch(() => {})
-    }
+      .catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug])
 
@@ -99,16 +82,12 @@ export default function PortalTicketsPage() {
       return
     }
 
-    const token = getToken()
-    if (!token) return
-
     setCreating(true)
     try {
       const res = await fetch('/api/portal/tickets', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           subject: newSubject,
@@ -137,10 +116,10 @@ export default function PortalTicketsPage() {
   }
 
   function handleLogout() {
-    localStorage.removeItem('portal_token')
     localStorage.removeItem('portal_customer')
     localStorage.removeItem('portal_company')
-    router.push(`/portal/${slug}/login`)
+    fetch('/api/portal/logout', { method: 'POST' })
+      .finally(() => router.push(`/portal/${slug}/login`))
   }
 
   const statusColors: Record<string, string> = {

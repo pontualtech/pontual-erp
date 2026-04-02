@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 
@@ -26,29 +26,16 @@ export default function PortalDashboardPage() {
   const [customer, setCustomer] = useState<{ id: string; name: string } | null>(null)
   const [company, setCompany] = useState<{ id: string; name: string; slug: string } | null>(null)
 
-  const getToken = useCallback(() => {
-    if (typeof window === 'undefined') return null
-    return localStorage.getItem('portal_token')
-  }, [])
-
   useEffect(() => {
-    const token = getToken()
-    if (!token) {
-      router.push(`/portal/${slug}/login`)
-      return
-    }
-
     const savedCustomer = localStorage.getItem('portal_customer')
     const savedCompany = localStorage.getItem('portal_company')
     if (savedCustomer) setCustomer(JSON.parse(savedCustomer))
     if (savedCompany) setCompany(JSON.parse(savedCompany))
 
-    fetch('/api/portal/os?limit=10', {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    // Auth token is sent automatically via httpOnly cookie
+    fetch('/api/portal/os?limit=10')
       .then(r => {
         if (r.status === 401) {
-          localStorage.removeItem('portal_token')
           router.push(`/portal/${slug}/login`)
           return null
         }
@@ -59,13 +46,15 @@ export default function PortalDashboardPage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [slug, router, getToken])
+  }, [slug, router])
 
   function handleLogout() {
-    localStorage.removeItem('portal_token')
+    // Clear display data from localStorage
     localStorage.removeItem('portal_customer')
     localStorage.removeItem('portal_company')
-    router.push(`/portal/${slug}/login`)
+    // Logout clears the httpOnly cookie server-side
+    fetch('/api/portal/logout', { method: 'POST' })
+      .finally(() => router.push(`/portal/${slug}/login`))
   }
 
   const osEmAndamento = osList.filter(

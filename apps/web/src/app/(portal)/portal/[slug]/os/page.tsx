@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 
@@ -30,32 +30,17 @@ export default function PortalOSListPage() {
   const [company, setCompany] = useState<{ name: string } | null>(null)
   const [customer, setCustomer] = useState<{ name: string } | null>(null)
 
-  const getToken = useCallback(() => {
-    if (typeof window === 'undefined') return null
-    return localStorage.getItem('portal_token')
-  }, [])
-
   useEffect(() => {
-    const token = getToken()
-    if (!token) {
-      router.push(`/portal/${slug}/login`)
-      return
-    }
-
     const savedCompany = localStorage.getItem('portal_company')
     const savedCustomer = localStorage.getItem('portal_customer')
     if (savedCompany) setCompany(JSON.parse(savedCompany))
     if (savedCustomer) setCustomer(JSON.parse(savedCustomer))
-  }, [slug, router, getToken])
+  }, [slug, router])
 
   useEffect(() => {
-    const token = getToken()
-    if (!token) return
-
     setLoading(true)
-    fetch(`/api/portal/os?page=${page}&limit=20`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    // Auth token is sent automatically via httpOnly cookie
+    fetch(`/api/portal/os?page=${page}&limit=20`)
       .then(r => {
         if (r.status === 401) {
           router.push(`/portal/${slug}/login`)
@@ -71,13 +56,13 @@ export default function PortalOSListPage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [page, slug, router, getToken])
+  }, [page, slug, router])
 
   function handleLogout() {
-    localStorage.removeItem('portal_token')
     localStorage.removeItem('portal_customer')
     localStorage.removeItem('portal_company')
-    router.push(`/portal/${slug}/login`)
+    fetch('/api/portal/logout', { method: 'POST' })
+      .finally(() => router.push(`/portal/${slug}/login`))
   }
 
   const totalPages = Math.ceil(total / 20)

@@ -1,10 +1,17 @@
-import { NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@pontual/db'
 import { success, error, handleError } from '@/lib/api-response'
+import { rateLimit, getClientIp } from '@/lib/rate-limit'
 
 export async function POST(request: NextRequest) {
   try {
+    const ip = getClientIp(request)
+    const { allowed } = rateLimit(ip, 5, 60000) // 5 per minute
+    if (!allowed) {
+      return NextResponse.json({ error: 'Muitas tentativas. Aguarde um momento.' }, { status: 429 })
+    }
+
     const body = await request.json()
     const { email, password } = body
 

@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     // Rate limiting: 5 tentativas por documento a cada 15 minutos
     const rateLimitKey = `portal-auth:${cleanDoc}`
     const rl = rateLimit(rateLimitKey, 5, 15 * 60 * 1000)
-    if (!rl.success) {
+    if (!rl.allowed) {
       return NextResponse.json(
         { error: 'Muitas tentativas. Tente novamente em 15 minutos.' },
         { status: 429 }
@@ -89,9 +89,9 @@ export async function POST(req: NextRequest) {
     // Criar token
     const token = createPortalToken(customer.id, company.id)
 
+    // Token is only sent via httpOnly cookie, never in the response body
     const response = NextResponse.json({
       data: {
-        token,
         customer: {
           id: customer.id,
           name: customer.legal_name,
