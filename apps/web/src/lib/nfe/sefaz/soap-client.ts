@@ -56,8 +56,7 @@ export async function sendSoapRequest(req: SoapRequest): Promise<string> {
       path: urlObj.pathname,
       method: 'POST',
       headers: {
-        'Content-Type': 'application/soap+xml; charset=utf-8',
-        'SOAPAction': req.action,
+        'Content-Type': `application/soap+xml; charset=utf-8; action="${req.action}"`,
         'Content-Length': Buffer.byteLength(envelope),
       },
       key: req.privateKeyPem,
