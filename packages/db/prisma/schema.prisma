@@ -776,11 +776,18 @@ model Invoice {
   notes            String?
   created_at       DateTime?     @default(now()) @db.Timestamptz(6)
   updated_at       DateTime?     @default(now()) @db.Timestamptz(6)
-  fiscal_logs      FiscalLog[]
-  invoice_items    InvoiceItem[]
-  companies        Company       @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  customers        Customer?     @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  service_orders   ServiceOrder? @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  nfe_tipo             String?
+  nfe_referenced_keys  Json?         @default("[]")
+  payment_method_nfe   String?       @default("99")
+  payment_indicator    Int?          @default(1)
+  cancelled_at         DateTime?     @db.Timestamptz(6)
+  source_chave         String?
+  fiscal_logs          FiscalLog[]
+  invoice_items        InvoiceItem[]
+  nfe_events           NfeEvent[]
+  companies            Company       @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customers            Customer?     @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  service_orders       ServiceOrder? @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([access_key], map: "idx_invoices_access_key")
   @@index([company_id], map: "idx_invoices_company")
@@ -800,6 +807,8 @@ model InvoiceItem {
   cfop         String?
   cst          String?
   taxes        Json?    @default("{}")
+  unidade                String?  @default("UN")
+  codigo_produto_fiscal  String?
   invoices     Invoice  @relation(fields: [invoice_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   products     Product? @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
@@ -930,4 +939,60 @@ model AnnouncementRead {
   @@unique([announcement_id, user_id])
   @@index([user_id, company_id], map: "idx_announcement_reads_user")
   @@map("announcement_reads")
+}
+
+model NfeEvent {
+  id            String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id    String
+  invoice_id    String?
+  event_type    String
+  seq_number    Int       @default(1)
+  protocol      String?
+  description   String?
+  request_data  Json?
+  response_data Json?
+  status        String?   @default("PROCESSING")
+  created_at    DateTime? @default(now()) @db.Timestamptz(6)
+  invoices      Invoice?  @relation(fields: [invoice_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([company_id], map: "idx_nfe_events_company")
+  @@index([invoice_id], map: "idx_nfe_events_invoice")
+  @@map("nfe_events")
+}
+
+model NfeRecebida {
+  id                String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id        String
+  chave_nfe         String
+  numero            Int?
+  serie             String?
+  cnpj_emitente     String?
+  nome_emitente     String?
+  valor_total       Int       @default(0)
+  data_emissao      DateTime? @db.Timestamptz(6)
+  situacao          String?   @default("pendente")
+  manifestacao      String?
+  xml_data          Json?
+  items_data        Json?
+  imported          Boolean?  @default(false)
+  purchase_entry_id String?
+  created_at        DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@unique([company_id, chave_nfe])
+  @@index([company_id], map: "idx_nfe_recebidas_company")
+  @@map("nfe_recebidas")
+}
+
+model NfeSerie {
+  id          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id  String
+  serie       String    @default("1")
+  last_number Int       @default(0)
+  is_active   Boolean?  @default(true)
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@unique([company_id, serie])
+  @@map("nfe_series")
 }
