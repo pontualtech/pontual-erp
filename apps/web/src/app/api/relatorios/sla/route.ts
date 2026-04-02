@@ -17,26 +17,30 @@ export async function GET(req: NextRequest) {
 
     // Average time per status transition (hours)
     const avgTimePerStatus: any[] = await prisma.$queryRawUnsafe(`
+      WITH transitions AS (
+        SELECT
+          soh.id,
+          soh.to_status_id,
+          soh.service_order_id,
+          soh.created_at,
+          LEAD(soh.created_at) OVER (PARTITION BY soh.service_order_id ORDER BY soh.created_at) AS next_at
+        FROM service_order_history soh
+        JOIN service_orders so ON so.id = soh.service_order_id
+        WHERE soh.company_id = $1
+          AND so.deleted_at IS NULL
+          AND so.created_at >= $2::timestamptz
+          AND so.created_at <= ($3::date + interval '1 day')::timestamptz
+      )
       SELECT
         ms.name AS status_name,
         ms.color,
         ms.order AS status_order,
-        COUNT(soh.id)::int AS transition_count,
+        COUNT(t.id)::int AS transition_count,
         ROUND(AVG(
-          EXTRACT(EPOCH FROM (
-            COALESCE(
-              LEAD(soh.created_at) OVER (PARTITION BY soh.service_order_id ORDER BY soh.created_at),
-              NOW()
-            ) - soh.created_at
-          )) / 3600
+          EXTRACT(EPOCH FROM (COALESCE(t.next_at, NOW()) - t.created_at)) / 3600
         ), 1)::float AS avg_hours
-      FROM service_order_history soh
-      JOIN module_statuses ms ON ms.id = soh.to_status_id
-      JOIN service_orders so ON so.id = soh.service_order_id
-      WHERE soh.company_id = $1
-        AND so.deleted_at IS NULL
-        AND so.created_at >= $2::timestamptz
-        AND so.created_at <= ($3::date + interval '1 day')::timestamptz
+      FROM transitions t
+      JOIN module_statuses ms ON ms.id = t.to_status_id
       GROUP BY ms.name, ms.color, ms.order
       ORDER BY ms.order ASC
     `, cid, `${dateFrom}T00:00:00Z`, dateTo)
