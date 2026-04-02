@@ -27,8 +27,18 @@ export async function GET(req: NextRequest) {
     if (technicianId) where.technician_id = technicianId
     if (osType) where.os_type = osType
 
+    // Excluir finalizadas do kanban (Entregue, Cancelada)
+    const finalStatuses = await prisma.moduleStatus.findMany({
+      where: { company_id: user.companyId, module: 'os', is_final: true },
+      select: { id: true },
+    })
+    if (finalStatuses.length > 0) {
+      where.status_id = { notIn: finalStatuses.map(s => s.id) }
+    }
+
     const orders = await prisma.serviceOrder.findMany({
       where,
+      take: 500,
       orderBy: [{ priority: 'desc' }, { created_at: 'asc' }],
       include: {
         customers: { select: { id: true, legal_name: true, phone: true } },
