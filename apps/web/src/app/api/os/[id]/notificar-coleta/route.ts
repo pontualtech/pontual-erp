@@ -20,7 +20,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     const os = await prisma.serviceOrder.findFirst({
       where: { id: params.id, company_id: user.companyId, deleted_at: null },
-      include: { customers: true },
+      include: { customers: true, companies: true },
     })
     if (!os) return error('OS não encontrada', 404)
 
@@ -33,7 +33,17 @@ export async function POST(req: NextRequest, { params }: Params) {
     const customerPhone = os.customers?.mobile || os.customers?.phone || ''
     const osNum = String(os.os_number).padStart(4, '0')
     const equipDesc = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ')
-    const portalUrl = 'https://pontualtech.com.br/#consulta-os'
+
+    // Carregar settings da empresa
+    const settings = await prisma.setting.findMany({ where: { company_id: user.companyId } })
+    const cfg: Record<string, string> = {}
+    for (const s of settings) cfg[s.key] = s.value
+
+    const portalUrl = cfg['portal.quote_url'] || cfg['portal.url'] || 'https://pontualtech.com.br/#consulta-os'
+    const companyName = os.companies?.name || cfg['company.name'] || 'Pontual Tech'
+    const companyPhone = cfg['company.phone'] || '(11) 2626-3841'
+    const whatsappNum = (cfg['company.whatsapp'] || '551126263841').replace(/\D/g, '')
+    const whatsappUrl = `https://wa.me/${whatsappNum}`
 
     // Buscar outras OS do mesmo cliente com status "Coletar"
     const coletarStatus = await prisma.moduleStatus.findFirst({
@@ -98,17 +108,17 @@ ${customerEmail ? `Historico enviado para: ${customerEmail}` : ''}
 Verifique tambem a pasta de Spam/Lixo Eletronico
 
 Precisando de algo sobre a logistica, nosso suporte esta a disposicao:
-(11) 2626-3841
-https://wa.me/551126263841
+${companyPhone}
+${whatsappUrl}
 
 Obrigado pela confianca!
-Equipe Pontual Tech`
+Equipe ${companyName}`
 
     // ===== EMAIL HTML =====
     const emailHtml = `
 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
   <div style="background: linear-gradient(135deg, #2563eb, #1d4ed8); padding: 24px; border-radius: 12px 12px 0 0;">
-    <h1 style="color: white; margin: 0; font-size: 22px;">Pontual Tech</h1>
+    <h1 style="color: white; margin: 0; font-size: 22px;">${companyName}</h1>
     <p style="color: rgba(255,255,255,0.85); margin: 4px 0 0; font-size: 14px;">Confirmacao de Coleta</p>
   </div>
 
@@ -182,12 +192,12 @@ Equipe Pontual Tech`
         Precisando de algo sobre a logistica:
       </p>
       <p style="font-size: 13px; margin: 0;">
-        <a href="tel:+551126263841" style="color: #2563eb; text-decoration: none;">(11) 2626-3841</a>
+        <a href="tel:+55${whatsappNum}" style="color: #2563eb; text-decoration: none;">${companyPhone}</a>
         &nbsp;&bull;&nbsp;
-        <a href="https://wa.me/551126263841" style="color: #16a34a; text-decoration: none;">WhatsApp</a>
+        <a href="${whatsappUrl}" style="color: #16a34a; text-decoration: none;">WhatsApp</a>
       </p>
       <p style="font-size: 12px; color: #9ca3af; margin: 12px 0 0;">
-        Obrigado pela confianca! — Equipe Pontual Tech
+        Obrigado pela confianca! — Equipe ${companyName}
       </p>
     </div>
   </div>

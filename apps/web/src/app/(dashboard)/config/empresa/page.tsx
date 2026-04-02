@@ -1,243 +1,207 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { ArrowLeft, Save, Loader2, Building2, CheckCircle, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
-import { Loader2, Search } from 'lucide-react'
 
-function maskCEP(v: string) {
-  return v.replace(/\D/g, '').slice(0, 8).replace(/(\d{5})(\d)/, '$1-$2')
+interface EmpresaConfig {
+  // Dados da Empresa
+  company_name: string
+  razao_social: string
+  nome_fantasia: string
+  cnpj: string
+  ie: string
+  im: string
+  cnae: string
+  // Endereco
+  logradouro: string
+  numero: string
+  complemento: string
+  bairro: string
+  municipio: string
+  cod_municipio: string
+  uf: string
+  cep: string
+  // Contato
+  phone: string
+  whatsapp: string
+  email: string
+  website: string
+  // Email SMTP
+  from_name: string
+  from_address: string
+  resend_configured: string
+  // Portal do Cliente
+  quote_url: string
+  portal_url: string
+  app_url_env: string
+  // NFS-e Servico
+  nfse_codigo_municipio: string
+  aliquota_iss: string
+  codigo_servico: string
+  crt: string
 }
-function maskCNPJ(v: string) {
-  return v.replace(/\D/g, '').slice(0, 14)
-    .replace(/(\d{2})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2')
-    .replace(/(\d{3})(\d)/, '$1/$2').replace(/(\d{4})(\d{1,2})$/, '$1-$2')
-}
-function maskPhone(v: string) {
-  const d = v.replace(/\D/g, '').slice(0, 11)
-  if (d.length <= 10) return d.replace(/(\d{2})(\d)/, '($1) $2').replace(/(\d{4})(\d)/, '$1-$2')
-  return d.replace(/(\d{2})(\d)/, '($1) $2').replace(/(\d{5})(\d)/, '$1-$2')
-}
+
+const CRT_OPTIONS = [
+  { value: '1', label: '1 — Simples Nacional' },
+  { value: '2', label: '2 — Simples Nacional (excesso)' },
+  { value: '3', label: '3 — Regime Normal' },
+]
+
+const UF_OPTIONS = ['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO']
 
 export default function ConfigEmpresaPage() {
-  const router = useRouter()
+  const [config, setConfig] = useState<EmpresaConfig>({
+    company_name: '', razao_social: '', nome_fantasia: '', cnpj: '', ie: '', im: '', cnae: '',
+    logradouro: '', numero: '', complemento: '', bairro: '', municipio: '', cod_municipio: '', uf: 'SP', cep: '',
+    phone: '', whatsapp: '', email: '', website: '',
+    from_name: '', from_address: '', resend_configured: 'false',
+    quote_url: '', portal_url: '', app_url_env: '',
+    nfse_codigo_municipio: '', aliquota_iss: '', codigo_servico: '', crt: '1',
+  })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [cepLoading, setCepLoading] = useState(false)
-
-  const [form, setForm] = useState({
-    company_name: '', phone: '', email: '', cnpj: '',
-    address_street: '', address_number: '', address_complement: '',
-    address_neighborhood: '', address_city: '', address_state: '', address_zip: '',
-    warranty_days: '90',
-  })
 
   useEffect(() => {
-    // Load from settings API
-    fetch('/api/settings')
+    fetch('/api/settings/empresa-config')
       .then(r => r.json())
-      .then(d => {
-        const data = d.data ?? {}
-        // Settings are grouped, flatten them
-        const flat: Record<string, string> = {}
-        for (const group of Object.values(data) as any[]) {
-          for (const [key, val] of Object.entries(group)) {
-            flat[key] = (val as any)?.value ?? ''
-          }
-        }
-        if (Object.keys(flat).length > 0) {
-          setForm(prev => ({
-            ...prev,
-            company_name: flat['company_name'] || flat['empresa.nome'] || prev.company_name,
-            phone: flat['phone'] || flat['empresa.telefone'] ? maskPhone(flat['phone'] || flat['empresa.telefone'] || '') : prev.phone,
-            email: flat['email'] || flat['empresa.email'] || prev.email,
-            cnpj: flat['cnpj'] || flat['empresa.cnpj'] ? maskCNPJ(flat['cnpj'] || flat['empresa.cnpj'] || '') : prev.cnpj,
-            address_street: flat['address_street'] || flat['empresa.rua'] || prev.address_street,
-            address_number: flat['address_number'] || flat['empresa.numero'] || prev.address_number,
-            address_complement: flat['address_complement'] || flat['empresa.complemento'] || prev.address_complement,
-            address_neighborhood: flat['address_neighborhood'] || flat['empresa.bairro'] || prev.address_neighborhood,
-            address_city: flat['address_city'] || flat['empresa.cidade'] || prev.address_city,
-            address_state: flat['address_state'] || flat['empresa.estado'] || prev.address_state,
-            address_zip: flat['address_zip'] || flat['empresa.cep'] ? maskCEP(flat['address_zip'] || flat['empresa.cep'] || '') : prev.address_zip,
-            warranty_days: flat['warranty_days'] || flat['empresa.garantia_dias'] || prev.warranty_days,
-          }))
-        }
-      })
-      .catch(() => {})
+      .then(d => { if (d.data) setConfig(prev => ({ ...prev, ...d.data })) })
+      .catch(() => toast.error('Erro ao carregar configuracoes'))
       .finally(() => setLoading(false))
   }, [])
 
-  function update(field: string, value: string) { setForm(prev => ({ ...prev, [field]: value })) }
-
-  async function searchCEP() {
-    const digits = form.address_zip.replace(/\D/g, '')
-    if (digits.length !== 8) { toast.error('CEP deve ter 8 dígitos'); return }
-    setCepLoading(true)
-    try {
-      const res = await fetch(`/api/consulta/cep/${digits}`)
-      const data = await res.json()
-      if (res.ok && data.data) {
-        setForm(prev => ({
-          ...prev,
-          address_street: data.data.address_street || prev.address_street,
-          address_neighborhood: data.data.address_neighborhood || prev.address_neighborhood,
-          address_city: data.data.address_city || prev.address_city,
-          address_state: data.data.address_state || prev.address_state,
-        }))
-        toast.success('Endereço preenchido!')
-      } else { toast.error('CEP não encontrado') }
-    } catch { toast.error('Erro ao consultar CEP') } finally { setCepLoading(false) }
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!form.company_name.trim()) { toast.error('Nome da empresa é obrigatório'); return }
-
+  async function handleSave() {
     setSaving(true)
     try {
-      // Convert flat form to settings array format
-      const settings = Object.entries(form).map(([key, value]) => ({
-        key,
-        value: String(value),
-        type: key === 'warranty_days' ? 'number' as const : 'string' as const,
-        group: 'empresa',
-      }))
-
-      const res = await fetch('/api/settings', {
+      const res = await fetch('/api/settings/empresa-config', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ settings }),
+        body: JSON.stringify(config),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Erro ao salvar')
-
-      toast.success('Dados da empresa salvos!')
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Erro')
-    } finally {
-      setSaving(false)
-    }
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error) }
+      toast.success('Configuracoes da empresa salvas!')
+    } catch (err: any) { toast.error(err.message) }
+    finally { setSaving(false) }
   }
 
-  if (loading) return <div className="py-12 text-center text-gray-400">Carregando...</div>
+  function upd(field: string, value: string) { setConfig(prev => ({ ...prev, [field]: value })) }
+  const inp = 'w-full px-3 py-2 border rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-200'
 
-  const inp = "w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:ring-1 focus:ring-blue-200 transition-colors"
+  if (loading) return <div className="flex items-center justify-center py-16 text-gray-400"><Loader2 className="h-5 w-5 animate-spin mr-2" /> Carregando...</div>
 
   return (
-    <div className="max-w-2xl mx-auto">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Dados da Empresa</h1>
-        <p className="text-sm text-gray-500 mt-1">Informações gerais da sua empresa</p>
+    <div className="space-y-6 max-w-4xl">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Link href="/config" className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100"><ArrowLeft className="h-5 w-5" /></Link>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2"><Building2 className="h-6 w-6" /> Dados da Empresa</h1>
+            <p className="text-sm text-gray-500">Cadastro, endereco, contato, email e configuracoes fiscais</p>
+          </div>
+        </div>
+        <button type="button" onClick={handleSave} disabled={saving}
+          className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          {saving ? 'Salvando...' : 'Salvar'}
+        </button>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-5">
-        <div className="rounded-lg border bg-white p-5 space-y-3">
-          <h2 className="font-semibold text-gray-900">Identificação</h2>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Nome da Empresa *</label>
-            <input type="text" value={form.company_name} onChange={e => update('company_name', e.target.value)}
-              placeholder="Nome da empresa" required className={inp} />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">CNPJ</label>
-            <input type="text" value={form.cnpj} onChange={e => update('cnpj', maskCNPJ(e.target.value))}
-              placeholder="00.000.000/0001-00" className={inp + " font-mono"} />
-          </div>
+      {/* Secao 1: Dados da Empresa */}
+      <div className="rounded-lg border bg-white p-5 shadow-sm">
+        <h2 className="font-semibold text-gray-900 mb-4">Dados da Empresa</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="sm:col-span-2"><label className="block text-xs text-gray-500 mb-1">Razao Social</label><input title="Razao Social" value={config.razao_social} onChange={e => upd('razao_social', e.target.value)} className={inp} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Nome Fantasia</label><input title="Nome Fantasia" value={config.nome_fantasia} onChange={e => upd('nome_fantasia', e.target.value)} className={inp} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">CNPJ</label><input value={config.cnpj} onChange={e => upd('cnpj', e.target.value)} placeholder="00.000.000/0001-00" className={inp} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Inscricao Estadual</label><input title="Inscricao Estadual" value={config.ie} onChange={e => upd('ie', e.target.value)} className={inp} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Inscricao Municipal</label><input title="Inscricao Municipal" value={config.im} onChange={e => upd('im', e.target.value)} className={inp} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">CNAE</label><input value={config.cnae} onChange={e => upd('cnae', e.target.value)} placeholder="4751201" className={inp} /></div>
         </div>
+      </div>
 
-        <div className="rounded-lg border bg-white p-5 space-y-3">
-          <h2 className="font-semibold text-gray-900">Contato</h2>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Telefone</label>
-              <input type="tel" value={form.phone} onChange={e => update('phone', maskPhone(e.target.value))}
-                placeholder="(11) 3136-0415" className={inp} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-              <input type="email" value={form.email} onChange={e => update('email', e.target.value)}
-                placeholder="contato@empresa.com" className={inp} />
-            </div>
+      {/* Secao 2: Endereco */}
+      <div className="rounded-lg border bg-white p-5 shadow-sm">
+        <h2 className="font-semibold text-gray-900 mb-4">Endereco</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="sm:col-span-2"><label className="block text-xs text-gray-500 mb-1">Logradouro</label><input title="Logradouro" value={config.logradouro} onChange={e => upd('logradouro', e.target.value)} className={inp} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Numero</label><input title="Numero" value={config.numero} onChange={e => upd('numero', e.target.value)} className={inp} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Complemento</label><input title="Complemento" value={config.complemento} onChange={e => upd('complemento', e.target.value)} className={inp} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Bairro</label><input title="Bairro" value={config.bairro} onChange={e => upd('bairro', e.target.value)} className={inp} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">CEP</label><input value={config.cep} onChange={e => upd('cep', e.target.value)} placeholder="00000-000" className={inp} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Municipio</label><input title="Municipio" value={config.municipio} onChange={e => upd('municipio', e.target.value)} className={inp} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Cod. Municipio IBGE</label><input value={config.cod_municipio} onChange={e => upd('cod_municipio', e.target.value)} placeholder="3550308" className={inp} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">UF</label>
+            <select value={config.uf} onChange={e => upd('uf', e.target.value)} title="UF" className={inp}>
+              {UF_OPTIONS.map(u => <option key={u} value={u}>{u}</option>)}
+            </select>
           </div>
         </div>
+      </div>
 
-        <div className="rounded-lg border bg-white p-5 space-y-3">
-          <h2 className="font-semibold text-gray-900">Endereço</h2>
-          <div className="flex gap-2">
-            <div className="w-44">
-              <label className="block text-sm font-medium text-gray-700 mb-1">CEP</label>
-              <input type="text" value={form.address_zip}
-                onChange={e => update('address_zip', maskCEP(e.target.value))}
-                onBlur={() => { if (form.address_zip.replace(/\D/g, '').length === 8) searchCEP() }}
-                placeholder="00000-000" className={inp + " font-mono"} />
-            </div>
-            <div className="flex items-end">
-              <button type="button" onClick={searchCEP} disabled={cepLoading}
-                className="px-3 py-2 text-sm bg-gray-100 border rounded-md hover:bg-gray-200 disabled:opacity-50 flex items-center gap-1.5">
-                {cepLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
-                Buscar CEP
-              </button>
-            </div>
+      {/* Secao 3: Contato */}
+      <div className="rounded-lg border bg-white p-5 shadow-sm">
+        <h2 className="font-semibold text-gray-900 mb-4">Contato</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div><label className="block text-xs text-gray-500 mb-1">Telefone</label><input value={config.phone} onChange={e => upd('phone', e.target.value)} placeholder="(11) 2626-3841" className={inp} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">WhatsApp</label><input value={config.whatsapp} onChange={e => upd('whatsapp', e.target.value)} placeholder="551126263841" className={inp} />
+            <p className="text-xs text-gray-400 mt-1">Numero com DDD, ex: 551126263841</p>
           </div>
-          <div className="grid grid-cols-4 gap-3">
-            <div className="col-span-3">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Rua</label>
-              <input type="text" value={form.address_street} onChange={e => update('address_street', e.target.value)}
-                placeholder="Rua, Avenida..." className={inp} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Número</label>
-              <input type="text" value={form.address_number} onChange={e => update('address_number', e.target.value)}
-                placeholder="Nº" className={inp} />
-            </div>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Complemento</label>
-              <input type="text" value={form.address_complement} onChange={e => update('address_complement', e.target.value)}
-                placeholder="Sala, Bloco..." className={inp} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Bairro</label>
-              <input type="text" value={form.address_neighborhood} onChange={e => update('address_neighborhood', e.target.value)}
-                placeholder="Bairro" className={inp} />
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Cidade</label>
-                <input type="text" value={form.address_city} onChange={e => update('address_city', e.target.value)}
-                  placeholder="Cidade" className={inp} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">UF</label>
-                <input type="text" value={form.address_state} onChange={e => update('address_state', e.target.value.toUpperCase())}
-                  maxLength={2} placeholder="SP" className={inp} />
-              </div>
-            </div>
-          </div>
+          <div><label className="block text-xs text-gray-500 mb-1">Email</label><input type="email" value={config.email} onChange={e => upd('email', e.target.value)} placeholder="contato@empresa.com.br" className={inp} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Website</label><input value={config.website} onChange={e => upd('website', e.target.value)} placeholder="https://empresa.com.br" className={inp} /></div>
         </div>
+      </div>
 
-        <div className="rounded-lg border bg-white p-5 space-y-3">
-          <h2 className="font-semibold text-gray-900">Configurações</h2>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Dias de Garantia Padrão</label>
-            <input type="number" min="0" value={form.warranty_days}
-              onChange={e => update('warranty_days', e.target.value)}
-              placeholder="90" className={inp + " max-w-xs"} />
-            <p className="text-xs text-gray-400 mt-1">Aplicado automaticamente nas novas ordens de serviço</p>
+      {/* Secao 4: Email (SMTP) */}
+      <div className="rounded-lg border bg-white p-5 shadow-sm">
+        <h2 className="font-semibold text-gray-900 mb-4">Email (SMTP)</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div><label className="block text-xs text-gray-500 mb-1">Remetente Nome</label><input value={config.from_name} onChange={e => upd('from_name', e.target.value)} placeholder="Minha Empresa" className={inp} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Remetente Email</label><input type="email" value={config.from_address} onChange={e => upd('from_address', e.target.value)} placeholder="contato@empresa.com.br" className={inp} /></div>
+        </div>
+        <div className="mt-4">
+          <div className={`rounded-lg border p-3 flex items-center gap-2 ${config.resend_configured === 'true' ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'}`}>
+            {config.resend_configured === 'true'
+              ? <><CheckCircle className="h-4 w-4 text-green-600" /><span className="text-sm text-green-800">Resend API Key configurada (env RESEND_API_KEY)</span></>
+              : <><XCircle className="h-4 w-4 text-amber-600" /><span className="text-sm text-amber-800">Resend API Key nao configurada — adicione RESEND_API_KEY nas variaveis de ambiente</span></>
+            }
+          </div>
+          <p className="text-xs text-gray-400 mt-2">O email e enviado via Resend. O remetente sera: &quot;{config.from_name || 'Empresa'} &lt;{config.from_address || 'email@empresa.com'}&gt;&quot;</p>
+        </div>
+      </div>
+
+      {/* Secao 5: Portal do Cliente */}
+      <div className="rounded-lg border bg-white p-5 shadow-sm">
+        <h2 className="font-semibold text-gray-900 mb-4">Portal do Cliente</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div><label className="block text-xs text-gray-500 mb-1">URL de Consulta de OS</label><input value={config.quote_url} onChange={e => upd('quote_url', e.target.value)} placeholder="https://empresa.com.br/#consulta-os" className={inp} />
+            <p className="text-xs text-gray-400 mt-1">Link enviado ao cliente para acompanhar a OS</p>
+          </div>
+          <div><label className="block text-xs text-gray-500 mb-1">URL do Portal</label><input value={config.portal_url} onChange={e => upd('portal_url', e.target.value)} placeholder="https://app.empresa.com.br" className={inp} />
+            {config.app_url_env && !config.portal_url && (
+              <p className="text-xs text-gray-400 mt-1">Env NEXT_PUBLIC_APP_URL: {config.app_url_env}</p>
+            )}
           </div>
         </div>
+      </div>
 
-        <div className="flex gap-3">
-          <button type="button" onClick={() => router.push('/config')}
-            className="px-5 py-2.5 border rounded-md text-gray-700 hover:bg-gray-50 transition-colors">Voltar</button>
-          <button type="submit" disabled={saving}
-            className="flex-1 py-2.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 font-medium transition-colors flex items-center justify-center gap-2">
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-            {saving ? 'Salvando...' : 'Salvar Configurações'}
-          </button>
+      {/* Secao 6: NFS-e Servico */}
+      <div className="rounded-lg border bg-white p-5 shadow-sm">
+        <h2 className="font-semibold text-gray-900 mb-4">NFS-e Servico</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div><label className="block text-xs text-gray-500 mb-1">Codigo do Municipio</label><input value={config.nfse_codigo_municipio} onChange={e => upd('nfse_codigo_municipio', e.target.value)} placeholder="3550308" className={inp} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">CCM / Inscricao Municipal</label><input title="CCM / Inscricao Municipal" value={config.im} disabled className={inp + ' bg-gray-50'} />
+            <p className="text-xs text-gray-400 mt-1">Mesmo valor do campo acima (Dados da Empresa)</p>
+          </div>
+          <div><label className="block text-xs text-gray-500 mb-1">Aliquota ISS padrao (%)</label><input value={config.aliquota_iss} onChange={e => upd('aliquota_iss', e.target.value)} placeholder="5.00" className={inp} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Codigo de Servico padrao</label><input value={config.codigo_servico} onChange={e => upd('codigo_servico', e.target.value)} placeholder="14.01" className={inp} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Regime Tributario (CRT)</label>
+            <select value={config.crt} onChange={e => upd('crt', e.target.value)} title="CRT" className={inp}>
+              {CRT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
         </div>
-      </form>
+      </div>
     </div>
   )
 }
