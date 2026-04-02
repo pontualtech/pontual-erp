@@ -182,11 +182,27 @@ export async function POST(req: NextRequest) {
       update: { value: maxNSU },
     })
 
+    // Salvar log para debug
+    await prisma.fiscalLog.create({
+      data: {
+        company_id: user.companyId,
+        action: 'nfe_recebidas_sync',
+        request: { ultNSU, cnpj, uf, ambiente, url: endpoints.distribuicaoDFe },
+        response: { cStat, xMotivo: responseBody.match(/<xMotivo>([^<]+)<\/xMotivo>/)?.[1] || '', maxNSU, imported },
+        status_code: parseInt(cStat) || 0,
+      },
+    })
+
+    const xMotivo = responseBody.match(/<xMotivo>([^<]+)<\/xMotivo>/)?.[1] || ''
+
     return success({
       cStat,
+      motivo: xMotivo,
       documentos_importados: imported,
       ultimo_nsu: maxNSU,
       tem_mais: cStat === '138', // 138 = ainda tem documentos
+      ambiente: ambiente === '1' ? 'Producao' : 'Homologacao',
+      cnpj,
     })
   } catch (err) {
     return handleError(err)

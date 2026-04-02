@@ -33,9 +33,12 @@ interface NfeRecebida {
 
 interface SyncResult {
   cStat: string
+  motivo: string
   documentos_importados: number
   ultimo_nsu: string
   tem_mais: boolean
+  ambiente: string
+  cnpj: string
 }
 
 // ---------- Helpers ----------
@@ -353,7 +356,8 @@ export default function NfeRecebidasPage() {
               Sincronizacao concluida: {syncResult.documentos_importados} documento(s) importado(s)
             </p>
             <p className="text-xs mt-0.5 opacity-75">
-              Ultimo NSU: {syncResult.ultimo_nsu} | Status: {syncResult.cStat}
+              NSU: {syncResult.ultimo_nsu} | Status: {syncResult.cStat} — {syncResult.motivo || ''}
+              <br />CNPJ: {syncResult.cnpj} | Ambiente: {syncResult.ambiente}
             </p>
           </div>
           {syncResult.tem_mais && (
