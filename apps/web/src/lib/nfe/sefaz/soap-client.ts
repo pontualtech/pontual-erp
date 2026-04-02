@@ -32,20 +32,18 @@ function getNamespace(action: string): string {
 }
 
 function wrapSoapEnvelope(body: string, xmlns: string): string {
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
-  <soap12:Header/>
-  <soap12:Body>
-    <nfeDadosMsg xmlns="${xmlns}">
-      ${body}
-    </nfeDadosMsg>
-  </soap12:Body>
-</soap12:Envelope>`
+  return `<?xml version="1.0" encoding="utf-8"?><soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"><soap12:Body><nfeDistDFeInteresse xmlns="${xmlns}"><nfeDadosMsg>${body}</nfeDadosMsg></nfeDistDFeInteresse></soap12:Body></soap12:Envelope>`
+}
+
+function wrapSoapEnvelopeGeneric(body: string, xmlns: string, method: string): string {
+  return `<?xml version="1.0" encoding="utf-8"?><soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"><soap12:Body><${method} xmlns="${xmlns}"><nfeDadosMsg>${body}</nfeDadosMsg></${method}></soap12:Body></soap12:Envelope>`
 }
 
 export async function sendSoapRequest(req: SoapRequest): Promise<string> {
   const xmlns = getNamespace(req.action)
-  const envelope = wrapSoapEnvelope(req.body, xmlns)
+  // Extrair nome do método da action URL (última parte após /)
+  const method = req.action.split('/').pop() || 'nfeDadosMsg'
+  const envelope = wrapSoapEnvelopeGeneric(req.body, xmlns, method)
 
   const urlObj = new URL(req.url)
 
