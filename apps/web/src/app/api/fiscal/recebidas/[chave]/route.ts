@@ -12,7 +12,7 @@ type RouteParams = { params: { chave: string } }
 
 export async function GET(_req: NextRequest, { params }: RouteParams) {
   try {
-    const result = await requirePermission('fiscal', 'read')
+    const result = await requirePermission('fiscal', 'view')
     if (result instanceof NextResponse) return result
     const user = result
 
@@ -44,7 +44,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 
 export async function POST(req: NextRequest, { params }: RouteParams) {
   try {
-    const result = await requirePermission('fiscal', 'emitir')
+    const result = await requirePermission('fiscal', 'create')
     if (result instanceof NextResponse) return result
     const user = result
 

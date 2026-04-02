@@ -16,7 +16,7 @@ const emitNfseSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
-    const result = await requirePermission('fiscal', 'emitir')
+    const result = await requirePermission('fiscal', 'create')
     if (result instanceof NextResponse) return result
     const user = result
 

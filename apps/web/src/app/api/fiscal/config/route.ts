@@ -11,7 +11,7 @@ import { z } from 'zod'
 
 export async function GET(_request: NextRequest) {
   try {
-    const result = await requirePermission('fiscal', 'read')
+    const result = await requirePermission('fiscal', 'view')
     if (result instanceof NextResponse) return result
     const user = result
 
@@ -77,7 +77,7 @@ const updateConfigSchema = z.object({
 
 export async function PUT(request: NextRequest) {
   try {
-    const result = await requirePermission('fiscal', 'emitir')
+    const result = await requirePermission('fiscal', 'create')
     if (result instanceof NextResponse) return result
     const user = result
 
@@ -170,7 +170,7 @@ export async function PUT(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const result = await requirePermission('fiscal', 'read')
+    const result = await requirePermission('fiscal', 'view')
     if (result instanceof NextResponse) return result
     const user = result
 

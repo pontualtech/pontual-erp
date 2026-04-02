@@ -19,6 +19,8 @@ interface NavItem {
   module?: string
   action?: string
   adminOnly?: boolean
+  /** Requires ANY of these permissions (OR logic) — item shows if user has at least one */
+  requiredAnyPermission?: { module: string; action: string }[]
   children?: { label: string; href: string; icon: React.ElementType }[]
 }
 
@@ -32,12 +34,12 @@ const navGroups: { title: string; items: NavItem[] }[] = [
   {
     title: 'Operacional',
     items: [
-      { label: 'Ordens de Servico', href: '/os', icon: ClipboardList, module: 'os' },
-      { label: 'Clientes', href: '/clientes', icon: Users, module: 'clientes' },
-      { label: 'Tickets', href: '/tickets', icon: MessageSquare, module: 'os' },
-      { label: 'Chat', href: '/chat', icon: MessageCircle, adminOnly: true },
-      { label: 'WhatsApp', href: '/integracoes/chatwoot', icon: Phone, adminOnly: true },
-      { label: 'Logistica', href: '/logistica', icon: Truck, module: 'os' },
+      { label: 'Ordens de Servico', href: '/os', icon: ClipboardList, module: 'os', action: 'view' },
+      { label: 'Clientes', href: '/clientes', icon: Users, module: 'clientes', action: 'view' },
+      { label: 'Tickets', href: '/tickets', icon: MessageSquare, module: 'os', action: 'view' },
+      { label: 'Chat', href: '/chat', icon: MessageCircle, requiredAnyPermission: [{ module: 'os', action: 'edit' }] },
+      { label: 'WhatsApp', href: '/integracoes/chatwoot', icon: Phone, requiredAnyPermission: [{ module: 'os', action: 'edit' }] },
+      { label: 'Logistica', href: '/logistica', icon: Truck, module: 'os', action: 'view' },
       { label: 'Contratos', href: '/contratos', icon: FileText, adminOnly: true },
     ],
   },
@@ -61,9 +63,9 @@ const navGroups: { title: string; items: NavItem[] }[] = [
   {
     title: 'Financeiro',
     items: [
-      { label: 'Financeiro', href: '/financeiro', icon: DollarSign, module: 'financeiro' },
-      { label: 'Fiscal', href: '/fiscal', icon: FileText, module: 'fiscal' },
-      { label: 'BI / Relatorios', href: '/relatorios-bi', icon: BarChart3, module: 'financeiro' },
+      { label: 'Financeiro', href: '/financeiro', icon: DollarSign, module: 'financeiro', action: 'view' },
+      { label: 'Fiscal', href: '/fiscal', icon: FileText, module: 'fiscal', action: 'view' },
+      { label: 'BI / Relatorios', href: '/relatorios-bi', icon: BarChart3, module: 'financeiro', action: 'view' },
     ],
   },
   {
@@ -85,6 +87,9 @@ export function Sidebar({ user }: { user: AuthUser }) {
       ...g,
       items: g.items.filter(i => {
         if (i.adminOnly) return isAdmin
+        if (i.requiredAnyPermission) {
+          return isAdmin || i.requiredAnyPermission.some(p => hasPermission(p.module, p.action))
+        }
         if (!i.module) return true
         return hasPermission(i.module, i.action ?? 'view')
       }),

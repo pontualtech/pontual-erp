@@ -157,6 +157,17 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json()
 
+    // Validate customer_id exists
+    const customerId = body.customer_id || body.customerId
+    if (customerId) {
+      const customer = await prisma.customer.findFirst({
+        where: { id: customerId, company_id: user.companyId, deleted_at: null },
+      })
+      if (!customer) {
+        return error('Cliente não encontrado. Verifique o ID informado.', 400)
+      }
+    }
+
     // Get initial status for this company
     const initialStatus = await prisma.moduleStatus.findFirst({
       where: { company_id: user.companyId, module: 'os', is_default: true },

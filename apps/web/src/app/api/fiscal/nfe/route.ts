@@ -12,7 +12,7 @@ import { z } from 'zod'
 
 export async function GET(request: NextRequest) {
   try {
-    const result = await requirePermission('fiscal', 'read')
+    const result = await requirePermission('fiscal', 'view')
     if (result instanceof NextResponse) return result
     const user = result
 
@@ -98,7 +98,7 @@ const emitNfeSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
-    const result = await requirePermission('fiscal', 'emitir')
+    const result = await requirePermission('fiscal', 'create')
     if (result instanceof NextResponse) return result
     const user = result
 

@@ -5,7 +5,7 @@ import { paginated, handleError } from '@/lib/api-response'
 
 export async function GET(request: NextRequest) {
   try {
-    const result = await requirePermission('fiscal', 'read')
+    const result = await requirePermission('fiscal', 'view')
     if (result instanceof NextResponse) return result
     const user = result
 

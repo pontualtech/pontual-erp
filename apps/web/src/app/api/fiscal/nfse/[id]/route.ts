@@ -14,7 +14,7 @@ type RouteParams = { params: { id: string } }
 
 export async function GET(_req: NextRequest, { params }: RouteParams) {
   try {
-    const result = await requirePermission('fiscal', 'read')
+    const result = await requirePermission('fiscal', 'view')
     if (result instanceof NextResponse) return result
     const user = result
 
@@ -115,7 +115,7 @@ const cancelSchema = z.object({
 
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
-    const result = await requirePermission('fiscal', 'emitir')
+    const result = await requirePermission('fiscal', 'create')
     if (result instanceof NextResponse) return result
     const user = result
 

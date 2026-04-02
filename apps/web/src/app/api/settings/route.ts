@@ -18,7 +18,7 @@ const updateSettingsSchema = z.object({
 
 export async function GET(request: NextRequest) {
   try {
-    const result = await requirePermission('core', 'view')
+    const result = await requirePermission('config', 'view')
     if (result instanceof NextResponse) return result
     const user = result
 
@@ -29,24 +29,9 @@ export async function GET(request: NextRequest) {
       orderBy: { key: 'asc' },
     })
 
-    // Chaves sensíveis que só admin pode ver
-    const sensitiveKeyPrefixes = [
-      'api_key', 'secret', 'password', 'token', 'credential',
-      'boleto.', 'fiscal.api', 'chatwoot.token', 'encryption',
-    ]
-    const isAdmin = user.roleName === 'admin'
-
     // Agrupar por prefixo da key (ex: "general.theme" -> grupo "general")
     const grouped: Record<string, Record<string, { value: string; type: string | null }>> = {}
     for (const s of settings) {
-      // Filtrar chaves sensíveis para não-admin
-      if (!isAdmin) {
-        const isSensitive = sensitiveKeyPrefixes.some(
-          prefix => s.key.toLowerCase().includes(prefix)
-        )
-        if (isSensitive) continue
-      }
-
       const parts = s.key.split('.')
       const group = parts.length > 1 ? parts[0] : 'general'
       if (!grouped[group]) grouped[group] = {}

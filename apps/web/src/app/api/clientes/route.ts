@@ -23,6 +23,35 @@ export async function GET(req: NextRequest) {
       deleted_at: null,
     }
 
+    // Motorista: only see clients linked to their OS or logistics routes
+    if (user.roleName === 'motorista') {
+      where.OR = [
+        // Clients from OS assigned to this motorista (as technician)
+        {
+          service_orders: {
+            some: { technician_id: user.id },
+          },
+        },
+        // Clients from OS linked to logistics stops on routes driven by this motorista
+        {
+          service_orders: {
+            some: {
+              id: {
+                in: await prisma.logisticsStop.findMany({
+                  where: {
+                    company_id: user.companyId,
+                    route: { driver_id: user.id },
+                    os_id: { not: null },
+                  },
+                  select: { os_id: true },
+                }).then(stops => stops.map(s => s.os_id!).filter(Boolean)),
+              },
+            },
+          },
+        },
+      ]
+    }
+
     // Mapear PF/PJ para FISICA/JURIDICA
     if (personType) {
       const personTypeMap: Record<string, string> = { PF: 'FISICA', PJ: 'JURIDICA', FISICA: 'FISICA', JURIDICA: 'JURIDICA' }
@@ -39,15 +68,35 @@ export async function GET(req: NextRequest) {
       ]
     }
 
+    // Motorista sees limited fields only
+    const isMotorista = user.roleName === 'motorista'
+    const selectFields = isMotorista
+      ? {
+          id: true,
+          legal_name: true,
+          trade_name: true,
+          phone: true,
+          mobile: true,
+          address_street: true,
+          address_number: true,
+          address_complement: true,
+          address_neighborhood: true,
+          address_city: true,
+          address_state: true,
+          address_zip: true,
+          created_at: true,
+        }
+      : undefined
+
     const [data, total] = await Promise.all([
       prisma.customer.findMany({
         where,
         skip: (page - 1) * limit,
         take: limit,
         orderBy: { legal_name: 'asc' },
-        include: {
-          _count: { select: { service_orders: true } },
-        },
+        ...(selectFields ? { select: { ...selectFields, _count: { select: { service_orders: true } } } } : {
+          include: { _count: { select: { service_orders: true } } },
+        }),
       }),
       prisma.customer.count({ where }),
     ])

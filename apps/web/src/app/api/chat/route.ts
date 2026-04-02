@@ -28,9 +28,14 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const result = await requirePermission('core', 'view')
+    const result = await requirePermission('os', 'view')
     if (result instanceof NextResponse) return result
     const user = result
+
+    // Motorista não pode enviar mensagens no chat interno
+    if (user.roleName === 'motorista') {
+      return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+    }
 
     const body = await req.json()
 
