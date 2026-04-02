@@ -1605,11 +1605,15 @@ export default function OSDetailPage() {
                     loadOS()
                   }}
                   className="text-sm rounded border px-2 py-0.5 bg-white">
-                  <option value="BALCAO">Balcao</option>
-                  <option value="COLETA">Coleta</option>
-                  <option value="ENTREGA">Entrega</option>
-                  <option value="CAMPO">Campo</option>
-                  <option value="REMOTO">Remoto</option>
+                  {tiposOS.length > 0 ? tiposOS.map(t => (
+                    <option key={t.key} value={t.key}>{t.label}</option>
+                  )) : (
+                    <>
+                      <option value="AVULSO">Avulso</option>
+                      <option value="GARANTIA">Garantia</option>
+                      <option value="CONTRATO">Contrato</option>
+                    </>
+                  )}
                 </select>
               ) : (
                 <span className="text-sm text-gray-900">{os.os_type}</span>
