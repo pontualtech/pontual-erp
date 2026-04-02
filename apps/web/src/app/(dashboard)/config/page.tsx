@@ -33,6 +33,7 @@ const sections = [
       { label: 'Taxas de Cartao', href: '/config/taxas-cartao', icon: Landmark, desc: 'Taxas por operadora, faixa de parcelas' },
       { label: 'Integracoes Bancarias', href: '/config/integracoes', icon: Landmark, desc: 'Boletos: Inter, Itau, Stone' },
       { label: 'NFS-e / Fiscal', href: '/fiscal/config', icon: FileText, desc: 'Focus NFe, inscricao municipal, aliquota' },
+      { label: 'NF-e Produto', href: '/config/nfe', icon: FileKey, desc: 'Emitente, impostos, serie, ambiente SEFAZ' },
       { label: 'Certificado A1', href: '/config/certificado', icon: FileKey, desc: 'Instalar certificado digital para NF-e/NFS-e' },
       { label: 'Chatwoot / WhatsApp', href: '/integracoes/chatwoot', icon: MessageSquare, desc: 'Conversas e mensagens via WhatsApp' },
       { label: 'Sincronizar VHSys', href: '/config/sync-vhsys', icon: RefreshCw, desc: 'Importar OS, clientes e servicos do VHSys' },
