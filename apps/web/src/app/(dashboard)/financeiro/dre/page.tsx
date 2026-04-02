@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Loader2, ChevronDown, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Loader2, ChevronDown, ChevronRight, Download } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import {
@@ -210,6 +210,55 @@ export default function DREPage() {
     'Lucro Liquido': m.lucro_liquido / 100,
   }))
 
+  const margemBruta = dre && dre.receita_bruta > 0
+    ? ((dre.lucro_bruto / dre.receita_bruta) * 100).toFixed(1)
+    : '0.0'
+
+  const margemLiquida = dre && dre.receita_bruta > 0
+    ? ((dre.lucro_liquido / dre.receita_bruta) * 100).toFixed(1)
+    : '0.0'
+
+  function exportCSV() {
+    if (!dre) return
+    const lines: string[] = []
+    lines.push('Linha,Valor')
+    lines.push(`RECEITA BRUTA,"${formatCurrency(dre.receita_bruta)}"`)
+    for (const r of dre.receitas) {
+      lines.push(`  ${r.name},"${formatCurrency(r.amount)}"`)
+    }
+    if (dre.deducoes > 0) lines.push(`(-) DEDUCOES,"${formatCurrency(-dre.deducoes)}"`)
+    lines.push(`(=) RECEITA LIQUIDA,"${formatCurrency(dre.receita_liquida)}"`)
+    lines.push(`(-) CUSTOS,"${formatCurrency(-dre.custos)}"`)
+    for (const c of dre.custos_detalhado) {
+      lines.push(`  ${c.name},"${formatCurrency(c.amount)}"`)
+    }
+    lines.push(`(=) LUCRO BRUTO,"${formatCurrency(dre.lucro_bruto)}"`)
+    lines.push(`Margem Bruta,${margemBruta}%`)
+    lines.push(`(-) DESPESAS OPERACIONAIS,"${formatCurrency(-dre.despesas_operacionais)}"`)
+    for (const d of dre.despesas_detalhado) {
+      lines.push(`  ${d.name},"${formatCurrency(d.amount)}"`)
+    }
+    lines.push(`(=) RESULTADO OPERACIONAL,"${formatCurrency(dre.resultado_operacional)}"`)
+    lines.push(`(=) LUCRO LIQUIDO,"${formatCurrency(dre.lucro_liquido)}"`)
+    lines.push(`Margem Liquida,${margemLiquida}%`)
+
+    if (monthly.length > 1) {
+      lines.push('')
+      lines.push('Mes,Receita Bruta,Custos,Lucro Bruto,Despesas,Lucro Liquido')
+      for (const m of monthly) {
+        lines.push(`${formatMonthLabel(m.month)},"${formatCurrency(m.receita_bruta)}","${formatCurrency(-(m.receita_bruta - m.lucro_bruto))}","${formatCurrency(m.lucro_bruto)}","${formatCurrency(-(m.lucro_bruto - m.resultado_operacional))}","${formatCurrency(m.lucro_liquido)}"`)
+      }
+    }
+
+    const blob = new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `DRE_${year}${month ? '_' + month : ''}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const years = Array.from({ length: 5 }, (_, i) => currentYear - i)
   const monthOptions = [
     { value: '', label: 'Ano completo' },
@@ -247,7 +296,7 @@ export default function DREPage() {
 
       {/* Filters */}
       <div className="rounded-lg border bg-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-end gap-4">
+        <div className="flex flex-wrap items-end gap-4 justify-between">
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Ano</label>
             <select
@@ -271,6 +320,17 @@ export default function DREPage() {
                 <option key={m.value} value={m.value}>{m.label}</option>
               ))}
             </select>
+          </div>
+          <div>
+            <button
+              type="button"
+              onClick={exportCSV}
+              disabled={!dre || loading}
+              className="flex items-center gap-2 rounded-md border bg-white py-2 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <Download className="h-4 w-4" />
+              Exportar CSV
+            </button>
           </div>
         </div>
       </div>
@@ -338,6 +398,17 @@ export default function DREPage() {
                 prefix="(=)"
               />
 
+              {/* Margem Bruta */}
+              <div className="flex items-center justify-between py-1.5 px-4 bg-gray-50/50">
+                <span className="text-xs text-gray-500 italic pl-4">Margem Bruta</span>
+                <span className={cn(
+                  'text-xs font-semibold tabular-nums',
+                  Number(margemBruta) >= 0 ? 'text-emerald-600' : 'text-red-600'
+                )}>
+                  {margemBruta}%
+                </span>
+              </div>
+
               {/* Despesas Operacionais */}
               <CollapsibleSection
                 title="DESPESAS OPERACIONAIS"
@@ -374,6 +445,20 @@ export default function DREPage() {
                   )}
                 >
                   {formatCurrency(dre.lucro_liquido)}
+                </span>
+              </div>
+
+              {/* Margem Liquida */}
+              <div className={cn(
+                'flex items-center justify-between py-1.5 px-4',
+                dre.lucro_liquido >= 0 ? 'bg-green-50/50' : 'bg-red-50/50'
+              )}>
+                <span className="text-xs text-gray-500 italic pl-4">Margem Liquida</span>
+                <span className={cn(
+                  'text-xs font-semibold tabular-nums',
+                  Number(margemLiquida) >= 0 ? 'text-emerald-600' : 'text-red-600'
+                )}>
+                  {margemLiquida}%
                 </span>
               </div>
             </div>

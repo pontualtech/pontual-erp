@@ -5,6 +5,7 @@ import Link from 'next/link'
 import {
   ArrowLeft, Upload, FileSpreadsheet, CheckCircle2, XCircle, Plus,
   Clock, ArrowRightLeft, AlertTriangle, RefreshCw, Eye, ChevronDown,
+  Undo2, CheckCheck, Search,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -29,6 +30,9 @@ interface SuggestedMatch {
   due_date: string
   customer_name: string | null
   status: string | null
+  match_confidence: 'exact' | 'close'
+  amount_diff_pct: number
+  name_match: boolean
 }
 
 interface Transaction {
@@ -48,6 +52,29 @@ interface Summary {
   total: number
   with_match: number
   without_match: number
+  exact_match: number
+  close_match: number
+}
+
+interface PreviewTransaction {
+  fitId: string
+  type: 'CREDIT' | 'DEBIT'
+  amount: number
+  date: string
+  memo: string
+  is_duplicate: boolean
+}
+
+interface PreviewData {
+  file_name: string
+  transactions: PreviewTransaction[]
+  summary: {
+    total: number
+    new: number
+    duplicates: number
+    total_credits: number
+    total_debits: number
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -75,9 +102,13 @@ export default function ConciliacaoPage() {
   const [selectedAccountId, setSelectedAccountId] = useState('')
   const [loadingAccounts, setLoadingAccounts] = useState(true)
 
-  // State: upload
+  // State: upload & preview
   const [uploading, setUploading] = useState(false)
   const [uploadResult, setUploadResult] = useState<{ total: number; imported: number; skipped: number } | null>(null)
+  const [previewData, setPreviewData] = useState<PreviewData | null>(null)
+  const [previewFile, setPreviewFile] = useState<File | null>(null)
+  const [loadingPreview, setLoadingPreview] = useState(false)
+  const [confirmingImport, setConfirmingImport] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // State: transactions
@@ -88,6 +119,11 @@ export default function ConciliacaoPage() {
   // State: reconciliation actions
   const [reconcilingId, setReconcilingId] = useState<string | null>(null)
   const [ignoringId, setIgnoringId] = useState<string | null>(null)
+  const [bulkReconciling, setBulkReconciling] = useState(false)
+  const [undoingId, setUndoingId] = useState<string | null>(null)
+
+  // State: reconciled items (for undo)
+  const [reconciledItems, setReconciledItems] = useState<Transaction[]>([])
 
   // State: reconciled count (for summary bar)
   const [reconciledCount, setReconciledCount] = useState(0)
@@ -119,6 +155,7 @@ export default function ConciliacaoPage() {
         setTransactions(d.data?.transactions ?? [])
         setSummary(d.data?.summary ?? null)
         setReconciledCount(0)
+        setReconciledItems([])
         setUploadResult(null)
       })
       .catch(() => toast.error('Erro ao carregar transacoes'))
@@ -127,8 +164,8 @@ export default function ConciliacaoPage() {
 
   useEffect(() => { loadPendentes() }, [loadPendentes])
 
-  // Upload OFX file
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  // Preview OFX file before import
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
     if (!selectedAccountId) {
@@ -136,11 +173,41 @@ export default function ConciliacaoPage() {
       return
     }
 
-    setUploading(true)
+    setPreviewFile(file)
+    setLoadingPreview(true)
+    setPreviewData(null)
     setUploadResult(null)
+
     try {
       const formData = new FormData()
       formData.append('file', file)
+      formData.append('account_id', selectedAccountId)
+
+      const res = await fetch('/api/financeiro/conciliacao/preview', {
+        method: 'POST',
+        body: formData,
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao processar arquivo')
+
+      setPreviewData(data.data)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao processar arquivo')
+      setPreviewFile(null)
+    } finally {
+      setLoadingPreview(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  // Confirm import after preview
+  async function handleConfirmImport() {
+    if (!previewFile || !selectedAccountId) return
+
+    setConfirmingImport(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', previewFile)
       formData.append('account_id', selectedAccountId)
 
       const res = await fetch('/api/financeiro/conciliacao/upload', {
@@ -151,17 +218,22 @@ export default function ConciliacaoPage() {
       if (!res.ok) throw new Error(data.error || 'Erro ao importar arquivo')
 
       setUploadResult(data.data)
+      setPreviewData(null)
+      setPreviewFile(null)
       toast.success(`${data.data.imported} transacao(es) importada(s)`)
 
-      // Reload pending transactions
       loadPendentes()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao importar arquivo')
     } finally {
-      setUploading(false)
-      // Reset file input so the same file can be re-selected
-      if (fileInputRef.current) fileInputRef.current.value = ''
+      setConfirmingImport(false)
     }
+  }
+
+  // Cancel preview
+  function handleCancelPreview() {
+    setPreviewData(null)
+    setPreviewFile(null)
   }
 
   // Reconcile a transaction with its suggested match
@@ -182,6 +254,7 @@ export default function ConciliacaoPage() {
       if (!res.ok) throw new Error(data.error || 'Erro ao conciliar')
 
       toast.success('Transacao conciliada com sucesso')
+      setReconciledItems(prev => [transaction, ...prev])
       setTransactions(prev => prev.filter(t => t.id !== transaction.id))
       setReconciledCount(prev => prev + 1)
       if (summary) {
@@ -189,12 +262,65 @@ export default function ConciliacaoPage() {
           ...summary,
           total: summary.total - 1,
           with_match: summary.with_match - 1,
+          exact_match: transaction.suggested_match?.match_confidence === 'exact' ? summary.exact_match - 1 : summary.exact_match,
+          close_match: transaction.suggested_match?.match_confidence === 'close' ? summary.close_match - 1 : summary.close_match,
         })
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao conciliar')
     } finally {
       setReconcilingId(null)
+    }
+  }
+
+  // Bulk reconcile all matched items
+  async function handleBulkReconcile() {
+    const matchedTransactions = transactions.filter(t => t.suggested_match)
+    if (matchedTransactions.length === 0) {
+      toast.error('Nenhuma transacao com sugestao de match')
+      return
+    }
+
+    setBulkReconciling(true)
+    try {
+      const matches = matchedTransactions.map(t => ({
+        transaction_id: t.id,
+        type: t.suggested_match!.type,
+        record_id: t.suggested_match!.id,
+      }))
+
+      const res = await fetch('/api/financeiro/conciliacao/match', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ matches }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao conciliar em lote')
+
+      const result = data.data
+      const succeededIds = new Set(
+        result.results
+          .filter((r: { success: boolean }) => r.success)
+          .map((r: { transaction_id: string }) => r.transaction_id)
+      )
+
+      const reconciledTxns = matchedTransactions.filter(t => succeededIds.has(t.id))
+      setReconciledItems(prev => [...reconciledTxns, ...prev])
+      setTransactions(prev => prev.filter(t => !succeededIds.has(t.id)))
+      setReconciledCount(prev => prev + result.summary.succeeded)
+
+      if (result.summary.failed > 0) {
+        toast.warning(`${result.summary.succeeded} conciliada(s), ${result.summary.failed} com erro`)
+      } else {
+        toast.success(`${result.summary.succeeded} transacao(es) conciliada(s) em lote`)
+      }
+
+      // Reload to get accurate summary
+      loadPendentes()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao conciliar em lote')
+    } finally {
+      setBulkReconciling(false)
     }
   }
 
@@ -215,6 +341,9 @@ export default function ConciliacaoPage() {
 
       toast.success('Transacao ignorada')
       const txn = transactions.find(t => t.id === transactionId)
+      if (txn) {
+        setReconciledItems(prev => [{ ...txn, reconciled: true }, ...prev])
+      }
       setTransactions(prev => prev.filter(t => t.id !== transactionId))
       setReconciledCount(prev => prev + 1)
       if (summary) {
@@ -223,6 +352,8 @@ export default function ConciliacaoPage() {
           total: summary.total - 1,
           with_match: txn?.suggested_match ? summary.with_match - 1 : summary.with_match,
           without_match: txn?.suggested_match ? summary.without_match : summary.without_match - 1,
+          exact_match: summary.exact_match,
+          close_match: summary.close_match,
         })
       }
     } catch (err) {
@@ -232,10 +363,37 @@ export default function ConciliacaoPage() {
     }
   }
 
+  // Undo reconciliation
+  async function handleUndo(transactionId: string) {
+    setUndoingId(transactionId)
+    try {
+      const res = await fetch('/api/financeiro/conciliacao/match', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transaction_id: transactionId }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao desfazer')
+
+      toast.success('Conciliacao desfeita')
+      setReconciledItems(prev => prev.filter(t => t.id !== transactionId))
+      setReconciledCount(prev => Math.max(0, prev - 1))
+
+      // Reload to re-fetch with fresh matches
+      loadPendentes()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao desfazer conciliacao')
+    } finally {
+      setUndoingId(null)
+    }
+  }
+
   // Computed summary values
   const totalVisible = transactions.length
   const withMatch = transactions.filter(t => t.suggested_match).length
   const withoutMatch = totalVisible - withMatch
+  const exactMatch = transactions.filter(t => t.suggested_match?.match_confidence === 'exact').length
+  const closeMatch = transactions.filter(t => t.suggested_match?.match_confidence === 'close').length
 
   return (
     <div className="space-y-4">
@@ -283,6 +441,7 @@ export default function ConciliacaoPage() {
                 <select
                   value={selectedAccountId}
                   onChange={e => setSelectedAccountId(e.target.value)}
+                  aria-label="Conta Bancaria"
                   className="w-full rounded-md border bg-white py-2.5 px-3 pr-8 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 appearance-none"
                 >
                   <option value="">Selecione uma conta...</option>
@@ -305,7 +464,7 @@ export default function ConciliacaoPage() {
               ref={fileInputRef}
               type="file"
               accept=".ofx,.ofc"
-              onChange={handleUpload}
+              onChange={handleFileSelect}
               className="hidden"
               id="ofx-upload"
             />
@@ -313,15 +472,19 @@ export default function ConciliacaoPage() {
               htmlFor="ofx-upload"
               className={cn(
                 'flex items-center gap-2 rounded-md px-5 py-2.5 text-sm font-medium cursor-pointer transition-colors',
-                selectedAccountId && !uploading
+                selectedAccountId && !uploading && !loadingPreview
                   ? 'bg-blue-600 text-white hover:bg-blue-700'
                   : 'bg-gray-200 text-gray-400 cursor-not-allowed'
               )}
               onClick={e => {
-                if (!selectedAccountId || uploading) e.preventDefault()
+                if (!selectedAccountId || uploading || loadingPreview) e.preventDefault()
               }}
             >
-              {uploading ? (
+              {loadingPreview ? (
+                <>
+                  <RefreshCw className="h-4 w-4 animate-spin" /> Analisando...
+                </>
+              ) : uploading ? (
                 <>
                   <RefreshCw className="h-4 w-4 animate-spin" /> Importando...
                 </>
@@ -335,6 +498,7 @@ export default function ConciliacaoPage() {
 
           {selectedAccountId && (
             <button
+              type="button"
               onClick={loadPendentes}
               disabled={loadingTransactions}
               className="flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50"
@@ -362,9 +526,117 @@ export default function ConciliacaoPage() {
         )}
       </div>
 
+      {/* OFX Preview Modal */}
+      {previewData && (
+        <div className="rounded-lg border-2 border-blue-300 bg-blue-50/30 p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Eye className="h-5 w-5 text-blue-600" />
+              <h2 className="font-semibold text-gray-900">
+                Preview: {previewData.file_name}
+              </h2>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleCancelPreview}
+                className="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmImport}
+                disabled={confirmingImport || previewData.summary.new === 0}
+                className="flex items-center gap-2 rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+              >
+                {confirmingImport ? (
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-4 w-4" />
+                )}
+                Confirmar Importacao ({previewData.summary.new} novas)
+              </button>
+            </div>
+          </div>
+
+          {/* Preview summary */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
+            <div className="rounded-md bg-white p-3 border text-center">
+              <p className="text-xs text-gray-500">Total</p>
+              <p className="text-lg font-bold">{previewData.summary.total}</p>
+            </div>
+            <div className="rounded-md bg-white p-3 border text-center">
+              <p className="text-xs text-gray-500">Novas</p>
+              <p className="text-lg font-bold text-green-600">{previewData.summary.new}</p>
+            </div>
+            <div className="rounded-md bg-white p-3 border text-center">
+              <p className="text-xs text-gray-500">Duplicadas</p>
+              <p className="text-lg font-bold text-amber-600">{previewData.summary.duplicates}</p>
+            </div>
+            <div className="rounded-md bg-white p-3 border text-center">
+              <p className="text-xs text-gray-500">Creditos</p>
+              <p className="text-lg font-bold text-green-600">{formatCurrency(previewData.summary.total_credits)}</p>
+            </div>
+            <div className="rounded-md bg-white p-3 border text-center">
+              <p className="text-xs text-gray-500">Debitos</p>
+              <p className="text-lg font-bold text-red-600">{formatCurrency(previewData.summary.total_debits)}</p>
+            </div>
+          </div>
+
+          {/* Preview table */}
+          <div className="max-h-64 overflow-y-auto rounded-md border bg-white">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 sticky top-0">
+                <tr>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Status</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Data</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Tipo</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Descricao</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Valor</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {previewData.transactions.map((t, i) => (
+                  <tr key={i} className={cn(t.is_duplicate && 'bg-amber-50/50 opacity-60')}>
+                    <td className="px-3 py-2">
+                      {t.is_duplicate ? (
+                        <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
+                          Duplicada
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">
+                          Nova
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-gray-600">{formatDate(t.date)}</td>
+                    <td className="px-3 py-2">
+                      <span className={cn(
+                        'inline-flex rounded-full px-2 py-0.5 text-xs font-medium',
+                        t.type === 'DEBIT' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+                      )}>
+                        {t.type === 'DEBIT' ? 'Debito' : 'Credito'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-gray-700 truncate max-w-[200px]">{t.memo}</td>
+                    <td className={cn(
+                      'px-3 py-2 text-right font-medium',
+                      t.type === 'DEBIT' ? 'text-red-600' : 'text-green-600'
+                    )}>
+                      {t.type === 'DEBIT' ? '- ' : '+ '}{formatCurrency(t.amount)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Summary Bar */}
-      {selectedAccountId && summary && (
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+      {selectedAccountId && summary && !previewData && (
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
           <div className="rounded-lg border bg-white p-4 shadow-sm">
             <div className="flex items-center gap-3">
               <div className="rounded-full bg-blue-50 p-2">
@@ -379,29 +651,40 @@ export default function ConciliacaoPage() {
           <div className="rounded-lg border bg-white p-4 shadow-sm">
             <div className="flex items-center gap-3">
               <div className="rounded-full bg-green-50 p-2">
-                <ArrowRightLeft className="h-5 w-5 text-green-600" />
+                <CheckCircle2 className="h-5 w-5 text-green-600" />
               </div>
               <div>
-                <p className="text-sm text-gray-500">Com Sugestao</p>
-                <p className="text-xl font-bold text-green-600">{withMatch}</p>
+                <p className="text-sm text-gray-500">Exato</p>
+                <p className="text-xl font-bold text-green-600">{exactMatch}</p>
               </div>
             </div>
           </div>
           <div className="rounded-lg border bg-white p-4 shadow-sm">
             <div className="flex items-center gap-3">
-              <div className="rounded-full bg-amber-50 p-2">
-                <AlertTriangle className="h-5 w-5 text-amber-600" />
+              <div className="rounded-full bg-yellow-50 p-2">
+                <Search className="h-5 w-5 text-yellow-600" />
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Aproximado</p>
+                <p className="text-xl font-bold text-yellow-600">{closeMatch}</p>
+              </div>
+            </div>
+          </div>
+          <div className="rounded-lg border bg-white p-4 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="rounded-full bg-gray-100 p-2">
+                <AlertTriangle className="h-5 w-5 text-gray-400" />
               </div>
               <div>
                 <p className="text-sm text-gray-500">Sem Match</p>
-                <p className="text-xl font-bold text-amber-600">{withoutMatch}</p>
+                <p className="text-xl font-bold text-gray-400">{withoutMatch}</p>
               </div>
             </div>
           </div>
           <div className="rounded-lg border bg-white p-4 shadow-sm">
             <div className="flex items-center gap-3">
               <div className="rounded-full bg-emerald-50 p-2">
-                <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                <CheckCheck className="h-5 w-5 text-emerald-600" />
               </div>
               <div>
                 <p className="text-sm text-gray-500">Conciliadas</p>
@@ -413,17 +696,34 @@ export default function ConciliacaoPage() {
       )}
 
       {/* Step 2: Transactions List */}
-      {selectedAccountId && (
+      {selectedAccountId && !previewData && (
         <div className="rounded-lg border bg-white shadow-sm overflow-hidden">
           <div className="border-b px-5 py-3 flex items-center justify-between">
             <h2 className="font-semibold text-gray-900">
               2. Transacoes Pendentes de Conciliacao
             </h2>
-            {totalVisible > 0 && (
-              <span className="text-xs text-gray-400">
-                {totalVisible} transacao(es)
-              </span>
-            )}
+            <div className="flex items-center gap-3">
+              {totalVisible > 0 && (
+                <span className="text-xs text-gray-400">
+                  {totalVisible} transacao(es)
+                </span>
+              )}
+              {withMatch > 0 && (
+                <button
+                  type="button"
+                  onClick={handleBulkReconcile}
+                  disabled={bulkReconciling}
+                  className="flex items-center gap-1.5 rounded-md bg-green-600 px-4 py-2 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
+                >
+                  {bulkReconciling ? (
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <CheckCheck className="h-3.5 w-3.5" />
+                  )}
+                  Reconciliar Todos ({withMatch})
+                </button>
+              )}
+            </div>
           </div>
 
           {loadingTransactions ? (
@@ -446,6 +746,7 @@ export default function ConciliacaoPage() {
                 const isDebit = txn.transaction_type === 'DEBIT'
                 const isReconciling = reconcilingId === txn.id
                 const isIgnoring = ignoringId === txn.id
+                const confidence = txn.suggested_match?.match_confidence
 
                 return (
                   <div
@@ -487,18 +788,48 @@ export default function ConciliacaoPage() {
                       {/* Suggested match */}
                       <div className="flex-1 min-w-0">
                         {txn.suggested_match ? (
-                          <div className="rounded-md border border-green-200 bg-green-50/50 p-3">
+                          <div className={cn(
+                            'rounded-md border p-3',
+                            confidence === 'exact'
+                              ? 'border-green-200 bg-green-50/50'
+                              : 'border-yellow-200 bg-yellow-50/50'
+                          )}>
                             <div className="flex items-center gap-1.5 mb-1">
-                              <ArrowRightLeft className="h-3.5 w-3.5 text-green-600" />
-                              <span className="text-xs font-medium text-green-700">
-                                Sugestao: {txn.suggested_match.type === 'payable' ? 'Conta a Pagar' : 'Conta a Receber'}
+                              <ArrowRightLeft className={cn(
+                                'h-3.5 w-3.5',
+                                confidence === 'exact' ? 'text-green-600' : 'text-yellow-600'
+                              )} />
+                              <span className={cn(
+                                'text-xs font-medium',
+                                confidence === 'exact' ? 'text-green-700' : 'text-yellow-700'
+                              )}>
+                                {txn.suggested_match.type === 'payable' ? 'Conta a Pagar' : 'Conta a Receber'}
                               </span>
+                              {/* Confidence badge */}
+                              <span className={cn(
+                                'inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
+                                confidence === 'exact'
+                                  ? 'bg-green-200 text-green-800'
+                                  : 'bg-yellow-200 text-yellow-800'
+                              )}>
+                                {confidence === 'exact' ? 'Exato' : 'Aproximado'}
+                              </span>
+                              {txn.suggested_match.name_match && (
+                                <span className="inline-flex items-center rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 uppercase tracking-wide">
+                                  Nome
+                                </span>
+                              )}
                             </div>
                             <p className="text-sm text-gray-700 truncate">
                               {txn.suggested_match.description}
                             </p>
                             <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
                               <span>{formatCurrency(txn.suggested_match.total_amount)}</span>
+                              {confidence === 'close' && txn.suggested_match.amount_diff_pct > 0 && (
+                                <span className="text-yellow-600">
+                                  ({txn.suggested_match.amount_diff_pct.toFixed(1)}% dif.)
+                                </span>
+                              )}
                               <span>Venc: {formatDate(txn.suggested_match.due_date)}</span>
                               {txn.suggested_match.customer_name && (
                                 <span className="truncate">{txn.suggested_match.customer_name}</span>
@@ -508,9 +839,12 @@ export default function ConciliacaoPage() {
                         ) : (
                           <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
                             <div className="flex items-center gap-1.5">
-                              <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
-                              <span className="text-xs text-gray-500">
+                              <AlertTriangle className="h-3.5 w-3.5 text-gray-400" />
+                              <span className="text-xs text-gray-400">
                                 Nenhum lancamento correspondente encontrado
+                              </span>
+                              <span className="inline-flex items-center rounded-full bg-gray-200 px-1.5 py-0.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                                Sem match
                               </span>
                             </div>
                           </div>
@@ -521,6 +855,7 @@ export default function ConciliacaoPage() {
                       <div className="flex flex-col gap-1.5 shrink-0">
                         {txn.suggested_match && (
                           <button
+                            type="button"
                             onClick={() => handleReconcile(txn)}
                             disabled={isReconciling}
                             className="flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
@@ -534,6 +869,7 @@ export default function ConciliacaoPage() {
                           </button>
                         )}
                         <button
+                          type="button"
                           onClick={() => handleIgnore(txn.id)}
                           disabled={isIgnoring}
                           className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors"
@@ -563,6 +899,71 @@ export default function ConciliacaoPage() {
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Recently Reconciled (Undo section) */}
+      {reconciledItems.length > 0 && !previewData && (
+        <div className="rounded-lg border bg-white shadow-sm overflow-hidden">
+          <div className="border-b px-5 py-3 flex items-center justify-between">
+            <h2 className="font-semibold text-gray-700">
+              Conciliadas nesta sessao
+            </h2>
+            <span className="text-xs text-gray-400">
+              {reconciledItems.length} item(ns)
+            </span>
+          </div>
+          <div className="divide-y">
+            {reconciledItems.map(txn => {
+              const isDebit = txn.transaction_type === 'DEBIT'
+              const isUndoing = undoingId === txn.id
+
+              return (
+                <div
+                  key={txn.id}
+                  className="px-5 py-3 flex items-center justify-between bg-gray-50/50"
+                >
+                  <div className="flex items-center gap-3">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                    <div>
+                      <p className="text-sm text-gray-600 truncate max-w-[300px]">
+                        {txn.description || 'Sem descricao'}
+                      </p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className={cn(
+                          'text-xs font-medium',
+                          isDebit ? 'text-red-500' : 'text-green-500'
+                        )}>
+                          {isDebit ? '- ' : '+ '}{formatCurrency(txn.amount)}
+                        </span>
+                        <span className="text-xs text-gray-400">
+                          {formatDate(txn.transaction_date)}
+                        </span>
+                        {txn.suggested_match && (
+                          <span className="text-xs text-gray-400">
+                            → {txn.suggested_match.description}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleUndo(txn.id)}
+                    disabled={isUndoing}
+                    className="flex items-center gap-1.5 rounded-md border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50 transition-colors"
+                  >
+                    {isUndoing ? (
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Undo2 className="h-3.5 w-3.5" />
+                    )}
+                    Desfazer
+                  </button>
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 

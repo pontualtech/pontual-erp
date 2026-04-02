@@ -16,6 +16,18 @@ const matchSchema = z.object({
   record_id: z.string().optional(),
 })
 
+const bulkMatchSchema = z.object({
+  matches: z.array(z.object({
+    transaction_id: z.string().min(1),
+    type: z.enum(['payable', 'receivable']),
+    record_id: z.string().min(1),
+  })).min(1, 'Pelo menos um match e necessario'),
+})
+
+const undoSchema = z.object({
+  transaction_id: z.string().min(1, 'transaction_id e obrigatorio'),
+})
+
 export async function POST(request: NextRequest) {
   try {
     const result = await requirePermission('financeiro', 'edit')
@@ -178,6 +190,156 @@ export async function POST(request: NextRequest) {
         received_total: newReceivedTotal,
       })
     }
+  } catch (err) {
+    return handleError(err)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PUT /api/financeiro/conciliacao/match  — Bulk reconcile multiple matches
+// ---------------------------------------------------------------------------
+
+export async function PUT(request: NextRequest) {
+  try {
+    const result = await requirePermission('financeiro', 'edit')
+    if (result instanceof NextResponse) return result
+    const user = result
+
+    const body = await request.json()
+    const data = bulkMatchSchema.parse(body)
+
+    const results: { transaction_id: string; success: boolean; error?: string }[] = []
+
+    for (const match of data.matches) {
+      try {
+        const transaction = await prisma.transaction.findFirst({
+          where: { id: match.transaction_id, company_id: user.companyId },
+        })
+        if (!transaction) {
+          results.push({ transaction_id: match.transaction_id, success: false, error: 'Transacao nao encontrada' })
+          continue
+        }
+        if (transaction.reconciled) {
+          results.push({ transaction_id: match.transaction_id, success: false, error: 'Ja conciliada' })
+          continue
+        }
+
+        const absAmount = Math.abs(transaction.amount)
+
+        if (match.type === 'payable') {
+          const payable = await prisma.accountPayable.findFirst({
+            where: { id: match.record_id, company_id: user.companyId, deleted_at: null },
+          })
+          if (!payable || payable.status === 'PAGO' || payable.status === 'CANCELADO') {
+            results.push({ transaction_id: match.transaction_id, success: false, error: 'Conta a pagar invalida' })
+            continue
+          }
+
+          const previousPaid = payable.paid_amount || 0
+          const newPaidTotal = previousPaid + absAmount
+          const isPaidInFull = newPaidTotal >= payable.total_amount
+
+          await prisma.$transaction([
+            prisma.accountPayable.update({
+              where: { id: match.record_id },
+              data: { paid_amount: newPaidTotal, status: isPaidInFull ? 'PAGO' : 'PENDENTE', updated_at: new Date() },
+            }),
+            prisma.transaction.update({
+              where: { id: match.transaction_id },
+              data: { reconciled: true },
+            }),
+          ])
+        } else {
+          const receivable = await prisma.accountReceivable.findFirst({
+            where: { id: match.record_id, company_id: user.companyId, deleted_at: null },
+          })
+          if (!receivable || receivable.status === 'RECEBIDO' || receivable.status === 'CANCELADO') {
+            results.push({ transaction_id: match.transaction_id, success: false, error: 'Conta a receber invalida' })
+            continue
+          }
+
+          const previousReceived = receivable.received_amount || 0
+          const newReceivedTotal = previousReceived + absAmount
+          const isReceivedInFull = newReceivedTotal >= receivable.total_amount
+
+          await prisma.$transaction([
+            prisma.accountReceivable.update({
+              where: { id: match.record_id },
+              data: { received_amount: newReceivedTotal, status: isReceivedInFull ? 'RECEBIDO' : 'PENDENTE', updated_at: new Date() },
+            }),
+            prisma.transaction.update({
+              where: { id: match.transaction_id },
+              data: { reconciled: true },
+            }),
+          ])
+        }
+
+        results.push({ transaction_id: match.transaction_id, success: true })
+
+        logAudit({
+          companyId: user.companyId,
+          userId: user.id,
+          module: 'financeiro',
+          action: 'conciliacao.bulk_match',
+          entityId: match.transaction_id,
+          newValue: { type: match.type, record_id: match.record_id },
+        })
+      } catch {
+        results.push({ transaction_id: match.transaction_id, success: false, error: 'Erro interno' })
+      }
+    }
+
+    const succeeded = results.filter(r => r.success).length
+    const failed = results.filter(r => !r.success).length
+
+    return success({ results, summary: { succeeded, failed, total: data.matches.length } })
+  } catch (err) {
+    return handleError(err)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// DELETE /api/financeiro/conciliacao/match  — Undo reconciliation
+// ---------------------------------------------------------------------------
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const result = await requirePermission('financeiro', 'edit')
+    if (result instanceof NextResponse) return result
+    const user = result
+
+    const body = await request.json()
+    const data = undoSchema.parse(body)
+
+    const transaction = await prisma.transaction.findFirst({
+      where: { id: data.transaction_id, company_id: user.companyId },
+    })
+    if (!transaction) return error('Transacao nao encontrada', 404)
+    if (!transaction.reconciled) return error('Transacao nao esta conciliada', 400)
+
+    // Mark transaction as unreconciled
+    await prisma.transaction.update({
+      where: { id: data.transaction_id },
+      data: { reconciled: false },
+    })
+
+    logAudit({
+      companyId: user.companyId,
+      userId: user.id,
+      module: 'financeiro',
+      action: 'conciliacao.undo',
+      entityId: data.transaction_id,
+      newValue: {
+        description: transaction.description,
+        amount: transaction.amount,
+      },
+    })
+
+    return success({
+      transaction_id: data.transaction_id,
+      reconciled: false,
+      action: 'undone',
+    })
   } catch (err) {
     return handleError(err)
   }

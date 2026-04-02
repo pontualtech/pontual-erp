@@ -12,8 +12,10 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
+    const accountId = searchParams.get('account_id')
+    const categoryId = searchParams.get('category_id')
 
-    // Default: mês corrente até 11 meses à frente
+    // Default: mes corrente ate 11 meses a frente
     const now = new Date()
     const defaultFrom = new Date(now.getFullYear(), now.getMonth(), 1)
     const defaultTo = new Date(now.getFullYear(), now.getMonth() + 12, 0, 23, 59, 59)
@@ -22,41 +24,59 @@ export async function GET(request: NextRequest) {
     const endDate = to ? new Date(to + 'T23:59:59') : defaultTo
 
     // Buscar recebimentos (status RECEBIDO)
+    const receivablesWhere: any = {
+      company_id: user.companyId,
+      deleted_at: null,
+      status: 'RECEBIDO',
+      due_date: { gte: startDate, lte: endDate },
+    }
+    if (categoryId) receivablesWhere.category_id = categoryId
+
     const receivables = await prisma.accountReceivable.findMany({
-      where: {
-        company_id: user.companyId,
-        deleted_at: null,
-        status: 'RECEBIDO',
-        due_date: { gte: startDate, lte: endDate },
-      },
+      where: receivablesWhere,
       select: { total_amount: true, received_amount: true, due_date: true },
     })
 
     // Buscar pagamentos (status PAGO)
+    const payablesWhere: any = {
+      company_id: user.companyId,
+      deleted_at: null,
+      status: 'PAGO',
+      due_date: { gte: startDate, lte: endDate },
+    }
+    if (categoryId) payablesWhere.category_id = categoryId
+
     const payables = await prisma.accountPayable.findMany({
-      where: {
-        company_id: user.companyId,
-        deleted_at: null,
-        status: 'PAGO',
-        due_date: { gte: startDate, lte: endDate },
-      },
+      where: payablesWhere,
       select: { total_amount: true, paid_amount: true, due_date: true },
     })
 
-    // Buscar saldo inicial de TODAS as contas bancárias ativas
+    // Buscar TODAS as contas bancarias ativas
     const accounts = await prisma.account.findMany({
       where: { company_id: user.companyId, is_active: true },
       select: { id: true, name: true, current_balance: true, initial_balance: true },
     })
-    const saldoBancarioAtual = accounts.reduce((sum, a) => sum + (a.current_balance ?? 0), 0)
+    const saldoBancarioAtual = accountId
+      ? accounts.filter(a => a.id === accountId).reduce((sum, a) => sum + (a.current_balance ?? 0), 0)
+      : accounts.reduce((sum, a) => sum + (a.current_balance ?? 0), 0)
 
-    // Buscar transações no período (fonte mais precisa de movimentação)
+    // Buscar transacoes no periodo (fonte mais precisa de movimentacao)
+    const transactionsWhere: any = {
+      company_id: user.companyId,
+      transaction_date: { gte: startDate, lte: endDate },
+    }
+    if (accountId) transactionsWhere.account_id = accountId
+
     const transactions = await prisma.transaction.findMany({
-      where: {
-        company_id: user.companyId,
-        transaction_date: { gte: startDate, lte: endDate },
-      },
+      where: transactionsWhere,
       select: { amount: true, transaction_type: true, transaction_date: true },
+    })
+
+    // Buscar categorias para dropdown
+    const categories = await prisma.category.findMany({
+      where: { company_id: user.companyId },
+      select: { id: true, name: true, module: true },
+      orderBy: { name: 'asc' },
     })
 
     // Build month keys
@@ -68,14 +88,14 @@ export async function GET(request: NextRequest) {
       cursor.setMonth(cursor.getMonth() + 1)
     }
 
-    // Agrupar por mês — priorizar Transactions se existem, senão usar receivables/payables
+    // Agrupar por mes — priorizar Transactions se existem, senao usar receivables/payables
     const monthMap: Record<string, { entradas: number; saidas: number }> = {}
     for (const m of months) {
       monthMap[m] = { entradas: 0, saidas: 0 }
     }
 
     if (transactions.length > 0) {
-      // Usar transações bancárias (mais preciso)
+      // Usar transacoes bancarias (mais preciso)
       for (const t of transactions) {
         const d = new Date(t.transaction_date)
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
@@ -107,12 +127,9 @@ export async function GET(request: NextRequest) {
     }
 
     // Build result with accumulated balance
-    // Acumulado começa do saldo total das contas bancárias
     let acumulado = saldoBancarioAtual
-    // Subtrair movimentação futura para achar o saldo no início do período
     const totalEntradasAll = Object.values(monthMap).reduce((s, m) => s + m.entradas, 0)
     const totalSaidasAll = Object.values(monthMap).reduce((s, m) => s + m.saidas, 0)
-    // Se temos transações, o saldo atual já reflete tudo — então o acumulado no início é saldo - movimentação do período
     if (transactions.length > 0) {
       acumulado = saldoBancarioAtual - (totalEntradasAll - totalSaidasAll)
     }
@@ -136,6 +153,7 @@ export async function GET(request: NextRequest) {
       },
       saldoBancario: saldoBancarioAtual,
       contas: accounts.map(a => ({ id: a.id, name: a.name, balance: a.current_balance ?? 0 })),
+      categorias: categories.map(c => ({ id: c.id, name: c.name, module: c.module })),
     })
   } catch (err) {
     return handleError(err)

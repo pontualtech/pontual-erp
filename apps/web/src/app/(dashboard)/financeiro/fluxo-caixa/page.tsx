@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, TrendingUp, TrendingDown, DollarSign, Loader2 } from 'lucide-react'
+import { ArrowLeft, TrendingUp, TrendingDown, DollarSign, Loader2, Filter } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import {
@@ -30,6 +30,12 @@ interface ContaBancaria {
   balance: number
 }
 
+interface CategoriaOption {
+  id: string
+  name: string
+  module: string
+}
+
 interface FluxoData {
   data: FluxoItem[]
   totais: {
@@ -39,6 +45,7 @@ interface FluxoData {
   }
   saldoBancario: number
   contas: ContaBancaria[]
+  categorias: CategoriaOption[]
 }
 
 function formatCurrency(cents: number) {
@@ -69,25 +76,29 @@ export default function FluxoCaixaPage() {
   const [data, setData] = useState<FluxoData | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Default: mês corrente até 11 meses à frente
+  // Default: mes corrente ate 11 meses a frente
   const now = new Date()
   const defaultFrom = new Date(now.getFullYear(), now.getMonth(), 1)
   const defaultTo = new Date(now.getFullYear(), now.getMonth() + 12, 0)
   const [fromDate, setFromDate] = useState(defaultFrom.toISOString().slice(0, 10))
   const [toDate, setToDate] = useState(defaultTo.toISOString().slice(0, 10))
+  const [accountId, setAccountId] = useState('')
+  const [categoryId, setCategoryId] = useState('')
 
   const loadData = useCallback(() => {
     setLoading(true)
     const params = new URLSearchParams()
     if (fromDate) params.set('from', fromDate)
     if (toDate) params.set('to', toDate)
+    if (accountId) params.set('account_id', accountId)
+    if (categoryId) params.set('category_id', categoryId)
 
     fetch(`/api/financeiro/relatorios/fluxo-caixa?${params}`)
       .then(r => r.json())
       .then(d => setData(d.data ?? null))
       .catch(() => toast.error('Erro ao carregar fluxo de caixa'))
       .finally(() => setLoading(false))
-  }, [fromDate, toDate])
+  }, [fromDate, toDate, accountId, categoryId])
 
   useEffect(() => { loadData() }, [loadData])
 
@@ -118,8 +129,12 @@ export default function FluxoCaixaPage() {
         </div>
       </div>
 
-      {/* Period Selector */}
+      {/* Filters */}
       <div className="rounded-lg border bg-white p-4 shadow-sm">
+        <div className="flex items-center gap-2 mb-3">
+          <Filter className="h-4 w-4 text-gray-400" />
+          <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Filtros</span>
+        </div>
         <div className="flex flex-wrap items-end gap-4">
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">De</label>
@@ -139,28 +154,72 @@ export default function FluxoCaixaPage() {
               className="rounded-md border bg-white py-2 px-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
             />
           </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Conta Bancaria</label>
+            <select
+              value={accountId}
+              onChange={e => setAccountId(e.target.value)}
+              title="Conta Bancaria"
+              aria-label="Conta Bancaria"
+              className="rounded-md border bg-white py-2 px-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 min-w-[180px]"
+            >
+              <option value="">Todas as contas</option>
+              {(data?.contas ?? []).map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Categoria</label>
+            <select
+              value={categoryId}
+              onChange={e => setCategoryId(e.target.value)}
+              title="Categoria"
+              aria-label="Categoria"
+              className="rounded-md border bg-white py-2 px-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 min-w-[180px]"
+            >
+              <option value="">Todas as categorias</option>
+              {(data?.categorias ?? []).map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+          {(accountId || categoryId) && (
+            <button
+              type="button"
+              onClick={() => { setAccountId(''); setCategoryId('') }}
+              className="rounded-md border border-gray-300 bg-white py-2 px-3 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+            >
+              Limpar filtros
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Saldo Bancário */}
+      {/* Saldo Bancario */}
       {data && data.contas && data.contas.length > 0 && (
         <div className="rounded-lg border bg-gradient-to-r from-blue-50 to-indigo-50 p-5 shadow-sm">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-gray-700">Saldo Bancario Atual</h2>
+            <h2 className="text-sm font-semibold text-gray-700">
+              Saldo Bancario Atual
+              {accountId && <span className="text-xs text-gray-400 ml-2">(filtrado)</span>}
+            </h2>
             <span className={cn('text-2xl font-bold', (data.saldoBancario ?? 0) >= 0 ? 'text-blue-700' : 'text-red-600')}>
               {formatCurrency(data.saldoBancario ?? 0)}
             </span>
           </div>
-          <div className="flex flex-wrap gap-4">
-            {data.contas.map(c => (
-              <div key={c.id} className="flex items-center gap-2 text-sm">
-                <span className="text-gray-500">{c.name}:</span>
-                <span className={cn('font-medium', c.balance >= 0 ? 'text-blue-700' : 'text-red-600')}>
-                  {formatCurrency(c.balance)}
-                </span>
-              </div>
-            ))}
-          </div>
+          {!accountId && (
+            <div className="flex flex-wrap gap-4">
+              {data.contas.map(c => (
+                <div key={c.id} className="flex items-center gap-2 text-sm">
+                  <span className="text-gray-500">{c.name}:</span>
+                  <span className={cn('font-medium', c.balance >= 0 ? 'text-blue-700' : 'text-red-600')}>
+                    {formatCurrency(c.balance)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
