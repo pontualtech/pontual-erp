@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
-import { Plus, Search, AlertTriangle, Package, Wrench, Trash2, Loader2 } from 'lucide-react'
+import { Plus, Search, AlertTriangle, Package, Wrench, Trash2, Loader2, ArrowRightLeft, PenLine, DollarSign } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/lib/use-auth'
 
@@ -39,6 +39,13 @@ export default function ProdutosPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [showBulkDelete, setShowBulkDelete] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [filtroAbaixoMinimo, setFiltroAbaixoMinimo] = useState(false)
+
+  // Ajuste manual modal
+  const [ajusteModal, setAjusteModal] = useState<Produto | null>(null)
+  const [ajusteQtd, setAjusteQtd] = useState('')
+  const [ajusteMotivo, setAjusteMotivo] = useState('')
+  const [ajusteLoading, setAjusteLoading] = useState(false)
 
   function loadProdutos() {
     setLoading(true)
@@ -47,6 +54,7 @@ export default function ProdutosPage() {
     params.set('limit', '20')
     if (search) params.set('search', search)
     if (filtroTipo) params.set('type', filtroTipo)
+    if (filtroAbaixoMinimo) params.set('below_min', '1')
     fetch(`/api/produtos?${params}`)
       .then(r => r.json())
       .then(d => {
@@ -57,7 +65,7 @@ export default function ProdutosPage() {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { loadProdutos(); setSelected(new Set()) }, [search, page, filtroTipo])
+  useEffect(() => { loadProdutos(); setSelected(new Set()) }, [search, page, filtroTipo, filtroAbaixoMinimo])
 
   function toggleSelect(id: string) {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -80,6 +88,40 @@ export default function ProdutosPage() {
     setShowBulkDelete(false); setSelected(new Set()); setBulkDeleting(false); loadProdutos()
   }
 
+  async function handleAjusteManual(e: React.FormEvent) {
+    e.preventDefault()
+    if (!ajusteModal || !ajusteQtd) return
+    setAjusteLoading(true)
+    try {
+      const res = await fetch('/api/estoque/movimentar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          product_id: ajusteModal.id,
+          movement_type: 'ADJUSTMENT',
+          quantity: parseInt(ajusteQtd, 10),
+          reason: 'AJUSTE',
+          notes: ajusteMotivo || 'Ajuste manual de estoque',
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao ajustar estoque')
+      toast.success('Estoque ajustado com sucesso!')
+      setAjusteModal(null); setAjusteQtd(''); setAjusteMotivo('')
+      loadProdutos()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao ajustar')
+    } finally {
+      setAjusteLoading(false)
+    }
+  }
+
+  // Computed values
+  const produtosAbaixoMin = produtos.filter(p => p.unit !== 'SV' && p.min_stock > 0 && p.current_stock <= p.min_stock)
+  const custoTotalEstoque = produtos
+    .filter(p => p.unit !== 'SV')
+    .reduce((acc, p) => acc + (p.current_stock * p.cost_price), 0)
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -99,6 +141,71 @@ export default function ProdutosPage() {
           </Link>
         </div>
       </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {/* Custo Total em Estoque */}
+        <div className="rounded-lg border bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-500">Custo Total em Estoque</p>
+              <p className="mt-1 text-xl font-bold text-gray-900">{loading ? '...' : formatCurrency(custoTotalEstoque)}</p>
+            </div>
+            <div className="rounded-lg bg-emerald-50 p-2.5">
+              <DollarSign className="h-5 w-5 text-emerald-600" />
+            </div>
+          </div>
+        </div>
+        {/* Produtos Abaixo do Minimo */}
+        <div className="rounded-lg border bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-500">Abaixo do Mínimo</p>
+              <p className="mt-1 text-xl font-bold text-red-600">{loading ? '...' : produtosAbaixoMin.length}</p>
+            </div>
+            <div className="rounded-lg bg-red-50 p-2.5">
+              <AlertTriangle className="h-5 w-5 text-red-600" />
+            </div>
+          </div>
+        </div>
+        {/* Total de Itens */}
+        <div className="rounded-lg border bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-500">Total de Itens</p>
+              <p className="mt-1 text-xl font-bold text-gray-900">{loading ? '...' : produtos.length}</p>
+            </div>
+            <div className="rounded-lg bg-blue-50 p-2.5">
+              <Package className="h-5 w-5 text-blue-600" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Alertas de Estoque */}
+      {!loading && produtosAbaixoMin.length > 0 && (
+        <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertTriangle className="h-4 w-4 text-yellow-600" />
+            <h3 className="font-semibold text-yellow-800">Alertas de Estoque</h3>
+          </div>
+          <div className="space-y-1">
+            {produtosAbaixoMin.slice(0, 5).map(p => (
+              <div key={p.id} className="flex items-center justify-between text-sm">
+                <Link href={`/produtos/${p.id}`} className="text-yellow-900 hover:underline font-medium">{p.name}</Link>
+                <span className="text-yellow-700">
+                  {p.current_stock} / {p.min_stock} {p.unit} — faltam {p.min_stock - p.current_stock}
+                </span>
+              </div>
+            ))}
+            {produtosAbaixoMin.length > 5 && (
+              <p className="text-xs text-yellow-600 mt-1">
+                + {produtosAbaixoMin.length - 5} outros produtos abaixo do mínimo
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 items-center">
@@ -125,6 +232,18 @@ export default function ProdutosPage() {
               filtroTipo === 'servico' ? 'bg-amber-600 text-white' : 'text-gray-500 hover:bg-gray-100'
             }`}><Wrench className="h-3.5 w-3.5" /> Serviços</button>
         </div>
+        {/* Toggle abaixo do minimo */}
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={filtroAbaixoMinimo}
+            onChange={e => { setFiltroAbaixoMinimo(e.target.checked); setPage(1) }}
+            className="rounded text-red-600 focus:ring-red-500"
+          />
+          <span className={cn('text-sm font-medium', filtroAbaixoMinimo ? 'text-red-600' : 'text-gray-500')}>
+            Abaixo do mínimo
+          </span>
+        </label>
       </div>
 
       <div className="overflow-x-auto rounded-lg border bg-white shadow-sm">
@@ -146,13 +265,14 @@ export default function ProdutosPage() {
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Custo</th>
               <th className="px-4 py-3">Venda</th>
+              <th className="px-4 py-3">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y">
             {loading ? (
-              <tr><td colSpan={isAdmin ? 9 : 8} className="px-4 py-8 text-center text-gray-400">Carregando...</td></tr>
+              <tr><td colSpan={isAdmin ? 10 : 9} className="px-4 py-8 text-center text-gray-400">Carregando...</td></tr>
             ) : produtos.length === 0 ? (
-              <tr><td colSpan={isAdmin ? 9 : 8} className="px-4 py-8 text-center text-gray-400">Nenhum item encontrado</td></tr>
+              <tr><td colSpan={isAdmin ? 10 : 9} className="px-4 py-8 text-center text-gray-400">Nenhum item encontrado</td></tr>
             ) : (
               produtos.map(p => {
                 const isServico = p.unit === 'SV'
@@ -213,6 +333,27 @@ export default function ProdutosPage() {
                     </td>
                     <td className="px-4 py-3 text-gray-500">{formatCurrency(p.cost_price)}</td>
                     <td className="px-4 py-3 font-medium text-gray-900">{formatCurrency(p.sale_price)}</td>
+                    <td className="px-4 py-3">
+                      {!isServico && (
+                        <div className="flex items-center gap-1">
+                          <Link
+                            href={`/produtos/${p.id}/movimentacoes`}
+                            title="Movimentações"
+                            className="rounded p-1 text-gray-400 hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                          >
+                            <ArrowRightLeft className="h-4 w-4" />
+                          </Link>
+                          <button
+                            type="button"
+                            title="Ajuste Manual"
+                            onClick={() => { setAjusteModal(p); setAjusteQtd(''); setAjusteMotivo('') }}
+                            className="rounded p-1 text-gray-400 hover:bg-amber-50 hover:text-amber-600 transition-colors"
+                          >
+                            <PenLine className="h-4 w-4" />
+                          </button>
+                        </div>
+                      )}
+                    </td>
                   </tr>
                 )
               })
@@ -263,6 +404,53 @@ export default function ProdutosPage() {
                 {bulkDeleting ? 'Excluindo...' : `Excluir ${selected.size}`}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Ajuste Manual modal */}
+      {ajusteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setAjusteModal(null)}>
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-semibold text-gray-900 mb-1">Ajuste Manual de Estoque</h2>
+            <p className="text-sm text-gray-500 mb-4">
+              {ajusteModal.name} — Estoque atual: <span className="font-medium">{ajusteModal.current_stock} {ajusteModal.unit}</span>
+            </p>
+            <form onSubmit={handleAjusteManual} className="space-y-4">
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">Nova Quantidade *</label>
+                <input
+                  type="number"
+                  value={ajusteQtd}
+                  onChange={e => setAjusteQtd(e.target.value)}
+                  placeholder="Ex: 50"
+                  className="w-full px-3 py-2 border rounded-md text-sm"
+                  autoFocus
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Informe a quantidade do ajuste (positivo para entrada, negativo para saída)
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">Motivo</label>
+                <input
+                  type="text"
+                  value={ajusteMotivo}
+                  onChange={e => setAjusteMotivo(e.target.value)}
+                  placeholder="Ex: Contagem de inventário"
+                  className="w-full px-3 py-2 border rounded-md text-sm"
+                />
+              </div>
+              <div className="flex gap-3 justify-end">
+                <button type="button" onClick={() => setAjusteModal(null)}
+                  className="px-4 py-2 text-sm border rounded-md hover:bg-gray-50">Cancelar</button>
+                <button type="submit" disabled={ajusteLoading || !ajusteQtd}
+                  className="px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2 font-medium">
+                  {ajusteLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  {ajusteLoading ? 'Salvando...' : 'Confirmar Ajuste'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

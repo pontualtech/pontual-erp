@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Building2, Users, Shield, Tag, Wrench, Bell, Database, Palette, Landmark, FileText, PrinterIcon, FileKey, MessageSquare, Search, Layers, Eye, Mail, Clock, RefreshCw, Receipt } from 'lucide-react'
+import { Building2, Users, Shield, Tag, Wrench, Bell, Database, Palette, Landmark, FileText, PrinterIcon, FileKey, MessageSquare, Search, Layers, Eye, Mail, Clock, RefreshCw, Receipt, Bot } from 'lucide-react'
 
 const sections = [
   {
@@ -36,6 +36,7 @@ const sections = [
       { label: 'NF-e Produto', href: '/config/nfe', icon: FileKey, desc: 'Emitente, impostos, serie, ambiente SEFAZ' },
       { label: 'Certificado A1', href: '/config/certificado', icon: FileKey, desc: 'Instalar certificado digital para NF-e/NFS-e' },
       { label: 'Chatwoot / WhatsApp', href: '/integracoes/chatwoot', icon: MessageSquare, desc: 'Conversas e mensagens via WhatsApp' },
+      { label: 'Chatbot / IA', href: '/config/chatbot', icon: Bot, desc: 'WhatsApp bot, IA, respostas automaticas' },
       { label: 'Sincronizar VHSys', href: '/config/sync-vhsys', icon: RefreshCw, desc: 'Importar OS, clientes e servicos do VHSys' },
       { label: 'Cobrança Automática', href: '/config/cobranca', icon: Mail, desc: 'Lembrete de pagamento por email' },
       { label: 'Email de Orcamento', href: '/config/orcamento-email', icon: FileText, desc: 'Template e condicoes do orcamento por email' },

@@ -35,6 +35,8 @@ model Company {
   module_statuses     ModuleStatus[]
   print_templates     PrintTemplate[]
   products            Product[]
+  suppliers           Supplier[]
+  purchases           Purchase[]
   purchase_entries    PurchaseEntry[]
   quotes              Quote[]
   roles               Role[]
@@ -46,6 +48,7 @@ model Company {
   customer_access     CustomerAccess[]
   chat_messages       ChatMessage[]
   announcements       Announcement[]
+  chatbot_logs        ChatbotLog[]
 
   @@map("companies")
 }
@@ -541,8 +544,15 @@ model Product {
   categories           Category?           @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   companies            Company             @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   purchase_entry_items PurchaseEntryItem[]
+  reorder_point        Int?
+  supplier_id          String?
+  location             String?
+  last_purchase_date   DateTime?         @db.Date
+  avg_cost             Int?              @default(0)
   stock_alerts         StockAlert[]
   stock_movements      StockMovement[]
+  purchase_items       PurchaseItem[]
+  default_supplier     Supplier?         @relation(fields: [supplier_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([barcode], map: "idx_products_barcode")
   @@index([company_id], map: "idx_products_company")
@@ -1048,4 +1058,82 @@ model LogisticsStop {
   @@index([route_id], map: "idx_stops_route")
   @@index([os_id], map: "idx_stops_os")
   @@map("logistics_stops")
+}
+
+// ========== CHATBOT / IA ==========
+
+model ChatbotLog {
+  id            String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id    String
+  customer_name String?
+  customer_phone String?
+  intent        String?
+  confidence    Decimal?  @db.Decimal(5, 4)
+  message_in    String?
+  message_out   String?
+  provider      String?   // openai | claude | keywords
+  model         String?
+  status        String?   @default("bot") // bot | transferred | error
+  created_at    DateTime? @default(now()) @db.Timestamptz(6)
+  companies     Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([company_id, created_at], map: "idx_chatbot_logs_company_date")
+  @@map("chatbot_logs")
+}
+
+// ========== ESTOQUE AVANÇADO ==========
+
+model Supplier {
+  id                String     @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id        String
+  name              String
+  document          String?
+  contact_name      String?
+  phone             String?
+  email             String?
+  avg_delivery_days Int?
+  notes             String?
+  is_active         Boolean?   @default(true)
+  created_at        DateTime?  @default(now()) @db.Timestamptz(6)
+  companies         Company    @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  purchases         Purchase[]
+  products          Product[]
+
+  @@index([company_id], map: "idx_suppliers_company")
+  @@map("suppliers")
+}
+
+model Purchase {
+  id                String         @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id        String
+  supplier_id       String?
+  number            String?
+  status            String?        @default("DRAFT")
+  nfe_key           String?
+  total             Int?           @default(0)
+  expected_delivery DateTime?      @db.Date
+  received_at       DateTime?      @db.Timestamptz(6)
+  notes             String?
+  created_by        String?
+  created_at        DateTime?      @default(now()) @db.Timestamptz(6)
+  companies         Company        @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  suppliers         Supplier?      @relation(fields: [supplier_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  purchase_items    PurchaseItem[]
+
+  @@map("purchases")
+}
+
+model PurchaseItem {
+  id          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  purchase_id String
+  product_id  String?
+  description String?
+  quantity    Int
+  unit_cost   Int
+  total       Int
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+  purchases   Purchase  @relation(fields: [purchase_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  products    Product?  @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("purchase_items")
 }
