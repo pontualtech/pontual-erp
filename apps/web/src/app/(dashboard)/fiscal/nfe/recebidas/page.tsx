@@ -346,17 +346,21 @@ export default function NfeRecebidasPage() {
       {syncResult && (
         <div className={cn(
           'rounded-xl border px-4 py-3 text-sm flex items-start gap-3',
-          syncResult.documentos_importados > 0
-            ? 'border-green-200 bg-green-50 text-green-800'
-            : 'border-blue-200 bg-blue-50 text-blue-800'
+          syncResult.cStat === '656' ? 'border-amber-200 bg-amber-50 text-amber-800'
+            : syncResult.documentos_importados > 0 ? 'border-green-200 bg-green-50 text-green-800'
+            : syncResult.cStat === '137' ? 'border-blue-200 bg-blue-50 text-blue-800'
+            : 'border-gray-200 bg-gray-50 text-gray-800'
         )}>
           <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
           <div className="flex-1">
             <p className="font-medium">
-              Sincronizacao concluida: {syncResult.documentos_importados} documento(s) importado(s)
+              {syncResult.cStat === '656' ? 'Limite de consultas atingido — aguarde 1 hora para tentar novamente'
+                : syncResult.cStat === '137' ? 'Nenhum documento novo encontrado na SEFAZ'
+                : syncResult.cStat === '138' ? `${syncResult.documentos_importados} documento(s) importado(s) — tem mais disponivel`
+                : `Sincronizacao: ${syncResult.documentos_importados} documento(s) — Status ${syncResult.cStat}`}
             </p>
             <p className="text-xs mt-0.5 opacity-75">
-              NSU: {syncResult.ultimo_nsu} | Status: {syncResult.cStat} — {syncResult.motivo || ''}
+              NSU: {syncResult.ultimo_nsu} | cStat: {syncResult.cStat} {syncResult.motivo ? `— ${syncResult.motivo}` : ''}
               <br />CNPJ: {syncResult.cnpj} | Ambiente: {syncResult.ambiente}
             </p>
           </div>
