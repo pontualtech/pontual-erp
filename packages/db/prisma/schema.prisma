@@ -63,7 +63,8 @@ model UserProfile {
   preferences    Json?          @default("{}")
   created_at     DateTime?      @default(now()) @db.Timestamptz(6)
   updated_at     DateTime?      @default(now()) @db.Timestamptz(6)
-  service_orders ServiceOrder[]
+  service_orders    ServiceOrder[]
+  logistics_routes  LogisticsRoute[]
   companies      Company        @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   roles          Role           @relation(fields: [role_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
@@ -995,4 +996,56 @@ model NfeSerie {
 
   @@unique([company_id, serie])
   @@map("nfe_series")
+}
+
+// ========== LOGISTICA ==========
+
+model LogisticsRoute {
+  id              String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id      String
+  driver_id       String?
+  date            DateTime  @db.Date
+  status          String?   @default("PLANNED") // PLANNED | IN_PROGRESS | COMPLETED
+  total_stops     Int?      @default(0)
+  completed_stops Int?      @default(0)
+  started_at      DateTime? @db.Timestamptz(6)
+  completed_at    DateTime? @db.Timestamptz(6)
+  notes           String?
+  created_at      DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime? @default(now()) @db.Timestamptz(6)
+  stops           LogisticsStop[]
+  driver          UserProfile? @relation(fields: [driver_id], references: [id])
+  @@index([date], map: "idx_routes_date")
+  @@index([driver_id], map: "idx_routes_driver")
+  @@index([company_id], map: "idx_routes_company")
+  @@map("logistics_routes")
+}
+
+model LogisticsStop {
+  id                     String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id             String
+  route_id               String
+  os_id                  String?
+  type                   String    // COLETA | ENTREGA
+  sequence               Int
+  status                 String?   @default("PENDING") // PENDING | EN_ROUTE | ARRIVED | COMPLETED | FAILED
+  customer_name          String?
+  customer_phone         String?
+  address                String
+  address_complement     String?
+  lat                    Decimal?  @db.Decimal(10, 8)
+  lng                    Decimal?  @db.Decimal(11, 8)
+  scheduled_window_start DateTime? @db.Time(6)
+  scheduled_window_end   DateTime? @db.Time(6)
+  arrived_at             DateTime? @db.Timestamptz(6)
+  completed_at           DateTime? @db.Timestamptz(6)
+  signature_url          String?
+  photo_urls             Json?     @default("[]")
+  notes                  String?
+  failure_reason         String?
+  created_at             DateTime? @default(now()) @db.Timestamptz(6)
+  route                  LogisticsRoute @relation(fields: [route_id], references: [id])
+  @@index([route_id], map: "idx_stops_route")
+  @@index([os_id], map: "idx_stops_os")
+  @@map("logistics_stops")
 }

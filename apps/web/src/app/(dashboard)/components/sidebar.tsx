@@ -8,7 +8,7 @@ import { useAuth } from '@/lib/use-auth'
 import type { AuthUser } from '@/lib/auth'
 import {
   ClipboardList, Users, Package, DollarSign, FileText,
-  Settings, LayoutDashboard, Menu, X, ChevronDown, MessageSquare, MessageCircle, Phone,
+  Settings, LayoutDashboard, Menu, X, ChevronDown, MessageSquare, MessageCircle, Phone, Truck,
 } from 'lucide-react'
 
 interface NavItem {
@@ -33,6 +33,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
       { label: 'Tickets', href: '/tickets', icon: MessageSquare, module: 'core' },
       { label: 'Chat', href: '/chat', icon: MessageCircle, module: 'core' },
       { label: 'WhatsApp', href: '/integracoes/chatwoot', icon: Phone, module: 'core' },
+      { label: 'Logistica', href: '/logistica', icon: Truck, module: 'core' },
     ],
   },
   {
