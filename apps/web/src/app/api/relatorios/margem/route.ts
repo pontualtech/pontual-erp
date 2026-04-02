@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
         so.equipment_type,
         so.equipment_brand,
         so.equipment_model,
-        c.name AS customer_name,
+        COALESCE(c.trade_name, c.legal_name, 'Cliente') AS customer_name,
         COALESCE(so.total_cost, 0)::bigint AS revenue_cents,
         COALESCE(costs.total_cost_price, 0)::bigint AS cost_cents,
         COALESCE(so.total_cost, 0) - COALESCE(costs.total_cost_price, 0) AS margin_cents,
