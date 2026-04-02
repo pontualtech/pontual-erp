@@ -275,15 +275,19 @@ export default function OSDetailPage() {
       .finally(() => setLoading(false))
   }
 
-  function loadQuoteVersions() {
+  function loadQuoteVersions(selectLatest = false) {
     setLoadingVersions(true)
     fetch(`/api/os/${id}/orcamento/versao`)
       .then(r => r.json())
       .then(d => {
         const versions = d.data ?? []
         setQuoteVersions(versions)
-        if (versions.length > 0 && selectedQuoteVersion === null) {
-          setSelectedQuoteVersion(versions[0].version)
+        if (versions.length > 0) {
+          if (selectLatest) {
+            setSelectedQuoteVersion(versions[0].version)
+          } else {
+            setSelectedQuoteVersion(prev => prev ?? versions[0].version)
+          }
         }
       })
       .catch(() => {})
@@ -297,7 +301,7 @@ export default function OSDetailPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Erro ao criar versao')
       toast.success(`Versao v${data.data.version} do orcamento criada!`)
-      loadQuoteVersions()
+      loadQuoteVersions(true)
     } catch (err: any) {
       toast.error(err.message || 'Erro ao criar nova versao')
     } finally {
@@ -1485,6 +1489,117 @@ export default function OSDetailPage() {
           </div>
         )
       })()}
+
+      {/* ========== ORCAMENTO VERSOES ========== */}
+      {quoteVersions.length > 0 && (
+        <div className="rounded-xl border bg-white shadow-sm">
+          <div className="flex items-center justify-between p-4 pb-2">
+            <div className="flex items-center gap-2">
+              <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-indigo-100">
+                <FileText className="h-4 w-4 text-indigo-600" />
+              </div>
+              <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                Versoes do Orcamento ({quoteVersions.length})
+              </h2>
+            </div>
+            <button type="button" onClick={handleCreateNewVersion} disabled={creatingVersion}
+              className="flex items-center gap-1.5 rounded-lg bg-indigo-50 border border-indigo-200 px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 transition-colors disabled:opacity-50">
+              {creatingVersion ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FilePlus className="h-3.5 w-3.5" />}
+              Nova Versao
+            </button>
+          </div>
+
+          {/* Version tabs */}
+          <div className="px-4 flex flex-wrap gap-2 mb-3">
+            {quoteVersions.map(q => {
+              const isLatest = q.version === quoteVersions[0]?.version
+              const isSelected = selectedQuoteVersion === q.version
+              const statusColor = q.status === 'APPROVED' ? 'bg-green-100 text-green-700 border-green-300'
+                : q.status === 'REJECTED' ? 'bg-red-100 text-red-700 border-red-300'
+                : q.status === 'SUPERSEDED' ? 'bg-gray-100 text-gray-500 border-gray-300'
+                : q.status === 'SENT' ? 'bg-blue-100 text-blue-700 border-blue-300'
+                : 'bg-amber-100 text-amber-700 border-amber-300'
+              return (
+                <button key={q.id} type="button" onClick={() => setSelectedQuoteVersion(q.version)}
+                  className={cn(
+                    'rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors',
+                    isSelected ? 'ring-2 ring-indigo-400 ring-offset-1' : '',
+                    statusColor,
+                  )}>
+                  v{q.version}
+                  {isLatest && <span className="ml-1 text-[10px] font-bold">(atual)</span>}
+                  {q.status === 'APPROVED' && <span className="ml-1">aprovado</span>}
+                  {q.status === 'REJECTED' && <span className="ml-1">recusado</span>}
+                  {q.status === 'SUPERSEDED' && <span className="ml-1">anterior</span>}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Selected version details */}
+          {(() => {
+            const selected = quoteVersions.find(q => q.version === selectedQuoteVersion)
+            if (!selected) return null
+            const qItems = selected.quote_items ?? []
+            return (
+              <div className="px-4 pb-4">
+                <div className="rounded-lg border bg-gray-50 p-3 space-y-2">
+                  <div className="flex items-center justify-between text-xs text-gray-500">
+                    <span>Orcamento #{selected.quote_number} - v{selected.version}</span>
+                    <span>{selected.created_at ? new Date(selected.created_at).toLocaleDateString('pt-BR') : ''}</span>
+                  </div>
+                  {selected.notes && (
+                    <p className="text-xs text-gray-600 italic">{selected.notes}</p>
+                  )}
+                  {qItems.length > 0 && (
+                    <table className="w-full text-sm mt-2">
+                      <thead>
+                        <tr className="border-b text-left text-xs font-medium uppercase text-gray-400">
+                          <th className="pb-1">Descricao</th>
+                          <th className="pb-1 w-16 text-right">Qtd</th>
+                          <th className="pb-1 w-24 text-right">V.Unit</th>
+                          <th className="pb-1 w-24 text-right">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {qItems.map((qi: any) => (
+                          <tr key={qi.id}>
+                            <td className="py-1.5 text-gray-700">{qi.description}</td>
+                            <td className="py-1.5 text-right text-gray-500">{qi.quantity}</td>
+                            <td className="py-1.5 text-right text-gray-500">{fmt(qi.unit_price)}</td>
+                            <td className="py-1.5 text-right font-medium">{fmt(qi.total_price)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t font-medium">
+                          <td colSpan={3} className="py-1.5 text-right text-gray-500 text-xs uppercase">Total</td>
+                          <td className="py-1.5 text-right font-bold text-indigo-700">{fmt(selected.total_amount || 0)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  )}
+                </div>
+              </div>
+            )
+          })()}
+        </div>
+      )}
+
+      {/* Button to create first quote version when none exist */}
+      {quoteVersions.length === 0 && os.service_order_items.length > 0 && (
+        <div className="rounded-xl border border-dashed border-indigo-300 bg-indigo-50/30 p-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <FileText className="h-5 w-5 text-indigo-400" />
+            <span className="text-sm text-indigo-700">Nenhum orcamento formal criado para esta OS</span>
+          </div>
+          <button type="button" onClick={handleCreateNewVersion} disabled={creatingVersion}
+            className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 transition-colors disabled:opacity-50">
+            {creatingVersion ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FilePlus className="h-3.5 w-3.5" />}
+            Criar Orcamento v1
+          </button>
+        </div>
+      )}
 
       {/* ========== SAVE + BACK BUTTONS ========== */}
       <div className="flex items-center justify-between gap-3">

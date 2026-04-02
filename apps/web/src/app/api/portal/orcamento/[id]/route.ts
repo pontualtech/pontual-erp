@@ -43,6 +43,11 @@ export async function GET(request: NextRequest, { params }: Params) {
         companies: true,
         module_statuses: true,
         service_order_items: { where: { deleted_at: null } },
+        quotes: {
+          orderBy: { version: 'desc' },
+          take: 1,
+          include: { quote_items: true },
+        },
       },
     })
 
@@ -59,14 +64,27 @@ export async function GET(request: NextRequest, { params }: Params) {
     const settingsMap: Record<string, string> = {}
     for (const s of settings) settingsMap[s.key] = s.value
 
-    const items = os.service_order_items.map(item => ({
-      id: item.id,
-      description: item.description,
-      item_type: item.item_type,
-      quantity: item.quantity,
-      unit_price: item.unit_price,
-      total_price: item.total_price,
-    }))
+    // Use latest quote version items if available, otherwise fall back to OS items
+    const latestQuote = os.quotes[0] ?? null
+    const items = latestQuote
+      ? latestQuote.quote_items.map(item => ({
+          id: item.id,
+          description: item.description,
+          item_type: 'SERVICO' as const,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          total_price: item.total_price,
+        }))
+      : os.service_order_items.map(item => ({
+          id: item.id,
+          description: item.description,
+          item_type: item.item_type,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          total_price: item.total_price,
+        }))
+
+    const totalFromQuote = latestQuote ? (latestQuote.total_amount || 0) : null
 
     return success({
       id: os.id,
@@ -77,11 +95,12 @@ export async function GET(request: NextRequest, { params }: Params) {
       serial_number: os.serial_number,
       reported_issue: os.reported_issue,
       diagnosis: os.diagnosis,
-      total_cost: os.total_cost || 0,
-      total_parts: os.total_parts || 0,
-      total_services: os.total_services || 0,
+      total_cost: totalFromQuote ?? (os.total_cost || 0),
+      total_parts: latestQuote ? 0 : (os.total_parts || 0),
+      total_services: latestQuote ? (latestQuote.total_amount || 0) : (os.total_services || 0),
       status: os.module_statuses?.name || '—',
       items,
+      quote_version: latestQuote?.version ?? null,
       customer_name: os.customers?.legal_name || '—',
       customer_person_type: os.customers?.person_type || 'FISICA',
       company: {

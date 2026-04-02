@@ -15,6 +15,7 @@ interface OrcamentoData {
   total_cost: number; total_parts: number; total_services: number
   status: string; items: OsItem[]; customer_name: string
   customer_person_type: string
+  quote_version: number | null
   company: { name: string; phone: string | null; email: string | null; whatsapp: string | null }
 }
 
@@ -194,7 +195,14 @@ function OrcamentoContent() {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <p className="text-sm text-gray-500">Ordem de Servico</p>
-                <p className="text-2xl font-bold text-gray-900">#{data.os_number}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-2xl font-bold text-gray-900">#{data.os_number}</p>
+                  {data.quote_version && (
+                    <span className="rounded-full bg-indigo-100 border border-indigo-300 px-2.5 py-0.5 text-xs font-bold text-indigo-700">
+                      v{data.quote_version}
+                    </span>
+                  )}
+                </div>
               </div>
               <span className="rounded-full bg-amber-100 border border-amber-300 px-3 py-1 text-xs font-bold text-amber-800">
                 {data.status}
