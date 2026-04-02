@@ -163,18 +163,21 @@ export default function FiscalPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Link
-            href="/fiscal/config"
-            className="flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-          >
-            Configuracoes
+          <Link href="/fiscal/nfe"
+            className="flex items-center gap-2 rounded-md border border-green-300 bg-green-50 px-4 py-2 text-sm font-medium text-green-700 hover:bg-green-100">
+            NF-e Produto
           </Link>
-          <Link
-            href="/fiscal/emitir-nfse"
-            className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            <Plus className="h-4 w-4" />
-            Emitir NFS-e
+          <Link href="/fiscal/nfe/recebidas"
+            className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100">
+            NF-e Recebidas
+          </Link>
+          <Link href="/fiscal/config"
+            className="flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            Config
+          </Link>
+          <Link href="/fiscal/emitir-nfse"
+            className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
+            <Plus className="h-4 w-4" /> NFS-e
           </Link>
         </div>
       </div>
