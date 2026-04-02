@@ -29,6 +29,7 @@ interface LogisticsRoute {
   started_at: string | null
   completed_at: string | null
   stops: RouteStop[]
+  _stopCount?: number
 }
 
 interface RouteSummary {
@@ -71,14 +72,30 @@ export default function LogisticaPage() {
       const res = await fetch(`/api/logistics/routes?date=${date}`)
       if (!res.ok) throw new Error('Erro ao carregar rotas')
       const data = await res.json()
-      const list: LogisticsRoute[] = data.data ?? []
+      // Map API response (driver object + _count) to frontend interface
+      const raw: any[] = data.data ?? []
+      const list: LogisticsRoute[] = raw.map((r: any) => ({
+        id: r.id,
+        date: r.date,
+        status: r.status,
+        driver_name: r.driver?.name ?? r.driver_name ?? 'Sem motorista',
+        driver_avatar: r.driver_avatar ?? null,
+        started_at: r.started_at,
+        completed_at: r.completed_at,
+        stops: r.stops ?? [],
+        _stopCount: r._count?.stops ?? r.total_stops ?? 0,
+      }))
       setRoutes(list)
 
       const planned = list.filter(r => r.status === 'PLANNED').length
       const in_progress = list.filter(r => r.status === 'IN_PROGRESS').length
       const completed = list.filter(r => r.status === 'COMPLETED').length
       const pending_stops = list.reduce((acc, r) => {
-        return acc + (r.stops?.filter(s => s.status === 'PENDING').length ?? 0)
+        // If stops array is loaded, count PENDING; otherwise use _stopCount as estimate for PLANNED routes
+        if (r.stops && r.stops.length > 0) {
+          return acc + r.stops.filter(s => s.status === 'PENDING').length
+        }
+        return acc + (r.status === 'PLANNED' ? (r._stopCount ?? 0) : 0)
       }, 0)
       setSummary({ planned, in_progress, completed, pending_stops })
     } catch {
@@ -203,7 +220,7 @@ export default function LogisticaPage() {
         ) : (
           <div className="divide-y">
             {routes.map(route => {
-              const totalStops = route.stops?.length ?? 0
+              const totalStops = (route.stops?.length ?? 0) > 0 ? route.stops.length : (route._stopCount ?? 0)
               const completedStops = route.stops?.filter(s => s.status === 'COMPLETED').length ?? 0
               const progress = totalStops > 0 ? Math.round((completedStops / totalStops) * 100) : 0
               const st = statusConfig[route.status] ?? statusConfig.PLANNED

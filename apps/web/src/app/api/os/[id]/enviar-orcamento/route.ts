@@ -288,7 +288,7 @@ function buildTemplateVars(os: any, settings: Record<string, string>, approvalLi
 
   const warrantyPeriod = settings['quote.warranty'] || '3 MESES'
   const executionDays = settings['quote.execution_days'] || '10 dias uteis'
-  const quoteValidity = settings['quote.validity'] || '2 dias'
+  const quoteValidity = settings['quote.validity'] || '7 dias'
   const paymentConditions = settings['quote.payment_conditions'] || 'PIX, Dinheiro, Cartao de credito (ate 3x sem juros), Cartao de debito'
   const whatsapp = (settings['company.whatsapp'] || settings['whatsapp'] || settings['company.phone'] || '').replace(/\D/g, '')
 

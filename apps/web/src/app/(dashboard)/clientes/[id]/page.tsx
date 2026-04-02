@@ -32,6 +32,8 @@ interface OS {
   id: string
   os_number: string
   status: string
+  status_id: string
+  module_statuses?: { name: string; color: string | null }
   reported_issue: string | null
   total_amount: number
   created_at: string
@@ -251,8 +253,11 @@ export default function ClienteDetalhePage() {
                       </Link>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
-                        {os.status}
+                      <span
+                        className="inline-flex rounded-full px-2 py-0.5 text-xs font-medium text-white"
+                        style={{ backgroundColor: os.module_statuses?.color || '#6B7280' }}
+                      >
+                        {os.module_statuses?.name || os.status || 'Sem status'}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-gray-500 max-w-xs truncate">{os.reported_issue || '—'}</td>

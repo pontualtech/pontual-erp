@@ -17,7 +17,7 @@ interface QuoteEmailConfig {
 const DEFAULT_CONFIG: QuoteEmailConfig = {
   warranty: '3 MESES',
   execution_days: '10 dias uteis',
-  validity: '2 dias',
+  validity: '7 dias',
   max_installments: '3',
   payment_conditions: 'PIX, Dinheiro, Cartao de credito (ate 3x sem juros), Cartao de debito',
   observations: '',
@@ -186,7 +186,7 @@ export default function OrcamentoEmailConfigPage() {
               value={config.validity}
               onChange={e => setConfig({ ...config, validity: e.target.value })}
               className="w-full rounded-lg border px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-              placeholder="2 dias"
+              placeholder="7 dias"
             />
           </div>
 

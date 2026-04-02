@@ -6,7 +6,7 @@ import { cn, formatDocument } from '@/lib/utils'
 import {
   FileText, Plus, Download, XCircle,
   Eye, BarChart3, Loader2, RefreshCw, Filter,
-  Printer, Send,
+  Printer, Send, AlertTriangle, RotateCcw,
 } from 'lucide-react'
 
 interface FiscalDashboard {
@@ -34,6 +34,7 @@ interface Nota {
   access_key: string | null
   danfe_url: string | null
   xml_url: string | null
+  notes: string | null
   provider_ref: string | null
   customers: { id: string; legal_name: string; document_number: string | null } | null
   _count: { invoice_items: number }
@@ -352,6 +353,12 @@ export default function FiscalPage() {
                     )}>
                       {statusLabel[n.status] ?? n.status}
                     </span>
+                    {n.status === 'REJECTED' && n.notes && (
+                      <p className="mt-1 text-xs text-red-500 max-w-[200px] truncate" title={n.notes}>
+                        <AlertTriangle className="inline h-3 w-3 mr-0.5" />
+                        {n.notes}
+                      </p>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-gray-500">
                     {n.issued_at
@@ -385,6 +392,18 @@ export default function FiscalPage() {
                           className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600">
                           <XCircle className="h-4 w-4" />
                         </button>
+                      )}
+                      {n.status === 'REJECTED' && (
+                        <>
+                          <Link href={`/fiscal/nfse/${n.id}`} title="Ver detalhes"
+                            className="rounded p-1.5 text-gray-400 hover:bg-blue-50 hover:text-blue-600">
+                            <Eye className="h-4 w-4" />
+                          </Link>
+                          <Link href={`/fiscal/emitir-nfse?reemitir=${n.id}`} title="Reemitir NFS-e"
+                            className="rounded p-1.5 text-gray-400 hover:bg-orange-50 hover:text-orange-600">
+                            <RotateCcw className="h-4 w-4" />
+                          </Link>
+                        </>
                       )}
                     </div>
                   </td>

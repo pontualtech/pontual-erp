@@ -25,25 +25,26 @@ export async function GET(req: NextRequest) {
         AND created_at <= ($3::date + interval '1 day')::timestamptz
     `, cid, `${dateFrom}T00:00:00Z`, dateTo)
 
-    // OS that have a quote (orcado)
+    // OS that have a quote OR have estimated_cost > 0 (orcado)
     const totalQuoted: any[] = await prisma.$queryRawUnsafe(`
       SELECT COUNT(DISTINCT so.id)::int AS count
       FROM service_orders so
-      JOIN quotes q ON q.service_order_id = so.id
+      LEFT JOIN quotes q ON q.service_order_id = so.id
       WHERE so.company_id = $1
         AND so.deleted_at IS NULL
+        AND (q.id IS NOT NULL OR COALESCE(so.estimated_cost, 0) > 0)
         AND so.created_at >= $2::timestamptz
         AND so.created_at <= ($3::date + interval '1 day')::timestamptz
     `, cid, `${dateFrom}T00:00:00Z`, dateTo)
 
-    // OS with approved quote
+    // OS with approved quote OR approved_cost > 0
     const totalApproved: any[] = await prisma.$queryRawUnsafe(`
       SELECT COUNT(DISTINCT so.id)::int AS count
       FROM service_orders so
-      JOIN quotes q ON q.service_order_id = so.id
+      LEFT JOIN quotes q ON q.service_order_id = so.id AND q.status = 'APPROVED'
       WHERE so.company_id = $1
         AND so.deleted_at IS NULL
-        AND q.status = 'APPROVED'
+        AND (q.id IS NOT NULL OR COALESCE(so.approved_cost, 0) > 0)
         AND so.created_at >= $2::timestamptz
         AND so.created_at <= ($3::date + interval '1 day')::timestamptz
     `, cid, `${dateFrom}T00:00:00Z`, dateTo)
@@ -69,7 +70,7 @@ export async function GET(req: NextRequest) {
       totalCompleted = Number(completedResult[0]?.count || 0)
     }
 
-    // Paid (has accounts_receivable with status PAGO/RECEBIDO)
+    // Paid (has accounts_receivable with status PAGO/RECEBIDO/LIQUIDADO or received_amount > 0)
     const totalPaid: any[] = await prisma.$queryRawUnsafe(`
       SELECT COUNT(DISTINCT so.id)::int AS count
       FROM service_orders so
@@ -77,7 +78,7 @@ export async function GET(req: NextRequest) {
       WHERE so.company_id = $1
         AND so.deleted_at IS NULL
         AND ar.deleted_at IS NULL
-        AND ar.status IN ('PAGO', 'RECEBIDO')
+        AND (ar.status IN ('PAGO', 'RECEBIDO', 'LIQUIDADO') OR COALESCE(ar.received_amount, 0) > 0)
         AND so.created_at >= $2::timestamptz
         AND so.created_at <= ($3::date + interval '1 day')::timestamptz
     `, cid, `${dateFrom}T00:00:00Z`, dateTo)

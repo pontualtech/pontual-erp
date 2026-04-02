@@ -33,7 +33,7 @@ export default function FinanceiroPage() {
     { label: 'Saldo Total', value: formatCurrency(data?.totalBalanceCents ?? 0), icon: DollarSign, color: 'text-emerald-600 bg-emerald-50' },
     { label: 'A Receber', value: formatCurrency(data?.receivable?.openCents ?? 0), sub: data?.receivable?.openCount ? `${data.receivable.openCount} titulo(s)` : null, icon: TrendingUp, color: 'text-green-600 bg-green-50' },
     { label: 'A Pagar', value: formatCurrency(data?.payable?.openCents ?? 0), sub: data?.payable?.openCount ? `${data.payable.openCount} titulo(s)` : null, icon: TrendingDown, color: 'text-red-600 bg-red-50' },
-    { label: 'Vencidos', value: formatCurrency((data?.payable?.overdueCents ?? 0) + (data?.receivable?.overdueCents ?? 0)), sub: ((data?.payable?.overdueCount ?? 0) + (data?.receivable?.overdueCount ?? 0)) > 0 ? `${(data?.payable?.overdueCount ?? 0) + (data?.receivable?.overdueCount ?? 0)} titulo(s)` : null, icon: AlertTriangle, color: 'text-orange-600 bg-orange-50' },
+    { label: 'Vencidos', value: formatCurrency((data?.payable?.overdueCents ?? 0) + (data?.receivable?.overdueCents ?? 0)), sub: ((data?.payable?.overdueCount ?? 0) + (data?.receivable?.overdueCount ?? 0)) > 0 ? `${(data?.payable?.overdueCount ?? 0) + (data?.receivable?.overdueCount ?? 0)} titulo(s)` : null, icon: ((data?.payable?.overdueCents ?? 0) + (data?.receivable?.overdueCents ?? 0)) > 0 ? AlertTriangle : DollarSign, color: ((data?.payable?.overdueCents ?? 0) + (data?.receivable?.overdueCents ?? 0)) > 0 ? 'text-orange-600 bg-orange-50' : 'text-gray-400 bg-gray-50' },
   ]
 
   return (

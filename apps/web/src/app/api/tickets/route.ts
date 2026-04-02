@@ -108,7 +108,7 @@ export async function POST(req: NextRequest) {
         source: body.source || 'INTERNO',
         customer_id: body.customer_id || null,
         service_order_id: body.service_order_id || null,
-        assigned_to: body.assigned_to || null,
+        assigned_to: body.assigned_to || user.id,
         created_by: user.id,
         created_by_type: 'FUNCIONARIO',
         status: 'ABERTO',

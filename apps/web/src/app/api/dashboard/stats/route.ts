@@ -18,10 +18,13 @@ export async function GET() {
     })
     const finalIds = allStatuses.filter(s => s.is_final).map(s => s.id)
 
-    // ---- Date boundaries ----
+    // ---- Date boundaries (use UTC to avoid timezone mismatches with DB) ----
     const now = new Date()
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    // Use Sao Paulo offset (UTC-3) to determine "today" in local time
+    const spNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }))
+    const todayStart = new Date(Date.UTC(spNow.getFullYear(), spNow.getMonth(), spNow.getDate()))
+    const todayEnd = new Date(todayStart.getTime() + 86400000)
+    const monthStart = new Date(Date.UTC(spNow.getFullYear(), spNow.getMonth(), 1))
 
     // ---- 1. Summary Cards ----
     const [
@@ -35,7 +38,7 @@ export async function GET() {
         where: {
           company_id: cid,
           deleted_at: null,
-          created_at: { gte: todayStart, lt: new Date(todayStart.getTime() + 86400000) },
+          created_at: { gte: todayStart, lt: todayEnd },
           ...(finalIds.length > 0 ? { status_id: { notIn: finalIds } } : {}),
         },
       }),
@@ -55,21 +58,33 @@ export async function GET() {
         },
       }),
 
-      // Faturamento do mes (contas recebidas)
-      prisma.accountReceivable.aggregate({
-        where: {
-          company_id: cid,
-          deleted_at: null,
-          status: { in: ['RECEBIDO', 'PAGO'] },
-          updated_at: { gte: monthStart },
-        },
-        _sum: { received_amount: true },
-      }),
+      // Faturamento do mes: contas recebidas OR OS com status final
+      Promise.all([
+        prisma.accountReceivable.aggregate({
+          where: {
+            company_id: cid,
+            deleted_at: null,
+            status: { in: ['RECEBIDO', 'PAGO'] },
+            updated_at: { gte: monthStart },
+          },
+          _sum: { received_amount: true },
+        }),
+        prisma.serviceOrder.aggregate({
+          where: {
+            company_id: cid,
+            deleted_at: null,
+            ...(finalIds.length > 0 ? { status_id: { in: finalIds } } : {}),
+            created_at: { gte: monthStart },
+          },
+          _sum: { total_cost: true },
+        }),
+      ]),
     ])
 
     // ---- 2. OS por Semana (ultimas 8 semanas) ----
+    // Include current week + 8 full weeks back (63 days to be safe with timezone)
     const eightWeeksAgo = new Date()
-    eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 56)
+    eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 63)
 
     const osPerWeek: { week: string; count: string }[] = await prisma.$queryRawUnsafe(`
       SELECT
@@ -107,12 +122,11 @@ export async function GET() {
     // Tempo medio de reparo (dias entre abertura e entrega)
     const avgRepair: { avg_days: number | null }[] = await prisma.$queryRawUnsafe(`
       SELECT
-        AVG(GREATEST(EXTRACT(EPOCH FROM (actual_delivery - created_at)) / 86400, 0))::numeric(10,1) as avg_days
+        AVG(ABS(EXTRACT(EPOCH FROM (actual_delivery - created_at)) / 86400))::numeric(10,1) as avg_days
       FROM service_orders
       WHERE company_id = $1
         AND deleted_at IS NULL
         AND actual_delivery IS NOT NULL
-        AND actual_delivery > created_at
         AND created_at >= $2
     `, cid, monthStart)
 
@@ -164,7 +178,13 @@ export async function GET() {
         osAbertasHoje,
         osEmExecucao,
         osProntas,
-        faturamentoMesCents: faturamentoMes._sum.received_amount ?? 0,
+        faturamentoMesCents: (() => {
+          const [arAgg, osAgg] = faturamentoMes
+          const arTotal = arAgg._sum.received_amount ?? 0
+          const osTotal = osAgg._sum.total_cost ?? 0
+          // Use accounts receivable if available, otherwise fallback to OS total_cost
+          return arTotal > 0 ? arTotal : osTotal
+        })(),
       },
       osPerWeek: osPerWeek.map(w => ({ week: w.week, count: Number(w.count) })),
       pipeline: pipelineData,

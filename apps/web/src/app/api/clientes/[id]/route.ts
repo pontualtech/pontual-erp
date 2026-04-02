@@ -20,6 +20,9 @@ export async function GET(req: NextRequest, { params }: Params) {
           where: { deleted_at: null },
           orderBy: { created_at: 'desc' },
           take: 10,
+          include: {
+            module_statuses: { select: { name: true, color: true } },
+          },
         },
       },
     })

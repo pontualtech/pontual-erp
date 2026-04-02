@@ -9,7 +9,22 @@ import { toast } from 'sonner'
 interface Customer {
   id: string
   legal_name: string
+  trade_name: string | null
   document_number: string | null
+}
+
+// Returns true if a name looks like a phone number (all digits/spaces/dashes, > 10 digit chars)
+function looksLikePhone(name: string): boolean {
+  const digits = name.replace(/\D/g, '')
+  return digits.length > 10 && digits.length === name.replace(/[\s\-\(\)\+]/g, '').length
+}
+
+function getDisplayName(c: Customer): string {
+  const name = (!looksLikePhone(c.legal_name) && c.legal_name)
+    || (c.trade_name && !looksLikePhone(c.trade_name) && c.trade_name)
+    || c.document_number
+    || 'Cliente sem nome'
+  return name
 }
 
 interface EquipmentRow {
@@ -114,9 +129,15 @@ export default function NovoContratoPage() {
     }
   }
 
+  // Filter out customers whose name looks like a phone number, then search
+  const validCustomers = customers.filter(c => !looksLikePhone(c.legal_name) || (c.trade_name && !looksLikePhone(c.trade_name)))
   const filteredCustomers = customerSearch
-    ? customers.filter(c => c.legal_name.toLowerCase().includes(customerSearch.toLowerCase()))
-    : customers
+    ? validCustomers.filter(c => {
+        const search = customerSearch.toLowerCase()
+        return getDisplayName(c).toLowerCase().includes(search)
+          || (c.document_number && c.document_number.includes(search))
+      })
+    : validCustomers
 
   return (
     <div className="space-y-6">
@@ -161,7 +182,7 @@ export default function NovoContratoPage() {
                     <option value="">Selecione um cliente</option>
                     {filteredCustomers.map(c => (
                       <option key={c.id} value={c.id}>
-                        {c.legal_name} {c.document_number ? `(${c.document_number})` : ''}
+                        {getDisplayName(c)} {c.document_number ? `(${c.document_number})` : ''}
                       </option>
                     ))}
                   </select>

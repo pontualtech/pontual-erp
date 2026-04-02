@@ -1,11 +1,17 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import type { AuthUser } from '@/lib/auth'
-import { Search, ChevronRight, LogOut, User, Settings } from 'lucide-react'
+import { Search, ChevronRight, LogOut, User, Settings, Wrench, Users, Package, Loader2 } from 'lucide-react'
 import { NotificationBell } from './notification-bell'
+
+interface SearchResults {
+  os: { id: string; os_number: number; equipment_type: string; status_name: string; customer_name: string }[]
+  clientes: { id: string; legal_name: string; document_number: string | null; mobile: string | null }[]
+  produtos: { id: string; name: string; sku: string | null; current_stock: number | null }[]
+}
 
 const breadcrumbMap: Record<string, string> = {
   os: 'Ordens de Servico',
@@ -42,8 +48,48 @@ function Breadcrumb() {
 export function Header({ user }: { user: AuthUser }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<SearchResults | null>(null)
+  const [searchLoading, setSearchLoading] = useState(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
+
+  const doSearch = useCallback(async (q: string) => {
+    if (q.length < 2) {
+      setSearchResults(null)
+      setSearchLoading(false)
+      return
+    }
+    setSearchLoading(true)
+    try {
+      const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`)
+      const json = await res.json()
+      if (json.data) setSearchResults(json.data)
+    } catch {
+      // ignore
+    } finally {
+      setSearchLoading(false)
+    }
+  }, [])
+
+  function handleSearchInput(value: string) {
+    setSearchQuery(value)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => doSearch(value), 300)
+  }
+
+  function closeSearch() {
+    setSearchOpen(false)
+    setSearchQuery('')
+    setSearchResults(null)
+    setSearchLoading(false)
+  }
+
+  function navigateTo(path: string) {
+    closeSearch()
+    router.push(path)
+  }
 
   // Cmd+K shortcut
   useEffect(() => {
@@ -51,6 +97,9 @@ export function Header({ user }: { user: AuthUser }) {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault()
         setSearchOpen(prev => !prev)
+        setSearchQuery('')
+        setSearchResults(null)
+        setSearchLoading(false)
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -127,20 +176,105 @@ export function Header({ user }: { user: AuthUser }) {
         </div>
       </div>
 
-      {/* Search modal (simplified) */}
+      {/* Search modal */}
       {searchOpen && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center pt-24 bg-black/30" onClick={() => setSearchOpen(false)}>
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-24 bg-black/30" onClick={closeSearch}>
           <div className="w-full max-w-lg rounded-lg border bg-white shadow-xl" onClick={e => e.stopPropagation()}>
             <div className="flex items-center gap-2 border-b px-4 py-3">
               <Search className="h-5 w-5 text-gray-400" />
               <input
                 autoFocus
+                value={searchQuery}
+                onChange={e => handleSearchInput(e.target.value)}
+                onKeyDown={e => e.key === 'Escape' && closeSearch()}
                 placeholder="Buscar OS, clientes, produtos..."
                 className="flex-1 bg-transparent text-sm outline-none"
               />
+              {searchLoading && <Loader2 className="h-4 w-4 animate-spin text-gray-400" />}
             </div>
-            <div className="p-4 text-center text-sm text-gray-400">
-              Digite para buscar
+            <div className="max-h-80 overflow-y-auto">
+              {!searchResults && !searchLoading && (
+                <div className="p-4 text-center text-sm text-gray-400">
+                  Digite para buscar
+                </div>
+              )}
+              {searchResults && (
+                <>
+                  {searchResults.os.length === 0 && searchResults.clientes.length === 0 && searchResults.produtos.length === 0 ? (
+                    <div className="p-4 text-center text-sm text-gray-400">
+                      Nenhum resultado encontrado
+                    </div>
+                  ) : (
+                    <div className="py-2">
+                      {searchResults.os.length > 0 && (
+                        <div>
+                          <div className="flex items-center gap-2 px-4 py-1.5 text-xs font-semibold text-gray-500 uppercase">
+                            <Wrench className="h-3.5 w-3.5" /> Ordens de Servico
+                          </div>
+                          {searchResults.os.map(o => (
+                            <button
+                              key={o.id}
+                              onClick={() => navigateTo(`/os/${o.id}`)}
+                              className="flex w-full items-center justify-between px-4 py-2 text-sm hover:bg-gray-50"
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium text-blue-600">#{o.os_number}</span>
+                                <span className="text-gray-700">{o.equipment_type}</span>
+                              </div>
+                              <div className="flex items-center gap-2 text-xs text-gray-500">
+                                <span>{o.customer_name}</span>
+                                <span className="rounded bg-gray-100 px-1.5 py-0.5">{o.status_name}</span>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {searchResults.clientes.length > 0 && (
+                        <div>
+                          <div className="flex items-center gap-2 px-4 py-1.5 text-xs font-semibold text-gray-500 uppercase">
+                            <Users className="h-3.5 w-3.5" /> Clientes
+                          </div>
+                          {searchResults.clientes.map(c => (
+                            <button
+                              key={c.id}
+                              onClick={() => navigateTo(`/clientes/${c.id}`)}
+                              className="flex w-full items-center justify-between px-4 py-2 text-sm hover:bg-gray-50"
+                            >
+                              <span className="font-medium text-gray-700">{c.legal_name}</span>
+                              <div className="flex items-center gap-2 text-xs text-gray-500">
+                                {c.document_number && <span>{c.document_number}</span>}
+                                {c.mobile && <span>{c.mobile}</span>}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {searchResults.produtos.length > 0 && (
+                        <div>
+                          <div className="flex items-center gap-2 px-4 py-1.5 text-xs font-semibold text-gray-500 uppercase">
+                            <Package className="h-3.5 w-3.5" /> Produtos
+                          </div>
+                          {searchResults.produtos.map(p => (
+                            <button
+                              key={p.id}
+                              onClick={() => navigateTo(`/produtos/${p.id}`)}
+                              className="flex w-full items-center justify-between px-4 py-2 text-sm hover:bg-gray-50"
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium text-gray-700">{p.name}</span>
+                                {p.sku && <span className="text-xs text-gray-400">{p.sku}</span>}
+                              </div>
+                              <span className="text-xs text-gray-500">
+                                Estoque: {p.current_stock ?? 0}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
         </div>
