@@ -85,8 +85,8 @@ export default function FinanceiroPage() {
                   <p className="text-sm font-medium text-gray-900">{acc.name}</p>
                   <p className="text-xs text-gray-400">{acc.type}</p>
                 </div>
-                <span className={cn('text-sm font-semibold', acc.balance_cents >= 0 ? 'text-green-600' : 'text-red-600')}>
-                  {formatCurrency(acc.balance_cents)}
+                <span className={cn('text-sm font-semibold', (acc.current_balance ?? acc.balance_cents ?? 0) >= 0 ? 'text-green-600' : 'text-red-600')}>
+                  {formatCurrency(acc.current_balance ?? acc.balance_cents ?? 0)}
                 </span>
               </div>
             ))}
