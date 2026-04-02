@@ -6,16 +6,31 @@ import https from 'https'
 
 interface SoapRequest {
   url: string
-  action: string  // SOAPAction header
-  body: string    // XML body (dentro do envelope SOAP)
+  action: string
+  body: string
   privateKeyPem: string
   certificatePem: string
   timeout?: number
 }
 
-/**
- * Monta envelope SOAP 1.2 para SEFAZ
- */
+// Mapa SOAPAction → namespace do serviço
+const ACTION_NAMESPACE: Record<string, string> = {
+  'nfeAutorizacaoLote': 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeAutorizacao4',
+  'nfeRetAutorizacaoLote': 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeRetAutorizacao4',
+  'nfeConsultaNF': 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeConsultaProtocolo4',
+  'nfeInutilizacaoNF': 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeInutilizacao4',
+  'nfeRecepcaoEvento': 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4',
+  'nfeStatusServicoNF': 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeStatusServico4',
+  'nfeDistDFeInteresse': 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe',
+}
+
+function getNamespace(action: string): string {
+  for (const [key, ns] of Object.entries(ACTION_NAMESPACE)) {
+    if (action.includes(key)) return ns
+  }
+  return 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeAutorizacao4'
+}
+
 function wrapSoapEnvelope(body: string, xmlns: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
@@ -28,13 +43,8 @@ function wrapSoapEnvelope(body: string, xmlns: string): string {
 </soap12:Envelope>`
 }
 
-/**
- * Envia requisição SOAP com mTLS para a SEFAZ
- */
 export async function sendSoapRequest(req: SoapRequest): Promise<string> {
-  // Namespace varia por serviço
-  const xmlns = 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeAutorizacao4'
-
+  const xmlns = getNamespace(req.action)
   const envelope = wrapSoapEnvelope(req.body, xmlns)
 
   const urlObj = new URL(req.url)
@@ -60,7 +70,7 @@ export async function sendSoapRequest(req: SoapRequest): Promise<string> {
       let data = ''
       res.on('data', chunk => data += chunk)
       res.on('end', () => {
-        if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+        if (res.statusCode && res.statusCode >= 200 && res.statusCode < 500) {
           resolve(data)
         } else {
           reject(new Error(`SEFAZ HTTP ${res.statusCode}: ${data.substring(0, 500)}`))
@@ -68,19 +78,21 @@ export async function sendSoapRequest(req: SoapRequest): Promise<string> {
       })
     })
 
-    httpReq.on('error', err => reject(new Error(`SEFAZ connection error: ${err.message}`)))
-    httpReq.on('timeout', () => { httpReq.destroy(); reject(new Error('SEFAZ timeout (30s)')) })
+    httpReq.on('error', (err: any) => {
+      if (err.code === 'ECONNREFUSED') reject(new Error('SEFAZ: Conexão recusada. Verifique o certificado.'))
+      else if (err.code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE') reject(new Error('SEFAZ: Certificado não aceito. Verifique validade e CA.'))
+      else if (err.code === 'ERR_TLS_CERT_ALTNAME_INVALID') reject(new Error('SEFAZ: Nome do certificado não bate com o servidor.'))
+      else reject(new Error(`SEFAZ: ${err.code || err.message}`))
+    })
+
+    httpReq.on('timeout', () => { httpReq.destroy(); reject(new Error('SEFAZ: Timeout (30s)')) })
 
     httpReq.write(envelope)
     httpReq.end()
   })
 }
 
-/**
- * Extrai o conteúdo do body SOAP da resposta
- */
 export function extractSoapBody(soapResponse: string): string {
-  // Extrair conteúdo entre <soap:Body> ou <soap12:Body>
   const match = soapResponse.match(/<(?:soap12?:)?Body[^>]*>([\s\S]*?)<\/(?:soap12?:)?Body>/i)
   return match?.[1]?.trim() || soapResponse
 }

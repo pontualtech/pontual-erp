@@ -83,14 +83,36 @@ export async function POST(req: NextRequest) {
       </distNSU>
     </distDFeInt>`
 
-    const sefazResponse = await sendSoapRequest({
-      url: endpoints.distribuicaoDFe,
-      action: 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe/nfeDistDFeInteresse',
-      body: distXml,
-      privateKeyPem: cert.privateKeyPem,
-      certificatePem: cert.certificatePem,
-      timeout: 30000,
-    })
+    let sefazResponse: string
+    try {
+      sefazResponse = await sendSoapRequest({
+        url: endpoints.distribuicaoDFe,
+        action: 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe/nfeDistDFeInteresse',
+        body: distXml,
+        privateKeyPem: cert.privateKeyPem,
+        certificatePem: cert.certificatePem,
+        timeout: 30000,
+      })
+    } catch (sefazErr: any) {
+      console.error('[NF-e Recebidas] Erro SEFAZ:', sefazErr.message)
+      // Log para debug
+      await prisma.fiscalLog.create({
+        data: {
+          company_id: user.companyId,
+          action: 'nfe_recebidas_sync_error',
+          response: {
+            error: sefazErr.message,
+            url: endpoints.distribuicaoDFe,
+            cnpj,
+            uf,
+            ambiente,
+            certCnpj: cert.cnpj,
+            certValid: `${cert.validFrom.toISOString()} - ${cert.validTo.toISOString()}`,
+          },
+        },
+      })
+      return error(`Erro de comunicação com SEFAZ: ${sefazErr.message}`, 502)
+    }
 
     const responseBody = extractSoapBody(sefazResponse)
     const cStat = responseBody.match(/<cStat>(\d+)<\/cStat>/)?.[1] || ''
