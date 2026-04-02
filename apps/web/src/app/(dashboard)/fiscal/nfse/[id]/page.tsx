@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
-import { cn } from '@/lib/utils'
+import { cn, formatDocument } from '@/lib/utils'
 import {
   ArrowLeft, FileText, Download, Eye, XCircle,
   Loader2, RefreshCw, CheckCircle2, Clock, AlertTriangle,
@@ -346,7 +346,7 @@ export default function NfseDetailPage() {
                 <>
                   <p className="font-medium text-gray-900">{invoice.customers.legal_name}</p>
                   {invoice.customers.document_number && (
-                    <p className="text-gray-500">{invoice.customers.document_number}</p>
+                    <p className="text-gray-500">{formatDocument(invoice.customers.document_number)}</p>
                   )}
                   {invoice.customers.email && (
                     <p className="text-gray-500">{invoice.customers.email}</p>

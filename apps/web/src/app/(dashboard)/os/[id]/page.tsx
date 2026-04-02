@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { cn } from '@/lib/utils'
+import { cn, formatDocument } from '@/lib/utils'
 import { toast } from 'sonner'
 import { useAuth } from '@/lib/use-auth'
 import { ArrowLeft, Edit, Camera, History, Info, Package, Plus, Trash2, Loader2, Search, Wrench, CreditCard, X, Printer, Mail, Send, Copy, FilePlus, User, Monitor, FileText, Clock, ChevronDown, ChevronUp, AlertTriangle, Save, Check, Layers, DollarSign, ExternalLink, Receipt, Truck, MessageCircle } from 'lucide-react'
@@ -2316,7 +2316,7 @@ export default function OSDetailPage() {
             <div className="space-y-4">
               <div className="rounded-lg bg-gray-50 p-3 text-sm space-y-1">
                 <div className="flex justify-between"><span className="text-gray-500">Cliente:</span><span className="font-medium">{os.customers?.legal_name}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">CPF/CNPJ:</span><span className="font-medium">{os.customers?.document_number || 'Nao informado'}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">CPF/CNPJ:</span><span className="font-medium">{os.customers?.document_number ? formatDocument(os.customers.document_number) : 'Nao informado'}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Valor:</span><span className="font-bold text-green-700">R$ {(os.total_cost / 100).toFixed(2)}</span></div>
               </div>
 

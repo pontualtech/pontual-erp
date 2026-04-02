@@ -36,8 +36,19 @@ export function NotificationBell() {
       const res = await fetch('/api/avisos/unread')
       const json = await res.json()
       if (json.data) {
-        setCount(json.data.count)
-        setAnnouncements(json.data.announcements || [])
+        // Filtra os que exigem leitura obrigatoria — esses sao mostrados pelo AnnouncementModal
+        const nonRequired = (json.data.announcements || []).filter(
+          (a: Announcement & { require_read?: boolean }) => !a.require_read
+        )
+        // Deduplica por id (precaucao contra dados duplicados)
+        const seen = new Set<string>()
+        const unique = nonRequired.filter((a: Announcement) => {
+          if (seen.has(a.id)) return false
+          seen.add(a.id)
+          return true
+        })
+        setCount(unique.length)
+        setAnnouncements(unique)
       }
     } catch {}
   }, [])

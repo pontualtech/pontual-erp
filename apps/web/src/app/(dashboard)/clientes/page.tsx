@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Plus, Search, Pencil, Trash2, Eye, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/lib/use-auth'
+import { formatDocument } from '@/lib/utils'
 
 interface Cliente {
   id: string; legal_name: string; trade_name: string | null; person_type: string
@@ -143,7 +144,7 @@ export default function ClientesPage() {
                     {c.trade_name && <p className="text-xs text-gray-400">{c.trade_name}</p>}
                   </td>
                   <td className="px-4 py-3 text-gray-500">{personTypeLabel[c.person_type] ?? c.person_type}</td>
-                  <td className="px-4 py-3 text-gray-700">{c.document_number || '—'}</td>
+                  <td className="px-4 py-3 text-gray-700">{formatDocument(c.document_number)}</td>
                   <td className="px-4 py-3 text-gray-700">{c.mobile || c.phone || '—'}</td>
                   <td className="px-4 py-3 text-gray-500">{c.email || '—'}</td>
                   <td className="px-4 py-3 text-gray-500">

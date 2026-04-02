@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { cn } from '@/lib/utils'
+import { cn, formatDocument } from '@/lib/utils'
 import {
   ArrowLeft, Send, Loader2, Plus, Trash2, Search,
   CheckCircle2, XCircle, AlertTriangle, Download, FileText,
@@ -517,7 +517,7 @@ export default function EmitirNfePage() {
                   className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-blue-50 text-sm border-b last:border-b-0">
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-gray-900 truncate">{c.legal_name}</p>
-                    <p className="text-xs text-gray-400">{c.document_number || 'Sem CPF/CNPJ'}</p>
+                    <p className="text-xs text-gray-400">{c.document_number ? formatDocument(c.document_number) : 'Sem CPF/CNPJ'}</p>
                   </div>
                   {c.address_city && (
                     <span className="text-xs text-gray-400 shrink-0">{c.address_city}/{c.address_state}</span>
@@ -537,7 +537,7 @@ export default function EmitirNfePage() {
               </div>
               <div>
                 <p className="text-xs text-gray-400">CPF/CNPJ</p>
-                <p className="font-medium">{selectedCliente.document_number || '---'}</p>
+                <p className="font-medium">{formatDocument(selectedCliente.document_number)}</p>
               </div>
               <div>
                 <p className="text-xs text-gray-400">Cidade/UF</p>

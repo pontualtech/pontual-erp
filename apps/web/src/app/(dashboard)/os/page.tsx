@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { cn } from '@/lib/utils'
-import { Plus, Search, List, LayoutGrid, Settings2, Eye, EyeOff, Trash2, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Clock, AlertTriangle, Printer, FileSpreadsheet, Mail, Columns3, MoreVertical, Copy, Receipt, ChevronDown, RefreshCw, SearchX, Send } from 'lucide-react'
+import { cn, formatDocument } from '@/lib/utils'
+import { Plus, Search, List, LayoutGrid, Settings2, Eye, EyeOff, Trash2, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Clock, AlertTriangle, Printer, FileSpreadsheet, Mail, Columns3, MoreVertical, Copy, Receipt, ChevronDown, RefreshCw, SearchX, Send, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/lib/use-auth'
 
@@ -144,6 +144,14 @@ export default function OSListPage() {
   const [nfseDesc, setNfseDesc] = useState('')
   const [emittingNfse, setEmittingNfse] = useState(false)
   const [bulkChanging, setBulkChanging] = useState(false)
+  const [tecnicos, setTecnicos] = useState<{ id: string; name: string }[]>([])
+  const [showBulkAssign, setShowBulkAssign] = useState(false)
+  const [bulkAssigning, setBulkAssigning] = useState(false)
+
+  // Load technicians list
+  useEffect(() => {
+    fetch('/api/users?limit=100').then(r => r.json()).then(d => setTecnicos(d.data ?? [])).catch(() => {})
+  }, [])
 
   useEffect(() => {
     function handleEsc(e: KeyboardEvent) {
@@ -151,6 +159,7 @@ export default function OSListPage() {
         if (showBulkDelete) { setShowBulkDelete(false); return }
         if (nfseModalOS && !emittingNfse) { setNfseModalOS(null); return }
         if (showBulkStatus) { setShowBulkStatus(false); return }
+        if (showBulkAssign) { setShowBulkAssign(false); return }
         if (showColumnPicker) { setShowColumnPicker(false); return }
         if (showStatusFilter) { setShowStatusFilter(false); return }
         if (actionMenuId) { setActionMenuId(null); return }
@@ -158,7 +167,7 @@ export default function OSListPage() {
     }
     document.addEventListener('keydown', handleEsc)
     return () => document.removeEventListener('keydown', handleEsc)
-  }, [showBulkDelete, nfseModalOS, emittingNfse, showBulkStatus, showColumnPicker, showStatusFilter, actionMenuId])
+  }, [showBulkDelete, nfseModalOS, emittingNfse, showBulkStatus, showBulkAssign, showColumnPicker, showStatusFilter, actionMenuId])
 
   // Load role-based visibility config
   useEffect(() => {
@@ -435,19 +444,48 @@ export default function OSListPage() {
 
   async function bulkChangeStatus(targetStatusId: string) {
     setBulkChanging(true)
-    let ok = 0, fail = 0
-    for (const osId of selected) {
-      try {
-        const res = await fetch(`/api/os/${osId}/transition`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ to_status_id: targetStatusId }),
-        })
-        if (res.ok) ok++; else fail++
-      } catch { fail++ }
+    try {
+      const res = await fetch('/api/os/bulk-transition', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selected), toStatusId: targetStatusId }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        const ok = data.data?.ok ?? 0
+        const fail = data.data?.fail ?? 0
+        toast.success(`${ok} OS alterada(s)${fail ? `, ${fail} erro(s)` : ''}`)
+        if (fail > 0) {
+          const errors = (data.data?.results ?? []).filter((r: any) => !r.success)
+          errors.forEach((r: any) => toast.error(`OS-${String(r.os_number).padStart(4, '0')}: ${r.error}`))
+        }
+      } else {
+        toast.error(data.error || 'Erro ao alterar status')
+      }
+    } catch {
+      toast.error('Erro ao alterar status em massa')
     }
-    toast.success(`${ok} OS alterada(s)${fail ? `, ${fail} erro(s)` : ''}`)
     setShowBulkStatus(false); setBulkChanging(false); setSelected(new Set()); loadOS()
+  }
+
+  async function bulkAssignTechnician(technicianId: string) {
+    setBulkAssigning(true)
+    try {
+      const res = await fetch('/api/os/bulk-assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selected), technician_id: technicianId }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        toast.success(`${data.data?.updated ?? 0} OS atribuída(s) para ${data.data?.technician ?? 'técnico'}`)
+      } else {
+        toast.error(data.error || 'Erro ao atribuir técnico')
+      }
+    } catch {
+      toast.error('Erro ao atribuir técnico em massa')
+    }
+    setShowBulkAssign(false); setBulkAssigning(false); setSelected(new Set()); loadOS()
   }
 
   // Effective visible columns = allowed by role - hidden by user
@@ -994,6 +1032,31 @@ export default function OSListPage() {
                     </>
                   )}
                 </div>
+                <div className="relative">
+                  <button type="button" onClick={() => setShowBulkAssign(!showBulkAssign)}
+                    className="flex items-center gap-1.5 px-3 py-1 text-sm border rounded-md hover:bg-white text-gray-600">
+                    <UserPlus className="h-3.5 w-3.5" /> Atribuir Tecnico <ChevronDown className="h-3 w-3" />
+                  </button>
+                  {showBulkAssign && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setShowBulkAssign(false)} />
+                      <div className="absolute right-0 bottom-full mb-1 z-20 w-56 rounded-lg border bg-white shadow-lg py-1 max-h-64 overflow-y-auto">
+                        <div className="px-3 py-1.5 text-xs font-medium text-gray-400 uppercase">Atribuir {selected.size} OS para:</div>
+                        {tecnicos.map(t => (
+                          <button key={t.id} type="button" onClick={() => bulkAssignTechnician(t.id)}
+                            disabled={bulkAssigning}
+                            className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 w-full disabled:opacity-50">
+                            <UserPlus className="h-3.5 w-3.5 text-gray-400" />
+                            {t.name}
+                          </button>
+                        ))}
+                        {tecnicos.length === 0 && (
+                          <p className="px-3 py-2 text-xs text-gray-400">Nenhum tecnico cadastrado</p>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
                 <button type="button" onClick={() => setSelected(new Set())}
                   className="text-sm text-gray-500 hover:text-gray-700">Limpar</button>
                 {isAdmin && (
@@ -1169,7 +1232,7 @@ export default function OSListPage() {
             <div className="space-y-4">
               <div className="rounded-lg bg-gray-50 p-3 text-sm space-y-1">
                 <div className="flex justify-between"><span className="text-gray-500">Cliente:</span><span className="font-medium">{nfseModalOS.customers?.legal_name}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">CPF/CNPJ:</span><span className="font-medium">{nfseModalOS.customers?.document_number || 'Nao informado'}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">CPF/CNPJ:</span><span className="font-medium">{nfseModalOS.customers?.document_number ? formatDocument(nfseModalOS.customers.document_number) : 'Nao informado'}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Equipamento:</span><span className="font-medium">{nfseModalOS.equipment_type || '-'}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Valor:</span><span className="font-bold text-green-700">{fmt(nfseModalOS.total_cost || 0)}</span></div>
               </div>

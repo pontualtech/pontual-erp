@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
-import { cn } from '@/lib/utils'
+import { cn, formatDocument } from '@/lib/utils'
 import {
   FileText, Plus, Download, XCircle,
   Eye, BarChart3, Loader2, RefreshCw, Filter,
@@ -341,7 +341,7 @@ export default function FiscalPage() {
                   <td className="px-4 py-3">
                     <p className="text-gray-900">{n.customers?.legal_name ?? '—'}</p>
                     {n.customers?.document_number && (
-                      <p className="text-xs text-gray-400">{n.customers.document_number}</p>
+                      <p className="text-xs text-gray-400">{formatDocument(n.customers.document_number)}</p>
                     )}
                   </td>
                   <td className="px-4 py-3 font-medium">{formatCurrency(n.total_amount ?? 0)}</td>

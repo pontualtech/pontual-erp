@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { cn } from '@/lib/utils'
+import { cn, formatDocument } from '@/lib/utils'
 import {
   ArrowLeft, Send, Loader2, FileText, Search, Plus, Trash2,
   CheckCircle2, XCircle, Eye, AlertTriangle, Download, Package,
@@ -584,7 +584,7 @@ export default function EmitirNfePage() {
                 >
                   <span className="font-medium text-gray-900">{c.legal_name}</span>
                   {c.document_number && (
-                    <span className="text-xs text-gray-400">{c.document_number}</span>
+                    <span className="text-xs text-gray-400">{formatDocument(c.document_number)}</span>
                   )}
                 </button>
               ))}
@@ -601,7 +601,7 @@ export default function EmitirNfePage() {
               </div>
               <div>
                 <span className="text-gray-500">Documento:</span>{' '}
-                <span className="font-medium">{selectedCliente.document_number || '---'}</span>
+                <span className="font-medium">{formatDocument(selectedCliente.document_number)}</span>
               </div>
               <div>
                 <span className="text-gray-500">IE:</span>{' '}
@@ -933,7 +933,7 @@ export default function EmitirNfePage() {
               <div>
                 <p className="text-xs font-medium uppercase text-gray-400">Destinatario</p>
                 <p className="font-medium">{selectedCliente.legal_name}</p>
-                <p className="text-gray-500">{selectedCliente.document_number}</p>
+                <p className="text-gray-500">{formatDocument(selectedCliente.document_number)}</p>
               </div>
               <div>
                 <p className="text-xs font-medium uppercase text-gray-400">Endereco</p>

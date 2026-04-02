@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
-import { cn } from '@/lib/utils'
+import { cn, formatDocument } from '@/lib/utils'
 import {
   ArrowLeft, FileText, Plus, Download, XCircle, Edit3,
   Loader2, Filter, ChevronLeft, ChevronRight, Search,
@@ -436,7 +436,7 @@ export default function NfeListPage() {
                       {n.customers?.legal_name ?? '---'}
                     </p>
                     {n.customers?.document_number && (
-                      <p className="text-xs text-gray-400">{n.customers.document_number}</p>
+                      <p className="text-xs text-gray-400">{formatDocument(n.customers.document_number)}</p>
                     )}
                   </td>
                   <td className="px-4 py-3">

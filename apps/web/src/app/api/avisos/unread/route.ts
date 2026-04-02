@@ -10,11 +10,11 @@ export async function GET(req: NextRequest) {
     if (result instanceof NextResponse) return result
     const user = result
 
-    // Busca avisos ativos com require_read que o usuário ainda não leu
+    // Busca TODOS os avisos ativos nao lidos (require_read ou nao)
+    // O frontend separa: modal mostra require_read, bell mostra o resto
     const announcements = await prisma.announcement.findMany({
       where: {
         company_id: user.companyId,
-        require_read: true,
         OR: [
           { expires_at: null },
           { expires_at: { gt: new Date() } },
@@ -29,6 +29,7 @@ export async function GET(req: NextRequest) {
         { pinned: 'desc' },
         { created_at: 'desc' },
       ],
+      distinct: ['id'],
     })
 
     return success({

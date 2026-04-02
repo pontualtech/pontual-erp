@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Pencil, Trash2, DollarSign, Download, Printer, Loader2, RefreshCw, FileText } from 'lucide-react'
+import { formatDocument } from '@/lib/utils'
 import { toast } from 'sonner'
 
 interface Cliente {
@@ -176,7 +177,7 @@ export default function ClienteDetalhePage() {
             </div>
             <div className="flex justify-between">
               <span className="text-gray-500">{cliente.person_type === 'FISICA' ? 'CPF' : 'CNPJ'}</span>
-              <span className="text-gray-900">{cliente.document_number || '—'}</span>
+              <span className="text-gray-900">{formatDocument(cliente.document_number)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-500">Cadastrado em</span>

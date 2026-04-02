@@ -37,8 +37,15 @@ export function AnnouncementModal() {
         const required = json.data.announcements.filter(
           (a: RequiredAnnouncement & { require_read?: boolean }) => a.require_read
         )
-        if (required.length > 0) {
-          setAnnouncements(required)
+        // Deduplica por id (precaucao contra dados duplicados)
+        const seen = new Set<string>()
+        const unique = required.filter((a: RequiredAnnouncement) => {
+          if (seen.has(a.id)) return false
+          seen.add(a.id)
+          return true
+        })
+        if (unique.length > 0) {
+          setAnnouncements(unique)
           setCurrentIndex(0)
         }
       }
