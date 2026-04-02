@@ -368,7 +368,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ===== Metrics Row ===== */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className={cn('grid grid-cols-1 gap-4', canViewFinanceiro ? 'sm:grid-cols-3' : 'sm:grid-cols-2')}>
         <div className="rounded-xl border bg-white p-5 shadow-sm">
           <div className="flex items-center gap-3">
             <div className="rounded-xl bg-purple-50 p-2.5">
@@ -397,19 +397,21 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="rounded-xl border bg-white p-5 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-green-50 p-2.5">
-              <TrendingUp className="h-5 w-5 text-green-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Ticket Medio</p>
-              <p className="mt-0.5 text-xl font-bold text-gray-900">
-                {loading ? '...' : stats?.metrics.avgTicketCents != null ? formatCurrency(stats.metrics.avgTicketCents) : '—'}
-              </p>
+        {canViewFinanceiro && (
+          <div className="rounded-xl border bg-white p-5 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-green-50 p-2.5">
+                <TrendingUp className="h-5 w-5 text-green-600" />
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Ticket Medio</p>
+                <p className="mt-0.5 text-xl font-bold text-gray-900">
+                  {loading ? '...' : stats?.metrics.avgTicketCents != null ? formatCurrency(stats.metrics.avgTicketCents) : '—'}
+                </p>
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* ===== Recent Activity ===== */}
@@ -449,42 +451,44 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Ultimas Contas a Receber */}
-        <div className="rounded-xl border bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b px-5 py-3">
-            <h2 className="font-semibold text-gray-900">Contas a Receber</h2>
-            <Link href="/financeiro" className="flex items-center gap-1 text-sm text-blue-600 hover:underline">
-              Ver todas <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
-          </div>
-          <div className="divide-y">
-            {loading ? (
-              <div className="flex items-center justify-center p-8">
-                <Loader2 className="h-5 w-5 animate-spin text-gray-300" />
-              </div>
-            ) : (stats?.recentReceivable?.length ?? 0) === 0 ? (
-              <p className="p-5 text-sm text-gray-400">Nenhuma conta encontrada</p>
-            ) : (
-              stats!.recentReceivable.map(r => (
-                <div key={r.id} className="flex items-center justify-between px-5 py-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-gray-900 truncate">{r.description}</p>
-                    <p className="text-xs text-gray-400">{r.customer_name} &middot; Venc. {formatDate(r.due_date)}</p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0 ml-3">
-                    <span className="text-sm font-semibold text-gray-900">{formatCurrency(r.total_amount)}</span>
-                    <span className={cn(
-                      'rounded-full px-2 py-0.5 text-[10px] font-medium',
-                      receivableStatusStyle[r.status ?? 'PENDENTE'] ?? 'bg-gray-100 text-gray-600'
-                    )}>
-                      {receivableStatusLabel[r.status ?? 'PENDENTE'] ?? r.status}
-                    </span>
-                  </div>
+        {/* Ultimas Contas a Receber — only for users with financeiro.view */}
+        {canViewFinanceiro && (
+          <div className="rounded-xl border bg-white shadow-sm">
+            <div className="flex items-center justify-between border-b px-5 py-3">
+              <h2 className="font-semibold text-gray-900">Contas a Receber</h2>
+              <Link href="/financeiro" className="flex items-center gap-1 text-sm text-blue-600 hover:underline">
+                Ver todas <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+            <div className="divide-y">
+              {loading ? (
+                <div className="flex items-center justify-center p-8">
+                  <Loader2 className="h-5 w-5 animate-spin text-gray-300" />
                 </div>
-              ))
-            )}
+              ) : (stats?.recentReceivable?.length ?? 0) === 0 ? (
+                <p className="p-5 text-sm text-gray-400">Nenhuma conta encontrada</p>
+              ) : (
+                stats!.recentReceivable.map(r => (
+                  <div key={r.id} className="flex items-center justify-between px-5 py-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-gray-900 truncate">{r.description}</p>
+                      <p className="text-xs text-gray-400">{r.customer_name} &middot; Venc. {formatDate(r.due_date)}</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0 ml-3">
+                      <span className="text-sm font-semibold text-gray-900">{formatCurrency(r.total_amount)}</span>
+                      <span className={cn(
+                        'rounded-full px-2 py-0.5 text-[10px] font-medium',
+                        receivableStatusStyle[r.status ?? 'PENDENTE'] ?? 'bg-gray-100 text-gray-600'
+                      )}>
+                        {receivableStatusLabel[r.status ?? 'PENDENTE'] ?? r.status}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   )

@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Plus, Search, X, Pencil } from 'lucide-react'
 import { toast } from 'sonner'
+import { useAuth } from '@/lib/use-auth'
 
 interface Role {
   id: string
@@ -29,6 +30,7 @@ const ROLE_COLORS: Record<string, string> = {
 }
 
 export default function UsuariosPage() {
+  const { isAdmin } = useAuth()
   const [users, setUsers] = useState<User[]>([])
   const [roles, setRoles] = useState<Role[]>([])
   const [loading, setLoading] = useState(true)
@@ -60,12 +62,14 @@ export default function UsuariosPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Usuarios</h1>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        >
-          <Plus className="h-4 w-4" /> Novo Usuario
-        </button>
+        {isAdmin && (
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            <Plus className="h-4 w-4" /> Novo Usuario
+          </button>
+        )}
       </div>
 
       <div className="relative max-w-md">
@@ -113,15 +117,17 @@ export default function UsuariosPage() {
                   <td className="px-4 py-3 text-gray-500">
                     {new Date(u.created_at).toLocaleDateString('pt-BR')}
                   </td>
-                  <td className="px-4 py-3">
-                    <button
-                      onClick={() => setEditingUser(u)}
-                      className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-                      title="Editar usuario"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                  </td>
+                  {isAdmin && (
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => setEditingUser(u)}
+                        className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                        title="Editar usuario"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))
             )}
