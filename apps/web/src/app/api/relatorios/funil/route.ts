@@ -1,0 +1,111 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@pontual/db'
+import { requirePermission } from '@/lib/auth'
+import { success, handleError } from '@/lib/api-response'
+
+export async function GET(req: NextRequest) {
+  try {
+    const result = await requirePermission('os', 'view')
+    if (result instanceof NextResponse) return result
+    const user = result
+
+    const url = req.nextUrl.searchParams
+    const now = new Date()
+    const dateFrom = url.get('dateFrom') || new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
+    const dateTo = url.get('dateTo') || now.toISOString().split('T')[0]
+    const cid = user.companyId
+
+    // Total OS created in period
+    const totalCreated: any[] = await prisma.$queryRawUnsafe(`
+      SELECT COUNT(*)::int AS count
+      FROM service_orders
+      WHERE company_id = $1
+        AND deleted_at IS NULL
+        AND created_at >= $2::timestamptz
+        AND created_at <= ($3::date + interval '1 day')::timestamptz
+    `, cid, `${dateFrom}T00:00:00Z`, dateTo)
+
+    // OS that have a quote (orcado)
+    const totalQuoted: any[] = await prisma.$queryRawUnsafe(`
+      SELECT COUNT(DISTINCT so.id)::int AS count
+      FROM service_orders so
+      JOIN quotes q ON q.service_order_id = so.id
+      WHERE so.company_id = $1
+        AND so.deleted_at IS NULL
+        AND so.created_at >= $2::timestamptz
+        AND so.created_at <= ($3::date + interval '1 day')::timestamptz
+    `, cid, `${dateFrom}T00:00:00Z`, dateTo)
+
+    // OS with approved quote
+    const totalApproved: any[] = await prisma.$queryRawUnsafe(`
+      SELECT COUNT(DISTINCT so.id)::int AS count
+      FROM service_orders so
+      JOIN quotes q ON q.service_order_id = so.id
+      WHERE so.company_id = $1
+        AND so.deleted_at IS NULL
+        AND q.status = 'APPROVED'
+        AND so.created_at >= $2::timestamptz
+        AND so.created_at <= ($3::date + interval '1 day')::timestamptz
+    `, cid, `${dateFrom}T00:00:00Z`, dateTo)
+
+    // Completed (final status)
+    const finalStatuses = await prisma.moduleStatus.findMany({
+      where: { company_id: cid, module: 'os', is_final: true },
+      select: { id: true },
+    })
+    const finalIds = finalStatuses.map(s => `'${s.id}'`).join(',')
+
+    let totalCompleted = 0
+    if (finalIds) {
+      const completedResult: any[] = await prisma.$queryRawUnsafe(`
+        SELECT COUNT(*)::int AS count
+        FROM service_orders
+        WHERE company_id = $1
+          AND deleted_at IS NULL
+          AND status_id IN (${finalIds})
+          AND created_at >= $2::timestamptz
+          AND created_at <= ($3::date + interval '1 day')::timestamptz
+      `, cid, `${dateFrom}T00:00:00Z`, dateTo)
+      totalCompleted = Number(completedResult[0]?.count || 0)
+    }
+
+    // Paid (has accounts_receivable with status PAGO/RECEBIDO)
+    const totalPaid: any[] = await prisma.$queryRawUnsafe(`
+      SELECT COUNT(DISTINCT so.id)::int AS count
+      FROM service_orders so
+      JOIN accounts_receivable ar ON ar.service_order_id = so.id
+      WHERE so.company_id = $1
+        AND so.deleted_at IS NULL
+        AND ar.deleted_at IS NULL
+        AND ar.status IN ('PAGO', 'RECEBIDO')
+        AND so.created_at >= $2::timestamptz
+        AND so.created_at <= ($3::date + interval '1 day')::timestamptz
+    `, cid, `${dateFrom}T00:00:00Z`, dateTo)
+
+    const created = Number(totalCreated[0]?.count || 0)
+    const quoted = Number(totalQuoted[0]?.count || 0)
+    const approved = Number(totalApproved[0]?.count || 0)
+    const completed = totalCompleted
+    const paid = Number(totalPaid[0]?.count || 0)
+
+    const steps = [
+      { name: 'Criadas', count: created, percent: 100 },
+      { name: 'Orcadas', count: quoted, percent: created > 0 ? Math.round((quoted / created) * 10000) / 100 : 0 },
+      { name: 'Aprovadas', count: approved, percent: created > 0 ? Math.round((approved / created) * 10000) / 100 : 0 },
+      { name: 'Concluidas', count: completed, percent: created > 0 ? Math.round((completed / created) * 10000) / 100 : 0 },
+      { name: 'Pagas', count: paid, percent: created > 0 ? Math.round((paid / created) * 10000) / 100 : 0 },
+    ]
+
+    // Conversion rates between steps
+    const conversions = [
+      { from: 'Criadas', to: 'Orcadas', rate: created > 0 ? Math.round((quoted / created) * 10000) / 100 : 0 },
+      { from: 'Orcadas', to: 'Aprovadas', rate: quoted > 0 ? Math.round((approved / quoted) * 10000) / 100 : 0 },
+      { from: 'Aprovadas', to: 'Concluidas', rate: approved > 0 ? Math.round((completed / approved) * 10000) / 100 : 0 },
+      { from: 'Concluidas', to: 'Pagas', rate: completed > 0 ? Math.round((paid / completed) * 10000) / 100 : 0 },
+    ]
+
+    return success({ steps, conversions })
+  } catch (err) {
+    return handleError(err)
+  }
+}

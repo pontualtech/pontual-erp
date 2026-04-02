@@ -49,6 +49,8 @@ model Company {
   chat_messages       ChatMessage[]
   announcements       Announcement[]
   chatbot_logs        ChatbotLog[]
+  contracts           Contract[]
+  price_table         PriceTable[]
 
   @@map("companies")
 }
@@ -367,6 +369,7 @@ model Customer {
   service_orders       ServiceOrder[]
   tickets              Ticket[]
   customer_access      CustomerAccess[]
+  contracts            Contract[]
 
   @@unique([company_id, vhsys_id])
   @@index([company_id], map: "idx_customers_company")
@@ -1136,4 +1139,85 @@ model PurchaseItem {
   products    Product?  @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@map("purchase_items")
+}
+
+// ========== CONTRATOS & MANUTENÇÃO PREVENTIVA ==========
+
+model Contract {
+  id                  String              @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id          String
+  customer_id         String
+  number              String?
+  description         String?
+  start_date          DateTime            @db.Date
+  end_date            DateTime            @db.Date
+  monthly_value       Int?                @default(0)
+  billing_day         Int?                @default(1)
+  visit_frequency     String?             @default("MONTHLY")
+  max_visits_per_period Int?
+  status              String?             @default("ACTIVE")
+  auto_renew          Boolean?            @default(false)
+  renewal_alert_days  Int?                @default(30)
+  notes               String?
+  created_at          DateTime?           @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime?           @default(now()) @db.Timestamptz(6)
+  companies           Company             @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customers           Customer            @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  contract_equipment  ContractEquipment[]
+  contract_visits     ContractVisit[]
+
+  @@index([company_id], map: "idx_contracts_company")
+  @@index([customer_id], map: "idx_contracts_customer")
+  @@index([status], map: "idx_contracts_status")
+  @@map("contracts")
+}
+
+model ContractEquipment {
+  id               String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  contract_id      String
+  equipment_type   String?
+  brand            String?
+  model            String?
+  serial_number    String?
+  location         String?
+  last_maintenance DateTime? @db.Date
+  next_maintenance DateTime? @db.Date
+  created_at       DateTime? @default(now()) @db.Timestamptz(6)
+  contracts        Contract  @relation(fields: [contract_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([contract_id], map: "idx_contract_equip")
+  @@map("contract_equipment")
+}
+
+model ContractVisit {
+  id          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id  String
+  contract_id String
+  os_id       String?
+  visit_date  DateTime? @db.Date
+  type        String?   @default("PREVENTIVE")
+  status      String?   @default("SCHEDULED")
+  notes       String?
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+  contracts   Contract  @relation(fields: [contract_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([contract_id], map: "idx_contract_visits")
+  @@map("contract_visits")
+}
+
+model PriceTable {
+  id                    String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id            String
+  equipment_type        String?
+  brand                 String?
+  model_pattern         String?
+  service_description   String?
+  default_price         Int?      @default(0)
+  estimated_time_minutes Int?
+  is_active             Boolean?  @default(true)
+  created_at            DateTime? @default(now()) @db.Timestamptz(6)
+  companies             Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([company_id], map: "idx_price_table_company")
+  @@map("price_table")
 }

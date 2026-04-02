@@ -41,6 +41,8 @@ interface OSDetail {
   invoices: { id: string; invoice_number: number | null; status: string; danfe_url: string | null; access_key: string | null; total_amount: number; created_at: string }[]
   customer_id: string
   accounts_receivable?: AccountReceivable[]
+  custom_data?: Record<string, any> | null
+  _recentOsCount?: number
 }
 interface AccountReceivableInstallment {
   id: string
@@ -71,6 +73,12 @@ interface AccountReceivable {
   installments: AccountReceivableInstallment[]
 }
 interface Produto { id: string; name: string; unit: string; sale_price: number; brand: string | null }
+interface PriceSuggestion {
+  id: string; equipment_type: string | null; brand: string | null; model_pattern: string | null
+  service_description: string | null; default_price: number; estimated_time_minutes: number | null
+}
+
+const CANAL_OPTIONS = ['WhatsApp', 'Telefone', 'Balcao', 'Site', 'Indicacao', 'Outro'] as const
 
 const priorityLabel: Record<string, string> = { LOW: 'Baixa', MEDIUM: 'Normal', HIGH: 'Alta', URGENT: 'Urgente' }
 const priorityColor: Record<string, string> = { LOW: 'text-gray-500', MEDIUM: 'text-blue-600', HIGH: 'text-orange-600', URGENT: 'text-red-600' }
@@ -169,6 +177,9 @@ export default function OSDetailPage() {
   const [savingAll, setSavingAll] = useState(false)
   const [financeiroExpanded, setFinanceiroExpanded] = useState(true)
   const [headerScrolled, setHeaderScrolled] = useState(false)
+  const [editCanal, setEditCanal] = useState('')
+  const [priceSuggestions, setPriceSuggestions] = useState<PriceSuggestion[]>([])
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false)
   const [originalValues, setOriginalValues] = useState({
     diagnosis: '', notes: '', internalNotes: '', technicianId: '', paymentMethod: '', estimatedDelivery: '', actualDelivery: '',
   })
@@ -245,6 +256,7 @@ export default function OSDetailPage() {
           setEditPaymentMethod(data.payment_method || '')
           setEditEstimatedDelivery(data.estimated_delivery ? new Date(data.estimated_delivery).toISOString().split('T')[0] : '')
           setEditActualDelivery(data.actual_delivery ? new Date(data.actual_delivery).toISOString().split('T')[0] : '')
+          setEditCanal(data.custom_data?.canal_entrada || '')
           // Inicializar desconto a partir do total_cost salvo
           const subtotal = (data.total_services ?? 0) + (data.total_parts ?? 0)
           if (subtotal > 0 && data.total_cost != null && data.total_cost < subtotal) {
@@ -678,6 +690,7 @@ export default function OSDetailPage() {
         : Math.round(parseFloat(discountValue || '0') * 100)
       const totalFinal = Math.max(0, subtotal - discountAmt)
 
+      const existingCustom = os.custom_data || {}
       const payload: any = {
         diagnosis: editDiagnosis || null,
         reception_notes: editNotes || null,
@@ -687,6 +700,7 @@ export default function OSDetailPage() {
         estimated_delivery: editEstimatedDelivery ? new Date(editEstimatedDelivery).toISOString() : null,
         actual_delivery: editActualDelivery ? new Date(editActualDelivery).toISOString() : null,
         total_cost: totalFinal,
+        custom_data: { ...existingCustom, canal_entrada: editCanal || null },
       }
       const res = await fetch(`/api/os/${id}`, {
         method: 'PUT',
@@ -708,6 +722,22 @@ export default function OSDetailPage() {
     }
   }
 
+  async function loadPriceSuggestions() {
+    if (!os) return
+    const params = new URLSearchParams()
+    if (os.equipment_type) params.set('equipment_type', os.equipment_type)
+    if (os.equipment_brand) params.set('brand', os.equipment_brand)
+    if (os.equipment_model) params.set('model', os.equipment_model)
+    if (!params.toString()) { setPriceSuggestions([]); return }
+    setLoadingSuggestions(true)
+    try {
+      const res = await fetch(`/api/price-table/suggest?${params}`)
+      const data = await res.json()
+      setPriceSuggestions(data.data ?? [])
+    } catch { setPriceSuggestions([]) }
+    finally { setLoadingSuggestions(false) }
+  }
+
   function openAddItem(section: 'SERVICO' | 'PECA') {
     setAddItemSection(section)
     setItemType(section)
@@ -721,6 +751,35 @@ export default function OSDetailPage() {
     setShowQuickRegister(false)
     setItemsAddedCount(0)
     setShowAddedCheck(false)
+    if (section === 'SERVICO') loadPriceSuggestions()
+    else setPriceSuggestions([])
+  }
+
+  // Helper: days in current status
+  function getDaysInStatus(): number {
+    if (!os) return 0
+    const history = os.service_order_history ?? []
+    const currentEntry = history.find(h => h.to_status_id === os.status_id)
+    if (!currentEntry) {
+      // Fallback to created_at
+      return Math.floor((Date.now() - new Date(os.created_at).getTime()) / (1000 * 60 * 60 * 24))
+    }
+    return Math.floor((Date.now() - new Date(currentEntry.created_at).getTime()) / (1000 * 60 * 60 * 24))
+  }
+
+  // Helper: save canal de entrada
+  async function handleSaveCanal(canal: string) {
+    setEditCanal(canal)
+    const existingCustom = os?.custom_data || {}
+    const newCustomData = { ...existingCustom, canal_entrada: canal || null }
+    try {
+      await fetch(`/api/os/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ custom_data: newCustomData }),
+      })
+      loadOS()
+    } catch { toast.error('Erro ao salvar canal') }
   }
 
   if (loading) return <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-blue-500" /></div>
@@ -782,6 +841,27 @@ export default function OSDetailPage() {
             </span>
           ) : null}
           {transitioning && <Loader2 className="h-4 w-4 animate-spin text-gray-400" />}
+          {/* Dias no status atual */}
+          {(() => {
+            const days = getDaysInStatus()
+            const color = days < 3 ? 'bg-green-100 text-green-700 border-green-200' : days <= 7 ? 'bg-yellow-100 text-yellow-700 border-yellow-200' : 'bg-red-100 text-red-700 border-red-200'
+            return (
+              <span className={cn('rounded-full px-2 py-0.5 text-xs font-bold border', color)} title={`${days} dia(s) no status atual`}>
+                {days}d
+              </span>
+            )
+          })()}
+          {/* Canal de Entrada */}
+          {canEditType ? (
+            <select value={editCanal} title="Canal de entrada"
+              onChange={e => handleSaveCanal(e.target.value)}
+              className="rounded-full px-3 py-1 text-xs font-medium border bg-indigo-50 text-indigo-700">
+              <option value="">Canal...</option>
+              {CANAL_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          ) : editCanal ? (
+            <span className="rounded-full px-2.5 py-0.5 text-xs font-medium bg-indigo-100 text-indigo-700 border border-indigo-200">{editCanal}</span>
+          ) : null}
           {canEditType ? (
             <select value={os.os_type || 'BALCAO'} title="Tipo de OS"
               onChange={async e => {
@@ -911,6 +991,11 @@ export default function OSDetailPage() {
               <User className="h-4 w-4 text-blue-600" />
             </div>
             <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Dados do Cliente</h2>
+            {(os._recentOsCount ?? 0) >= 3 && (
+              <span className="rounded-full bg-purple-100 text-purple-700 border border-purple-200 px-2.5 py-0.5 text-xs font-bold">
+                Cliente Recorrente ({os._recentOsCount} OS)
+              </span>
+            )}
           </div>
           <div className="space-y-2">
             <div className="flex items-baseline justify-between">
@@ -1175,6 +1260,8 @@ export default function OSDetailPage() {
               sectionType="SERVICO"
               itemsAddedCount={itemsAddedCount}
               showAddedCheck={showAddedCheck}
+              priceSuggestions={priceSuggestions}
+              loadingSuggestions={loadingSuggestions}
             />
           </div>
         )}
@@ -2385,6 +2472,8 @@ interface InlineAddItemFormProps {
   sectionType: 'SERVICO' | 'PECA'
   itemsAddedCount: number
   showAddedCheck: boolean
+  priceSuggestions?: PriceSuggestion[]
+  loadingSuggestions?: boolean
 }
 
 function InlineAddItemForm({
@@ -2405,6 +2494,8 @@ function InlineAddItemForm({
   sectionType,
   itemsAddedCount,
   showAddedCheck,
+  priceSuggestions = [],
+  loadingSuggestions = false,
 }: InlineAddItemFormProps) {
   const isServico = sectionType === 'SERVICO'
   const borderColor = isServico ? 'border-amber-200' : 'border-blue-200'
@@ -2433,6 +2524,41 @@ function InlineAddItemForm({
           <X className="h-4 w-4" />
         </button>
       </div>
+
+      {/* Price table suggestions */}
+      {isServico && priceSuggestions.length > 0 && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3">
+          <p className="text-xs font-semibold text-emerald-700 uppercase mb-2 flex items-center gap-1.5">
+            <DollarSign className="h-3.5 w-3.5" /> Sugestoes da tabela de precos
+          </p>
+          <div className="space-y-1 max-h-32 overflow-y-auto">
+            {priceSuggestions.slice(0, 5).map(s => (
+              <button key={s.id} type="button"
+                onClick={() => {
+                  setItemDesc(s.service_description || '')
+                  setItemPrice(String((s.default_price || 0) / 100))
+                  setItemProductId(null)
+                }}
+                className="w-full text-left px-2.5 py-1.5 rounded hover:bg-emerald-100 text-sm flex items-center justify-between transition-colors">
+                <span className="text-gray-800">{s.service_description}</span>
+                <div className="flex items-center gap-2 shrink-0">
+                  {s.estimated_time_minutes && (
+                    <span className="text-xs text-gray-400 flex items-center gap-0.5">
+                      <Clock className="h-3 w-3" /> {s.estimated_time_minutes}min
+                    </span>
+                  )}
+                  <span className="font-semibold text-emerald-700">{fmt(s.default_price)}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {isServico && loadingSuggestions && (
+        <div className="flex items-center gap-2 text-xs text-gray-400 py-1">
+          <Loader2 className="h-3 w-3 animate-spin" /> Carregando sugestoes...
+        </div>
+      )}
 
       {/* Product/service search */}
       <div className="relative">

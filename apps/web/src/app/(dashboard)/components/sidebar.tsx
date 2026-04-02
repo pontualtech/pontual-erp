@@ -36,6 +36,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
       { label: 'Chat', href: '/chat', icon: MessageCircle, module: 'core' },
       { label: 'WhatsApp', href: '/integracoes/chatwoot', icon: Phone, module: 'core' },
       { label: 'Logistica', href: '/logistica', icon: Truck, module: 'core' },
+      { label: 'Contratos', href: '/contratos', icon: FileText, module: 'contratos' },
     ],
   },
   {
@@ -59,6 +60,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
     items: [
       { label: 'Financeiro', href: '/financeiro', icon: DollarSign, module: 'financeiro' },
       { label: 'Fiscal', href: '/fiscal', icon: FileText, module: 'fiscal' },
+      { label: 'BI / Relatorios', href: '/relatorios-bi', icon: BarChart3, module: 'os' },
     ],
   },
   {

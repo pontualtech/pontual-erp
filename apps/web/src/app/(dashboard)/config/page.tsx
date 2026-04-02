@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Building2, Users, Shield, Tag, Wrench, Bell, Database, Palette, Landmark, FileText, PrinterIcon, FileKey, MessageSquare, Search, Layers, Eye, Mail, Clock, RefreshCw, Receipt, Bot } from 'lucide-react'
+import { Building2, Users, Shield, Tag, Wrench, Bell, Database, Palette, Landmark, FileText, PrinterIcon, FileKey, MessageSquare, Search, Layers, Eye, Mail, Clock, RefreshCw, Receipt, Bot, DollarSign } from 'lucide-react'
 
 const sections = [
   {
@@ -24,6 +24,7 @@ const sections = [
       { label: 'Templates', href: '/config/templates', icon: PrinterIcon, desc: 'Templates de impressao e email de OS' },
       { label: 'Marcas e Modelos', href: '/config/marcas-modelos', icon: Wrench, desc: 'Marcas e modelos de equipamentos para OS' },
       { label: 'Kits de Servico', href: '/config/kits', icon: Layers, desc: 'Kits pre-definidos para adicionar na OS' },
+      { label: 'Tabela de Precos', href: '/config/tabela-precos', icon: DollarSign, desc: 'Precos padrao para orcamentos inteligentes' },
     ],
   },
   {

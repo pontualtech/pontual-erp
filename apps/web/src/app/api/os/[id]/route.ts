@@ -41,7 +41,10 @@ export async function GET(req: NextRequest, { params }: Params) {
     const receivableIds = os.accounts_receivable.map(ar => ar.id)
     const changedByIds = [...new Set(os.service_order_history.map(h => h.changed_by).filter(Boolean))] as string[]
 
-    const [installments, userProfiles] = await Promise.all([
+    const twelveMonthsAgo = new Date()
+    twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12)
+
+    const [installments, userProfiles, recentOsCount] = await Promise.all([
       receivableIds.length > 0
         ? prisma.installment.findMany({
             where: { parent_type: 'RECEIVABLE', parent_id: { in: receivableIds } },
@@ -54,6 +57,16 @@ export async function GET(req: NextRequest, { params }: Params) {
             select: { id: true, name: true },
           })
         : Promise.resolve([]),
+      os.customer_id
+        ? prisma.serviceOrder.count({
+            where: {
+              customer_id: os.customer_id,
+              company_id: user.companyId,
+              deleted_at: null,
+              created_at: { gte: twelveMonthsAgo },
+            },
+          })
+        : Promise.resolve(0),
     ])
 
     const installmentsByReceivable = new Map<string, typeof installments>()
@@ -73,7 +86,7 @@ export async function GET(req: NextRequest, { params }: Params) {
       changed_by_name: h.changed_by ? userNameMap[h.changed_by] || null : null,
     }))
 
-    return success({ ...os, service_order_history: enrichedHistory, accounts_receivable: enrichedReceivables })
+    return success({ ...os, service_order_history: enrichedHistory, accounts_receivable: enrichedReceivables, _recentOsCount: recentOsCount })
   } catch (err) {
     return handleError(err)
   }
