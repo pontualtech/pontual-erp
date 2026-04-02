@@ -28,6 +28,25 @@ export async function GET(req: NextRequest, { params }: Params) {
     })
 
     if (!customer) return error('Cliente não encontrado', 404)
+
+    // IDOR protection: motorista only gets limited fields (logistics-relevant data)
+    if (user.roleName === 'motorista') {
+      return success({
+        id: customer.id,
+        legal_name: customer.legal_name,
+        trade_name: customer.trade_name,
+        phone: customer.phone,
+        mobile: customer.mobile,
+        address_street: customer.address_street,
+        address_number: customer.address_number,
+        address_complement: customer.address_complement,
+        address_neighborhood: customer.address_neighborhood,
+        address_city: customer.address_city,
+        address_state: customer.address_state,
+        address_zip: customer.address_zip,
+      })
+    }
+
     return success(customer)
   } catch (err) {
     return handleError(err)

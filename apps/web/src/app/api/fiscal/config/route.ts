@@ -48,10 +48,20 @@ export async function GET(_request: NextRequest) {
         maskedKey = `${'*'.repeat(Math.max(0, config.api_key.length - 4))}${config.api_key.slice(-4)}`
       }
     }
+    // Strip sensitive fields — NEVER return certificate or password
+    const { certificate_password, certificate_path, ...configWithoutSecrets } = config as any
+    const settings = (configWithoutSecrets.settings && typeof configWithoutSecrets.settings === 'object')
+      ? configWithoutSecrets.settings as Record<string, any>
+      : {}
+    const { certificate_base64, ...safeSettings } = settings
+
     const safeConfig = {
-      ...config,
+      ...configWithoutSecrets,
+      settings: safeSettings,
       api_key: maskedKey,
       has_api_key: !!config.api_key,
+      certificate_uploaded: !!(certificate_path || certificate_base64 || settings.certificate_base64),
+      certificate_filename: settings.certificate_filename || (config as any).certificate_filename || null,
     }
 
     return success(safeConfig)

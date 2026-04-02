@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@pontual/db'
 import { success, error, handleError } from '@/lib/api-response'
 import { rateLimit, getClientIp } from '@/lib/rate-limit'
+import { cookies } from 'next/headers'
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,6 +11,15 @@ export async function POST(request: NextRequest) {
     const { allowed } = rateLimit(ip, 5, 60000) // 5 per minute
     if (!allowed) {
       return NextResponse.json({ error: 'Muitas tentativas. Aguarde um momento.' }, { status: 429 })
+    }
+
+    // Clear previous session cookies to prevent session confusion between roles (C-9)
+    const cookieStore = cookies()
+    const allCookies = cookieStore.getAll()
+    for (const cookie of allCookies) {
+      if (cookie.name.startsWith('sb-') || cookie.name.includes('supabase')) {
+        cookieStore.set(cookie.name, '', { maxAge: 0, path: '/' })
+      }
     }
 
     const body = await request.json()

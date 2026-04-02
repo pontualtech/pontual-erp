@@ -15,9 +15,14 @@ export async function GET(req: NextRequest) {
 
     const companyFilter = { company_id: user.companyId, deleted_at: null }
     const isNumeric = /^\d+$/.test(q)
+    const role = user.roleName
+
+    // Role-based search: motorista only sees OS, tecnico sees OS + products
+    const includeClientes = role !== 'motorista' && role !== 'tecnico'
+    const includeProdutos = role !== 'motorista'
 
     const [os, clientes, produtos] = await Promise.all([
-      // Service Orders
+      // Service Orders — all roles can search OS
       prisma.serviceOrder.findMany({
         where: {
           ...companyFilter,
@@ -41,37 +46,41 @@ export async function GET(req: NextRequest) {
         orderBy: { created_at: 'desc' },
       }),
 
-      // Customers
-      prisma.customer.findMany({
-        where: {
-          ...companyFilter,
-          OR: [
-            { legal_name: { contains: q, mode: 'insensitive' } },
-            { trade_name: { contains: q, mode: 'insensitive' } },
-            { document_number: { contains: q, mode: 'insensitive' } },
-            { email: { contains: q, mode: 'insensitive' } },
-            { phone: { contains: q, mode: 'insensitive' } },
-            { mobile: { contains: q, mode: 'insensitive' } },
-          ],
-        },
-        take: 5,
-        orderBy: { created_at: 'desc' },
-      }),
+      // Customers — only admin, atendente, financeiro
+      includeClientes
+        ? prisma.customer.findMany({
+            where: {
+              ...companyFilter,
+              OR: [
+                { legal_name: { contains: q, mode: 'insensitive' } },
+                { trade_name: { contains: q, mode: 'insensitive' } },
+                { document_number: { contains: q, mode: 'insensitive' } },
+                { email: { contains: q, mode: 'insensitive' } },
+                { phone: { contains: q, mode: 'insensitive' } },
+                { mobile: { contains: q, mode: 'insensitive' } },
+              ],
+            },
+            take: 5,
+            orderBy: { created_at: 'desc' },
+          })
+        : Promise.resolve([]),
 
-      // Products
-      prisma.product.findMany({
-        where: {
-          ...companyFilter,
-          OR: [
-            { name: { contains: q, mode: 'insensitive' } },
-            { internal_code: { contains: q, mode: 'insensitive' } },
-            { barcode: { contains: q, mode: 'insensitive' } },
-            { description: { contains: q, mode: 'insensitive' } },
-          ],
-        },
-        take: 5,
-        orderBy: { created_at: 'desc' },
-      }),
+      // Products — everyone except motorista
+      includeProdutos
+        ? prisma.product.findMany({
+            where: {
+              ...companyFilter,
+              OR: [
+                { name: { contains: q, mode: 'insensitive' } },
+                { internal_code: { contains: q, mode: 'insensitive' } },
+                { barcode: { contains: q, mode: 'insensitive' } },
+                { description: { contains: q, mode: 'insensitive' } },
+              ],
+            },
+            take: 5,
+            orderBy: { created_at: 'desc' },
+          })
+        : Promise.resolve([]),
     ])
 
     return success({

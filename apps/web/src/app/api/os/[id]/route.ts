@@ -45,6 +45,19 @@ export async function GET(req: NextRequest, { params }: Params) {
 
     if (!os) return error('OS não encontrada', 404)
 
+    // IDOR protection: motorista can only see OS linked to their logistics routes
+    if (user.roleName === 'motorista') {
+      const linkedStop = await prisma.logisticsStop.findFirst({
+        where: {
+          os_id: os.id,
+          route: { driver_id: user.id },
+        },
+      })
+      if (!linkedStop) {
+        return error('Acesso negado', 403)
+      }
+    }
+
     // Paralelizar queries extras (installments + user names)
     const receivableIds = os.accounts_receivable.map(ar => ar.id)
     const changedByIds = [...new Set(os.service_order_history.map(h => h.changed_by).filter(Boolean))] as string[]

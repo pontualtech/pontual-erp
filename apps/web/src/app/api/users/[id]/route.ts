@@ -14,6 +14,11 @@ export async function GET(request: NextRequest, { params }: Params) {
     if (result instanceof NextResponse) return result
     const user = result
 
+    // IDOR protection: non-admin can only read their own profile
+    if (user.roleName !== 'admin' && user.id !== params.id) {
+      return error('Acesso negado', 403)
+    }
+
     const profile = await prisma.userProfile.findFirst({
       where: { id: params.id, company_id: user.companyId },
       include: {

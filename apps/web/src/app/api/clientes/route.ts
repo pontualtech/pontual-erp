@@ -24,32 +24,29 @@ export async function GET(req: NextRequest) {
     }
 
     // Motorista: only see clients linked to their OS or logistics routes
+    const andConditions: any[] = []
     if (user.roleName === 'motorista') {
-      where.OR = [
-        // Clients from OS assigned to this motorista (as technician)
-        {
-          service_orders: {
-            some: { technician_id: user.id },
-          },
+      // Fetch OS IDs from logistics stops driven by this motorista
+      const driverStops = await prisma.logisticsStop.findMany({
+        where: {
+          company_id: user.companyId,
+          route: { driver_id: user.id },
+          os_id: { not: null },
         },
-        // Clients from OS linked to logistics stops on routes driven by this motorista
-        {
-          service_orders: {
-            some: {
-              id: {
-                in: await prisma.logisticsStop.findMany({
-                  where: {
-                    company_id: user.companyId,
-                    route: { driver_id: user.id },
-                    os_id: { not: null },
-                  },
-                  select: { os_id: true },
-                }).then(stops => stops.map(s => s.os_id!).filter(Boolean)),
-              },
-            },
-          },
-        },
-      ]
+        select: { os_id: true },
+      })
+      const osIdsFromStops = driverStops.map(s => s.os_id!).filter(Boolean)
+
+      andConditions.push({
+        OR: [
+          // Clients from OS assigned to this motorista (as technician)
+          { service_orders: { some: { technician_id: user.id } } },
+          // Clients from OS linked to logistics stops on this motorista's routes
+          ...(osIdsFromStops.length > 0
+            ? [{ service_orders: { some: { id: { in: osIdsFromStops } } } }]
+            : []),
+        ],
+      })
     }
 
     // Mapear PF/PJ para FISICA/JURIDICA
@@ -59,13 +56,19 @@ export async function GET(req: NextRequest) {
     }
     if (customerType) where.customer_type = customerType
     if (search) {
-      where.OR = [
-        { legal_name: { contains: search, mode: 'insensitive' } },
-        { trade_name: { contains: search, mode: 'insensitive' } },
-        { document_number: { contains: search } },
-        { email: { contains: search, mode: 'insensitive' } },
-        { phone: { contains: search } },
-      ]
+      andConditions.push({
+        OR: [
+          { legal_name: { contains: search, mode: 'insensitive' } },
+          { trade_name: { contains: search, mode: 'insensitive' } },
+          { document_number: { contains: search } },
+          { email: { contains: search, mode: 'insensitive' } },
+          { phone: { contains: search } },
+        ],
+      })
+    }
+
+    if (andConditions.length > 0) {
+      where.AND = andConditions
     }
 
     // Motorista sees limited fields only

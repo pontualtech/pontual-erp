@@ -7,7 +7,7 @@ const KEY_PREFIX = 'forma_pgto.'
 
 export async function GET() {
   try {
-    const result = await requirePermission('core', 'view')
+    const result = await requirePermission('financeiro', 'view')
     if (result instanceof NextResponse) return result
     const user = result
 
