@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
     const user = result
 
     // Only admins can list all users
-    if (user.role !== 'admin') {
+    if (user.roleName !== 'admin') {
       return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
     }
 

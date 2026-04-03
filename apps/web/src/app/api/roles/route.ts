@@ -12,7 +12,7 @@ export async function GET() {
     const user = result
 
     // Only admins can list roles
-    if (user.role !== 'admin') {
+    if (user.roleName !== 'admin') {
       return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
     }
 
