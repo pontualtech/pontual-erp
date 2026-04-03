@@ -9,6 +9,11 @@ export async function GET(req: NextRequest) {
     if (result instanceof NextResponse) return result
     const user = result
 
+    // Chat: block técnico and motorista (aligned with sidebar)
+    if (user.roleName === 'técnico' || user.roleName === 'motorista') {
+      return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+    }
+
     const channel = req.nextUrl.searchParams.get('channel') || 'geral'
 
     const messages = await prisma.chatMessage.findMany({
