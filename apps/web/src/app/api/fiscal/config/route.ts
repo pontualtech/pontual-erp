@@ -53,7 +53,7 @@ export async function GET(_request: NextRequest) {
     const settings = (configWithoutSecrets.settings && typeof configWithoutSecrets.settings === 'object')
       ? configWithoutSecrets.settings as Record<string, any>
       : {}
-    const { certificate_base64, ...safeSettings } = settings
+    const { certificate_base64, certificate_password: _settingsCertPwd, ...safeSettings } = settings
 
     const safeConfig = {
       ...configWithoutSecrets,
