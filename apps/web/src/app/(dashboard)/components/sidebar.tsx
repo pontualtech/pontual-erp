@@ -36,9 +36,9 @@ const navGroups: { title: string; items: NavItem[] }[] = [
     items: [
       { label: 'Ordens de Servico', href: '/os', icon: ClipboardList, module: 'os', action: 'view' },
       { label: 'Clientes', href: '/clientes', icon: Users, module: 'clientes', action: 'view' },
-      { label: 'Tickets', href: '/tickets', icon: MessageSquare, module: 'os', action: 'edit' },
-      { label: 'Chat', href: '/chat', icon: MessageCircle, requiredAnyPermission: [{ module: 'os', action: 'edit' }] },
-      { label: 'WhatsApp', href: '/integracoes/chatwoot', icon: Phone, requiredAnyPermission: [{ module: 'os', action: 'edit' }] },
+      { label: 'Tickets', href: '/tickets', icon: MessageSquare, requiredAnyPermission: [{ module: 'os', action: 'create' }] },
+      { label: 'Chat', href: '/chat', icon: MessageCircle, requiredAnyPermission: [{ module: 'os', action: 'create' }] },
+      { label: 'WhatsApp', href: '/integracoes/chatwoot', icon: Phone, requiredAnyPermission: [{ module: 'os', action: 'create' }] },
       { label: 'Logistica', href: '/logistica', icon: Truck, adminOnly: true },
       { label: 'Contratos', href: '/contratos', icon: FileText, adminOnly: true },
     ],

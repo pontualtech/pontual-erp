@@ -45,15 +45,14 @@ export async function GET(req: NextRequest, { params }: Params) {
 
     if (!os) return error('OS não encontrada', 404)
 
-    // IDOR protection: motorista can only see OS linked to their logistics routes
+    // IDOR protection: motorista can see OS linked to logistics OR in delivery/collection status
     if (user.roleName === 'motorista') {
       const linkedStop = await prisma.logisticsStop.findFirst({
-        where: {
-          os_id: os.id,
-          route: { driver_id: user.id },
-        },
+        where: { os_id: os.id, route: { driver_id: user.id } },
       })
-      if (!linkedStop) {
+      const osStatus = await prisma.moduleStatus.findUnique({ where: { id: os.status_id }, select: { name: true } })
+      const isDeliveryStatus = /coleta|coletar|entreg/i.test(osStatus?.name || '')
+      if (!linkedStop && !isDeliveryStatus) {
         return error('Acesso negado', 403)
       }
     }

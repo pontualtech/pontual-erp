@@ -88,7 +88,7 @@ const updateConfigSchema = z.object({
 
 export async function PUT(request: NextRequest) {
   try {
-    const result = await requirePermission('fiscal', 'create')
+    const result = await requirePermission('config', 'edit')
     if (result instanceof NextResponse) return result
     const user = result
 
