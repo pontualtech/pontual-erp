@@ -115,7 +115,7 @@ export async function GET(req: NextRequest) {
       recentOsCounts.map(r => [r.customer_id, r._count.id])
     )
 
-    const enriched = data.map(c => ({
+    const enriched = data.map((c: any) => ({
       ...c,
       os_count: c._count?.service_orders ?? c.total_os ?? 0,
       recent_os_count: recentOsMap[c.id] ?? 0,
