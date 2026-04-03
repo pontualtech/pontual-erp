@@ -9,7 +9,7 @@ type Params = { params: { id: string } }
 
 export async function GET(request: NextRequest, { params }: Params) {
   try {
-    const result = await requirePermission('core', 'view')
+    const result = await requirePermission('config', 'view')
     if (result instanceof NextResponse) return result
     const user = result
 
@@ -43,9 +43,12 @@ export async function GET(request: NextRequest, { params }: Params) {
 
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
-    const result = await requirePermission('core', 'edit')
+    const result = await requirePermission('config', 'edit')
     if (result instanceof NextResponse) return result
     const admin = result
+
+    // Only admin can edit roles
+    if (admin.role !== 'admin') return error('Apenas administradores podem editar cargos', 403)
 
     const body = await request.json()
     const data = updateRoleSchema.parse(body)
@@ -55,6 +58,12 @@ export async function PUT(request: NextRequest, { params }: Params) {
     })
     if (!existing) return error('Cargo não encontrado', 404)
     if (existing.is_system) return error('Cargos de sistema não podem ser editados', 403)
+
+    // Protect default role names from being renamed
+    const protectedNames = ['admin', 'atendente', 'financeiro', 'tecnico', 'motorista']
+    if (protectedNames.includes(existing.name.toLowerCase()) && data.name && data.name.toLowerCase() !== existing.name.toLowerCase()) {
+      return error('Cargos padrão não podem ser renomeados', 403)
+    }
 
     const updated = await prisma.role.update({
       where: { id: params.id },
@@ -79,7 +88,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
-    const result = await requirePermission('core', 'delete')
+    const result = await requirePermission('config', 'edit')
     if (result instanceof NextResponse) return result
     const admin = result
 
