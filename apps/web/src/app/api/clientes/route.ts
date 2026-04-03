@@ -71,38 +71,30 @@ export async function GET(req: NextRequest) {
       where.AND = andConditions
     }
 
-    // Motorista sees limited fields only
     const isMotorista = user.roleName === 'motorista'
-    const selectFields = isMotorista
-      ? {
-          id: true,
-          legal_name: true,
-          trade_name: true,
-          phone: true,
-          mobile: true,
-          address_street: true,
-          address_number: true,
-          address_complement: true,
-          address_neighborhood: true,
-          address_city: true,
-          address_state: true,
-          address_zip: true,
-          created_at: true,
-        }
-      : undefined
 
-    const [data, total] = await Promise.all([
+    const [rawData, total] = await Promise.all([
       prisma.customer.findMany({
         where,
         skip: (page - 1) * limit,
         take: limit,
         orderBy: { legal_name: 'asc' },
-        ...(selectFields ? { select: { ...selectFields, _count: { select: { service_orders: true } } } } : {
-          include: { _count: { select: { service_orders: true } } },
-        }),
+        include: { _count: { select: { service_orders: true } } },
       }),
       prisma.customer.count({ where }),
     ])
+
+    // Motorista sees limited fields only (strip sensitive data)
+    const data = isMotorista
+      ? rawData.map(c => ({
+          id: c.id, legal_name: c.legal_name, trade_name: c.trade_name,
+          phone: c.phone, mobile: c.mobile,
+          address_street: c.address_street, address_number: c.address_number,
+          address_complement: c.address_complement, address_neighborhood: c.address_neighborhood,
+          address_city: c.address_city, address_state: c.address_state, address_zip: c.address_zip,
+          created_at: c.created_at, _count: c._count,
+        }))
+      : rawData
 
     // Calculate recent OS count (last 12 months) for recurrence badge
     const twelveMonthsAgo = new Date()
