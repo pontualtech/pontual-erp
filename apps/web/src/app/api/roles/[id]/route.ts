@@ -48,7 +48,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
     const admin = result
 
     // Only admin can edit roles
-    if (admin.role !== 'admin') return error('Apenas administradores podem editar cargos', 403)
+    if (admin.roleName !== 'admin') return error('Apenas administradores podem editar cargos', 403)
 
     const body = await request.json()
     const data = updateRoleSchema.parse(body)
