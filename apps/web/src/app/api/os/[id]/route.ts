@@ -7,9 +7,13 @@ import { updateOSSchema } from '@/lib/validations/os'
 
 type Params = { params: { id: string } }
 
-/** Resolve OS lookup: UUID by id, otherwise by os_number */
+/** Resolve OS lookup: UUID by id, otherwise by os_number. Returns null if invalid format. */
 function buildOsWhere(id: string, companyId: string) {
-  const isUuid = id.includes('-') || id.length > 20
+  // Reject path traversal, SQL injection, and invalid characters
+  if (!id || /[\/\\;'"<>]|\.\./.test(id)) return null
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+  const isNumber = /^\d{1,10}$/.test(id)
+  if (!isUuid && !isNumber) return null
   return isUuid
     ? { id, company_id: companyId, deleted_at: null }
     : { os_number: parseInt(id, 10), company_id: companyId, deleted_at: null }
@@ -21,8 +25,11 @@ export async function GET(req: NextRequest, { params }: Params) {
     if (result instanceof NextResponse) return result
     const user = result
 
+    const where = buildOsWhere(params.id, user.companyId)
+    if (!where) return error('ID inválido', 400)
+
     const os = await prisma.serviceOrder.findFirst({
-      where: buildOsWhere(params.id, user.companyId) as any,
+      where: where as any,
       include: {
         customers: true,
         user_profiles: { select: { id: true, name: true } },
@@ -118,8 +125,11 @@ export async function PUT(req: NextRequest, { params }: Params) {
     if (result instanceof NextResponse) return result
     const user = result
 
+    const putWhere = buildOsWhere(params.id, user.companyId)
+    if (!putWhere) return error('ID inválido', 400)
+
     const existing = await prisma.serviceOrder.findFirst({
-      where: buildOsWhere(params.id, user.companyId) as any,
+      where: putWhere as any,
     })
     if (!existing) return error('OS não encontrada', 404)
 
@@ -166,8 +176,11 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     if (result instanceof NextResponse) return result
     const user = result
 
+    const delWhere = buildOsWhere(params.id, user.companyId)
+    if (!delWhere) return error('ID inválido', 400)
+
     const existing = await prisma.serviceOrder.findFirst({
-      where: buildOsWhere(params.id, user.companyId) as any,
+      where: delWhere as any,
     })
     if (!existing) return error('OS não encontrada', 404)
 
