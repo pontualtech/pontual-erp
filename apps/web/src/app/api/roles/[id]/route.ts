@@ -60,7 +60,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
     if (existing.is_system) return error('Cargos de sistema não podem ser editados', 403)
 
     // Protect default role names from being renamed
-    const protectedNames = ['admin', 'atendente', 'financeiro', 'tecnico', 'motorista']
+    const protectedNames = ['admin', 'atendente', 'financeiro', 'técnico', 'motorista']
     if (protectedNames.includes(existing.name.toLowerCase()) && data.name && data.name.toLowerCase() !== existing.name.toLowerCase()) {
       return error('Cargos padrão não podem ser renomeados', 403)
     }

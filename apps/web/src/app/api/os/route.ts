@@ -31,8 +31,8 @@ export async function GET(req: NextRequest) {
     if (ownOnly) {
       where.technician_id = user.id
     } else if (!showAll) {
-      const role = user.roleName // e.g. 'tecnico', 'motorista', 'admin', 'atendente', 'financeiro'
-      if (role === 'tecnico') {
+      const role = user.roleName // e.g. 'técnico', 'motorista', 'admin', 'atendente', 'financeiro'
+      if (role === 'técnico') {
         where.technician_id = user.id
       } else if (role === 'motorista') {
         // Motorista only sees OS in delivery/collection-related statuses

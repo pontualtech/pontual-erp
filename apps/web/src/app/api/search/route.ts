@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
     const role = user.roleName
 
     // Role-based search: motorista only sees OS, tecnico sees OS + products
-    const includeClientes = role !== 'motorista' && role !== 'tecnico'
+    const includeClientes = role !== 'motorista' && role !== 'técnico'
     const includeProdutos = role !== 'motorista'
 
     const [os, clientes, produtos] = await Promise.all([

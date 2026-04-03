@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     const user = result
 
     // Apenas admin, atendente e financeiro podem enviar mensagens
-    if (user.roleName === 'motorista' || user.roleName === 'tecnico') {
+    if (user.roleName === 'motorista' || user.roleName === 'técnico') {
       return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
     }
 
