@@ -5,9 +5,14 @@ import { success, handleError } from '@/lib/api-response'
 
 export async function GET(req: NextRequest) {
   try {
-    const result = await requirePermission('core', 'view')
+    const result = await requirePermission('os', 'edit')
     if (result instanceof NextResponse) return result
     const user = result
+
+    // Block motorista (consistent with /api/chat)
+    if (user.roleName === 'motorista') {
+      return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+    }
 
     // Get distinct channels with last message
     const channels = await prisma.$queryRaw<

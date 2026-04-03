@@ -9,6 +9,11 @@ export async function GET(req: NextRequest) {
     if (result instanceof NextResponse) return result
     const user = result
 
+    // Price table: admin, atendente, financeiro only
+    if (user.roleName === 'técnico' || user.roleName === 'motorista') {
+      return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+    }
+
     const url = new URL(req.url)
     const search = url.searchParams.get('search') || ''
     const equipment_type = url.searchParams.get('equipment_type') || ''

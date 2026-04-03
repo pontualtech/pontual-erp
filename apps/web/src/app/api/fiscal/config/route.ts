@@ -55,10 +55,11 @@ export async function GET(_request: NextRequest) {
       : {}
     const { certificate_base64, certificate_password: _settingsCertPwd, ...safeSettings } = settings
 
+    const { api_key: _rawApiKey, ...configNoApiKey } = configWithoutSecrets as any
     const safeConfig = {
-      ...configWithoutSecrets,
+      ...configNoApiKey,
       settings: safeSettings,
-      api_key: maskedKey,
+      api_key_masked: maskedKey,
       has_api_key: !!config.api_key,
       certificate_uploaded: !!(certificate_path || certificate_base64 || settings.certificate_base64),
       certificate_filename: settings.certificate_filename || (config as any).certificate_filename || null,
