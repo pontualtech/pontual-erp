@@ -6,7 +6,7 @@ import { logAudit } from '@/lib/audit'
 
 export async function GET(req: NextRequest) {
   try {
-    const result = await requirePermission('os', 'view')
+    const result = await requirePermission('os', 'edit')
     if (result instanceof NextResponse) return result
     const user = result
 

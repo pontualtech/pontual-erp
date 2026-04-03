@@ -18,6 +18,8 @@ const routePermissions: { prefix: string; module: string; action: string; adminO
   { prefix: '/contratos', module: 'config', action: 'view', adminOnly: true },
   { prefix: '/chat', module: 'os', action: 'edit' },
   { prefix: '/integracoes/chatwoot', module: 'os', action: 'edit' },
+  { prefix: '/logistica', module: 'config', action: 'view', adminOnly: true },
+  { prefix: '/tickets', module: 'os', action: 'edit' },
 ]
 
 export function RouteGuard({ children }: { children: React.ReactNode }) {

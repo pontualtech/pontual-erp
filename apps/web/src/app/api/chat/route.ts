@@ -32,8 +32,8 @@ export async function POST(req: NextRequest) {
     if (result instanceof NextResponse) return result
     const user = result
 
-    // Motorista não pode enviar mensagens no chat interno
-    if (user.roleName === 'motorista') {
+    // Apenas admin, atendente e financeiro podem enviar mensagens
+    if (user.roleName === 'motorista' || user.roleName === 'tecnico') {
       return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
     }
 
