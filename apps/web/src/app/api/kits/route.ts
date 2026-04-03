@@ -9,6 +9,11 @@ export async function GET(req: NextRequest) {
     if (result instanceof Response) return result
     const user = result
 
+    // Motorista doesn't need kits
+    if (user.roleName === 'motorista') {
+      return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+    }
+
     const settings = await prisma.setting.findMany({
       where: {
         company_id: user.companyId,

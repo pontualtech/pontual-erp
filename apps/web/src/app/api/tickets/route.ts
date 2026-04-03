@@ -10,6 +10,11 @@ export async function GET(req: NextRequest) {
     if (result instanceof NextResponse) return result
     const user = result
 
+    // Only admin, atendente, financeiro can access tickets
+    if (user.roleName === 'técnico' || user.roleName === 'motorista') {
+      return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+    }
+
     const url = req.nextUrl.searchParams
     const page = Math.max(1, Number(url.get('page') || '1'))
     const limit = Math.min(100, Math.max(1, Number(url.get('limit') || '20')))
