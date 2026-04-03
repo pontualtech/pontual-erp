@@ -17,6 +17,8 @@ export async function GET(req: NextRequest) {
     const search = url.get('search') || ''
     const personType = url.get('personType') as 'PF' | 'PJ' | null
     const customerType = url.get('customerType') || null
+    const city = url.get('city') || null
+    const isRecurrent = url.get('isRecurrent') as 'true' | 'false' | null
 
     const where: any = {
       company_id: user.companyId,
@@ -55,6 +57,8 @@ export async function GET(req: NextRequest) {
       where.person_type = personTypeMap[personType] || personType
     }
     if (customerType) where.customer_type = customerType
+    if (city) where.address_city = { equals: city, mode: 'insensitive' }
+    // isRecurrent filtering is applied post-query on recent_os_count
     if (search) {
       andConditions.push({
         OR: [
@@ -115,14 +119,24 @@ export async function GET(req: NextRequest) {
       recentOsCounts.map(r => [r.customer_id, r._count.id])
     )
 
-    const enriched = data.map((c: any) => ({
+    let enriched = data.map((c: any) => ({
       ...c,
       os_count: c._count?.service_orders ?? c.total_os ?? 0,
       recent_os_count: recentOsMap[c.id] ?? 0,
       _count: undefined,
     }))
 
-    return paginated(enriched, total, page, limit)
+    // Apply recurrence filter post-query (based on recent_os_count >= 3)
+    if (isRecurrent === 'true') {
+      enriched = enriched.filter((c: any) => c.recent_os_count >= 3)
+    } else if (isRecurrent === 'false') {
+      enriched = enriched.filter((c: any) => c.recent_os_count < 3)
+    }
+
+    // When recurrence filter is active, adjust total for pagination
+    const finalTotal = isRecurrent ? enriched.length : total
+
+    return paginated(enriched, finalTotal, page, limit)
   } catch (err) {
     return handleError(err)
   }

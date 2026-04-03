@@ -695,6 +695,9 @@ export default function OSDetailPage() {
       if (!res.ok) throw new Error(data.error || 'Erro na transicao')
       if (data.data?.receivable_created) {
         toast.success('OS finalizada! Conta a receber gerada automaticamente.')
+      } else {
+        const targetStatus = statusList.find(s => s.id === toStatusId)
+        toast.success(`Status atualizado para ${targetStatus?.name || 'novo status'}`)
       }
       setShowPaymentModal(false)
       setPendingStatusId(null)
@@ -894,6 +897,19 @@ export default function OSDetailPage() {
               </span>
             )
           })()}
+          {/* Overdue badge */}
+          {(() => {
+            if (!os.estimated_delivery) return null
+            const now = new Date()
+            const est = new Date(os.estimated_delivery)
+            const diffDays = Math.floor((now.getTime() - est.getTime()) / (1000 * 60 * 60 * 24))
+            if (diffDays <= 0) return null
+            return (
+              <span className="rounded-full px-2 py-0.5 text-xs font-bold border border-red-300 bg-red-100 text-red-700 animate-pulse" title={`Previsão era ${est.toLocaleDateString('pt-BR')}`}>
+                {diffDays} dia{diffDays > 1 ? 's' : ''} atrasado
+              </span>
+            )
+          })()}
           {/* Canal de Entrada */}
           {canEditType ? (
             <select value={editCanal} title="Canal de entrada"
@@ -1057,7 +1073,16 @@ export default function OSDetailPage() {
             </div>
             <div className="flex items-baseline justify-between">
               <span className="text-xs text-gray-400 uppercase w-16 shrink-0">Tel</span>
-              <span className="text-sm text-gray-700 text-right">{os.customers?.mobile || os.customers?.phone || '--'}</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm text-gray-700 text-right">{os.customers?.mobile || os.customers?.phone || '--'}</span>
+                {(os.customers?.mobile || os.customers?.phone) && (
+                  <a href={`https://wa.me/${(() => { const d = (os.customers?.mobile || os.customers?.phone || '').replace(/\D/g, ''); return d.startsWith('55') ? d : '55' + d })()}`}
+                    target="_blank" rel="noopener noreferrer" title="WhatsApp"
+                    className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-green-500 hover:bg-green-600 transition-colors">
+                    <MessageCircle className="h-3 w-3 text-white" />
+                  </a>
+                )}
+              </div>
             </div>
             <div className="flex items-baseline justify-between">
               <span className="text-xs text-gray-400 uppercase w-16 shrink-0">Email</span>

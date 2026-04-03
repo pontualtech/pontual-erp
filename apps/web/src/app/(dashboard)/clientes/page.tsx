@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Plus, Search, Pencil, Trash2, Eye, Loader2 } from 'lucide-react'
+import { Plus, Search, Pencil, Trash2, Eye, Loader2, MessageCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/lib/use-auth'
 import { formatDocument } from '@/lib/utils'
@@ -23,6 +23,10 @@ export default function ClientesPage() {
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [personType, setPersonType] = useState('')
+  const [cityFilter, setCityFilter] = useState('')
+  const [recurrenceFilter, setRecurrenceFilter] = useState('')
+  const [cities, setCities] = useState<string[]>([])
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [deleteId, setDeleteId] = useState<string | null>(null)
@@ -37,6 +41,9 @@ export default function ClientesPage() {
     params.set('page', String(page))
     params.set('limit', '20')
     if (search) params.set('search', search)
+    if (personType) params.set('personType', personType)
+    if (cityFilter) params.set('city', cityFilter)
+    if (recurrenceFilter) params.set('isRecurrent', recurrenceFilter)
     fetch(`/api/clientes?${params}`)
       .then(r => r.json())
       .then(d => { setClientes(d.data ?? []); setTotalPages(d.totalPages ?? 1) })
@@ -44,7 +51,15 @@ export default function ClientesPage() {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { loadClientes(); setSelected(new Set()) }, [search, page])
+  // Load unique cities for the filter dropdown
+  useEffect(() => {
+    fetch('/api/clientes/cities')
+      .then(r => r.json())
+      .then(d => setCities(d.data ?? []))
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => { loadClientes(); setSelected(new Set()) }, [search, page, personType, cityFilter, recurrenceFilter])
 
   function toggleSelect(id: string) {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -98,11 +113,30 @@ export default function ClientesPage() {
         </div>
       </div>
 
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-        <input placeholder="Buscar por nome, documento, telefone..." value={search}
-          onChange={e => { setSearch(e.target.value); setPage(1) }}
-          className="w-full rounded-md border bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative min-w-[240px] flex-1">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+          <input placeholder="Buscar por nome, documento, telefone..." value={search}
+            onChange={e => { setSearch(e.target.value); setPage(1) }}
+            className="w-full rounded-md border bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
+        </div>
+        <select value={personType} title="Filtrar por tipo de pessoa" onChange={e => { setPersonType(e.target.value); setPage(1) }}
+          className="rounded-md border bg-white px-3 py-2 text-sm outline-none focus:border-blue-500">
+          <option value="">Tipo: Todos</option>
+          <option value="PF">Pessoa Fisica</option>
+          <option value="PJ">Pessoa Juridica</option>
+        </select>
+        <select value={cityFilter} title="Filtrar por cidade" onChange={e => { setCityFilter(e.target.value); setPage(1) }}
+          className="rounded-md border bg-white px-3 py-2 text-sm outline-none focus:border-blue-500">
+          <option value="">Cidade: Todas</option>
+          {cities.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select value={recurrenceFilter} title="Filtrar por recorrencia" onChange={e => { setRecurrenceFilter(e.target.value); setPage(1) }}
+          className="rounded-md border bg-white px-3 py-2 text-sm outline-none focus:border-blue-500">
+          <option value="">Recorrencia: Todos</option>
+          <option value="true">Recorrente</option>
+          <option value="false">Novo</option>
+        </select>
       </div>
 
       <div className="overflow-x-auto rounded-lg border bg-white shadow-sm">
@@ -148,7 +182,18 @@ export default function ClientesPage() {
                   </td>
                   <td className="px-4 py-3 text-gray-500">{personTypeLabel[c.person_type] ?? c.person_type}</td>
                   <td className="px-4 py-3 text-gray-700">{formatDocument(c.document_number)}</td>
-                  <td className="px-4 py-3 text-gray-700">{c.mobile || c.phone || '—'}</td>
+                  <td className="px-4 py-3 text-gray-700">
+                    <div className="flex items-center gap-1.5">
+                      {c.mobile || c.phone || '—'}
+                      {(c.mobile || c.phone) && (
+                        <a href={`https://wa.me/${(() => { const d = (c.mobile || c.phone || '').replace(/\D/g, ''); return d.startsWith('55') ? d : '55' + d })()}`}
+                          target="_blank" rel="noopener noreferrer" title="WhatsApp"
+                          className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-green-500 hover:bg-green-600 transition-colors shrink-0">
+                          <MessageCircle className="h-3 w-3 text-white" />
+                        </a>
+                      )}
+                    </div>
+                  </td>
                   <td className="px-4 py-3 text-gray-500">{c.email || '—'}</td>
                   <td className="px-4 py-3 text-gray-500">
                     {c.address_city ? `${c.address_city}${c.address_state ? '/' + c.address_state : ''}` : '—'}

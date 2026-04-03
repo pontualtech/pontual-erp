@@ -53,8 +53,10 @@ function getFinanceStatus(os: OS) {
   return { label: 'Pendente', color: 'bg-amber-100 text-amber-700' }
 }
 
-function isOverdue(os: OS) {
+function isOverdue(os: OS, statusName?: string) {
   if (!os.estimated_delivery || os.actual_delivery) return false
+  const name = (statusName || '').toLowerCase()
+  if (name.includes('entreg') || name.includes('cancelad') || name.includes('finaliz')) return false
   return new Date(os.estimated_delivery) < new Date()
 }
 
@@ -734,10 +736,23 @@ export default function OSListPage() {
           title="Filtrar OS em atraso"
           className={cn(
             'flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors',
-            overdueFilter ? 'bg-red-50 border-red-300 text-red-700' : 'bg-white text-gray-600 hover:bg-gray-50'
+            overdueFilter
+              ? 'bg-red-100 border-red-400 text-red-700 ring-1 ring-red-300 shadow-sm'
+              : 'bg-white text-gray-600 hover:bg-gray-50'
           )}>
           <AlertTriangle className="h-3.5 w-3.5" />
           Em atraso
+          {(() => {
+            const count = osList.filter(o => {
+              const st = o.module_statuses || statusMap[o.status_id]
+              return isOverdue(o, st?.name)
+            }).length
+            return count > 0 ? (
+              <span className="ml-0.5 rounded-full bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 leading-none min-w-[18px] text-center">
+                {count}
+              </span>
+            ) : null
+          })()}
         </button>
         <label className="flex items-center gap-1.5 cursor-pointer text-xs text-gray-500 hover:text-gray-700">
           <input type="checkbox" checked={showCancelled} onChange={e => { setShowCancelled(e.target.checked); setPage(1) }}
@@ -853,11 +868,12 @@ export default function OSListPage() {
                 ) : (
                   getSortedList().map((os, rowIndex) => {
                     const st = os.module_statuses || statusMap[os.status_id]
+                    const osIsOverdue = isOverdue(os, st?.name)
                     return (
                       <tr key={os.id} className={cn(
                         'hover:bg-gray-50',
                         selected.has(os.id) && 'bg-blue-50',
-                        isOverdue(os) && 'bg-red-50/50',
+                        osIsOverdue && 'bg-red-50/50 border-l-4 border-l-red-500',
                       )}>
                         <td className="px-3 py-2.5">
                           <input type="checkbox" title={`Selecionar OS-${String(os.os_number).padStart(4, '0')}`}
@@ -901,9 +917,9 @@ export default function OSListPage() {
                               >
                                 {st?.name ?? os.status_id}
                               </span>
-                              {isOverdue(os) && (
+                              {osIsOverdue && (
                                 <span className="rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-600 flex items-center gap-0.5 text-nowrap">
-                                  <Clock className="h-2.5 w-2.5" /> Atraso
+                                  <Clock className="h-2.5 w-2.5" /> Atrasado
                                 </span>
                               )}
                             </div>
@@ -1224,9 +1240,9 @@ export default function OSListPage() {
                         if (!fin) return null
                         return <span className={cn('rounded-full px-1.5 py-0.5 text-[10px] font-medium', fin.color)}>{fin.label}</span>
                       })()}
-                      {isOverdue(os) && (
+                      {isOverdue(os, col.name) && (
                         <span className="text-[10px] font-medium text-red-600 flex items-center gap-0.5">
-                          <Clock className="h-2.5 w-2.5" /> Atraso
+                          <Clock className="h-2.5 w-2.5" /> Atrasado
                         </span>
                       )}
                     </div>

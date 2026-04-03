@@ -268,6 +268,65 @@ export async function POST(req: NextRequest, { params }: Params) {
       return updatedOS
     })
 
+    // ====== AUTO-NOTIFICATIONS (AUTO-1): registrar notas automáticas no histórico ======
+    // Fire-and-forget: não bloqueia a resposta, erros são silenciados
+    try {
+      if (toNameLower.includes('aguardando aprov')) {
+        // Orçamento enviado, aguardando aprovação do cliente
+        await prisma.serviceOrderHistory.create({
+          data: {
+            company_id: user.companyId,
+            service_order_id: os.id,
+            to_status_id: toStatusId,
+            changed_by: user.id,
+            notes: '📋 Orçamento enviado automaticamente ao cliente — aguardando aprovação',
+          },
+        })
+      }
+
+      if (toNameLower.includes('pronto') || toNameLower.includes('reparad')) {
+        // Equipamento pronto para retirada/entrega
+        await prisma.serviceOrderHistory.create({
+          data: {
+            company_id: user.companyId,
+            service_order_id: os.id,
+            to_status_id: toStatusId,
+            changed_by: user.id,
+            notes: '🔧 Equipamento pronto — notificação de retirada/entrega pendente',
+          },
+        })
+      }
+
+      if (toNameLower.includes('entregue')) {
+        // Entrega realizada
+        await prisma.serviceOrderHistory.create({
+          data: {
+            company_id: user.companyId,
+            service_order_id: os.id,
+            to_status_id: toStatusId,
+            changed_by: user.id,
+            notes: '✅ Equipamento entregue ao cliente — OS finalizada',
+          },
+        })
+      }
+
+      if (toNameLower.includes('coleta') || toNameLower.includes('coletar')) {
+        // Coleta agendada
+        await prisma.serviceOrderHistory.create({
+          data: {
+            company_id: user.companyId,
+            service_order_id: os.id,
+            to_status_id: toStatusId,
+            changed_by: user.id,
+            notes: '🚚 Coleta agendada — logística será notificada',
+          },
+        })
+      }
+    } catch (autoNotifErr) {
+      // Silenciar erro — notificação automática não deve bloquear a transição
+      console.error('[AUTO-NOTIFICATION] Erro ao registrar notificação automática:', autoNotifErr)
+    }
+
     // Fora da transação: notificações (fire and forget, não precisa ser atômica)
     if (isReparado) {
       const osNum = String(os.os_number).padStart(4, '0')

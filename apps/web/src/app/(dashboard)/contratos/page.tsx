@@ -182,10 +182,24 @@ export default function ContratosPage() {
           <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
         </div>
       ) : contracts.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-12 text-gray-400">
-          <FileText className="h-12 w-12 mb-3" />
-          <p className="text-lg font-medium">Nenhum contrato encontrado</p>
-          <p className="text-sm">Crie um novo contrato para comecar</p>
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 dark:bg-blue-900/20 mb-4">
+            <FileText className="h-8 w-8 text-blue-400" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Nenhum contrato encontrado</h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400 max-w-sm mb-1">
+            Gerencie contratos de manutencao preventiva com seus clientes.
+          </p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 max-w-sm mb-6">
+            Defina equipamentos cobertos, frequencia de visitas, valor mensal e acompanhe vencimentos automaticamente.
+          </p>
+          <Link
+            href="/contratos/novo"
+            className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            Criar Primeiro Contrato
+          </Link>
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border bg-white dark:bg-gray-800 dark:border-gray-700">

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Pencil, Trash2, DollarSign, Download, Printer, Loader2, RefreshCw, FileText } from 'lucide-react'
+import { ArrowLeft, Pencil, Trash2, DollarSign, Download, Printer, Loader2, RefreshCw, FileText, MessageCircle } from 'lucide-react'
 import { formatDocument } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -197,11 +197,29 @@ export default function ClienteDetalhePage() {
             </div>
             <div className="flex justify-between">
               <span className="text-gray-500">Celular</span>
-              <span className="text-gray-900">{cliente.mobile || '—'}</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-gray-900">{cliente.mobile || '—'}</span>
+                {cliente.mobile && (
+                  <a href={`https://wa.me/${(() => { const d = cliente.mobile.replace(/\D/g, ''); return d.startsWith('55') ? d : '55' + d })()}`}
+                    target="_blank" rel="noopener noreferrer" title="WhatsApp"
+                    className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-green-500 hover:bg-green-600 transition-colors">
+                    <MessageCircle className="h-3 w-3 text-white" />
+                  </a>
+                )}
+              </div>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-500">Telefone</span>
-              <span className="text-gray-900">{cliente.phone || '—'}</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-gray-900">{cliente.phone || '—'}</span>
+                {cliente.phone && (
+                  <a href={`https://wa.me/${(() => { const d = cliente.phone.replace(/\D/g, ''); return d.startsWith('55') ? d : '55' + d })()}`}
+                    target="_blank" rel="noopener noreferrer" title="WhatsApp"
+                    className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-green-500 hover:bg-green-600 transition-colors">
+                    <MessageCircle className="h-3 w-3 text-white" />
+                  </a>
+                )}
+              </div>
             </div>
           </div>
         </div>

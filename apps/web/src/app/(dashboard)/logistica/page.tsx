@@ -206,15 +206,23 @@ export default function LogisticaPage() {
             <Loader2 className="h-6 w-6 animate-spin text-gray-300" />
           </div>
         ) : routes.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-12 text-center">
-            <Truck className="h-10 w-10 text-gray-200 mb-3" />
-            <p className="text-sm text-gray-500">Nenhuma rota encontrada para esta data</p>
+          <div className="flex flex-col items-center justify-center p-16 text-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 mb-4">
+              <Truck className="h-8 w-8 text-blue-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-1">Nenhuma rota para esta data</h3>
+            <p className="text-sm text-gray-500 max-w-sm mb-1">
+              O modulo de Logistica organiza coletas e entregas em rotas otimizadas para os motoristas.
+            </p>
+            <p className="text-xs text-gray-400 max-w-sm mb-6">
+              Crie uma rota, adicione paradas com enderecos de clientes e acompanhe o andamento em tempo real.
+            </p>
             <Link
               href="/logistica/nova"
-              className="mt-4 flex items-center gap-2 rounded-lg border border-dashed border-gray-300 px-4 py-2 text-sm text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors"
+              className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
             >
               <Plus className="h-4 w-4" />
-              Criar primeira rota
+              Criar Nova Rota
             </Link>
           </div>
         ) : (
