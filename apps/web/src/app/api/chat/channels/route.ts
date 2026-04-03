@@ -9,8 +9,8 @@ export async function GET(req: NextRequest) {
     if (result instanceof NextResponse) return result
     const user = result
 
-    // Block motorista (consistent with /api/chat)
-    if (user.roleName === 'motorista') {
+    // Block técnico + motorista (consistent with /api/chat)
+    if (user.roleName === 'motorista' || user.roleName === 'técnico') {
       return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
     }
 

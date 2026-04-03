@@ -15,6 +15,11 @@ export async function GET(_request: NextRequest) {
     if (result instanceof NextResponse) return result
     const user = result
 
+    // Fiscal config: only admin + financeiro (not atendente — sensitive data)
+    if (user.roleName !== 'admin' && user.roleName !== 'financeiro') {
+      return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+    }
+
     let config = await prisma.fiscalConfig.findUnique({
       where: { company_id: user.companyId },
     })
