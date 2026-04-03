@@ -16,10 +16,11 @@ const routePermissions: { prefix: string; module: string; action: string; adminO
   { prefix: '/config', module: 'config', action: 'view', adminOnly: true },
   { prefix: '/relatorios-bi', module: 'financeiro', action: 'view' },
   { prefix: '/contratos', module: 'config', action: 'view', adminOnly: true },
-  { prefix: '/chat', module: 'os', action: 'edit' },
-  { prefix: '/integracoes/chatwoot', module: 'os', action: 'edit' },
+  { prefix: '/chat', module: 'os', action: 'create' },
+  { prefix: '/integracoes/chatwoot', module: 'os', action: 'create' },
   { prefix: '/logistica', module: 'config', action: 'view', adminOnly: true },
-  { prefix: '/tickets', module: 'os', action: 'edit' },
+  { prefix: '/tickets', module: 'os', action: 'create' },
+  { prefix: '/produtos', module: 'estoque', action: 'read' },
 ]
 
 export function RouteGuard({ children }: { children: React.ReactNode }) {

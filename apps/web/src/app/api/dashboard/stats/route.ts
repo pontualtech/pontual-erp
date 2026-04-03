@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
-import { getServerUser } from '@/lib/auth'
+import { getServerUser, hasPermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 
 export async function GET() {
@@ -191,19 +191,22 @@ export async function GET() {
       }),
     ])
 
+    // Check if user has financial permissions
+    const canViewFinanceiro = user.roleName === 'admin' || await hasPermission(user.id, user.companyId, 'financeiro', 'view')
+
     return success({
       cards: {
         osAbertasHoje,
         osEmExecucao,
         osProntas,
-        faturamentoMesCents: faturamentoMesCents._sum.total_cost ?? 0,
+        ...(canViewFinanceiro ? { faturamentoMesCents: faturamentoMesCents._sum.total_cost ?? 0 } : {}),
       },
       osPerWeek: osPerWeek.map(w => ({ week: w.week, count: Number(w.count) })),
       pipeline: pipelineData,
       metrics: {
         avgRepairDays: avgRepair[0]?.avg_days ? Number(avgRepair[0].avg_days) : null,
         approvalRate: quotesTotal > 0 ? Math.round((quotesApproved / quotesTotal) * 100) : 0,
-        avgTicketCents: avgTicket[0]?.avg_ticket ? Number(avgTicket[0].avg_ticket) : null,
+        ...(canViewFinanceiro ? { avgTicketCents: avgTicket[0]?.avg_ticket ? Number(avgTicket[0].avg_ticket) : null } : {}),
       },
       recentOs: recentOs.map(o => ({
         id: o.id,
@@ -213,7 +216,7 @@ export async function GET() {
         status_color: o.module_statuses?.color ?? '#6B7280',
         created_at: o.created_at,
       })),
-      recentReceivable: recentReceivable.map(r => ({
+      recentReceivable: !canViewFinanceiro ? [] : recentReceivable.map(r => ({
         id: r.id,
         description: r.description,
         customer_name: r.customers?.legal_name ?? '—',
