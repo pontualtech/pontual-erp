@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
 
     // Motorista doesn't need kits
     if (user.roleName === 'motorista') {
-      return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+      return error('Sem permissão', 403)
     }
 
     const settings = await prisma.setting.findMany({
