@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, Search, X, Pencil } from 'lucide-react'
+import { Plus, Search, X, Pencil, KeyRound } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/lib/use-auth'
 
@@ -299,6 +299,9 @@ function CreateUserModal({ roles, onClose, onCreated }: { roles: Role[]; onClose
 
 function EditUserModal({ user, roles, onClose, onUpdated }: { user: User; roles: Role[]; onClose: () => void; onUpdated: () => void }) {
   const [saving, setSaving] = useState(false)
+  const [showResetPassword, setShowResetPassword] = useState(false)
+  const [newPassword, setNewPassword] = useState('')
+  const [resettingPassword, setResettingPassword] = useState(false)
   const [form, setForm] = useState({
     name: user.name,
     email: user.email,
@@ -306,6 +309,32 @@ function EditUserModal({ user, roles, onClose, onUpdated }: { user: User; roles:
     roleId: user.role_id || user.roles?.id || '',
     is_active: user.is_active,
   })
+
+  async function handleResetPassword() {
+    if (newPassword.length < 6) {
+      toast.error('A senha deve ter pelo menos 6 caracteres.')
+      return
+    }
+
+    setResettingPassword(true)
+    try {
+      const res = await fetch(`/api/users/${user.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: newPassword }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao redefinir senha')
+
+      toast.success(`Senha de ${user.name} redefinida!`)
+      setShowResetPassword(false)
+      setNewPassword('')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao redefinir senha')
+    } finally {
+      setResettingPassword(false)
+    }
+  }
 
   useEffect(() => {
     function handleEsc(e: KeyboardEvent) { if (e.key === 'Escape') { onClose() } }
@@ -409,6 +438,49 @@ function EditUserModal({ user, roles, onClose, onUpdated }: { user: User; roles:
               className="h-4 w-4 rounded border-gray-300"
             />
             <label htmlFor="is_active" className="text-sm text-gray-700">Usuario ativo</label>
+          </div>
+
+          {/* Redefinir Senha */}
+          <div className="border-t pt-4">
+            {!showResetPassword ? (
+              <button
+                type="button"
+                onClick={() => setShowResetPassword(true)}
+                className="flex items-center gap-2 text-sm text-orange-600 hover:text-orange-700 font-medium"
+              >
+                <KeyRound className="h-4 w-4" />
+                Redefinir Senha
+              </button>
+            ) : (
+              <div className="space-y-3 rounded-md border border-orange-200 bg-orange-50 p-3">
+                <p className="text-xs font-medium text-orange-700">Nova senha para {user.name}</p>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={e => setNewPassword(e.target.value)}
+                    placeholder="Minimo 6 caracteres"
+                    minLength={6}
+                    className="flex-1 rounded-md border px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleResetPassword}
+                    disabled={resettingPassword || newPassword.length < 6}
+                    className="rounded-md bg-orange-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-orange-700 disabled:opacity-50"
+                  >
+                    {resettingPassword ? 'Salvando...' : 'Salvar'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowResetPassword(false); setNewPassword('') }}
+                    className="rounded-md border px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex gap-3 pt-2">
