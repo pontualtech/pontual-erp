@@ -200,7 +200,7 @@ export default function OSListPage() {
   // Load role-based visibility config
   useEffect(() => {
     if (isAdmin) {
-      setAllowedColumns(['os_number', 'created_at', 'customer', 'equipment_type', 'os_type', 'status', 'total_cost', 'financeiro', 'technician', 'priority'])
+      setAllowedColumns(['os_number', 'created_at', 'customer', 'equipment_type', 'os_type', 'os_location', 'status', 'total_cost', 'financeiro', 'technician', 'priority'])
       setOwnOnly(false)
       setVisibilityLoaded(true)
       return
@@ -214,7 +214,7 @@ export default function OSListPage() {
         }
       })
       .catch(() => {
-        setAllowedColumns(['os_number', 'created_at', 'customer', 'equipment_type', 'os_type', 'status', 'total_cost', 'financeiro', 'technician', 'priority'])
+        setAllowedColumns(['os_number', 'created_at', 'customer', 'equipment_type', 'os_type', 'os_location', 'status', 'total_cost', 'financeiro', 'technician', 'priority'])
       })
       .finally(() => setVisibilityLoaded(true))
   }, [isAdmin])
@@ -528,7 +528,7 @@ export default function OSListPage() {
 
   const allColumnLabels: Record<string, string> = {
     os_number: 'Nº', created_at: 'Data', customer: 'Cliente', equipment_type: 'Equip.',
-    os_type: 'Tipo', status: 'Status', total_cost: 'Valor', financeiro: 'Financeiro', technician: 'Técnico', priority: 'Prioridade',
+    os_type: 'Tipo', os_location: 'Local', status: 'Status', total_cost: 'Valor', financeiro: 'Financeiro', technician: 'Técnico', priority: 'Prioridade',
   }
 
   // Export selected OS to CSV
@@ -545,6 +545,7 @@ export default function OSListPage() {
         case 'customer': return os.customers?.legal_name || ''
         case 'equipment_type': return os.equipment_type || ''
         case 'os_type': return osTypeLabel[os.os_type] || os.os_type
+        case 'os_location': return os.os_location || ''
         case 'status': return st?.name || ''
         case 'total_cost': return ((os.total_cost || 0) / 100).toFixed(2)
         case 'financeiro': return getFinanceStatus(os)?.label || ''
@@ -908,6 +909,9 @@ export default function OSListPage() {
                             </span>
                           </td>
                         )}
+                        {effectiveColumns.includes('os_location') && (
+                          <td className="px-3 py-2.5 text-gray-600 text-xs">{os.os_location || '\u2014'}</td>
+                        )}
                         {effectiveColumns.includes('status') && (
                           <td className="px-3 py-2.5">
                             <div className="flex items-center gap-1.5">
@@ -1218,7 +1222,10 @@ export default function OSListPage() {
                   <Link
                     key={os.id}
                     href={`/os/${os.id}`}
-                    className="block rounded-lg border bg-white p-3 shadow-sm hover:shadow-md transition-shadow"
+                    className={cn(
+                      'block rounded-lg border bg-white p-3 shadow-sm hover:shadow-md transition-shadow',
+                      isOverdue(os, col.name) && 'border-l-4 border-l-red-500 bg-red-50/30'
+                    )}
                   >
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium text-gray-900">
