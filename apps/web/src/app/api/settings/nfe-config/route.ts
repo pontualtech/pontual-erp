@@ -11,11 +11,11 @@ const NFE_KEYS = [
   'cnab.bairro', 'company.cod_municipio', 'cnab.cidade', 'cnab.uf', 'cnab.cep',
   'company.phone',
   'nfe.ambiente', 'nfe.serie', 'nfe.proximo_numero',
-  'nfe.csosn_padrao', 'nfe.cfop_venda_interna', 'nfe.cfop_venda_interestadual', 'nfe.cfop_devolucao',
+  'nfe.csosn_padrao', 'nfe.aliquota_simples', 'nfe.cfop_venda_interna', 'nfe.cfop_venda_interestadual', 'nfe.cfop_devolucao',
   'nfe.info_complementar',
 ]
 
-// Mapa campo do form → chave no banco
+// Mapa campo do form -> chave no banco
 const FIELD_MAP: Record<string, string> = {
   cnpj: 'cnab.cnpj',
   razao_social: 'cnab.razao_social',
@@ -37,6 +37,7 @@ const FIELD_MAP: Record<string, string> = {
   serie: 'nfe.serie',
   proximo_numero: 'nfe.proximo_numero',
   csosn_padrao: 'nfe.csosn_padrao',
+  aliquota_simples: 'nfe.aliquota_simples',
   cfop_venda_interna: 'nfe.cfop_venda_interna',
   cfop_venda_interestadual: 'nfe.cfop_venda_interestadual',
   cfop_devolucao: 'nfe.cfop_devolucao',
@@ -47,7 +48,7 @@ const FIELD_MAP: Record<string, string> = {
 const KEY_MAP = Object.fromEntries(Object.entries(FIELD_MAP).map(([k, v]) => [v, k]))
 
 /**
- * GET /api/settings/nfe-config — Carregar configurações NF-e
+ * GET /api/settings/nfe-config — Carregar configuracoes NF-e
  */
 export async function GET() {
   try {
@@ -65,7 +66,7 @@ export async function GET() {
       if (field) data[field] = s.value
     }
 
-    // Info do certificado
+    // Info do certificado (rich info)
     const fiscalCfg = await prisma.fiscalConfig.findUnique({ where: { company_id: user.companyId } })
     const fiscalSettings = (fiscalCfg?.settings || {}) as Record<string, any>
     if (fiscalSettings.certificate_base64) {
@@ -76,19 +77,42 @@ export async function GET() {
         if (fiscalSettings.certificate_password) {
           const { decrypt } = await import('@/lib/encryption')
           pw = decrypt(fiscalSettings.certificate_password)
+        } else if (fiscalCfg?.certificate_password) {
+          // Password may be stored directly on the model
+          pw = fiscalCfg.certificate_password
         }
         const cert = extractCertificate(fiscalSettings.certificate_base64, pw)
-        data.cert_validade = cert.validTo.toLocaleDateString('pt-BR')
+        data.cert_validade = cert.validTo.toISOString()
+        data.cert_valid_from = cert.validFrom.toISOString()
         data.cert_cnpj = cert.cnpj
-      } catch { data.cert_validade = 'Erro ao ler'; data.cert_cnpj = '' }
+        data.cert_subject = cert.razaoSocial
+      } catch {
+        data.cert_validade = ''
+        data.cert_cnpj = ''
+        data.cert_subject = ''
+      }
+      // Fallback to stored metadata
+      if (fiscalSettings.certificate_subject) {
+        data.cert_subject = data.cert_subject || fiscalSettings.certificate_subject
+      }
+      if (fiscalSettings.certificate_issuer) {
+        data.cert_issuer = fiscalSettings.certificate_issuer
+      }
+      if (fiscalSettings.certificate_filename) {
+        data.cert_filename = fiscalSettings.certificate_filename
+      }
     }
 
-    // Número da série
+    // Numero da serie
     const serie = data.serie || '1'
-    const nfeSerie = await prisma.$queryRawUnsafe(
-      `SELECT last_number FROM nfe_series WHERE company_id = '${user.companyId}' AND serie = '${serie}'`
-    ) as any[]
-    if (nfeSerie.length > 0) data.proximo_numero = String(Number(nfeSerie[0].last_number) + 1)
+    try {
+      const nfeSerie = await prisma.$queryRawUnsafe(
+        `SELECT last_number FROM nfe_series WHERE company_id = '${user.companyId}' AND serie = '${serie}'`
+      ) as any[]
+      if (nfeSerie.length > 0) data.proximo_numero = String(Number(nfeSerie[0].last_number) + 1)
+    } catch {
+      // nfe_series table may not exist yet
+    }
 
     return success(data)
   } catch (err) {
@@ -97,7 +121,7 @@ export async function GET() {
 }
 
 /**
- * PUT /api/settings/nfe-config — Salvar configurações NF-e
+ * PUT /api/settings/nfe-config — Salvar configuracoes NF-e
  */
 export async function PUT(req: NextRequest) {
   try {
@@ -134,13 +158,17 @@ export async function PUT(req: NextRequest) {
       })
     }
 
-    // Atualizar série
+    // Atualizar serie
     if (body.serie && body.proximo_numero) {
       const nextNum = Math.max(0, parseInt(body.proximo_numero) - 1)
-      await prisma.$executeRawUnsafe(`
-        INSERT INTO nfe_series (company_id, serie, last_number) VALUES ('${user.companyId}', '${body.serie}', ${nextNum})
-        ON CONFLICT (company_id, serie) DO UPDATE SET last_number = ${nextNum}, updated_at = NOW()
-      `)
+      try {
+        await prisma.$executeRawUnsafe(`
+          INSERT INTO nfe_series (company_id, serie, last_number) VALUES ('${user.companyId}', '${body.serie}', ${nextNum})
+          ON CONFLICT (company_id, serie) DO UPDATE SET last_number = ${nextNum}, updated_at = NOW()
+        `)
+      } catch {
+        // nfe_series table may not exist yet
+      }
     }
 
     return success({ saved: true })
