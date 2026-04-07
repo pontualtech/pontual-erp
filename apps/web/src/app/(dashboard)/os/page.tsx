@@ -839,6 +839,7 @@ export default function OSListPage() {
                     { key: 'customer', label: 'Cliente' },
                     { key: 'equipment_type', label: 'Equip.' },
                     { key: 'os_type', label: 'Tipo' },
+                    { key: 'os_location', label: 'Local' },
                     { key: 'status', label: 'Status' },
                     { key: 'total_cost', label: 'Valor' },
                     { key: 'financeiro', label: 'Financeiro' },
