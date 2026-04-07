@@ -130,6 +130,12 @@ export async function POST(req: NextRequest, { params }: Params) {
           orderBy: { name: 'asc' },
         })
 
+        // Buscar conta bancária padrão para esta forma de pagamento
+        const defaultAccountSetting = await tx.setting.findFirst({
+          where: { company_id: user.companyId, key: `account_default.${payment_method}` },
+        })
+        const defaultAccountId = defaultAccountSetting?.value || null
+
         const totalAmount = os.total_cost ?? 0
         let cardFeeTotal = 0
         let netAmount = totalAmount
@@ -194,6 +200,7 @@ export async function POST(req: NextRequest, { params }: Params) {
             received_amount: 0,
             due_date: dueDate,
             status: 'PENDENTE',
+            account_id: defaultAccountId,
             payment_method: payment_method,
             installment_count: installment_count,
             card_fee_total: cardFeeTotal,

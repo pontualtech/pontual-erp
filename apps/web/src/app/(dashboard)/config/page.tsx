@@ -25,6 +25,7 @@ const sections = [
       { label: 'Marcas e Modelos', href: '/config/marcas-modelos', icon: Wrench, desc: 'Marcas e modelos de equipamentos para OS' },
       { label: 'Kits de Servico', href: '/config/kits', icon: Layers, desc: 'Kits pre-definidos para adicionar na OS' },
       { label: 'Tabela de Precos', href: '/config/tabela-precos', icon: DollarSign, desc: 'Precos padrao para orcamentos inteligentes' },
+      { label: 'Contas Padrao', href: '/config/contas-padrao', icon: Landmark, desc: 'Conta bancaria padrao por forma de pagamento' },
     ],
   },
   {
