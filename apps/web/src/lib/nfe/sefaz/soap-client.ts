@@ -53,15 +53,15 @@ function getService(action: string): { xmlns: string; method: string } {
  */
 function buildEnvelope(xmlBody: string, action: string): string {
   const svc = getService(action)
+  // SEFAZ SP requires nfeDadosMsg WITHOUT inherited namespace from method element
+  // Using explicit xmlns="" on nfeDadosMsg resets the default namespace
   return [
     '<?xml version="1.0" encoding="utf-8"?>',
     '<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">',
     '<soap12:Body>',
-    `<${svc.method} xmlns="${svc.xmlns}">`,
-    '<nfeDadosMsg>',
+    `<nfeDadosMsg xmlns="${svc.xmlns}">`,
     xmlBody,
     '</nfeDadosMsg>',
-    `</${svc.method}>`,
     '</soap12:Body>',
     '</soap12:Envelope>',
   ].join('')
