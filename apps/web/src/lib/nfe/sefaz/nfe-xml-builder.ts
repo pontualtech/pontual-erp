@@ -149,7 +149,9 @@ export function buildNfeXml(nfe: NfeData): { xml: string; chaveAcesso: string } 
   const serChave = nfe.serie.padStart(3, '0')
   const chave = gerarChaveAcesso(uf, aamm, cnpj14, '55', serChave, nfe.numero, tpEmis, cNF)
   const cUF = getUfCodigo(uf)
-  const dhEmi = nfe.dataEmissao.toISOString().replace(/\.\d{3}Z$/, '-03:00')
+  // Generate dhEmi in BRT (UTC-3) — toISOString gives UTC, need to subtract 3h for display
+  const brDate = new Date(nfe.dataEmissao.getTime() - 3 * 60 * 60 * 1000)
+  const dhEmi = brDate.toISOString().replace(/\.\d{3}Z$/, '-03:00')
   const nNF = String(nfe.numero)
   const ser = String(parseInt(nfe.serie) || 1)
 
