@@ -200,14 +200,13 @@ export async function POST(req: NextRequest, { params }: Params) {
             received_amount: 0,
             due_date: dueDate,
             status: 'PENDENTE',
-            account_id: defaultAccountId,
             payment_method: payment_method,
             installment_count: installment_count,
             card_fee_total: cardFeeTotal,
             net_amount: netAmount,
             notes: isCard
-              ? `Cartao ${installment_count}x — Taxa ${((cardFeeTotal / totalAmount) * 100).toFixed(2)}% (R$ ${(cardFeeTotal / 100).toFixed(2)}) — Liquido R$ ${(netAmount / 100).toFixed(2)} — Recebe em D+${daysToReceive} — OS-${String(os.os_number).padStart(4, '0')}`
-              : `Gerado automaticamente ao entregar OS-${String(os.os_number).padStart(4, '0')}`,
+              ? `Cartao ${installment_count}x — Taxa ${((cardFeeTotal / totalAmount) * 100).toFixed(2)}% (R$ ${(cardFeeTotal / 100).toFixed(2)}) — Liquido R$ ${(netAmount / 100).toFixed(2)} — Recebe em D+${daysToReceive} — OS-${String(os.os_number).padStart(4, '0')}${defaultAccountId ? ` — Conta: ${defaultAccountId}` : ''}`
+              : `Gerado automaticamente ao entregar OS-${String(os.os_number).padStart(4, '0')}${defaultAccountId ? ` — Conta: ${defaultAccountId}` : ''}`,
           },
         })
 
