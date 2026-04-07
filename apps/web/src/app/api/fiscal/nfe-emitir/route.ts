@@ -188,16 +188,18 @@ export async function POST(req: NextRequest) {
 
     // Gerar XML
     const { xml, chaveAcesso } = buildNfeXml(nfeData)
-    console.log('[NFE] Raw XML (first 500):', xml.substring(0, 500))
-
     // Assinar XML
     const signedXml = signXml(xml, cert.privateKeyPem, cert.certificatePem, 'infNFe')
-    console.log('[NFE] Signed XML (first 500):', signedXml.substring(0, 500))
-    console.log('[NFE] Has Signature:', signedXml.includes('<Signature'))
 
-    // Envelope de lote para SEFAZ (sem whitespace — SEFAZ rejeita espaços extras)
+    // Envelope de lote para SEFAZ
     const loteXml = `<enviNFe xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00"><idLote>${Date.now()}</idLote><indSinc>1</indSinc>${signedXml}</enviNFe>`
-    console.log('[NFE] Lote XML (first 500):', loteXml.substring(0, 500))
+
+    // Log full XML for debugging
+    await prisma.fiscalLog.create({
+      data: { company_id: user.companyId, invoice_id: invoice?.id, action: 'nfe_xml_debug',
+        request: { raw_xml: xml.substring(0, 4000), signed_has_signature: signedXml.includes('<Signature'), lote_length: loteXml.length } as any,
+      },
+    }).catch(() => {})
 
     // Determinar ambiente
     const ambiente = fiscalCfg.environment === 'producao' ? '1' : '2'
