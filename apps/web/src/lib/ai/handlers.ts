@@ -193,15 +193,76 @@ async function continueOrcamentoFlow(
     }
 
     case 'AWAITING_CONFIRMATION': {
-      const confirmed = /sim|ok|confirma|pode|isso|yes/i.test(message)
+      const confirmed = /sim|ok|confirma|pode|isso|yes|quero|vamos/i.test(message)
       if (confirmed) {
-        clearState(conversationId)
-        const msg = 'Orcamento registrado! Voce pode trazer o equipamento em nossa loja de segunda a sexta, das 9h as 18h.\n\nEndereco: consulte nosso site ou pergunte aqui.\n\nQualquer duvida, estamos a disposicao!'
-        await sendChatwootMessage(conversationId, msg)
-        return msg
+        // Create OS in PontualERP
+        try {
+          const equipType = state.data.equipment_type || 'Impressora'
+          const issue = state.data.issue || 'Sem descricao'
+
+          // Find initial status
+          const initialStatus = await prisma.moduleStatus.findFirst({
+            where: { company_id: companyId, module: 'os', is_default: true },
+          }) || await prisma.moduleStatus.findFirst({
+            where: { company_id: companyId, module: 'os' },
+            orderBy: { order: 'asc' },
+          })
+
+          if (!initialStatus) throw new Error('No status configured')
+
+          // Atomic OS number
+          const result = await prisma.$queryRaw<{ n: number }[]>`
+            SELECT COALESCE(MAX(os_number), 0) + 1 as n FROM service_orders WHERE company_id = ${companyId}
+          `
+          const osNumber = result[0]?.n || 1
+
+          const os = await prisma.serviceOrder.create({
+            data: {
+              company_id: companyId,
+              os_number: osNumber,
+              customer_id: customerId || null,
+              status_id: initialStatus.id,
+              priority: 'MEDIUM',
+              os_type: 'WHATSAPP',
+              os_location: 'EXTERNO',
+              equipment_type: equipType,
+              reported_issue: issue,
+            },
+          })
+
+          await prisma.serviceOrderHistory.create({
+            data: {
+              company_id: companyId,
+              service_order_id: os.id,
+              to_status_id: initialStatus.id,
+              changed_by: 'BOT_ANA',
+              notes: `OS aberta automaticamente via WhatsApp (Bot Ana)`,
+            },
+          })
+
+          clearState(conversationId)
+          const portalUrl = 'https://erp.pontualtech.work/portal/pontualtech'
+          const msg = `✅ *OS #${osNumber} aberta com sucesso!*\n\n` +
+            `📋 Equipamento: ${equipType}\n` +
+            `🔧 Defeito: ${issue}\n\n` +
+            `Voce pode trazer o equipamento em nossa loja:\n` +
+            `📍 Rua Ouvidor Peleja, 660 — Vila Mariana — São Paulo/SP\n` +
+            `🕘 Seg a Sex, 9h as 18h\n\n` +
+            `Acompanhe online: ${portalUrl}\n` +
+            `📞 Suporte: (11) 2626-3841\n\n` +
+            `Qualquer duvida, estamos a disposicao!`
+          await sendChatwootMessage(conversationId, msg)
+          return msg
+        } catch (err) {
+          console.error('[Bot] Error creating OS:', err)
+          clearState(conversationId)
+          const msg = 'Desculpe, houve um erro ao registrar sua OS. Por favor, entre em contato com nosso suporte: (11) 2626-3841'
+          await sendChatwootMessage(conversationId, msg)
+          return msg
+        }
       } else {
         clearState(conversationId)
-        const msg = 'Sem problema! Se precisar, e so chamar novamente.'
+        const msg = 'Sem problema! Se precisar, e so chamar novamente. 😊'
         await sendChatwootMessage(conversationId, msg)
         return msg
       }
