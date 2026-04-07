@@ -194,10 +194,8 @@ export async function POST(req: NextRequest) {
     // Assinar XML
     const signedXml = signXml(xml, cert.privateKeyPem, cert.certificatePem, 'infNFe')
 
-    // TEST: send WITHOUT signature to check if XML structure is valid
-    // If SEFAZ returns "Assinatura ausente" (298), the XML is OK but signature is wrong
-    // If SEFAZ returns 242 again, the XML structure itself has a problem
-    const loteXml = `<enviNFe xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00"><idLote>${Date.now()}</idLote><indSinc>1</indSinc>${xml}</enviNFe>`
+    // Envelope de lote com XML assinado
+    const loteXml = `<enviNFe xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00"><idLote>${Date.now()}</idLote><indSinc>1</indSinc>${signedXml}</enviNFe>`
 
     // Log full XML for debugging (signed + lote)
     await prisma.fiscalLog.create({
