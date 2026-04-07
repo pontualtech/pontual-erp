@@ -57,6 +57,7 @@ const emptyForm = {
   address_city: '',
   address_state: '',
   address_zip: '',
+  state_registration: '',
   notes: '',
 }
 
@@ -437,12 +438,21 @@ export default function NovoClientePage() {
           </div>
 
           {form.person_type === 'JURIDICA' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nome Fantasia</label>
-              <input type="text" value={form.trade_name} onChange={e => update('trade_name', e.target.value)}
-                placeholder="Nome fantasia da empresa"
-                className="w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:ring-1 focus:ring-blue-200 transition-colors" />
-            </div>
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nome Fantasia</label>
+                <input type="text" value={form.trade_name} onChange={e => update('trade_name', e.target.value)}
+                  placeholder="Nome fantasia da empresa"
+                  className="w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:ring-1 focus:ring-blue-200 transition-colors" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Inscricao Estadual (IE)</label>
+                <input type="text" value={form.state_registration} onChange={e => update('state_registration', e.target.value.replace(/\D/g, ''))}
+                  placeholder="Isento ou numero da IE"
+                  className="w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:ring-1 focus:ring-blue-200 transition-colors" />
+                <p className="text-xs text-gray-400 mt-1">Necessario para emissao de NF-e. Deixe vazio para contribuinte isento.</p>
+              </div>
+            </>
           )}
         </div>
 

@@ -41,7 +41,7 @@ export default function EditarClientePage() {
 
   const [form, setForm] = useState({
     legal_name: '', trade_name: '', person_type: 'FISICA', customer_type: 'CLIENTE',
-    document_number: '', email: '', phone: '', mobile: '',
+    document_number: '', state_registration: '', email: '', phone: '', mobile: '',
     address_zip: '', address_street: '', address_number: '', address_complement: '',
     address_neighborhood: '', address_city: '', address_state: '', notes: '',
   })
@@ -58,6 +58,7 @@ export default function EditarClientePage() {
           person_type: c.person_type || 'FISICA',
           customer_type: c.customer_type || 'CLIENTE',
           document_number: c.document_number ? maskDoc(c.document_number) : '',
+          state_registration: c.state_registration || '',
           email: c.email || '',
           phone: c.phone ? maskPhone(c.phone) : '',
           mobile: c.mobile ? maskPhone(c.mobile) : '',
@@ -264,11 +265,19 @@ export default function EditarClientePage() {
           </div>
 
           {form.person_type === 'JURIDICA' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nome Fantasia</label>
-              <input type="text" value={form.trade_name} onChange={e => update('trade_name', e.target.value)}
-                placeholder="Nome fantasia da empresa" className={inp} />
-            </div>
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nome Fantasia</label>
+                <input type="text" value={form.trade_name} onChange={e => update('trade_name', e.target.value)}
+                  placeholder="Nome fantasia da empresa" className={inp} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Inscricao Estadual (IE)</label>
+                <input type="text" value={form.state_registration} onChange={e => update('state_registration', e.target.value.replace(/\D/g, ''))}
+                  placeholder="Isento ou numero da IE" className={inp} />
+                <p className="text-xs text-gray-400 mt-1">Necessario para NF-e. Vazio = isento.</p>
+              </div>
+            </>
           )}
         </div>
 
