@@ -74,6 +74,7 @@ export interface NfeData {
   // Identificação
   numero: number
   serie: string
+  ambiente: '1' | '2' // 1=produção, 2=homologação
   dataEmissao: Date
   tipoOperacao: '0' | '1' // 0=entrada, 1=saída
   destino: '1' | '2' | '3' // 1=interna, 2=interestadual, 3=exterior
@@ -144,11 +145,14 @@ export function buildNfeXml(nfe: NfeData): { xml: string; chaveAcesso: string } 
   const aamm = `${String(nfe.dataEmissao.getFullYear()).slice(2)}${String(nfe.dataEmissao.getMonth() + 1).padStart(2, '0')}`
   const cnpj14 = nfe.emitente.cnpj.padStart(14, '0')
   const tpEmis = '1' // emissão normal
-  const chave = gerarChaveAcesso(uf, aamm, cnpj14, '55', nfe.serie, nfe.numero, tpEmis, cNF)
+  const chave = gerarChaveAcesso(uf, aamm, cnpj14, '55', serChave, nfe.numero, tpEmis, cNF)
   const cUF = getUfCodigo(uf)
   const dhEmi = nfe.dataEmissao.toISOString().replace(/\.\d{3}Z$/, '-03:00')
-  const nNF = String(nfe.numero).padStart(9, '0')
-  const ser = nfe.serie.padStart(3, '0')
+  // For chave: padded. For XML tags: raw integer
+  const nNFChave = String(nfe.numero).padStart(9, '0')
+  const serChave = nfe.serie.padStart(3, '0')
+  const nNF = String(nfe.numero) // XML tag: raw number without padding
+  const ser = String(parseInt(nfe.serie) || 1) // XML tag: raw integer
 
   const dest = nfe.destinatario
   const isDocCnpj = dest.cpfCnpj.replace(/\D/g, '').length === 14
@@ -214,7 +218,7 @@ export function buildNfeXml(nfe: NfeData): { xml: string; chaveAcesso: string } 
       <tpImp>1</tpImp>
       <tpEmis>${tpEmis}</tpEmis>
       <cDV>${chave.slice(-1)}</cDV>
-      <tpAmb>2</tpAmb>
+      <tpAmb>${nfe.ambiente || '2'}</tpAmb>
       <finNFe>${nfe.finalidade}</finNFe>
       <indFinal>1</indFinal>
       <indPres>${nfe.presencaComprador}</indPres>
@@ -297,7 +301,9 @@ export function buildNfeXml(nfe: NfeData): { xml: string; chaveAcesso: string } 
   </infNFe>
 </NFe>`
 
-  return { xml, chaveAcesso: chave }
+  // Remove whitespace between tags (SEFAZ SP rejects indented XML)
+  const compactXml = xml.replace(/>\s+</g, '><').trim()
+  return { xml: compactXml, chaveAcesso: chave }
 }
 
 function escapeXml(str: string): string {

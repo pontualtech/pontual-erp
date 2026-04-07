@@ -167,9 +167,12 @@ export async function POST(req: NextRequest) {
     }))
 
     // Montar NF-e
+    const ambiente = fiscalCfg.environment === 'producao' ? '1' : '2'
+
     const nfeData: NfeData = {
       numero,
       serie,
+      ambiente: ambiente as '1' | '2',
       dataEmissao: new Date(),
       tipoOperacao: tipo_operacao || '1',
       destino: destino as '1' | '2',
@@ -201,8 +204,7 @@ export async function POST(req: NextRequest) {
       },
     }).catch(() => {})
 
-    // Determinar ambiente
-    const ambiente = fiscalCfg.environment === 'producao' ? '1' : '2'
+    // Determinar endpoints SEFAZ
     const endpoints = getSefazEndpoints(emitente.endereco.uf, ambiente as '1' | '2')
 
     // Criar registro Invoice ANTES de enviar (para rastreabilidade)
