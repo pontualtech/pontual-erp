@@ -72,6 +72,11 @@ function buildEnvelope(xmlBody: string, action: string): string {
  */
 export async function sendSoapRequest(req: SoapRequest): Promise<string> {
   const envelope = buildEnvelope(req.body, req.action)
+  console.log(`[SOAP] URL: ${req.url}`)
+  console.log(`[SOAP] Action: ${req.action}`)
+  console.log(`[SOAP] Service: ${JSON.stringify(getService(req.action))}`)
+  console.log(`[SOAP] Envelope length: ${envelope.length}`)
+  console.log(`[SOAP] Envelope start: ${envelope.substring(0, 300)}`)
 
   const urlObj = new URL(req.url)
 
