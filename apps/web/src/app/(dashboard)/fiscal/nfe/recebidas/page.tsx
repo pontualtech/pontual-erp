@@ -5,10 +5,10 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import {
-  ArrowLeft, RefreshCw, Loader2, FileText, Download,
+  ArrowLeft, RefreshCw, Loader2, FileText, Download, Upload,
   CheckCircle2, XCircle, AlertTriangle, Search, ShoppingCart,
   ChevronDown, ChevronUp, Copy, Package, Home, Eye,
-  HelpCircle, ChevronLeft, ChevronRight, Info,
+  HelpCircle, ChevronLeft, ChevronRight, Info, Code, X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -27,8 +27,14 @@ interface NfeRecebida {
   manifestacao: string | null
   importada: boolean
   xml_data: any
+  items_data: any
   created_at: string
   updated_at: string
+}
+
+interface ImportResult {
+  imported: number
+  errors: string[]
 }
 
 interface SyncResult {
@@ -73,17 +79,27 @@ const manifestacaoConfig: Record<string, { label: string; color: string }> = {
 
 // ---------- Detail Panel ----------
 
-function DetailPanel({ nfe, onClose }: { nfe: NfeRecebida; onClose: () => void }) {
+function DetailPanel({ nfe, onClose, onShowXml }: { nfe: NfeRecebida; onClose: () => void; onShowXml: (nfe: NfeRecebida) => void }) {
   const xmlData = nfe.xml_data || {}
-  const items = xmlData.items || xmlData.itens || []
+  const itemsFromXml = xmlData.items || xmlData.itens || []
+  const itemsFromData = Array.isArray(nfe.items_data) ? nfe.items_data : []
+  const items = itemsFromData.length > 0 ? itemsFromData : itemsFromXml
 
   return (
     <div className="border-t bg-gray-50 px-6 py-5">
       <div className="flex items-center justify-between mb-4">
         <h4 className="text-sm font-semibold text-gray-700">Detalhes da NF-e</h4>
-        <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600">
-          <ChevronUp className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          {nfe.xml_data?.xml && (
+            <button type="button" onClick={() => onShowXml(nfe)}
+              className="flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-white hover:text-blue-600 transition-colors">
+              <Code className="h-3.5 w-3.5" /> Ver XML
+            </button>
+          )}
+          <button type="button" onClick={onClose} title="Fechar detalhes" className="text-gray-400 hover:text-gray-600">
+            <ChevronUp className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       {/* Key */}
@@ -115,7 +131,7 @@ function DetailPanel({ nfe, onClose }: { nfe: NfeRecebida; onClose: () => void }
         </div>
       </div>
 
-      {/* Items from xml_data */}
+      {/* Items */}
       {items.length > 0 && (
         <div>
           <p className="text-xs font-medium uppercase text-gray-400 mb-2">Itens ({items.length})</p>
@@ -129,6 +145,7 @@ function DetailPanel({ nfe, onClose }: { nfe: NfeRecebida; onClose: () => void }
                   <th className="px-3 py-2 text-right">V. Unit.</th>
                   <th className="px-3 py-2 text-right">V. Total</th>
                   <th className="px-3 py-2">NCM</th>
+                  <th className="px-3 py-2">CFOP</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -146,6 +163,7 @@ function DetailPanel({ nfe, onClose }: { nfe: NfeRecebida; onClose: () => void }
                       {formatCurrency(Math.round(parseFloat(item.valor_bruto || item.valor_total || '0') * 100))}
                     </td>
                     <td className="px-3 py-2 text-gray-400">{item.codigo_ncm || item.ncm || '---'}</td>
+                    <td className="px-3 py-2 text-gray-400">{item.cfop || '---'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -157,7 +175,7 @@ function DetailPanel({ nfe, onClose }: { nfe: NfeRecebida; onClose: () => void }
       {items.length === 0 && (
         <div className="rounded-lg border border-dashed bg-white px-4 py-6 text-center text-sm text-gray-400">
           <Info className="mx-auto h-5 w-5 mb-1" />
-          Detalhes dos itens nao disponiveis. Faca a manifestacao de "Ciencia" para obter o XML completo.
+          Detalhes dos itens nao disponiveis. Importe o XML ou faca a manifestacao de "Ciencia" para obter o XML completo.
         </div>
       )}
     </div>
@@ -179,6 +197,9 @@ export default function NfeRecebidasPage() {
   const [total, setTotal] = useState(0)
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [importingId, setImportingId] = useState<string | null>(null)
+  const [uploadingXml, setUploadingXml] = useState(false)
+  const [importResult, setImportResult] = useState<ImportResult | null>(null)
+  const [xmlViewNfe, setXmlViewNfe] = useState<NfeRecebida | null>(null)
 
   // ---------- Load Recebidas ----------
 
@@ -236,6 +257,54 @@ export default function NfeRecebidasPage() {
   // Continue syncing if "tem mais"
   async function handleSyncMore() {
     handleSync()
+  }
+
+  // ---------- Import XML ----------
+
+  async function handleImportXml(files: FileList | null) {
+    if (!files || files.length === 0) return
+
+    setUploadingXml(true)
+    setImportResult(null)
+
+    try {
+      const formData = new FormData()
+      for (let i = 0; i < files.length; i++) {
+        formData.append('files', files[i])
+      }
+
+      const res = await fetch('/api/fiscal/nfe-recebidas/import-xml', {
+        method: 'POST',
+        body: formData,
+      })
+      const data = await res.json()
+
+      if (!res.ok) {
+        toast.error(data.error || 'Erro ao importar XML')
+        return
+      }
+
+      const result = data.data as ImportResult
+      setImportResult(result)
+
+      if (result.imported > 0) {
+        toast.success(`${result.imported} NF-e importada(s) com sucesso!`)
+        loadRecebidas()
+      }
+      if (result.errors.length > 0) {
+        toast.error(`${result.errors.length} erro(s) na importacao`)
+      }
+    } catch {
+      toast.error('Erro ao enviar arquivos XML')
+    } finally {
+      setUploadingXml(false)
+    }
+  }
+
+  // ---------- Show XML ----------
+
+  function handleShowXml(nfe: NfeRecebida) {
+    setXmlViewNfe(nfe)
   }
 
   // ---------- Copy to new NF-e ----------
@@ -331,15 +400,39 @@ export default function NfeRecebidasPage() {
           </div>
         </div>
 
-        <button type="button" onClick={handleSync} disabled={syncing}
-          className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 shadow-sm">
-          {syncing ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <RefreshCw className="h-4 w-4" />
-          )}
-          Sincronizar com SEFAZ
-        </button>
+        <div className="flex items-center gap-2">
+          <label
+            className={cn(
+              'flex items-center gap-2 rounded-lg border border-green-300 bg-green-50 px-4 py-2.5 text-sm font-medium text-green-700 hover:bg-green-100 shadow-sm cursor-pointer transition-colors',
+              uploadingXml && 'opacity-50 pointer-events-none'
+            )}
+          >
+            {uploadingXml ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Upload className="h-4 w-4" />
+            )}
+            Importar XML
+            <input
+              type="file"
+              accept=".xml"
+              multiple
+              className="hidden"
+              onChange={e => handleImportXml(e.target.files)}
+              disabled={uploadingXml}
+            />
+          </label>
+
+          <button type="button" onClick={handleSync} disabled={syncing}
+            className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 shadow-sm">
+            {syncing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
+            Sincronizar com SEFAZ
+          </button>
+        </div>
       </div>
 
       {/* Sync Result Banner */}
@@ -374,6 +467,43 @@ export default function NfeRecebidasPage() {
         </div>
       )}
 
+      {/* Import XML Result Banner */}
+      {importResult && (
+        <div className={cn(
+          'rounded-xl border px-4 py-3 text-sm flex items-start gap-3',
+          importResult.errors.length > 0 && importResult.imported === 0
+            ? 'border-red-200 bg-red-50 text-red-800'
+            : importResult.errors.length > 0
+            ? 'border-amber-200 bg-amber-50 text-amber-800'
+            : 'border-green-200 bg-green-50 text-green-800'
+        )}>
+          {importResult.imported > 0 ? (
+            <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
+          ) : (
+            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+          )}
+          <div className="flex-1">
+            <p className="font-medium">
+              {importResult.imported > 0
+                ? `${importResult.imported} NF-e importada(s) com sucesso via XML`
+                : 'Nenhuma NF-e importada'}
+              {importResult.errors.length > 0 && ` | ${importResult.errors.length} erro(s)`}
+            </p>
+            {importResult.errors.length > 0 && (
+              <ul className="mt-1 text-xs opacity-75 list-disc list-inside">
+                {importResult.errors.map((err, i) => (
+                  <li key={i}>{err}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <button type="button" onClick={() => setImportResult(null)} title="Fechar"
+            className="text-current opacity-50 hover:opacity-100">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       {/* Info banner (before first load) */}
       {!loading && recebidas.length === 0 && !syncResult && (
         <div className="rounded-xl border border-blue-200 bg-blue-50 px-5 py-4 text-sm text-blue-800 flex items-start gap-3">
@@ -381,8 +511,9 @@ export default function NfeRecebidasPage() {
           <div>
             <p className="font-semibold">Manifesto do Destinatario Eletronico (MDe)</p>
             <p className="mt-1">
-              Clique em &quot;Sincronizar com SEFAZ&quot; para consultar notas fiscais emitidas contra seu CNPJ.
-              Apos a sincronizacao, voce pode visualizar detalhes, copiar dados para nova NF-e de devolucao ou importar itens no estoque.
+              Clique em &quot;Sincronizar com SEFAZ&quot; para consultar notas fiscais emitidas contra seu CNPJ,
+              ou use &quot;Importar XML&quot; para carregar arquivos XML de NF-e recebidas manualmente.
+              Apos a importacao, voce pode visualizar detalhes, ver itens, copiar dados para nova NF-e ou importar no estoque.
             </p>
           </div>
         </div>
@@ -540,7 +671,7 @@ export default function NfeRecebidasPage() {
                   {expandedRows.has(nfe.id) && (
                     <tr>
                       <td colSpan={8} className="p-0">
-                        <DetailPanel nfe={nfe} onClose={() => toggleExpand(nfe.id)} />
+                        <DetailPanel nfe={nfe} onClose={() => toggleExpand(nfe.id)} onShowXml={handleShowXml} />
                       </td>
                     </tr>
                   )}
@@ -563,6 +694,31 @@ export default function NfeRecebidasPage() {
             className="flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-40">
             Proxima <ChevronRight className="h-4 w-4" />
           </button>
+        </div>
+      )}
+
+      {/* XML Viewer Modal */}
+      {xmlViewNfe && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-4xl max-h-[80vh] rounded-lg bg-white shadow-xl flex flex-col">
+            <div className="flex items-center justify-between border-b px-6 py-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">XML da NF-e</h3>
+                <p className="text-sm text-gray-500">
+                  Chave: {xmlViewNfe.chave_nfe}
+                </p>
+              </div>
+              <button type="button" onClick={() => setXmlViewNfe(null)} title="Fechar"
+                className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-6">
+              <pre className="whitespace-pre-wrap break-all text-xs font-mono text-gray-700 bg-gray-50 rounded-lg p-4 border">
+                {xmlViewNfe.xml_data?.xml || 'XML nao disponivel'}
+              </pre>
+            </div>
+          </div>
         </div>
       )}
     </div>
