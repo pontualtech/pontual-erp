@@ -241,9 +241,16 @@ async function continueOrcamentoFlow(
           })
 
           clearState(conversationId)
-          // OS criada silenciosamente — não notifica o cliente sobre a OS
-          // Ana responde normalmente sem mencionar número da OS
-          const msg = 'Orcamento registrado! Voce pode trazer o equipamento em nossa loja de segunda a sexta, das 9h as 18h.\n\nRua Ouvidor Peleja, 660 — Vila Mariana — Sao Paulo/SP\nWhatsApp Suporte: (11) 2626-3841\n\nQualquer duvida, estamos a disposicao!'
+          const portalUrl = 'https://erp.pontualtech.work/portal/pontualtech'
+          const msg = `✅ *OS #${osNumber} aberta com sucesso!*\n\n` +
+            `📋 Equipamento: ${equipType}\n` +
+            `🔧 Defeito: ${issue}\n\n` +
+            `Voce pode trazer o equipamento em nossa loja:\n` +
+            `📍 Rua Ouvidor Peleja, 660 — Vila Mariana — São Paulo/SP\n` +
+            `🕘 Seg a Sex, 9h as 18h\n\n` +
+            `Acompanhe online: ${portalUrl}\n` +
+            `📞 Suporte: (11) 2626-3841\n\n` +
+            `Qualquer duvida, estamos a disposicao!`
           await sendChatwootMessage(conversationId, msg)
           return msg
         } catch (err) {
