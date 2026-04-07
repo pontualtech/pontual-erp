@@ -188,12 +188,16 @@ export async function POST(req: NextRequest) {
 
     // Gerar XML
     const { xml, chaveAcesso } = buildNfeXml(nfeData)
+    console.log('[NFE] Raw XML (first 500):', xml.substring(0, 500))
 
     // Assinar XML
     const signedXml = signXml(xml, cert.privateKeyPem, cert.certificatePem, 'infNFe')
+    console.log('[NFE] Signed XML (first 500):', signedXml.substring(0, 500))
+    console.log('[NFE] Has Signature:', signedXml.includes('<Signature'))
 
     // Envelope de lote para SEFAZ (sem whitespace — SEFAZ rejeita espaços extras)
     const loteXml = `<enviNFe xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00"><idLote>${Date.now()}</idLote><indSinc>1</indSinc>${signedXml}</enviNFe>`
+    console.log('[NFE] Lote XML (first 500):', loteXml.substring(0, 500))
 
     // Determinar ambiente
     const ambiente = fiscalCfg.environment === 'producao' ? '1' : '2'
