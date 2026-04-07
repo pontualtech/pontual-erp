@@ -1101,12 +1101,10 @@ export default function NfeListPage() {
                           </a>
 
                           {/* XML */}
-                          {n.xml_url && (
-                            <a href={n.xml_url} target="_blank" rel="noopener noreferrer" title="Baixar XML"
-                              className="rounded-lg p-1.5 text-gray-400 hover:bg-green-50 hover:text-green-600 transition-colors">
-                              <Download className="h-4 w-4" />
-                            </a>
-                          )}
+                          <a href={n.xml_url || `/api/fiscal/nfe/${n.id}/xml`} target="_blank" rel="noopener noreferrer" title="Baixar XML"
+                            className="rounded-lg p-1.5 text-gray-400 hover:bg-green-50 hover:text-green-600 transition-colors">
+                            <Download className="h-4 w-4" />
+                          </a>
 
                           {/* Email */}
                           <button type="button" onClick={() => setEmailNota(n)} title="Enviar por Email"
@@ -1166,12 +1164,10 @@ export default function NfeListPage() {
                             className="rounded-lg p-1.5 text-gray-400 hover:bg-blue-50 hover:text-blue-600 transition-colors">
                             <Printer className="h-4 w-4" />
                           </a>
-                          {n.xml_url && (
-                            <a href={n.xml_url} target="_blank" rel="noopener noreferrer" title="Baixar XML"
-                              className="rounded-lg p-1.5 text-gray-400 hover:bg-green-50 hover:text-green-600 transition-colors">
-                              <Download className="h-4 w-4" />
-                            </a>
-                          )}
+                          <a href={n.xml_url || `/api/fiscal/nfe/${n.id}/xml`} target="_blank" rel="noopener noreferrer" title="Baixar XML"
+                            className="rounded-lg p-1.5 text-gray-400 hover:bg-green-50 hover:text-green-600 transition-colors">
+                            <Download className="h-4 w-4" />
+                          </a>
                         </>
                       )}
 
