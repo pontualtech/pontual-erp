@@ -103,6 +103,8 @@ export async function sendSoapRequest(req: SoapRequest): Promise<string> {
       res.on('data', (chunk: Buffer) => chunks.push(chunk))
       res.on('end', () => {
         const data = Buffer.concat(chunks).toString('utf-8')
+        console.log(`[SOAP] Response HTTP ${res.statusCode}, length: ${data.length}`)
+        console.log(`[SOAP] Response body: ${data.substring(0, 500)}`)
         if (res.statusCode && res.statusCode >= 200 && res.statusCode < 500) {
           resolve(data)
         } else {
