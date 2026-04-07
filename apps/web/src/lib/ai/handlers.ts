@@ -205,7 +205,7 @@ async function continueOrcamentoFlow(
             where: { company_id: companyId, module: 'os' },
             orderBy: { order: 'asc' },
           })
-          if (initialStatus) {
+          if (initialStatus && customerId) {
             const result = await prisma.$queryRaw<{ n: number }[]>`
               SELECT COALESCE(MAX(os_number), 0) + 1 as n FROM service_orders WHERE company_id = ${companyId}
             `
@@ -213,7 +213,7 @@ async function continueOrcamentoFlow(
             await prisma.serviceOrder.create({
               data: {
                 company_id: companyId, os_number: osNumber,
-                customer_id: customerId || undefined, status_id: initialStatus.id,
+                customer_id: customerId, status_id: initialStatus.id,
                 priority: 'MEDIUM', os_type: 'WHATSAPP', os_location: 'EXTERNO',
                 equipment_type: equipType, reported_issue: issue,
               },
