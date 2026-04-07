@@ -197,10 +197,10 @@ export async function POST(req: NextRequest) {
     // Envelope de lote para SEFAZ
     const loteXml = `<enviNFe xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00"><idLote>${Date.now()}</idLote><indSinc>1</indSinc>${signedXml}</enviNFe>`
 
-    // Log full XML for debugging
+    // Log full XML for debugging (signed + lote)
     await prisma.fiscalLog.create({
       data: { company_id: user.companyId, action: 'nfe_xml_debug',
-        request: { raw_xml: xml.substring(0, 4000), signed_has_signature: signedXml.includes('<Signature'), lote_length: loteXml.length } as any,
+        request: { raw_xml: xml.substring(0, 4000), signed_xml: signedXml.substring(0, 4000), lote_xml: loteXml.substring(0, 4000) } as any,
       },
     }).catch(() => {})
 
