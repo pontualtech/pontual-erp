@@ -43,9 +43,9 @@ export async function POST(req: NextRequest, { params }: Params) {
       return error(`Transição não permitida: ${currentStatus.name} → ${toStatus.name}`, 422)
     }
 
-    // Bloquear reversão de status final (Entregue, Fechada) para qualquer outro — só admin pode
-    if (currentStatus.is_final && !toStatus.is_final) {
-      return error(`OS já foi finalizada (${currentStatus.name}). Não é possível reverter o status.`, 422)
+    // Bloquear reversão de status final (Entregue, Cancelada) — só admin pode reverter
+    if (currentStatus.is_final && !toStatus.is_final && user.roleName !== 'admin') {
+      return error(`OS já foi finalizada (${currentStatus.name}). Apenas o administrador pode reverter o status.`, 422)
     }
 
     // If target is a final status (Entregue) and OS has a total, require payment_method
