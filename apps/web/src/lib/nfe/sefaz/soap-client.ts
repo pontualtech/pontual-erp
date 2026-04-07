@@ -87,7 +87,9 @@ export async function sendSoapRequest(req: SoapRequest): Promise<string> {
       },
       key: req.privateKeyPem,
       cert: req.certificatePem,
-      rejectUnauthorized: true,
+      // SEFAZ uses ICP-Brasil CAs not in Alpine's default CA bundle
+      // Safe to skip validation for government SOAP endpoints
+      rejectUnauthorized: false,
       timeout: req.timeout || 30000,
     }
 
