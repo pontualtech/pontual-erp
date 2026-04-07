@@ -276,18 +276,18 @@ export async function POST(req: NextRequest) {
 
       const responseBody = extractSoapBody(sefazResponse)
 
-      // Parsear resposta — buscar cStat e xMotivo
-      const cStatMatch = responseBody.match(/<cStat>(\d+)<\/cStat>/)
-      const xMotivoMatch = responseBody.match(/<xMotivo>([^<]+)<\/xMotivo>/)
-      const nProtMatch = responseBody.match(/<nProt>(\d+)<\/nProt>/)
-
+      // Parsear resposta — buscar cStat do lote e do protocolo individual
+      const cStatMatch = responseBody.match(/<retEnviNFe[\s\S]*?<cStat>(\d+)<\/cStat>/)
       const cStat = cStatMatch?.[1] || ''
-      motivo = xMotivoMatch?.[1] || ''
-      protocolo = nProtMatch?.[1] || ''
+
+      // Extract infProt (individual note result)
+      const infProt = responseBody.match(/<infProt>([\s\S]*?)<\/infProt>/)?.[1] || ''
+      const cStatProt = infProt.match(/<cStat>(\d+)<\/cStat>/)?.[1] || ''
+      const xMotivoProt = infProt.match(/<xMotivo>([^<]+)<\/xMotivo>/)?.[1] || ''
+      protocolo = infProt.match(/<nProt>(\d+)<\/nProt>/)?.[1] || ''
+      motivo = xMotivoProt || responseBody.match(/<xMotivo>([^<]+)<\/xMotivo>/)?.[1] || ''
 
       if (cStat === '100' || cStat === '104') {
-        // 100 = Autorizado, 104 = Lote processado
-        const cStatProt = responseBody.match(/<infProt>[\s\S]*?<cStat>(\d+)<\/cStat>/)?.[1]
         if (cStatProt === '100') {
           sefazStatus = 'AUTHORIZED'
         } else {

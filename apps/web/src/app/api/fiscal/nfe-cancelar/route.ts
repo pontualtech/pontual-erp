@@ -49,35 +49,17 @@ export async function POST(req: NextRequest) {
     const cUF = getUfCodigo(uf)
 
     // Montar XML do evento de cancelamento
-    const dhEvento = new Date().toISOString().replace(/\.\d{3}Z$/, '-03:00')
+    const brDate = new Date(Date.now() - 3 * 60 * 60 * 1000)
+    const dhEvento = brDate.toISOString().replace(/\.\d{3}Z$/, '-03:00')
     const nSeqEvento = '1'
     const tpEvento = '110111' // Cancelamento
     const idEvento = `ID${tpEvento}${invoice.access_key}${nSeqEvento.padStart(2, '0')}`
 
-    const eventoXml = `<evento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
-      <infEvento Id="${idEvento}">
-        <cOrgao>${cUF}</cOrgao>
-        <tpAmb>${ambiente}</tpAmb>
-        <CNPJ>${cnpj}</CNPJ>
-        <chNFe>${invoice.access_key}</chNFe>
-        <dhEvento>${dhEvento}</dhEvento>
-        <tpEvento>${tpEvento}</tpEvento>
-        <nSeqEvento>${nSeqEvento}</nSeqEvento>
-        <verEvento>1.00</verEvento>
-        <detEvento versao="1.00">
-          <descEvento>Cancelamento</descEvento>
-          <nProt>${invoice.provider_ref}</nProt>
-          <xJust>${justificativa}</xJust>
-        </detEvento>
-      </infEvento>
-    </evento>`
+    const eventoXml = `<evento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00"><infEvento Id="${idEvento}"><cOrgao>${cUF}</cOrgao><tpAmb>${ambiente}</tpAmb><CNPJ>${cnpj}</CNPJ><chNFe>${invoice.access_key}</chNFe><dhEvento>${dhEvento}</dhEvento><tpEvento>${tpEvento}</tpEvento><nSeqEvento>${nSeqEvento}</nSeqEvento><verEvento>1.00</verEvento><detEvento versao="1.00"><descEvento>Cancelamento</descEvento><nProt>${invoice.provider_ref}</nProt><xJust>${justificativa}</xJust></detEvento></infEvento></evento>`
 
     const signedEvento = signXml(eventoXml, cert.privateKeyPem, cert.certificatePem, 'infEvento')
 
-    const envEvento = `<envEvento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
-      <idLote>${Date.now()}</idLote>
-      ${signedEvento}
-    </envEvento>`
+    const envEvento = `<envEvento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00"><idLote>${Date.now()}</idLote>${signedEvento}</envEvento>`
 
     const endpoints = getSefazEndpoints(uf, ambiente as '1' | '2')
 
