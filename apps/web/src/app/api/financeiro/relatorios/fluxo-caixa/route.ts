@@ -23,32 +23,32 @@ export async function GET(request: NextRequest) {
     const startDate = from ? new Date(from) : defaultFrom
     const endDate = to ? new Date(to + 'T23:59:59') : defaultTo
 
-    // Buscar recebimentos (status RECEBIDO)
+    // Buscar recebimentos (RECEBIDO + PENDENTE para projeção)
     const receivablesWhere: any = {
       company_id: user.companyId,
       deleted_at: null,
-      status: 'RECEBIDO',
+      status: { in: ['RECEBIDO', 'PENDENTE', 'VENCIDO'] },
       due_date: { gte: startDate, lte: endDate },
     }
     if (categoryId) receivablesWhere.category_id = categoryId
 
     const receivables = await prisma.accountReceivable.findMany({
       where: receivablesWhere,
-      select: { total_amount: true, received_amount: true, due_date: true },
+      select: { total_amount: true, received_amount: true, due_date: true, status: true },
     })
 
-    // Buscar pagamentos (status PAGO)
+    // Buscar pagamentos (PAGO + PENDENTE para projeção)
     const payablesWhere: any = {
       company_id: user.companyId,
       deleted_at: null,
-      status: 'PAGO',
+      status: { in: ['PAGO', 'PENDENTE', 'VENCIDO'] },
       due_date: { gte: startDate, lte: endDate },
     }
     if (categoryId) payablesWhere.category_id = categoryId
 
     const payables = await prisma.accountPayable.findMany({
       where: payablesWhere,
-      select: { total_amount: true, paid_amount: true, due_date: true },
+      select: { total_amount: true, paid_amount: true, due_date: true, status: true },
     })
 
     // Buscar TODAS as contas bancarias ativas
@@ -108,12 +108,12 @@ export async function GET(request: NextRequest) {
         }
       }
     } else {
-      // Fallback: usar receivables/payables
+      // Fallback: usar receivables/payables (inclui pendentes como projeção)
       for (const r of receivables) {
         const d = new Date(r.due_date)
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
         if (monthMap[key]) {
-          monthMap[key].entradas += r.received_amount ?? r.total_amount
+          monthMap[key].entradas += r.status === 'RECEBIDO' ? (r.received_amount ?? r.total_amount) : r.total_amount
         }
       }
 
@@ -121,7 +121,7 @@ export async function GET(request: NextRequest) {
         const d = new Date(p.due_date)
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
         if (monthMap[key]) {
-          monthMap[key].saidas += p.paid_amount ?? p.total_amount
+          monthMap[key].saidas += p.status === 'PAGO' ? (p.paid_amount ?? p.total_amount) : p.total_amount
         }
       }
     }

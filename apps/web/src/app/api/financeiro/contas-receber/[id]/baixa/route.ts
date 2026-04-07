@@ -61,6 +61,41 @@ export async function POST(req: NextRequest, { params }: Params) {
         })
       }
 
+      // Auto-pay card fee when receivable is fully paid
+      if (isReceivedInFull && existing.card_fee_total && existing.card_fee_total > 0 && existing.service_order_id) {
+        const cardFeePayable = await tx.accountPayable.findFirst({
+          where: {
+            company_id: user.companyId,
+            description: { contains: `OS-${String(existing.description).split('OS-')[1]?.split(' ')[0] || ''}` },
+            total_amount: existing.card_fee_total,
+            status: 'PENDENTE',
+          },
+        })
+        if (cardFeePayable) {
+          await tx.accountPayable.update({
+            where: { id: cardFeePayable.id },
+            data: { status: 'PAGO', paid_amount: cardFeePayable.total_amount, updated_at: new Date() },
+          })
+          // Create debit transaction for card fee if account specified
+          if (data.account_id) {
+            await tx.transaction.create({
+              data: {
+                company_id: user.companyId,
+                account_id: data.account_id,
+                transaction_type: 'DEBIT',
+                amount: existing.card_fee_total,
+                description: `Taxa cartão: ${existing.description}`,
+                transaction_date: data.received_at ? new Date(data.received_at) : new Date(),
+              },
+            })
+            await tx.account.update({
+              where: { id: data.account_id },
+              data: { current_balance: { decrement: existing.card_fee_total }, updated_at: new Date() },
+            })
+          }
+        }
+      }
+
       return updated
     })
 
