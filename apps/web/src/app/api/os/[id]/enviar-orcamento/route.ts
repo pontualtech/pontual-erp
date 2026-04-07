@@ -38,48 +38,52 @@ function buildItemsTable(items: any[]): string {
   let html = ''
 
   if (servicos.length > 0) {
-    html += `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:16px;">
+    html += `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:16px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
       <tr>
-        <td colspan="4" style="padding:10px 12px;background:#2563eb;color:#fff;font-weight:700;font-size:14px;border-radius:6px 6px 0 0;">
-          &#128295; Servicos Tecnicos
+        <td colspan="4" style="padding:12px 16px;background:#2563eb;color:#fff;font-weight:700;font-size:14px;">
+          Servicos Tecnicos
         </td>
       </tr>
-      <tr style="background:#f1f5f9;">
-        <td style="padding:8px 12px;font-size:12px;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;">Descricao</td>
-        <td style="padding:8px 12px;font-size:12px;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;text-align:center;width:50px;">Qtd</td>
-        <td style="padding:8px 12px;font-size:12px;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;text-align:right;width:90px;">Unit.</td>
-        <td style="padding:8px 12px;font-size:12px;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;text-align:right;width:100px;">Subtotal</td>
+      <tr style="background:#f8fafc;">
+        <td style="padding:10px 16px;font-size:12px;font-weight:700;color:#475569;border-bottom:2px solid #e2e8f0;text-transform:uppercase;letter-spacing:0.5px;">Descricao</td>
+        <td style="padding:10px 16px;font-size:12px;font-weight:700;color:#475569;border-bottom:2px solid #e2e8f0;text-align:center;width:50px;text-transform:uppercase;letter-spacing:0.5px;">Qtd</td>
+        <td style="padding:10px 16px;font-size:12px;font-weight:700;color:#475569;border-bottom:2px solid #e2e8f0;text-align:right;width:90px;text-transform:uppercase;letter-spacing:0.5px;">Unit.</td>
+        <td style="padding:10px 16px;font-size:12px;font-weight:700;color:#475569;border-bottom:2px solid #e2e8f0;text-align:right;width:100px;text-transform:uppercase;letter-spacing:0.5px;">Subtotal</td>
       </tr>`
-    for (const item of servicos) {
-      html += `<tr>
-        <td style="padding:10px 12px;font-size:13px;color:#1e293b;border-bottom:1px solid #f1f5f9;">${item.description || '—'}</td>
-        <td style="padding:10px 12px;font-size:13px;color:#475569;border-bottom:1px solid #f1f5f9;text-align:center;">${item.quantity}</td>
-        <td style="padding:10px 12px;font-size:13px;color:#475569;border-bottom:1px solid #f1f5f9;text-align:right;">${fmtCents(item.unit_price)}</td>
-        <td style="padding:10px 12px;font-size:13px;font-weight:600;color:#1e293b;border-bottom:1px solid #f1f5f9;text-align:right;">${fmtCents(item.total_price)}</td>
+    for (let idx = 0; idx < servicos.length; idx++) {
+      const item = servicos[idx]
+      const bg = idx % 2 === 0 ? '#ffffff' : '#f8fafc'
+      html += `<tr style="background:${bg};">
+        <td style="padding:12px 16px;font-size:13px;color:#1e293b;border-bottom:1px solid #f1f5f9;">${item.description || '\u2014'}</td>
+        <td style="padding:12px 16px;font-size:13px;color:#475569;border-bottom:1px solid #f1f5f9;text-align:center;">${item.quantity}</td>
+        <td style="padding:12px 16px;font-size:13px;color:#475569;border-bottom:1px solid #f1f5f9;text-align:right;">${fmtCents(item.unit_price)}</td>
+        <td style="padding:12px 16px;font-size:13px;font-weight:700;color:#1e293b;border-bottom:1px solid #f1f5f9;text-align:right;">${fmtCents(item.total_price)}</td>
       </tr>`
     }
     html += `</table>`
   }
 
   if (pecas.length > 0) {
-    html += `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:16px;">
+    html += `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:16px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
       <tr>
-        <td colspan="4" style="padding:10px 12px;background:#7c3aed;color:#fff;font-weight:700;font-size:14px;border-radius:6px 6px 0 0;">
-          &#128230; Pecas e Componentes
+        <td colspan="4" style="padding:12px 16px;background:#7c3aed;color:#fff;font-weight:700;font-size:14px;">
+          Pecas e Componentes
         </td>
       </tr>
-      <tr style="background:#f1f5f9;">
-        <td style="padding:8px 12px;font-size:12px;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;">Descricao</td>
-        <td style="padding:8px 12px;font-size:12px;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;text-align:center;width:50px;">Qtd</td>
-        <td style="padding:8px 12px;font-size:12px;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;text-align:right;width:90px;">Unit.</td>
-        <td style="padding:8px 12px;font-size:12px;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;text-align:right;width:100px;">Subtotal</td>
+      <tr style="background:#f8fafc;">
+        <td style="padding:10px 16px;font-size:12px;font-weight:700;color:#475569;border-bottom:2px solid #e2e8f0;text-transform:uppercase;letter-spacing:0.5px;">Descricao</td>
+        <td style="padding:10px 16px;font-size:12px;font-weight:700;color:#475569;border-bottom:2px solid #e2e8f0;text-align:center;width:50px;text-transform:uppercase;letter-spacing:0.5px;">Qtd</td>
+        <td style="padding:10px 16px;font-size:12px;font-weight:700;color:#475569;border-bottom:2px solid #e2e8f0;text-align:right;width:90px;text-transform:uppercase;letter-spacing:0.5px;">Unit.</td>
+        <td style="padding:10px 16px;font-size:12px;font-weight:700;color:#475569;border-bottom:2px solid #e2e8f0;text-align:right;width:100px;text-transform:uppercase;letter-spacing:0.5px;">Subtotal</td>
       </tr>`
-    for (const item of pecas) {
-      html += `<tr>
-        <td style="padding:10px 12px;font-size:13px;color:#1e293b;border-bottom:1px solid #f1f5f9;">${item.description || '—'}</td>
-        <td style="padding:10px 12px;font-size:13px;color:#475569;border-bottom:1px solid #f1f5f9;text-align:center;">${item.quantity}</td>
-        <td style="padding:10px 12px;font-size:13px;color:#475569;border-bottom:1px solid #f1f5f9;text-align:right;">${fmtCents(item.unit_price)}</td>
-        <td style="padding:10px 12px;font-size:13px;font-weight:600;color:#1e293b;border-bottom:1px solid #f1f5f9;text-align:right;">${fmtCents(item.total_price)}</td>
+    for (let idx = 0; idx < pecas.length; idx++) {
+      const item = pecas[idx]
+      const bg = idx % 2 === 0 ? '#ffffff' : '#faf5ff'
+      html += `<tr style="background:${bg};">
+        <td style="padding:12px 16px;font-size:13px;color:#1e293b;border-bottom:1px solid #f1f5f9;">${item.description || '\u2014'}</td>
+        <td style="padding:12px 16px;font-size:13px;color:#475569;border-bottom:1px solid #f1f5f9;text-align:center;">${item.quantity}</td>
+        <td style="padding:12px 16px;font-size:13px;color:#475569;border-bottom:1px solid #f1f5f9;text-align:right;">${fmtCents(item.unit_price)}</td>
+        <td style="padding:12px 16px;font-size:13px;font-weight:700;color:#1e293b;border-bottom:1px solid #f1f5f9;text-align:right;">${fmtCents(item.total_price)}</td>
       </tr>`
     }
     html += `</table>`
@@ -95,123 +99,150 @@ const DEFAULT_QUOTE_TEMPLATE = `<!DOCTYPE html>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Orcamento - {{company_name}}</title>
 </head>
-<body style="margin:0;padding:0;background-color:#f5f5f5;font-family:Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f5;padding:24px 0;">
+<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f1f5f9;padding:32px 0;">
     <tr>
       <td align="center">
-        <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+        <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
 
           <!-- HEADER -->
           <tr>
-            <td style="background:linear-gradient(135deg,#2563eb 0%,#1e40af 100%);padding:32px 24px;text-align:center;">
-              <h1 style="margin:0 0 8px;color:#ffffff;font-size:22px;font-weight:700;">{{company_name}}</h1>
-              <p style="margin:0;color:#bfdbfe;font-size:15px;font-weight:600;">&#128203; DIAGNOSTICO CONCLUIDO</p>
+            <td style="background:linear-gradient(135deg,#1e40af 0%,#2563eb 50%,#3b82f6 100%);padding:36px 32px;text-align:center;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center">
+                    <div style="width:64px;height:64px;background:rgba(255,255,255,0.15);border-radius:16px;margin:0 auto 12px;line-height:64px;font-size:28px;">&#128736;</div>
+                    <h1 style="margin:0 0 6px;color:#ffffff;font-size:24px;font-weight:800;letter-spacing:-0.3px;">{{company_name}}</h1>
+                    <p style="margin:0 0 4px;color:rgba(255,255,255,0.7);font-size:12px;">Assistencia Tecnica em Informatica</p>
+                    <div style="display:inline-block;background:rgba(255,255,255,0.2);border-radius:20px;padding:6px 20px;margin-top:10px;">
+                      <p style="margin:0;color:#ffffff;font-size:14px;font-weight:700;letter-spacing:0.3px;">DIAGNOSTICO CONCLUIDO</p>
+                    </div>
+                  </td>
+                </tr>
+              </table>
             </td>
           </tr>
 
           <!-- BODY -->
           <tr>
-            <td style="padding:28px 24px 0;">
+            <td style="padding:32px 32px 0;">
               <!-- Greeting -->
-              <p style="margin:0 0 16px;font-size:16px;color:#1e293b;">
-                &#128075; Ola <strong>{{customer_name}}</strong>,
+              <p style="margin:0 0 16px;font-size:17px;color:#1e293b;line-height:1.4;">
+                Ola <strong>{{customer_name}}</strong>,
               </p>
-              <p style="margin:0 0 20px;font-size:14px;color:#475569;line-height:1.6;">
-                Otima noticia! Nossos tecnicos finalizaram o laudo do seu equipamento
-                <strong>{{equipment}}</strong> (OS #{{os_number}}) e temos a solucao completa para voce.
+              <p style="margin:0 0 24px;font-size:14px;color:#475569;line-height:1.7;">
+                Nossos tecnicos finalizaram a analise do seu equipamento
+                <strong style="color:#1e293b;">{{equipment}}</strong> (OS #{{os_number}}) e preparamos o orcamento completo para voce.
               </p>
 
-              <!-- Laudo tecnico -->
+              <!-- LAUDO TECNICO -->
               {{laudo_section}}
-
-              <!-- Eco tip -->
-              <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 16px;margin-bottom:24px;">
-                <p style="margin:0;font-size:13px;color:#166534;line-height:1.5;">
-                  &#128161; <strong>Voce sabia?</strong> Reparar seu equipamento custa ate 70% menos do que comprar um novo e ainda ajuda a reduzir o lixo eletronico. Escolha inteligente e sustentavel!
-                </p>
-              </div>
 
               <!-- Items table -->
               {{items_table}}
 
               <!-- Installment info (DESTAQUE) -->
-              <div style="background:linear-gradient(135deg,#1e40af 0%,#2563eb 100%);border-radius:10px;padding:24px;margin-bottom:16px;text-align:center;">
-                <p style="margin:0 0 6px;font-size:28px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">
-                  &#128179; {{installment_info}}
-                </p>
-                <p style="margin:0;font-size:14px;color:#bfdbfe;">
-                  Valor total: {{total_cost}}
-                </p>
-              </div>
+              <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:20px;">
+                <tr>
+                  <td style="background:linear-gradient(135deg,#1e40af 0%,#2563eb 100%);border-radius:12px;padding:28px 24px;text-align:center;">
+                    <p style="margin:0 0 8px;font-size:30px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">
+                      {{installment_info}}
+                    </p>
+                    <p style="margin:0;font-size:14px;color:rgba(255,255,255,0.75);">
+                      Valor total: {{total_cost}}
+                    </p>
+                  </td>
+                </tr>
+              </table>
 
-              <!-- Execution time -->
-              <p style="margin:0 0 8px;font-size:14px;color:#475569;text-align:center;">
-                &#128197; <strong>Prazo de execucao:</strong> {{execution_days}} apos aprovacao
-              </p>
+              <!-- Info pills -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:20px;">
+                <tr>
+                  <td width="50%" style="padding:0 6px 0 0;">
+                    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px 16px;text-align:center;">
+                      <p style="margin:0 0 2px;font-size:11px;color:#3b82f6;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Prazo</p>
+                      <p style="margin:0;font-size:14px;color:#1e40af;font-weight:600;">{{execution_days}}</p>
+                    </div>
+                  </td>
+                  <td width="50%" style="padding:0 0 0 6px;">
+                    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 16px;text-align:center;">
+                      <p style="margin:0 0 2px;font-size:11px;color:#16a34a;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Garantia</p>
+                      <p style="margin:0;font-size:14px;color:#15803d;font-weight:600;">{{warranty_period}}</p>
+                    </div>
+                  </td>
+                </tr>
+              </table>
 
-              <!-- Warranty -->
-              <p style="margin:0 0 8px;font-size:14px;color:#475569;text-align:center;">
-                &#128737;&#65039; <strong>Garantia de {{warranty_period}}</strong> em todos os servicos realizados.
-              </p>
-
-              <!-- Eco message -->
-              <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 16px;margin:20px 0;text-align:center;">
-                <p style="margin:0;font-size:13px;color:#166534;line-height:1.5;">
-                  &#127793; Ao reparar, voce economiza dinheiro e ajuda o planeta. Cada equipamento consertado e menos lixo eletronico no meio ambiente.
+              <!-- Eco tip -->
+              <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 16px;margin-bottom:24px;">
+                <p style="margin:0;font-size:13px;color:#166534;line-height:1.6;">
+                  <strong>Voce sabia?</strong> Reparar seu equipamento custa ate 70% menos do que comprar um novo e ainda ajuda a reduzir o lixo eletronico.
                 </p>
               </div>
 
               <!-- Validity -->
-              <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:12px 16px;margin-bottom:24px;text-align:center;">
+              <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:14px 16px;margin-bottom:28px;text-align:center;">
                 <p style="margin:0;font-size:14px;color:#92400e;font-weight:700;">
-                  &#9200; ORCAMENTO VALIDO POR {{quote_validity}}
+                  ORCAMENTO VALIDO POR {{quote_validity}}
                 </p>
               </div>
 
               <!-- CTA Button -->
-              <div style="text-align:center;margin-bottom:20px;">
-                <a href="{{approval_link}}" target="_blank"
-                   style="display:inline-block;background:#22c55e;color:#ffffff;text-decoration:none;font-size:16px;font-weight:700;padding:16px 40px;border-radius:8px;letter-spacing:0.5px;">
-                  &#9989; APROVAR MEU ORCAMENTO AGORA
-                </a>
+              <div style="text-align:center;margin-bottom:16px;">
+                <table cellpadding="0" cellspacing="0" style="margin:0 auto;">
+                  <tr>
+                    <td style="background:#22c55e;border-radius:10px;">
+                      <a href="{{approval_link}}" target="_blank"
+                         style="display:inline-block;color:#ffffff;text-decoration:none;font-size:17px;font-weight:800;padding:18px 48px;letter-spacing:0.3px;">
+                        APROVAR ORCAMENTO
+                      </a>
+                    </td>
+                  </tr>
+                </table>
               </div>
 
               <!-- WhatsApp -->
-              <div style="text-align:center;margin-bottom:28px;">
-                <p style="margin:0 0 8px;font-size:13px;color:#64748b;">&#128241; Prefere falar com a gente?</p>
-                <a href="https://wa.me/{{company_whatsapp}}" target="_blank"
-                   style="display:inline-block;background:#25d366;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:10px 24px;border-radius:6px;">
-                  &#128172; Chamar no WhatsApp
-                </a>
+              <div style="text-align:center;margin-bottom:32px;">
+                <p style="margin:0 0 10px;font-size:13px;color:#64748b;">Prefere falar com a gente?</p>
+                <table cellpadding="0" cellspacing="0" style="margin:0 auto;">
+                  <tr>
+                    <td style="background:#25d366;border-radius:8px;">
+                      <a href="https://wa.me/{{company_whatsapp}}" target="_blank"
+                         style="display:inline-block;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;padding:12px 28px;">
+                        Fale com nosso suporte
+                      </a>
+                    </td>
+                  </tr>
+                </table>
               </div>
 
               <!-- Conditions -->
-              <div style="border-top:2px solid #e2e8f0;padding-top:20px;margin-bottom:20px;">
-                <h3 style="margin:0 0 12px;font-size:15px;color:#1e293b;font-weight:700;">Condicoes</h3>
+              <div style="border-top:2px solid #e2e8f0;padding-top:24px;margin-bottom:24px;">
+                <h3 style="margin:0 0 16px;font-size:15px;color:#1e293b;font-weight:700;">Condicoes</h3>
                 <table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;color:#475569;">
                   <tr>
-                    <td style="padding:6px 0;font-weight:600;width:140px;vertical-align:top;">Pagamento:</td>
-                    <td style="padding:6px 0;">{{payment_conditions}}</td>
+                    <td style="padding:8px 0;font-weight:600;width:140px;vertical-align:top;color:#1e293b;">Pagamento:</td>
+                    <td style="padding:8px 0;">{{payment_conditions}}</td>
                   </tr>
                   <tr>
-                    <td style="padding:6px 0;font-weight:600;vertical-align:top;">Prazo execucao:</td>
-                    <td style="padding:6px 0;">{{execution_days}} apos aprovacao</td>
+                    <td style="padding:8px 0;font-weight:600;vertical-align:top;color:#1e293b;">Prazo execucao:</td>
+                    <td style="padding:8px 0;">{{execution_days}} apos aprovacao</td>
                   </tr>
                   <tr>
-                    <td style="padding:6px 0;font-weight:600;vertical-align:top;">Garantia:</td>
-                    <td style="padding:6px 0;">{{warranty_period}} em servicos realizados</td>
+                    <td style="padding:8px 0;font-weight:600;vertical-align:top;color:#1e293b;">Garantia:</td>
+                    <td style="padding:8px 0;">{{warranty_period}} em todos os servicos realizados</td>
                   </tr>
                   <tr>
-                    <td style="padding:6px 0;font-weight:600;vertical-align:top;">Validade:</td>
-                    <td style="padding:6px 0;">{{quote_validity}}</td>
+                    <td style="padding:8px 0;font-weight:600;vertical-align:top;color:#1e293b;">Validade:</td>
+                    <td style="padding:8px 0;">{{quote_validity}}</td>
                   </tr>
                   <tr>
-                    <td style="padding:6px 0;font-weight:600;vertical-align:top;">PIX:</td>
-                    <td style="padding:6px 0;">{{company_pix}}</td>
+                    <td style="padding:8px 0;font-weight:600;vertical-align:top;color:#1e293b;">PIX:</td>
+                    <td style="padding:8px 0;">{{company_pix}}</td>
                   </tr>
                   <tr>
-                    <td style="padding:6px 0;font-weight:600;vertical-align:top;">Banco:</td>
-                    <td style="padding:6px 0;">{{company_bank}}</td>
+                    <td style="padding:8px 0;font-weight:600;vertical-align:top;color:#1e293b;">Banco:</td>
+                    <td style="padding:8px 0;">{{company_bank}}</td>
                   </tr>
                 </table>
               </div>
@@ -220,15 +251,30 @@ const DEFAULT_QUOTE_TEMPLATE = `<!DOCTYPE html>
 
           <!-- FOOTER -->
           <tr>
-            <td style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:20px 24px;text-align:center;">
-              <p style="margin:0 0 4px;font-size:14px;font-weight:700;color:#1e293b;">{{company_name}}</p>
-              <p style="margin:0 0 4px;font-size:12px;color:#64748b;">{{company_address}}</p>
-              <p style="margin:0 0 4px;font-size:12px;color:#64748b;">CNPJ: {{company_cnpj}}</p>
-              <p style="margin:0 0 4px;font-size:12px;color:#64748b;">Tel: {{company_phone}} | {{company_email}}</p>
-              <p style="margin:0;font-size:12px;color:#64748b;">{{company_website}}</p>
+            <td style="background:#1e293b;padding:28px 32px;text-align:center;">
+              <p style="margin:0 0 6px;font-size:15px;font-weight:700;color:#ffffff;">{{company_name}}</p>
+              <p style="margin:0 0 4px;font-size:12px;color:#94a3b8;">Assistencia Tecnica em Informatica</p>
+              <p style="margin:0 0 4px;font-size:12px;color:#94a3b8;">{{company_address}}</p>
+              <p style="margin:0 0 4px;font-size:12px;color:#94a3b8;">CNPJ: {{company_cnpj}}</p>
+              <p style="margin:0 0 4px;font-size:12px;color:#94a3b8;">Tel: {{company_phone}} | {{company_email}}</p>
+              <p style="margin:0 0 12px;font-size:12px;color:#94a3b8;">{{company_website}}</p>
+              <div style="border-top:1px solid #334155;padding-top:12px;">
+                <p style="margin:0;font-size:11px;color:#64748b;">Garantia de 3 meses em todos os servicos</p>
+              </div>
             </td>
           </tr>
 
+        </table>
+
+        <!-- Unsubscribe / info -->
+        <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+          <tr>
+            <td style="padding:16px 0;text-align:center;">
+              <p style="margin:0;font-size:11px;color:#94a3b8;">
+                Este email foi enviado por {{company_name}} referente a OS #{{os_number}}.
+              </p>
+            </td>
+          </tr>
         </table>
       </td>
     </tr>
@@ -300,11 +346,32 @@ function buildTemplateVars(os: any, settings: Record<string, string>, approvalLi
   const hasLaudoOrObs = laudo || obs || os.reported_issue
 
   const laudoSection = hasLaudoOrObs
-    ? `<div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:16px;margin-bottom:24px;">
-        <p style="margin:0 0 8px;font-size:13px;color:#92400e;font-weight:600;">LAUDO TECNICO</p>
-        <p style="margin:0 0 8px;font-size:14px;color:#78350f;"><strong>Problema relatado:</strong> ${os.reported_issue || '\u2014'}</p>
-        ${laudo ? `<p style="margin:0 0 8px;font-size:14px;color:#78350f;"><strong>Laudo:</strong> ${laudo}</p>` : ''}
-        ${obs ? `<p style="margin:0;font-size:14px;color:#78350f;"><strong>Observacoes:</strong> ${obs}</p>` : ''}
+    ? `<div style="background:#ffffff;border:2px solid #e2e8f0;border-radius:10px;overflow:hidden;margin-bottom:24px;">
+        <div style="background:#f8fafc;padding:12px 16px;border-bottom:2px solid #e2e8f0;">
+          <p style="margin:0;font-size:13px;color:#1e293b;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Laudo Tecnico</p>
+        </div>
+        <div style="padding:16px;">
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding:0 0 12px;vertical-align:top;">
+                <p style="margin:0 0 4px;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Problema Relatado</p>
+                <p style="margin:0;font-size:14px;color:#1e293b;line-height:1.5;">${os.reported_issue || '\u2014'}</p>
+              </td>
+            </tr>
+            ${laudo ? `<tr>
+              <td style="padding:12px 0;border-top:1px solid #f1f5f9;vertical-align:top;">
+                <p style="margin:0 0 4px;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Diagnostico / Laudo</p>
+                <p style="margin:0;font-size:14px;color:#1e293b;line-height:1.5;">${laudo}</p>
+              </td>
+            </tr>` : ''}
+            ${obs ? `<tr>
+              <td style="padding:12px 0 0;border-top:1px solid #f1f5f9;vertical-align:top;">
+                <p style="margin:0 0 4px;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Observacoes</p>
+                <p style="margin:0;font-size:14px;color:#1e293b;line-height:1.5;">${obs}</p>
+              </td>
+            </tr>` : ''}
+          </table>
+        </div>
       </div>`
     : ''
 

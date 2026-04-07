@@ -35,48 +35,84 @@ function daysSince(date: Date): number {
 const DEFAULT_QUOTE_REMINDER_TEMPLATE = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="font-family:Arial,sans-serif;font-size:14px;color:#333;max-width:600px;margin:0 auto;padding:20px;background:#f5f5f5;">
-<div style="background:#fff;border:1px solid #e0e0e0;border-radius:8px;overflow:hidden;">
-  <div style="background:#1e40af;padding:24px;text-align:center;">
-    <h2 style="margin:0;color:#fff;font-size:20px;">{{company_name}}</h2>
-  </div>
-  <div style="padding:24px;">
-    <p style="margin:0 0 16px;font-size:15px;color:#1e293b;">
-      Prezado(a) <strong>{{customer_name}}</strong>,
-    </p>
-    <p style="margin:0 0 20px;color:#475569;">
-      O orçamento da sua <strong>OS-{{os_number}}</strong> está aguardando sua aprovação há <strong>{{days_waiting}} dias</strong>.
-    </p>
-    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin-bottom:20px;">
-      <p style="margin:0 0 8px;font-size:13px;color:#64748b;">Equipamento</p>
-      <p style="margin:0 0 12px;font-size:15px;color:#1e293b;font-weight:600;">{{equipment}}</p>
-      <p style="margin:0 0 8px;font-size:13px;color:#64748b;">Diagnóstico</p>
-      <p style="margin:0;font-size:14px;color:#334155;">{{diagnosis}}</p>
-    </div>
-    {{items_table}}
-    <div style="background:#f0fdf4;border:2px solid #bbf7d0;border-radius:8px;padding:16px;text-align:center;margin-bottom:20px;">
-      <p style="margin:0 0 4px;font-size:13px;color:#15803d;">Valor Total</p>
-      <p style="margin:0;font-size:24px;font-weight:700;color:#15803d;">{{total_cost}}</p>
-    </div>
-    <div style="text-align:center;margin:24px 0;">
-      <a href="{{approval_link}}" style="display:inline-block;background:#16a34a;color:#fff;font-size:16px;font-weight:600;padding:14px 40px;border-radius:8px;text-decoration:none;margin-right:12px;">
-        Aprovar Orçamento
-      </a>
-      <a href="{{rejection_link}}" style="display:inline-block;background:#dc2626;color:#fff;font-size:16px;font-weight:600;padding:14px 40px;border-radius:8px;text-decoration:none;">
-        Recusar
-      </a>
-    </div>
-    <p style="margin:16px 0 0;font-size:12px;color:#94a3b8;text-align:center;">
-      Responda este email ou ligue para {{company_phone}} em caso de dúvidas.
-    </p>
-  </div>
-  <div style="background:#f8fafc;padding:16px;text-align:center;border-top:1px solid #e2e8f0;">
-    <p style="margin:0;font-size:12px;color:#94a3b8;">
-      {{company_name}} | Tel: {{company_phone}}<br>
-      Este é um lembrete automático.
-    </p>
-  </div>
-</div>
+<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f1f5f9;padding:32px 0;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+          <!-- HEADER -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#1e40af 0%,#2563eb 50%,#3b82f6 100%);padding:36px 32px;text-align:center;">
+              <div style="width:56px;height:56px;background:rgba(255,255,255,0.15);border-radius:14px;margin:0 auto 12px;line-height:56px;font-size:28px;">&#128203;</div>
+              <h1 style="margin:0 0 4px;color:#ffffff;font-size:22px;font-weight:800;">Orcamento Pendente</h1>
+              <p style="margin:0;color:rgba(255,255,255,0.7);font-size:12px;">{{company_name}}</p>
+            </td>
+          </tr>
+          <!-- BODY -->
+          <tr>
+            <td style="padding:32px;">
+              <p style="margin:0 0 16px;font-size:16px;color:#1e293b;">
+                Prezado(a) <strong>{{customer_name}}</strong>,
+              </p>
+              <p style="margin:0 0 24px;font-size:14px;color:#475569;line-height:1.7;">
+                O orcamento da sua <strong>OS-{{os_number}}</strong> esta aguardando sua aprovacao ha <strong>{{days_waiting}} dias</strong>.
+              </p>
+              <div style="background:#f8fafc;border:2px solid #e2e8f0;border-radius:10px;overflow:hidden;margin-bottom:24px;">
+                <div style="padding:16px;">
+                  <table width="100%" cellpadding="0" cellspacing="0">
+                    <tr><td style="padding:6px 0;vertical-align:top;"><p style="margin:0 0 2px;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Equipamento</p><p style="margin:0;font-size:15px;color:#1e293b;font-weight:600;">{{equipment}}</p></td></tr>
+                    <tr><td style="padding:12px 0 0;border-top:1px solid #f1f5f9;vertical-align:top;"><p style="margin:0 0 2px;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Diagnostico</p><p style="margin:0;font-size:14px;color:#334155;line-height:1.5;">{{diagnosis}}</p></td></tr>
+                  </table>
+                </div>
+              </div>
+              {{items_table}}
+              <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:24px;">
+                <tr>
+                  <td style="background:linear-gradient(135deg,#1e40af 0%,#2563eb 100%);border-radius:10px;padding:20px;text-align:center;">
+                    <p style="margin:0 0 4px;font-size:12px;color:rgba(255,255,255,0.7);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Valor Total</p>
+                    <p style="margin:0;font-size:28px;font-weight:800;color:#ffffff;">{{total_cost}}</p>
+                  </td>
+                </tr>
+              </table>
+              <div style="text-align:center;margin:0 0 16px;">
+                <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr><td style="background:#22c55e;border-radius:10px;">
+                  <a href="{{approval_link}}" style="display:inline-block;color:#ffffff;text-decoration:none;font-size:16px;font-weight:800;padding:16px 40px;">
+                    APROVAR ORCAMENTO
+                  </a>
+                </td></tr></table>
+              </div>
+              <div style="text-align:center;margin:0 0 24px;">
+                <a href="{{rejection_link}}" style="color:#dc2626;font-size:13px;font-weight:600;text-decoration:underline;">
+                  Recusar orcamento
+                </a>
+              </div>
+              <div style="text-align:center;margin:0 0 16px;">
+                <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr><td style="background:#25d366;border-radius:8px;">
+                  <a href="https://wa.me/551126263841" style="display:inline-block;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 28px;">
+                    Fale com nosso suporte
+                  </a>
+                </td></tr></table>
+              </div>
+              <p style="margin:16px 0 0;font-size:12px;color:#94a3b8;text-align:center;">
+                Responda este email ou ligue para {{company_phone}} em caso de duvidas.
+              </p>
+            </td>
+          </tr>
+          <!-- FOOTER -->
+          <tr>
+            <td style="background:#1e293b;padding:24px 32px;text-align:center;">
+              <p style="margin:0 0 4px;font-size:14px;font-weight:700;color:#ffffff;">{{company_name}}</p>
+              <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">Assistencia Tecnica em Informatica</p>
+              <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">Tel: {{company_phone}}</p>
+              <div style="border-top:1px solid #334155;padding-top:10px;margin-top:10px;">
+                <p style="margin:0;font-size:10px;color:#64748b;">Este e um lembrete automatico &mdash; Garantia de 3 meses em todos os servicos</p>
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
 </body>
 </html>`
 

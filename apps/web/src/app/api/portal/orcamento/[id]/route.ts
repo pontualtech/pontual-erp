@@ -271,47 +271,76 @@ export async function POST(request: NextRequest, { params }: Params) {
 
       // 2. Email de confirmação ao cliente
       const customerEmail = os.customers?.email
+      const companyEmailAddr = cfg['company.email'] || cfg['email'] || 'contato@pontualtech.com.br'
+      const companyCnpj = cfg['company.cnpj'] || cfg['cnpj'] || '32.772.178/0001-47'
+      const companyAddress = cfg['company.address'] || cfg['endereco'] || 'Rua Ouvidor Peleja, 660 — Vila Mariana — CEP 04128-001 — Sao Paulo/SP'
       if (customerEmail) {
-        const emailHtml = `
-<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#333;">
-  <div style="background:linear-gradient(135deg,#22c55e,#16a34a);padding:28px;border-radius:12px 12px 0 0;text-align:center;">
-    <p style="margin:0;font-size:40px;">✅</p>
-    <h1 style="color:#fff;margin:8px 0 0;font-size:22px;">Orcamento Aprovado!</h1>
-  </div>
-  <div style="background:#fff;border:1px solid #e5e7eb;border-top:none;padding:28px;border-radius:0 0 12px 12px;">
-    <p style="font-size:16px;margin:0 0 16px;">Ola <strong>${customerFirstName}</strong>,</p>
-    <p style="font-size:14px;color:#555;margin:0 0 20px;line-height:1.6;">
-      Seu orcamento para a OS <strong>#${osNum}</strong> foi aprovado com sucesso!
-      Nossa equipe tecnica ja esta ciente e o reparo comeca a partir de agora.
-    </p>
+        const emailHtml = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f1f5f9;padding:32px 0;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+          <tr>
+            <td style="background:linear-gradient(135deg,#15803d 0%,#22c55e 100%);padding:36px 32px;text-align:center;">
+              <div style="width:56px;height:56px;background:rgba(255,255,255,0.15);border-radius:14px;margin:0 auto 12px;line-height:56px;font-size:28px;">&#9989;</div>
+              <h1 style="margin:0 0 4px;color:#ffffff;font-size:22px;font-weight:800;">Orcamento Aprovado!</h1>
+              <p style="margin:0;color:rgba(255,255,255,0.7);font-size:12px;">${companyName}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:32px 32px 0;">
+              <p style="font-size:16px;margin:0 0 16px;color:#1e293b;">Ola <strong>${customerFirstName}</strong>,</p>
+              <p style="font-size:14px;color:#475569;margin:0 0 24px;line-height:1.7;">
+                Seu orcamento para a OS <strong>#${osNum}</strong> foi aprovado com sucesso!
+                Nossa equipe tecnica ja esta ciente e o reparo comeca a partir de agora.
+              </p>
 
-    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:16px;margin:0 0 20px;">
-      <table style="width:100%;font-size:14px;color:#166534;">
-        <tr><td style="padding:4px 0;font-weight:600;">Equipamento:</td><td style="padding:4px 0;">${equipment}</td></tr>
-        <tr><td style="padding:4px 0;font-weight:600;">Valor aprovado:</td><td style="padding:4px 0;font-weight:700;font-size:18px;">${fmtValue}</td></tr>
-        <tr><td style="padding:4px 0;font-weight:600;">Previsao de entrega:</td><td style="padding:4px 0;font-weight:700;">${previsaoStr}</td></tr>
-        <tr><td style="padding:4px 0;font-weight:600;">Prazo:</td><td style="padding:4px 0;">10 dias uteis a partir de hoje</td></tr>
-      </table>
-    </div>
+              <div style="background:#f8fafc;border:2px solid #e2e8f0;border-radius:10px;overflow:hidden;margin:0 0 24px;">
+                <div style="padding:16px;">
+                  <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;color:#1e293b;">
+                    <tr><td style="padding:6px 0;font-weight:700;width:150px;color:#64748b;">Equipamento:</td><td style="padding:6px 0;font-weight:600;">${equipment}</td></tr>
+                    <tr><td style="padding:6px 0;font-weight:700;color:#64748b;">Valor aprovado:</td><td style="padding:6px 0;font-weight:800;font-size:18px;color:#15803d;">${fmtValue}</td></tr>
+                    <tr><td style="padding:6px 0;font-weight:700;color:#64748b;">Previsao entrega:</td><td style="padding:6px 0;font-weight:700;">${previsaoStr}</td></tr>
+                    <tr><td style="padding:6px 0;font-weight:700;color:#64748b;">Prazo:</td><td style="padding:6px 0;">10 dias uteis a partir de hoje</td></tr>
+                  </table>
+                </div>
+              </div>
 
-    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px;margin:0 0 20px;">
-      <p style="margin:0;font-size:13px;color:#1e40af;line-height:1.5;">
-        <strong>Proximo passo:</strong> Nossa equipe vai iniciar o reparo e voce sera notificado quando o equipamento estiver pronto para retirada/entrega.
-      </p>
-    </div>
+              <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:16px;margin:0 0 24px;">
+                <p style="margin:0;font-size:14px;color:#1e40af;line-height:1.6;">
+                  <strong>Proximo passo:</strong> Nossa equipe vai iniciar o reparo e voce sera notificado quando o equipamento estiver pronto para retirada/entrega.
+                </p>
+              </div>
 
-    <div style="text-align:center;margin:0 0 20px;">
-      <a href="${whatsappUrl}" style="display:inline-block;background:#25d366;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:14px;">
-        Falar com o Suporte via WhatsApp
-      </a>
-    </div>
-
-    <div style="border-top:1px solid #e5e7eb;padding-top:16px;">
-      <p style="font-size:13px;color:#555;margin:0 0 4px;">${companyName}</p>
-      <p style="font-size:12px;color:#999;margin:0;">Tel: ${companyPhone} | <a href="${whatsappUrl}" style="color:#16a34a;">WhatsApp</a></p>
-    </div>
-  </div>
-</div>`
+              <div style="text-align:center;margin:0 0 32px;">
+                <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr><td style="background:#25d366;border-radius:8px;">
+                  <a href="${whatsappUrl}" style="display:inline-block;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 28px;">
+                    Fale com nosso suporte
+                  </a>
+                </td></tr></table>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="background:#1e293b;padding:24px 32px;text-align:center;">
+              <p style="margin:0 0 4px;font-size:14px;font-weight:700;color:#ffffff;">${companyName}</p>
+              <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">Assistencia Tecnica em Informatica</p>
+              <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">${companyAddress}</p>
+              <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">CNPJ: ${companyCnpj} | Tel: ${companyPhone} | ${companyEmailAddr}</p>
+              <div style="border-top:1px solid #334155;padding-top:10px;margin-top:10px;">
+                <p style="margin:0;font-size:10px;color:#64748b;">Garantia de 3 meses em todos os servicos</p>
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`
         sendEmail(customerEmail, `Orcamento Aprovado — OS #${osNum} — ${companyName}`, emailHtml).catch(() => {})
       }
 
@@ -412,52 +441,81 @@ export async function POST(request: NextRequest, { params }: Params) {
 
       // 2. Email ao cliente confirmando a recusa
       const customerEmail2 = os.customers?.email
+      const companyEmailAddr2 = cfg2['company.email'] || cfg2['email'] || 'contato@pontualtech.com.br'
+      const companyCnpj2 = cfg2['company.cnpj'] || cfg2['cnpj'] || '32.772.178/0001-47'
+      const companyAddress2 = cfg2['company.address'] || cfg2['endereco'] || 'Rua Ouvidor Peleja, 660 — Vila Mariana — CEP 04128-001 — Sao Paulo/SP'
       if (customerEmail2) {
-        const emailHtml2 = `
-<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#333;">
-  <div style="background:linear-gradient(135deg,#dc2626,#b91c1c);padding:28px;border-radius:12px 12px 0 0;text-align:center;">
-    <p style="margin:0;font-size:40px;">📋</p>
-    <h1 style="color:#fff;margin:8px 0 0;font-size:22px;">Orcamento Recusado</h1>
-  </div>
-  <div style="background:#fff;border:1px solid #e5e7eb;border-top:none;padding:28px;border-radius:0 0 12px 12px;">
-    <p style="font-size:16px;margin:0 0 16px;">Ola <strong>${customerName2.split(' ')[0]}</strong>,</p>
-    <p style="font-size:14px;color:#555;margin:0 0 20px;line-height:1.6;">
-      Recebemos sua decisao sobre o orcamento da OS <strong>#${osNum2}</strong>.
-      Entendemos e respeitamos sua escolha.
-    </p>
+        const emailHtml2 = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f1f5f9;padding:32px 0;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+          <tr>
+            <td style="background:linear-gradient(135deg,#1e40af 0%,#2563eb 50%,#3b82f6 100%);padding:36px 32px;text-align:center;">
+              <div style="width:56px;height:56px;background:rgba(255,255,255,0.15);border-radius:14px;margin:0 auto 12px;line-height:56px;font-size:28px;">&#128203;</div>
+              <h1 style="margin:0 0 4px;color:#ffffff;font-size:22px;font-weight:800;">Orcamento Recusado</h1>
+              <p style="margin:0;color:rgba(255,255,255,0.7);font-size:12px;">${companyName2}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:32px 32px 0;">
+              <p style="font-size:16px;margin:0 0 16px;color:#1e293b;">Ola <strong>${customerName2.split(' ')[0]}</strong>,</p>
+              <p style="font-size:14px;color:#475569;margin:0 0 24px;line-height:1.7;">
+                Recebemos sua decisao sobre o orcamento da OS <strong>#${osNum2}</strong>.
+                Entendemos e respeitamos sua escolha.
+              </p>
 
-    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:16px;margin:0 0 20px;">
-      <table style="width:100%;font-size:14px;color:#991b1b;">
-        <tr><td style="padding:4px 0;font-weight:600;">Equipamento:</td><td style="padding:4px 0;">${equipment2}</td></tr>
-        <tr><td style="padding:4px 0;font-weight:600;">Valor orcado:</td><td style="padding:4px 0;">${fmtValue2}</td></tr>
-        ${reason ? `<tr><td style="padding:4px 0;font-weight:600;">Motivo:</td><td style="padding:4px 0;">${reason}</td></tr>` : ''}
-      </table>
-    </div>
+              <div style="background:#f8fafc;border:2px solid #e2e8f0;border-radius:10px;overflow:hidden;margin:0 0 24px;">
+                <div style="padding:16px;">
+                  <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;color:#1e293b;">
+                    <tr><td style="padding:6px 0;font-weight:700;width:130px;color:#64748b;">Equipamento:</td><td style="padding:6px 0;">${equipment2}</td></tr>
+                    <tr><td style="padding:6px 0;font-weight:700;color:#64748b;">Valor orcado:</td><td style="padding:6px 0;font-weight:600;">${fmtValue2}</td></tr>
+                    ${reason ? `<tr><td style="padding:6px 0;font-weight:700;color:#64748b;">Motivo:</td><td style="padding:6px 0;">${reason}</td></tr>` : ''}
+                  </table>
+                </div>
+              </div>
 
-    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px;margin:0 0 20px;">
-      <p style="margin:0;font-size:13px;color:#1e40af;line-height:1.5;">
-        <strong>Quer negociar?</strong> Nossa equipe esta disponivel para revisar o orcamento ou esclarecer duvidas. Entre em contato pelo WhatsApp!
-      </p>
-    </div>
+              <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:16px;margin:0 0 24px;">
+                <p style="margin:0;font-size:14px;color:#1e40af;line-height:1.6;">
+                  <strong>Quer negociar?</strong> Nossa equipe esta disponivel para revisar o orcamento ou esclarecer duvidas. Entre em contato pelo WhatsApp!
+                </p>
+              </div>
 
-    <div style="text-align:center;margin:0 0 20px;">
-      <a href="${whatsappUrl2}" style="display:inline-block;background:#25d366;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:14px;">
-        Falar com o Suporte via WhatsApp
-      </a>
-    </div>
+              <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:14px 16px;margin:0 0 24px;">
+                <p style="margin:0;font-size:13px;color:#92400e;line-height:1.5;">
+                  <strong>Importante:</strong> Seu equipamento esta conosco. Entraremos em contato para combinar a devolucao.
+                </p>
+              </div>
 
-    <div style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:14px;margin:0 0 20px;">
-      <p style="margin:0;font-size:13px;color:#92400e;line-height:1.5;">
-        <strong>Importante:</strong> Seu equipamento esta conosco. Entraremos em contato para combinar a devolucao.
-      </p>
-    </div>
-
-    <div style="border-top:1px solid #e5e7eb;padding-top:16px;">
-      <p style="font-size:13px;color:#555;margin:0 0 4px;">${companyName2}</p>
-      <p style="font-size:12px;color:#999;margin:0;">Tel: ${companyPhone2} | <a href="${whatsappUrl2}" style="color:#16a34a;">WhatsApp</a></p>
-    </div>
-  </div>
-</div>`
+              <div style="text-align:center;margin:0 0 32px;">
+                <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr><td style="background:#25d366;border-radius:8px;">
+                  <a href="${whatsappUrl2}" style="display:inline-block;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 28px;">
+                    Fale com nosso suporte
+                  </a>
+                </td></tr></table>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="background:#1e293b;padding:24px 32px;text-align:center;">
+              <p style="margin:0 0 4px;font-size:14px;font-weight:700;color:#ffffff;">${companyName2}</p>
+              <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">Assistencia Tecnica em Informatica</p>
+              <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">${companyAddress2}</p>
+              <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">CNPJ: ${companyCnpj2} | Tel: ${companyPhone2} | ${companyEmailAddr2}</p>
+              <div style="border-top:1px solid #334155;padding-top:10px;margin-top:10px;">
+                <p style="margin:0;font-size:10px;color:#64748b;">Garantia de 3 meses em todos os servicos</p>
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`
         sendEmail(customerEmail2, `Orcamento OS #${osNum2} — ${companyName2}`, emailHtml2).catch(() => {})
       }
 

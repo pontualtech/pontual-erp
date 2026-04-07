@@ -115,93 +115,125 @@ Obrigado pela confianca!
 Equipe ${companyName}`
 
     // ===== EMAIL HTML =====
-    const emailHtml = `
-<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
-  <div style="background: linear-gradient(135deg, #2563eb, #1d4ed8); padding: 24px; border-radius: 12px 12px 0 0;">
-    <h1 style="color: white; margin: 0; font-size: 22px;">${companyName}</h1>
-    <p style="color: rgba(255,255,255,0.85); margin: 4px 0 0; font-size: 14px;">Confirmacao de Coleta</p>
-  </div>
+    const companyCnpj = cfg['company.cnpj'] || cfg['cnpj'] || '32.772.178/0001-47'
+    const companyEmail2 = cfg['company.email'] || cfg['email'] || 'contato@pontualtech.com.br'
+    const companyAddress = cfg['company.address'] || cfg['endereco'] || 'Rua Ouvidor Peleja, 660 — Vila Mariana — CEP 04128-001 — Sao Paulo/SP'
 
-  <div style="background: #fff; border: 1px solid #e5e7eb; border-top: none; padding: 28px; border-radius: 0 0 12px 12px;">
-    <p style="font-size: 16px; margin: 0 0 4px;">
-      Tudo certo, <strong>${customerName}</strong>!
-    </p>
-    <p style="font-size: 15px; color: #555; margin: 0 0 20px;">
-      OS ${osNumbers} aberta com sucesso! Seu agendamento ja esta com nossa logistica.
-    </p>
+    const emailHtml = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f1f5f9;padding:32px 0;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+          <!-- HEADER -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#1e40af 0%,#2563eb 50%,#3b82f6 100%);padding:36px 32px;text-align:center;">
+              <div style="width:56px;height:56px;background:rgba(255,255,255,0.15);border-radius:14px;margin:0 auto 12px;line-height:56px;font-size:28px;">&#128666;</div>
+              <h1 style="margin:0 0 4px;color:#ffffff;font-size:22px;font-weight:800;">Confirmacao de Coleta</h1>
+              <p style="margin:0;color:rgba(255,255,255,0.7);font-size:12px;">${companyName}</p>
+            </td>
+          </tr>
+          <!-- BODY -->
+          <tr>
+            <td style="padding:32px 32px 0;">
+              <p style="font-size:16px;margin:0 0 4px;color:#1e293b;">
+                Tudo certo, <strong>${customerName}</strong>!
+              </p>
+              <p style="font-size:14px;color:#475569;margin:0 0 24px;line-height:1.7;">
+                OS ${osNumbers} aberta com sucesso! Seu agendamento ja esta com nossa logistica.
+              </p>
 
-    <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 16px; margin: 0 0 20px;">
-      <p style="margin: 0 0 8px; font-size: 13px; color: #0369a1; font-weight: 600;">EQUIPAMENTOS PARA COLETA</p>
-      ${allEquipments.map((e, i) => `
-        <p style="margin: 0 0 4px; font-size: 14px;">
-          <strong>${i + 1}.</strong> ${e.desc} <span style="color: #6b7280;">(OS #${e.num})</span>
-        </p>
-      `).join('')}
-    </div>
+              <div style="background:#f8fafc;border:2px solid #e2e8f0;border-radius:10px;overflow:hidden;margin:0 0 24px;">
+                <div style="background:#eff6ff;padding:10px 16px;border-bottom:1px solid #e2e8f0;">
+                  <p style="margin:0;font-size:11px;color:#2563eb;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Equipamentos para Coleta</p>
+                </div>
+                <div style="padding:16px;">
+                  ${allEquipments.map((e, i) => `
+                    <p style="margin:0 0 6px;font-size:14px;color:#1e293b;">
+                      <strong>${i + 1}.</strong> ${e.desc} <span style="color:#64748b;">(OS #${e.num})</span>
+                    </p>
+                  `).join('')}
+                </div>
+              </div>
 
-    <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 16px; margin: 0 0 20px;">
-      <p style="margin: 0 0 8px; font-size: 13px; color: #92400e; font-weight: 600;">INSTRUCOES PARA A COLETA</p>
-      <p style="margin: 0 0 6px; font-size: 14px; color: #78350f;">
-        A coleta ocorrera durante o <strong>horario comercial (09:00 as 17:00)</strong>.
-      </p>
-      <p style="margin: 0; font-size: 14px; color: #78350f;">
-        Como seguimos uma rota, nao ha horario fixo. <strong>Deixe alguem avisado!</strong>
-      </p>
-    </div>
+              <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:16px;margin:0 0 20px;">
+                <p style="margin:0 0 6px;font-size:11px;color:#92400e;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Instrucoes para a Coleta</p>
+                <p style="margin:0 0 6px;font-size:14px;color:#78350f;line-height:1.5;">
+                  A coleta ocorrera durante o <strong>horario comercial (09:00 as 17:00)</strong>.
+                </p>
+                <p style="margin:0;font-size:14px;color:#78350f;line-height:1.5;">
+                  Como seguimos uma rota, nao ha horario fixo. <strong>Deixe alguem avisado!</strong>
+                </p>
+              </div>
 
-    <table style="width: 100%; border-collapse: collapse; margin: 0 0 20px;">
-      <tr>
-        <td style="padding: 12px; background: #f0fdf4; border-radius: 8px 0 0 8px; border: 1px solid #bbf7d0; width: 50%; vertical-align: top;">
-          <p style="margin: 0 0 6px; font-size: 12px; color: #166534; font-weight: 600;">MANTENHA COM VOCE</p>
-          <p style="margin: 0; font-size: 13px; color: #15803d;">Cabos de energia e fontes</p>
-        </td>
-        <td style="padding: 12px; background: #f0fdf4; border-radius: 0 8px 8px 0; border: 1px solid #bbf7d0; border-left: none; width: 50%; vertical-align: top;">
-          <p style="margin: 0 0 6px; font-size: 12px; color: #166534; font-weight: 600;">PODE ENVIAR</p>
-          <p style="margin: 0; font-size: 13px; color: #15803d;">O equipamento com os toners/cartuchos dentro</p>
-        </td>
-      </tr>
-    </table>
+              <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 20px;">
+                <tr>
+                  <td style="padding:14px;background:#f0fdf4;border:1px solid #bbf7d0;width:50%;vertical-align:top;border-radius:8px 0 0 8px;">
+                    <p style="margin:0 0 6px;font-size:11px;color:#166534;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Mantenha com voce</p>
+                    <p style="margin:0;font-size:13px;color:#15803d;">Cabos de energia e fontes</p>
+                  </td>
+                  <td style="padding:14px;background:#f0fdf4;border:1px solid #bbf7d0;border-left:none;width:50%;vertical-align:top;border-radius:0 8px 8px 0;">
+                    <p style="margin:0 0 6px;font-size:11px;color:#166534;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Pode enviar</p>
+                    <p style="margin:0;font-size:13px;color:#15803d;">O equipamento com os toners/cartuchos dentro</p>
+                  </td>
+                </tr>
+              </table>
 
-    <div style="background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 8px; padding: 16px; margin: 0 0 20px;">
-      <p style="margin: 0 0 6px; font-size: 13px; color: #6b21a8; font-weight: 600;">ORCAMENTOS</p>
-      <p style="margin: 0; font-size: 14px; color: #7c3aed;">
-        Fique de olho no seu e-mail, pois o laudo sera enviado por la.
-      </p>
-    </div>
+              <div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px;padding:14px 16px;margin:0 0 24px;">
+                <p style="margin:0 0 4px;font-size:11px;color:#6b21a8;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Orcamentos</p>
+                <p style="margin:0;font-size:14px;color:#7c3aed;line-height:1.5;">
+                  Fique de olho no seu e-mail, pois o laudo sera enviado por la.
+                </p>
+              </div>
 
-    <div style="text-align: center; margin: 0 0 20px;">
-      <a href="${portalUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 14px;">
-        Acompanhar minha OS online
-      </a>
-      <p style="margin: 8px 0 0; font-size: 12px; color: #9ca3af;">
-        Consulte o status e aprove orcamentos direto pelo site
-      </p>
-    </div>
+              <div style="text-align:center;margin:0 0 16px;">
+                <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr><td style="background:#2563eb;border-radius:8px;">
+                  <a href="${portalUrl}" style="display:inline-block;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:14px 32px;">
+                    Acompanhar minha OS online
+                  </a>
+                </td></tr></table>
+                <p style="margin:8px 0 0;font-size:12px;color:#94a3b8;">Consulte o status e aprove orcamentos direto pelo site</p>
+              </div>
 
-    ${customerEmail ? `
-      <p style="font-size: 12px; color: #6b7280; margin: 0 0 4px;">
-        Historico enviado para: <strong>${customerEmail}</strong>
-      </p>
-      <p style="font-size: 11px; color: #9ca3af; margin: 0 0 16px;">
-        Verifique tambem a pasta de Spam/Lixo Eletronico
-      </p>
-    ` : ''}
+              <div style="text-align:center;margin:0 0 32px;">
+                <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr><td style="background:#25d366;border-radius:8px;">
+                  <a href="${whatsappUrl}" style="display:inline-block;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 28px;">
+                    Fale com nosso suporte
+                  </a>
+                </td></tr></table>
+              </div>
 
-    <div style="border-top: 1px solid #e5e7eb; padding-top: 16px; margin-top: 8px;">
-      <p style="font-size: 13px; color: #555; margin: 0 0 4px;">
-        Precisando de algo sobre a logistica:
-      </p>
-      <p style="font-size: 13px; margin: 0;">
-        <a href="tel:+55${whatsappNum}" style="color: #2563eb; text-decoration: none;">${companyPhone}</a>
-        &nbsp;&bull;&nbsp;
-        <a href="${whatsappUrl}" style="color: #16a34a; text-decoration: none;">WhatsApp</a>
-      </p>
-      <p style="font-size: 12px; color: #9ca3af; margin: 12px 0 0;">
-        Obrigado pela confianca! — Equipe ${companyName}
-      </p>
-    </div>
-  </div>
-</div>`
+              ${customerEmail ? `
+                <p style="font-size:12px;color:#64748b;margin:0 0 4px;">
+                  Historico enviado para: <strong>${customerEmail}</strong>
+                </p>
+                <p style="font-size:11px;color:#94a3b8;margin:0 0 16px;">
+                  Verifique tambem a pasta de Spam/Lixo Eletronico
+                </p>
+              ` : ''}
+            </td>
+          </tr>
+          <!-- FOOTER -->
+          <tr>
+            <td style="background:#1e293b;padding:28px 32px;text-align:center;">
+              <p style="margin:0 0 4px;font-size:14px;font-weight:700;color:#ffffff;">${companyName}</p>
+              <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">Assistencia Tecnica em Informatica</p>
+              <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">${companyAddress}</p>
+              <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">CNPJ: ${companyCnpj}</p>
+              <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">Tel: ${companyPhone} | ${companyEmail2}</p>
+              <div style="border-top:1px solid #334155;padding-top:10px;margin-top:10px;">
+                <p style="margin:0;font-size:10px;color:#64748b;">Garantia de 3 meses em todos os servicos</p>
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`
 
     const results: { channel: string; status: string }[] = []
 

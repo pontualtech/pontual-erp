@@ -8,36 +8,74 @@ type Params = { params: { id: string } }
 
 const DEFAULT_EMAIL_TEMPLATE = `<!DOCTYPE html>
 <html lang="pt-BR">
-<head><meta charset="UTF-8"></head>
-<body style="font-family:Arial,sans-serif;font-size:14px;color:#333;max-width:600px;margin:0 auto;padding:20px;">
-<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:24px;">
-  <h2 style="margin:0 0 4px;color:#1e293b;">{{company_name}}</h2>
-  <p style="margin:0 0 20px;font-size:12px;color:#64748b;">CNPJ: {{company_cnpj}} | Tel: {{company_phone}}</p>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f1f5f9;padding:32px 0;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+          <!-- HEADER -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#1e40af 0%,#2563eb 50%,#3b82f6 100%);padding:32px;text-align:center;">
+              <h1 style="margin:0 0 4px;color:#ffffff;font-size:22px;font-weight:800;">{{company_name}}</h1>
+              <p style="margin:0;color:rgba(255,255,255,0.7);font-size:12px;">Assistencia Tecnica em Informatica</p>
+            </td>
+          </tr>
+          <!-- BODY -->
+          <tr>
+            <td style="padding:32px;">
+              <div style="background:#f8fafc;border:2px solid #e2e8f0;border-radius:10px;overflow:hidden;margin-bottom:24px;">
+                <div style="background:#eff6ff;padding:14px 16px;border-bottom:2px solid #e2e8f0;">
+                  <table width="100%" cellpadding="0" cellspacing="0"><tr>
+                    <td><p style="margin:0;font-size:18px;font-weight:800;color:#1e293b;">OS-{{os_number}}</p></td>
+                    <td style="text-align:right;"><p style="margin:0;font-size:12px;color:#2563eb;font-weight:700;">{{status}}</p></td>
+                  </tr></table>
+                </div>
+                <div style="padding:16px;">
+                  <table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;color:#1e293b;">
+                    <tr><td style="padding:6px 0;color:#64748b;font-weight:700;width:130px;">Data Abertura:</td><td style="padding:6px 0;">{{created_at}}</td></tr>
+                    <tr><td style="padding:6px 0;color:#64748b;font-weight:700;">Equipamento:</td><td style="padding:6px 0;font-weight:600;">{{equipment_type}} {{equipment_brand}} {{equipment_model}}</td></tr>
+                    <tr><td style="padding:6px 0;color:#64748b;font-weight:700;">N. Serie:</td><td style="padding:6px 0;">{{serial_number}}</td></tr>
+                    <tr><td style="padding:6px 0;color:#64748b;font-weight:700;">Problema:</td><td style="padding:6px 0;">{{reported_issue}}</td></tr>
+                    <tr><td style="padding:6px 0;color:#64748b;font-weight:700;">Diagnostico:</td><td style="padding:6px 0;">{{diagnosis}}</td></tr>
+                  </table>
+                </div>
+              </div>
 
-  <div style="background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:20px;margin-bottom:16px;">
-    <h3 style="margin:0 0 16px;font-size:18px;color:#1e293b;">OS-{{os_number}}</h3>
+              <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:24px;">
+                <tr>
+                  <td style="background:linear-gradient(135deg,#1e40af 0%,#2563eb 100%);border-radius:10px;padding:20px;text-align:center;">
+                    <p style="margin:0 0 4px;font-size:12px;color:rgba(255,255,255,0.7);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Valor Total</p>
+                    <p style="margin:0;font-size:28px;font-weight:800;color:#ffffff;">{{total_cost}}</p>
+                    <p style="margin:6px 0 0;font-size:12px;color:rgba(255,255,255,0.6);">Pecas: {{total_parts}} | Servicos: {{total_services}}</p>
+                  </td>
+                </tr>
+              </table>
 
-    <table style="width:100%;font-size:13px;border-collapse:collapse;">
-      <tr><td style="padding:6px 0;color:#64748b;width:140px;">Status:</td><td style="padding:6px 0;font-weight:600;">{{status}}</td></tr>
-      <tr><td style="padding:6px 0;color:#64748b;">Data Abertura:</td><td style="padding:6px 0;">{{created_at}}</td></tr>
-      <tr><td style="padding:6px 0;color:#64748b;">Equipamento:</td><td style="padding:6px 0;">{{equipment_type}} {{equipment_brand}} {{equipment_model}}</td></tr>
-      <tr><td style="padding:6px 0;color:#64748b;">N. Serie:</td><td style="padding:6px 0;">{{serial_number}}</td></tr>
-      <tr><td style="padding:6px 0;color:#64748b;">Problema:</td><td style="padding:6px 0;">{{reported_issue}}</td></tr>
-      <tr><td style="padding:6px 0;color:#64748b;">Diagnostico:</td><td style="padding:6px 0;">{{diagnosis}}</td></tr>
-    </table>
-  </div>
-
-  <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:16px;text-align:center;margin-bottom:16px;">
-    <p style="margin:0 0 4px;font-size:12px;color:#3b82f6;font-weight:600;">VALOR TOTAL</p>
-    <p style="margin:0;font-size:24px;font-weight:bold;color:#1e40af;">{{total_cost}}</p>
-    <p style="margin:4px 0 0;font-size:11px;color:#64748b;">Pecas: {{total_parts}} | Servicos: {{total_services}}</p>
-  </div>
-
-  <p style="font-size:12px;color:#94a3b8;text-align:center;margin:0;">
-    {{company_name}} - {{company_address}}<br>
-    {{company_email}} | {{company_phone}}
-  </p>
-</div>
+              <div style="text-align:center;margin-bottom:24px;">
+                <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr><td style="background:#25d366;border-radius:8px;">
+                  <a href="https://wa.me/551126263841" style="display:inline-block;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 28px;">
+                    Fale com nosso suporte
+                  </a>
+                </td></tr></table>
+              </div>
+            </td>
+          </tr>
+          <!-- FOOTER -->
+          <tr>
+            <td style="background:#1e293b;padding:24px 32px;text-align:center;">
+              <p style="margin:0 0 4px;font-size:14px;font-weight:700;color:#ffffff;">{{company_name}}</p>
+              <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">{{company_address}}</p>
+              <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">CNPJ: {{company_cnpj}} | Tel: {{company_phone}} | {{company_email}}</p>
+              <div style="border-top:1px solid #334155;padding-top:10px;margin-top:10px;">
+                <p style="margin:0;font-size:10px;color:#64748b;">Garantia de 3 meses em todos os servicos</p>
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
 </body>
 </html>`
 
