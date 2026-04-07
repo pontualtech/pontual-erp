@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
 
     const url = req.nextUrl.searchParams
     const page = Math.max(1, Number(url.get('page') || '1'))
-    const limit = Math.min(100, Math.max(1, Number(url.get('limit') || '20')))
+    const limit = Math.min(200, Math.max(1, Number(url.get('limit') || '100')))
     const search = url.get('search') || ''
     const statusIds = url.getAll('statusId').filter(Boolean)
     const technicianId = url.get('assignedTo') || url.get('technicianId') || null

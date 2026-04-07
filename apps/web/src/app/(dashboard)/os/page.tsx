@@ -285,7 +285,7 @@ export default function OSListPage() {
     setLoading(true)
     const params = new URLSearchParams()
     params.set('page', String(page))
-    params.set('limit', '20')
+    params.set('limit', '100')
     if (debouncedSearch) params.set('search', debouncedSearch)
     if (statusFilter.length === 1) params.set('statusId', statusFilter[0])
     else if (statusFilter.length > 1) statusFilter.forEach(s => params.append('statusId', s))
