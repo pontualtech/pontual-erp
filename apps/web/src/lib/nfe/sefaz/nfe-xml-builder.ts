@@ -307,6 +307,14 @@ export function buildNfeXml(nfe: NfeData): { xml: string; chaveAcesso: string } 
 
 function escapeXml(str: string): string {
   return str
+    // Remove/replace Unicode chars not accepted by SEFAZ (only ASCII + basic accents)
+    .replace(/[—–]/g, '-')      // em-dash, en-dash → hyphen
+    .replace(/[""]/g, '"')      // smart quotes → regular
+    .replace(/['']/g, "'")      // smart apostrophes → regular
+    .replace(/[•]/g, '-')       // bullet → hyphen
+    .replace(/[…]/g, '...')     // ellipsis → dots
+    .replace(/[^\x20-\x7E\xC0-\xFF]/g, '') // Remove any remaining non-Latin1 chars
+    // XML entity escaping
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
