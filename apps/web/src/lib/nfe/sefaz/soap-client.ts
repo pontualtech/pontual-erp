@@ -53,15 +53,16 @@ function getService(action: string): { xmlns: string; method: string } {
  */
 function buildEnvelope(xmlBody: string, action: string): string {
   const svc = getService(action)
+  // SEFAZ SP format: nfeDadosMsg with WSDL xmlns, directly in Body (no method wrapper)
+  // Adding empty Header as SEFAZ SP requires it
   return [
     '<?xml version="1.0" encoding="utf-8"?>',
     '<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">',
+    '<soap12:Header/>',
     '<soap12:Body>',
-    `<${svc.method} xmlns="${svc.xmlns}">`,
-    '<nfeDadosMsg>',
+    `<nfeDadosMsg xmlns="${svc.xmlns}">`,
     xmlBody,
     '</nfeDadosMsg>',
-    `</${svc.method}>`,
     '</soap12:Body>',
     '</soap12:Envelope>',
   ].join('')
