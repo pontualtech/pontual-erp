@@ -149,6 +149,7 @@ const PICKUP_TEMPLATE = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="
 <div class="sec"><div class="sec-t">Problema Relatado</div><div class="text-box">{{reported_issue}}</div></div>
 <div class="sec"><div class="sec-t">Observacoes do Motorista</div><div style="min-height:60px;border:1px solid #ddd;border-radius:4px;padding:8px"></div></div>
 <div class="terms"><h3>Instrucoes de Coleta</h3><p>1. Verificar se os cabos de energia e fontes acompanham o equipamento.</p><p>2. Equipamento pode ser enviado com toners/cartuchos instalados.</p><p>3. Este comprovante deve ser assinado pelo cliente no ato da coleta.</p><p>4. Qualquer avaria visivel deve ser anotada nas observacoes acima.</p></div>
+<div class="terms" style="margin-top:10px;background:#f0f9ff;border:1px solid #bae6fd"><h3>Acompanhe sua OS Online</h3><p>Acesse: <strong>{{portal_url}}</strong></p><p>Faca login com seu CPF/CNPJ e a senha cadastrada. Pelo portal voce pode consultar o status da OS, aprovar orcamentos e abrir novas solicitacoes.</p><p>WhatsApp Suporte: <strong>{{whatsapp_suporte}}</strong></p></div>
 <div class="sigs"><div class="sig">Motorista / Responsavel<p class="sig-sub">{{company_name}}</p></div><div class="sig">Assinatura do Cliente<p class="sig-sub">{{customer_name}}</p></div></div>
 <div class="footer"><strong>{{company_name}}</strong> &mdash; {{company_address}} &mdash; Tel: {{company_phone}} &mdash; {{company_email}} &mdash; CNPJ: {{company_cnpj}}</div>
 <script>window.onload=function(){window.print()}</script></body></html>`
@@ -162,6 +163,7 @@ const DELIVERY_REPAIR_TEMPLATE = `<!DOCTYPE html><html lang="pt-BR"><head><meta 
 <div class="sec"><div class="g2"><div class="f"><label>Forma de Pagamento</label><p><strong>{{payment_method}}</strong></p></div><div class="f"><label>Data Entrega</label><p><strong>{{today}}</strong></p></div></div></div>
 <div class="warranty-box"><h3>Termo de Garantia — {{warranty_period}}</h3><p style="font-size:9px;line-height:1.6">Garantimos os servicos realizados nesta OS pelo prazo de {{warranty_period}} a partir desta data ({{today}}), conforme Art. 26 do CDC. A garantia cobre exclusivamente os servicos e pecas descritos acima. Nao cobre mau uso, quedas, sobrecarga eletrica ou intervencao de terceiros. Para acionar a garantia, entre em contato: {{company_phone}}.</p></div>
 <div class="receipt-box"><h3>Recibo de Entrega</h3><p style="font-size:9px;line-height:1.6">Declaro que recebi o equipamento {{equipment_full}} (OS {{os_number}}) em perfeito funcionamento, conforme servicos descritos acima, no valor de {{total_cost}}.</p></div>
+<div class="terms" style="margin-top:10px;background:#f0f9ff;border:1px solid #bae6fd"><h3>Acompanhe suas OS Online</h3><p>Acesse: <strong>{{portal_url}}</strong></p><p>Faca login com seu CPF/CNPJ e a senha cadastrada. Consulte status, historico e abra novas solicitacoes.</p><p>WhatsApp Suporte: <strong>{{whatsapp_suporte}}</strong></p></div>
 <div class="sigs"><div class="sig">Assinatura do Tecnico<p class="sig-sub">{{company_name}}</p></div><div class="sig">Assinatura do Cliente<p class="sig-sub">{{customer_name}}</p></div></div>
 <div class="footer"><strong>{{company_name}}</strong> &mdash; {{company_address}} &mdash; Tel: {{company_phone}} &mdash; {{company_email}} &mdash; CNPJ: {{company_cnpj}}</div>
 <script>window.onload=function(){window.print()}</script></body></html>`
@@ -278,17 +280,22 @@ export async function GET(req: NextRequest, { params }: Params) {
       : '—'
 
     // Build company address from settings
-    const companyAddress = settingsMap['company.address'] ||
-      settingsMap['endereco'] ||
-      [settingsMap['company.street'], settingsMap['company.number'], settingsMap['company.city'], settingsMap['company.state']]
-        .filter(Boolean)
-        .join(', ') || '—'
+    const companyAddress = [
+      settingsMap['address_street'],
+      settingsMap['address_number'],
+      settingsMap['address_complement'],
+    ].filter(Boolean).join(', ')
+      + (settingsMap['address_neighborhood'] ? ` — ${settingsMap['address_neighborhood']}` : '')
+      + (settingsMap['address_zip'] ? ` — CEP ${settingsMap['address_zip']}` : '')
+      + (settingsMap['address_city'] ? ` — ${settingsMap['address_city']}` : '')
+      + (settingsMap['address_state'] ? `/${settingsMap['address_state']}` : '')
+      || '—'
 
     const template = req.nextUrl.searchParams.get('template') || 'os_full'
-    const companyName = company?.name || settingsMap['company.name'] || 'PontualTech'
-    const companyPhone = settingsMap['company.phone'] || settingsMap['telefone'] || '—'
-    const companyEmail = settingsMap['company.email'] || settingsMap['email'] || '—'
-    const companyCnpj = settingsMap['company.cnpj'] || settingsMap['cnpj'] || '—'
+    const companyName = company?.name || settingsMap['company_name'] || settingsMap['company.nome_fantasia'] || 'PontualTech'
+    const companyPhone = settingsMap['phone'] || settingsMap['company.phone'] || settingsMap['company.whatsapp'] || '(11) 2626-3841'
+    const companyEmail = settingsMap['email'] || settingsMap['email.from_address'] || settingsMap['company.email'] || 'contato@pontualtech.com.br'
+    const companyCnpj = settingsMap['cnpj'] || settingsMap['company.cnpj'] || '32.772.178/0001-47'
     const osNum = String(os.os_number)
     const equipment = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ')
     const warrantyPeriod = settingsMap['quote.warranty'] || '90 dias'
@@ -322,6 +329,12 @@ export async function GET(req: NextRequest, { params }: Params) {
       warranty_period: warrantyPeriod,
       today,
       payment_method: os.payment_method || '—',
+      observations: os.reception_notes || '—',
+      internal_notes: os.internal_notes || '',
+      portal_url: `https://erp.pontualtech.work/portal/pontualtech`,
+      portal_instructions: `Acompanhe sua OS online: https://erp.pontualtech.work/portal/pontualtech — Faca login com seu CPF/CNPJ e senha cadastrada. Voce pode consultar o status, aprovar orcamentos e abrir novas OS diretamente pelo portal.`,
+      whatsapp_suporte: '(11) 2626-3841',
+      whatsapp_link: 'https://wa.me/551126263841',
     }
 
     // Selecionar template
