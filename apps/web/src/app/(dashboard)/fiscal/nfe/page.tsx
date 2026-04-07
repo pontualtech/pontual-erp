@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { cn, formatDocument } from '@/lib/utils'
 import {
-  ArrowLeft, FileText, Plus, Download, XCircle, Edit3,
+  ArrowLeft, FileText, Plus, Download, XCircle, Edit3, RotateCcw,
   Loader2, Filter, ChevronLeft, ChevronRight, Search,
   AlertTriangle, Home,
 } from 'lucide-react'
@@ -486,6 +486,22 @@ export default function NfeListPage() {
                         <button type="button" onClick={() => setCancelNota(n)} title="Cancelar NF-e"
                           className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 transition-colors">
                           <XCircle className="h-4 w-4" />
+                        </button>
+                      )}
+
+                      {/* Editar e Reenviar (rejeitadas) */}
+                      {(n.status === 'REJECTED' || n.status === 'ERROR') && (
+                        <Link href={`/fiscal/nfe/emitir?reemitir=${n.id}`} title="Editar e Reenviar"
+                          className="rounded-lg p-1.5 text-gray-400 hover:bg-orange-50 hover:text-orange-600 transition-colors">
+                          <RotateCcw className="h-4 w-4" />
+                        </Link>
+                      )}
+
+                      {/* Motivo da rejeição */}
+                      {(n.status === 'REJECTED' || n.status === 'ERROR') && n.notes && (
+                        <button type="button" title={n.notes} onClick={() => toast.error(n.notes || 'Sem detalhes')}
+                          className="rounded-lg p-1.5 text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors">
+                          <AlertTriangle className="h-4 w-4" />
                         </button>
                       )}
                     </div>

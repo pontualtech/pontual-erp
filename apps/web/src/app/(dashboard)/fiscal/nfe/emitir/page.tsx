@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { cn, formatDocument } from '@/lib/utils'
 import {
   ArrowLeft, Send, Loader2, Plus, Trash2, Search,
@@ -124,10 +124,13 @@ function createEmptyItem(): ItemForm {
 
 export default function EmitirNfePage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const reemitirId = searchParams.get('reemitir')
 
   // SEFAZ Status
   const [sefazStatus, setSefazStatus] = useState<SefazStatus | null>(null)
   const [sefazLoading, setSefazLoading] = useState(true)
+  const [loadingReemitir, setLoadingReemitir] = useState(!!reemitirId)
 
   // Form state
   const [natureza, setNatureza] = useState(NATUREZAS[0].value)
@@ -153,6 +156,48 @@ export default function EmitirNfePage() {
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<EmissionResult | null>(null)
   const [resultError, setResultError] = useState<string | null>(null)
+
+  // ---------- Load rejected NF-e for re-emission ----------
+
+  useEffect(() => {
+    if (!reemitirId) return
+    setLoadingReemitir(true)
+    fetch(`/api/fiscal/nfe/${reemitirId}`)
+      .then(r => r.json())
+      .then(d => {
+        const nfe = d.data
+        if (!nfe) return
+        // Pre-fill form with data from rejected note
+        if (nfe.notes) {
+          const nat = NATUREZAS.find(n => nfe.notes?.includes(n.value))
+          if (nat) setNatureza(nat.value)
+        }
+        if (nfe.payment_method_nfe) setFormaPagamento(nfe.payment_method_nfe)
+        if (nfe.customers) {
+          setSelectedCliente(nfe.customers)
+          setClienteSearch(nfe.customers.legal_name || '')
+        }
+        if (nfe.invoice_items?.length) {
+          const loadedItems: ItemForm[] = nfe.invoice_items.map((it: any) => ({
+            key: ++itemKeyCounter,
+            product_id: '',
+            descricao: it.description || '',
+            quantidade: it.quantity || 1,
+            valor_unitario_display: ((it.unit_price || 0) / 100).toFixed(2).replace('.', ','),
+            valor_unitario: (it.unit_price || 0) / 100,
+            ncm: it.codigo_produto_fiscal || '',
+            cfop: '',
+            unidade: it.unidade || 'UN',
+            codigo_produto: '',
+          }))
+          setItems(loadedItems.length ? loadedItems : [createEmptyItem()])
+        }
+        if (nfe.additional_info) setInfoAdicionais(nfe.additional_info)
+        toast.info('Dados da NF-e rejeitada carregados. Corrija e reenvie.')
+      })
+      .catch(() => toast.error('Erro ao carregar NF-e para reemissao'))
+      .finally(() => setLoadingReemitir(false))
+  }, [reemitirId])
 
   // ---------- SEFAZ Status ----------
 
