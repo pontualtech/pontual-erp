@@ -206,9 +206,17 @@ export async function POST(req: NextRequest) {
     }
 
     // 6. Detect intent and handle
-    const response = await processNewMessage(
-      conversationId, content, companyId, customerId, customerContext, config, phone
-    )
+    try {
+      const response = await processNewMessage(
+        conversationId, content, companyId, customerId, customerContext, config, phone
+      )
+    } catch (processErr) {
+      // Fallback: always respond even if processing fails
+      console.error('[Webhook] processNewMessage error:', processErr)
+      try {
+        await sendChatwootMessage(conversationId, 'Desculpe, estou com dificuldade para processar sua mensagem. Um atendente sera notificado. WhatsApp Suporte: (11) 2626-3841')
+      } catch {}
+    }
 
     return NextResponse.json({ status: 'ok' })
   } catch (err) {
@@ -294,12 +302,18 @@ async function processNewMessage(
       break
   }
 
+  // Ensure response was actually sent — if empty, send fallback
+  if (!response) {
+    response = 'Ola! Como posso ajudar? Posso consultar o status de uma OS, abrir um orcamento ou transferir para um atendente.'
+    await sendChatwootMessage(conversationId, response)
+  }
+
   await logBotResponse(companyId, conversationId, content, action, response, {
     customerName: customerContext?.name,
     customerPhone: phone || customerContext?.phone,
     provider: config.provider,
     confidence: intent.confidence,
-  })
+  }).catch(() => {}) // Don't fail on log error
   return response
 }
 

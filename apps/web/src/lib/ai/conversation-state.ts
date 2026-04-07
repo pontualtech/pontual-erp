@@ -28,7 +28,7 @@ export interface ConversationState {
   updatedAt: number
 }
 
-const EXPIRY_MS = 30 * 60 * 1000 // 30 minutes
+const EXPIRY_MS = 24 * 60 * 60 * 1000 // 24 hours (was 30 min — too short for follow-ups)
 
 const store = new Map<number, ConversationState>()
 
