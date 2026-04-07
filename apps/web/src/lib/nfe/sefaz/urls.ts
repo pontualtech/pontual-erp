@@ -93,7 +93,9 @@ const UF_AUTORIZADOR: Record<string, string> = {
 }
 
 export function getSefazEndpoints(uf: string, ambiente: SefazAmbiente): SefazEndpoints {
-  const autorizador = UF_AUTORIZADOR[uf] || 'SVRS'
+  // Accept both UF code ('35') and UF sigla ('SP')
+  const ufCode = uf.length === 2 && /\d/.test(uf) ? uf : getUfCodigo(uf)
+  const autorizador = UF_AUTORIZADOR[ufCode] || 'SVRS'
 
   // SP tem autorizador próprio
   if (autorizador === 'SP') {
