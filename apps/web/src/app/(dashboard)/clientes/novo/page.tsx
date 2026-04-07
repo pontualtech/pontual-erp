@@ -136,6 +136,7 @@ export default function NovoClientePage() {
           address_city: c.address_city || '',
           address_state: c.address_state || '',
           address_zip: c.address_zip ? maskCEP(c.address_zip) : '',
+          state_registration: c.state_registration || '',
           notes: c.notes || '',
         })
         setExistingClientId(c.id)
