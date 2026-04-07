@@ -144,15 +144,14 @@ export function buildNfeXml(nfe: NfeData): { xml: string; chaveAcesso: string } 
   const uf = nfe.emitente.endereco.uf
   const aamm = `${String(nfe.dataEmissao.getFullYear()).slice(2)}${String(nfe.dataEmissao.getMonth() + 1).padStart(2, '0')}`
   const cnpj14 = nfe.emitente.cnpj.padStart(14, '0')
-  const tpEmis = '1' // emissão normal
+  const tpEmis = '1'
+  // For chave: padded. For XML tags: raw integer
+  const serChave = nfe.serie.padStart(3, '0')
   const chave = gerarChaveAcesso(uf, aamm, cnpj14, '55', serChave, nfe.numero, tpEmis, cNF)
   const cUF = getUfCodigo(uf)
   const dhEmi = nfe.dataEmissao.toISOString().replace(/\.\d{3}Z$/, '-03:00')
-  // For chave: padded. For XML tags: raw integer
-  const nNFChave = String(nfe.numero).padStart(9, '0')
-  const serChave = nfe.serie.padStart(3, '0')
-  const nNF = String(nfe.numero) // XML tag: raw number without padding
-  const ser = String(parseInt(nfe.serie) || 1) // XML tag: raw integer
+  const nNF = String(nfe.numero)
+  const ser = String(parseInt(nfe.serie) || 1)
 
   const dest = nfe.destinatario
   const isDocCnpj = dest.cpfCnpj.replace(/\D/g, '').length === 14
