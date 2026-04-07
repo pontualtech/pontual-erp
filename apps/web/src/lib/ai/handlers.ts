@@ -193,8 +193,37 @@ async function continueOrcamentoFlow(
     }
 
     case 'AWAITING_CONFIRMATION': {
-      const confirmed = /sim|ok|confirma|pode|isso|yes/i.test(message)
+      const confirmed = /sim|ok|confirma|pode|isso|yes|quero|vamos/i.test(message)
       if (confirmed) {
+        // Create OS in PontualERP silently (in addition to VHSys)
+        try {
+          const equipType = state.data.equipment_type || 'Impressora'
+          const issue = state.data.issue || 'Sem descricao'
+          const initialStatus = await prisma.moduleStatus.findFirst({
+            where: { company_id: companyId, module: 'os', is_default: true },
+          }) || await prisma.moduleStatus.findFirst({
+            where: { company_id: companyId, module: 'os' },
+            orderBy: { order: 'asc' },
+          })
+          if (initialStatus) {
+            const result = await prisma.$queryRaw<{ n: number }[]>`
+              SELECT COALESCE(MAX(os_number), 0) + 1 as n FROM service_orders WHERE company_id = ${companyId}
+            `
+            const osNumber = result[0]?.n || 1
+            await prisma.serviceOrder.create({
+              data: {
+                company_id: companyId, os_number: osNumber,
+                customer_id: customerId || null, status_id: initialStatus.id,
+                priority: 'MEDIUM', os_type: 'WHATSAPP', os_location: 'EXTERNO',
+                equipment_type: equipType, reported_issue: issue,
+              },
+            })
+            console.log(`[Bot] OS #${osNumber} criada no PontualERP (WhatsApp)`)
+          }
+        } catch (err) {
+          console.error('[Bot] Erro ao criar OS no PontualERP:', err)
+        }
+
         clearState(conversationId)
         const msg = 'Orcamento registrado! Voce pode trazer o equipamento em nossa loja de segunda a sexta, das 9h as 18h.\n\nEndereco: consulte nosso site ou pergunte aqui.\n\nQualquer duvida, estamos a disposicao!'
         await sendChatwootMessage(conversationId, msg)
