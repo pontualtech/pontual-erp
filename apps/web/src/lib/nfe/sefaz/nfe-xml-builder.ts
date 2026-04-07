@@ -249,7 +249,7 @@ export function buildNfeXml(nfe: NfeData): { xml: string; chaveAcesso: string } 
     </emit>
     <dest>
       <${docTag}>${docValue}</${docTag}>
-      <xNome>${escapeXml(dest.razaoSocial)}</xNome>
+      <xNome>${nfe.ambiente === '2' ? 'NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL' : escapeXml(dest.razaoSocial)}</xNome>
       <enderDest>
         <xLgr>${escapeXml(dest.endereco.logradouro)}</xLgr>
         <nro>${dest.endereco.numero}</nro>
