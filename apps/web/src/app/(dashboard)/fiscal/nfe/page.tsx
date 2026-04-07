@@ -7,7 +7,7 @@ import {
   ArrowLeft, FileText, Plus, Download, XCircle, Edit3, RotateCcw,
   Loader2, Filter, ChevronLeft, ChevronRight, Search,
   AlertTriangle, Home, Mail, Trash2, Eye, Copy, X,
-  CheckCircle2, Clock, Ban, FileWarning, ChevronDown, ChevronUp,
+  CheckCircle2, Clock, Ban, FileWarning, ChevronDown, ChevronUp, Printer,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -1095,12 +1095,10 @@ export default function NfeListPage() {
                       {n.status === 'AUTHORIZED' && (
                         <>
                           {/* DANFE */}
-                          {n.danfe_url && (
-                            <a href={n.danfe_url} target="_blank" rel="noopener noreferrer" title="Imprimir DANFE"
-                              className="rounded-lg p-1.5 text-gray-400 hover:bg-blue-50 hover:text-blue-600 transition-colors">
-                              <FileText className="h-4 w-4" />
-                            </a>
-                          )}
+                          <a href={`/api/fiscal/nfe/${n.id}/danfe`} target="_blank" rel="noopener noreferrer" title="Imprimir DANFE"
+                            className="rounded-lg p-1.5 text-gray-400 hover:bg-blue-50 hover:text-blue-600 transition-colors">
+                            <Printer className="h-4 w-4" />
+                          </a>
 
                           {/* XML */}
                           {n.xml_url && (
@@ -1164,12 +1162,10 @@ export default function NfeListPage() {
                       {/* === CANCELLED actions === */}
                       {n.status === 'CANCELLED' && (
                         <>
-                          {n.danfe_url && (
-                            <a href={n.danfe_url} target="_blank" rel="noopener noreferrer" title="Ver DANFE (cancelamento)"
-                              className="rounded-lg p-1.5 text-gray-400 hover:bg-blue-50 hover:text-blue-600 transition-colors">
-                              <FileText className="h-4 w-4" />
-                            </a>
-                          )}
+                          <a href={`/api/fiscal/nfe/${n.id}/danfe`} target="_blank" rel="noopener noreferrer" title="Ver DANFE (cancelamento)"
+                            className="rounded-lg p-1.5 text-gray-400 hover:bg-blue-50 hover:text-blue-600 transition-colors">
+                            <Printer className="h-4 w-4" />
+                          </a>
                           {n.xml_url && (
                             <a href={n.xml_url} target="_blank" rel="noopener noreferrer" title="Baixar XML"
                               className="rounded-lg p-1.5 text-gray-400 hover:bg-green-50 hover:text-green-600 transition-colors">
