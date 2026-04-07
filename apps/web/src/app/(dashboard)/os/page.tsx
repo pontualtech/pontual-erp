@@ -23,6 +23,7 @@ interface OS {
   status_id: string
   priority: string
   os_type: string
+  os_location: string | null
   equipment_type: string | null
   equipment_brand: string | null
   equipment_model: string | null
