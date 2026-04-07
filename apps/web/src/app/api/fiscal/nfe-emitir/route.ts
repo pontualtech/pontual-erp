@@ -196,7 +196,7 @@ export async function POST(req: NextRequest) {
 
     // Log full XML for debugging
     await prisma.fiscalLog.create({
-      data: { company_id: user.companyId, invoice_id: invoice?.id, action: 'nfe_xml_debug',
+      data: { company_id: user.companyId, action: 'nfe_xml_debug',
         request: { raw_xml: xml.substring(0, 4000), signed_has_signature: signedXml.includes('<Signature'), lote_length: loteXml.length } as any,
       },
     }).catch(() => {})
