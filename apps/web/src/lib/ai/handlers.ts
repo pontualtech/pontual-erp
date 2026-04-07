@@ -213,7 +213,7 @@ async function continueOrcamentoFlow(
             await prisma.serviceOrder.create({
               data: {
                 company_id: companyId, os_number: osNumber,
-                customer_id: customerId || null, status_id: initialStatus.id,
+                customer_id: customerId || undefined, status_id: initialStatus.id,
                 priority: 'MEDIUM', os_type: 'WHATSAPP', os_location: 'EXTERNO',
                 equipment_type: equipType, reported_issue: issue,
               },
