@@ -459,9 +459,18 @@ function EmailModal({
     if (!email) return
     setLoading(true)
     try {
-      // For now just show success - integrate with email API later
-      toast.success(`DANFE enviada para ${email}`)
-      onClose()
+      const res = await fetch(`/api/fiscal/nfe/${nota.id}/email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        toast.success(`DANFE enviada para ${email}`)
+        onClose()
+      } else {
+        toast.error(data.error || 'Erro ao enviar email')
+      }
     } catch {
       toast.error('Erro ao enviar email')
     } finally {
