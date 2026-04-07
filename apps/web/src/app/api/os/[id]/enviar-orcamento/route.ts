@@ -296,11 +296,15 @@ function buildTemplateVars(os: any, settings: Record<string, string>, approvalLi
   const itemsTable = buildItemsTable(items)
 
   const laudo = os.diagnosis || ''
-  const laudoSection = laudo
+  const obs = os.reception_notes || ''
+  const hasLaudoOrObs = laudo || obs || os.reported_issue
+
+  const laudoSection = hasLaudoOrObs
     ? `<div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:16px;margin-bottom:24px;">
         <p style="margin:0 0 8px;font-size:13px;color:#92400e;font-weight:600;">LAUDO TECNICO</p>
-        <p style="margin:0 0 8px;font-size:14px;color:#78350f;"><strong>Problema relatado:</strong> ${os.reported_issue || '—'}</p>
-        <p style="margin:0;font-size:14px;color:#78350f;"><strong>Laudo:</strong> ${laudo}</p>
+        <p style="margin:0 0 8px;font-size:14px;color:#78350f;"><strong>Problema relatado:</strong> ${os.reported_issue || '\u2014'}</p>
+        ${laudo ? `<p style="margin:0 0 8px;font-size:14px;color:#78350f;"><strong>Laudo:</strong> ${laudo}</p>` : ''}
+        ${obs ? `<p style="margin:0;font-size:14px;color:#78350f;"><strong>Observacoes:</strong> ${obs}</p>` : ''}
       </div>`
     : ''
 
