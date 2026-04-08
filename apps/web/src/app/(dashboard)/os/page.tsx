@@ -61,6 +61,26 @@ function isOverdue(os: OS, statusName?: string) {
   return new Date(os.estimated_delivery) < new Date()
 }
 
+/** Semáforo de prazo: red (estourado), yellow (<=2 dias), green (ok), null (sem prazo) */
+function getDeadlineColor(os: OS, statusName?: string): 'red' | 'yellow' | 'green' | null {
+  if (!os.estimated_delivery || os.actual_delivery) return null
+  const name = (statusName || '').toLowerCase()
+  if (name.includes('entreg') || name.includes('cancelad') || name.includes('finaliz')) return null
+  const now = new Date()
+  const deadline = new Date(os.estimated_delivery)
+  const diffMs = deadline.getTime() - now.getTime()
+  const diffDays = diffMs / (1000 * 60 * 60 * 24)
+  if (diffDays < 0) return 'red'
+  if (diffDays <= 2) return 'yellow'
+  return 'green'
+}
+
+const deadlineStyles = {
+  red: { dot: 'bg-red-500', row: 'border-l-4 border-l-red-500 bg-red-50/40' },
+  yellow: { dot: 'bg-yellow-400', row: 'border-l-4 border-l-yellow-400 bg-yellow-50/40' },
+  green: { dot: 'bg-green-500', row: '' },
+}
+
 const priorityLabel: Record<string, string> = {
   LOW: 'Baixa',
   MEDIUM: 'Normal',
@@ -882,11 +902,13 @@ export default function OSListPage() {
                   getSortedList().map((os, rowIndex) => {
                     const st = os.module_statuses || statusMap[os.status_id]
                     const osIsOverdue = isOverdue(os, st?.name)
+                    const dlColor = getDeadlineColor(os, st?.name)
+                    const dlStyle = dlColor ? deadlineStyles[dlColor] : null
                     return (
                       <tr key={os.id} className={cn(
                         'hover:bg-gray-50',
                         selected.has(os.id) && 'bg-blue-50',
-                        osIsOverdue && 'bg-red-50/50 border-l-4 border-l-red-500',
+                        dlStyle?.row,
                       )}>
                         <td className="px-3 py-2.5">
                           <input type="checkbox" title={`Selecionar OS-${String(os.os_number).padStart(4, '0')}`}
@@ -895,12 +917,20 @@ export default function OSListPage() {
                         </td>
                         {effectiveColumns.includes('os_number') && (
                           <td className="px-3 py-2.5">
-                            <Link href={`/os/${os.id}`} className="font-bold text-blue-600 hover:underline font-mono text-base tracking-tight">
-                              {os.os_number}
-                            </Link>
-                            {(os as any).is_warranty && (
-                              <span className="ml-1.5 rounded bg-amber-100 text-amber-800 px-1.5 py-0.5 text-[10px] font-bold border border-amber-300">GAR</span>
-                            )}
+                            <div className="flex items-center gap-2">
+                              {dlColor && (
+                                <span
+                                  className={cn('h-2.5 w-2.5 rounded-full shrink-0', dlStyle?.dot)}
+                                  title={dlColor === 'red' ? 'Prazo estourado' : dlColor === 'yellow' ? 'Prazo vencendo (≤2 dias)' : 'Dentro do prazo'}
+                                />
+                              )}
+                              <Link href={`/os/${os.id}`} className="font-bold text-blue-600 hover:underline font-mono text-base tracking-tight">
+                                {os.os_number}
+                              </Link>
+                              {(os as any).is_warranty && (
+                                <span className="ml-1 rounded bg-amber-100 text-amber-800 px-1.5 py-0.5 text-[10px] font-bold border border-amber-300">GAR</span>
+                              )}
+                            </div>
                           </td>
                         )}
                         {effectiveColumns.includes('created_at') && (
@@ -933,9 +963,14 @@ export default function OSListPage() {
                               >
                                 {st?.name ?? os.status_id}
                               </span>
-                              {osIsOverdue && (
+                              {dlColor === 'red' && (
                                 <span className="rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-600 flex items-center gap-0.5 text-nowrap">
                                   <Clock className="h-2.5 w-2.5" /> Atrasado
+                                </span>
+                              )}
+                              {dlColor === 'yellow' && (
+                                <span className="rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-yellow-100 text-yellow-700 flex items-center gap-0.5 text-nowrap">
+                                  <AlertTriangle className="h-2.5 w-2.5" /> Vencendo
                                 </span>
                               )}
                             </div>
