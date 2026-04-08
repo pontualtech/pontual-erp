@@ -53,11 +53,20 @@ export async function GET(
     }
 
     // Buscar todos os status para a timeline
-    const allStatuses = await prisma.moduleStatus.findMany({
+    // Ocultar status internos do progresso do cliente
+    const HIDDEN_PORTAL_STATUSES = ['orcar', 'negociar', 'recalculado']
+    const allStatuses = (await prisma.moduleStatus.findMany({
       where: { company_id: portalUser.company_id, module: 'os' },
       orderBy: { order: 'asc' },
       select: { id: true, name: true, color: true, icon: true, order: true },
-    })
+    })).filter(s => !HIDDEN_PORTAL_STATUSES.some(h => s.name.toLowerCase().includes(h)))
+
+    // Se OS está em status oculto, mapear para "Em Análise" no portal
+    const currentStatusName = os.module_statuses?.name || ''
+    const isHiddenStatus = HIDDEN_PORTAL_STATUSES.some(h => currentStatusName.toLowerCase().includes(h))
+    const portalStatus = isHiddenStatus
+      ? { ...os.module_statuses, name: 'Em Analise', color: '#F59E0B' }
+      : os.module_statuses
 
     return NextResponse.json({
       data: {
@@ -81,7 +90,7 @@ export async function GET(
         warranty_until: os.warranty_until,
         created_at: os.created_at,
         updated_at: os.updated_at,
-        status: os.module_statuses,
+        status: portalStatus,
         items: os.service_order_items,
         history: os.service_order_history.map(h => ({
           id: h.id,

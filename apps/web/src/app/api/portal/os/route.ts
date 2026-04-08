@@ -136,25 +136,30 @@ export async function GET(req: NextRequest) {
       prisma.serviceOrder.count({ where }),
     ])
 
-    // Remover campos internos antes de enviar ao cliente
-    const safeData = data.map(os => ({
-      id: os.id,
-      os_number: os.os_number,
-      equipment_type: os.equipment_type,
-      equipment_brand: os.equipment_brand,
-      equipment_model: os.equipment_model,
-      reported_issue: os.reported_issue,
-      diagnosis: os.diagnosis,
-      priority: os.priority,
-      os_type: os.os_type,
-      estimated_cost: os.estimated_cost,
-      total_cost: os.total_cost,
-      estimated_delivery: os.estimated_delivery,
-      actual_delivery: os.actual_delivery,
-      created_at: os.created_at,
-      updated_at: os.updated_at,
-      status: os.module_statuses,
-    }))
+    // Remover campos internos e mapear status ocultos antes de enviar ao cliente
+    const HIDDEN_PORTAL_STATUSES = ['orcar', 'negociar', 'recalculado']
+    const safeData = data.map(os => {
+      const statusName = os.module_statuses?.name || ''
+      const isHidden = HIDDEN_PORTAL_STATUSES.some(h => statusName.toLowerCase().includes(h))
+      return {
+        id: os.id,
+        os_number: os.os_number,
+        equipment_type: os.equipment_type,
+        equipment_brand: os.equipment_brand,
+        equipment_model: os.equipment_model,
+        reported_issue: os.reported_issue,
+        diagnosis: os.diagnosis,
+        priority: os.priority,
+        os_type: os.os_type,
+        estimated_cost: os.estimated_cost,
+        total_cost: os.total_cost,
+        estimated_delivery: os.estimated_delivery,
+        actual_delivery: os.actual_delivery,
+        created_at: os.created_at,
+        updated_at: os.updated_at,
+        status: isHidden ? { ...os.module_statuses, name: 'Em Analise', color: '#F59E0B' } : os.module_statuses,
+      }
+    })
 
     return NextResponse.json({
       data: safeData,
