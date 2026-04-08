@@ -121,7 +121,7 @@ export async function POST(req: NextRequest) {
         customer_id: customer.id,
         status_id: coletarStatus.id,
         priority: 'MEDIUM',
-        os_type: origem || 'WHATSAPP',
+        os_type: 'AVULSO',
         os_location: 'EXTERNO',
         equipment_type: equipamento || 'Impressora',
         equipment_brand: marca || undefined,
