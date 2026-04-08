@@ -4,6 +4,8 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { sendEmail } from '@/lib/send-email'
+import { sendWhatsApp } from '@/lib/whatsapp/evolution'
+import { whatsappTemplates, getTemplateForStatus } from '@/lib/whatsapp/templates'
 
 type Params = { params: { id: string } }
 
@@ -481,6 +483,28 @@ export async function POST(req: NextRequest, { params }: Params) {
         `OS #${osNum} — ${friendlyTo} — ${companyName}`,
         emailHtml,
       ).catch(e => console.log('[Transition] Email notification failed (ignored):', e.message))
+    }
+
+    // WhatsApp notification (fire-and-forget)
+    const customerPhone = os.customers?.mobile || os.customers?.phone
+    if (customerPhone) {
+      const templateKey = getTemplateForStatus(toStatus.name)
+      if (templateKey) {
+        const waCompany = await prisma.company.findUnique({ where: { id: user.companyId }, select: { name: true, slug: true } }).catch(() => null)
+        const templateFn = whatsappTemplates[templateKey]
+        const msg = templateFn({
+          customerName: os.customers?.legal_name?.split(' ')[0] || 'Cliente',
+          osNumber: os.os_number,
+          companyName: waCompany?.name || 'Empresa',
+          companySlug: waCompany?.slug || 'pontualtech',
+          osId: os.id,
+          value: os.total_cost || undefined,
+          estimatedDelivery: (os as any).estimated_delivery ? String((os as any).estimated_delivery) : undefined,
+        })
+        void sendWhatsApp(customerPhone, msg).catch(e =>
+          console.log('[Transition] WhatsApp notification failed (ignored):', e)
+        )
+      }
     }
 
     return success({ ...updated, receivable_created: receivableCreated })
