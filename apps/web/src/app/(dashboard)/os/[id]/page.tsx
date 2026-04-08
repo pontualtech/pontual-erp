@@ -97,6 +97,7 @@ export default function OSDetailPage() {
   const canEditOs = hasPermission('os', 'edit')
   const canCreateOs = hasPermission('os', 'create')
   const canCreateFiscal = hasPermission('fiscal', 'create')
+  const canViewFinanceiro = hasPermission('financeiro', 'view')
   const [os, setOs] = useState<OSDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [statusMap, setStatusMap] = useState<Record<string, StatusDef>>({})
@@ -1653,7 +1654,7 @@ export default function OSDetailPage() {
       </div>
 
       {/* ========== FINANCEIRO ========== */}
-      {(os.accounts_receivable ?? []).length > 0 && (
+      {canViewFinanceiro && (os.accounts_receivable ?? []).length > 0 && (
         <div className="rounded-xl border bg-white shadow-sm">
           <button
             type="button"
