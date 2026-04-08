@@ -107,7 +107,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     const admin = result
 
     if (params.id === admin.id) {
-      return error('Você não pode desativar sua própria conta', 400)
+      return error('Você não pode excluir sua própria conta', 400)
     }
 
     const existing = await prisma.userProfile.findFirst({
@@ -115,11 +115,26 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     })
     if (!existing) return error('Usuário não encontrado', 404)
 
-    // Soft delete: desativar o perfil
-    await prisma.userProfile.update({
-      where: { id_company_id: { id: params.id, company_id: admin.companyId } },
-      data: { is_active: false },
+    // Check if user has OS assigned
+    const osCount = await prisma.serviceOrder.count({
+      where: { technician_id: params.id, company_id: admin.companyId, deleted_at: null },
     })
+    if (osCount > 0) {
+      return error(`Não é possível excluir: ${existing.name} tem ${osCount} OS atribuída(s). Inative o usuário em vez de excluir.`, 422)
+    }
+
+    // Delete profile from database
+    await prisma.userProfile.delete({
+      where: { id_company_id: { id: params.id, company_id: admin.companyId } },
+    })
+
+    // Delete from Supabase Auth
+    try {
+      const supabaseAdmin = createAdminClient()
+      await supabaseAdmin.auth.admin.deleteUser(params.id)
+    } catch {
+      // Auth delete may fail if user doesn't exist there — ignore
+    }
 
     logAudit({
       companyId: admin.companyId,
@@ -127,11 +142,15 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       module: 'core',
       action: 'delete_user',
       entityId: params.id,
-      oldValue: { name: existing.name, isActive: true },
+      oldValue: { name: existing.name, email: existing.email },
     })
 
-    return success({ message: 'Usuário desativado com sucesso' })
-  } catch (err) {
+    return success({ message: `${existing.name} excluído com sucesso` })
+  } catch (err: any) {
+    // Foreign key constraint — user has related records
+    if (err?.code === 'P2003' || err?.message?.includes('foreign key')) {
+      return error('Não é possível excluir: usuário tem registros vinculados. Inative em vez de excluir.', 422)
+    }
     return handleError(err)
   }
 }
