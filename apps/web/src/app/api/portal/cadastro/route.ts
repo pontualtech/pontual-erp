@@ -111,20 +111,46 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Check if document already exists for this company
-    const existingCustomer = await prisma.customer.findFirst({
-      where: {
-        company_id: company.id,
-        document_number: cleanDoc,
-        deleted_at: null,
-      },
-    })
+    // Check duplicates: document, email, phone
+    const cleanPhone = phone.replace(/\D/g, '')
+    const cleanEmail = email.trim().toLowerCase()
 
-    if (existingCustomer) {
+    const existingByDoc = await prisma.customer.findFirst({
+      where: { company_id: company.id, document_number: cleanDoc, deleted_at: null },
+    })
+    if (existingByDoc) {
       return NextResponse.json(
         { error: 'CPF/CNPJ ja cadastrado. Faca login ou recupere sua senha.' },
         { status: 409 }
       )
+    }
+
+    const existingByEmail = await prisma.customer.findFirst({
+      where: { company_id: company.id, email: cleanEmail, deleted_at: null },
+    })
+    if (existingByEmail) {
+      return NextResponse.json(
+        { error: 'Este email ja esta cadastrado para outro cliente.' },
+        { status: 409 }
+      )
+    }
+
+    if (cleanPhone.length >= 10) {
+      const existingByPhone = await prisma.customer.findFirst({
+        where: {
+          company_id: company.id, deleted_at: null,
+          OR: [
+            { mobile: { contains: cleanPhone.slice(-10) } },
+            { phone: { contains: cleanPhone.slice(-10) } },
+          ],
+        },
+      })
+      if (existingByPhone) {
+        return NextResponse.json(
+          { error: 'Este telefone ja esta cadastrado para outro cliente.' },
+          { status: 409 }
+        )
+      }
     }
 
     // Format data

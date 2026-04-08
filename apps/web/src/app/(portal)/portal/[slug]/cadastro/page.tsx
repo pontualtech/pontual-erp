@@ -99,40 +99,53 @@ export default function CadastroPage() {
 
   // Auto-fetch CNPJ data when 14 digits are typed
   const [cnpjFetched, setCnpjFetched] = useState('')
-  useEffect(() => {
-    if (digits.length === 14 && digits !== cnpjFetched) {
-      handleDocumentBlur()
-    }
-  }, [digits])
 
-  async function handleDocumentBlur() {
-    if (digits.length === 14 && digits !== cnpjFetched) {
-      setFetchingCnpj(true)
-      try {
-        const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${digits}`)
-        if (res.ok) {
-          const data = await res.json()
-          if (data.razao_social) setNome(data.razao_social.toUpperCase())
-          if (data.cep) {
-            setCep(formatCep(data.cep))
-            await fetchCepData(data.cep.replace(/\D/g, ''))
-          }
-          if (data.logradouro) setLogradouro(data.logradouro.toUpperCase())
-          if (data.numero) setNumero(data.numero)
-          if (data.complemento) setComplemento(data.complemento.toUpperCase())
-          if (data.bairro) setBairro(data.bairro.toUpperCase())
-          if (data.municipio) setCidade(data.municipio.toUpperCase())
-          if (data.uf) setUf(data.uf.toUpperCase())
-          setCnpjFetched(digits)
-          toast.success('Dados do CNPJ preenchidos automaticamente!')
-          // Auto-advance to step 2 since data was filled
-          if (step === 0) setStep(1)
+  useEffect(() => {
+    if (digits.length !== 14 || digits === cnpjFetched) return
+    let cancelled = false
+    setFetchingCnpj(true)
+
+    fetch(`https://brasilapi.com.br/api/cnpj/v1/${digits}`)
+      .then(r => { if (!r.ok) throw new Error('CNPJ nao encontrado'); return r.json() })
+      .then(data => {
+        if (cancelled) return
+        if (data.razao_social) setNome(data.razao_social.toUpperCase())
+        if (data.cep) {
+          const cepClean = data.cep.replace(/\D/g, '')
+          setCep(formatCep(cepClean))
+          // Fetch CEP data too
+          fetch(`https://viacep.com.br/ws/${cepClean}/json/`)
+            .then(r => r.json())
+            .then(cepData => {
+              if (cancelled || cepData.erro) return
+              if (cepData.logradouro) setLogradouro(cepData.logradouro.toUpperCase())
+              if (cepData.bairro) setBairro(cepData.bairro.toUpperCase())
+              if (cepData.localidade) setCidade(cepData.localidade.toUpperCase())
+              if (cepData.uf) setUf(cepData.uf.toUpperCase())
+            }).catch(() => {})
         }
-      } catch {
-        toast.error('Nao foi possivel consultar o CNPJ. Preencha manualmente.')
-      } finally {
-        setFetchingCnpj(false)
-      }
+        if (data.logradouro) setLogradouro(data.logradouro.toUpperCase())
+        if (data.numero) setNumero(data.numero)
+        if (data.complemento) setComplemento(data.complemento.toUpperCase())
+        if (data.bairro) setBairro(data.bairro.toUpperCase())
+        if (data.municipio) setCidade(data.municipio.toUpperCase())
+        if (data.uf) setUf(data.uf.toUpperCase())
+        setCnpjFetched(digits)
+        toast.success('Dados do CNPJ preenchidos!')
+        setStep(1) // Avança para step 2
+      })
+      .catch(() => {
+        if (!cancelled) toast.error('Nao foi possivel consultar o CNPJ. Preencha manualmente.')
+      })
+      .finally(() => { if (!cancelled) setFetchingCnpj(false) })
+
+    return () => { cancelled = true }
+  }, [digits, cnpjFetched])
+
+  // Keep handleDocumentBlur for the onBlur fallback (manual trigger)
+  function handleDocumentBlur() {
+    if (digits.length === 14 && digits !== cnpjFetched) {
+      setCnpjFetched('') // Force refetch by clearing cached
     }
   }
 
@@ -158,9 +171,19 @@ export default function CadastroPage() {
     }
   }
 
+  // Auto-fetch CEP when 8 digits typed
+  const [cepFetched, setCepFetched] = useState('')
+  useEffect(() => {
+    const cepDigits = cep.replace(/\D/g, '')
+    if (cepDigits.length === 8 && cepDigits !== cepFetched) {
+      setCepFetched(cepDigits)
+      fetchCepData(cepDigits)
+    }
+  }, [cep])
+
   function handleCepBlur() {
     const cepDigits = cep.replace(/\D/g, '')
-    if (cepDigits.length === 8) fetchCepData(cepDigits)
+    if (cepDigits.length === 8) { setCepFetched(''); fetchCepData(cepDigits) }
   }
 
   function validateStep(): boolean {
