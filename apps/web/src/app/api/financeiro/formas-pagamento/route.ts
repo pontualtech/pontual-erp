@@ -7,7 +7,8 @@ const KEY_PREFIX = 'forma_pgto.'
 
 export async function GET() {
   try {
-    const result = await requirePermission('financeiro', 'view')
+    // Allow anyone who can transition OS (needs to select payment method on delivery)
+    const result = await requirePermission('os', 'view')
     if (result instanceof NextResponse) return result
     const user = result
 
