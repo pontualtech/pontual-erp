@@ -189,11 +189,11 @@ export default function OSListPage() {
   const [defaultFilterApplied, setDefaultFilterApplied] = useState(false)
   useEffect(() => {
     if (isTecnico && !defaultFilterApplied && Object.keys(statusMap).length > 0) {
-      const aprovadoId = Object.entries(statusMap).find(
-        ([, v]) => v.name.toLowerCase().includes('aprovad')
-      )?.[0]
-      if (aprovadoId) {
-        setStatusFilter([aprovadoId])
+      const tecnicoStatuses = Object.entries(statusMap)
+        .filter(([, v]) => v.name.toLowerCase().includes('aprovad') || v.name.toLowerCase().includes('aguardando pe'))
+        .map(([id]) => id)
+      if (tecnicoStatuses.length > 0) {
+        setStatusFilter(tecnicoStatuses)
         setSortField('created_at')
         setSortDir('asc') // mais antigas primeiro
       }
