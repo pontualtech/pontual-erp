@@ -233,7 +233,7 @@ export default function OSListPage() {
   // Load role-based visibility config
   useEffect(() => {
     if (isAdmin) {
-      setAllowedColumns(['os_number', 'created_at', 'customer', 'equipment_type', 'os_type', 'os_location', 'status', 'total_cost', 'financeiro', 'technician', 'priority'])
+      setAllowedColumns(['os_number', 'created_at', 'customer', 'equipment_type', 'equipment_brand', 'equipment_model', 'os_type', 'os_location', 'status', 'total_cost', 'financeiro', 'technician', 'priority'])
       setOwnOnly(false)
       setVisibilityLoaded(true)
       return
@@ -247,7 +247,7 @@ export default function OSListPage() {
         }
       })
       .catch(() => {
-        setAllowedColumns(['os_number', 'created_at', 'customer', 'equipment_type', 'os_type', 'os_location', 'status', 'total_cost', 'financeiro', 'technician', 'priority'])
+        setAllowedColumns(['os_number', 'created_at', 'customer', 'equipment_type', 'equipment_brand', 'equipment_model', 'os_type', 'os_location', 'status', 'total_cost', 'financeiro', 'technician', 'priority'])
       })
       .finally(() => setVisibilityLoaded(true))
   }, [isAdmin])
@@ -570,6 +570,7 @@ export default function OSListPage() {
 
   const allColumnLabels: Record<string, string> = {
     os_number: 'Nº', created_at: 'Data', customer: 'Cliente', equipment_type: 'Equip.',
+    equipment_brand: 'Marca', equipment_model: 'Modelo',
     os_type: 'Tipo', os_location: 'Local', status: 'Status', total_cost: 'Valor', financeiro: 'Financeiro', technician: 'Técnico', priority: 'Prioridade',
   }
 
@@ -586,6 +587,8 @@ export default function OSListPage() {
         case 'created_at': return new Date(os.created_at).toLocaleDateString('pt-BR')
         case 'customer': return os.customers?.legal_name || ''
         case 'equipment_type': return os.equipment_type || ''
+        case 'equipment_brand': return os.equipment_brand || ''
+        case 'equipment_model': return os.equipment_model || ''
         case 'os_type': return osTypeLabel[os.os_type] || os.os_type
         case 'os_location': return os.os_location || ''
         case 'status': return st?.name || ''
@@ -879,6 +882,8 @@ export default function OSListPage() {
                     { key: 'created_at', label: 'Data' },
                     { key: 'customer', label: 'Cliente' },
                     { key: 'equipment_type', label: 'Equip.' },
+                    { key: 'equipment_brand', label: 'Marca' },
+                    { key: 'equipment_model', label: 'Modelo' },
                     { key: 'os_type', label: 'Tipo' },
                     { key: 'os_location', label: 'Local' },
                     { key: 'status', label: 'Status' },
@@ -955,6 +960,12 @@ export default function OSListPage() {
                         )}
                         {effectiveColumns.includes('equipment_type') && (
                           <td className="px-3 py-2.5 text-gray-700 text-xs">{os.equipment_type ?? '\u2014'}</td>
+                        )}
+                        {effectiveColumns.includes('equipment_brand') && (
+                          <td className="px-3 py-2.5 text-gray-700 text-xs">{os.equipment_brand ?? '\u2014'}</td>
+                        )}
+                        {effectiveColumns.includes('equipment_model') && (
+                          <td className="px-3 py-2.5 text-gray-700 text-xs">{os.equipment_model ?? '\u2014'}</td>
                         )}
                         {effectiveColumns.includes('os_type') && (
                           <td className="px-3 py-2.5">
