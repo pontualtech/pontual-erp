@@ -6,7 +6,7 @@ export async function middleware(request: NextRequest) {
 
   // PATCH 7: API routes without auth return 401 JSON (not HTML SPA shell)
   // Skip ALL middleware for webhooks (they use their own auth: token/secret)
-  if (pathname.startsWith('/api/chatwoot/')) {
+  if (pathname.startsWith('/api/chatwoot/') || pathname.startsWith('/api/webhook/')) {
     return NextResponse.next()
   }
 
