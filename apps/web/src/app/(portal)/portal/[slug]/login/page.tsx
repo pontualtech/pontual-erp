@@ -215,24 +215,18 @@ export default function PortalLoginPage() {
                 </button>
               </form>
 
-              {/* Register link */}
-              <div className="mt-6 text-center space-y-2">
-                <p className="text-gray-500 text-sm">
-                  Primeiro acesso?{' '}
-                  <Link
-                    href={`/portal/${slug}/registrar`}
-                    className="text-blue-600 hover:text-blue-700 font-medium"
-                  >
-                    Cadastre-se
-                  </Link>
-                </p>
-                <p className="text-gray-500 text-sm">
-                  Novo cliente?{' '}
-                  <Link
-                    href={`/portal/${slug}/cadastro`}
-                    className="text-blue-600 hover:text-blue-700 font-medium"
-                  >
-                    Cadastre-se aqui
+              {/* Register links */}
+              <div className="mt-6 space-y-3">
+                <Link
+                  href={`/portal/${slug}/cadastro`}
+                  className="block w-full text-center py-3 rounded-xl border-2 border-blue-600 text-blue-600 font-semibold text-sm hover:bg-blue-50 transition-colors"
+                >
+                  Cadastre-se
+                </Link>
+                <p className="text-gray-400 text-xs text-center">
+                  Ja tem cadastro mas nao tem senha?{' '}
+                  <Link href={`/portal/${slug}/registrar`} className="text-blue-500 hover:underline">
+                    Ative seu acesso aqui
                   </Link>
                 </p>
               </div>
