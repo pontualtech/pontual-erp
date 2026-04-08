@@ -133,13 +133,15 @@ export async function handleNovoOrcamento(
     return continueOrcamentoFlow(conversationId, companyId, customerId, state, params)
   }
 
-  // Start new flow
+  // Start new flow — save phone and contact name for later customer creation
   setState(conversationId, {
     action: 'NOVO_ORCAMENTO',
     step: 'AWAITING_EQUIPMENT_TYPE',
     data: {
       customerId,
       companyId,
+      phone: params.phone || '',
+      customerName: params.customerName || '',
       equipment_type: params.equipment_type,
       issue: params.issue,
     },
@@ -195,38 +197,133 @@ async function continueOrcamentoFlow(
     case 'AWAITING_CONFIRMATION': {
       const confirmed = /sim|ok|confirma|pode|isso|yes|quero|vamos/i.test(message)
       if (confirmed) {
-        // Create OS in PontualERP silently (in addition to VHSys)
+        const equipType = state.data.equipment_type || 'Impressora'
+        const issue = state.data.issue || 'Sem descricao'
+        let osNumber = 0
+        let customerName = ''
+        let isNewCustomer = false
+
         try {
-          const equipType = state.data.equipment_type || 'Impressora'
-          const issue = state.data.issue || 'Sem descricao'
+          // 1. Find or create customer
+          let finalCustomerId = customerId
+          if (!finalCustomerId && state.data.phone) {
+            // Try to find by phone from conversation
+            const found = await findCustomerByPhone(state.data.phone)
+            if (found) {
+              finalCustomerId = found.customer.id
+              customerName = found.customer.trade_name || found.customer.legal_name || ''
+            }
+          }
+
+          if (!finalCustomerId) {
+            // Create new customer from data collected by Ana
+            const contactName = state.data.customerName || state.data.nome || 'Cliente WhatsApp'
+            const contactPhone = state.data.phone || ''
+            const contactDoc = state.data.cpf || state.data.cnpj || state.data.documento || ''
+            const contactEmail = state.data.email || ''
+            const contactCep = state.data.cep || ''
+            const contactEndereco = state.data.endereco || ''
+            const isPJ = contactDoc.replace(/\D/g, '').length === 14
+
+            const newCustomer = await prisma.customer.create({
+              data: {
+                company_id: companyId,
+                legal_name: contactName,
+                person_type: isPJ ? 'JURIDICA' : 'FISICA',
+                customer_type: 'CLIENTE',
+                document_number: contactDoc.replace(/\D/g, '') || undefined,
+                mobile: contactPhone,
+                email: contactEmail || undefined,
+                address_zip: contactCep.replace(/\D/g, '') || undefined,
+                address_street: contactEndereco || undefined,
+              },
+            })
+            finalCustomerId = newCustomer.id
+            customerName = contactName
+            isNewCustomer = true
+            console.log(`[Bot] Novo cliente criado: ${contactName} (${contactPhone}) doc:${contactDoc}`)
+          } else if (!customerName) {
+            const c = await prisma.customer.findUnique({ where: { id: finalCustomerId }, select: { legal_name: true, trade_name: true } })
+            customerName = c?.trade_name || c?.legal_name || ''
+          }
+
+          // 2. Find initial status
           const initialStatus = await prisma.moduleStatus.findFirst({
             where: { company_id: companyId, module: 'os', is_default: true },
           }) || await prisma.moduleStatus.findFirst({
             where: { company_id: companyId, module: 'os' },
             orderBy: { order: 'asc' },
           })
-          if (initialStatus && customerId) {
+
+          if (initialStatus && finalCustomerId) {
+            // 3. Create OS with atomic number
             const result = await prisma.$queryRaw<{ n: number }[]>`
               SELECT COALESCE(MAX(os_number), 0) + 1 as n FROM service_orders WHERE company_id = ${companyId}
             `
-            const osNumber = result[0]?.n || 1
+            osNumber = result[0]?.n || 1
+
             await prisma.serviceOrder.create({
               data: {
-                company_id: companyId, os_number: osNumber,
-                customer_id: customerId, status_id: initialStatus.id,
-                priority: 'MEDIUM', os_type: 'WHATSAPP', os_location: 'EXTERNO',
-                equipment_type: equipType, reported_issue: issue,
+                company_id: companyId,
+                os_number: osNumber,
+                customer_id: finalCustomerId,
+                status_id: initialStatus.id,
+                priority: 'MEDIUM',
+                os_type: 'WHATSAPP',
+                os_location: 'EXTERNO',
+                equipment_type: equipType,
+                equipment_brand: state.data.marca || undefined,
+                equipment_model: state.data.modelo || undefined,
+                reported_issue: issue,
+                reception_notes: state.data.endereco || undefined,
               },
             })
-            console.log(`[Bot] OS #${osNumber} criada no PontualERP (WhatsApp)`)
+
+            // 4. Log in history
+            await prisma.serviceOrderHistory.create({
+              data: {
+                company_id: companyId,
+                service_order_id: (await prisma.serviceOrder.findFirst({ where: { company_id: companyId, os_number: osNumber } }))!.id,
+                to_status_id: initialStatus.id,
+                changed_by: 'BOT_ANA',
+                notes: `OS aberta via WhatsApp (Bot Ana) — Equipamento: ${equipType} — Defeito: ${issue}`,
+              },
+            }).catch(() => {})
+
+            console.log(`[Bot] OS #${osNumber} criada no PontualERP para ${customerName}`)
           }
         } catch (err) {
           console.error('[Bot] Erro ao criar OS no PontualERP:', err)
         }
 
         clearState(conversationId)
-        const msg = 'Orcamento registrado! Voce pode trazer o equipamento em nossa loja de segunda a sexta, das 9h as 18h.\n\nEndereco: consulte nosso site ou pergunte aqui.\n\nQualquer duvida, estamos a disposicao!'
+
+        // 5. Send confirmation with OS number to client
+        let msg: string
+        if (osNumber > 0) {
+          msg = `Pronto! Sua OS *#${osNumber}* foi aberta com sucesso!\n\n`
+            + `Equipamento: ${equipType}\n`
+            + `Defeito: ${issue}\n\n`
+            + `Voce pode trazer o equipamento em nossa loja:\n`
+            + `Rua Ouvidor Peleja, 660 - Vila Mariana - Sao Paulo/SP\n`
+            + `Seg a Sex, 9h as 18h\n\n`
+            + `Acompanhe online: https://erp.pontualtech.work/portal/pontualtech\n`
+            + `WhatsApp Suporte: (11) 2626-3841`
+        } else {
+          msg = 'Orcamento registrado! Voce pode trazer o equipamento em nossa loja de segunda a sexta, das 9h as 18h.\n\nRua Ouvidor Peleja, 660 - Vila Mariana - Sao Paulo/SP\nWhatsApp Suporte: (11) 2626-3841'
+        }
         await sendChatwootMessage(conversationId, msg)
+
+        // 6. Notify team via private note
+        if (osNumber > 0) {
+          const noteMsg = `[BOT ANA] Nova OS #${osNumber} criada via WhatsApp\n`
+            + `Cliente: ${customerName}${isNewCustomer ? ' (NOVO CADASTRO)' : ''}\n`
+            + `Equipamento: ${equipType}\n`
+            + `Defeito: ${issue}\n`
+            + `Link: https://erp.pontualtech.work/os/${osNumber}`
+          await sendChatwootMessage(conversationId, noteMsg, true).catch(() => {})
+        }
+
         return msg
       } else {
         clearState(conversationId)

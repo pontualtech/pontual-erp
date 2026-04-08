@@ -178,9 +178,10 @@ export async function POST(req: NextRequest) {
     }
 
     // 5. Check for active multi-step flow
+    const senderName = sender.name || sender.display_name || ''
     if (hasActiveState(conversationId)) {
       const state = getState(conversationId)!
-      const params = { _raw_message: content }
+      const params = { _raw_message: content, phone, customerName: senderName }
 
       let response: string
       switch (state.action) {
@@ -193,7 +194,7 @@ export async function POST(req: NextRequest) {
         default:
           // Unknown active state — clear and re-detect
           response = await processNewMessage(
-            conversationId, content, companyId, customerId, customerContext, config, phone
+            conversationId, content, companyId, customerId, customerContext, config, phone, senderName
           )
       }
 
@@ -208,7 +209,7 @@ export async function POST(req: NextRequest) {
     // 6. Detect intent and handle
     try {
       const response = await processNewMessage(
-        conversationId, content, companyId, customerId, customerContext, config, phone
+        conversationId, content, companyId, customerId, customerContext, config, phone, senderName
       )
     } catch (processErr) {
       // Fallback: always respond even if processing fails
@@ -239,7 +240,8 @@ async function processNewMessage(
   customerId: string | undefined,
   customerContext: CustomerContext | undefined,
   config: BotConfig,
-  phone?: string
+  phone?: string,
+  senderName?: string
 ): Promise<string> {
   // Detect intent
   const intent = await detectIntent(content, {
@@ -267,7 +269,7 @@ async function processNewMessage(
       break
 
     case 'NOVO_ORCAMENTO':
-      response = await handleNovoOrcamento(conversationId, companyId, customerId, intent.params)
+      response = await handleNovoOrcamento(conversationId, companyId, customerId, { ...intent.params, phone, customerName: senderName })
       break
 
     case 'AGENDAR_COLETA':
