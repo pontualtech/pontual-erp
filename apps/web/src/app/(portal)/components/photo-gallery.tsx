@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { toast } from 'sonner'
 
 interface Photo {
@@ -25,6 +25,8 @@ export function PhotoGallery({ osId, customerId, initialPhotos = [] }: PhotoGall
   const [lightbox, setLightbox] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => { loadPhotos() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadPhotos = useCallback(async () => {
     try {
