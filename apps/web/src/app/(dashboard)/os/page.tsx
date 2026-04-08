@@ -203,6 +203,8 @@ export default function OSListPage() {
     searchTimerRef.current = setTimeout(() => {
       setDebouncedSearch(search)
       setPage(1)
+      // Clear status filter when searching (so results aren't hidden by filter)
+      if (search) setStatusFilter([])
     }, 300)
     return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current) }
   }, [search])
@@ -310,8 +312,15 @@ export default function OSListPage() {
     }
   }
 
+  const abortRef = useRef<AbortController | null>(null)
+
   function loadOS() {
     if (!visibilityLoaded) return
+    // Cancel previous request to prevent stale data overwriting fresh results
+    if (abortRef.current) abortRef.current.abort()
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+
     setLoading(true)
     const params = new URLSearchParams()
     params.set('page', String(page))
@@ -336,15 +345,15 @@ export default function OSListPage() {
     if (dateTo) params.set('dateTo', dateTo)
     if (sortField) params.set('sortBy', sortField)
     if (sortDir) params.set('sortDir', sortDir)
-    fetch(`/api/os?${params}`)
+    fetch(`/api/os?${params}`, { signal: ctrl.signal })
       .then(r => r.json())
       .then(d => {
         setOsList(d.data ?? [])
         setTotalPages(d.totalPages ?? 1)
         setTotalFiltered(d.total ?? 0)
       })
-      .catch(() => toast.error('Erro ao carregar ordens de servico'))
-      .finally(() => setLoading(false))
+      .catch(e => { if (e.name !== 'AbortError') toast.error('Erro ao carregar ordens de servico') })
+      .finally(() => { if (!ctrl.signal.aborted) setLoading(false) })
   }
 
   useEffect(() => { loadOS(); setSelected(new Set()) }, [debouncedSearch, statusFilter, typeFilter, locationFilter, equipFilter, overdueFilter, showCancelled, page, visibilityLoaded, ownOnly, myOsFilter, dateFrom, dateTo, sortField, sortDir])
