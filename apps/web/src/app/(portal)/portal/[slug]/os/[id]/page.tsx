@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
+import { Printer, Mail, X } from 'lucide-react'
 
 interface OSDetail {
   id: string
@@ -72,6 +73,9 @@ export default function PortalOSDetailPage() {
   const [npsSubmitted, setNpsSubmitted] = useState(false)
   const [npsExisting, setNpsExisting] = useState<{ score: number; comment?: string } | null>(null)
   const [npsLoading, setNpsLoading] = useState(false)
+  const [showEmailModal, setShowEmailModal] = useState(false)
+  const [emailTo, setEmailTo] = useState('')
+  const [emailSending, setEmailSending] = useState(false)
 
   function loadOS() {
     // Auth token is sent automatically via httpOnly cookie
@@ -165,6 +169,37 @@ export default function PortalOSDetailPage() {
     }
   }
 
+  function handlePrint() {
+    window.print()
+  }
+
+  async function handleSendEmail() {
+    if (!emailTo.trim()) {
+      toast.error('Informe o email')
+      return
+    }
+    setEmailSending(true)
+    try {
+      const res = await fetch(`/api/portal/os/${osId}/email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailTo.trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data.error || 'Erro ao enviar email')
+        return
+      }
+      toast.success('Email enviado com sucesso!')
+      setShowEmailModal(false)
+      setEmailTo('')
+    } catch {
+      toast.error('Erro de conexao')
+    } finally {
+      setEmailSending(false)
+    }
+  }
+
   function handleLogout() {
     localStorage.removeItem('portal_customer')
     localStorage.removeItem('portal_company')
@@ -204,6 +239,84 @@ export default function PortalOSDetailPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Print styles */}
+      <style>{`
+        @media print {
+          header, nav, footer,
+          .print\\:hidden,
+          [data-print-hide] {
+            display: none !important;
+          }
+          body, .min-h-screen {
+            background: white !important;
+            min-height: auto !important;
+          }
+          .bg-gray-50 {
+            background: white !important;
+          }
+          main {
+            padding: 0 !important;
+            max-width: 100% !important;
+          }
+          .rounded-xl {
+            border-radius: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+          }
+          @page {
+            margin: 1.5cm;
+          }
+          .print\\:block {
+            display: block !important;
+          }
+        }
+      `}</style>
+
+      {/* Print header - only visible when printing */}
+      <div className="hidden print:block text-center mb-6 border-b pb-4">
+        <h1 className="text-xl font-bold">{company?.name || slug}</h1>
+        <p className="text-sm text-gray-500">Ordem de Servico #{os.os_number}</p>
+      </div>
+
+      {/* Email Modal */}
+      {showEmailModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-gray-900 text-lg">Enviar OS por Email</h3>
+              <button onClick={() => setShowEmailModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email do destinatario</label>
+            <input
+              type="email"
+              value={emailTo}
+              onChange={e => setEmailTo(e.target.value)}
+              placeholder="email@exemplo.com"
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-400"
+              onKeyDown={e => e.key === 'Enter' && handleSendEmail()}
+              autoFocus
+            />
+            <div className="flex justify-end gap-3 mt-4">
+              <button
+                onClick={() => setShowEmailModal(false)}
+                className="px-4 py-2 border border-gray-300 rounded-xl text-gray-600 hover:bg-gray-50 text-sm font-medium"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSendEmail}
+                disabled={emailSending || !emailTo.trim()}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl text-sm font-medium transition-colors"
+              >
+                {emailSending ? 'Enviando...' : 'Enviar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
@@ -230,7 +343,7 @@ export default function PortalOSDetailPage() {
       {/* Content */}
       <main className="max-w-5xl mx-auto px-4 py-6">
         {/* Breadcrumb */}
-        <div className="flex items-center gap-2 text-sm text-gray-500 mb-6">
+        <div className="flex items-center gap-2 text-sm text-gray-500 mb-6 print:hidden">
           <Link href={`/portal/${slug}/os`} className="hover:text-gray-700">Minhas OS</Link>
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -249,15 +362,35 @@ export default function PortalOSDetailPage() {
                 })}
               </p>
             </div>
-            <span
-              className="inline-flex items-center px-4 py-2 rounded-full text-sm font-semibold self-start"
-              style={{
-                backgroundColor: `${os.status.color}20`,
-                color: os.status.color,
-              }}
-            >
-              {os.status.name}
-            </span>
+            <div className="flex items-center gap-2 self-start">
+              <span
+                className="inline-flex items-center px-4 py-2 rounded-full text-sm font-semibold"
+                style={{
+                  backgroundColor: `${os.status.color}20`,
+                  color: os.status.color,
+                }}
+              >
+                {os.status.name}
+              </span>
+              <button
+                type="button"
+                title="Imprimir OS"
+                onClick={handlePrint}
+                className="print:hidden inline-flex items-center gap-1.5 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors"
+              >
+                <Printer className="w-4 h-4" />
+                <span className="hidden sm:inline">Imprimir</span>
+              </button>
+              <button
+                type="button"
+                title="Enviar por Email"
+                onClick={() => setShowEmailModal(true)}
+                className="print:hidden inline-flex items-center gap-1.5 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors"
+              >
+                <Mail className="w-4 h-4" />
+                <span className="hidden sm:inline">Email</span>
+              </button>
+            </div>
           </div>
 
           {/* Status Timeline */}
@@ -426,7 +559,7 @@ export default function PortalOSDetailPage() {
             { value: 'Boleto', label: 'Boleto Bancario', icon: '📄', desc: 'Somente PJ (7 dias)' },
           ]
           return (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 mb-6">
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 mb-6" data-print-hide>
               <h3 className="font-semibold text-amber-900 text-lg mb-2">Orcamento aguardando aprovacao</h3>
               <p className="text-amber-700 mb-4">
                 Valor total: <strong className="text-2xl">{fmt(os.total_cost || 0)}</strong>
@@ -553,7 +686,7 @@ export default function PortalOSDetailPage() {
 
         {/* Payment section */}
         {isProntaOuEntregue && os.total_cost && os.total_cost > 0 && (
-          <div className="bg-white rounded-xl border border-gray-200 mb-6 p-6">
+          <div className="bg-white rounded-xl border border-gray-200 mb-6 p-6" data-print-hide>
             <h2 className="font-semibold text-gray-900 mb-4">Pagamento</h2>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {/* PIX */}
@@ -604,7 +737,7 @@ export default function PortalOSDetailPage() {
 
         {/* NPS Survey - Already answered */}
         {isEntregue && npsExisting && (
-          <div className="bg-green-50 border border-green-200 rounded-xl p-6 mb-6">
+          <div className="bg-green-50 border border-green-200 rounded-xl p-6 mb-6" data-print-hide>
             <div className="flex items-center gap-3 mb-2">
               <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
                 <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -624,7 +757,7 @@ export default function PortalOSDetailPage() {
 
         {/* NPS Survey - Submitted just now */}
         {isEntregue && npsSubmitted && !npsExisting && (
-          <div className="bg-green-50 border border-green-200 rounded-xl p-6 mb-6 text-center">
+          <div className="bg-green-50 border border-green-200 rounded-xl p-6 mb-6 text-center" data-print-hide>
             <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
               <svg className="w-6 h-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -637,7 +770,7 @@ export default function PortalOSDetailPage() {
 
         {/* NPS Survey Widget */}
         {showNpsSurvey && (
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-6 mb-6">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-6 mb-6" data-print-hide>
             <h3 className="font-semibold text-blue-900 text-lg mb-2">Como foi sua experiencia?</h3>
             <p className="text-blue-700 text-sm mb-4">
               Avalie de 0 a 10: qual a probabilidade de voce recomendar nossos servicos?
@@ -750,7 +883,7 @@ export default function PortalOSDetailPage() {
         )}
 
         {/* Comment */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="bg-white rounded-xl border border-gray-200 p-6" data-print-hide>
           <h2 className="font-semibold text-gray-900 mb-4">Enviar Comentario</h2>
           <textarea
             value={comment}
@@ -771,7 +904,7 @@ export default function PortalOSDetailPage() {
         </div>
       </main>
 
-      <footer className="border-t border-gray-200 bg-white mt-12">
+      <footer className="border-t border-gray-200 bg-white mt-12 print:hidden">
         <div className="max-w-5xl mx-auto px-4 py-4 text-center text-xs text-gray-400">
           Powered by PontualERP
         </div>

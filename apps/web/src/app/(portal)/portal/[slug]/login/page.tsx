@@ -216,7 +216,7 @@ export default function PortalLoginPage() {
               </form>
 
               {/* Register link */}
-              <div className="mt-6 text-center">
+              <div className="mt-6 text-center space-y-2">
                 <p className="text-gray-500 text-sm">
                   Primeiro acesso?{' '}
                   <Link
@@ -224,6 +224,15 @@ export default function PortalLoginPage() {
                     className="text-blue-600 hover:text-blue-700 font-medium"
                   >
                     Cadastre-se
+                  </Link>
+                </p>
+                <p className="text-gray-500 text-sm">
+                  Novo cliente?{' '}
+                  <Link
+                    href={`/portal/${slug}/cadastro`}
+                    className="text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    Cadastre-se aqui
                   </Link>
                 </p>
               </div>

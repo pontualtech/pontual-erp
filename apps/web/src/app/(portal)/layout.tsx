@@ -1,13 +1,24 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import '../globals.css'
 import { Toaster } from 'sonner'
+import { PortalFooter } from './components/portal-footer'
 
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
   title: 'Portal do Cliente',
   description: 'Acompanhe suas ordens de servico',
+  other: {
+    'apple-mobile-web-app-capable': 'yes',
+  },
+}
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  themeColor: '#1e40af',
 }
 
 export default function PortalRootLayout({
@@ -18,6 +29,13 @@ export default function PortalRootLayout({
   return (
     <html lang="pt-BR" suppressHydrationWarning>
       <head>
+        <style dangerouslySetInnerHTML={{ __html: `
+          @media print {
+            .print-hidden { display: none !important; }
+            body { background: white !important; }
+            .print-break { page-break-before: always; }
+          }
+        `}} />
         <script async src="https://www.googletagmanager.com/gtag/js?id=G-Z2TDQ081F5" />
         <script dangerouslySetInnerHTML={{ __html: `
           window.dataLayer = window.dataLayer || [];
@@ -26,8 +44,11 @@ export default function PortalRootLayout({
           gtag('config', 'G-Z2TDQ081F5', { send_page_view: true });
         `}} />
       </head>
-      <body className={`${inter.className} bg-gray-50 min-h-screen`}>
-        {children}
+      <body className={`${inter.className} bg-gradient-to-br from-gray-50 to-blue-50/30 min-h-screen antialiased flex flex-col`}>
+        <div className="flex-1">
+          {children}
+        </div>
+        <PortalFooter />
         <Toaster position="top-right" richColors />
       </body>
     </html>
