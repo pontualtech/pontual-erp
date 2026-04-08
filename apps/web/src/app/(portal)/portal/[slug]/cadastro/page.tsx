@@ -97,8 +97,16 @@ export default function CadastroPage() {
     else setPersonType('JURIDICA')
   }, [digits])
 
+  // Auto-fetch CNPJ data when 14 digits are typed
+  const [cnpjFetched, setCnpjFetched] = useState('')
+  useEffect(() => {
+    if (digits.length === 14 && digits !== cnpjFetched) {
+      handleDocumentBlur()
+    }
+  }, [digits])
+
   async function handleDocumentBlur() {
-    if (digits.length === 14) {
+    if (digits.length === 14 && digits !== cnpjFetched) {
       setFetchingCnpj(true)
       try {
         const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${digits}`)
@@ -115,10 +123,13 @@ export default function CadastroPage() {
           if (data.bairro) setBairro(data.bairro.toUpperCase())
           if (data.municipio) setCidade(data.municipio.toUpperCase())
           if (data.uf) setUf(data.uf.toUpperCase())
-          toast.success('Dados do CNPJ preenchidos automaticamente')
+          setCnpjFetched(digits)
+          toast.success('Dados do CNPJ preenchidos automaticamente!')
+          // Auto-advance to step 2 since data was filled
+          if (step === 0) setStep(1)
         }
       } catch {
-        // silently fail
+        toast.error('Nao foi possivel consultar o CNPJ. Preencha manualmente.')
       } finally {
         setFetchingCnpj(false)
       }
