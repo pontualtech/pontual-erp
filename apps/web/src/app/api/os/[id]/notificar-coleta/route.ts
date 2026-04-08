@@ -39,7 +39,9 @@ export async function POST(req: NextRequest, { params }: Params) {
     const cfg: Record<string, string> = {}
     for (const s of settings) cfg[s.key] = s.value
 
-    const portalUrl = cfg['portal.quote_url'] || cfg['portal.url'] || 'https://pontualtech.com.br/#consulta-os'
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'
+    const portalSlug = os.companies?.slug || 'pontualtech'
+    const portalUrl = `${appUrl}/portal/${portalSlug}/os/${os.id}`
     const companyName = os.companies?.name || cfg['company.name'] || 'Pontual Tech'
     const companyPhone = cfg['company.phone'] || '(11) 2626-3841'
     const whatsappNum = (cfg['company.whatsapp'] || '551126263841').replace(/\D/g, '')
