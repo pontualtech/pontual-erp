@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, Search, X, Pencil, KeyRound } from 'lucide-react'
+import { Plus, Search, X, Pencil, KeyRound, UserX, UserCheck, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/lib/use-auth'
 
@@ -37,6 +37,35 @@ export default function UsuariosPage() {
   const [search, setSearch] = useState('')
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingUser, setEditingUser] = useState<User | null>(null)
+  const [deletingUser, setDeletingUser] = useState<User | null>(null)
+
+  async function toggleActive(u: User) {
+    const newActive = !u.is_active
+    try {
+      const res = await fetch(`/api/users/${u.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: newActive }),
+      })
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Erro') }
+      toast.success(newActive ? `${u.name} ativado` : `${u.name} inativado`)
+      loadUsers()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao alterar status')
+    }
+  }
+
+  async function deleteUser(u: User) {
+    try {
+      const res = await fetch(`/api/users/${u.id}`, { method: 'DELETE' })
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Erro') }
+      toast.success(`${u.name} excluido`)
+      setDeletingUser(null)
+      loadUsers()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao excluir')
+    }
+  }
 
   const loadUsers = useCallback(() => {
     setLoading(true)
@@ -91,7 +120,7 @@ export default function UsuariosPage() {
               <th className="px-4 py-3">Perfil</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Criado em</th>
-              <th className="px-4 py-3 w-16"></th>
+              <th className="px-4 py-3 w-28">Acoes</th>
             </tr>
           </thead>
           <tbody className="divide-y">
@@ -119,13 +148,32 @@ export default function UsuariosPage() {
                   </td>
                   {isAdmin && (
                     <td className="px-4 py-3">
-                      <button
-                        onClick={() => setEditingUser(u)}
-                        className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-                        title="Editar usuario"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setEditingUser(u)}
+                          className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                          title="Editar usuario"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleActive(u)}
+                          className={`rounded p-1.5 ${u.is_active ? 'text-orange-400 hover:bg-orange-50 hover:text-orange-600' : 'text-green-400 hover:bg-green-50 hover:text-green-600'}`}
+                          title={u.is_active ? 'Inativar usuario' : 'Reativar usuario'}
+                        >
+                          {u.is_active ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeletingUser(u)}
+                          className="rounded p-1.5 text-red-300 hover:bg-red-50 hover:text-red-600"
+                          title="Excluir usuario"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
                     </td>
                   )}
                 </tr>
@@ -150,6 +198,36 @@ export default function UsuariosPage() {
           onClose={() => setEditingUser(null)}
           onUpdated={() => { setEditingUser(null); loadUsers() }}
         />
+      )}
+
+      {deletingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setDeletingUser(null)}>
+          <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Excluir usuario</h3>
+            <p className="text-sm text-gray-600 mb-1">
+              Tem certeza que deseja excluir <strong>{deletingUser.name}</strong>?
+            </p>
+            <p className="text-xs text-gray-400 mb-4">
+              O usuario sera removido permanentemente. Considere inativar se quiser manter o historico.
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setDeletingUser(null)}
+                className="flex-1 rounded-md border px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => deleteUser(deletingUser)}
+                className="flex-1 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+              >
+                Excluir
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
