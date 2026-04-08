@@ -159,13 +159,21 @@ export default function OSListPage() {
   const [showBulkAssign, setShowBulkAssign] = useState(false)
   const [bulkAssigning, setBulkAssigning] = useState(false)
 
-  // Initialize myOsFilter based on role (default off — see all OS)
-  const [myOsInitialized, setMyOsInitialized] = useState(false)
+  // Técnico: pre-filter by "Aprovado" status + oldest first on first load
+  const [defaultFilterApplied, setDefaultFilterApplied] = useState(false)
   useEffect(() => {
-    if (authUser && !myOsInitialized) {
-      setMyOsInitialized(true)
+    if (isTecnico && !defaultFilterApplied && Object.keys(statusMap).length > 0) {
+      const aprovadoId = Object.entries(statusMap).find(
+        ([, v]) => v.name.toLowerCase().includes('aprovad')
+      )?.[0]
+      if (aprovadoId) {
+        setStatusFilter([aprovadoId])
+        setSortField('created_at')
+        setSortDir('asc') // mais antigas primeiro
+      }
+      setDefaultFilterApplied(true)
     }
-  }, [authUser, myOsInitialized])
+  }, [isTecnico, defaultFilterApplied, statusMap])
 
   // Debounce search: wait 300ms after user stops typing
   useEffect(() => {
@@ -304,6 +312,8 @@ export default function OSListPage() {
     }
     if (dateFrom) params.set('dateFrom', dateFrom)
     if (dateTo) params.set('dateTo', dateTo)
+    if (sortField) params.set('sortBy', sortField)
+    if (sortDir) params.set('sortDir', sortDir)
     fetch(`/api/os?${params}`)
       .then(r => r.json())
       .then(d => {
@@ -315,7 +325,7 @@ export default function OSListPage() {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { loadOS(); setSelected(new Set()) }, [debouncedSearch, statusFilter, typeFilter, locationFilter, equipFilter, overdueFilter, showCancelled, page, visibilityLoaded, ownOnly, myOsFilter, dateFrom, dateTo])
+  useEffect(() => { loadOS(); setSelected(new Set()) }, [debouncedSearch, statusFilter, typeFilter, locationFilter, equipFilter, overdueFilter, showCancelled, page, visibilityLoaded, ownOnly, myOsFilter, dateFrom, dateTo, sortField, sortDir])
 
   function toggleSelect(id: string) {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })

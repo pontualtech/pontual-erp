@@ -115,12 +115,17 @@ export async function GET(req: NextRequest) {
       ].filter(Boolean)
     }
 
+    // Sort
+    const allowedSortFields = ['os_number', 'created_at', 'priority', 'os_type']
+    const sortBy = allowedSortFields.includes(url.get('sortBy') || '') ? url.get('sortBy')! : 'created_at'
+    const sortDir = url.get('sortDir') === 'asc' ? 'asc' : 'desc'
+
     const [data, total] = await Promise.all([
       prisma.serviceOrder.findMany({
         where,
         skip: (page - 1) * limit,
         take: limit,
-        orderBy: { created_at: 'desc' },
+        orderBy: { [sortBy]: sortDir },
         include: {
           customers: { select: { id: true, legal_name: true, phone: true, document_number: true } },
           module_statuses: { select: { id: true, name: true, color: true } },
