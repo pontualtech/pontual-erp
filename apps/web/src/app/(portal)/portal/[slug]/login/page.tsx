@@ -86,6 +86,7 @@ export default function PortalLoginPage() {
       localStorage.setItem('portal_company', JSON.stringify(data.data.company))
 
       toast.success('Login realizado com sucesso!')
+      try { const { portalEvents } = await import('@/lib/analytics'); portalEvents.login('cpf_cnpj') } catch {}
       router.push(`/portal/${slug}`)
     } catch {
       toast.error('Erro de conexao')

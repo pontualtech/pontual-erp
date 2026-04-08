@@ -49,6 +49,7 @@ function OrcamentoContent() {
   const [paymentMethod, setPaymentMethod] = useState('')
   const [showApproveForm, setShowApproveForm] = useState(false)
   const [applyDiscount, setApplyDiscount] = useState(false)
+  const [clientIp, setClientIp] = useState('')
 
   const DISCOUNT_PERCENT = 10
 
@@ -60,6 +61,13 @@ function OrcamentoContent() {
       .catch(err => setError(err.message))
       .finally(() => setLoading(false))
   }, [id, token, slug])
+
+  useEffect(() => {
+    fetch('https://api.ipify.org?format=json')
+      .then(r => r.json())
+      .then(d => setClientIp(d.ip || ''))
+      .catch(() => setClientIp('N/A'))
+  }, [])
 
   async function handleAction(action: 'approve' | 'reject') {
     if (action === 'approve' && !paymentMethod) { alert('Selecione a forma de pagamento'); return }
@@ -80,6 +88,13 @@ function OrcamentoContent() {
       const resData = await res.json()
       if (!res.ok) throw new Error(resData.error || 'Erro ao processar')
       setResult(resData.data)
+      // GA4 tracking
+      try {
+        const { portalEvents } = await import('@/lib/analytics')
+        if (action === 'approve') portalEvents.approveQuote(data?.os_number || 0, data?.total_cost || 0, paymentMethod)
+        else portalEvents.rejectQuote(data?.os_number || 0)
+        if (applyDiscount) portalEvents.acceptDiscount(data?.os_number || 0, DISCOUNT_PERCENT)
+      } catch {}
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Erro ao processar')
     } finally { setSubmitting(false) }
@@ -117,16 +132,118 @@ function OrcamentoContent() {
   // Result
   if (result) {
     const isApproved = result.action === 'approved'
+
+    if (isApproved) {
+      const approvedValue = applyDiscount ? Math.round(data.total_cost * (1 - DISCOUNT_PERCENT / 100)) : data.total_cost
+      const confirmationCode = btoa(`${id}-${Date.now()}`).slice(0, 8).toUpperCase()
+      const approvalDateTime = new Date().toLocaleString('pt-BR', { dateStyle: 'long', timeStyle: 'medium' })
+
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-gray-50 to-gray-100 p-4">
+          <div className="w-full max-w-lg">
+            {/* Receipt Card */}
+            <div className="rounded-2xl border-2 border-gray-300 bg-white shadow-lg overflow-hidden print:shadow-none print:border print:rounded-none">
+              {/* Receipt Header */}
+              <div className="bg-gray-900 p-6 text-center text-white print:bg-white print:text-black print:border-b-2 print:border-black">
+                <h2 className="text-lg font-bold tracking-wide uppercase">Comprovante de Aprovacao</h2>
+                <p className="mt-1 text-gray-400 text-xs print:text-gray-600">{data.company.name}</p>
+              </div>
+
+              {/* Receipt Body */}
+              <div className="p-6 space-y-4">
+                {/* Status Badge */}
+                <div className="text-center">
+                  <span className="inline-block rounded-full bg-green-100 border border-green-300 px-4 py-1.5 text-sm font-bold text-green-700">
+                    APROVADO
+                  </span>
+                </div>
+
+                {/* Details Table */}
+                <div className="border rounded-lg divide-y text-sm">
+                  <div className="flex justify-between px-4 py-3">
+                    <span className="text-gray-500">Ordem de Servico</span>
+                    <span className="font-bold text-gray-900 font-mono">#{data.os_number}</span>
+                  </div>
+                  <div className="flex justify-between px-4 py-3">
+                    <span className="text-gray-500">Cliente</span>
+                    <span className="font-medium text-gray-900">{data.customer_name}</span>
+                  </div>
+                  <div className="flex justify-between px-4 py-3">
+                    <span className="text-gray-500">Equipamento</span>
+                    <span className="font-medium text-gray-900">{[data.equipment_type, data.equipment_brand, data.equipment_model].filter(Boolean).join(' ')}</span>
+                  </div>
+                  <div className="flex justify-between px-4 py-3 bg-green-50">
+                    <span className="text-gray-500">Valor Aprovado</span>
+                    <div className="text-right">
+                      {applyDiscount && (
+                        <span className="block text-xs text-gray-400 line-through">{fmt(data.total_cost)}</span>
+                      )}
+                      <span className="font-bold text-green-700 text-lg">{fmt(approvedValue)}</span>
+                      {applyDiscount && (
+                        <span className="block text-xs text-green-600 font-semibold">({DISCOUNT_PERCENT}% desconto)</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex justify-between px-4 py-3">
+                    <span className="text-gray-500">Forma de Pagamento</span>
+                    <span className="font-medium text-gray-900">{paymentMethod}</span>
+                  </div>
+                  <div className="flex justify-between px-4 py-3">
+                    <span className="text-gray-500">Data/Hora</span>
+                    <span className="font-medium text-gray-900 text-right text-xs">{approvalDateTime}</span>
+                  </div>
+                  <div className="flex justify-between px-4 py-3">
+                    <span className="text-gray-500">IP</span>
+                    <span className="font-mono text-gray-700 text-xs">{clientIp || '...'}</span>
+                  </div>
+                </div>
+
+                {/* Confirmation Code */}
+                <div className="rounded-lg bg-gray-100 border border-dashed border-gray-400 p-4 text-center">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Codigo de Confirmacao</p>
+                  <p className="text-2xl font-bold font-mono tracking-widest text-gray-900">{confirmationCode}</p>
+                </div>
+
+                {/* Next Steps */}
+                <div className="rounded-lg bg-blue-50 border border-blue-200 p-4 text-sm text-blue-800 print:hidden">
+                  <p className="font-semibold mb-1">Proximo passo</p>
+                  <p>Nossa equipe tecnica ja foi notificada e o reparo comeca agora. Voce recebera um aviso quando estiver pronto.</p>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-3 print:hidden">
+                  <button type="button" onClick={() => window.print()}
+                    className="flex-1 rounded-lg bg-gray-900 py-3 text-center text-sm font-semibold text-white hover:bg-gray-800">
+                    Imprimir Comprovante
+                  </button>
+                  <button type="button" onClick={() => window.location.href = whatsappUrl}
+                    className="flex-1 rounded-lg bg-green-600 py-3 text-center text-sm font-semibold text-white hover:bg-green-700">
+                    Voltar ao Portal
+                  </button>
+                </div>
+              </div>
+
+              {/* Receipt Footer */}
+              <div className="border-t px-6 py-4 text-center space-y-1">
+                <p className="text-xs font-medium text-gray-500">{data.company.name}</p>
+                {data.company.phone && <p className="text-xs text-gray-400">Tel: {data.company.phone}</p>}
+                {data.company.email && <p className="text-xs text-gray-400">{data.company.email}</p>}
+              </div>
+            </div>
+          </div>
+        </div>
+      )
+    }
+
+    // Rejected result (unchanged)
     return (
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-gray-50 to-gray-100 p-4">
         <div className="w-full max-w-md rounded-2xl border bg-white shadow-lg overflow-hidden">
-          <div className={`p-8 text-center ${isApproved ? 'bg-gradient-to-b from-green-50 to-white' : 'bg-gradient-to-b from-red-50 to-white'}`}>
-            <div className={`mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full ${isApproved ? 'bg-green-100' : 'bg-red-100'}`}>
-              <span className="text-3xl">{isApproved ? '✅' : '📋'}</span>
+          <div className="p-8 text-center bg-gradient-to-b from-red-50 to-white">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-100">
+              <span className="text-3xl">📋</span>
             </div>
-            <h2 className={`text-xl font-bold ${isApproved ? 'text-green-800' : 'text-red-800'}`}>
-              {isApproved ? 'Orcamento Aprovado!' : 'Orcamento Recusado'}
-            </h2>
+            <h2 className="text-xl font-bold text-red-800">Orcamento Recusado</h2>
             <p className="mt-2 text-sm text-gray-500">{result.message}</p>
           </div>
 
@@ -140,29 +257,12 @@ function OrcamentoContent() {
                 <span className="text-gray-500">Equipamento</span>
                 <span className="font-medium text-gray-900">{[data.equipment_type, data.equipment_brand, data.equipment_model].filter(Boolean).join(' ')}</span>
               </div>
-              {isApproved && (
-                <div className="flex justify-between pt-2 border-t">
-                  <span className="text-gray-500">Valor aprovado</span>
-                  <span className="font-bold text-green-700 text-lg">
-                    {applyDiscount ? fmt(Math.round(data.total_cost * (1 - DISCOUNT_PERCENT / 100))) : fmt(data.total_cost)}
-                  </span>
-                </div>
-              )}
             </div>
 
-            {isApproved && (
-              <div className="rounded-lg bg-blue-50 border border-blue-200 p-4 text-sm text-blue-800">
-                <p className="font-semibold mb-1">Proximo passo</p>
-                <p>Nossa equipe tecnica ja foi notificada e o reparo comeca agora. Voce recebera um aviso quando estiver pronto.</p>
-              </div>
-            )}
-
-            {!isApproved && (
-              <div className="rounded-lg bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800">
-                <p className="font-semibold mb-1">Quer negociar?</p>
-                <p>Entre em contato pelo WhatsApp que revisamos o orcamento.</p>
-              </div>
-            )}
+            <div className="rounded-lg bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800">
+              <p className="font-semibold mb-1">Quer negociar?</p>
+              <p>Entre em contato pelo WhatsApp que revisamos o orcamento.</p>
+            </div>
 
             <div className="flex gap-3">
               <a href={whatsappUrl} target="_blank" rel="noopener noreferrer"

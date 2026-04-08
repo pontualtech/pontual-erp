@@ -17,6 +17,15 @@ export default function PortalRootLayout({
 }) {
   return (
     <html lang="pt-BR" suppressHydrationWarning>
+      <head>
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-Z2TDQ081F5" />
+        <script dangerouslySetInnerHTML={{ __html: `
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', 'G-Z2TDQ081F5', { send_page_view: true });
+        `}} />
+      </head>
       <body className={`${inter.className} bg-gray-50 min-h-screen`}>
         {children}
         <Toaster position="top-right" richColors />

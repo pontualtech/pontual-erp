@@ -9,7 +9,7 @@ import type { AuthUser } from '@/lib/auth'
 import {
   ClipboardList, Users, Package, DollarSign, FileText,
   Settings, LayoutDashboard, Menu, X, ChevronDown, ChevronLeft, ChevronRight, MessageSquare, MessageCircle, Phone, Truck,
-  Building2, ShoppingCart, BarChart3,
+  Building2, ShoppingCart, BarChart3, Activity,
 } from 'lucide-react'
 
 interface NavItem {
@@ -71,6 +71,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
   {
     title: 'Sistema',
     items: [
+      { label: 'Log Portal', href: '/portal-log', icon: Activity, adminOnly: true },
       { label: 'Configuracoes', href: '/config', icon: Settings, adminOnly: true },
     ],
   },
