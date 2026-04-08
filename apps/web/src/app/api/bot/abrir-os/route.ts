@@ -144,6 +144,16 @@ export async function POST(req: NextRequest) {
 
     console.log(`[Bot abrir-os] OS #${os.os_number} | Cliente: ${customer.legal_name} ${isNewCustomer ? '(NOVO)' : ''}`)
 
+    // Fire-and-forget: enviar email de abertura ao cliente
+    if (customer.email) {
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'
+      fetch(`${baseUrl}/api/os/${os.id}/notificar-abertura`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId: auth.companyId }),
+      }).catch(e => console.log('[Bot] Email abertura falhou (ignorado):', e.message))
+    }
+
     return botSuccess({
       os_numero: os.os_number,
       os_id: os.id,

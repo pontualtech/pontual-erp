@@ -146,6 +146,16 @@ export async function POST(req: NextRequest) {
 
     console.log(`[Webhook nova-os] OS #${osNumber} criada | Cliente: ${customer.legal_name} ${isNewCustomer ? '(NOVO)' : ''} | ${equipamento} ${marca || ''} | ${defeito?.substring(0, 50)}`)
 
+    // Fire-and-forget: enviar email de abertura ao cliente
+    if (customer.email) {
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'
+      fetch(`${baseUrl}/api/os/${os.id}/notificar-abertura`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId }),
+      }).catch(e => console.log('[Webhook] Email abertura falhou (ignorado):', e.message))
+    }
+
     return NextResponse.json({
       success: true,
       os_number: osNumber,

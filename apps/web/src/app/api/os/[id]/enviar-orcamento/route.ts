@@ -216,6 +216,18 @@ const DEFAULT_QUOTE_TEMPLATE = `<!DOCTYPE html>
                 </table>
               </div>
 
+              <!-- Portal do Cliente -->
+              <div style="background:#eff6ff;border:2px solid #3b82f6;border-radius:12px;padding:20px;margin-bottom:24px;text-align:center;">
+                <p style="font-size:14px;font-weight:700;color:#1e40af;margin:0 0 6px;">Acompanhe online pelo Portal do Cliente</p>
+                <p style="font-size:12px;color:#475569;margin:0 0 12px;">Consulte o status, aprove orcamentos e veja o historico completo.</p>
+                <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr>
+                  <td style="background:#1e40af;border-radius:8px;">
+                    <a href="{{portal_os_link}}" target="_blank" style="display:inline-block;color:#ffffff;text-decoration:none;font-size:13px;font-weight:700;padding:10px 24px;">ACESSAR MINHA OS</a>
+                  </td>
+                </tr></table>
+                <p style="font-size:11px;color:#94a3b8;margin:10px 0 0;">Primeiro acesso? Use seu CPF/CNPJ como login e crie sua senha.</p>
+              </div>
+
               <!-- Conditions -->
               <div style="border-top:2px solid #e2e8f0;padding-top:24px;margin-bottom:24px;">
                 <h3 style="margin:0 0 16px;font-size:15px;color:#1e293b;font-weight:700;">Condicoes</h3>
@@ -400,6 +412,11 @@ function buildTemplateVars(os: any, settings: Record<string, string>, approvalLi
     company_pix: settings['company.pix'] || settings['pix'] || '',
     company_bank: settings['company.bank'] || settings['banco'] || '',
     payment_conditions: paymentConditions,
+    portal_os_link: (() => {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'
+      const slug = os.companies?.slug || 'pontualtech'
+      return `${appUrl}/portal/${slug}/os/${os.id}`
+    })(),
   }
 }
 
