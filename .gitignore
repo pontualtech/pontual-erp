@@ -9,3 +9,6 @@ dist/
 emit-test.js
 migration-cache/
 migration-*.json
+BACKUP_v5_PRODUCTION.md
+BACKUP_REPLICACAO_COMPLETA.md
+*.sql
