@@ -90,8 +90,9 @@ const osTypeColor: Record<string, string> = {
 
 export default function OSListPage() {
   const { isAdmin, user: authUser, hasPermission } = useAuth()
-  const isTecnico = authUser?.role === 'tecnico'
-  const isMotorista = authUser?.role === 'motorista'
+  const normalizedRole = authUser?.role?.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() || ''
+  const isTecnico = normalizedRole === 'tecnico'
+  const isMotorista = normalizedRole === 'motorista'
   const canCreateOs = hasPermission('os', 'create')
   const [osList, setOsList] = useState<OS[]>([])
   const [kanbanColumns, setKanbanColumns] = useState<KanbanColumn[]>([])
@@ -158,14 +159,13 @@ export default function OSListPage() {
   const [showBulkAssign, setShowBulkAssign] = useState(false)
   const [bulkAssigning, setBulkAssigning] = useState(false)
 
-  // Default "Minhas OS" on for tecnico role
+  // Initialize myOsFilter based on role (default off — see all OS)
   const [myOsInitialized, setMyOsInitialized] = useState(false)
   useEffect(() => {
     if (authUser && !myOsInitialized) {
-      if (isTecnico) setMyOsFilter(true)
       setMyOsInitialized(true)
     }
-  }, [authUser, myOsInitialized, isTecnico])
+  }, [authUser, myOsInitialized])
 
   // Debounce search: wait 300ms after user stops typing
   useEffect(() => {

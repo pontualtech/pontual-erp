@@ -19,7 +19,7 @@ const DEFAULT_HIDDEN: Record<string, string[]> = {
 const DEFAULT_OWN_ONLY: Record<string, boolean> = {
   admin: false,
   atendente: false,
-  tecnico: true,
+  tecnico: false,
   motorista: true,
   financeiro: false,
 }
@@ -35,12 +35,14 @@ export async function GET(req: NextRequest) {
       return success({ columns: ALL_COLUMNS, own_only: false })
     }
 
-    const setting = await prisma.setting.findUnique({
+    // Normalize role name (remove accents) for settings lookup
+    const roleKey = user.roleName.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+
+    // Try both normalized and original key (accented)
+    const setting = await prisma.setting.findFirst({
       where: {
-        company_id_key: {
-          company_id: user.companyId,
-          key: `os_visibility.${user.roleName}`,
-        },
+        company_id: user.companyId,
+        key: { in: [`os_visibility.${roleKey}`, `os_visibility.${user.roleName}`] },
       },
     })
 
@@ -53,9 +55,9 @@ export async function GET(req: NextRequest) {
     }
 
     // Defaults
-    const hidden = DEFAULT_HIDDEN[user.roleName] ?? ['total_cost', 'financeiro']
+    const hidden = DEFAULT_HIDDEN[roleKey] ?? DEFAULT_HIDDEN[user.roleName] ?? ['total_cost', 'financeiro']
     const columns = ALL_COLUMNS.filter(c => !hidden.includes(c))
-    const own_only = DEFAULT_OWN_ONLY[user.roleName] ?? false
+    const own_only = DEFAULT_OWN_ONLY[roleKey] ?? DEFAULT_OWN_ONLY[user.roleName] ?? false
 
     return success({ columns, own_only })
   } catch (err) {
