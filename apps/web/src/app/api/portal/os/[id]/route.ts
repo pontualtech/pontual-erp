@@ -188,12 +188,27 @@ export async function POST(
         )
       }
 
+      // Calcular previsão de 10 dias úteis
+      const estimatedDelivery = new Date()
+      let diasUteis = 0
+      while (diasUteis < 10) {
+        estimatedDelivery.setDate(estimatedDelivery.getDate() + 1)
+        const dow = estimatedDelivery.getDay()
+        if (dow !== 0 && dow !== 6) diasUteis++
+      }
+
+      // Extrair forma de pagamento da mensagem (ex: "Aprovado pelo cliente — Pagamento: PIX")
+      const paymentMatch = (message || '').match(/Pagamento:\s*(.+)/i)
+      const paymentMethod = paymentMatch ? paymentMatch[1].trim() : null
+
       await prisma.$transaction([
         prisma.serviceOrder.update({
           where: { id: os.id },
           data: {
             status_id: approvedStatus.id,
-            approved_cost: os.estimated_cost,
+            approved_cost: os.total_cost || os.estimated_cost,
+            estimated_delivery: estimatedDelivery,
+            payment_method: paymentMethod || os.payment_method,
             updated_at: new Date(),
           },
         }),
