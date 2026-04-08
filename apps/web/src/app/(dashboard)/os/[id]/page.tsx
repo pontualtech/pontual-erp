@@ -313,7 +313,7 @@ export default function OSDetailPage() {
   }
 
   useEffect(() => {
-    fetch('/api/users').then(r => r.json()).then(d => setUsers(d.data ?? [])).catch(() => toast.error('Erro ao carregar usuarios'))
+    fetch('/api/users?simple=true').then(r => r.json()).then(d => setUsers(d.data ?? [])).catch(() => toast.error('Erro ao carregar usuarios'))
     fetch('/api/settings/tipos-os').then(r => r.json()).then(d => setTiposOS(d.data ?? [])).catch(() => {})
     fetch('/api/settings/locais-os').then(r => r.json()).then(d => setLocaisOS(d.data ?? [])).catch(() => {})
     fetch('/api/financeiro/formas-pagamento').then(r => r.json()).then(d => {

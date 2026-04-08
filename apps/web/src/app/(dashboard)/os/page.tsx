@@ -209,7 +209,7 @@ export default function OSListPage() {
 
   // Load technicians list
   useEffect(() => {
-    fetch('/api/users?limit=100').then(r => r.json()).then(d => setTecnicos(d.data ?? [])).catch(() => {})
+    fetch('/api/users?simple=true').then(r => r.json()).then(d => setTecnicos(d.data ?? [])).catch(() => {})
   }, [])
 
   useEffect(() => {

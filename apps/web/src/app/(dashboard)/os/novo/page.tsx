@@ -65,7 +65,7 @@ export default function NovaOSPage() {
 
   // Load technicians on mount
   useEffect(() => {
-    fetch('/api/users?limit=100')
+    fetch('/api/users?simple=true')
       .then(r => r.json())
       .then(d => setTecnicos(d.data ?? []))
       .catch(() => {})

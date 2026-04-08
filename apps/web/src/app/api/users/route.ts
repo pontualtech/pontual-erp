@@ -9,6 +9,21 @@ import { randomBytes } from 'crypto'
 
 export async function GET(request: NextRequest) {
   try {
+    const isSimple = request.nextUrl.searchParams.get('simple') === 'true'
+
+    // Simple mode: just id+name for dropdowns (any authenticated user with os.view)
+    if (isSimple) {
+      const result = await requirePermission('os', 'view')
+      if (result instanceof NextResponse) return result
+      const user = result
+      const users = await prisma.userProfile.findMany({
+        where: { company_id: user.companyId, is_active: true },
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' },
+      })
+      return success(users)
+    }
+
     const result = await requirePermission('config', 'view')
     if (result instanceof NextResponse) return result
     const user = result
