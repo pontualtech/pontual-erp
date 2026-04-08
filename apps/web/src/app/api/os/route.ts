@@ -76,6 +76,10 @@ export async function GET(req: NextRequest) {
     if (filterOsLocation) where.os_location = filterOsLocation
     const filterEquipType = url.get('equipmentType')
     if (filterEquipType) where.equipment_type = filterEquipType
+    const filterBrand = url.get('equipmentBrand')
+    if (filterBrand) where.equipment_brand = { contains: filterBrand, mode: 'insensitive' }
+    const filterModel = url.get('equipmentModel')
+    if (filterModel) where.equipment_model = { contains: filterModel, mode: 'insensitive' }
 
     // Ocultar canceladas por padrão (status is_final = true)
     // Quando um statusId específico é fornecido, ignorar hideCancelled (evita conflito)

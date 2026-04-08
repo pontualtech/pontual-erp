@@ -147,7 +147,11 @@ export default function OSListPage() {
   const [typeFilter, setTypeFilter] = useState('')
   const [locationFilter, setLocationFilter] = useState('')
   const [equipFilter, setEquipFilter] = useState('')
+  const [brandFilter, setBrandFilter] = useState('')
+  const [modelFilter, setModelFilter] = useState('')
   const [equipTypes, setEquipTypes] = useState<string[]>([])
+  const [brandOptions, setBrandOptions] = useState<string[]>([])
+  const [modelOptions, setModelOptions] = useState<string[]>([])
   const [osLocationLabel, setOsLocationLabel] = useState<Record<string, string>>({ LOJA: 'Loja', EXTERNO: 'Externo' })
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
@@ -331,6 +335,8 @@ export default function OSListPage() {
     if (typeFilter) params.set('osType', typeFilter)
     if (locationFilter) params.set('osLocation', locationFilter)
     if (equipFilter) params.set('equipmentType', equipFilter)
+    if (brandFilter) params.set('equipmentBrand', brandFilter)
+    if (modelFilter) params.set('equipmentModel', modelFilter)
     if (overdueFilter) params.set('overdue', 'true')
     if (!showCancelled) params.set('hideCancelled', 'true')
     if (ownOnly) params.set('own_only', 'true')
@@ -348,15 +354,21 @@ export default function OSListPage() {
     fetch(`/api/os?${params}`, { signal: ctrl.signal })
       .then(r => r.json())
       .then(d => {
-        setOsList(d.data ?? [])
+        const list = d.data ?? []
+        setOsList(list)
         setTotalPages(d.totalPages ?? 1)
         setTotalFiltered(d.total ?? 0)
+        // Extract unique brands/models for filter dropdowns
+        const brands = [...new Set(list.map((o: OS) => o.equipment_brand).filter(Boolean))] as string[]
+        const models = [...new Set(list.map((o: OS) => o.equipment_model).filter(Boolean))] as string[]
+        setBrandOptions(prev => { const merged = [...new Set([...prev, ...brands])]; return merged.length !== prev.length ? merged.sort() : prev })
+        setModelOptions(prev => { const merged = [...new Set([...prev, ...models])]; return merged.length !== prev.length ? merged.sort() : prev })
       })
       .catch(e => { if (e.name !== 'AbortError') toast.error('Erro ao carregar ordens de servico') })
       .finally(() => { if (!ctrl.signal.aborted) setLoading(false) })
   }
 
-  useEffect(() => { loadOS(); setSelected(new Set()) }, [debouncedSearch, statusFilter, typeFilter, locationFilter, equipFilter, overdueFilter, showCancelled, page, visibilityLoaded, ownOnly, myOsFilter, dateFrom, dateTo, sortField, sortDir])
+  useEffect(() => { loadOS(); setSelected(new Set()) }, [debouncedSearch, statusFilter, typeFilter, locationFilter, equipFilter, brandFilter, modelFilter, overdueFilter, showCancelled, page, visibilityLoaded, ownOnly, myOsFilter, dateFrom, dateTo, sortField, sortDir])
 
   function toggleSelect(id: string) {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -770,6 +782,16 @@ export default function OSListPage() {
           <option value="">Todos Equipamentos</option>
           {equipTypes.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
+        <select title="Filtrar por marca" value={brandFilter} onChange={e => { setBrandFilter(e.target.value); setPage(1) }}
+          className={cn('rounded-md border px-2 py-1.5 text-xs', brandFilter ? 'bg-teal-50 border-teal-300 text-teal-700' : 'bg-white text-gray-600')}>
+          <option value="">Todas Marcas</option>
+          {brandOptions.map(b => <option key={b} value={b}>{b}</option>)}
+        </select>
+        <select title="Filtrar por modelo" value={modelFilter} onChange={e => { setModelFilter(e.target.value); setPage(1) }}
+          className={cn('rounded-md border px-2 py-1.5 text-xs', modelFilter ? 'bg-teal-50 border-teal-300 text-teal-700' : 'bg-white text-gray-600')}>
+          <option value="">Todos Modelos</option>
+          {modelOptions.map(m => <option key={m} value={m}>{m}</option>)}
+        </select>
         <span className="text-gray-300">|</span>
         {/* Date filters */}
         <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1) }}
@@ -849,8 +871,8 @@ export default function OSListPage() {
             <LayoutGrid className="h-3.5 w-3.5" />
           </button>
         </div>
-        {(statusFilter.length > 0 || dateFrom || dateTo || overdueFilter || search) && (
-          <button type="button" onClick={() => { setStatusFilter([]); setDateFrom(''); setDateTo(''); setOverdueFilter(false); setSearch(''); setPage(1) }}
+        {(statusFilter.length > 0 || dateFrom || dateTo || overdueFilter || search || brandFilter || modelFilter || equipFilter || typeFilter || locationFilter) && (
+          <button type="button" onClick={() => { setStatusFilter([]); setDateFrom(''); setDateTo(''); setOverdueFilter(false); setSearch(''); setBrandFilter(''); setModelFilter(''); setEquipFilter(''); setTypeFilter(''); setLocationFilter(''); setPage(1) }}
             className="text-xs text-blue-600 hover:underline ml-1">Limpar filtros</button>
         )}
       </div>
