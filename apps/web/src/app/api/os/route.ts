@@ -32,9 +32,7 @@ export async function GET(req: NextRequest) {
       where.technician_id = user.id
     } else if (!showAll) {
       const role = user.roleName // e.g. 'técnico', 'motorista', 'admin', 'atendente', 'financeiro'
-      if (role === 'técnico') {
-        where.technician_id = user.id
-      } else if (role === 'motorista') {
+      if (role === 'motorista') {
         // Motorista only sees OS in delivery/collection-related statuses
         const deliveryStatuses = await prisma.moduleStatus.findMany({
           where: {
