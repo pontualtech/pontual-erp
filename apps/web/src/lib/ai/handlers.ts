@@ -28,14 +28,12 @@ function formatDate(d: Date | string | null): string {
   return date.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })
 }
 
-/** Look up customer by phone across all companies (used for multi-tenant) */
+/** Look up customer by phone across all companies */
 export async function findCustomerByPhone(phone: string): Promise<{
   customer: any
   companyId: string
 } | null> {
-  // Normalize phone: remove non-digits, handle +55
   const digits = phone.replace(/\D/g, '')
-  // Search with both mobile and phone fields
   const customer = await prisma.customer.findFirst({
     where: {
       OR: [
@@ -48,7 +46,21 @@ export async function findCustomerByPhone(phone: string): Promise<{
     },
     orderBy: { last_os_at: 'desc' },
   })
+  if (!customer) return null
+  return { customer, companyId: customer.company_id }
+}
 
+/** Look up customer by CPF or CNPJ */
+export async function findCustomerByDocument(doc: string): Promise<{
+  customer: any
+  companyId: string
+} | null> {
+  const digits = doc.replace(/\D/g, '')
+  if (digits.length < 11) return null
+  const customer = await prisma.customer.findFirst({
+    where: { document_number: digits, deleted_at: null },
+    orderBy: { last_os_at: 'desc' },
+  })
   if (!customer) return null
   return { customer, companyId: customer.company_id }
 }
@@ -204,14 +216,27 @@ async function continueOrcamentoFlow(
         let isNewCustomer = false
 
         try {
-          // 1. Find or create customer
+          // 1. Find or create customer — search by CPF/CNPJ first, then phone
           let finalCustomerId = customerId
+
+          // Try CPF/CNPJ collected by Ana
+          const docCollected = state.data.cpf || state.data.cnpj || state.data.documento || ''
+          if (!finalCustomerId && docCollected) {
+            const foundByDoc = await findCustomerByDocument(docCollected)
+            if (foundByDoc) {
+              finalCustomerId = foundByDoc.customer.id
+              customerName = foundByDoc.customer.trade_name || foundByDoc.customer.legal_name || ''
+              console.log(`[Bot] Cliente encontrado por CPF/CNPJ: ${customerName}`)
+            }
+          }
+
+          // Fallback: try phone
           if (!finalCustomerId && state.data.phone) {
-            // Try to find by phone from conversation
             const found = await findCustomerByPhone(state.data.phone)
             if (found) {
               finalCustomerId = found.customer.id
               customerName = found.customer.trade_name || found.customer.legal_name || ''
+              console.log(`[Bot] Cliente encontrado por telefone: ${customerName}`)
             }
           }
 
@@ -247,8 +272,10 @@ async function continueOrcamentoFlow(
             customerName = c?.trade_name || c?.legal_name || ''
           }
 
-          // 2. Find initial status
+          // 2. Find "Coletar" status (always open with this status for WhatsApp OS)
           const initialStatus = await prisma.moduleStatus.findFirst({
+            where: { company_id: companyId, module: 'os', name: { contains: 'oletar', mode: 'insensitive' } },
+          }) || await prisma.moduleStatus.findFirst({
             where: { company_id: companyId, module: 'os', is_default: true },
           }) || await prisma.moduleStatus.findFirst({
             where: { company_id: companyId, module: 'os' },
