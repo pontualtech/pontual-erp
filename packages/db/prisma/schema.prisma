@@ -955,6 +955,45 @@ model LoginOtp {
   @@map("login_otps")
 }
 
+model AiDocument {
+  id          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id  String
+  title       String
+  content     String
+  category    String?   // manual, faq, troubleshooting
+  metadata    Json?     @default("{}")
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([company_id], map: "idx_ai_documents_company")
+  @@map("ai_documents")
+}
+
+model AiChatSession {
+  id          String          @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id  String
+  customer_id String
+  title       String?
+  created_at  DateTime?       @default(now()) @db.Timestamptz(6)
+  messages    AiChatMessage[]
+
+  @@index([company_id, customer_id], map: "idx_ai_sessions_customer")
+  @@map("ai_chat_sessions")
+}
+
+model AiChatMessage {
+  id         String        @id @default(dbgenerated("(gen_random_uuid())::text"))
+  session_id String
+  role       String        // user, assistant
+  content    String
+  sources    Json?         @default("[]")
+  created_at DateTime?     @default(now()) @db.Timestamptz(6)
+  session    AiChatSession @relation(fields: [session_id], references: [id], onDelete: Cascade)
+
+  @@index([session_id], map: "idx_ai_messages_session")
+  @@map("ai_chat_messages")
+}
+
 model PushSubscription {
   id          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
   company_id  String
