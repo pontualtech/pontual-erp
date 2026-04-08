@@ -42,11 +42,13 @@ export async function POST(req: NextRequest, { params }: Params) {
     const body = await req.json().catch(() => ({}))
     const reportedIssue = body.reported_issue || `Retorno em garantia - OS original #${original.os_number}`
 
-    // Buscar status "Aberta"
+    // Buscar status "Aprovado" (garantia vai direto para execução) ou fallback "Aberta"
     const abertaStatus = await prisma.moduleStatus.findFirst({
-      where: { company_id: user.companyId, module: 'os', name: 'Aberta' },
+      where: { company_id: user.companyId, module: 'os', name: { contains: 'provad', mode: 'insensitive' } },
+    }) || await prisma.moduleStatus.findFirst({
+      where: { company_id: user.companyId, module: 'os', is_default: true },
     })
-    if (!abertaStatus) return error('Status "Aberta" não encontrado', 500)
+    if (!abertaStatus) return error('Status inicial não encontrado', 500)
 
     // Gerar próximo número de OS
     const lastOS = await prisma.serviceOrder.findFirst({
@@ -64,7 +66,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         customer_id: original.customer_id,
         technician_id: original.technician_id,
         status_id: abertaStatus.id,
-        priority: 'HIGH',
+        priority: 'URGENT',
         os_type: original.os_type,
         equipment_type: original.equipment_type,
         equipment_brand: original.equipment_brand,
@@ -84,17 +86,28 @@ export async function POST(req: NextRequest, { params }: Params) {
       },
     })
 
-    // Registrar histórico na OS original
-    await prisma.serviceOrderHistory.create({
-      data: {
-        company_id: user.companyId,
-        service_order_id: original.id,
-        from_status_id: original.status_id,
-        to_status_id: original.status_id,
-        changed_by: user.id,
-        notes: `Garantia aberta → nova OS-${String(nextNumber).padStart(4, '0')}`,
-      },
-    })
+    // Registrar histórico na OS original e na nova
+    await Promise.all([
+      prisma.serviceOrderHistory.create({
+        data: {
+          company_id: user.companyId,
+          service_order_id: original.id,
+          from_status_id: original.status_id,
+          to_status_id: original.status_id,
+          changed_by: user.id,
+          notes: `Garantia aberta → nova OS-${String(nextNumber).padStart(4, '0')}`,
+        },
+      }),
+      prisma.serviceOrderHistory.create({
+        data: {
+          company_id: user.companyId,
+          service_order_id: warrantyOS.id,
+          to_status_id: abertaStatus.id,
+          changed_by: user.id,
+          notes: `OS de garantia criada — original OS-${String(original.os_number).padStart(4, '0')} | ${original.equipment_type || ''} ${original.equipment_brand || ''} ${original.equipment_model || ''}`.trim(),
+        },
+      }),
+    ])
 
     logAudit({
       companyId: user.companyId,

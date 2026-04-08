@@ -32,6 +32,8 @@ interface OS {
   approved_cost: number | null
   estimated_delivery: string | null
   actual_delivery: string | null
+  is_warranty: boolean | null
+  warranty_os_id: string | null
   created_at: string
   customers: { id: string; legal_name: string; phone: string | null; document_number: string | null } | null
   module_statuses: { id: string; name: string; color: string } | null
@@ -902,13 +904,14 @@ export default function OSListPage() {
                   getSortedList().map((os, rowIndex) => {
                     const st = os.module_statuses || statusMap[os.status_id]
                     const osIsOverdue = isOverdue(os, st?.name)
-                    const dlColor = getDeadlineColor(os, st?.name)
+                    const isWarranty = os.is_warranty === true
+                    const dlColor = isWarranty ? 'red' as const : getDeadlineColor(os, st?.name)
                     const dlStyle = dlColor ? deadlineStyles[dlColor] : null
                     return (
                       <tr key={os.id} className={cn(
                         'hover:bg-gray-50',
                         selected.has(os.id) && 'bg-blue-50',
-                        dlStyle?.row,
+                        isWarranty ? 'border-l-4 border-l-red-600 bg-red-50/60' : dlStyle?.row,
                       )}>
                         <td className="px-3 py-2.5">
                           <input type="checkbox" title={`Selecionar OS-${String(os.os_number).padStart(4, '0')}`}
@@ -924,11 +927,11 @@ export default function OSListPage() {
                                   title={dlColor === 'red' ? 'Prazo estourado' : dlColor === 'yellow' ? 'Prazo vencendo (≤2 dias)' : 'Dentro do prazo'}
                                 />
                               )}
-                              <Link href={`/os/${os.id}`} className="font-bold text-blue-600 hover:underline font-mono text-base tracking-tight">
+                              <Link href={`/os/${os.id}`} className={cn('font-bold hover:underline font-mono text-base tracking-tight', isWarranty ? 'text-red-600' : 'text-blue-600')}>
                                 {os.os_number}
                               </Link>
-                              {(os as any).is_warranty && (
-                                <span className="ml-1 rounded bg-amber-100 text-amber-800 px-1.5 py-0.5 text-[10px] font-bold border border-amber-300">GAR</span>
+                              {isWarranty && (
+                                <span className="rounded bg-red-100 text-red-700 px-1.5 py-0.5 text-[10px] font-bold border border-red-300">GARANTIA</span>
                               )}
                             </div>
                           </td>
