@@ -73,6 +73,15 @@ export async function PUT(req: NextRequest) {
       newStatusId = targetStatus.id
       statusAtual = targetStatus.name
       camposAtualizados.push('status')
+
+      // Se Aprovado, calcular previsão de 10 dias úteis
+      if (targetStatus.name.toLowerCase().includes('aprovad')) {
+        const est = new Date()
+        let du = 0
+        while (du < 10) { est.setDate(est.getDate() + 1); const d = est.getDay(); if (d !== 0 && d !== 6) du++ }
+        updateData.estimated_delivery = est
+        camposAtualizados.push('previsao_entrega')
+      }
     }
 
     if (diagnostico !== undefined) {

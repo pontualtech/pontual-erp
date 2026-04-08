@@ -394,6 +394,11 @@ function OrcamentoContent() {
               <p className="text-xs text-blue-800 font-medium">Importante: o pagamento sera realizado no momento da entrega/retirada do equipamento.</p>
             </div>
 
+            <div className="rounded-lg bg-blue-50 border border-blue-200 p-4 mb-4">
+              <p className="text-sm font-semibold text-blue-800 mb-1">📅 Previsao de entrega</p>
+              <p className="text-xs text-blue-700">Ate <strong>10 dias uteis</strong> a partir da aprovacao. Sempre tentamos entregar o quanto antes!</p>
+            </div>
+
             <div className="flex gap-3">
               <button type="button" onClick={() => handleAction('approve')} disabled={submitting || !paymentMethod}
                 className="flex-1 rounded-lg bg-green-600 py-3 text-sm font-bold text-white hover:bg-green-700 disabled:opacity-50">

@@ -342,9 +342,10 @@ export default function PortalOSDetailPage() {
               </div>
             )}
             {os.estimated_delivery && (
-              <div>
-                <h3 className="text-sm font-semibold text-gray-500 uppercase mb-2">Previsao de Entrega</h3>
-                <p className="text-gray-900">{new Date(os.estimated_delivery).toLocaleDateString('pt-BR')}</p>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h3 className="text-sm font-semibold text-blue-700 uppercase mb-2">Previsao de Entrega</h3>
+                <p className="text-xl font-bold text-blue-900">{new Date(os.estimated_delivery).toLocaleDateString('pt-BR')}</p>
+                <p className="text-xs text-blue-600 mt-1">Prazo maximo de 10 dias uteis apos aprovacao. Sempre tentamos entregar o quanto antes!</p>
               </div>
             )}
             {os.warranty_until && (
