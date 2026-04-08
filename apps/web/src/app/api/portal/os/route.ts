@@ -32,10 +32,15 @@ export async function POST(req: NextRequest) {
       reported_issue = reported_issue.charAt(0).toUpperCase() + reported_issue.slice(1)
     }
 
-    // Find initial status (is_default or lowest order) for this company's OS module
+    // Buscar status "Coletar" (portal sempre abre como Coletar)
     let initialStatus = await prisma.moduleStatus.findFirst({
-      where: { company_id: portalUser.company_id, module: 'os', is_default: true },
+      where: { company_id: portalUser.company_id, module: 'os', name: { contains: 'oletar', mode: 'insensitive' } },
     })
+    if (!initialStatus) {
+      initialStatus = await prisma.moduleStatus.findFirst({
+        where: { company_id: portalUser.company_id, module: 'os', is_default: true },
+      })
+    }
     if (!initialStatus) {
       initialStatus = await prisma.moduleStatus.findFirst({
         where: { company_id: portalUser.company_id, module: 'os' },
@@ -65,7 +70,7 @@ export async function POST(req: NextRequest) {
           customer_id: portalUser.customer_id,
           status_id: initialStatus!.id,
           priority: 'MEDIUM',
-          os_type: 'PORTAL',
+          os_type: 'AVULSO',
           os_location: 'EXTERNO',
           equipment_type,
           equipment_brand: brand || null,
