@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { Printer, Mail, X } from 'lucide-react'
+import { PhotoGallery } from '../../../../components/photo-gallery'
 
 interface OSDetail {
   id: string
@@ -67,7 +68,7 @@ export default function PortalOSDetailPage() {
   const [actionLoading, setActionLoading] = useState(false)
   const [approvePayment, setApprovePayment] = useState<string | null>(null)
   const [company, setCompany] = useState<{ name: string } | null>(null)
-  const [customer, setCustomer] = useState<{ name: string } | null>(null)
+  const [customer, setCustomer] = useState<{ id: string; name: string } | null>(null)
   const [npsScore, setNpsScore] = useState<number | null>(null)
   const [npsComment, setNpsComment] = useState('')
   const [npsSubmitted, setNpsSubmitted] = useState(false)
@@ -628,6 +629,14 @@ export default function PortalOSDetailPage() {
             </div>
           )
         })()}
+
+        {/* Photo Gallery */}
+        <div className="mb-6">
+          <PhotoGallery
+            osId={os.id}
+            customerId={customer?.id || ''}
+          />
+        </div>
 
         {/* Items table */}
         {os.items.length > 0 && (
