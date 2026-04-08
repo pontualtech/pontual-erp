@@ -52,6 +52,7 @@ model Company {
   contracts           Contract[]
   price_table         PriceTable[]
   nps_surveys         NpsSurvey[]
+  payments            Payment[]
 
   @@map("companies")
 }
@@ -372,6 +373,7 @@ model Customer {
   customer_access      CustomerAccess[]
   contracts            Contract[]
   nps_surveys          NpsSurvey[]
+  payments             Payment[]
 
   @@unique([company_id, vhsys_id])
   @@index([company_id], map: "idx_customers_company")
@@ -428,6 +430,7 @@ model ServiceOrder {
   user_profiles         UserProfile?          @relation(fields: [technician_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   tickets               Ticket[]
   nps_surveys           NpsSurvey[]
+  payments              Payment[]
 
   @@unique([company_id, os_number])
   @@index([company_id], map: "idx_os_company")
@@ -909,6 +912,33 @@ model CustomerAccess {
 
   @@unique([company_id, customer_id])
   @@map("customer_access")
+}
+
+model Payment {
+  id               String        @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id       String
+  service_order_id String
+  customer_id      String
+  provider         String        @default("asaas")
+  external_id      String?
+  idempotency_key  String        @unique
+  amount           Int           // centavos
+  status           String        @default("PENDING") // PENDING, CONFIRMED, EXPIRED, REFUNDED, FAILED
+  method           String        @default("PIX")
+  qr_code          String?       // PIX copia-e-cola
+  qr_code_image    String?       // base64 QR image
+  paid_at          DateTime?     @db.Timestamptz(6)
+  expires_at       DateTime?     @db.Timestamptz(6)
+  metadata         Json?         @default("{}")
+  created_at       DateTime?     @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime?     @default(now()) @db.Timestamptz(6)
+  companies        Company       @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  service_orders   ServiceOrder  @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customers        Customer      @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([company_id, service_order_id], map: "idx_payments_company_os")
+  @@index([external_id], map: "idx_payments_external")
+  @@map("payments")
 }
 
 model LoginOtp {

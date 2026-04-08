@@ -1,303 +1,280 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useParams, useSearchParams } from 'next/navigation'
-
-interface PaymentData {
-  id: string
-  description: string
-  total_amount: number
-  received_amount: number
-  pending_amount: number
-  due_date: string
-  days_overdue: number
-  status: string
-  payment_method: string | null
-  boleto_url: string | null
-  pix_code: string | null
-  customer_name: string
-  company: {
-    name: string
-    phone: string
-    email: string
-    pix_key: string | null
-    bank_info: string | null
-    whatsapp: string | null
-  }
-}
+import { useState, useEffect, useCallback } from 'react'
+import { useParams, useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { toast } from 'sonner'
 
 function fmtCents(cents: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cents / 100)
 }
 
-function fmtDate(date: string): string {
-  return new Date(date).toLocaleDateString('pt-BR')
+interface PaymentInfo {
+  id: string
+  qr_code: string | null
+  qr_code_image: string | null
+  amount: number
+  status: string
+  expires_at: string | null
+  paid_at?: string | null
 }
 
-export default function PortalPaymentPage() {
+export default function PortalPagamentoPage() {
   const params = useParams()
-  const searchParams = useSearchParams()
+  const router = useRouter()
   const slug = params.slug as string
-  const id = params.id as string
-  const token = searchParams.get('token')
+  const osId = params.id as string
 
   const [loading, setLoading] = useState(true)
-  const [data, setData] = useState<PaymentData | null>(null)
+  const [payment, setPayment] = useState<PaymentInfo | null>(null)
   const [error, setError] = useState('')
-  const [marking, setMarking] = useState(false)
-  const [marked, setMarked] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [timeLeft, setTimeLeft] = useState(0)
 
-  useEffect(() => {
-    if (!token) {
-      setError('Link inválido. Token de acesso não encontrado.')
-      setLoading(false)
-      return
-    }
-
-    fetch(`/api/portal/pagamento/${id}?token=${token}&slug=${slug}`)
-      .then(r => {
-        if (!r.ok) throw new Error('Link inválido ou expirado')
-        return r.json()
-      })
-      .then(res => {
-        if (res.data) setData(res.data)
-        else throw new Error('Dados não encontrados')
-      })
-      .catch(err => setError(err.message))
-      .finally(() => setLoading(false))
-  }, [id, token, slug])
-
-  async function handleMarkPaid() {
-    if (!confirm('Confirma que o pagamento foi realizado? A empresa será notificada.')) return
-    setMarking(true)
+  // Create or fetch PIX charge
+  const createCharge = useCallback(async () => {
+    setLoading(true)
+    setError('')
     try {
-      const res = await fetch(`/api/portal/pagamento/${id}`, {
+      const res = await fetch('/api/portal/payments/pix', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, slug, action: 'mark_paid' }),
+        body: JSON.stringify({ service_order_id: osId }),
       })
-      if (!res.ok) throw new Error('Erro ao registrar pagamento')
-      setMarked(true)
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Erro')
+      const data = await res.json()
+      if (!res.ok) {
+        setError(data.error || 'Erro ao gerar pagamento')
+        return
+      }
+      setPayment(data.data)
+    } catch {
+      setError('Erro de conexao')
     } finally {
-      setMarking(false)
+      setLoading(false)
+    }
+  }, [osId])
+
+  useEffect(() => { createCharge() }, [createCharge])
+
+  // Poll status every 5s while PENDING
+  useEffect(() => {
+    if (!payment || payment.status !== 'PENDING') return
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/portal/payments/${payment.id}/status`)
+        if (res.ok) {
+          const data = await res.json()
+          if (data.data.status !== 'PENDING') {
+            setPayment(prev => prev ? { ...prev, ...data.data } : prev)
+            if (data.data.status === 'CONFIRMED') {
+              toast.success('Pagamento confirmado!')
+            }
+          }
+        }
+      } catch {}
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [payment])
+
+  // Timer countdown
+  useEffect(() => {
+    if (!payment?.expires_at || payment.status !== 'PENDING') return
+    const update = () => {
+      const diff = Math.max(0, Math.floor((new Date(payment.expires_at!).getTime() - Date.now()) / 1000))
+      setTimeLeft(diff)
+      if (diff <= 0) {
+        setPayment(prev => prev ? { ...prev, status: 'EXPIRED' } : prev)
+      }
+    }
+    update()
+    const interval = setInterval(update, 1000)
+    return () => clearInterval(interval)
+  }, [payment?.expires_at, payment?.status])
+
+  async function handleCopy() {
+    if (!payment?.qr_code) return
+    try {
+      await navigator.clipboard.writeText(payment.qr_code)
+      setCopied(true)
+      toast.success('Codigo PIX copiado!')
+      setTimeout(() => setCopied(false), 3000)
+    } catch {
+      toast.error('Erro ao copiar')
     }
   }
 
-  function copyToClipboard(text: string) {
-    navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-zinc-950">
-        <div className="text-center">
-          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-blue-600 dark:border-blue-500 border-t-transparent" />
-          <p className="mt-3 text-gray-500 dark:text-gray-400">Carregando...</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (error || !data) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-zinc-950 p-4">
-        <div className="w-full max-w-md rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-8 text-center shadow-sm">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
-            <svg className="h-6 w-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-            </svg>
-          </div>
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Link inválido</h2>
-          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{error || 'Não foi possível carregar as informações de pagamento.'}</p>
-        </div>
-      </div>
-    )
-  }
-
-  const isPaid = data.status === 'RECEBIDO' || marked
-  const isOverdue = data.days_overdue > 0 && !isPaid
+  const timerMinutes = Math.floor(timeLeft / 60)
+  const timerSeconds = timeLeft % 60
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 p-4">
-      <div className="mx-auto max-w-lg">
-        {/* Header */}
-        <div className="mb-6 text-center">
-          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">{data.company.name}</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Portal de Pagamento</p>
+    <div className="min-h-screen bg-gray-50 dark:bg-zinc-950">
+      {/* Header */}
+      <header className="bg-white dark:bg-zinc-900 border-b border-gray-200 dark:border-zinc-800 sticky top-0 z-10">
+        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
+          <Link href={`/portal/${slug}/os/${osId}`} className="text-sm text-blue-600 dark:text-blue-400 font-medium inline-flex items-center gap-1">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Voltar para OS
+          </Link>
         </div>
+      </header>
 
-        {/* Status */}
-        {isPaid ? (
-          <div className="mb-6 rounded-lg border-2 border-green-200 bg-green-50 p-6 text-center">
-            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
-              <svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            <h2 className="text-lg font-semibold text-green-800">
-              {marked ? 'Pagamento informado com sucesso!' : 'Já pago'}
-            </h2>
-            <p className="mt-1 text-sm text-green-600">
-              {marked
-                ? 'Obrigado! A empresa foi notificada sobre seu pagamento.'
-                : 'Este título já foi quitado. Obrigado!'
-              }
-            </p>
+      <main className="max-w-2xl mx-auto px-4 py-6">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-6">Pagamento via PIX</h1>
+
+        {loading && (
+          <div className="flex flex-col items-center py-12 gap-3">
+            <div className="animate-spin rounded-full h-10 w-10 border-4 border-blue-200 dark:border-blue-900 border-t-blue-600 dark:border-t-blue-400" />
+            <p className="text-sm text-gray-500 dark:text-gray-400">Gerando QR Code PIX...</p>
           </div>
-        ) : (
-          <>
-            {/* Payment info card */}
-            <div className="mb-4 rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-6 shadow-sm">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="font-semibold text-gray-900 dark:text-gray-100">Detalhes da Cobrança</h2>
-                <span className={`rounded-full px-3 py-1 text-xs font-medium ${
-                  isOverdue
-                    ? 'bg-red-100 text-red-700'
-                    : 'bg-yellow-100 text-yellow-700'
-                }`}>
-                  {isOverdue ? 'Vencido' : 'Pendente'}
-                </span>
-              </div>
-
-              <div className="space-y-3 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-500 dark:text-gray-400">Cliente</span>
-                  <span className="font-medium text-gray-900 dark:text-gray-100">{data.customer_name}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500 dark:text-gray-400">Descrição</span>
-                  <span className="font-medium text-gray-900 dark:text-gray-100">{data.description}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500 dark:text-gray-400">Vencimento</span>
-                  <span className={`font-medium ${isOverdue ? 'text-red-600' : 'text-gray-900 dark:text-gray-100'}`}>
-                    {fmtDate(data.due_date)}
-                  </span>
-                </div>
-                {isOverdue && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500 dark:text-gray-400">Dias em atraso</span>
-                    <span className="font-medium text-red-600">{data.days_overdue} dias</span>
-                  </div>
-                )}
-                <div className="border-t dark:border-zinc-700 pt-3">
-                  <div className="flex justify-between">
-                    <span className="text-lg font-semibold text-gray-900 dark:text-gray-100">Valor</span>
-                    <span className="text-lg font-bold text-gray-900 dark:text-gray-100">{fmtCents(data.pending_amount)}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Payment methods */}
-            <div className="mb-4 space-y-3">
-              {/* PIX */}
-              {data.company.pix_key && (
-                <div className="rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4 shadow-sm">
-                  <h3 className="mb-2 font-semibold text-gray-900 dark:text-gray-100">PIX</h3>
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 rounded-lg bg-gray-100 dark:bg-zinc-800 px-3 py-2 font-mono text-sm text-gray-700 dark:text-gray-300">
-                      {data.company.pix_key}
-                    </div>
-                    <button
-                      onClick={() => copyToClipboard(data.company.pix_key!)}
-                      className="rounded-lg bg-blue-600 dark:bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-                    >
-                      {copied ? 'Copiado!' : 'Copiar'}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* PIX Code (QR) */}
-              {data.pix_code && (
-                <div className="rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4 shadow-sm">
-                  <h3 className="mb-2 font-semibold text-gray-900 dark:text-gray-100">PIX Copia e Cola</h3>
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 truncate rounded-lg bg-gray-100 dark:bg-zinc-800 px-3 py-2 font-mono text-xs text-gray-700 dark:text-gray-300">
-                      {data.pix_code}
-                    </div>
-                    <button
-                      onClick={() => copyToClipboard(data.pix_code!)}
-                      className="shrink-0 rounded-lg bg-blue-600 dark:bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-                    >
-                      Copiar
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Boleto */}
-              {data.boleto_url && (
-                <div className="rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4 shadow-sm">
-                  <h3 className="mb-2 font-semibold text-gray-900 dark:text-gray-100">Boleto</h3>
-                  <a
-                    href={data.boleto_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block rounded-lg bg-blue-600 dark:bg-blue-500 px-4 py-3 text-center text-sm font-medium text-white hover:bg-blue-700"
-                  >
-                    Abrir Boleto
-                  </a>
-                </div>
-              )}
-
-              {/* Bank transfer */}
-              {data.company.bank_info && (
-                <div className="rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4 shadow-sm">
-                  <h3 className="mb-2 font-semibold text-gray-900 dark:text-gray-100">Transferência Bancária</h3>
-                  <pre className="whitespace-pre-wrap rounded-lg bg-gray-100 dark:bg-zinc-800 p-3 text-sm text-gray-700 dark:text-gray-300">
-                    {data.company.bank_info}
-                  </pre>
-                </div>
-              )}
-            </div>
-
-            {/* Mark as paid */}
-            <button
-              onClick={handleMarkPaid}
-              disabled={marking}
-              className="w-full rounded-lg bg-green-600 px-4 py-3 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"
-            >
-              {marking ? 'Registrando...' : 'Já realizei o pagamento'}
-            </button>
-          </>
         )}
 
-        {/* Contact */}
-        <div className="mt-6 rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4 shadow-sm">
-          <h3 className="mb-2 text-sm font-semibold text-gray-900 dark:text-gray-100">Dúvidas? Entre em contato</h3>
-          <div className="space-y-1 text-sm text-gray-500 dark:text-gray-400">
-            {data.company.phone && (
-              <p>Telefone: <a href={`tel:${data.company.phone}`} className="text-blue-600 dark:text-blue-400 hover:underline">{data.company.phone}</a></p>
-            )}
-            {data.company.email && (
-              <p>Email: <a href={`mailto:${data.company.email}`} className="text-blue-600 dark:text-blue-400 hover:underline">{data.company.email}</a></p>
-            )}
-            {data.company.whatsapp && (
-              <p>
-                <a
-                  href={`https://wa.me/${data.company.whatsapp.replace(/\D/g, '')}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-green-600 hover:underline"
-                >
-                  WhatsApp
-                </a>
-              </p>
-            )}
+        {error && (
+          <div className="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-900 rounded-xl p-5 text-center">
+            <svg className="w-10 h-10 text-red-400 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+            <p className="text-red-700 dark:text-red-400 font-medium">{error}</p>
+            <button type="button" onClick={createCharge} className="mt-3 text-sm text-blue-600 dark:text-blue-400 font-medium hover:underline">
+              Tentar novamente
+            </button>
           </div>
-        </div>
+        )}
 
-        <p className="mt-4 text-center text-xs text-gray-400 dark:text-gray-500">
-          {data.company.name} - Portal de Pagamento
-        </p>
-      </div>
+        {/* CONFIRMED */}
+        {payment?.status === 'CONFIRMED' && (
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-zinc-700 p-8 text-center">
+            <div className="w-20 h-20 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-10 h-10 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h2 className="text-2xl font-bold text-green-700 dark:text-green-400 mb-2">Pagamento Confirmado!</h2>
+            <p className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-1">{fmtCents(payment.amount)}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+              Pago em {payment.paid_at ? new Date(payment.paid_at).toLocaleString('pt-BR') : '-'}
+            </p>
+            <Link
+              href={`/portal/${slug}/os/${osId}`}
+              className="inline-block bg-blue-600 dark:bg-blue-500 text-white font-semibold py-3 px-8 rounded-xl hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors"
+            >
+              Voltar para OS
+            </Link>
+          </div>
+        )}
+
+        {/* EXPIRED */}
+        {payment?.status === 'EXPIRED' && (
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-zinc-700 p-8 text-center">
+            <div className="w-20 h-20 bg-amber-100 dark:bg-amber-900 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-10 h-10 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-bold text-amber-700 dark:text-amber-400 mb-2">QR Code Expirado</h2>
+            <p className="text-gray-500 dark:text-gray-400 mb-4">O tempo para pagamento expirou.</p>
+            <button
+              type="button"
+              onClick={createCharge}
+              className="bg-blue-600 dark:bg-blue-500 text-white font-semibold py-3 px-8 rounded-xl hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors"
+            >
+              Gerar Novo QR Code
+            </button>
+          </div>
+        )}
+
+        {/* PENDING — QR Code */}
+        {payment?.status === 'PENDING' && !loading && (
+          <div className="space-y-5">
+            {/* Value card */}
+            <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-zinc-700 p-6 text-center">
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Valor a pagar</p>
+              <p className="text-4xl font-bold text-gray-900 dark:text-gray-100">{fmtCents(payment.amount)}</p>
+            </div>
+
+            {/* QR Code */}
+            <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-zinc-700 p-6 flex flex-col items-center">
+              {payment.qr_code_image ? (
+                <img src={payment.qr_code_image} alt="QR Code PIX" className="w-64 h-64 mb-4 rounded-lg" />
+              ) : (
+                <div className="w-64 h-64 bg-gray-100 dark:bg-zinc-800 rounded-lg flex items-center justify-center mb-4">
+                  <p className="text-sm text-gray-400 dark:text-gray-500 text-center px-4">
+                    QR Code visual indisponivel.<br/>Use o codigo copia-e-cola abaixo.
+                  </p>
+                </div>
+              )}
+
+              {/* Timer */}
+              <div className="mb-4">
+                {timeLeft > 0 ? (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Expira em{' '}
+                    <span className={`font-mono font-bold ${timeLeft <= 300 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'}`}>
+                      {timerMinutes}:{String(timerSeconds).padStart(2, '0')}
+                    </span>
+                  </p>
+                ) : (
+                  <p className="text-sm text-red-600 dark:text-red-400 font-medium">Expirado</p>
+                )}
+              </div>
+
+              {/* Copia e cola */}
+              {payment.qr_code && (
+                <div className="w-full">
+                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 text-center">PIX Copia e Cola</p>
+                  <div className="bg-gray-50 dark:bg-zinc-800 rounded-lg p-3 break-all text-xs text-gray-600 dark:text-gray-400 font-mono max-h-20 overflow-auto mb-3">
+                    {payment.qr_code}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCopy}
+                    className={`w-full py-3 rounded-xl font-semibold transition-colors flex items-center justify-center gap-2 ${
+                      copied
+                        ? 'bg-green-600 text-white'
+                        : 'bg-blue-600 dark:bg-blue-500 hover:bg-blue-700 dark:hover:bg-blue-600 text-white'
+                    }`}
+                  >
+                    {copied ? (
+                      <>
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        Copiado!
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                        </svg>
+                        Copiar Codigo PIX
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Instructions */}
+            <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-900 rounded-xl p-4">
+              <h3 className="font-semibold text-blue-800 dark:text-blue-300 text-sm mb-2">Como pagar:</h3>
+              <ol className="text-sm text-blue-700 dark:text-blue-400 space-y-1 list-decimal list-inside">
+                <li>Abra o app do seu banco</li>
+                <li>Escolha pagar com PIX</li>
+                <li>Escaneie o QR Code ou cole o codigo</li>
+                <li>Confirme o pagamento</li>
+              </ol>
+              <p className="text-xs text-blue-600 dark:text-blue-500 mt-2">A confirmacao e automatica e leva poucos segundos.</p>
+            </div>
+          </div>
+        )}
+      </main>
+
+      <footer className="border-t border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 mt-12">
+        <div className="max-w-2xl mx-auto px-4 py-4 text-center text-xs text-gray-400 dark:text-gray-500">
+          Powered by PontualERP
+        </div>
+      </footer>
     </div>
   )
 }
