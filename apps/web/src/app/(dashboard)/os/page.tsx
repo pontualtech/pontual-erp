@@ -389,6 +389,11 @@ export default function OSListPage() {
 
   function getSortedList() {
     return [...osList].sort((a, b) => {
+      // Garantia sempre primeiro (topo da lista)
+      const aW = a.is_warranty === true ? 0 : 1
+      const bW = b.is_warranty === true ? 0 : 1
+      if (aW !== bW) return aW - bW
+
       let va: any, vb: any
       switch (sortField) {
         case 'os_number': va = a.os_number; vb = b.os_number; break
