@@ -127,12 +127,14 @@ export async function POST(request: NextRequest, { params }: Params) {
     }
 
     const body = await request.json()
-    const { token, slug, action, reason, payment_method } = body as {
+    const { token, slug, action, reason, payment_method, discounted_cost, discount_percent } = body as {
       token?: string
       slug?: string
       action?: 'approve' | 'reject'
       reason?: string
       payment_method?: string
+      discounted_cost?: number
+      discount_percent?: number
     }
 
     // Capturar IP do cliente
@@ -200,10 +202,15 @@ export async function POST(request: NextRequest, { params }: Params) {
         if (dow !== 0 && dow !== 6) diasUteis++
       }
 
+      // Determinar valor aprovado (com ou sem desconto)
+      const hasDiscount = typeof discounted_cost === 'number' && discounted_cost > 0 && discounted_cost < (os.total_cost || 0)
+      const approvedCostValue = hasDiscount ? discounted_cost : (os.total_cost || 0)
+      const discountNote = hasDiscount ? ` — COM DESCONTO de ${discount_percent || '?'}% (de ${fmtCents(os.total_cost || 0)} para ${fmtCents(discounted_cost)})` : ''
+
       // Nota interna com data, hora e IP
       const now = new Date()
       const dataHora = now.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
-      const notaAprovacao = `[${dataHora}] Orcamento APROVADO pelo cliente via portal (IP: ${clientIp})${payment_method ? ' — Pagamento: ' + payment_method : ''}`
+      const notaAprovacao = `[${dataHora}] Orcamento APROVADO pelo cliente via portal (IP: ${clientIp})${payment_method ? ' — Pagamento: ' + payment_method : ''}${discountNote}`
       const currentNotes = os.internal_notes || ''
 
       // Transição atômica
@@ -212,7 +219,7 @@ export async function POST(request: NextRequest, { params }: Params) {
           where: { id: os.id },
           data: {
             status_id: approvedStatus.id,
-            approved_cost: os.total_cost || 0,
+            approved_cost: approvedCostValue,
             estimated_delivery: estimatedDelivery,
             payment_method: payment_method || os.payment_method || null,
             internal_notes: currentNotes ? `${currentNotes}\n${notaAprovacao}` : notaAprovacao,
@@ -227,7 +234,7 @@ export async function POST(request: NextRequest, { params }: Params) {
             from_status_id: os.status_id,
             to_status_id: approvedStatus.id,
             changed_by: 'portal',
-            notes: 'Orçamento aprovado pelo cliente via portal',
+            notes: hasDiscount ? `Orcamento aprovado COM DESCONTO de ${discount_percent || '?'}% pelo cliente via portal` : 'Orçamento aprovado pelo cliente via portal',
           },
         })
       })
@@ -235,7 +242,7 @@ export async function POST(request: NextRequest, { params }: Params) {
       const osNum = String(os.os_number).padStart(4, '0')
       const customerName = os.customers?.legal_name || 'Cliente'
       const customerFirstName = customerName.split(' ')[0]
-      const fmtValue = fmtCents(os.total_cost || 0)
+      const fmtValue = fmtCents(approvedCostValue)
       const previsaoStr = estimatedDelivery.toLocaleDateString('pt-BR')
 
       // Carregar settings para WhatsApp e template
@@ -253,7 +260,7 @@ export async function POST(request: NextRequest, { params }: Params) {
         module: 'os',
         action: 'quote_approved_by_customer',
         entityId: os.id,
-        newValue: { customer_name: customerName, os_number: os.os_number, total_cost: os.total_cost, estimated_delivery: previsaoStr },
+        newValue: { customer_name: customerName, os_number: os.os_number, total_cost: os.total_cost, approved_cost: approvedCostValue, discount_percent: hasDiscount ? discount_percent : null, estimated_delivery: previsaoStr },
       })
 
       // 1. Aviso interno URGENTE para técnicos
@@ -261,7 +268,7 @@ export async function POST(request: NextRequest, { params }: Params) {
         data: {
           company_id: os.company_id,
           title: `✅ OS ${osNum} APROVADA — ${customerName}`,
-          message: `O cliente ${customerName} aprovou o orçamento da OS ${osNum} (${equipment}) no valor de ${fmtValue}.\n\nPrevisão de entrega: ${previsaoStr} (10 dias úteis).\n\nIniciar o reparo imediatamente!`,
+          message: `O cliente ${customerName} aprovou o orçamento da OS ${osNum} (${equipment}) no valor de ${fmtValue}${hasDiscount ? ` (COM DESCONTO de ${discount_percent}% — valor original: ${fmtCents(os.total_cost || 0)})` : ''}.\n\nPrevisão de entrega: ${previsaoStr} (10 dias úteis).\n\nIniciar o reparo imediatamente!`,
           priority: 'URGENTE',
           require_read: true,
           author_name: 'Sistema',

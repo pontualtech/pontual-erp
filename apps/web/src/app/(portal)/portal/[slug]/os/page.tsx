@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 
@@ -15,7 +15,27 @@ interface PortalOS {
   total_cost?: number
   estimated_delivery?: string
   created_at: string
-  status: { id: string; name: string; color: string }
+  status: { id: string; name: string; color: string; is_final?: boolean }
+}
+
+type StatusFilter = 'todas' | 'em_andamento' | 'aguardando' | 'concluidas'
+
+const STATUS_TABS: { key: StatusFilter; label: string }[] = [
+  { key: 'todas', label: 'Todas' },
+  { key: 'em_andamento', label: 'Em Andamento' },
+  { key: 'aguardando', label: 'Aguardando Aprovacao' },
+  { key: 'concluidas', label: 'Concluidas' },
+]
+
+function classifyStatus(os: PortalOS): StatusFilter {
+  const name = os.status.name.toLowerCase()
+  if (name.includes('aguardando aprov') || name.includes('analise')) {
+    return 'aguardando'
+  }
+  if (os.status.is_final || name.includes('entreg') || name.includes('cancelad') || name.includes('finaliz')) {
+    return 'concluidas'
+  }
+  return 'em_andamento'
 }
 
 export default function PortalOSListPage() {
@@ -29,6 +49,8 @@ export default function PortalOSListPage() {
   const [page, setPage] = useState(1)
   const [company, setCompany] = useState<{ name: string } | null>(null)
   const [customer, setCustomer] = useState<{ name: string } | null>(null)
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('todas')
 
   useEffect(() => {
     const savedCompany = localStorage.getItem('portal_company')
@@ -39,7 +61,6 @@ export default function PortalOSListPage() {
 
   useEffect(() => {
     setLoading(true)
-    // Auth token is sent automatically via httpOnly cookie
     fetch(`/api/portal/os?page=${page}&limit=20`)
       .then(r => {
         if (r.status === 401) {
@@ -65,7 +86,53 @@ export default function PortalOSListPage() {
       .finally(() => router.push(`/portal/${slug}/login`))
   }
 
+  const filteredList = useMemo(() => {
+    let list = osList
+
+    // Status filter
+    if (statusFilter !== 'todas') {
+      list = list.filter(os => classifyStatus(os) === statusFilter)
+    }
+
+    // Search filter
+    if (search.trim()) {
+      const q = search.trim().toLowerCase()
+      list = list.filter(os => {
+        const osNum = String(os.os_number)
+        const equip = `${os.equipment_type} ${os.equipment_brand || ''} ${os.equipment_model || ''}`.toLowerCase()
+        return osNum.includes(q) || equip.includes(q)
+      })
+    }
+
+    return list
+  }, [osList, statusFilter, search])
+
   const totalPages = Math.ceil(total / 20)
+
+  const statusCounts = useMemo(() => {
+    const counts = { todas: osList.length, em_andamento: 0, aguardando: 0, concluidas: 0 }
+    osList.forEach(os => {
+      const cat = classifyStatus(os)
+      counts[cat]++
+    })
+    return counts
+  }, [osList])
+
+  function formatEquipment(os: PortalOS) {
+    const parts = [os.equipment_type]
+    if (os.equipment_brand) parts.push(os.equipment_brand)
+    if (os.equipment_model) parts.push(os.equipment_model)
+    return parts.join(' ')
+  }
+
+  function formatDate(dateStr: string) {
+    return new Date(dateStr).toLocaleDateString('pt-BR')
+  }
+
+  function formatCurrency(cents?: number) {
+    if (!cents) return '-'
+    return `R$ ${(cents / 100).toFixed(2)}`
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -109,20 +176,78 @@ export default function PortalOSListPage() {
 
       {/* Content */}
       <main className="max-w-5xl mx-auto px-4 py-6">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Minhas Ordens de Servico</h1>
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-500 hidden sm:block">{total} OS encontradas</span>
-            <Link
-              href={`/portal/${slug}/nova-os`}
-              className="inline-flex items-center gap-1.5 bg-blue-600 text-white font-medium py-2 px-3.5 rounded-lg hover:bg-blue-700 transition-colors text-sm"
+        {/* Title + Nova OS */}
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Minhas Ordens de Servico</h1>
+            <p className="text-sm text-gray-500 mt-0.5">{total} OS encontradas</p>
+          </div>
+          <Link
+            href={`/portal/${slug}/nova-os`}
+            className="inline-flex items-center gap-1.5 bg-blue-600 text-white font-medium py-2.5 px-4 rounded-lg hover:bg-blue-700 transition-colors text-sm shadow-sm"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Nova OS
+          </Link>
+        </div>
+
+        {/* Search bar */}
+        <div className="relative mb-4">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+          <input
+            type="text"
+            placeholder="Buscar por numero da OS ou equipamento..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              title="Limpar busca"
+              className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
-              Nova OS
-            </Link>
-          </div>
+            </button>
+          )}
+        </div>
+
+        {/* Status filter tabs */}
+        <div className="flex gap-1 mb-5 overflow-x-auto pb-1 -mx-4 px-4 sm:mx-0 sm:px-0">
+          {STATUS_TABS.map(tab => {
+            const isActive = statusFilter === tab.key
+            const count = statusCounts[tab.key]
+            return (
+              <button
+                type="button"
+                key={tab.key}
+                onClick={() => setStatusFilter(tab.key)}
+                className={`flex-shrink-0 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  isActive
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                {tab.label}
+                <span
+                  className={`inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-xs font-semibold ${
+                    isActive ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-500'
+                  }`}
+                >
+                  {count}
+                </span>
+              </button>
+            )
+          })}
         </div>
 
         {loading ? (
@@ -130,11 +255,42 @@ export default function PortalOSListPage() {
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
           </div>
         ) : osList.length === 0 ? (
+          /* Empty state: no OS at all */
           <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
-            <svg className="w-12 h-12 text-gray-300 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-            </svg>
-            <p className="text-gray-500">Nenhuma ordem de servico encontrada</p>
+            <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-1">Voce ainda nao tem ordens de servico</h3>
+            <p className="text-gray-500 mb-5">Abra sua primeira OS!</p>
+            <Link
+              href={`/portal/${slug}/nova-os`}
+              className="inline-flex items-center gap-1.5 bg-blue-600 text-white font-medium py-2.5 px-5 rounded-lg hover:bg-blue-700 transition-colors text-sm"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Abrir Nova OS
+            </Link>
+          </div>
+        ) : filteredList.length === 0 ? (
+          /* Empty state: filter returns nothing */
+          <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+            <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-1">Nenhuma OS encontrada para este filtro</h3>
+            <p className="text-gray-500 mb-4">Tente alterar os termos da busca ou o filtro de status</p>
+            <button
+              type="button"
+              onClick={() => { setSearch(''); setStatusFilter('todas') }}
+              className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+            >
+              Limpar filtros
+            </button>
           </div>
         ) : (
           <>
@@ -143,21 +299,26 @@ export default function PortalOSListPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50">
-                    <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase">#</th>
-                    <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Equipamento</th>
-                    <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Status</th>
-                    <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Data</th>
-                    <th className="text-right px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Valor</th>
+                    <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Numero OS</th>
+                    <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Equipamento</th>
+                    <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+                    <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Data Abertura</th>
+                    <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Previsao</th>
+                    <th className="text-right px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Valor</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {osList.map(os => (
+                  {filteredList.map(os => (
                     <tr
                       key={os.id}
                       onClick={() => router.push(`/portal/${slug}/os/${os.id}`)}
-                      className="hover:bg-gray-50 cursor-pointer transition-colors"
+                      className="hover:bg-blue-50/50 cursor-pointer transition-colors group"
                     >
-                      <td className="px-5 py-4 font-medium text-gray-900">{os.os_number}</td>
+                      <td className="px-5 py-4">
+                        <span className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">
+                          #{os.os_number}
+                        </span>
+                      </td>
                       <td className="px-5 py-4">
                         <div className="text-gray-900">{os.equipment_type}</div>
                         {(os.equipment_brand || os.equipment_model) && (
@@ -178,10 +339,13 @@ export default function PortalOSListPage() {
                         </span>
                       </td>
                       <td className="px-5 py-4 text-sm text-gray-500">
-                        {new Date(os.created_at).toLocaleDateString('pt-BR')}
+                        {formatDate(os.created_at)}
+                      </td>
+                      <td className="px-5 py-4 text-sm text-gray-500">
+                        {os.estimated_delivery ? formatDate(os.estimated_delivery) : '-'}
                       </td>
                       <td className="px-5 py-4 text-right font-medium text-gray-900">
-                        {os.total_cost ? `R$ ${(os.total_cost / 100).toFixed(2)}` : '-'}
+                        {formatCurrency(os.total_cost)}
                       </td>
                     </tr>
                   ))}
@@ -191,14 +355,14 @@ export default function PortalOSListPage() {
 
             {/* Mobile cards */}
             <div className="md:hidden space-y-3">
-              {osList.map(os => (
+              {filteredList.map(os => (
                 <Link
                   key={os.id}
                   href={`/portal/${slug}/os/${os.id}`}
-                  className="block bg-white rounded-xl border border-gray-200 p-4 hover:bg-gray-50 transition-colors"
+                  className="block bg-white rounded-xl border border-gray-200 p-4 hover:border-blue-200 hover:shadow-sm transition-all active:scale-[0.99]"
                 >
                   <div className="flex items-center justify-between mb-2">
-                    <span className="font-medium text-gray-900">OS #{os.os_number}</span>
+                    <span className="text-lg font-bold text-gray-900">OS #{os.os_number}</span>
                     <span
                       className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
                       style={{
@@ -209,16 +373,17 @@ export default function PortalOSListPage() {
                       {os.status.name}
                     </span>
                   </div>
-                  <p className="text-sm text-gray-600">{os.equipment_type}</p>
-                  <div className="flex items-center justify-between mt-2 text-sm">
-                    <span className="text-gray-500">
-                      {new Date(os.created_at).toLocaleDateString('pt-BR')}
+                  <p className="text-sm text-gray-700 font-medium">{formatEquipment(os)}</p>
+                  <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
+                    <div className="flex items-center gap-1.5 text-sm text-gray-500">
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      {formatDate(os.created_at)}
+                    </div>
+                    <span className="font-semibold text-gray-900">
+                      {formatCurrency(os.total_cost)}
                     </span>
-                    {os.total_cost ? (
-                      <span className="font-medium text-gray-900">
-                        R$ {(os.total_cost / 100).toFixed(2)}
-                      </span>
-                    ) : null}
                   </div>
                 </Link>
               ))}
@@ -230,17 +395,17 @@ export default function PortalOSListPage() {
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
                   disabled={page === 1}
-                  className="px-3 py-2 text-sm border border-gray-300 rounded-lg disabled:opacity-50 hover:bg-gray-50"
+                  className="px-4 py-2 text-sm font-medium border border-gray-300 rounded-lg disabled:opacity-50 hover:bg-gray-50 transition-colors"
                 >
                   Anterior
                 </button>
-                <span className="text-sm text-gray-600">
+                <span className="text-sm text-gray-600 px-2">
                   Pagina {page} de {totalPages}
                 </span>
                 <button
                   onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                   disabled={page === totalPages}
-                  className="px-3 py-2 text-sm border border-gray-300 rounded-lg disabled:opacity-50 hover:bg-gray-50"
+                  className="px-4 py-2 text-sm font-medium border border-gray-300 rounded-lg disabled:opacity-50 hover:bg-gray-50 transition-colors"
                 >
                   Proxima
                 </button>

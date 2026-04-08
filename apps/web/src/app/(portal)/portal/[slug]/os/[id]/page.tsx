@@ -260,62 +260,104 @@ export default function PortalOSDetailPage() {
           </div>
 
           {/* Status Timeline */}
-          {os.all_statuses.length > 0 && (
-            <div className="mb-6">
-              <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Progresso</h3>
-              <div className="flex items-center overflow-x-auto pb-2">
-                {os.all_statuses.map((s, i) => {
-                  const currentOrder = os.status.order ?? 0
-                  const statusOrder = s.order ?? 0
-                  const isActive = s.id === os.status.id
-                  const isPast = statusOrder < currentOrder
-                  const isFuture = statusOrder > currentOrder
+          {os.all_statuses.length > 0 && (() => {
+            const labelMap: Record<string, string> = {
+              'Coletar': 'Recebido',
+              'Em Analise': 'Diagnostico',
+              'Aprovado': 'Aprovado',
+              'Em Execucao': 'Reparo em Andamento',
+              'Aguardando Peca': 'Aguardando Pecas',
+              'Entregar Reparado': 'Pronto para Retirada',
+              'Entregue': 'Entregue',
+            }
+            const historyDateMap: Record<string, string> = {}
+            os.history.forEach((h) => {
+              historyDateMap[h.to_status.name] = h.created_at
+            })
+            return (
+              <div className="mb-6">
+                <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Progresso</h3>
+                <div className="flex flex-col gap-0">
+                  {os.all_statuses.map((s, i) => {
+                    const currentOrder = os.status.order ?? 0
+                    const statusOrder = s.order ?? 0
+                    const isActive = s.id === os.status.id
+                    const isPast = statusOrder < currentOrder
+                    const isFuture = statusOrder > currentOrder
+                    const friendlyName = labelMap[s.name] ?? s.name
+                    const historyDate = historyDateMap[s.name]
 
-                  return (
-                    <div key={s.id} className="flex items-center flex-shrink-0">
-                      <div className="flex flex-col items-center">
-                        <div
-                          className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
-                            isActive
-                              ? 'ring-4 ring-offset-2'
-                              : ''
-                          }`}
-                          style={{
-                            backgroundColor: isPast || isActive ? s.color : '#E5E7EB',
-                            color: isPast || isActive ? 'white' : '#9CA3AF',
-                            boxShadow: isActive ? `0 0 0 3px ${s.color}40` : undefined,
-                          }}
-                        >
-                          {isPast ? (
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                            </svg>
-                          ) : (
-                            i + 1
+                    return (
+                      <div key={s.id} className="flex items-stretch">
+                        {/* Left: circle + connecting line */}
+                        <div className="flex flex-col items-center mr-3">
+                          <div
+                            className={`w-8 h-8 rounded-full flex items-center justify-center text-sm flex-shrink-0 ${
+                              isActive ? 'animate-pulse' : ''
+                            }`}
+                            style={{
+                              backgroundColor: isPast ? '#22C55E' : isActive ? (s.color || '#3B82F6') : '#E5E7EB',
+                              color: isPast || isActive ? 'white' : '#9CA3AF',
+                              boxShadow: isActive ? `0 0 0 4px ${s.color || '#3B82F6'}30` : undefined,
+                            }}
+                          >
+                            {isPast ? (
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                            ) : isActive ? (
+                              <span className="text-base leading-none">&#9679;</span>
+                            ) : (
+                              <span className="text-base leading-none">&#9675;</span>
+                            )}
+                          </div>
+                          {i < os.all_statuses.length - 1 && (
+                            <div
+                              className="w-0.5 flex-1 min-h-[24px]"
+                              style={{
+                                backgroundColor: isPast ? '#22C55E' : '#E5E7EB',
+                              }}
+                            />
                           )}
                         </div>
-                        <span
-                          className={`text-xs mt-1 max-w-[80px] text-center leading-tight ${
-                            isActive ? 'font-semibold text-gray-900' : isFuture ? 'text-gray-400' : 'text-gray-600'
+                        {/* Right: label + date */}
+                        <div
+                          className={`pb-4 pt-1 flex-1 ${
+                            isActive ? 'bg-blue-50 -ml-1 pl-2 pr-2 rounded-lg border border-blue-100' : ''
                           }`}
                         >
-                          {s.name}
-                        </span>
+                          <span
+                            className={`text-sm leading-tight block ${
+                              isActive
+                                ? 'font-bold text-gray-900'
+                                : isPast
+                                  ? 'font-medium text-gray-700'
+                                  : 'text-gray-400'
+                            }`}
+                          >
+                            {friendlyName}
+                          </span>
+                          {isActive && (
+                            <span className="text-xs text-blue-600 font-semibold">Status atual</span>
+                          )}
+                          {isPast && historyDate && (
+                            <span className="text-xs text-gray-400">
+                              {new Date(historyDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          )}
+                          {isActive && historyDate && (
+                            <span className="text-xs text-gray-400 block">
+                              Desde {new Date(historyDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      {i < os.all_statuses.length - 1 && (
-                        <div
-                          className={`w-8 h-1 mx-1 rounded ${
-                            isPast ? 'bg-green-400' : 'bg-gray-200'
-                          }`}
-                          style={isPast ? { backgroundColor: s.color } : undefined}
-                        />
-                      )}
-                    </div>
-                  )
-                })}
+                    )
+                  })}
+                </div>
               </div>
-            </div>
-          )}
+            )
+          })()}
 
           {/* Equipment Info */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

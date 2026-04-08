@@ -141,12 +141,31 @@ export default function PortalRegistrarPage() {
               </div>
 
               <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                <p className="text-sm text-blue-800">
-                  <strong>Sua senha inicial</strong> sao os 5 primeiros digitos do seu CPF/CNPJ.
-                </p>
-                <p className="text-xs text-blue-600 mt-2">
-                  Exemplo: CPF 123.456.789-00 → senha: 12345
-                </p>
+                <div className="flex items-start gap-3">
+                  <svg className="w-6 h-6 text-blue-600 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                  </svg>
+                  <div>
+                    <p className="font-medium text-blue-900">Sua senha inicial</p>
+                    <p className="text-sm text-blue-800 mt-1">
+                      Sao os <strong>5 primeiros digitos</strong> do seu CPF/CNPJ.
+                    </p>
+                    <p className="text-xs text-blue-600 mt-2">
+                      Exemplo: CPF 123.456.789-00 → senha: <strong>12345</strong>
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                <div className="flex items-start gap-2">
+                  <svg className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                  <p className="text-sm text-amber-800">
+                    <strong>Dica:</strong> Troque sua senha no primeiro acesso para maior seguranca.
+                  </p>
+                </div>
               </div>
 
               <button

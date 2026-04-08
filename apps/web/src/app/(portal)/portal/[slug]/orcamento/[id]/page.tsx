@@ -44,9 +44,13 @@ function OrcamentoContent() {
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<{ action: string; message: string } | null>(null)
   const [showRejectForm, setShowRejectForm] = useState(false)
+  const [showCounterOffer, setShowCounterOffer] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
   const [paymentMethod, setPaymentMethod] = useState('')
   const [showApproveForm, setShowApproveForm] = useState(false)
+  const [applyDiscount, setApplyDiscount] = useState(false)
+
+  const DISCOUNT_PERCENT = 10
 
   useEffect(() => {
     if (!token) { setError('Link invalido. Token de acesso nao encontrado.'); setLoading(false); return }
@@ -61,6 +65,7 @@ function OrcamentoContent() {
     if (action === 'approve' && !paymentMethod) { alert('Selecione a forma de pagamento'); return }
     setSubmitting(true)
     try {
+      const discountedCost = applyDiscount && data ? Math.round(data.total_cost * (1 - DISCOUNT_PERCENT / 100)) : undefined
       const res = await fetch(`/api/portal/orcamento/${id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -68,6 +73,8 @@ function OrcamentoContent() {
           token, slug, action,
           reason: action === 'reject' ? rejectReason : undefined,
           payment_method: action === 'approve' ? paymentMethod : undefined,
+          discounted_cost: action === 'approve' && applyDiscount ? discountedCost : undefined,
+          discount_percent: action === 'approve' && applyDiscount ? DISCOUNT_PERCENT : undefined,
         }),
       })
       const resData = await res.json()
@@ -136,7 +143,9 @@ function OrcamentoContent() {
               {isApproved && (
                 <div className="flex justify-between pt-2 border-t">
                   <span className="text-gray-500">Valor aprovado</span>
-                  <span className="font-bold text-green-700 text-lg">{fmt(data.total_cost)}</span>
+                  <span className="font-bold text-green-700 text-lg">
+                    {applyDiscount ? fmt(Math.round(data.total_cost * (1 - DISCOUNT_PERCENT / 100))) : fmt(data.total_cost)}
+                  </span>
                 </div>
               )}
             </div>
@@ -305,6 +314,58 @@ function OrcamentoContent() {
           </div>
         </div>
 
+        {/* Counter-Offer */}
+        {showCounterOffer && data && (() => {
+          const discountedPrice = Math.round(data.total_cost * (1 - DISCOUNT_PERCENT / 100))
+          const discountInstallmentValue = fmt(Math.ceil(discountedPrice / maxInstallments))
+          return (
+            <div className="mb-4 rounded-2xl border-2 border-amber-300 bg-gradient-to-b from-amber-50 to-white p-6 shadow-lg">
+              <div className="text-center mb-5">
+                <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-amber-100">
+                  <span className="text-2xl">💡</span>
+                </div>
+                <h3 className="text-lg font-bold text-gray-900">Entendemos sua preocupacao!</h3>
+                <p className="text-sm text-gray-500 mt-1">Que tal um desconto especial para fechar agora?</p>
+              </div>
+
+              <div className="rounded-xl bg-white border-2 border-green-200 p-5 mb-5 text-center shadow-sm">
+                <p className="text-xs text-gray-400 uppercase tracking-wide mb-2">Oferta exclusiva</p>
+                <p className="text-lg text-gray-400 line-through">{fmt(data.total_cost)}</p>
+                <p className="text-3xl font-extrabold text-green-600 mt-1">{fmt(discountedPrice)}</p>
+                <span className="inline-block mt-2 rounded-full bg-green-100 border border-green-300 px-3 py-1 text-xs font-bold text-green-700">
+                  {DISCOUNT_PERCENT}% DE DESCONTO
+                </span>
+                <p className="text-sm text-gray-500 mt-3">ou {maxInstallments}x de {discountInstallmentValue} sem juros</p>
+              </div>
+
+              <div className="space-y-3">
+                <button type="button"
+                  onClick={() => {
+                    setApplyDiscount(true)
+                    setShowCounterOffer(false)
+                    setShowApproveForm(true)
+                  }}
+                  className="w-full rounded-xl bg-green-600 py-4 text-base font-bold text-white shadow-lg hover:bg-green-700 transition-colors">
+                  Aceitar com desconto
+                </button>
+                <button type="button"
+                  onClick={() => {
+                    setShowCounterOffer(false)
+                    setShowRejectForm(true)
+                  }}
+                  className="w-full rounded-xl border-2 border-red-300 bg-white py-3 text-sm font-semibold text-red-600 hover:bg-red-50 transition-colors">
+                  Recusar mesmo assim
+                </button>
+                <button type="button"
+                  onClick={() => setShowCounterOffer(false)}
+                  className="w-full rounded-lg border border-gray-300 py-2.5 text-sm font-medium text-gray-500 hover:bg-gray-50 transition-colors">
+                  Voltar
+                </button>
+              </div>
+            </div>
+          )
+        })()}
+
         {/* Reject Form */}
         {showRejectForm && (
           <div className="mb-4 rounded-2xl border-2 border-red-200 bg-red-50 p-6 shadow-sm">
@@ -327,8 +388,17 @@ function OrcamentoContent() {
         )}
 
         {/* Approve Form — selecionar pagamento */}
-        {showApproveForm && !showRejectForm && data && (
+        {showApproveForm && !showRejectForm && data && (() => {
+          const displayCost = applyDiscount ? Math.round(data.total_cost * (1 - DISCOUNT_PERCENT / 100)) : data.total_cost
+          return (
           <div className="mb-4 rounded-2xl border-2 border-green-200 bg-green-50 p-6 shadow-sm">
+            {applyDiscount && (
+              <div className="mb-4 rounded-lg bg-green-100 border border-green-300 p-3 text-center">
+                <p className="text-xs text-green-700 font-bold uppercase tracking-wide">Desconto de {DISCOUNT_PERCENT}% aplicado!</p>
+                <p className="text-sm text-gray-500 line-through">{fmt(data.total_cost)}</p>
+                <p className="text-xl font-extrabold text-green-700">{fmt(displayCost)}</p>
+              </div>
+            )}
             <h3 className="mb-2 font-bold text-green-800">Como deseja pagar?</h3>
             <p className="text-xs text-gray-500 mb-4">O pagamento sera realizado no momento da entrega do equipamento.</p>
 
@@ -338,7 +408,7 @@ function OrcamentoContent() {
                 className={`w-full rounded-lg border-2 p-4 text-left transition-all ${paymentMethod === 'PIX' ? 'border-green-500 bg-green-100' : 'border-gray-200 bg-white hover:border-green-300'}`}>
                 <div className="flex items-center justify-between">
                   <div><p className="text-sm font-semibold text-gray-900">⚡ PIX</p><p className="text-xs text-gray-500">Pagamento a vista na entrega</p></div>
-                  <p className="text-lg font-bold text-green-700">{fmt(data.total_cost)}</p>
+                  <p className="text-lg font-bold text-green-700">{fmt(displayCost)}</p>
                 </div>
               </button>
 
@@ -347,7 +417,7 @@ function OrcamentoContent() {
                 className={`w-full rounded-lg border-2 p-4 text-left transition-all ${paymentMethod === 'Dinheiro' ? 'border-green-500 bg-green-100' : 'border-gray-200 bg-white hover:border-green-300'}`}>
                 <div className="flex items-center justify-between">
                   <div><p className="text-sm font-semibold text-gray-900">💵 Dinheiro</p><p className="text-xs text-gray-500">Pagamento a vista na entrega</p></div>
-                  <p className="text-lg font-bold text-green-700">{fmt(data.total_cost)}</p>
+                  <p className="text-lg font-bold text-green-700">{fmt(displayCost)}</p>
                 </div>
               </button>
 
@@ -359,9 +429,9 @@ function OrcamentoContent() {
                     onChange={e => { if (e.target.value) setPaymentMethod(e.target.value) }}
                     className="rounded-md border bg-white px-3 py-1.5 text-sm font-medium text-gray-700">
                     <option value="">Parcelas</option>
-                    <option value="Cartao Credito 1x">1x de {fmt(data.total_cost)}</option>
-                    <option value="Cartao Credito 2x">2x de {fmt(Math.ceil(data.total_cost / 2))}</option>
-                    <option value="Cartao Credito 3x">3x de {fmt(Math.ceil(data.total_cost / 3))}</option>
+                    <option value="Cartao Credito 1x">1x de {fmt(displayCost)}</option>
+                    <option value="Cartao Credito 2x">2x de {fmt(Math.ceil(displayCost / 2))}</option>
+                    <option value="Cartao Credito 3x">3x de {fmt(Math.ceil(displayCost / 3))}</option>
                   </select>
                 </div>
               </div>
@@ -371,7 +441,7 @@ function OrcamentoContent() {
                 className={`w-full rounded-lg border-2 p-4 text-left transition-all ${paymentMethod === 'Cartao Debito' ? 'border-green-500 bg-green-100' : 'border-gray-200 bg-white hover:border-green-300'}`}>
                 <div className="flex items-center justify-between">
                   <div><p className="text-sm font-semibold text-gray-900">💳 Cartao de Debito</p><p className="text-xs text-gray-500">Pagamento a vista na entrega</p></div>
-                  <p className="text-lg font-bold text-green-700">{fmt(data.total_cost)}</p>
+                  <p className="text-lg font-bold text-green-700">{fmt(displayCost)}</p>
                 </div>
               </button>
 
@@ -384,7 +454,7 @@ function OrcamentoContent() {
                       <p className="text-sm font-semibold text-gray-900">🏦 Boleto Bancario</p>
                       <p className="text-xs text-gray-500">Vencimento em 7 dias — sujeito a analise de credito</p>
                     </div>
-                    <p className="text-lg font-bold text-green-700">{fmt(data.total_cost)}</p>
+                    <p className="text-lg font-bold text-green-700">{fmt(displayCost)}</p>
                   </div>
                 </button>
               )}
@@ -404,16 +474,17 @@ function OrcamentoContent() {
                 className="flex-1 rounded-lg bg-green-600 py-3 text-sm font-bold text-white hover:bg-green-700 disabled:opacity-50">
                 {submitting ? 'Processando...' : '✅ Confirmar Aprovacao'}
               </button>
-              <button type="button" onClick={() => setShowApproveForm(false)}
+              <button type="button" onClick={() => { setShowApproveForm(false); setApplyDiscount(false); setPaymentMethod('') }}
                 className="rounded-lg border border-gray-300 px-6 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50">
                 Voltar
               </button>
             </div>
           </div>
-        )}
+          )
+        })()}
 
         {/* Action Buttons */}
-        {!showRejectForm && !showApproveForm && (() => {
+        {!showRejectForm && !showApproveForm && !showCounterOffer && (() => {
           const st = (data.status || '').toLowerCase()
           const podeAprovar = st.includes('aguardando aprov') || st.includes('recusad')
           const valorValido = data.total_cost > 0
@@ -446,7 +517,7 @@ function OrcamentoContent() {
                 className="w-full rounded-2xl bg-green-600 py-4 text-lg font-bold text-white shadow-lg hover:bg-green-700 disabled:opacity-50 transition-colors">
                 ✅ Aprovar Orcamento
               </button>
-              <button type="button" onClick={() => setShowRejectForm(true)} disabled={submitting}
+              <button type="button" onClick={() => setShowCounterOffer(true)} disabled={submitting}
                 className="w-full rounded-2xl border-2 border-red-300 bg-white py-3 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors">
                 Recusar Orcamento
               </button>
