@@ -133,8 +133,9 @@ export async function PUT(req: NextRequest, { params }: Params) {
     })
     if (!existing) return error('OS não encontrada', 404)
 
-    // Técnico só pode editar OS atribuídas a ele
-    if (user.roleName === 'técnico' && existing.technician_id !== user.id) {
+    // Técnico pode editar: OS atribuídas a ele OU sem técnico (para se atribuir)
+    const roleNorm = user.roleName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    if (roleNorm === 'tecnico' && existing.technician_id && existing.technician_id !== user.id) {
       return error('Você só pode editar OS atribuídas a você', 403)
     }
 
