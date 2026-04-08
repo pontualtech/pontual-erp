@@ -94,10 +94,10 @@ export default function PortalPaymentPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-zinc-950">
         <div className="text-center">
-          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
-          <p className="mt-3 text-gray-500">Carregando...</p>
+          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-blue-600 dark:border-blue-500 border-t-transparent" />
+          <p className="mt-3 text-gray-500 dark:text-gray-400">Carregando...</p>
         </div>
       </div>
     )
@@ -105,15 +105,15 @@ export default function PortalPaymentPage() {
 
   if (error || !data) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
-        <div className="w-full max-w-md rounded-lg border bg-white p-8 text-center shadow-sm">
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-zinc-950 p-4">
+        <div className="w-full max-w-md rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-8 text-center shadow-sm">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
             <svg className="h-6 w-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
             </svg>
           </div>
-          <h2 className="text-lg font-semibold text-gray-900">Link inválido</h2>
-          <p className="mt-2 text-sm text-gray-500">{error || 'Não foi possível carregar as informações de pagamento.'}</p>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Link inválido</h2>
+          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{error || 'Não foi possível carregar as informações de pagamento.'}</p>
         </div>
       </div>
     )
@@ -123,12 +123,12 @@ export default function PortalPaymentPage() {
   const isOverdue = data.days_overdue > 0 && !isPaid
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
+    <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 p-4">
       <div className="mx-auto max-w-lg">
         {/* Header */}
         <div className="mb-6 text-center">
-          <h1 className="text-xl font-bold text-gray-900">{data.company.name}</h1>
-          <p className="text-sm text-gray-500">Portal de Pagamento</p>
+          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">{data.company.name}</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Portal de Pagamento</p>
         </div>
 
         {/* Status */}
@@ -152,9 +152,9 @@ export default function PortalPaymentPage() {
         ) : (
           <>
             {/* Payment info card */}
-            <div className="mb-4 rounded-lg border bg-white p-6 shadow-sm">
+            <div className="mb-4 rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-6 shadow-sm">
               <div className="mb-4 flex items-center justify-between">
-                <h2 className="font-semibold text-gray-900">Detalhes da Cobrança</h2>
+                <h2 className="font-semibold text-gray-900 dark:text-gray-100">Detalhes da Cobrança</h2>
                 <span className={`rounded-full px-3 py-1 text-xs font-medium ${
                   isOverdue
                     ? 'bg-red-100 text-red-700'
@@ -166,29 +166,29 @@ export default function PortalPaymentPage() {
 
               <div className="space-y-3 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Cliente</span>
-                  <span className="font-medium text-gray-900">{data.customer_name}</span>
+                  <span className="text-gray-500 dark:text-gray-400">Cliente</span>
+                  <span className="font-medium text-gray-900 dark:text-gray-100">{data.customer_name}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Descrição</span>
-                  <span className="font-medium text-gray-900">{data.description}</span>
+                  <span className="text-gray-500 dark:text-gray-400">Descrição</span>
+                  <span className="font-medium text-gray-900 dark:text-gray-100">{data.description}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Vencimento</span>
-                  <span className={`font-medium ${isOverdue ? 'text-red-600' : 'text-gray-900'}`}>
+                  <span className="text-gray-500 dark:text-gray-400">Vencimento</span>
+                  <span className={`font-medium ${isOverdue ? 'text-red-600' : 'text-gray-900 dark:text-gray-100'}`}>
                     {fmtDate(data.due_date)}
                   </span>
                 </div>
                 {isOverdue && (
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Dias em atraso</span>
+                    <span className="text-gray-500 dark:text-gray-400">Dias em atraso</span>
                     <span className="font-medium text-red-600">{data.days_overdue} dias</span>
                   </div>
                 )}
-                <div className="border-t pt-3">
+                <div className="border-t dark:border-zinc-700 pt-3">
                   <div className="flex justify-between">
-                    <span className="text-lg font-semibold text-gray-900">Valor</span>
-                    <span className="text-lg font-bold text-gray-900">{fmtCents(data.pending_amount)}</span>
+                    <span className="text-lg font-semibold text-gray-900 dark:text-gray-100">Valor</span>
+                    <span className="text-lg font-bold text-gray-900 dark:text-gray-100">{fmtCents(data.pending_amount)}</span>
                   </div>
                 </div>
               </div>
@@ -198,15 +198,15 @@ export default function PortalPaymentPage() {
             <div className="mb-4 space-y-3">
               {/* PIX */}
               {data.company.pix_key && (
-                <div className="rounded-lg border bg-white p-4 shadow-sm">
-                  <h3 className="mb-2 font-semibold text-gray-900">PIX</h3>
+                <div className="rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4 shadow-sm">
+                  <h3 className="mb-2 font-semibold text-gray-900 dark:text-gray-100">PIX</h3>
                   <div className="flex items-center gap-2">
-                    <div className="flex-1 rounded-lg bg-gray-100 px-3 py-2 font-mono text-sm text-gray-700">
+                    <div className="flex-1 rounded-lg bg-gray-100 dark:bg-zinc-800 px-3 py-2 font-mono text-sm text-gray-700 dark:text-gray-300">
                       {data.company.pix_key}
                     </div>
                     <button
                       onClick={() => copyToClipboard(data.company.pix_key!)}
-                      className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                      className="rounded-lg bg-blue-600 dark:bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
                     >
                       {copied ? 'Copiado!' : 'Copiar'}
                     </button>
@@ -216,15 +216,15 @@ export default function PortalPaymentPage() {
 
               {/* PIX Code (QR) */}
               {data.pix_code && (
-                <div className="rounded-lg border bg-white p-4 shadow-sm">
-                  <h3 className="mb-2 font-semibold text-gray-900">PIX Copia e Cola</h3>
+                <div className="rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4 shadow-sm">
+                  <h3 className="mb-2 font-semibold text-gray-900 dark:text-gray-100">PIX Copia e Cola</h3>
                   <div className="flex items-center gap-2">
-                    <div className="flex-1 truncate rounded-lg bg-gray-100 px-3 py-2 font-mono text-xs text-gray-700">
+                    <div className="flex-1 truncate rounded-lg bg-gray-100 dark:bg-zinc-800 px-3 py-2 font-mono text-xs text-gray-700 dark:text-gray-300">
                       {data.pix_code}
                     </div>
                     <button
                       onClick={() => copyToClipboard(data.pix_code!)}
-                      className="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                      className="shrink-0 rounded-lg bg-blue-600 dark:bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
                     >
                       Copiar
                     </button>
@@ -234,13 +234,13 @@ export default function PortalPaymentPage() {
 
               {/* Boleto */}
               {data.boleto_url && (
-                <div className="rounded-lg border bg-white p-4 shadow-sm">
-                  <h3 className="mb-2 font-semibold text-gray-900">Boleto</h3>
+                <div className="rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4 shadow-sm">
+                  <h3 className="mb-2 font-semibold text-gray-900 dark:text-gray-100">Boleto</h3>
                   <a
                     href={data.boleto_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="block rounded-lg bg-blue-600 px-4 py-3 text-center text-sm font-medium text-white hover:bg-blue-700"
+                    className="block rounded-lg bg-blue-600 dark:bg-blue-500 px-4 py-3 text-center text-sm font-medium text-white hover:bg-blue-700"
                   >
                     Abrir Boleto
                   </a>
@@ -249,9 +249,9 @@ export default function PortalPaymentPage() {
 
               {/* Bank transfer */}
               {data.company.bank_info && (
-                <div className="rounded-lg border bg-white p-4 shadow-sm">
-                  <h3 className="mb-2 font-semibold text-gray-900">Transferência Bancária</h3>
-                  <pre className="whitespace-pre-wrap rounded-lg bg-gray-100 p-3 text-sm text-gray-700">
+                <div className="rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4 shadow-sm">
+                  <h3 className="mb-2 font-semibold text-gray-900 dark:text-gray-100">Transferência Bancária</h3>
+                  <pre className="whitespace-pre-wrap rounded-lg bg-gray-100 dark:bg-zinc-800 p-3 text-sm text-gray-700 dark:text-gray-300">
                     {data.company.bank_info}
                   </pre>
                 </div>
@@ -270,14 +270,14 @@ export default function PortalPaymentPage() {
         )}
 
         {/* Contact */}
-        <div className="mt-6 rounded-lg border bg-white p-4 shadow-sm">
-          <h3 className="mb-2 text-sm font-semibold text-gray-900">Dúvidas? Entre em contato</h3>
-          <div className="space-y-1 text-sm text-gray-500">
+        <div className="mt-6 rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4 shadow-sm">
+          <h3 className="mb-2 text-sm font-semibold text-gray-900 dark:text-gray-100">Dúvidas? Entre em contato</h3>
+          <div className="space-y-1 text-sm text-gray-500 dark:text-gray-400">
             {data.company.phone && (
-              <p>Telefone: <a href={`tel:${data.company.phone}`} className="text-blue-600 hover:underline">{data.company.phone}</a></p>
+              <p>Telefone: <a href={`tel:${data.company.phone}`} className="text-blue-600 dark:text-blue-400 hover:underline">{data.company.phone}</a></p>
             )}
             {data.company.email && (
-              <p>Email: <a href={`mailto:${data.company.email}`} className="text-blue-600 hover:underline">{data.company.email}</a></p>
+              <p>Email: <a href={`mailto:${data.company.email}`} className="text-blue-600 dark:text-blue-400 hover:underline">{data.company.email}</a></p>
             )}
             {data.company.whatsapp && (
               <p>
@@ -294,7 +294,7 @@ export default function PortalPaymentPage() {
           </div>
         </div>
 
-        <p className="mt-4 text-center text-xs text-gray-400">
+        <p className="mt-4 text-center text-xs text-gray-400 dark:text-gray-500">
           {data.company.name} - Portal de Pagamento
         </p>
       </div>

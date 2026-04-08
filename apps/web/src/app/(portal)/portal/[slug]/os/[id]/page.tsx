@@ -228,8 +228,8 @@ export default function PortalOSDetailPage() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <p className="text-gray-500 mb-4">OS nao encontrada</p>
-          <Link href={`/portal/${slug}/os`} className="text-blue-600 hover:text-blue-700">
+          <p className="text-gray-500 dark:text-gray-400 mb-4">OS nao encontrada</p>
+          <Link href={`/portal/${slug}/os`} className="text-blue-600 dark:text-blue-400 hover:text-blue-700">
             Voltar para lista
           </Link>
         </div>
@@ -238,7 +238,7 @@ export default function PortalOSDetailPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-zinc-950">
       {/* Print styles */}
       <style>{`
         @media print {
@@ -275,40 +275,40 @@ export default function PortalOSDetailPage() {
       {/* Print header - only visible when printing */}
       <div className="hidden print:block text-center mb-6 border-b pb-4">
         <h1 className="text-xl font-bold">{company?.name || slug}</h1>
-        <p className="text-sm text-gray-500">Ordem de Servico #{os.os_number}</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">Ordem de Servico #{os.os_number}</p>
       </div>
 
       {/* Email Modal */}
       {showEmailModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+          <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-xl dark:shadow-zinc-900/50 w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-gray-900 text-lg">Enviar OS por Email</h3>
-              <button onClick={() => setShowEmailModal(false)} className="text-gray-400 hover:text-gray-600">
+              <h3 className="font-semibold text-gray-900 dark:text-gray-100 text-lg">Enviar OS por Email</h3>
+              <button onClick={() => setShowEmailModal(false)} className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email do destinatario</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email do destinatario</label>
             <input
               type="email"
               value={emailTo}
               onChange={e => setEmailTo(e.target.value)}
               placeholder="email@exemplo.com"
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-400"
+              className="w-full px-4 py-3 border border-gray-300 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 dark:bg-zinc-800/50"
               onKeyDown={e => e.key === 'Enter' && handleSendEmail()}
               autoFocus
             />
             <div className="flex justify-end gap-3 mt-4">
               <button
                 onClick={() => setShowEmailModal(false)}
-                className="px-4 py-2 border border-gray-300 rounded-xl text-gray-600 hover:bg-gray-50 text-sm font-medium"
+                className="px-4 py-2 border border-gray-300 dark:border-zinc-700 rounded-xl text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-zinc-800 text-sm font-medium"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleSendEmail}
                 disabled={emailSending || !emailTo.trim()}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl text-sm font-medium transition-colors"
+                className="px-4 py-2 bg-blue-600 dark:bg-blue-500 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl text-sm font-medium transition-colors"
               >
                 {emailSending ? 'Enviando...' : 'Enviar'}
               </button>
@@ -318,24 +318,24 @@ export default function PortalOSDetailPage() {
       )}
 
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
+      <header className="bg-white dark:bg-zinc-900 border-b border-gray-200 dark:border-zinc-700 sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+            <div className="w-8 h-8 bg-blue-600 dark:bg-blue-500 rounded-lg flex items-center justify-center">
               <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
               </svg>
             </div>
-            <span className="font-semibold text-gray-900">{company?.name || slug}</span>
+            <span className="font-semibold text-gray-900 dark:text-gray-100">{company?.name || slug}</span>
           </div>
           <nav className="hidden sm:flex items-center gap-6">
-            <Link href={`/portal/${slug}`} className="text-gray-600 hover:text-gray-900 text-sm">Inicio</Link>
-            <Link href={`/portal/${slug}/os`} className="text-blue-600 font-medium text-sm">Minhas OS</Link>
-            <Link href={`/portal/${slug}/tickets`} className="text-gray-600 hover:text-gray-900 text-sm">Tickets</Link>
+            <Link href={`/portal/${slug}`} className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 text-sm">Inicio</Link>
+            <Link href={`/portal/${slug}/os`} className="text-blue-600 dark:text-blue-400 font-medium text-sm">Minhas OS</Link>
+            <Link href={`/portal/${slug}/tickets`} className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 text-sm">Tickets</Link>
           </nav>
           <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-600 hidden sm:block">{customer?.name}</span>
-            <button onClick={handleLogout} className="text-sm text-red-600 hover:text-red-700 font-medium">Sair</button>
+            <span className="text-sm text-gray-600 dark:text-gray-400 hidden sm:block">{customer?.name}</span>
+            <button onClick={handleLogout} className="text-sm text-red-600 dark:text-red-400 hover:text-red-700 font-medium">Sair</button>
           </div>
         </div>
       </header>
@@ -343,20 +343,20 @@ export default function PortalOSDetailPage() {
       {/* Content */}
       <main className="max-w-5xl mx-auto px-4 py-6">
         {/* Breadcrumb */}
-        <div className="flex items-center gap-2 text-sm text-gray-500 mb-6 print:hidden">
-          <Link href={`/portal/${slug}/os`} className="hover:text-gray-700">Minhas OS</Link>
+        <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mb-6 print:hidden">
+          <Link href={`/portal/${slug}/os`} className="hover:text-gray-700 dark:hover:text-gray-300">Minhas OS</Link>
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
-          <span className="text-gray-900 font-medium">OS #{os.os_number}</span>
+          <span className="text-gray-900 dark:text-gray-100 font-medium">OS #{os.os_number}</span>
         </div>
 
         {/* OS Header */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+        <div className="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-700 p-6 mb-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">OS #{os.os_number}</h1>
-              <p className="text-gray-500 mt-1">
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">OS #{os.os_number}</h1>
+              <p className="text-gray-500 dark:text-gray-400 mt-1">
                 Aberta em {new Date(os.created_at).toLocaleDateString('pt-BR', {
                   day: '2-digit', month: 'long', year: 'numeric'
                 })}
@@ -376,7 +376,7 @@ export default function PortalOSDetailPage() {
                 type="button"
                 title="Imprimir OS"
                 onClick={handlePrint}
-                className="print:hidden inline-flex items-center gap-1.5 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors"
+                className="print:hidden inline-flex items-center gap-1.5 px-3 py-2 border border-gray-300 dark:border-zinc-700 rounded-lg text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-zinc-800 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
               >
                 <Printer className="w-4 h-4" />
                 <span className="hidden sm:inline">Imprimir</span>
@@ -385,7 +385,7 @@ export default function PortalOSDetailPage() {
                 type="button"
                 title="Enviar por Email"
                 onClick={() => setShowEmailModal(true)}
-                className="print:hidden inline-flex items-center gap-1.5 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors"
+                className="print:hidden inline-flex items-center gap-1.5 px-3 py-2 border border-gray-300 dark:border-zinc-700 rounded-lg text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-zinc-800 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
               >
                 <Mail className="w-4 h-4" />
                 <span className="hidden sm:inline">Email</span>
@@ -402,7 +402,7 @@ export default function PortalOSDetailPage() {
             })
             return (
               <div className="mb-6">
-                <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Progresso</h3>
+                <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase mb-3">Progresso</h3>
                 <div className="flex flex-col gap-0">
                   {os.all_statuses.map((s, i) => {
                     const currentOrder = os.status.order ?? 0
@@ -449,30 +449,30 @@ export default function PortalOSDetailPage() {
                         {/* Right: label + date */}
                         <div
                           className={`pb-4 pt-1 flex-1 ${
-                            isActive ? 'bg-blue-50 -ml-1 pl-2 pr-2 rounded-lg border border-blue-100' : ''
+                            isActive ? 'bg-blue-50 dark:bg-blue-950 -ml-1 pl-2 pr-2 rounded-lg border border-blue-100 dark:border-blue-900' : ''
                           }`}
                         >
                           <span
                             className={`text-sm leading-tight block ${
                               isActive
-                                ? 'font-bold text-gray-900'
+                                ? 'font-bold text-gray-900 dark:text-gray-100'
                                 : isPast
-                                  ? 'font-medium text-gray-700'
-                                  : 'text-gray-400'
+                                  ? 'font-medium text-gray-700 dark:text-gray-300'
+                                  : 'text-gray-400 dark:text-gray-500'
                             }`}
                           >
                             {friendlyName}
                           </span>
                           {isActive && (
-                            <span className="text-xs text-blue-600 font-semibold">Status atual</span>
+                            <span className="text-xs text-blue-600 dark:text-blue-400 font-semibold">Status atual</span>
                           )}
                           {isPast && historyDate && (
-                            <span className="text-xs text-gray-400">
+                            <span className="text-xs text-gray-400 dark:text-gray-500">
                               {new Date(historyDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                             </span>
                           )}
                           {isActive && historyDate && (
-                            <span className="text-xs text-gray-400 block">
+                            <span className="text-xs text-gray-400 dark:text-gray-500 block">
                               Desde {new Date(historyDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                             </span>
                           )}
@@ -488,38 +488,38 @@ export default function PortalOSDetailPage() {
           {/* Equipment Info */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <h3 className="text-sm font-semibold text-gray-500 uppercase mb-2">Equipamento</h3>
-              <p className="text-gray-900 font-medium">{os.equipment_type}</p>
+              <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2">Equipamento</h3>
+              <p className="text-gray-900 dark:text-gray-100 font-medium">{os.equipment_type}</p>
               {(os.equipment_brand || os.equipment_model) && (
-                <p className="text-gray-600 text-sm">
+                <p className="text-gray-600 dark:text-gray-400 text-sm">
                   {os.equipment_brand} {os.equipment_model}
                 </p>
               )}
               {os.serial_number && (
-                <p className="text-gray-500 text-sm">S/N: {os.serial_number}</p>
+                <p className="text-gray-500 dark:text-gray-400 text-sm">S/N: {os.serial_number}</p>
               )}
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-gray-500 uppercase mb-2">Problema Relatado</h3>
-              <p className="text-gray-700">{os.reported_issue}</p>
+              <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2">Problema Relatado</h3>
+              <p className="text-gray-700 dark:text-gray-300">{os.reported_issue}</p>
             </div>
             {os.diagnosis && (
               <div className="sm:col-span-2">
-                <h3 className="text-sm font-semibold text-gray-500 uppercase mb-2">Diagnostico</h3>
-                <p className="text-gray-700">{os.diagnosis}</p>
+                <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2">Diagnostico</h3>
+                <p className="text-gray-700 dark:text-gray-300">{os.diagnosis}</p>
               </div>
             )}
             {os.estimated_delivery && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <h3 className="text-sm font-semibold text-blue-700 uppercase mb-2">Previsao de Entrega</h3>
-                <p className="text-xl font-bold text-blue-900">{new Date(os.estimated_delivery).toLocaleDateString('pt-BR')}</p>
-                <p className="text-xs text-blue-600 mt-1">Prazo maximo de 10 dias uteis apos aprovacao. Sempre tentamos entregar o quanto antes!</p>
+              <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-900 rounded-lg p-4">
+                <h3 className="text-sm font-semibold text-blue-700 dark:text-blue-400 uppercase mb-2">Previsao de Entrega</h3>
+                <p className="text-xl font-bold text-blue-900 dark:text-blue-300">{new Date(os.estimated_delivery).toLocaleDateString('pt-BR')}</p>
+                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">Prazo maximo de 10 dias uteis apos aprovacao. Sempre tentamos entregar o quanto antes!</p>
               </div>
             )}
             {os.warranty_until && (
               <div>
-                <h3 className="text-sm font-semibold text-gray-500 uppercase mb-2">Garantia ate</h3>
-                <p className="text-gray-900">{new Date(os.warranty_until).toLocaleDateString('pt-BR')}</p>
+                <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2">Garantia ate</h3>
+                <p className="text-gray-900 dark:text-gray-100">{new Date(os.warranty_until).toLocaleDateString('pt-BR')}</p>
               </div>
             )}
           </div>
@@ -527,21 +527,21 @@ export default function PortalOSDetailPage() {
 
         {/* Laudo e Observações */}
         {(os.diagnosis || os.reported_issue) && (
-          <div className="bg-white rounded-xl border border-gray-200 mb-6 overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-100">
-              <h2 className="font-semibold text-gray-900">Laudo Tecnico</h2>
+          <div className="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-700 mb-6 overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100 dark:border-zinc-800">
+              <h2 className="font-semibold text-gray-900 dark:text-gray-100">Laudo Tecnico</h2>
             </div>
             <div className="p-5 space-y-4">
               {os.reported_issue && (
                 <div>
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase mb-1">Problema Relatado</h4>
-                  <p className="text-gray-700 text-sm whitespace-pre-wrap">{os.reported_issue}</p>
+                  <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">Problema Relatado</h4>
+                  <p className="text-gray-700 dark:text-gray-300 text-sm whitespace-pre-wrap">{os.reported_issue}</p>
                 </div>
               )}
               {os.diagnosis && (
                 <div>
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase mb-1">Diagnostico / Laudo</h4>
-                  <p className="text-gray-800 text-sm font-medium whitespace-pre-wrap">{os.diagnosis}</p>
+                  <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">Diagnostico / Laudo</h4>
+                  <p className="text-gray-800 dark:text-gray-200 text-sm font-medium whitespace-pre-wrap">{os.diagnosis}</p>
                 </div>
               )}
             </div>
@@ -559,9 +559,9 @@ export default function PortalOSDetailPage() {
             { value: 'Boleto', label: 'Boleto Bancario', icon: '📄', desc: 'Somente PJ (7 dias)' },
           ]
           return (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 mb-6" data-print-hide>
-              <h3 className="font-semibold text-amber-900 text-lg mb-2">Orcamento aguardando aprovacao</h3>
-              <p className="text-amber-700 mb-4">
+            <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-900 rounded-xl p-6 mb-6" data-print-hide>
+              <h3 className="font-semibold text-amber-900 dark:text-amber-300 text-lg mb-2">Orcamento aguardando aprovacao</h3>
+              <p className="text-amber-700 dark:text-amber-400 mb-4">
                 Valor total: <strong className="text-2xl">{fmt(os.total_cost || 0)}</strong>
               </p>
 
@@ -589,22 +589,22 @@ export default function PortalOSDetailPage() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <p className="text-sm font-medium text-gray-700">Selecione a forma de pagamento:</p>
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Selecione a forma de pagamento:</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {paymentOptions.map(pm => (
                       <button
                         key={pm.value}
                         type="button"
                         onClick={() => setApprovePayment(pm.value)}
-                        className={`text-left rounded-lg border-2 p-3 transition-all ${approvePayment === pm.value ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:border-green-300'}`}
+                        className={`text-left rounded-lg border-2 p-3 transition-all ${approvePayment === pm.value ? 'border-green-500 bg-green-50 dark:bg-green-950' : 'border-gray-200 dark:border-zinc-700 hover:border-green-300 dark:hover:border-green-700'}`}
                       >
                         <span className="text-sm font-semibold">{pm.icon} {pm.label}</span>
-                        <span className="text-xs text-gray-500 block">{pm.desc}</span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400 block">{pm.desc}</span>
                       </button>
                     ))}
                   </div>
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mt-2">
-                    <p className="text-xs text-blue-700">📅 Previsao de entrega: ate <strong>10 dias uteis</strong>. Sempre tentamos entregar o quanto antes!</p>
+                  <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-900 rounded-lg p-3 mt-2">
+                    <p className="text-xs text-blue-700 dark:text-blue-400">📅 Previsao de entrega: ate <strong>10 dias uteis</strong>. Sempre tentamos entregar o quanto antes!</p>
                   </div>
                   <div className="flex gap-3 mt-3">
                     <button
@@ -619,7 +619,7 @@ export default function PortalOSDetailPage() {
                       {actionLoading ? 'Processando...' : 'Confirmar Aprovacao'}
                     </button>
                     <button type="button" onClick={() => setApprovePayment(null)}
-                      className="px-4 py-3 border border-gray-300 rounded-xl text-gray-600 hover:bg-gray-50">
+                      className="px-4 py-3 border border-gray-300 dark:border-zinc-700 rounded-xl text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-zinc-800">
                       Voltar
                     </button>
                   </div>
@@ -631,50 +631,50 @@ export default function PortalOSDetailPage() {
 
         {/* Items table */}
         {os.items.length > 0 && (
-          <div className="bg-white rounded-xl border border-gray-200 mb-6 overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-100">
-              <h2 className="font-semibold text-gray-900">Itens do Orcamento</h2>
+          <div className="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-700 mb-6 overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100 dark:border-zinc-800">
+              <h2 className="font-semibold text-gray-900 dark:text-gray-100">Itens do Orcamento</h2>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-gray-100 bg-gray-50">
-                    <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Tipo</th>
-                    <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Descricao</th>
-                    <th className="text-center px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Qtd</th>
-                    <th className="text-right px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Unit.</th>
-                    <th className="text-right px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Total</th>
+                  <tr className="border-b border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/50">
+                    <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Tipo</th>
+                    <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Descricao</th>
+                    <th className="text-center px-5 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Qtd</th>
+                    <th className="text-right px-5 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Unit.</th>
+                    <th className="text-right px-5 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Total</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-gray-100 dark:divide-zinc-800">
                   {os.items.map(item => (
                     <tr key={item.id}>
                       <td className="px-5 py-3">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
                           item.item_type === 'PECA'
-                            ? 'bg-blue-100 text-blue-700'
-                            : 'bg-purple-100 text-purple-700'
+                            ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300'
+                            : 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300'
                         }`}>
                           {item.item_type === 'PECA' ? 'Peca' : 'Servico'}
                         </span>
                       </td>
-                      <td className="px-5 py-3 text-gray-900">{item.description}</td>
-                      <td className="px-5 py-3 text-center text-gray-600">{item.quantity}</td>
-                      <td className="px-5 py-3 text-right text-gray-600">
+                      <td className="px-5 py-3 text-gray-900 dark:text-gray-100">{item.description}</td>
+                      <td className="px-5 py-3 text-center text-gray-600 dark:text-gray-400">{item.quantity}</td>
+                      <td className="px-5 py-3 text-right text-gray-600 dark:text-gray-400">
                         R$ {(item.unit_price / 100).toFixed(2)}
                       </td>
-                      <td className="px-5 py-3 text-right font-medium text-gray-900">
+                      <td className="px-5 py-3 text-right font-medium text-gray-900 dark:text-gray-100">
                         R$ {(item.total_price / 100).toFixed(2)}
                       </td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot>
-                  <tr className="border-t-2 border-gray-200 bg-gray-50">
-                    <td colSpan={4} className="px-5 py-3 text-right font-semibold text-gray-700">
+                  <tr className="border-t-2 border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800/50">
+                    <td colSpan={4} className="px-5 py-3 text-right font-semibold text-gray-700 dark:text-gray-300">
                       Total
                     </td>
-                    <td className="px-5 py-3 text-right font-bold text-gray-900 text-lg">
+                    <td className="px-5 py-3 text-right font-bold text-gray-900 dark:text-gray-100 text-lg">
                       R$ {((os.total_cost || 0) / 100).toFixed(2)}
                     </td>
                   </tr>
@@ -686,47 +686,47 @@ export default function PortalOSDetailPage() {
 
         {/* Payment section */}
         {isProntaOuEntregue && os.total_cost && os.total_cost > 0 && (
-          <div className="bg-white rounded-xl border border-gray-200 mb-6 p-6" data-print-hide>
-            <h2 className="font-semibold text-gray-900 mb-4">Pagamento</h2>
+          <div className="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-700 mb-6 p-6" data-print-hide>
+            <h2 className="font-semibold text-gray-900 dark:text-gray-100 mb-4">Pagamento</h2>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {/* PIX */}
-              <div className="border border-gray-200 rounded-xl p-4 text-center">
-                <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center mx-auto mb-3">
-                  <svg className="w-6 h-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="border border-gray-200 dark:border-zinc-700 rounded-xl p-4 text-center">
+                <div className="w-12 h-12 bg-green-100 dark:bg-green-900 rounded-xl flex items-center justify-center mx-auto mb-3">
+                  <svg className="w-6 h-6 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
-                <h3 className="font-medium text-gray-900 mb-1">PIX</h3>
-                <p className="text-sm text-gray-500 mb-3">Pagamento instantaneo</p>
-                <div className="bg-gray-100 rounded-lg p-4 mb-2">
-                  <p className="text-xs text-gray-400">QR Code PIX</p>
-                  <p className="text-xs text-gray-400">(Em breve)</p>
+                <h3 className="font-medium text-gray-900 dark:text-gray-100 mb-1">PIX</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Pagamento instantaneo</p>
+                <div className="bg-gray-100 dark:bg-zinc-800/50 rounded-lg p-4 mb-2">
+                  <p className="text-xs text-gray-400 dark:text-gray-500">QR Code PIX</p>
+                  <p className="text-xs text-gray-400 dark:text-gray-500">(Em breve)</p>
                 </div>
               </div>
 
               {/* Boleto */}
-              <div className="border border-gray-200 rounded-xl p-4 text-center">
-                <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center mx-auto mb-3">
-                  <svg className="w-6 h-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="border border-gray-200 dark:border-zinc-700 rounded-xl p-4 text-center">
+                <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900 rounded-xl flex items-center justify-center mx-auto mb-3">
+                  <svg className="w-6 h-6 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
                 </div>
-                <h3 className="font-medium text-gray-900 mb-1">Boleto</h3>
-                <p className="text-sm text-gray-500 mb-3">Vencimento em 3 dias</p>
-                <button className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors">
+                <h3 className="font-medium text-gray-900 dark:text-gray-100 mb-1">Boleto</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Vencimento em 3 dias</p>
+                <button className="w-full py-2 px-4 bg-blue-600 dark:bg-blue-500 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors">
                   Gerar Boleto
                 </button>
               </div>
 
               {/* Cartao */}
-              <div className="border border-gray-200 rounded-xl p-4 text-center">
-                <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center mx-auto mb-3">
-                  <svg className="w-6 h-6 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="border border-gray-200 dark:border-zinc-700 rounded-xl p-4 text-center">
+                <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900 rounded-xl flex items-center justify-center mx-auto mb-3">
+                  <svg className="w-6 h-6 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
                   </svg>
                 </div>
-                <h3 className="font-medium text-gray-900 mb-1">Cartao</h3>
-                <p className="text-sm text-gray-500 mb-3">Credito ou debito</p>
+                <h3 className="font-medium text-gray-900 dark:text-gray-100 mb-1">Cartao</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Credito ou debito</p>
                 <button className="w-full py-2 px-4 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition-colors">
                   Pagar com Cartao
                 </button>
@@ -737,42 +737,42 @@ export default function PortalOSDetailPage() {
 
         {/* NPS Survey - Already answered */}
         {isEntregue && npsExisting && (
-          <div className="bg-green-50 border border-green-200 rounded-xl p-6 mb-6" data-print-hide>
+          <div className="bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-900 rounded-xl p-6 mb-6" data-print-hide>
             <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="w-10 h-10 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center">
+                <svg className="w-5 h-5 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
               </div>
               <div>
-                <h3 className="font-semibold text-green-900">Obrigado pela sua avaliacao!</h3>
-                <p className="text-green-700 text-sm">Voce deu nota <strong>{npsExisting.score}</strong> para esta OS.</p>
+                <h3 className="font-semibold text-green-900 dark:text-green-300">Obrigado pela sua avaliacao!</h3>
+                <p className="text-green-700 dark:text-green-400 text-sm">Voce deu nota <strong>{npsExisting.score}</strong> para esta OS.</p>
               </div>
             </div>
             {npsExisting.comment && (
-              <p className="text-green-700 text-sm mt-2 ml-13 italic">&quot;{npsExisting.comment}&quot;</p>
+              <p className="text-green-700 dark:text-green-400 text-sm mt-2 ml-13 italic">&quot;{npsExisting.comment}&quot;</p>
             )}
           </div>
         )}
 
         {/* NPS Survey - Submitted just now */}
         {isEntregue && npsSubmitted && !npsExisting && (
-          <div className="bg-green-50 border border-green-200 rounded-xl p-6 mb-6 text-center" data-print-hide>
-            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
-              <svg className="w-6 h-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-900 rounded-xl p-6 mb-6 text-center" data-print-hide>
+            <div className="w-12 h-12 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center mx-auto mb-3">
+              <svg className="w-6 h-6 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <h3 className="font-semibold text-green-900 text-lg">Obrigado!</h3>
-            <p className="text-green-700 mt-1">Sua avaliacao foi registrada com sucesso.</p>
+            <h3 className="font-semibold text-green-900 dark:text-green-300 text-lg">Obrigado!</h3>
+            <p className="text-green-700 dark:text-green-400 mt-1">Sua avaliacao foi registrada com sucesso.</p>
           </div>
         )}
 
         {/* NPS Survey Widget */}
         {showNpsSurvey && (
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-6 mb-6" data-print-hide>
-            <h3 className="font-semibold text-blue-900 text-lg mb-2">Como foi sua experiencia?</h3>
-            <p className="text-blue-700 text-sm mb-4">
+          <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-900 rounded-xl p-6 mb-6" data-print-hide>
+            <h3 className="font-semibold text-blue-900 dark:text-blue-300 text-lg mb-2">Como foi sua experiencia?</h3>
+            <p className="text-blue-700 dark:text-blue-400 text-sm mb-4">
               Avalie de 0 a 10: qual a probabilidade de voce recomendar nossos servicos?
             </p>
 
@@ -803,7 +803,7 @@ export default function PortalOSDetailPage() {
               })}
             </div>
 
-            <div className="flex justify-between text-xs text-gray-500 mb-4 px-1">
+            <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-4 px-1">
               <span>Nada provavel</span>
               <span>Muito provavel</span>
             </div>
@@ -816,7 +816,7 @@ export default function PortalOSDetailPage() {
                   onChange={e => setNpsComment(e.target.value)}
                   placeholder="Deixe um comentario (opcional)..."
                   rows={2}
-                  className="w-full px-4 py-3 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-400 resize-none bg-white"
+                  className="w-full px-4 py-3 border border-blue-200 dark:border-blue-900 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 resize-none bg-white dark:bg-zinc-900"
                 />
               </div>
             )}
@@ -826,7 +826,7 @@ export default function PortalOSDetailPage() {
               <button
                 onClick={handleNpsSubmit}
                 disabled={npsLoading}
-                className="w-full py-3 px-6 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold rounded-xl transition-colors"
+                className="w-full py-3 px-6 bg-blue-600 dark:bg-blue-500 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold rounded-xl transition-colors"
               >
                 {npsLoading ? 'Enviando...' : 'Enviar Avaliacao'}
               </button>
@@ -836,9 +836,9 @@ export default function PortalOSDetailPage() {
 
         {/* History */}
         {os.history.length > 0 && (
-          <div className="bg-white rounded-xl border border-gray-200 mb-6">
-            <div className="px-5 py-4 border-b border-gray-100">
-              <h2 className="font-semibold text-gray-900">Historico</h2>
+          <div className="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-700 mb-6">
+            <div className="px-5 py-4 border-b border-gray-100 dark:border-zinc-800">
+              <h2 className="font-semibold text-gray-900 dark:text-gray-100">Historico</h2>
             </div>
             <div className="p-5">
               <div className="space-y-4">
@@ -850,7 +850,7 @@ export default function PortalOSDetailPage() {
                         style={{ backgroundColor: h.to_status.color }}
                       />
                       {i < os.history.length - 1 && (
-                        <div className="w-0.5 flex-1 bg-gray-200 mt-1" />
+                        <div className="w-0.5 flex-1 bg-gray-200 dark:bg-zinc-700 mt-1" />
                       )}
                     </div>
                     <div className="pb-4">
@@ -864,7 +864,7 @@ export default function PortalOSDetailPage() {
                         >
                           {h.to_status.name}
                         </span>
-                        <span className="text-xs text-gray-400">
+                        <span className="text-xs text-gray-400 dark:text-gray-500">
                           {new Date(h.created_at).toLocaleDateString('pt-BR', {
                             day: '2-digit', month: '2-digit', year: 'numeric',
                             hour: '2-digit', minute: '2-digit'
@@ -872,7 +872,7 @@ export default function PortalOSDetailPage() {
                         </span>
                       </div>
                       {h.notes && (
-                        <p className="text-sm text-gray-600 mt-1">{h.notes}</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{h.notes}</p>
                       )}
                     </div>
                   </div>
@@ -883,20 +883,20 @@ export default function PortalOSDetailPage() {
         )}
 
         {/* Comment */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6" data-print-hide>
-          <h2 className="font-semibold text-gray-900 mb-4">Enviar Comentario</h2>
+        <div className="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-700 p-6" data-print-hide>
+          <h2 className="font-semibold text-gray-900 dark:text-gray-100 mb-4">Enviar Comentario</h2>
           <textarea
             value={comment}
             onChange={e => setComment(e.target.value)}
             placeholder="Digite sua mensagem..."
             rows={3}
-            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-400 resize-none"
+            className="w-full px-4 py-3 border border-gray-300 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 resize-none dark:bg-zinc-800/50"
           />
           <div className="flex justify-end mt-3">
             <button
               onClick={() => handleAction('comment', comment)}
               disabled={actionLoading || !comment.trim()}
-              className="py-2.5 px-6 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white font-medium rounded-xl transition-colors"
+              className="py-2.5 px-6 bg-blue-600 dark:bg-blue-500 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-zinc-700 text-white font-medium rounded-xl transition-colors"
             >
               {actionLoading ? 'Enviando...' : 'Enviar'}
             </button>
@@ -904,8 +904,8 @@ export default function PortalOSDetailPage() {
         </div>
       </main>
 
-      <footer className="border-t border-gray-200 bg-white mt-12 print:hidden">
-        <div className="max-w-5xl mx-auto px-4 py-4 text-center text-xs text-gray-400">
+      <footer className="border-t border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 mt-12 print:hidden">
+        <div className="max-w-5xl mx-auto px-4 py-4 text-center text-xs text-gray-400 dark:text-gray-500">
           Powered by PontualERP
         </div>
       </footer>

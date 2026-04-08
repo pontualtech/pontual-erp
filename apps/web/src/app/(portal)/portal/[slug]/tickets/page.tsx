@@ -131,39 +131,39 @@ export default function PortalTicketsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-zinc-950">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
+      <header className="bg-white dark:bg-zinc-900 border-b border-gray-200 dark:border-zinc-800 sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+            <div className="w-8 h-8 bg-blue-600 dark:bg-blue-500 rounded-lg flex items-center justify-center">
               <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
               </svg>
             </div>
-            <span className="font-semibold text-gray-900">{company?.name || slug}</span>
+            <span className="font-semibold text-gray-900 dark:text-gray-100">{company?.name || slug}</span>
           </div>
           <nav className="hidden sm:flex items-center gap-6">
-            <Link href={`/portal/${slug}`} className="text-gray-600 hover:text-gray-900 text-sm">Inicio</Link>
-            <Link href={`/portal/${slug}/os`} className="text-gray-600 hover:text-gray-900 text-sm">Minhas OS</Link>
-            <Link href={`/portal/${slug}/tickets`} className="text-blue-600 font-medium text-sm">Tickets</Link>
+            <Link href={`/portal/${slug}`} className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 text-sm">Inicio</Link>
+            <Link href={`/portal/${slug}/os`} className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 text-sm">Minhas OS</Link>
+            <Link href={`/portal/${slug}/tickets`} className="text-blue-600 dark:text-blue-400 font-medium text-sm">Tickets</Link>
           </nav>
           <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-600 hidden sm:block">{customer?.name}</span>
-            <button onClick={handleLogout} className="text-sm text-red-600 hover:text-red-700 font-medium">Sair</button>
+            <span className="text-sm text-gray-600 dark:text-gray-400 hidden sm:block">{customer?.name}</span>
+            <button onClick={handleLogout} className="text-sm text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 font-medium">Sair</button>
           </div>
         </div>
-        <div className="sm:hidden border-t border-gray-100 px-4 py-2 flex gap-4">
+        <div className="sm:hidden border-t border-gray-100 dark:border-zinc-800 px-4 py-2 flex gap-4">
           <Link href={`/portal/${slug}`} className="text-gray-600 text-sm">Inicio</Link>
           <Link href={`/portal/${slug}/os`} className="text-gray-600 text-sm">Minhas OS</Link>
-          <Link href={`/portal/${slug}/tickets`} className="text-blue-600 font-medium text-sm">Tickets</Link>
+          <Link href={`/portal/${slug}/tickets`} className="text-blue-600 dark:text-blue-400 font-medium text-sm">Tickets</Link>
         </div>
       </header>
 
       {/* Content */}
       <main className="max-w-5xl mx-auto px-4 py-6">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Meus Tickets</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Meus Tickets</h1>
           <button
             onClick={() => setShowNew(!showNew)}
             className="py-2.5 px-5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors text-sm"
@@ -174,38 +174,38 @@ export default function PortalTicketsPage() {
 
         {/* New ticket form */}
         {showNew && (
-          <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
-            <h2 className="font-semibold text-gray-900 mb-4">Novo Ticket</h2>
+          <div className="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-700 p-6 mb-6">
+            <h2 className="font-semibold text-gray-900 dark:text-gray-100 mb-4">Novo Ticket</h2>
             <form onSubmit={handleCreateTicket} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Assunto *</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Assunto *</label>
                 <input
                   type="text"
                   value={newSubject}
                   onChange={e => setNewSubject(e.target.value)}
                   placeholder="Descreva brevemente o problema"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-400"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-zinc-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 dark:text-gray-100 bg-white dark:bg-zinc-800 placeholder-gray-400 dark:placeholder-gray-600"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Descricao</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Descricao</label>
                 <textarea
                   value={newDescription}
                   onChange={e => setNewDescription(e.target.value)}
                   placeholder="Detalhes sobre o problema..."
                   rows={4}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-400 resize-none"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-zinc-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 dark:text-gray-100 bg-white dark:bg-zinc-800 placeholder-gray-400 dark:placeholder-gray-600 resize-none"
                 />
               </div>
               {osList.length > 0 && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Vincular a uma OS (opcional)
                   </label>
                   <select
                     value={newOsId}
                     onChange={e => setNewOsId(e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                    className="w-full px-4 py-3 border border-gray-300 dark:border-zinc-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 dark:text-gray-100 bg-white dark:bg-zinc-800"
                   >
                     <option value="">Nenhuma OS</option>
                     {osList.map(os => (
@@ -220,7 +220,7 @@ export default function PortalTicketsPage() {
                 <button
                   type="button"
                   onClick={() => setShowNew(false)}
-                  className="py-2.5 px-5 border border-gray-300 text-gray-700 font-medium rounded-xl hover:bg-gray-50 transition-colors text-sm"
+                  className="py-2.5 px-5 border border-gray-300 dark:border-zinc-600 text-gray-700 dark:text-gray-300 font-medium rounded-xl hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors text-sm"
                 >
                   Cancelar
                 </button>
@@ -242,14 +242,14 @@ export default function PortalTicketsPage() {
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
           </div>
         ) : tickets.length === 0 ? (
-          <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
-            <svg className="w-12 h-12 text-gray-300 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-700 p-12 text-center">
+            <svg className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
             </svg>
-            <p className="text-gray-500">Nenhum ticket encontrado</p>
+            <p className="text-gray-500 dark:text-gray-400">Nenhum ticket encontrado</p>
             <button
               onClick={() => setShowNew(true)}
-              className="mt-4 text-blue-600 hover:text-blue-700 font-medium text-sm"
+              className="mt-4 text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium text-sm"
             >
               Criar primeiro ticket
             </button>
@@ -260,12 +260,12 @@ export default function PortalTicketsPage() {
               <Link
                 key={ticket.id}
                 href={`/portal/${slug}/tickets/${ticket.id}`}
-                className="block bg-white rounded-xl border border-gray-200 p-5 hover:bg-gray-50 transition-colors"
+                className="block bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-700 p-5 hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="text-sm text-gray-400">#{ticket.ticket_number}</span>
+                      <span className="text-sm text-gray-400 dark:text-gray-500">#{ticket.ticket_number}</span>
                       <span
                         className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
                         style={{
@@ -276,15 +276,15 @@ export default function PortalTicketsPage() {
                         {(ticket.status || 'ABERTO').replace(/_/g, ' ')}
                       </span>
                     </div>
-                    <h3 className="font-medium text-gray-900 truncate">{ticket.subject}</h3>
+                    <h3 className="font-medium text-gray-900 dark:text-gray-100 truncate">{ticket.subject}</h3>
                     {ticket.service_order && (
-                      <p className="text-sm text-gray-500 mt-1">
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                         OS #{ticket.service_order.os_number} - {ticket.service_order.equipment_type}
                       </p>
                     )}
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <p className="text-sm text-gray-500">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
                       {new Date(ticket.created_at).toLocaleDateString('pt-BR')}
                     </p>
                   </div>
@@ -295,8 +295,8 @@ export default function PortalTicketsPage() {
         )}
       </main>
 
-      <footer className="border-t border-gray-200 bg-white mt-12">
-        <div className="max-w-5xl mx-auto px-4 py-4 text-center text-xs text-gray-400">
+      <footer className="border-t border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 mt-12">
+        <div className="max-w-5xl mx-auto px-4 py-4 text-center text-xs text-gray-400 dark:text-gray-500">
           Powered by PontualERP
         </div>
       </footer>

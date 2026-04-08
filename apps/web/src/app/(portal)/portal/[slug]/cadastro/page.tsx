@@ -273,9 +273,9 @@ export default function CadastroPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 px-4 py-8">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-zinc-950 dark:to-zinc-900 px-4 py-8">
       <div className="w-full max-w-lg">
-        <div className="bg-white rounded-2xl shadow-xl p-6 sm:p-8">
+        <div className="bg-white dark:bg-zinc-900 dark:shadow-zinc-900/50 dark:border dark:border-zinc-800 rounded-2xl shadow-xl p-6 sm:p-8">
           {/* Header */}
           <div className="text-center mb-6">
             {company?.logo ? (
@@ -287,8 +287,8 @@ export default function CadastroPage() {
                 </svg>
               </div>
             )}
-            <h1 className="text-xl font-bold text-gray-900">{company?.name}</h1>
-            <p className="text-gray-500 text-sm mt-1">Cadastro de Novo Cliente</p>
+            <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">{company?.name}</h1>
+            <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Cadastro de Novo Cliente</p>
           </div>
 
           {/* Step Indicator */}
@@ -302,7 +302,7 @@ export default function CadastroPage() {
                         ? 'bg-green-500 text-white'
                         : i === step
                         ? 'bg-blue-600 text-white'
-                        : 'bg-gray-200 text-gray-500'
+                        : 'bg-gray-200 dark:bg-zinc-600 text-gray-500 dark:text-gray-400'
                     }`}
                   >
                     {i < step ? (
@@ -313,12 +313,12 @@ export default function CadastroPage() {
                       i + 1
                     )}
                   </div>
-                  <span className={`text-[10px] mt-1 hidden sm:block ${i === step ? 'text-blue-600 font-medium' : 'text-gray-400'}`}>
+                  <span className={`text-[10px] mt-1 hidden sm:block ${i === step ? 'text-blue-600 dark:text-blue-400 font-medium' : 'text-gray-400 dark:text-gray-500'}`}>
                     {label}
                   </span>
                 </div>
                 {i < STEPS.length - 1 && (
-                  <div className={`h-0.5 w-full mx-1 ${i < step ? 'bg-green-500' : 'bg-gray-200'}`} />
+                  <div className={`h-0.5 w-full mx-1 ${i < step ? 'bg-green-500' : 'bg-gray-200 dark:bg-zinc-600'}`} />
                 )}
               </div>
             ))}
@@ -328,7 +328,7 @@ export default function CadastroPage() {
           {step === 0 && (
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">CPF ou CNPJ</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">CPF ou CNPJ</label>
                 <div className="relative">
                   <input
                     type="text"
@@ -337,7 +337,7 @@ export default function CadastroPage() {
                     onBlur={handleDocumentBlur}
                     placeholder="000.000.000-00 ou 00.000.000/0000-00"
                     maxLength={18}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-400"
+                    className="w-full px-4 py-3 border border-gray-300 dark:border-zinc-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 dark:text-gray-100 dark:bg-zinc-800 placeholder-gray-400 dark:placeholder-gray-600"
                     autoFocus
                   />
                   {fetchingCnpj && (
@@ -347,7 +347,7 @@ export default function CadastroPage() {
                   )}
                 </div>
                 {digits.length >= 11 && (
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     Tipo detectado: <span className="font-medium">{personType === 'FISICA' ? 'Pessoa Fisica (CPF)' : 'Pessoa Juridica (CNPJ)'}</span>
                   </p>
                 )}
@@ -359,39 +359,39 @@ export default function CadastroPage() {
           {step === 1 && (
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nome Completo / Razao Social</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Nome Completo / Razao Social</label>
                 <input
                   type="text"
                   value={nome}
                   onChange={e => setNome(e.target.value)}
                   placeholder={personType === 'JURIDICA' ? 'Razao Social' : 'Nome completo'}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-400"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-zinc-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 dark:text-gray-100 dark:bg-zinc-800 placeholder-gray-400 dark:placeholder-gray-600"
                   autoFocus
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
                 <input
                   type="email"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   placeholder="seuemail@exemplo.com"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-400"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-zinc-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 dark:text-gray-100 dark:bg-zinc-800 placeholder-gray-400 dark:placeholder-gray-600"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Telefone / Celular</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Telefone / Celular</label>
                 <input
                   type="text"
                   value={telefone}
                   onChange={e => setTelefone(formatPhone(e.target.value))}
                   placeholder="(11) 99999-9999"
                   maxLength={15}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-400"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-zinc-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 dark:text-gray-100 dark:bg-zinc-800 placeholder-gray-400 dark:placeholder-gray-600"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Pessoa</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tipo de Pessoa</label>
                 <div className="flex gap-4">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -400,7 +400,7 @@ export default function CadastroPage() {
                       onChange={() => setPersonType('FISICA')}
                       className="w-4 h-4 text-blue-600"
                     />
-                    <span className="text-sm text-gray-700">Pessoa Fisica</span>
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Pessoa Fisica</span>
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -409,7 +409,7 @@ export default function CadastroPage() {
                       onChange={() => setPersonType('JURIDICA')}
                       className="w-4 h-4 text-blue-600"
                     />
-                    <span className="text-sm text-gray-700">Pessoa Juridica</span>
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Pessoa Juridica</span>
                   </label>
                 </div>
               </div>
@@ -420,7 +420,7 @@ export default function CadastroPage() {
           {step === 2 && (
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">CEP</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">CEP</label>
                 <div className="relative">
                   <input
                     type="text"
@@ -429,7 +429,7 @@ export default function CadastroPage() {
                     onBlur={handleCepBlur}
                     placeholder="00000-000"
                     maxLength={9}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-400"
+                    className="w-full px-4 py-3 border border-gray-300 dark:border-zinc-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 dark:text-gray-100 dark:bg-zinc-800 placeholder-gray-400 dark:placeholder-gray-600"
                     autoFocus
                   />
                   {fetchingCep && (
@@ -440,64 +440,64 @@ export default function CadastroPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Logradouro</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Logradouro</label>
                 <input
                   type="text"
                   value={logradouro}
                   onChange={e => setLogradouro(e.target.value)}
                   placeholder="Rua, Avenida..."
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-400"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-zinc-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 dark:text-gray-100 dark:bg-zinc-800 placeholder-gray-400 dark:placeholder-gray-600"
                 />
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Numero</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Numero</label>
                   <input
                     type="text"
                     value={numero}
                     onChange={e => setNumero(e.target.value)}
                     placeholder="123"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-400"
+                    className="w-full px-4 py-3 border border-gray-300 dark:border-zinc-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 dark:text-gray-100 dark:bg-zinc-800 placeholder-gray-400 dark:placeholder-gray-600"
                   />
                 </div>
                 <div className="col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Complemento</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Complemento</label>
                   <input
                     type="text"
                     value={complemento}
                     onChange={e => setComplemento(e.target.value)}
                     placeholder="Apto, Sala..."
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-400"
+                    className="w-full px-4 py-3 border border-gray-300 dark:border-zinc-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 dark:text-gray-100 dark:bg-zinc-800 placeholder-gray-400 dark:placeholder-gray-600"
                   />
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Bairro</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Bairro</label>
                 <input
                   type="text"
                   value={bairro}
                   onChange={e => setBairro(e.target.value)}
                   placeholder="Bairro"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-400"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-zinc-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 dark:text-gray-100 dark:bg-zinc-800 placeholder-gray-400 dark:placeholder-gray-600"
                 />
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div className="col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Cidade</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Cidade</label>
                   <input
                     type="text"
                     value={cidade}
                     onChange={e => setCidade(e.target.value)}
                     placeholder="Cidade"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-400"
+                    className="w-full px-4 py-3 border border-gray-300 dark:border-zinc-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 dark:text-gray-100 dark:bg-zinc-800 placeholder-gray-400 dark:placeholder-gray-600"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">UF</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">UF</label>
                   <select
                     value={uf}
                     onChange={e => setUf(e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 bg-white"
+                    className="w-full px-4 py-3 border border-gray-300 dark:border-zinc-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 dark:text-gray-100 bg-white dark:bg-zinc-800"
                   >
                     <option value="">UF</option>
                     {UF_OPTIONS.map(u => (
@@ -513,13 +513,13 @@ export default function CadastroPage() {
           {step === 3 && (
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Senha</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Senha</label>
                 <input
                   type="password"
                   value={senha}
                   onChange={e => setSenha(e.target.value)}
                   placeholder="Minimo 6 caracteres"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-400"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-zinc-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 dark:text-gray-100 dark:bg-zinc-800 placeholder-gray-400 dark:placeholder-gray-600"
                   autoFocus
                 />
                 {senha.length > 0 && senha.length < 6 && (
@@ -527,13 +527,13 @@ export default function CadastroPage() {
                 )}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Confirmar Senha</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Confirmar Senha</label>
                 <input
                   type="password"
                   value={confirmarSenha}
                   onChange={e => setConfirmarSenha(e.target.value)}
                   placeholder="Repita a senha"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 placeholder-gray-400"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-zinc-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 dark:text-gray-100 dark:bg-zinc-800 placeholder-gray-400 dark:placeholder-gray-600"
                 />
                 {confirmarSenha.length > 0 && senha !== confirmarSenha && (
                   <p className="text-xs text-red-500 mt-1">As senhas nao conferem</p>
@@ -546,9 +546,9 @@ export default function CadastroPage() {
                   onChange={e => setAceitaTermos(e.target.checked)}
                   className="w-4 h-4 mt-0.5 text-blue-600 rounded"
                 />
-                <span className="text-sm text-gray-600">
+                <span className="text-sm text-gray-600 dark:text-gray-400">
                   Concordo com a{' '}
-                  <a href="/politica-privacidade" target="_blank" className="text-blue-600 hover:underline">
+                  <a href="/politica-privacidade" target="_blank" className="text-blue-600 dark:text-blue-400 hover:underline">
                     Politica de Privacidade
                   </a>
                 </span>
@@ -562,7 +562,7 @@ export default function CadastroPage() {
               <button
                 type="button"
                 onClick={prevStep}
-                className="px-5 py-3 border border-gray-300 text-gray-700 font-medium rounded-xl hover:bg-gray-50 transition-colors"
+                className="px-5 py-3 border border-gray-300 dark:border-zinc-600 text-gray-700 dark:text-gray-300 font-medium rounded-xl hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors"
               >
                 Voltar
               </button>
@@ -599,11 +599,11 @@ export default function CadastroPage() {
 
           {/* Back to login */}
           <div className="mt-6 text-center">
-            <p className="text-gray-500 text-sm">
+            <p className="text-gray-500 dark:text-gray-400 text-sm">
               Ja tem conta?{' '}
               <Link
                 href={`/portal/${slug}/login`}
-                className="text-blue-600 hover:text-blue-700 font-medium"
+                className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium"
               >
                 Faca login
               </Link>
@@ -612,7 +612,7 @@ export default function CadastroPage() {
         </div>
 
         {/* Footer */}
-        <p className="text-center text-gray-400 text-xs mt-6">
+        <p className="text-center text-gray-400 dark:text-gray-500 text-xs mt-6">
           Powered by PontualERP
         </p>
       </div>

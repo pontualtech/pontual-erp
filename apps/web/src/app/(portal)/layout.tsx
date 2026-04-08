@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import '../globals.css'
 import { Toaster } from 'sonner'
+import { ThemeProvider } from 'next-themes'
 import { PortalFooter } from './components/portal-footer'
 
 const inter = Inter({ subsets: ['latin'] })
@@ -44,12 +45,14 @@ export default function PortalRootLayout({
           gtag('config', 'G-Z2TDQ081F5', { send_page_view: true });
         `}} />
       </head>
-      <body className={`${inter.className} bg-gradient-to-br from-gray-50 to-blue-50/30 min-h-screen antialiased flex flex-col`}>
-        <div className="flex-1">
-          {children}
-        </div>
-        <PortalFooter />
-        <Toaster position="top-right" richColors />
+      <body className={`${inter.className} bg-gray-50 dark:bg-zinc-950 min-h-screen antialiased flex flex-col transition-colors`}>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+          <div className="flex-1">
+            {children}
+          </div>
+          <PortalFooter />
+          <Toaster position="top-right" richColors />
+        </ThemeProvider>
       </body>
     </html>
   )
