@@ -65,9 +65,25 @@ export default function PortalTicketDetailPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticketId])
 
+  // Auto-refresh messages every 5s for real-time feel
+  useEffect(() => {
+    if (!ticket || ticket.status === 'FECHADO') return
+    const interval = setInterval(() => {
+      fetch(`/api/portal/tickets/${ticketId}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(res => {
+          if (res?.data && res.data.messages.length !== ticket.messages.length) {
+            setTicket(res.data)
+          }
+        })
+        .catch(() => {})
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [ticketId, ticket?.messages?.length, ticket?.status])
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [ticket?.messages])
+  }, [ticket?.messages?.length])
 
   async function handleSendMessage(e: React.FormEvent) {
     e.preventDefault()
@@ -89,8 +105,14 @@ export default function PortalTicketDetailPage() {
         return
       }
 
+      // Optimistic update: add message immediately without full reload
+      if (data.data && ticket) {
+        setTicket({
+          ...ticket,
+          messages: [...ticket.messages, data.data],
+        })
+      }
       setMessage('')
-      loadTicket()
     } catch {
       toast.error('Erro de conexao')
     } finally {

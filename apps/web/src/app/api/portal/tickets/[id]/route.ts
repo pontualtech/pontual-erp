@@ -130,7 +130,10 @@ export async function POST(
     return NextResponse.json({
       data: {
         id: ticketMessage.id,
-        message: 'Mensagem enviada!',
+        message: ticketMessage.message,
+        sender_type: ticketMessage.sender_type,
+        sender_name: ticketMessage.sender_name,
+        created_at: ticketMessage.created_at,
       },
     })
   } catch (err) {
