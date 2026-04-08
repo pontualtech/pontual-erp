@@ -113,11 +113,6 @@ export default function DashboardPage() {
   const canViewDashboard = isAdmin || hasPermission('dashboard', 'view')
   const canViewFinanceiro = hasPermission('financeiro', 'view')
 
-  // Redirect if no dashboard permission
-  if (user && !canViewDashboard) {
-    if (typeof window !== 'undefined') window.location.href = '/os'
-    return null
-  }
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [avisos, setAvisos] = useState<Aviso[]>([])
   const [loading, setLoading] = useState(true)
@@ -128,12 +123,20 @@ export default function DashboardPage() {
     fetch('/api/avisos').then(r => r.json()).then(d => setAvisos(d.data ?? [])).catch(() => {})
   }
 
+  // Redirect if no dashboard permission
   useEffect(() => {
+    if (user && !canViewDashboard) {
+      window.location.href = '/os'
+    }
+  }, [user, canViewDashboard])
+
+  useEffect(() => {
+    if (!canViewDashboard) return
     Promise.all([
       fetch('/api/dashboard/stats').then(r => r.json()).then(d => setStats(d.data)).catch(() => toast.error('Erro ao carregar dashboard')),
     ]).finally(() => setLoading(false))
     loadAvisos()
-  }, [])
+  }, [canViewDashboard])
 
   useEffect(() => {
     function handleEsc(e: KeyboardEvent) { if (e.key === 'Escape') setShowAvisoModal(false) }
@@ -165,6 +168,8 @@ export default function DashboardPage() {
     { label: 'Prontas p/ Entrega', value: stats?.cards.osProntas ?? 0, icon: Truck, color: 'text-emerald-600 bg-emerald-50' },
     ...(canViewFinanceiro ? [{ label: 'Faturamento do Mes', value: formatCurrency(stats?.cards.faturamentoMesCents ?? 0), icon: DollarSign, color: 'text-green-600 bg-green-50' }] : []),
   ]
+
+  if (!canViewDashboard) return null
 
   return (
     <div className="space-y-6">
