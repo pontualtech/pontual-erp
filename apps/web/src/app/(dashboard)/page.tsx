@@ -110,7 +110,14 @@ const priorityLabel: Record<string, string> = {
 
 export default function DashboardPage() {
   const { user, isAdmin, hasPermission } = useAuth()
+  const canViewDashboard = isAdmin || hasPermission('dashboard', 'view')
   const canViewFinanceiro = hasPermission('financeiro', 'view')
+
+  // Redirect if no dashboard permission
+  if (user && !canViewDashboard) {
+    if (typeof window !== 'undefined') window.location.href = '/os'
+    return null
+  }
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [avisos, setAvisos] = useState<Aviso[]>([])
   const [loading, setLoading] = useState(true)

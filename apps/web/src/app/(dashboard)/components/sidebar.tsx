@@ -28,7 +28,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
   {
     title: 'Geral',
     items: [
-      { label: 'Dashboard', href: '/', icon: LayoutDashboard },
+      { label: 'Dashboard', href: '/', icon: LayoutDashboard, module: 'dashboard', action: 'view' },
     ],
   },
   {
