@@ -16,6 +16,13 @@ export default function PortalLoginPage() {
   const [loading, setLoading] = useState(false)
   const [loadingCompany, setLoadingCompany] = useState(true)
 
+  // OTP 2FA
+  const [showOtp, setShowOtp] = useState(false)
+  const [otpCode, setOtpCode] = useState('')
+  const [otpLoading, setOtpLoading] = useState(false)
+  const [otpData, setOtpData] = useState<{ customer_id: string; company_id: string; email_hint: string | null } | null>(null)
+  const [otpTimer, setOtpTimer] = useState(0)
+
   // Recuperar senha
   const [showRecovery, setShowRecovery] = useState(false)
   const [recoveryDoc, setRecoveryDoc] = useState('')
@@ -25,6 +32,83 @@ export default function PortalLoginPage() {
     email_hint: string | null
     message: string
   } | null>(null)
+
+  // OTP countdown timer
+  useEffect(() => {
+    if (otpTimer <= 0) return
+    const interval = setInterval(() => setOtpTimer(t => t - 1), 1000)
+    return () => clearInterval(interval)
+  }, [otpTimer])
+
+  async function handleVerifyOtp(e: React.FormEvent) {
+    e.preventDefault()
+    if (!otpCode || otpCode.length !== 6 || !otpData) {
+      toast.error('Digite o codigo de 6 digitos')
+      return
+    }
+
+    setOtpLoading(true)
+    try {
+      const res = await fetch('/api/portal/auth/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer_id: otpData.customer_id,
+          company_id: otpData.company_id,
+          otp_code: otpCode,
+        }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        toast.error(data.error || 'Codigo invalido')
+        return
+      }
+
+      localStorage.setItem('portal_customer', JSON.stringify(data.data.customer))
+      localStorage.setItem('portal_company', JSON.stringify(data.data.company))
+
+      toast.success('Login realizado com sucesso!')
+      try { const { portalEvents } = await import('@/lib/analytics'); portalEvents.login('otp_2fa') } catch {}
+      router.push(`/portal/${slug}`)
+    } catch {
+      toast.error('Erro de conexao')
+    } finally {
+      setOtpLoading(false)
+    }
+  }
+
+  async function handleResendOtp() {
+    if (otpTimer > 240) { // can resend after 60s
+      toast.error('Aguarde antes de solicitar um novo codigo')
+      return
+    }
+    setLoading(true)
+    try {
+      const res = await fetch('/api/portal/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          document: document.replace(/\D/g, ''),
+          password,
+          company_slug: slug,
+        }),
+      })
+      const data = await res.json()
+      if (res.ok && data.data?.requires_otp) {
+        setOtpTimer(300)
+        setOtpCode('')
+        toast.success('Novo codigo enviado!')
+      } else {
+        toast.error(data.error || 'Erro ao reenviar')
+      }
+    } catch {
+      toast.error('Erro de conexao')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
     fetch(`/api/portal/company?slug=${slug}`)
@@ -80,8 +164,20 @@ export default function PortalLoginPage() {
         return
       }
 
-      // Token is stored in httpOnly cookie by the server (secure, not accessible via JS)
-      // Only store non-sensitive display data in localStorage
+      // 2FA: server requires OTP verification
+      if (data.data?.requires_otp) {
+        setOtpData({
+          customer_id: data.data.customer_id,
+          company_id: data.data.company_id,
+          email_hint: data.data.email_hint,
+        })
+        setShowOtp(true)
+        setOtpTimer(300) // 5 minutes in seconds
+        toast.success('Codigo enviado para seu email!')
+        return
+      }
+
+      // Direct login (fallback if OTP disabled)
       localStorage.setItem('portal_customer', JSON.stringify(data.data.customer))
       localStorage.setItem('portal_company', JSON.stringify(data.data.company))
 
@@ -156,7 +252,88 @@ export default function PortalLoginPage() {
             <p className="text-gray-500 dark:text-gray-400 mt-1">Portal do Cliente</p>
           </div>
 
-          {!showRecovery ? (
+          {showOtp ? (
+            <>
+              {/* OTP Verification */}
+              <div className="text-center mb-6">
+                <div className="w-14 h-14 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <svg className="w-7 h-7 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                </div>
+                <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Verificacao em 2 etapas</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Enviamos um codigo para {otpData?.email_hint || 'seu email'}
+                </p>
+              </div>
+
+              <form onSubmit={handleVerifyOtp} className="space-y-5">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Codigo de verificacao
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={otpCode}
+                    onChange={e => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="000000"
+                    className="w-full px-4 py-4 border border-gray-300 dark:border-zinc-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 dark:text-gray-100 bg-white dark:bg-zinc-800 placeholder-gray-400 dark:placeholder-gray-600 text-center text-2xl font-mono tracking-[0.5em]"
+                    autoFocus
+                    autoComplete="one-time-code"
+                  />
+                </div>
+
+                {/* Timer */}
+                <div className="text-center">
+                  {otpTimer > 0 ? (
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      Codigo expira em{' '}
+                      <span className={`font-mono font-bold ${otpTimer <= 60 ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'}`}>
+                        {Math.floor(otpTimer / 60)}:{String(otpTimer % 60).padStart(2, '0')}
+                      </span>
+                    </p>
+                  ) : (
+                    <p className="text-sm text-red-600 dark:text-red-400 font-medium">Codigo expirado</p>
+                  )}
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={otpLoading || otpCode.length !== 6}
+                  className="w-full py-3 px-4 bg-blue-600 dark:bg-blue-500 hover:bg-blue-700 dark:hover:bg-blue-600 disabled:bg-blue-400 dark:disabled:bg-blue-800 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+                >
+                  {otpLoading ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
+                      Verificando...
+                    </>
+                  ) : (
+                    'Verificar e Entrar'
+                  )}
+                </button>
+
+                <div className="flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={handleResendOtp}
+                    disabled={otpTimer > 240}
+                    className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium disabled:text-gray-400 dark:disabled:text-gray-600 disabled:cursor-not-allowed"
+                  >
+                    Reenviar codigo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowOtp(false); setOtpCode(''); setOtpData(null) }}
+                    className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+                  >
+                    Voltar ao login
+                  </button>
+                </div>
+              </form>
+            </>
+          ) : !showRecovery ? (
             <>
               {/* Login Form */}
               <form onSubmit={handleLogin} className="space-y-5">

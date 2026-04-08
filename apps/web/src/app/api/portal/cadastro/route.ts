@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { hash } from 'bcryptjs'
+import { sendEmail } from '@/lib/send-email'
 
 // Simple in-memory rate limiter: 3 registrations per IP per hour
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
@@ -183,24 +184,53 @@ export async function POST(req: NextRequest) {
         },
       })
 
+      const verifyToken = crypto.randomUUID()
       await tx.customerAccess.create({
         data: {
           company_id: company.id,
           customer_id: customer.id,
           password_hash: passwordHash,
           email_verified: false,
-          verify_token: crypto.randomUUID(),
+          verify_token: verifyToken,
         },
       })
 
-      return customer
+      return { customer, verifyToken }
     })
+
+    // Send verification email (fire-and-forget)
+    if (formattedEmail && result.verifyToken) {
+      const verifyUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'}/portal/${company_slug}/verificar-email?token=${result.verifyToken}`
+      const firstName = formattedName.split(' ')[0] || 'Cliente'
+      void sendEmail(
+        formattedEmail,
+        `Verifique seu email - ${company.name}`,
+        `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <div style="max-width:480px;margin:0 auto;padding:24px;">
+    <div style="background:#1e40af;border-radius:12px 12px 0 0;padding:20px;text-align:center;">
+      <h1 style="color:white;margin:0;font-size:18px;">${company.name}</h1>
+      <p style="color:#bfdbfe;margin:6px 0 0;font-size:13px;">Verificacao de Email</p>
+    </div>
+    <div style="background:white;padding:24px;border-radius:0 0 12px 12px;">
+      <p style="color:#374151;font-size:14px;margin:0 0 16px;">Ola, <strong>${firstName}</strong>! Bem-vindo ao Portal do Cliente.</p>
+      <p style="color:#6b7280;font-size:14px;margin:0 0 20px;">Clique no botao abaixo para verificar seu email:</p>
+      <div style="text-align:center;margin:0 0 20px;">
+        <a href="${verifyUrl}" style="display:inline-block;padding:12px 32px;background:#2563eb;color:white;text-decoration:none;border-radius:8px;font-size:14px;font-weight:600;">Verificar Email</a>
+      </div>
+      <p style="color:#9ca3af;font-size:12px;margin:0;">Se voce nao criou esta conta, ignore este email.</p>
+    </div>
+  </div>
+</body></html>`
+      ).catch(err => console.error('[Portal Cadastro Email Error]', err))
+    }
 
     return NextResponse.json({
       data: {
         success: true,
+        customer_id: result.customer.id,
         email_hint: maskEmail(formattedEmail),
-        message: 'Conta criada com sucesso! Faca login para acessar o portal.',
+        message: 'Conta criada com sucesso! Verifique seu email para ativar.',
       },
     })
   } catch (err) {

@@ -911,6 +911,33 @@ model CustomerAccess {
   @@map("customer_access")
 }
 
+model LoginOtp {
+  id          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id  String
+  customer_id String
+  code        String
+  attempts    Int       @default(0)
+  used        Boolean   @default(false)
+  expires_at  DateTime  @db.Timestamptz(6)
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([company_id, customer_id, code], map: "idx_login_otp_lookup")
+  @@map("login_otps")
+}
+
+model PushSubscription {
+  id          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id  String
+  customer_id String
+  endpoint    String
+  p256dh      String
+  auth        String
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@unique([company_id, customer_id, endpoint])
+  @@map("push_subscriptions")
+}
+
 // ========== CHAT INTERNO & AVISOS ==========
 
 model ChatMessage {
