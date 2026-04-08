@@ -64,6 +64,7 @@ export default function PortalOSDetailPage() {
   const [loading, setLoading] = useState(true)
   const [comment, setComment] = useState('')
   const [actionLoading, setActionLoading] = useState(false)
+  const [approvePayment, setApprovePayment] = useState<string | null>(null)
   const [company, setCompany] = useState<{ name: string } | null>(null)
   const [customer, setCustomer] = useState<{ name: string } | null>(null)
   const [npsScore, setNpsScore] = useState<number | null>(null)
@@ -391,34 +392,109 @@ export default function PortalOSDetailPage() {
           </div>
         </div>
 
-        {/* Action buttons for approval */}
-        {isAguardandoAprovacao && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 mb-6">
-            <h3 className="font-semibold text-amber-900 text-lg mb-2">Orcamento aguardando aprovacao</h3>
-            <p className="text-amber-700 mb-4">
-              Valor total: <strong className="text-xl">R$ {((os.total_cost || 0) / 100).toFixed(2)}</strong>
-            </p>
-            <div className="flex flex-col sm:flex-row gap-3">
-              <button
-                onClick={() => handleAction('approve', 'Aprovado pelo cliente')}
-                disabled={actionLoading}
-                className="flex-1 py-3 px-6 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white font-semibold rounded-xl transition-colors"
-              >
-                Aprovar Orcamento
-              </button>
-              <button
-                onClick={() => {
-                  const reason = prompt('Motivo da negociacao (opcional):')
-                  handleAction('reject', reason || 'Cliente solicitou negociacao')
-                }}
-                disabled={actionLoading}
-                className="flex-1 py-3 px-6 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white font-semibold rounded-xl transition-colors"
-              >
-                Negociar
-              </button>
+        {/* Laudo e Observações */}
+        {(os.diagnosis || os.reported_issue) && (
+          <div className="bg-white rounded-xl border border-gray-200 mb-6 overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100">
+              <h2 className="font-semibold text-gray-900">Laudo Tecnico</h2>
+            </div>
+            <div className="p-5 space-y-4">
+              {os.reported_issue && (
+                <div>
+                  <h4 className="text-xs font-semibold text-gray-500 uppercase mb-1">Problema Relatado</h4>
+                  <p className="text-gray-700 text-sm whitespace-pre-wrap">{os.reported_issue}</p>
+                </div>
+              )}
+              {os.diagnosis && (
+                <div>
+                  <h4 className="text-xs font-semibold text-gray-500 uppercase mb-1">Diagnostico / Laudo</h4>
+                  <p className="text-gray-800 text-sm font-medium whitespace-pre-wrap">{os.diagnosis}</p>
+                </div>
+              )}
             </div>
           </div>
         )}
+
+        {/* Action buttons for approval */}
+        {isAguardandoAprovacao && (() => {
+          const fmt = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v / 100)
+          const paymentOptions = [
+            { value: 'PIX', label: 'PIX', icon: '⚡', desc: 'A vista na entrega' },
+            { value: 'Dinheiro', label: 'Dinheiro', icon: '💵', desc: 'A vista na entrega' },
+            { value: 'Cartao Credito', label: 'Cartao de Credito', icon: '💳', desc: 'Ate 3x sem juros' },
+            { value: 'Cartao Debito', label: 'Cartao de Debito', icon: '💳', desc: 'A vista na entrega' },
+            { value: 'Boleto', label: 'Boleto Bancario', icon: '📄', desc: 'Somente PJ (7 dias)' },
+          ]
+          return (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 mb-6">
+              <h3 className="font-semibold text-amber-900 text-lg mb-2">Orcamento aguardando aprovacao</h3>
+              <p className="text-amber-700 mb-4">
+                Valor total: <strong className="text-2xl">{fmt(os.total_cost || 0)}</strong>
+              </p>
+
+              {!approvePayment ? (
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setApprovePayment('selecting')}
+                    disabled={actionLoading}
+                    className="flex-1 py-3 px-6 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white font-semibold rounded-xl transition-colors"
+                  >
+                    Aprovar Orcamento
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const reason = prompt('Motivo da negociacao (opcional):')
+                      handleAction('reject', reason || 'Cliente solicitou negociacao')
+                    }}
+                    disabled={actionLoading}
+                    className="flex-1 py-3 px-6 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white font-semibold rounded-xl transition-colors"
+                  >
+                    Negociar
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-sm font-medium text-gray-700">Selecione a forma de pagamento:</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {paymentOptions.map(pm => (
+                      <button
+                        key={pm.value}
+                        type="button"
+                        onClick={() => setApprovePayment(pm.value)}
+                        className={`text-left rounded-lg border-2 p-3 transition-all ${approvePayment === pm.value ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:border-green-300'}`}
+                      >
+                        <span className="text-sm font-semibold">{pm.icon} {pm.label}</span>
+                        <span className="text-xs text-gray-500 block">{pm.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mt-2">
+                    <p className="text-xs text-blue-700">📅 Previsao de entrega: ate <strong>10 dias uteis</strong>. Sempre tentamos entregar o quanto antes!</p>
+                  </div>
+                  <div className="flex gap-3 mt-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (approvePayment === 'selecting') { toast.error('Selecione a forma de pagamento'); return }
+                        handleAction('approve', `Aprovado pelo cliente — Pagamento: ${approvePayment}`)
+                      }}
+                      disabled={actionLoading || approvePayment === 'selecting'}
+                      className="flex-1 py-3 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white font-semibold rounded-xl transition-colors"
+                    >
+                      {actionLoading ? 'Processando...' : 'Confirmar Aprovacao'}
+                    </button>
+                    <button type="button" onClick={() => setApprovePayment(null)}
+                      className="px-4 py-3 border border-gray-300 rounded-xl text-gray-600 hover:bg-gray-50">
+                      Voltar
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })()}
 
         {/* Items table */}
         {os.items.length > 0 && (
