@@ -36,7 +36,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const numero = invoice.invoice_number
     const serie = invoice.series || '1'
     const valor = ((invoice.total_amount || 0) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-    const data = invoice.issued_at ? new Date(invoice.issued_at).toLocaleDateString('pt-BR') : new Date(invoice.created_at).toLocaleDateString('pt-BR')
+    const data = new Date(invoice.issued_at || invoice.created_at || new Date()).toLocaleDateString('pt-BR')
     const cliente = invoice.customers?.legal_name || 'Cliente'
 
     // Items table
