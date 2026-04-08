@@ -35,7 +35,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const chaveFormatada = chave.replace(/(\d{4})/g, '$1 ').trim()
     const numero = invoice.invoice_number
     const serie = invoice.series || '1'
-    const valor = (invoice.total_amount / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+    const valor = ((invoice.total_amount || 0) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
     const data = invoice.issued_at ? new Date(invoice.issued_at).toLocaleDateString('pt-BR') : new Date(invoice.created_at).toLocaleDateString('pt-BR')
     const cliente = invoice.customers?.legal_name || 'Cliente'
 
