@@ -11,13 +11,25 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json()
 
-    const { equipment_type, brand, model, serial_number, reported_issue, preferred_date } = body
+    let { equipment_type, brand, model, serial_number, reported_issue, preferred_date } = body
 
     if (!equipment_type || !reported_issue) {
       return NextResponse.json(
         { error: 'Tipo de equipamento e defeito relatado sao obrigatorios' },
         { status: 400 }
       )
+    }
+
+    // Formatar dados no padrão do ERP (MAIÚSCULO, capitalizado)
+    const capitalize = (s: string) => s.replace(/\b\w/g, c => c.toUpperCase())
+    equipment_type = capitalize(equipment_type.trim())
+    brand = brand ? brand.trim().toUpperCase() : ''
+    model = model ? model.trim().toUpperCase() : ''
+    serial_number = serial_number ? serial_number.trim().toUpperCase() : ''
+    reported_issue = reported_issue.trim()
+    // Primeira letra maiúscula no defeito
+    if (reported_issue.length > 0) {
+      reported_issue = reported_issue.charAt(0).toUpperCase() + reported_issue.slice(1)
     }
 
     // Find initial status (is_default or lowest order) for this company's OS module
@@ -136,30 +148,47 @@ export async function GET(req: NextRequest) {
       prisma.serviceOrder.count({ where }),
     ])
 
-    // Remover campos internos e mapear status ocultos antes de enviar ao cliente
-    const HIDDEN_PORTAL_STATUSES = ['orcar', 'negociar', 'recalculado']
-    const safeData = data.map(os => {
-      const statusName = os.module_statuses?.name || ''
-      const isHidden = HIDDEN_PORTAL_STATUSES.some(h => statusName.toLowerCase().includes(h))
-      return {
-        id: os.id,
-        os_number: os.os_number,
-        equipment_type: os.equipment_type,
-        equipment_brand: os.equipment_brand,
-        equipment_model: os.equipment_model,
-        reported_issue: os.reported_issue,
-        diagnosis: os.diagnosis,
-        priority: os.priority,
-        os_type: os.os_type,
-        estimated_cost: os.estimated_cost,
-        total_cost: os.total_cost,
-        estimated_delivery: os.estimated_delivery,
-        actual_delivery: os.actual_delivery,
-        created_at: os.created_at,
-        updated_at: os.updated_at,
-        status: isHidden ? { ...os.module_statuses, name: 'Em Analise', color: '#F59E0B' } : os.module_statuses,
-      }
-    })
+    // Mapear status para nomes amigáveis do portal
+    const PORTAL_MAP: Record<string, { name: string; color: string }> = {
+      'coletar': { name: 'Recebido', color: '#7C3AED' },
+      'orcar': { name: 'Em Analise', color: '#F59E0B' },
+      'negociar': { name: 'Em Analise', color: '#F59E0B' },
+      'recalculado': { name: 'Aguardando Aprovacao', color: '#EF4444' },
+      'aguardando aprov': { name: 'Aguardando Aprovacao', color: '#EF4444' },
+      'aprovado': { name: 'Em Reparo', color: '#3B82F6' },
+      'em execu': { name: 'Em Reparo', color: '#3B82F6' },
+      'aguardando pe': { name: 'Em Reparo', color: '#3B82F6' },
+      'laudo': { name: 'Em Analise', color: '#F59E0B' },
+      'entregar reparado': { name: 'Pronto para Retirada', color: '#10B981' },
+      'entregar recusado': { name: 'Pronto para Retirada', color: '#10B981' },
+      'entregue': { name: 'Entregue', color: '#22C55E' },
+      'cancelada': { name: 'Cancelada', color: '#6B7280' },
+      'recusado': { name: 'Recusado', color: '#6B7280' },
+    }
+    function mapPortalStatus(s: any) {
+      if (!s) return s
+      const key = Object.keys(PORTAL_MAP).find(k => s.name.toLowerCase().includes(k))
+      if (!key) return { ...s, name: 'Em Reparo', color: '#3B82F6' }
+      return { ...s, ...PORTAL_MAP[key] }
+    }
+    const safeData = data.map(os => ({
+      id: os.id,
+      os_number: os.os_number,
+      equipment_type: os.equipment_type,
+      equipment_brand: os.equipment_brand,
+      equipment_model: os.equipment_model,
+      reported_issue: os.reported_issue,
+      diagnosis: os.diagnosis,
+      priority: os.priority,
+      os_type: os.os_type,
+      estimated_cost: os.estimated_cost,
+      total_cost: os.total_cost,
+      estimated_delivery: os.estimated_delivery,
+      actual_delivery: os.actual_delivery,
+      created_at: os.created_at,
+      updated_at: os.updated_at,
+      status: mapPortalStatus(os.module_statuses),
+    }))
 
     return NextResponse.json({
       data: safeData,

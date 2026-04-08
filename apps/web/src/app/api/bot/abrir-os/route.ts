@@ -15,9 +15,15 @@ export async function POST(req: NextRequest) {
     if (auth instanceof NextResponse) return auth
 
     const body = await req.json()
-    const { nome, documento, telefone, email, cep, endereco, equipamento, marca, modelo, defeito, observacoes, origem } = body
+    let { nome, documento, telefone, email, cep, endereco, equipamento, marca, modelo, defeito, observacoes, origem } = body
 
     if (!defeito && !equipamento) return botError('Campos "equipamento" e "defeito" sao obrigatorios')
+
+    // Formatar no padrão do ERP
+    if (nome) nome = nome.trim().toUpperCase()
+    if (marca) marca = marca.trim().toUpperCase()
+    if (modelo) modelo = modelo.trim().toUpperCase()
+    if (defeito) defeito = defeito.trim().charAt(0).toUpperCase() + defeito.trim().slice(1)
 
     const companyId = auth.companyId
     const docDigits = (documento || '').replace(/\D/g, '')

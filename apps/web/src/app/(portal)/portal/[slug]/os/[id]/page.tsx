@@ -261,15 +261,7 @@ export default function PortalOSDetailPage() {
 
           {/* Status Timeline */}
           {os.all_statuses.length > 0 && (() => {
-            const labelMap: Record<string, string> = {
-              'Coletar': 'Recebido',
-              'Em Analise': 'Diagnostico',
-              'Aprovado': 'Aprovado',
-              'Em Execucao': 'Reparo em Andamento',
-              'Aguardando Peca': 'Aguardando Pecas',
-              'Entregar Reparado': 'Pronto para Retirada',
-              'Entregue': 'Entregue',
-            }
+            // Nomes já vêm mapeados da API — usar direto
             const historyDateMap: Record<string, string> = {}
             os.history.forEach((h) => {
               historyDateMap[h.to_status.name] = h.created_at
@@ -284,7 +276,7 @@ export default function PortalOSDetailPage() {
                     const isActive = s.id === os.status.id
                     const isPast = statusOrder < currentOrder
                     const isFuture = statusOrder > currentOrder
-                    const friendlyName = labelMap[s.name] ?? s.name
+                    const friendlyName = s.name
                     const historyDate = historyDateMap[s.name]
 
                     return (

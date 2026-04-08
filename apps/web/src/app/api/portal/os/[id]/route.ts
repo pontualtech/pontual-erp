@@ -53,20 +53,45 @@ export async function GET(
     }
 
     // Buscar todos os status para a timeline
-    // Ocultar status internos do progresso do cliente
-    const HIDDEN_PORTAL_STATUSES = ['orcar', 'negociar', 'recalculado']
-    const allStatuses = (await prisma.moduleStatus.findMany({
+    // Apenas estes status aparecem no progresso do portal
+    const PORTAL_VISIBLE = ['coletar', 'orcar', 'aguardando aprov', 'aprovado', 'entregue']
+    // Mapeamento: status interno → nome que o cliente vê
+    const PORTAL_LABEL: Record<string, string> = {
+      'coletar': 'Recebido',
+      'orcar': 'Em Analise',
+      'aguardando aprov': 'Aguardando Aprovacao',
+      'aprovado': 'Em Reparo',
+      'entregue': 'Entregue',
+    }
+    const PORTAL_COLOR: Record<string, string> = {
+      'coletar': '#7C3AED',
+      'orcar': '#F59E0B',
+      'aguardando aprov': '#EF4444',
+      'aprovado': '#3B82F6',
+      'entregue': '#22C55E',
+    }
+
+    const allDbStatuses = await prisma.moduleStatus.findMany({
       where: { company_id: portalUser.company_id, module: 'os' },
       orderBy: { order: 'asc' },
       select: { id: true, name: true, color: true, icon: true, order: true },
-    })).filter(s => !HIDDEN_PORTAL_STATUSES.some(h => s.name.toLowerCase().includes(h)))
+    })
 
-    // Se OS está em status oculto, mapear para "Em Análise" no portal
+    // Filtrar e mapear para nomes amigáveis
+    const allStatuses = allDbStatuses
+      .filter(s => PORTAL_VISIBLE.some(v => s.name.toLowerCase().includes(v)))
+      .map(s => {
+        const matchKey = PORTAL_VISIBLE.find(v => s.name.toLowerCase().includes(v)) || ''
+        return { ...s, name: PORTAL_LABEL[matchKey] || s.name, color: PORTAL_COLOR[matchKey] || s.color }
+      })
+
+    // Mapear status atual da OS para o nome do portal
     const currentStatusName = os.module_statuses?.name || ''
-    const isHiddenStatus = HIDDEN_PORTAL_STATUSES.some(h => currentStatusName.toLowerCase().includes(h))
-    const portalStatus = isHiddenStatus
-      ? { ...os.module_statuses, name: 'Em Analise', color: '#F59E0B' }
-      : os.module_statuses
+    const currentKey = PORTAL_VISIBLE.find(v => currentStatusName.toLowerCase().includes(v))
+    // Se status não está nos visíveis, mapear: Em Execução/Aguardando Peça/etc → "Em Reparo"
+    const portalStatus = currentKey
+      ? { ...os.module_statuses, name: PORTAL_LABEL[currentKey] || currentStatusName, color: PORTAL_COLOR[currentKey] || os.module_statuses?.color }
+      : { ...os.module_statuses, name: 'Em Reparo', color: '#3B82F6' }
 
     return NextResponse.json({
       data: {
