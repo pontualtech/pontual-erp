@@ -303,6 +303,7 @@ async function continueOrcamentoFlow(
                 equipment_model: state.data.modelo || undefined,
                 reported_issue: issue,
                 reception_notes: state.data.endereco || undefined,
+                internal_notes: `[BOT ANA] OS aberta automaticamente via WhatsApp em ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}. Cliente: ${customerName || state.data.customerName || 'N/I'}. Telefone: ${state.data.phone || 'N/I'}.`,
               },
             })
 
