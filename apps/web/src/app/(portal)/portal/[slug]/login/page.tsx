@@ -1,14 +1,18 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
 
 export default function PortalLoginPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const slug = params.slug as string
+
+  // Pre-fill document from URL param (from email links)
+  const docFromUrl = searchParams.get('doc') || ''
 
   const [company, setCompany] = useState<{ name: string; logo?: string } | null>(null)
   const [document, setDocument] = useState('')
@@ -120,6 +124,13 @@ export default function PortalLoginPage() {
       .catch(() => setCompany({ name: slug }))
       .finally(() => setLoadingCompany(false))
   }, [slug])
+
+  // Pre-fill document from email link (?doc=32772178000147)
+  useEffect(() => {
+    if (docFromUrl) {
+      setDocument(formatDocument(docFromUrl))
+    }
+  }, [docFromUrl]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function formatDocument(value: string) {
     const digits = value.replace(/\D/g, '')
@@ -234,22 +245,22 @@ export default function PortalLoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-zinc-950 dark:to-zinc-900 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-zinc-950 dark:to-zinc-900 px-4 py-8">
       <div className="w-full max-w-md">
-        <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-xl dark:shadow-zinc-900/50 p-8 dark:border dark:border-zinc-800">
-          {/* Header */}
-          <div className="text-center mb-8">
+        <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-xl dark:shadow-zinc-900/50 p-6 sm:p-8 dark:border dark:border-zinc-800">
+          {/* Header — compact on mobile */}
+          <div className="text-center mb-6 sm:mb-8">
             {company?.logo ? (
-              <img src={company.logo} alt={company.name} className="h-16 mx-auto mb-4" />
+              <img src={company.logo} alt={company.name} className="h-12 sm:h-16 mx-auto mb-3" />
             ) : (
-              <div className="w-16 h-16 bg-blue-600 dark:bg-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="w-12 h-12 sm:w-16 sm:h-16 bg-blue-600 dark:bg-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                <svg className="w-6 h-6 sm:w-8 sm:h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                 </svg>
               </div>
             )}
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{company?.name}</h1>
-            <p className="text-gray-500 dark:text-gray-400 mt-1">Portal do Cliente</p>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100">{company?.name}</h1>
+            <p className="text-gray-500 dark:text-gray-400 mt-1 text-sm">Portal do Cliente</p>
           </div>
 
           {showOtp ? (
@@ -335,26 +346,37 @@ export default function PortalLoginPage() {
             </>
           ) : !showRecovery ? (
             <>
-              {/* Login Form */}
-              <form onSubmit={handleLogin} className="space-y-5">
+              {/* Login Form — Mobile-first, one-hand friendly */}
+              <form onSubmit={handleLogin} className="space-y-4">
                 <div>
-                  <label htmlFor="document" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label htmlFor="document" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                     CPF / CNPJ
                   </label>
                   <input
                     id="document"
                     type="text"
+                    inputMode="numeric"
                     value={document}
                     onChange={e => setDocument(formatDocument(e.target.value))}
-                    placeholder="000.000.000-00"
+                    placeholder="Digite seu CPF ou CNPJ"
                     maxLength={18}
-                    className="w-full px-4 py-3 border border-gray-300 dark:border-zinc-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 dark:text-gray-100 bg-white dark:bg-zinc-800 placeholder-gray-400 dark:placeholder-gray-600"
-                    autoFocus
+                    className="w-full px-4 py-4 text-lg border border-gray-300 dark:border-zinc-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 dark:text-gray-100 bg-white dark:bg-zinc-800 placeholder-gray-400 dark:placeholder-gray-600"
+                    autoFocus={!docFromUrl}
+                    readOnly={!!docFromUrl && document.length > 0}
                   />
+                  {docFromUrl && document && (
+                    <button
+                      type="button"
+                      onClick={() => { setDocument(''); }}
+                      className="text-xs text-blue-600 dark:text-blue-400 mt-1 hover:underline"
+                    >
+                      Usar outro documento
+                    </button>
+                  )}
                 </div>
 
                 <div>
-                  <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center justify-between mb-1.5">
                     <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                       Senha
                     </label>
@@ -372,14 +394,15 @@ export default function PortalLoginPage() {
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                     placeholder="Digite sua senha"
-                    className="w-full px-4 py-3 border border-gray-300 dark:border-zinc-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 dark:text-gray-100 bg-white dark:bg-zinc-800 placeholder-gray-400 dark:placeholder-gray-600"
+                    autoFocus={!!docFromUrl}
+                    className="w-full px-4 py-4 text-lg border border-gray-300 dark:border-zinc-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 dark:text-gray-100 bg-white dark:bg-zinc-800 placeholder-gray-400 dark:placeholder-gray-600"
                   />
                 </div>
 
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+                  className="w-full py-4 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-bold text-lg rounded-xl transition-colors flex items-center justify-center gap-2 active:scale-[0.98] min-h-[56px]"
                 >
                   {loading ? (
                     <>

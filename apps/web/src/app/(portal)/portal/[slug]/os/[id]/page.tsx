@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { Printer, Mail, X } from 'lucide-react'
@@ -59,8 +59,10 @@ interface OSDetail {
 export default function PortalOSDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const slug = params.slug as string
   const osId = params.id as string
+  const docParam = searchParams.get('doc') || ''
 
   const [os, setOs] = useState<OSDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -83,7 +85,7 @@ export default function PortalOSDetailPage() {
     fetch(`/api/portal/os/${osId}`)
       .then(r => {
         if (r.status === 401) {
-          router.push(`/portal/${slug}/login`)
+          router.push(`/portal/${slug}/login${docParam ? `?doc=${docParam}` : ''}`)
           return null
         }
         return r.json()
@@ -205,7 +207,7 @@ export default function PortalOSDetailPage() {
     localStorage.removeItem('portal_customer')
     localStorage.removeItem('portal_company')
     fetch('/api/portal/logout', { method: 'POST' })
-      .finally(() => router.push(`/portal/${slug}/login`))
+      .finally(() => router.push(`/portal/${slug}/login${docParam ? `?doc=${docParam}` : ''}`))
   }
 
   const isAguardandoAprovacao = os?.status.name.toLowerCase().includes('aguardando') &&

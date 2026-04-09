@@ -495,6 +495,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         const msg = templateFn({
           customerName: os.customers?.legal_name?.split(' ')[0] || 'Cliente',
           osNumber: os.os_number,
+          customerDoc: os.customers?.document_number || undefined,
           companyName: waCompany?.name || 'Empresa',
           companySlug: waCompany?.slug || 'pontualtech',
           osId: os.id,

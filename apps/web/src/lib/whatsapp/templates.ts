@@ -2,6 +2,7 @@ const PORTAL_BASE = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.
 
 interface TemplateParams {
   customerName: string
+  customerDoc?: string
   osNumber: number
   companyName: string
   companySlug: string
@@ -11,7 +12,8 @@ interface TemplateParams {
 }
 
 function portalLink(p: TemplateParams) {
-  return `${PORTAL_BASE}/portal/${p.companySlug}/os/${p.osId}`
+  const base = `${PORTAL_BASE}/portal/${p.companySlug}/os/${p.osId}`
+  return p.customerDoc ? `${base}?doc=${p.customerDoc}` : base
 }
 
 function fmtValue(cents?: number): string {
