@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import type { AuthUser } from '@/lib/auth'
 import { Search, ChevronRight, LogOut, User, Settings, Wrench, Users, Package, Loader2 } from 'lucide-react'
+import Link from 'next/link'
 import { NotificationBell } from './notification-bell'
 
 interface SearchResults {
@@ -31,15 +32,32 @@ function Breadcrumb() {
   const isUuid = (s: string) => /^[0-9a-f]{8}-/.test(s)
   const visibleSegments = segments.filter(s => !isUuid(s))
 
+  // Build href for each breadcrumb segment
+  function buildHref(index: number): string {
+    // Map visible segments back to actual path segments
+    const pathSegments = segments.slice(0, segments.indexOf(visibleSegments[index]) + 1)
+    return '/' + pathSegments.join('/')
+  }
+
+  const isLast = (i: number) => i === visibleSegments.length - 1
+
   return (
     <nav className="flex items-center gap-1 text-sm text-gray-500">
-      <span className="font-medium text-gray-700">Inicio</span>
+      <Link href="/" className="font-medium text-gray-700 hover:text-blue-600 transition-colors">
+        Inicio
+      </Link>
       {visibleSegments.map((seg, i) => (
         <span key={i} className="flex items-center gap-1">
           <ChevronRight className="h-3 w-3" />
-          <span className={cn(i === visibleSegments.length - 1 && 'text-gray-700 font-medium')}>
-            {breadcrumbMap[seg] ?? seg}
-          </span>
+          {isLast(i) ? (
+            <span className="text-gray-700 font-medium">
+              {breadcrumbMap[seg] ?? seg}
+            </span>
+          ) : (
+            <Link href={buildHref(i)} className="hover:text-blue-600 transition-colors">
+              {breadcrumbMap[seg] ?? seg}
+            </Link>
+          )}
         </span>
       ))}
     </nav>
