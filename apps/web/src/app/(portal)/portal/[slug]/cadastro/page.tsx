@@ -55,6 +55,10 @@ export default function CadastroPage() {
   const [loadingCompany, setLoadingCompany] = useState(true)
   const [fetchingCnpj, setFetchingCnpj] = useState(false)
   const [fetchingCep, setFetchingCep] = useState(false)
+  const [checkingDoc, setCheckingDoc] = useState(false)
+  const [existingCustomer, setExistingCustomer] = useState<{
+    exists: boolean; has_access: boolean; customer_name: string; email_hint: string | null
+  } | null>(null)
 
   // Step 1
   const [document, setDocument] = useState('')
@@ -214,8 +218,29 @@ export default function CadastroPage() {
     return true
   }
 
-  function nextStep() {
+  async function nextStep() {
     if (!validateStep()) return
+
+    // On step 0: check if customer already exists in ERP
+    if (step === 0) {
+      setCheckingDoc(true)
+      setExistingCustomer(null)
+      try {
+        const res = await fetch('/api/portal/check-document', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ document: document.replace(/\D/g, ''), company_slug: slug }),
+        })
+        const data = await res.json()
+        if (res.ok && data.data?.exists) {
+          // Customer already exists — show options instead of proceeding
+          setExistingCustomer(data.data)
+          return
+        }
+      } catch {}
+      finally { setCheckingDoc(false) }
+    }
+
     setStep(s => Math.min(s + 1, STEPS.length - 1))
   }
 
@@ -346,10 +371,71 @@ export default function CadastroPage() {
                     </div>
                   )}
                 </div>
-                {digits.length >= 11 && (
+                {digits.length >= 11 && !existingCustomer && (
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     Tipo detectado: <span className="font-medium">{personType === 'FISICA' ? 'Pessoa Fisica (CPF)' : 'Pessoa Juridica (CNPJ)'}</span>
                   </p>
+                )}
+
+                {/* Existing customer alert */}
+                {existingCustomer && (
+                  <div className="mt-4 rounded-xl border-2 border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950 p-5">
+                    <div className="flex items-start gap-3">
+                      <div className="flex-shrink-0 w-10 h-10 bg-amber-100 dark:bg-amber-900 rounded-full flex items-center justify-center">
+                        <svg className="w-5 h-5 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="font-bold text-amber-800 dark:text-amber-300 text-base">
+                          Ola, {existingCustomer.customer_name}!
+                        </h3>
+                        <p className="text-sm text-amber-700 dark:text-amber-400 mt-1">
+                          {existingCustomer.has_access
+                            ? 'Voce ja tem acesso ao portal. Faca login ou recupere sua senha.'
+                            : 'Encontramos seu cadastro no sistema. Ative seu acesso ao portal.'}
+                        </p>
+                        {existingCustomer.email_hint && (
+                          <p className="text-xs text-amber-600 dark:text-amber-500 mt-1">
+                            Email cadastrado: {existingCustomer.email_hint}
+                          </p>
+                        )}
+                        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+                          {existingCustomer.has_access ? (
+                            <>
+                              <Link
+                                href={`/portal/${slug}/login`}
+                                className="flex-1 text-center py-2.5 bg-blue-600 dark:bg-blue-500 text-white font-semibold rounded-xl hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors text-sm"
+                              >
+                                Fazer Login
+                              </Link>
+                              <button
+                                type="button"
+                                onClick={() => router.push(`/portal/${slug}/login`)}
+                                className="flex-1 text-center py-2.5 border-2 border-amber-500 dark:border-amber-600 text-amber-700 dark:text-amber-400 font-semibold rounded-xl hover:bg-amber-100 dark:hover:bg-amber-900 transition-colors text-sm"
+                              >
+                                Esqueci a Senha
+                              </button>
+                            </>
+                          ) : (
+                            <Link
+                              href={`/portal/${slug}/registrar`}
+                              className="flex-1 text-center py-2.5 bg-green-600 dark:bg-green-500 text-white font-semibold rounded-xl hover:bg-green-700 dark:hover:bg-green-600 transition-colors text-sm"
+                            >
+                              Ativar Meu Acesso
+                            </Link>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => { setExistingCustomer(null); setDocument('') }}
+                            className="flex-1 text-center py-2.5 text-gray-600 dark:text-gray-400 font-medium rounded-xl hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors text-sm"
+                          >
+                            Usar outro documento
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
@@ -574,9 +660,14 @@ export default function CadastroPage() {
               <button
                 type="button"
                 onClick={nextStep}
-                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors"
+                disabled={checkingDoc || !!existingCustomer}
+                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold rounded-xl transition-colors flex items-center gap-2"
               >
-                Proximo
+                {checkingDoc ? (
+                  <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> Verificando...</>
+                ) : (
+                  'Proximo'
+                )}
               </button>
             ) : (
               <button

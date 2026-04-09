@@ -131,14 +131,14 @@ export default function PortalDashboardPage() {
             {/* User / Theme / Logout */}
             <div className="flex items-center gap-1 sm:gap-2">
               <ThemeToggle />
-              <div className="hidden sm:flex items-center gap-2">
+              <Link href={`/portal/${slug}/perfil`} className="hidden sm:flex items-center gap-2 hover:opacity-80 transition-opacity" title="Meu Perfil">
                 <div className="w-7 h-7 bg-gray-200 dark:bg-zinc-700 rounded-full flex items-center justify-center">
                   <span className="text-xs font-medium text-gray-600 dark:text-gray-300">
                     {firstName.charAt(0).toUpperCase()}
                   </span>
                 </div>
                 <span className="text-sm text-gray-700 dark:text-gray-300 font-medium">{firstName}</span>
-              </div>
+              </Link>
               <button
                 type="button"
                 onClick={handleLogout}
