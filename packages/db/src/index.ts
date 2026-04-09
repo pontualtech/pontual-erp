@@ -21,13 +21,15 @@ const UPPERCASE_FIELDS = [
   'address_neighborhood', 'address_city',
   'equipment_type', 'equipment_brand', 'equipment_model',
   'serial_number', 'reference',
+  'reported_issue', 'diagnosis', 'reception_notes', 'internal_notes',
+  'description', 'item_description',
 ]
 
 const STATE_FIELDS = ['address_state']
 const EMAIL_FIELDS = ['email']
 const PHONE_FIELDS = ['phone', 'mobile']
 const DIGITS_ONLY_FIELDS = ['document_number', 'address_zip', 'state_registration', 'city_registration']
-const SENTENCE_FIELDS = ['reported_issue', 'diagnosis', 'reception_notes', 'internal_notes', 'description', 'subject', 'message']
+const SENTENCE_FIELDS = ['subject', 'message', 'notes', 'sender_name']
 
 function formatFieldValue(fieldName: string, value: unknown): unknown {
   if (typeof value !== 'string' || !value) return value
