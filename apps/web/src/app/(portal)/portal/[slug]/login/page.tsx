@@ -171,6 +171,18 @@ export default function PortalLoginPage() {
       const data = await res.json()
 
       if (!res.ok) {
+        // If access not registered, redirect to register page
+        if (res.status === 403 && data.error?.includes('primeiro acesso')) {
+          toast.error('Voce ainda nao tem acesso ao portal. Vamos ativar agora!')
+          router.push(`/portal/${slug}/registrar`)
+          return
+        }
+        // If customer not found, suggest cadastro
+        if (res.status === 404 && data.error?.includes('nao encontrado')) {
+          toast.error('CPF/CNPJ nao encontrado. Faca seu cadastro!')
+          router.push(`/portal/${slug}/cadastro`)
+          return
+        }
         toast.error(data.error || 'Erro ao fazer login')
         return
       }
