@@ -716,6 +716,11 @@ model AccountReceivable {
   anticipated_amount   Int?
   group_id             String?
   grouped_into_id      String?
+  charge_id            String?
+  charge_status        String?
+  charge_url           String?
+  charge_sent_at       DateTime?     @db.Timestamptz(6)
+  charge_sent_via      String?
   created_at         DateTime?     @default(now()) @db.Timestamptz(6)
   updated_at         DateTime?     @default(now()) @db.Timestamptz(6)
   deleted_at         DateTime?     @db.Timestamptz(6)
@@ -917,27 +922,34 @@ model CustomerAccess {
 model Payment {
   id               String        @id @default(dbgenerated("(gen_random_uuid())::text"))
   company_id       String
-  service_order_id String
+  service_order_id String?
   customer_id      String
+  receivable_id    String?
   provider         String        @default("asaas")
   external_id      String?
   idempotency_key  String        @unique
   amount           Int           // centavos
   status           String        @default("PENDING") // PENDING, CONFIRMED, EXPIRED, REFUNDED, FAILED
   method           String        @default("PIX")
+  billing_type     String?       // PIX, BOLETO, CREDIT_CARD
+  invoice_url      String?       // Asaas payment link
+  bank_slip_url    String?       // Boleto PDF URL
   qr_code          String?       // PIX copia-e-cola
   qr_code_image    String?       // base64 QR image
   paid_at          DateTime?     @db.Timestamptz(6)
+  refunded_at      DateTime?     @db.Timestamptz(6)
+  cancelled_at     DateTime?     @db.Timestamptz(6)
   expires_at       DateTime?     @db.Timestamptz(6)
   metadata         Json?         @default("{}")
   created_at       DateTime?     @default(now()) @db.Timestamptz(6)
   updated_at       DateTime?     @default(now()) @db.Timestamptz(6)
   companies        Company       @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  service_orders   ServiceOrder  @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  service_orders   ServiceOrder? @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   customers        Customer      @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([company_id, service_order_id], map: "idx_payments_company_os")
   @@index([external_id], map: "idx_payments_external")
+  @@index([receivable_id], map: "idx_payments_receivable")
   @@map("payments")
 }
 
@@ -1341,4 +1353,54 @@ model PriceTable {
 
   @@index([company_id], map: "idx_price_table_company")
   @@map("price_table")
+}
+
+// ========== COBRANÇA / PAGAMENTOS (Asaas) ==========
+
+model WebhookLog {
+  id            String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id    String
+  event         String                          // PAYMENT_RECEIVED, PAYMENT_OVERDUE, etc.
+  payment_id    String?                         // FK para payments.id (se encontrado)
+  asaas_event_id String?                        // evt_xxx do Asaas
+  payload       Json                            // body raw do webhook
+  status        String    @default("RECEIVED")  // RECEIVED, PROCESSED, FAILED, IGNORED
+  error         String?                         // mensagem de erro se FAILED
+  processed_at  DateTime? @db.Timestamptz(6)
+  created_at    DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([company_id], map: "idx_webhook_logs_company")
+  @@index([event], map: "idx_webhook_logs_event")
+  @@index([asaas_event_id], map: "idx_webhook_logs_asaas_event")
+  @@index([created_at], map: "idx_webhook_logs_created")
+  @@map("webhook_logs")
+}
+
+model AsaasCustomer {
+  id          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id  String
+  customer_id String                             // FK para customers.id
+  asaas_id    String                             // cus_xxx no Asaas
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@unique([company_id, customer_id], map: "idx_asaas_customers_company_customer")
+  @@unique([company_id, asaas_id], map: "idx_asaas_customers_company_asaas")
+  @@map("asaas_customers")
+}
+
+model PaymentConfig {
+  id             String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id     String    @unique
+  provider       String    @default("asaas")       // asaas, stripe, etc.
+  api_key        String                             // ENCRYPTED com AES-256
+  webhook_token  String?
+  environment    String    @default("production")   // sandbox, production
+  pix_key        String?                            // chave PIX cadastrada
+  enabled        Boolean   @default(true)
+  created_at     DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([company_id], map: "idx_payment_configs_company")
+  @@map("payment_configs")
 }

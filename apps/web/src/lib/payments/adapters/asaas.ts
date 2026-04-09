@@ -1,5 +1,5 @@
-import type { PaymentProvider, PixCharge, PaymentStatus, WebhookPayload } from '../types'
-import { createHmac } from 'crypto'
+import { timingSafeEqual } from 'crypto'
+import type { PaymentProvider, PixCharge, PaymentStatus, WebhookPayload, Charge, CreateChargeParams } from '../types'
 
 const ASAAS_API_URL = () => process.env.ASAAS_API_URL || 'https://api-sandbox.asaas.com/v3'
 const ASAAS_API_KEY = () => process.env.ASAAS_API_KEY || ''
@@ -70,7 +70,65 @@ export class AsaasProvider implements PaymentProvider {
     }
   }
 
-  private async findOrCreateCustomer(name: string, document: string) {
+  async createCharge(params: CreateChargeParams): Promise<Charge> {
+    const customerData = await this.findOrCreateCustomer(
+      params.customerName,
+      params.customerDocument,
+      params.customerEmail
+    )
+
+    const dueDate = params.dueDate || (() => {
+      const d = new Date()
+      d.setDate(d.getDate() + 1)
+      return d.toISOString().split('T')[0]
+    })()
+
+    const payload: Record<string, unknown> = {
+      customer: customerData.id,
+      billingType: params.billingType,
+      value: params.amount / 100,
+      dueDate,
+      description: params.description,
+    }
+
+    // Parcelamento só para cartão de crédito
+    if (params.billingType === 'CREDIT_CARD' && params.installmentCount && params.installmentCount > 1) {
+      payload.installmentCount = params.installmentCount
+      payload.installmentValue = Math.round(params.amount / params.installmentCount) / 100
+    }
+
+    const charge = await this.request('POST', '/payments', payload)
+
+    const result: Charge = {
+      externalId: charge.id,
+      billingType: params.billingType,
+      amount: params.amount,
+      status: charge.status,
+      invoiceUrl: charge.invoiceUrl || '',
+      dueDate,
+    }
+
+    if (charge.bankSlipUrl) {
+      result.bankSlipUrl = charge.bankSlipUrl
+    }
+
+    // Para PIX, buscar QR code
+    if (params.billingType === 'PIX') {
+      try {
+        const pixData = await this.request('GET', `/payments/${charge.id}/pixQrCode`)
+        result.pixQrCode = pixData.payload || ''
+        result.pixQrCodeImage = pixData.encodedImage
+          ? `data:image/png;base64,${pixData.encodedImage}`
+          : undefined
+      } catch (err) {
+        console.warn('[Asaas] Failed to get PIX QR code:', err)
+      }
+    }
+
+    return result
+  }
+
+  private async findOrCreateCustomer(name: string, document: string, email?: string) {
     // Try to find existing
     const search = await this.request('GET', `/customers?cpfCnpj=${document}`)
     if (search.data?.length > 0) {
@@ -78,10 +136,9 @@ export class AsaasProvider implements PaymentProvider {
     }
 
     // Create new
-    return this.request('POST', '/customers', {
-      name,
-      cpfCnpj: document,
-    })
+    const body: Record<string, string> = { name, cpfCnpj: document }
+    if (email) body.email = email
+    return this.request('POST', '/customers', body)
   }
 
   async getStatus(externalId: string): Promise<PaymentStatus> {
@@ -106,12 +163,25 @@ export class AsaasProvider implements PaymentProvider {
 
   validateWebhook(headers: Record<string, string>, body: string): boolean {
     const token = ASAAS_WEBHOOK_TOKEN()
-    if (!token) return true // No token configured = skip validation
+    if (!token) {
+      console.error('[Asaas] ASAAS_WEBHOOK_TOKEN not configured — rejecting webhook for security')
+      return false
+    }
 
     const receivedToken = headers['asaas-access-token'] || headers['x-asaas-access-token']
     if (!receivedToken) return false
 
-    return receivedToken === token
+    try {
+      const a = Buffer.from(receivedToken)
+      const b = Buffer.from(token)
+      return a.length === b.length && timingSafeEqual(a, b)
+    } catch {
+      return false
+    }
+  }
+
+  async cancelCharge(externalId: string): Promise<void> {
+    await this.request('DELETE', `/payments/${externalId}`)
   }
 
   parseWebhook(body: string): WebhookPayload {
