@@ -36,7 +36,7 @@ export async function GET() {
 // Webhook endpoint — public, no auth, validates signature
 export async function POST(req: NextRequest) {
   const body = await req.text()
-  let parsedBody: Record<string, unknown> = {}
+  let parsedBody: Record<string, any> = {}
 
   try {
     parsedBody = JSON.parse(body)
@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
   }
 
   const event = parsedBody.event as string | undefined
-  const asaasPayment = parsedBody.payment as Record<string, unknown> | undefined
+  const asaasPayment = parsedBody.payment as Record<string, any> | undefined
 
   // 1. Validate webhook signature
   const provider = getPaymentProvider()
@@ -150,7 +150,7 @@ export async function POST(req: NextRequest) {
       }
 
       // Update payment status
-      const paymentUpdate: Record<string, unknown> = {
+      const paymentUpdate: Record<string, any> = {
         status: newStatus,
         updated_at: new Date(),
       }
