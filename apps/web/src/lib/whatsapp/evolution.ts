@@ -25,7 +25,7 @@ export async function sendWhatsApp(phone: string, text: string): Promise<SendRes
   const formattedPhone = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`
 
   try {
-    const res = await fetch(`${url}/message/sendText/${INSTANCE()}`, {
+    const res = await fetch(`${url}/message/sendText/${encodeURIComponent(INSTANCE())}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
