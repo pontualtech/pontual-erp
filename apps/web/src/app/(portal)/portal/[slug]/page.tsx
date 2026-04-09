@@ -126,6 +126,12 @@ export default function PortalDashboardPage() {
               >
                 Tickets
               </Link>
+              <Link
+                href={`/portal/${slug}/financeiro`}
+                className="px-3 py-1.5 rounded-md text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors"
+              >
+                Financeiro
+              </Link>
             </nav>
 
             {/* User / Theme / Logout */}
@@ -168,6 +174,12 @@ export default function PortalDashboardPage() {
               className="flex-1 text-center px-2 py-1.5 rounded-md text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-zinc-800"
             >
               Tickets
+            </Link>
+            <Link
+              href={`/portal/${slug}/financeiro`}
+              className="flex-1 text-center px-2 py-1.5 rounded-md text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-zinc-800"
+            >
+              Financeiro
             </Link>
           </div>
         </div>
