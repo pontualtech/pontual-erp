@@ -15,7 +15,10 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (result instanceof NextResponse) return result
     const user = result
 
-    const { toStatusId, notes, payment_method, installment_count: rawInstallmentCount, technician_id: bodyTechnicianId } = await req.json()
+    const { toStatusId, notes, payment_method, installment_count: rawInstallmentCount, technician_id: bodyTechnicianId, notify_whatsapp, notify_email } = await req.json()
+    // Notification flags: default true for backward compat, but frontend can set false
+    const shouldNotifyWhatsApp = notify_whatsapp !== false
+    const shouldNotifyEmail = notify_email !== false
     const installment_count = Math.max(1, Math.min(120, parseInt(rawInstallmentCount) || 1))
     if (!toStatusId) return error('toStatusId é obrigatório', 400)
 
@@ -385,7 +388,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
 
     // ====== EMAIL NOTIFICATION: notify customer of status change (fire-and-forget) ======
-    if (os.customers?.email) {
+    if (shouldNotifyEmail && os.customers?.email) {
       const statusMap: Record<string, string> = {
         'Coletar': 'Recebido',
         'Orcar': 'Em Analise',
@@ -487,7 +490,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     // WhatsApp notification (fire-and-forget)
     const customerPhone = os.customers?.mobile || os.customers?.phone
-    if (customerPhone) {
+    if (shouldNotifyWhatsApp && customerPhone) {
       const templateKey = getTemplateForStatus(toStatus.name)
       if (templateKey) {
         const waCompany = await prisma.company.findUnique({ where: { id: user.companyId }, select: { name: true, slug: true } }).catch(() => null)

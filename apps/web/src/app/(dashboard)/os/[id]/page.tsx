@@ -103,6 +103,19 @@ export default function OSDetailPage() {
   const [statusMap, setStatusMap] = useState<Record<string, StatusDef>>({})
   const [statusList, setStatusList] = useState<StatusDef[]>([])
   const [transitioning, setTransitioning] = useState(false)
+  // Notification control after transition
+  const [notifyModal, setNotifyModal] = useState<{
+    statusName: string
+    osNumber: number
+    customerName: string
+    customerPhone: string | null
+    customerEmail: string | null
+    body: any // original transition body
+  } | null>(null)
+  const [notifyAuto, setNotifyAuto] = useState(() => {
+    if (typeof window !== 'undefined') return localStorage.getItem('os_notify_mode') !== 'manual'
+    return true
+  })
 
   // Item add form
   const [showAddItem, setShowAddItem] = useState(false)
@@ -687,6 +700,13 @@ export default function OSDetailPage() {
       if (notes) body.notes = notes
       if (installments && installments > 1) body.installment_count = installments
       if (editTechnicianId) body.technician_id = editTechnicianId
+
+      // If manual mode, do transition WITHOUT notification first, then ask
+      if (!notifyAuto) {
+        body.notify_whatsapp = false
+        body.notify_email = false
+      }
+
       const res = await fetch(`/api/os/${id}/transition`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -702,10 +722,49 @@ export default function OSDetailPage() {
       }
       setShowPaymentModal(false)
       setPendingStatusId(null)
+
+      // If manual mode, show notification modal to ask
+      if (!notifyAuto && os) {
+        const targetStatus = statusList.find(s => s.id === toStatusId)
+        setNotifyModal({
+          statusName: targetStatus?.name || '',
+          osNumber: os.os_number,
+          customerName: os.customers?.legal_name?.split(' ')[0] || 'Cliente',
+          customerPhone: os.customers?.mobile || os.customers?.phone || null,
+          customerEmail: os.customers?.email || null,
+          body,
+        })
+      }
+
       loadOS()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro')
     } finally { setTransitioning(false) }
+  }
+
+  async function sendNotifications(whatsapp: boolean, email: boolean) {
+    if (!notifyModal) return
+    // Re-send the transition with notification flags on
+    try {
+      await fetch(`/api/os/${id}/transition`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...notifyModal.body,
+          notify_whatsapp: whatsapp,
+          notify_email: email,
+          _resend_notify_only: true,
+        }),
+      })
+      const parts = []
+      if (whatsapp) parts.push('WhatsApp')
+      if (email) parts.push('email')
+      if (parts.length > 0) toast.success(`Notificacao enviada via ${parts.join(' e ')}`)
+      else toast.info('Nenhuma notificacao enviada')
+    } catch {
+      toast.error('Erro ao enviar notificacao')
+    }
+    setNotifyModal(null)
   }
 
   async function handleConfirmDelivery() {
@@ -898,6 +957,30 @@ export default function OSDetailPage() {
               </span>
             )
           })()}
+          {/* Notification mode toggle */}
+          <button
+            type="button"
+            onClick={() => {
+              const next = !notifyAuto
+              setNotifyAuto(next)
+              localStorage.setItem('os_notify_mode', next ? 'auto' : 'manual')
+              toast.info(next ? 'Notificacoes automaticas ATIVADAS' : 'Notificacoes manuais — voce decide antes de enviar')
+            }}
+            className={cn(
+              'flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium border transition-colors',
+              notifyAuto
+                ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
+                : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+            )}
+            title={notifyAuto ? 'Clique para mudar para modo manual (pergunta antes de notificar)' : 'Clique para ativar notificacoes automaticas'}
+          >
+            {notifyAuto ? (
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
+            ) : (
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" /></svg>
+            )}
+            {notifyAuto ? 'Auto' : 'Manual'}
+          </button>
           {/* Overdue badge */}
           {(() => {
             if (!os.estimated_delivery) return null
@@ -2622,6 +2705,71 @@ export default function OSDetailPage() {
               <button type="button" onClick={() => setShowNfseModal(false)} disabled={emittingNfse}
                 className="px-4 py-2.5 border rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
                 Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========== NOTIFICATION MODAL (manual mode) ========== */}
+      {notifyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setNotifyModal(null)}>
+          <div className="w-full max-w-sm rounded-xl bg-white shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="bg-blue-50 border-b border-blue-100 px-5 py-4">
+              <h3 className="font-bold text-blue-900 text-base">Notificar o cliente?</h3>
+              <p className="text-sm text-blue-700 mt-0.5">
+                OS #{notifyModal.osNumber} → {notifyModal.statusName}
+              </p>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <p className="text-sm text-gray-600">
+                Cliente: <strong>{notifyModal.customerName}</strong>
+              </p>
+              {notifyModal.customerPhone && (
+                <button
+                  type="button"
+                  onClick={() => sendNotifications(true, false)}
+                  className="w-full flex items-center gap-3 p-3 rounded-lg border border-green-200 bg-green-50 hover:bg-green-100 transition-colors text-left"
+                >
+                  <div className="w-9 h-9 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
+                    <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/></svg>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-green-800 text-sm">Enviar WhatsApp</p>
+                    <p className="text-xs text-green-600">{notifyModal.customerPhone}</p>
+                  </div>
+                </button>
+              )}
+              {notifyModal.customerEmail && (
+                <button
+                  type="button"
+                  onClick={() => sendNotifications(false, true)}
+                  className="w-full flex items-center gap-3 p-3 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors text-left"
+                >
+                  <div className="w-9 h-9 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
+                    <Mail className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-blue-800 text-sm">Enviar Email</p>
+                    <p className="text-xs text-blue-600">{notifyModal.customerEmail}</p>
+                  </div>
+                </button>
+              )}
+              {notifyModal.customerPhone && notifyModal.customerEmail && (
+                <button
+                  type="button"
+                  onClick={() => sendNotifications(true, true)}
+                  className="w-full py-2.5 text-center text-sm font-medium text-purple-700 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 transition-colors"
+                >
+                  Enviar WhatsApp + Email
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setNotifyModal(null)}
+                className="w-full py-2.5 text-center text-sm font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
+              >
+                Nao notificar agora
               </button>
             </div>
           </div>
