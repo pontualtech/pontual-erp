@@ -257,6 +257,48 @@ export default function NovaOSPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Local — PRIMEIRO CAMPO (define status inicial) */}
+        <div className="rounded-lg border-2 border-blue-200 bg-blue-50 p-5">
+          <h2 className="font-semibold text-gray-900 mb-3">Onde esta o equipamento? <span className="text-red-500">*</span></h2>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => updateForm('os_location', 'EXTERNO')}
+              className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
+                form.os_location === 'EXTERNO'
+                  ? 'border-blue-600 bg-blue-600 text-white shadow-md'
+                  : 'border-gray-200 bg-white text-gray-700 hover:border-blue-300'
+              }`}
+            >
+              <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+              </svg>
+              <span className="font-semibold text-sm">Externo (Coleta)</span>
+              <span className={`text-xs ${form.os_location === 'EXTERNO' ? 'text-blue-200' : 'text-gray-400'}`}>Motorista busca</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => updateForm('os_location', 'LOJA')}
+              className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
+                form.os_location === 'LOJA'
+                  ? 'border-blue-600 bg-blue-600 text-white shadow-md'
+                  : 'border-gray-200 bg-white text-gray-700 hover:border-blue-300'
+              }`}
+            >
+              <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+              </svg>
+              <span className="font-semibold text-sm">Loja (Balcao)</span>
+              <span className={`text-xs ${form.os_location === 'LOJA' ? 'text-blue-200' : 'text-gray-400'}`}>Cliente trouxe</span>
+            </button>
+          </div>
+          <p className="text-xs text-blue-700 mt-2 text-center">
+            {form.os_location === 'EXTERNO'
+              ? 'Status inicial: Coletar — motorista vai buscar o equipamento'
+              : 'Status inicial: Orcar — equipamento ja esta na loja'}
+          </p>
+        </div>
+
         {/* Cliente */}
         <div className="rounded-lg border bg-white p-5 space-y-3">
           <div className="flex items-center justify-between">
@@ -486,20 +528,7 @@ export default function NovaOSPage() {
                 )}
               </select>
             </div>
-            <div>
-              <label className="block text-sm text-gray-600 mb-1">Local</label>
-              <select value={form.os_location} onChange={e => updateForm('os_location', e.target.value)}
-                title="Local da OS" className="w-full px-3 py-2 border rounded-md">
-                {locaisOS.length > 0 ? locaisOS.map(l => (
-                  <option key={l.key} value={l.key}>{l.label}</option>
-                )) : (
-                  <>
-                    <option value="LOJA">Loja</option>
-                    <option value="EXTERNO">Externo</option>
-                  </>
-                )}
-              </select>
-            </div>
+            {/* Local já definido no primeiro card */}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

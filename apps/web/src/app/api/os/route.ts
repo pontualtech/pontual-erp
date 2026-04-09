@@ -175,10 +175,26 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Get initial status for this company
-    const initialStatus = await prisma.moduleStatus.findFirst({
-      where: { company_id: user.companyId, module: 'os', is_default: true },
+    // Determine initial status based on location:
+    // EXTERNO → "Coletar" (motorista vai buscar)
+    // LOJA/BALCAO → "Orçar" (cliente trouxe, já pode analisar)
+    const osLocation = (body.os_location || body.osLocation || 'EXTERNO').toUpperCase()
+    const isExterno = osLocation === 'EXTERNO'
+    const targetStatusName = isExterno ? 'Coletar' : 'Orcar'
+
+    let initialStatus = await prisma.moduleStatus.findFirst({
+      where: {
+        company_id: user.companyId,
+        module: 'os',
+        name: { contains: targetStatusName, mode: 'insensitive' },
+      },
     })
+    // Fallback to default if target status not found
+    if (!initialStatus) {
+      initialStatus = await prisma.moduleStatus.findFirst({
+        where: { company_id: user.companyId, module: 'os', is_default: true },
+      })
+    }
     if (!initialStatus) return error('Status inicial não configurado para OS', 500)
 
     // Criar OS com número atômico (prevenir race condition)
