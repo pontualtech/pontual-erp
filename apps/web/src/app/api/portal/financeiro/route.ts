@@ -58,8 +58,9 @@ export async function GET(req: NextRequest) {
     // Build payment map by OS
     const paymentsByOs: Record<string, typeof payments> = {}
     for (const p of payments) {
-      if (!paymentsByOs[p.service_order_id]) paymentsByOs[p.service_order_id] = []
-      paymentsByOs[p.service_order_id].push(p)
+      const osId = p.service_order_id ?? 'no-os'
+      if (!paymentsByOs[osId]) paymentsByOs[osId] = []
+      paymentsByOs[osId].push(p)
     }
 
     const fmt = (cents: number) =>
