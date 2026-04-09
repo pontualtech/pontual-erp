@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { getPaymentProvider } from '@/lib/payments/factory'
 
+// GET handler — Asaas tests webhook URL with GET before saving
+export async function GET() {
+  return NextResponse.json({ ok: true, message: 'Webhook endpoint active' })
+}
+
 // Webhook endpoint — public, no auth, validates signature
 export async function POST(req: NextRequest) {
   try {
