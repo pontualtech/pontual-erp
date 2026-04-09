@@ -116,7 +116,7 @@ export async function POST(req: NextRequest) {
     const log = await prisma.webhookLog.create({
       data: {
         company_id: payment.company_id,
-        event,
+        event: event!,
         payment_id: payment.id,
         asaas_event_id: (parsedBody.id as string) || null,
         payload: parsedBody,
