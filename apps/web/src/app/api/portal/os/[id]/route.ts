@@ -54,21 +54,32 @@ export async function GET(
 
     // Buscar todos os status para a timeline
     // Apenas estes status aparecem no progresso do portal
-    const PORTAL_VISIBLE = ['coletar', 'orcar', 'aguardando aprov', 'aprovado', 'entregue']
-    // Mapeamento: status interno → nome que o cliente vê
+    // Status visíveis no progresso do portal (timeline do cliente)
+    const PORTAL_VISIBLE = ['coletar', 'orcar', 'aguardando aprov', 'aprovado', 'entregar reparado', 'entregue']
+    // Mapeamento: status interno (lowercase) → nome que o cliente vê
     const PORTAL_LABEL: Record<string, string> = {
       'coletar': 'Recebido',
       'orcar': 'Em Analise',
       'aguardando aprov': 'Aguardando Aprovacao',
       'aprovado': 'Em Reparo',
+      'em execu': 'Em Reparo',
+      'aguardando pe': 'Em Reparo',
+      'entregar reparado': 'Pronto para Retirada',
+      'entregar recusado': 'Pronto para Retirada',
       'entregue': 'Entregue',
+      'cancelada': 'Cancelada',
     }
     const PORTAL_COLOR: Record<string, string> = {
       'coletar': '#7C3AED',
       'orcar': '#F59E0B',
       'aguardando aprov': '#EF4444',
       'aprovado': '#3B82F6',
+      'em execu': '#3B82F6',
+      'aguardando pe': '#F59E0B',
+      'entregar reparado': '#10B981',
+      'entregar recusado': '#10B981',
       'entregue': '#22C55E',
+      'cancelada': '#6B7280',
     }
 
     const allDbStatuses = await prisma.moduleStatus.findMany({
@@ -89,9 +100,11 @@ export async function GET(
     const currentStatusName = os.module_statuses?.name || ''
     const currentKey = PORTAL_VISIBLE.find(v => currentStatusName.toLowerCase().includes(v))
     // Se status não está nos visíveis, mapear: Em Execução/Aguardando Peça/etc → "Em Reparo"
+    // For non-visible statuses, try matching PORTAL_LABEL keys as partial match
+    const fallbackKey = Object.keys(PORTAL_LABEL).find(k => currentStatusName.toLowerCase().includes(k))
     const portalStatus = currentKey
       ? { ...os.module_statuses, name: PORTAL_LABEL[currentKey] || currentStatusName, color: PORTAL_COLOR[currentKey] || os.module_statuses?.color }
-      : { ...os.module_statuses, name: 'Em Reparo', color: '#3B82F6' }
+      : { ...os.module_statuses, name: PORTAL_LABEL[fallbackKey || ''] || 'Em Reparo', color: PORTAL_COLOR[fallbackKey || ''] || '#3B82F6' }
 
     return NextResponse.json({
       data: {
