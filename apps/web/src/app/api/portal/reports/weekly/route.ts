@@ -86,14 +86,27 @@ export async function GET(req: NextRequest) {
           total_value: totalValue,
           total_value_formatted: fmtCurrency(totalValue),
         },
-        orders: orders.map(os => ({
+        orders: orders.map(os => {
+          // Map internal status to friendly name
+          const STATUS_MAP: Record<string, string> = {
+            'coletar': 'Recebido', 'orcar': 'Em Analise', 'negociar': 'Em Analise',
+            'laudo': 'Em Analise', 'recalculado': 'Aguardando Aprovacao',
+            'aguardando aprov': 'Aguardando Aprovacao', 'aprovado': 'Em Reparo',
+            'em execu': 'Em Reparo', 'aguardando pe': 'Em Reparo',
+            'entregar reparado': 'Pronto para Retirada', 'entregar recusado': 'Pronto para Retirada',
+            'entregue': 'Entregue', 'cancelada': 'Cancelada',
+          }
+          const rawName = os.module_statuses?.name?.toLowerCase() || ''
+          const friendlyKey = Object.keys(STATUS_MAP).find(k => rawName.includes(k))
+          const friendlyStatus = friendlyKey ? STATUS_MAP[friendlyKey] : os.module_statuses?.name || '-'
+          return {
           os_number: os.os_number,
           equipment: `${os.equipment_type}${os.equipment_brand ? ` ${os.equipment_brand}` : ''}${os.equipment_model ? ` ${os.equipment_model}` : ''}`,
-          status: os.module_statuses?.name || '-',
+          status: friendlyStatus,
           value: os.total_cost || 0,
           value_formatted: fmtCurrency(os.total_cost || 0),
           created_at: os.created_at ? fmt(new Date(os.created_at)) : '-',
-        })),
+        }}),
       },
     })
   } catch (err) {

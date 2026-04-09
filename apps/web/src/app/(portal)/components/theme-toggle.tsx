@@ -100,36 +100,17 @@ export function ThemeToggle() {
             ))}
           </div>
 
-          {/* Color Scheme */}
-          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 px-1">Cor principal</p>
-          <div className="flex gap-2 px-1">
-            {COLOR_SCHEMES.map(s => (
-              <button
-                type="button"
-                key={s.id}
-                onClick={() => setColorScheme(s.id)}
-                className={`w-8 h-8 rounded-full transition-transform ${s.tw} ${
-                  colorScheme === s.id ? 'ring-2 ring-offset-2 ring-offset-white dark:ring-offset-zinc-800 ring-gray-400 scale-110' : 'hover:scale-105'
-                }`}
-                title={s.label}
-                aria-label={`Cor ${s.label}`}
-              />
-            ))}
-          </div>
-
           {/* Reset */}
-          <div className="mt-3 pt-3 border-t border-gray-100 dark:border-zinc-700">
+          <div className="mt-2 pt-2 border-t border-gray-100 dark:border-zinc-700">
             <button
               type="button"
               onClick={() => {
                 setTheme('system')
-                setColorScheme('blue')
-                localStorage.removeItem('portal_color_scheme')
                 setOpen(false)
               }}
               className="w-full text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 py-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-700 transition-colors"
             >
-              Restaurar padrão
+              Restaurar padrao
             </button>
           </div>
         </div>

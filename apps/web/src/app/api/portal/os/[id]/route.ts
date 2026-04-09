@@ -88,12 +88,18 @@ export async function GET(
       select: { id: true, name: true, color: true, icon: true, order: true },
     })
 
-    // Filtrar e mapear para nomes amigáveis
+    // Filtrar, mapear para nomes amigáveis, e DEDUPLICAR por nome
+    const seen = new Set<string>()
     const allStatuses = allDbStatuses
       .filter(s => PORTAL_VISIBLE.some(v => s.name.toLowerCase().includes(v)))
       .map(s => {
         const matchKey = PORTAL_VISIBLE.find(v => s.name.toLowerCase().includes(v)) || ''
         return { ...s, name: PORTAL_LABEL[matchKey] || s.name, color: PORTAL_COLOR[matchKey] || s.color }
+      })
+      .filter(s => {
+        if (seen.has(s.name)) return false
+        seen.add(s.name)
+        return true
       })
 
     // Mapear status atual da OS para o nome do portal

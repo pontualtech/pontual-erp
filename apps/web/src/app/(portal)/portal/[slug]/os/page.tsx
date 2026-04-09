@@ -29,7 +29,7 @@ const STATUS_TABS: { key: StatusFilter; label: string }[] = [
 
 function classifyStatus(os: PortalOS): StatusFilter {
   const name = os.status.name.toLowerCase()
-  if (name.includes('aguardando aprov') || name.includes('analise')) {
+  if (name.includes('aguardando aprov')) {
     return 'aguardando'
   }
   if (os.status.is_final || name.includes('entreg') || name.includes('cancelad') || name.includes('finaliz')) {
