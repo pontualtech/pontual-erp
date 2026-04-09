@@ -34,9 +34,16 @@ export async function POST(req: NextRequest, { params }: Params) {
       return error('Só é possível abrir garantia de uma OS já finalizada', 400)
     }
 
-    // Verificar se está dentro do período de garantia
-    if (original.warranty_until && new Date(original.warranty_until) < new Date()) {
-      return error(`Garantia expirada em ${new Date(original.warranty_until).toLocaleDateString('pt-BR')}`, 400)
+    // Verificar período de garantia: máximo 3 meses após entrega
+    const deliveryDate = original.actual_delivery || original.updated_at || original.created_at
+    const warrantyDeadline = original.warranty_until
+      ? new Date(original.warranty_until)
+      : deliveryDate
+        ? new Date(new Date(deliveryDate).getTime() + 90 * 24 * 60 * 60 * 1000) // 90 dias = ~3 meses
+        : null
+
+    if (warrantyDeadline && warrantyDeadline < new Date()) {
+      return error(`Periodo de garantia encerrado em ${warrantyDeadline.toLocaleDateString('pt-BR')}. Garantia valida por 3 meses apos a entrega.`, 400)
     }
 
     const body = await req.json().catch(() => ({}))
