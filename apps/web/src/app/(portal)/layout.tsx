@@ -10,8 +10,11 @@ const inter = Inter({ subsets: ['latin'] })
 export const metadata: Metadata = {
   title: 'Portal do Cliente',
   description: 'Acompanhe suas ordens de servico',
+  icons: {
+    icon: '/favicon.svg',
+  },
   other: {
-    'apple-mobile-web-app-capable': 'yes',
+    'mobile-web-app-capable': 'yes',
   },
 }
 

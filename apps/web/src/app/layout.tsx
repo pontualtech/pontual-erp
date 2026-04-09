@@ -8,6 +8,9 @@ const inter = Inter({ subsets: ['latin'] })
 export const metadata: Metadata = {
   title: 'PontualERP',
   description: 'Sistema de gestão para assistência técnica',
+  icons: {
+    icon: '/favicon.svg',
+  },
 }
 
 export default function RootLayout({

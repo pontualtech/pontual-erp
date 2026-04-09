@@ -174,6 +174,24 @@ export function formatField(fieldName: string, value: string): string {
 }
 
 /**
+ * Formata descrição de equipamento sem duplicação.
+ * "CANON G7010 - CANON G7010" → "CANON G7010"
+ * "Impressora - HP LaserJet" → "Impressora - HP LaserJet"
+ */
+export function formatEquipment(type?: string, brand?: string, model?: string): string {
+  const parts: string[] = []
+  const t = (type || '').trim()
+  const b = (brand || '').trim()
+  const m = (model || '').trim()
+
+  if (t) parts.push(t)
+  if (b && b.toLowerCase() !== t.toLowerCase()) parts.push(b)
+  if (m && m.toLowerCase() !== t.toLowerCase() && m.toLowerCase() !== b.toLowerCase()) parts.push(m)
+
+  return parts.join(' ') || 'Equipamento'
+}
+
+/**
  * Formata todos os campos de texto de um objeto.
  * Uso: formatAllFields({ legal_name: 'jOaO', email: 'FOO@bar.COM' })
  */
