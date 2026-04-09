@@ -130,12 +130,20 @@ export async function GET(
         updated_at: os.updated_at,
         status: portalStatus,
         items: os.service_order_items,
-        history: os.service_order_history.map(h => ({
-          id: h.id,
-          to_status: h.module_statuses_service_order_history_to_status_idTomodule_statuses,
-          notes: h.notes,
-          created_at: h.created_at,
-        })),
+        history: os.service_order_history.map(h => {
+          const rawStatus = h.module_statuses_service_order_history_to_status_idTomodule_statuses
+          // Map internal status name to customer-friendly name
+          const rawName = rawStatus?.name?.toLowerCase() || ''
+          const friendlyKey = Object.keys(PORTAL_LABEL).find(k => rawName.includes(k))
+          const friendlyName = friendlyKey ? PORTAL_LABEL[friendlyKey] : rawStatus?.name
+          const friendlyColor = friendlyKey ? PORTAL_COLOR[friendlyKey] : rawStatus?.color
+          return {
+            id: h.id,
+            to_status: rawStatus ? { ...rawStatus, name: friendlyName, color: friendlyColor } : rawStatus,
+            notes: h.notes,
+            created_at: h.created_at,
+          }
+        }),
         photos: os.service_order_photos,
         all_statuses: allStatuses,
       },
