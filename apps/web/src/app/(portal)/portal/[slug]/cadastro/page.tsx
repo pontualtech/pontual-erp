@@ -634,7 +634,7 @@ export default function CadastroPage() {
                 />
                 <span className="text-sm text-gray-600 dark:text-gray-400">
                   Concordo com a{' '}
-                  <a href="/politica-privacidade" target="_blank" className="text-blue-600 dark:text-blue-400 hover:underline">
+                  <a href="https://pontualtech.com.br/politica-de-privacidade.html" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">
                     Politica de Privacidade
                   </a>
                 </span>

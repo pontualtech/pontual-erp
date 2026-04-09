@@ -1,7 +1,7 @@
 import type { PaymentProvider, PixCharge, PaymentStatus, WebhookPayload } from '../types'
 import { createHmac } from 'crypto'
 
-const ASAAS_API_URL = () => process.env.ASAAS_API_URL || 'https://sandbox.asaas.com/api/v3'
+const ASAAS_API_URL = () => process.env.ASAAS_API_URL || 'https://api-sandbox.asaas.com/v3'
 const ASAAS_API_KEY = () => process.env.ASAAS_API_KEY || ''
 const ASAAS_WEBHOOK_TOKEN = () => process.env.ASAAS_WEBHOOK_TOKEN || ''
 
@@ -100,7 +100,7 @@ export class AsaasProvider implements PaymentProvider {
     return {
       externalId,
       status: statusMap[charge.status] || 'FAILED',
-      paidAt: charge.confirmedDate ? new Date(charge.confirmedDate) : undefined,
+      paidAt: (charge.paymentDate || charge.confirmedDate) ? new Date(charge.paymentDate || charge.confirmedDate) : undefined,
     }
   }
 
@@ -118,10 +118,12 @@ export class AsaasProvider implements PaymentProvider {
     const data = JSON.parse(body)
     const payment = data.payment || data
 
+    const isConfirmed = ['RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH'].includes(payment.status)
+
     return {
       externalId: payment.id,
-      status: payment.status === 'RECEIVED' || payment.status === 'CONFIRMED' ? 'CONFIRMED' : payment.status,
-      paidAt: payment.confirmedDate || undefined,
+      status: isConfirmed ? 'CONFIRMED' : payment.status,
+      paidAt: payment.paymentDate || payment.confirmedDate || payment.clientPaymentDate || undefined,
     }
   }
 }
