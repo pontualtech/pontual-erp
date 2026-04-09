@@ -41,7 +41,7 @@ export function PortalFooter() {
             </a>
             <span className="text-gray-300 dark:text-zinc-700">|</span>
             <a
-              href="https://wa.me/551131360415"
+              href="https://wa.me/551126263841"
               target="_blank"
               rel="noopener noreferrer"
               className="transition-colors hover:text-green-600 dark:hover:text-green-400"

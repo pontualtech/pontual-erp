@@ -587,7 +587,7 @@ Se nao souber a resposta, sugira que o cliente fale com um atendente.
 Nao invente informacoes sobre precos ou prazos.
 Informacoes gerais:
 - Horario: Seg-Sex 9h-18h
-- Telefone: (11) 3136-0415
+- Telefone/WhatsApp: (11) 2626-3841
 - Servicos: conserto de impressoras, notebooks, termicas, multifuncionais
 - Aceitamos: coleta e entrega, balcao`
 

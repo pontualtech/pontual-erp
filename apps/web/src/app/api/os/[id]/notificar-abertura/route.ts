@@ -35,7 +35,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const companySettings = (company?.settings || {}) as Record<string, string>
     const companyName = company?.name || 'PontualTech'
     const companyPhone = companySettings['phone'] || companySettings['telefone'] || '(11) 2626-3841'
-    const companyWhatsApp = '551131360415'
+    const companyWhatsApp = '551126263841'
     const companyEmail = companySettings['email'] || 'contato@pontualtech.com.br'
     const slug = company?.slug || 'pontualtech'
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'

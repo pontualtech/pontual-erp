@@ -55,7 +55,7 @@ const SAMPLE_DATA: Record<string, string> = {
   total_services: 'R$ 120,00',
   total_cost: 'R$ 205,00',
   company_name: 'PontualTech',
-  company_phone: '(11) 3136-0415',
+  company_phone: '(11) 2626-3841',
   company_email: 'contato@pontualtech.work',
   company_address: 'Sao Paulo - SP',
   company_cnpj: '32.772.178/0001-47',
