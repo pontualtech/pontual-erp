@@ -1,4 +1,4 @@
-import type { PaymentProvider, PixCharge, PaymentStatus, WebhookPayload } from '../types'
+import type { PaymentProvider, PixCharge, PaymentStatus, WebhookPayload, Charge, CreateChargeParams } from '../types'
 
 /**
  * Mock payment provider for development/testing.
@@ -27,6 +27,22 @@ export class MockProvider implements PaymentProvider {
       qrCodeImage: undefined,
       amount: params.amount,
       expiresAt,
+    }
+  }
+
+  async createCharge(params: CreateChargeParams): Promise<Charge> {
+    const externalId = `mock_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    const dueDate = params.dueDate || new Date(Date.now() + 86400000).toISOString().split('T')[0]
+
+    return {
+      externalId,
+      billingType: params.billingType,
+      amount: params.amount,
+      status: 'PENDING',
+      invoiceUrl: `https://sandbox.asaas.com/i/${externalId}`,
+      bankSlipUrl: params.billingType === 'BOLETO' ? `https://sandbox.asaas.com/b/pdf/${externalId}` : undefined,
+      pixQrCode: params.billingType === 'PIX' ? `mock-pix-${externalId}` : undefined,
+      dueDate,
     }
   }
 

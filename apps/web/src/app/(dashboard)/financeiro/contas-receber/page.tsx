@@ -148,6 +148,15 @@ export default function ContasReceberPage() {
   const [antecipLoading, setAntecipLoading] = useState(false)
   const [antecipConfirming, setAntecipConfirming] = useState(false)
 
+  // Cobranca (Asaas charge) modal
+  const [cobrancaConta, setCobrancaConta] = useState<ContaReceber | null>(null)
+  const [cobrancaBillingType, setCobrancaBillingType] = useState<'PIX' | 'BOLETO' | 'CREDIT_CARD'>('PIX')
+  const [cobrancaSendWhatsapp, setCobrancaSendWhatsapp] = useState(true)
+  const [cobrancaSendEmail, setCobrancaSendEmail] = useState(true)
+  const [cobrancaInstallments, setCobrancaInstallments] = useState(1)
+  const [cobrancaLoading, setCobrancaLoading] = useState(false)
+  const [cobrancaResult, setCobrancaResult] = useState<{ invoice_url: string; billing_type: string } | null>(null)
+
   // Column toggle
   const [showColToggle, setShowColToggle] = useState(false)
   const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(() => {
@@ -412,6 +421,52 @@ export default function ContasReceberPage() {
       toast.error(err.message || 'Erro ao gerar remessa')
     } finally {
       setBoletoGenerating(false)
+    }
+  }
+
+  function openCobranca(conta: ContaReceber) {
+    setCobrancaConta(conta)
+    setCobrancaBillingType('PIX')
+    setCobrancaSendWhatsapp(true)
+    setCobrancaSendEmail(true)
+    setCobrancaInstallments(1)
+    setCobrancaResult(null)
+  }
+
+  async function handleCobranca() {
+    if (!cobrancaConta || cobrancaLoading) return
+    setCobrancaLoading(true)
+    try {
+      const res = await fetch('/api/financeiro/cobranca/charge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          receivable_id: cobrancaConta.id,
+          billing_type: cobrancaBillingType,
+          send_whatsapp: cobrancaSendWhatsapp,
+          send_email: cobrancaSendEmail,
+          installment_count: cobrancaBillingType === 'CREDIT_CARD' ? cobrancaInstallments : undefined,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        if (res.status === 409 && data.payment?.invoice_url) {
+          setCobrancaResult({ invoice_url: data.payment.invoice_url, billing_type: data.payment.billing_type })
+          toast.info('Cobranca ja existente — link disponivel')
+          return
+        }
+        throw new Error(data.error || 'Erro ao criar cobranca')
+      }
+      setCobrancaResult({ invoice_url: data.payment.invoice_url, billing_type: data.payment.billing_type })
+      const channels = []
+      if (data.sent_whatsapp) channels.push('WhatsApp')
+      if (data.sent_email) channels.push('Email')
+      toast.success(`Cobranca criada${channels.length ? ` e enviada via ${channels.join(' + ')}` : ''}!`)
+      loadContas()
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao criar cobranca')
+    } finally {
+      setCobrancaLoading(false)
     }
   }
 
@@ -1009,11 +1064,21 @@ export default function ContasReceberPage() {
                             <Unlink className="h-4 w-4" />
                           </button>
                         )}
+                        {(displayStatus === 'PENDENTE' || displayStatus === 'VENCIDO') && conta.customer_id && (
+                          <button
+                            type="button"
+                            onClick={() => openCobranca(conta)}
+                            title="Enviar Cobranca (PIX/Boleto/Cartao)"
+                            className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-emerald-600"
+                          >
+                            <Send className="h-4 w-4" />
+                          </button>
+                        )}
                         {(displayStatus === 'PENDENTE' || displayStatus === 'VENCIDO') && !conta.boleto_url && (
                           <button
                             type="button"
                             onClick={() => setBoletoModalConta(conta)}
-                            title="Gerar Boleto e Enviar"
+                            title="Gerar Boleto CNAB"
                             className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-orange-600"
                           >
                             <Receipt className="h-4 w-4" />
@@ -1470,6 +1535,175 @@ export default function ContasReceberPage() {
               <button type="button" onClick={() => setBoletoModalConta(null)} disabled={boletoGenerating}
                 className="px-4 py-2.5 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== COBRANCA ASAAS MODAL ===== */}
+      {cobrancaConta && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => !cobrancaLoading && setCobrancaConta(null)}>
+          <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <Send className="h-5 w-5 text-emerald-600" />
+                Enviar Cobranca
+              </h2>
+              <button type="button" title="Fechar" onClick={() => setCobrancaConta(null)} disabled={cobrancaLoading}
+                className="p-1 rounded-lg hover:bg-gray-100 text-gray-400"><X className="h-5 w-5" /></button>
+            </div>
+
+            {/* Info do recebível */}
+            <div className="rounded-lg bg-gray-50 p-3 text-sm space-y-1 mb-4">
+              <div className="flex justify-between"><span className="text-gray-500">Cliente:</span><span className="font-medium">{cobrancaConta.customers?.legal_name || 'Sem cliente'}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Valor:</span><span className="font-bold text-emerald-700">{formatCurrency(cobrancaConta.total_amount - (cobrancaConta.received_amount || 0))}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Vencimento:</span><span>{formatDate(cobrancaConta.due_date)}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Descricao:</span><span className="text-right max-w-[200px] truncate">{cobrancaConta.description}</span></div>
+            </div>
+
+            {cobrancaResult ? (
+              /* Sucesso — mostrar link */
+              <div className="space-y-4">
+                <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-4 text-center">
+                  <CheckCircle2 className="h-8 w-8 text-emerald-500 mx-auto mb-2" />
+                  <p className="text-sm font-medium text-emerald-800 mb-2">Cobranca criada com sucesso!</p>
+                  <a
+                    href={cobrancaResult.invoice_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-emerald-600 underline break-all"
+                  >
+                    {cobrancaResult.invoice_url}
+                  </a>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(cobrancaResult.invoice_url)
+                      toast.success('Link copiado!')
+                    }}
+                    className="flex-1 px-4 py-2.5 text-sm border rounded-lg hover:bg-gray-50 font-medium"
+                  >
+                    Copiar Link
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setCobrancaConta(null); setCobrancaResult(null) }}
+                    className="flex-1 px-4 py-2.5 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium"
+                  >
+                    Fechar
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* Form — escolher tipo e canais */
+              <div className="space-y-4">
+                {/* Tipo de pagamento */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Forma de pagamento</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {([
+                      { value: 'PIX' as const, label: 'PIX', icon: '⚡', active: 'border-emerald-500 bg-emerald-50 text-emerald-700' },
+                      { value: 'BOLETO' as const, label: 'Boleto', icon: '📄', active: 'border-blue-500 bg-blue-50 text-blue-700' },
+                      { value: 'CREDIT_CARD' as const, label: 'Cartao', icon: '💳', active: 'border-purple-500 bg-purple-50 text-purple-700' },
+                    ] as const).map(opt => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setCobrancaBillingType(opt.value)}
+                        className={cn(
+                          'flex flex-col items-center gap-1 rounded-lg border-2 p-3 text-sm font-medium transition-all',
+                          cobrancaBillingType === opt.value
+                            ? opt.active
+                            : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                        )}
+                      >
+                        <span className="text-xl">{opt.icon}</span>
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Parcelamento (só para cartão) */}
+                {cobrancaBillingType === 'CREDIT_CARD' && (
+                  <div>
+                    <label htmlFor="cobranca-installments" className="block text-sm text-gray-600 mb-1">Parcelas</label>
+                    <select
+                      id="cobranca-installments"
+                      value={cobrancaInstallments}
+                      onChange={e => setCobrancaInstallments(Number(e.target.value))}
+                      className="w-full px-3 py-2 border rounded-md text-sm"
+                    >
+                      {Array.from({ length: 12 }, (_, i) => i + 1).map(n => (
+                        <option key={n} value={n}>
+                          {n}x de {formatCurrency(Math.ceil((cobrancaConta.total_amount - (cobrancaConta.received_amount || 0)) / n))}
+                          {n === 1 ? ' (a vista)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Canais de envio */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Enviar link via</label>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={cobrancaSendWhatsapp}
+                        onChange={e => setCobrancaSendWhatsapp(e.target.checked)}
+                        className="rounded border-gray-300"
+                      />
+                      <span>WhatsApp</span>
+                      {!cobrancaConta.customers && <span className="text-xs text-gray-400">(sem telefone)</span>}
+                    </label>
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={cobrancaSendEmail}
+                        onChange={e => setCobrancaSendEmail(e.target.checked)}
+                        className="rounded border-gray-300"
+                      />
+                      <span>Email</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Info do Asaas */}
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+                  <strong>Asaas — Gateway de Pagamento</strong>
+                  <p className="mt-1 text-xs text-emerald-700">
+                    {cobrancaBillingType === 'PIX' && 'Sera gerado um QR Code PIX. O cliente recebe o link e paga instantaneamente.'}
+                    {cobrancaBillingType === 'BOLETO' && 'Sera gerado um boleto bancario. O cliente recebe o link para pagar online ou imprimir.'}
+                    {cobrancaBillingType === 'CREDIT_CARD' && 'O cliente recebe o link e paga com cartao de credito (com ou sem parcelamento).'}
+                    {' '}Pagamento confirmado automaticamente via webhook.
+                  </p>
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={handleCobranca}
+                    disabled={cobrancaLoading}
+                    className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    {cobrancaLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                    {cobrancaLoading ? 'Criando cobranca...' : 'Criar e Enviar Cobranca'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCobrancaConta(null)}
+                    disabled={cobrancaLoading}
+                    className="px-4 py-2.5 border rounded-lg text-sm text-gray-600 hover:bg-gray-50"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
