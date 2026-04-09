@@ -69,6 +69,11 @@ export default function NovoClientePage() {
   const [docMessage, setDocMessage] = useState('')
   const [existingClientId, setExistingClientId] = useState<string | null>(null)
   const [cepLoading, setCepLoading] = useState(false)
+  const [duplicateModal, setDuplicateModal] = useState<{
+    existing: any
+    matchFields: string[]
+    payload: any
+  } | null>(null)
 
   function update(field: string, value: string) {
     setForm(prev => ({ ...prev, [field]: value }))
@@ -274,28 +279,13 @@ export default function NovoClientePage() {
       }
       const data = await res.json()
 
-      // Handle 409 — duplicate found, offer to update
+      // Handle 409 — duplicate found, show rich modal
       if (res.status === 409 && data.existing) {
-        const confirmUpdate = window.confirm(
-          `${data.error}\n\nCliente existente: ${data.existing.legal_name}\n\nDeseja atualizar os dados deste cliente?`
-        )
-        if (confirmUpdate) {
-          // Retry with _update flag
-          const updateRes = await fetch('/api/clientes', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...payload, _update: true }),
-          })
-          const updateData = await updateRes.json()
-          if (!updateRes.ok) throw new Error(updateData.error || 'Erro ao atualizar')
-          toast.success('Cliente atualizado!')
-          router.push('/clientes')
-          return
-        }
-        // User declined — set existing ID so next save does PATCH
-        setExistingClientId(data.existing.id)
-        setDocStatus('found')
-        setDocMessage(`Cliente existente: ${data.existing.legal_name}`)
+        setDuplicateModal({
+          existing: data.existing,
+          matchFields: data.match_fields || [],
+          payload,
+        })
         return
       }
 
@@ -308,6 +298,37 @@ export default function NovoClientePage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  async function handleDuplicateUpdate() {
+    if (!duplicateModal) return
+    setLoading(true)
+    try {
+      const res = await fetch('/api/clientes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...duplicateModal.payload, _update: true }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao atualizar')
+      toast.success('Cliente atualizado com sucesso!')
+      setDuplicateModal(null)
+      router.push('/clientes')
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao atualizar')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function handleDuplicateUseExisting() {
+    if (!duplicateModal) return
+    setExistingClientId(duplicateModal.existing.id)
+    setDocStatus('found')
+    setDocMessage(`Usando cadastro existente: ${duplicateModal.existing.legal_name}`)
+    setDuplicateModal(null)
+    toast.info('Usando o cadastro existente. Pode abrir a OS com este cliente.')
+    router.push(`/clientes/${duplicateModal.existing.id}`)
   }
 
   const isEditing = existingClientId !== null
@@ -570,6 +591,83 @@ export default function NovoClientePage() {
           </button>
         </div>
       </form>
+
+      {/* Duplicate Customer Modal */}
+      {duplicateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg bg-white rounded-xl shadow-2xl overflow-hidden">
+            {/* Header */}
+            <div className="bg-amber-50 border-b border-amber-200 px-6 py-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center flex-shrink-0">
+                  <AlertCircle className="w-5 h-5 text-amber-600" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-amber-900 text-lg">Cliente ja cadastrado!</h3>
+                  <p className="text-sm text-amber-700">
+                    Encontramos um cadastro existente por: <strong>{duplicateModal.matchFields.join(', ')}</strong>
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Existing customer info */}
+            <div className="px-6 py-4">
+              <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+                <p className="font-semibold text-gray-900 text-base">{duplicateModal.existing.legal_name}</p>
+                {duplicateModal.existing.document_number && (
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium">CPF/CNPJ:</span> {duplicateModal.existing.document_number}
+                  </p>
+                )}
+                {duplicateModal.existing.email && (
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium">Email:</span> {duplicateModal.existing.email}
+                  </p>
+                )}
+                {(duplicateModal.existing.mobile || duplicateModal.existing.phone) && (
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium">Telefone:</span> {duplicateModal.existing.mobile || duplicateModal.existing.phone}
+                  </p>
+                )}
+                {duplicateModal.existing.address_city && (
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium">Cidade:</span> {duplicateModal.existing.address_city} - {duplicateModal.existing.address_state}
+                  </p>
+                )}
+              </div>
+
+              <p className="text-sm text-gray-500 mt-3">O que deseja fazer?</p>
+            </div>
+
+            {/* Actions */}
+            <div className="px-6 pb-6 space-y-2">
+              <button
+                type="button"
+                onClick={handleDuplicateUseExisting}
+                className="w-full py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors text-sm"
+              >
+                Usar Este Cadastro (abrir ficha do cliente)
+              </button>
+              <button
+                type="button"
+                onClick={handleDuplicateUpdate}
+                disabled={loading}
+                className="w-full py-3 bg-amber-600 text-white font-semibold rounded-lg hover:bg-amber-700 transition-colors text-sm disabled:opacity-50"
+              >
+                {loading ? 'Atualizando...' : 'Atualizar Dados Deste Cliente'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setDuplicateModal(null)}
+                className="w-full py-3 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors text-sm"
+              >
+                Cancelar (voltar ao formulario)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
