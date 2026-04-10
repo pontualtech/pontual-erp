@@ -35,17 +35,18 @@ export async function GET(req: NextRequest) {
     const statusMap = Object.fromEntries(allStatuses.map(s => [s.id, s]))
 
     // === KPI: Counts ===
-    const [totalAtribuidas, emAndamento, completadasHoje, completadasSemana, completadasMes, garantias, totalCompletadas] = await Promise.all([
-      prisma.serviceOrder.count({ where: { company_id: cid, technician_id: techId, deleted_at: null, status_id: { notIn: finalIds } } }),
+    const [emAndamento, completadasHoje, completadasSemana, completadasMes, garantiasMes, totalCompletadasMes, totalGeral, totalCompletadasGeral] = await Promise.all([
       prisma.serviceOrder.count({ where: { company_id: cid, technician_id: techId, deleted_at: null, status_id: { notIn: finalIds } } }),
       prisma.serviceOrder.count({ where: { company_id: cid, technician_id: techId, deleted_at: null, status_id: { in: finalIds }, updated_at: { gte: todayStart, lt: todayEnd } } }),
       prisma.serviceOrder.count({ where: { company_id: cid, technician_id: techId, deleted_at: null, status_id: { in: finalIds }, updated_at: { gte: weekStart } } }),
       prisma.serviceOrder.count({ where: { company_id: cid, technician_id: techId, deleted_at: null, status_id: { in: finalIds }, updated_at: { gte: monthStart } } }),
-      prisma.serviceOrder.count({ where: { company_id: cid, technician_id: techId, deleted_at: null, is_warranty: true, updated_at: { gte: monthStart } } }),
+      prisma.serviceOrder.count({ where: { company_id: cid, technician_id: techId, deleted_at: null, is_warranty: true } }),
       prisma.serviceOrder.count({ where: { company_id: cid, technician_id: techId, deleted_at: null, status_id: { in: finalIds }, updated_at: { gte: monthStart } } }),
+      prisma.serviceOrder.count({ where: { company_id: cid, technician_id: techId, deleted_at: null } }),
+      prisma.serviceOrder.count({ where: { company_id: cid, technician_id: techId, deleted_at: null, status_id: { in: finalIds } } }),
     ])
 
-    const taxaGarantia = totalCompletadas > 0 ? Math.round((garantias / totalCompletadas) * 100) : 0
+    const taxaGarantia = totalCompletadasGeral > 0 ? Math.round((garantiasMes / totalCompletadasGeral) * 100) : 0
 
     // === PRAZO: Vencendo hoje / Atrasadas / No prazo ===
     const pendingOS = await prisma.serviceOrder.findMany({
@@ -144,7 +145,9 @@ export async function GET(req: NextRequest) {
         completadas_semana: completadasSemana,
         completadas_mes: completadasMes,
         taxa_garantia: taxaGarantia,
-        garantias_mes: garantias,
+        garantias_mes: garantiasMes,
+        total_geral: totalGeral,
+        total_completadas: totalCompletadasGeral,
       },
       prazo: { atrasadas, vencendo_hoje: vencendoHoje, no_prazo: noPrazo, sem_prazo: semPrazo },
       performance: { avg_repair_hours: avgRepairHours, avg_repair_days: avgRepairDays },

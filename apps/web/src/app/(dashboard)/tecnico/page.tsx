@@ -12,6 +12,7 @@ import {
 interface Cards {
   em_andamento: number; completadas_hoje: number; completadas_semana: number
   completadas_mes: number; taxa_garantia: number; garantias_mes: number
+  total_geral: number; total_completadas: number
 }
 interface Prazo { atrasadas: number; vencendo_hoje: number; no_prazo: number; sem_prazo: number }
 interface Performance { avg_repair_hours: number; avg_repair_days: number }
@@ -110,10 +111,10 @@ export default function TecnicoDashboard() {
 
       {/* ─── KPI Cards ────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <KpiCard icon={Target} label="Total OS" value={cards?.total_geral ?? 0} color="text-gray-600 dark:text-gray-400" bg="bg-gray-50 dark:bg-gray-800" />
         <KpiCard icon={Wrench} label="Em Andamento" value={cards?.em_andamento ?? 0} color="text-blue-600 dark:text-blue-400" bg="bg-blue-50 dark:bg-blue-950" />
-        <KpiCard icon={CheckCircle} label="Hoje" value={cards?.completadas_hoje ?? 0} color="text-green-600 dark:text-green-400" bg="bg-green-50 dark:bg-green-950" />
-        <KpiCard icon={TrendingUp} label="Semana" value={cards?.completadas_semana ?? 0} color="text-indigo-600 dark:text-indigo-400" bg="bg-indigo-50 dark:bg-indigo-950" />
-        <KpiCard icon={Trophy} label="Mes" value={cards?.completadas_mes ?? 0} color="text-purple-600 dark:text-purple-400" bg="bg-purple-50 dark:bg-purple-950" />
+        <KpiCard icon={Trophy} label="Completadas" value={cards?.total_completadas ?? 0} color="text-emerald-600 dark:text-emerald-400" bg="bg-emerald-50 dark:bg-emerald-950" />
+        <KpiCard icon={TrendingUp} label="Este Mes" value={cards?.completadas_mes ?? 0} color="text-purple-600 dark:text-purple-400" bg="bg-purple-50 dark:bg-purple-950" />
         <KpiCard icon={Timer} label="Tempo Medio" value={`${perf?.avg_repair_days?.toFixed(1) ?? '—'}d`} color="text-amber-600 dark:text-amber-400" bg="bg-amber-50 dark:bg-amber-950" />
         <KpiCard icon={ShieldAlert} label="Garantia" value={`${cards?.taxa_garantia ?? 0}%`} color={Number(cards?.taxa_garantia) > 10 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'} bg={Number(cards?.taxa_garantia) > 10 ? 'bg-red-50 dark:bg-red-950' : 'bg-green-50 dark:bg-green-950'} />
       </div>
