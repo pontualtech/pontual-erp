@@ -45,17 +45,32 @@ export default function TecnicoDashboard() {
   const [topEquip, setTopEquip] = useState<EquipItem[]>([])
   const [recent, setRecent] = useState<RecentItem[]>([])
 
-  useEffect(() => {
-    fetch('/api/dashboard/tecnico')
+  // Admin: seletor de técnico
+  const [tecnicos, setTecnicos] = useState<{ id: string; name: string }[]>([])
+  const [selectedTech, setSelectedTech] = useState('')
+  const [techName, setTechName] = useState('')
+
+  function loadDashboard(techId?: string) {
+    setLoading(true)
+    const params = techId ? `?tech_id=${techId}` : ''
+    fetch(`/api/dashboard/tecnico${params}`)
       .then(r => r.json())
       .then(d => {
-        const data = d.data
-        setCards(data.cards); setPrazo(data.prazo); setPerf(data.performance)
-        setFila(data.fila_trabalho); setPipeline(data.pipeline)
-        setTopEquip(data.top_equipamentos); setRecent(data.recent_completed)
+        if (!d.data) { toast.error('Sem dados'); return }
+        setCards(d.data.cards); setPrazo(d.data.prazo); setPerf(d.data.performance)
+        setFila(d.data.fila_trabalho); setPipeline(d.data.pipeline)
+        setTopEquip(d.data.top_equipamentos); setRecent(d.data.recent_completed)
       })
       .catch(() => toast.error('Erro ao carregar dashboard'))
       .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    loadDashboard()
+    // Load technician list for admin selector
+    fetch('/api/users?simple=true').then(r => r.json())
+      .then(d => setTecnicos(d.data ?? []))
+      .catch(() => {})
   }, [])
 
   if (loading) return (
@@ -69,11 +84,28 @@ export default function TecnicoDashboard() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-          <Wrench className="h-6 w-6 text-blue-600" /> Meu Painel
-        </h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Suas OS, prazos e performance</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+            <Wrench className="h-6 w-6 text-blue-600" /> {techName ? `Painel — ${techName}` : 'Meu Painel'}
+          </h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">OS, prazos e performance</p>
+        </div>
+        {/* Admin: seletor de técnico */}
+        {tecnicos.length > 1 && (
+          <select title="Ver painel de outro tecnico" value={selectedTech}
+            onChange={e => {
+              const tid = e.target.value
+              setSelectedTech(tid)
+              const tech = tecnicos.find(t => t.id === tid)
+              setTechName(tech?.name || '')
+              loadDashboard(tid || undefined)
+            }}
+            className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-700 dark:text-gray-300">
+            <option value="">Meu Painel</option>
+            {tecnicos.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        )}
       </div>
 
       {/* ─── KPI Cards ────────────────────────── */}
