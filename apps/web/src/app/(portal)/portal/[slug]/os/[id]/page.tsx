@@ -141,7 +141,7 @@ export default function PortalOSDetailPage() {
     if (savedCompany) setCompany(JSON.parse(savedCompany))
     if (savedCustomer) setCustomer(JSON.parse(savedCustomer))
     loadOS()
-    loadNps()
+    if (showNps) loadNps()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [osId])
 

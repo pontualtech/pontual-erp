@@ -25,6 +25,11 @@ export default function PortalPagamentoPage() {
   const slug = params.slug as string
   const osId = params.id as string
 
+  // Pagamento online desativado temporariamente — redireciona para a OS
+  useEffect(() => {
+    router.replace(`/portal/${slug}/os/${osId}`)
+  }, [router, slug, osId])
+
   const [loading, setLoading] = useState(true)
   const [payment, setPayment] = useState<PaymentInfo | null>(null)
   const [error, setError] = useState('')
