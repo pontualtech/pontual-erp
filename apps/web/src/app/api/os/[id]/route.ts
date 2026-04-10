@@ -133,17 +133,20 @@ export async function PUT(req: NextRequest, { params }: Params) {
     })
     if (!existing) return error('OS não encontrada', 404)
 
-    // Técnico só pode editar OS atribuídas a ele (não pode editar OS sem técnico, exceto para se atribuir)
     const roleNorm = user.roleName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-    if (roleNorm === 'tecnico') {
-      if (!existing.technician_id || existing.technician_id !== user.id) {
-        return error('Você só pode editar OS atribuídas a você', 403)
-      }
-    }
+    const isTecnico = roleNorm === 'tecnico'
 
     const body = await req.json()
-    // Validar com Zod strict — rejeita campos não permitidos
     const validated = updateOSSchema.parse(body)
+
+    // Técnico: pode se atribuir a qualquer OS, mas só editar campos de OS atribuída a ele
+    if (isTecnico) {
+      const isAssigningToSelf = validated.technician_id === user.id && !existing.technician_id
+      const isOwnOS = existing.technician_id === user.id
+      if (!isAssigningToSelf && !isOwnOS) {
+        return error('Voce so pode editar OS atribuidas a voce', 403)
+      }
+    }
 
     // Converter strings de data para Date objects para o Prisma
     const data: any = { ...validated }
@@ -156,6 +159,36 @@ export async function PUT(req: NextRequest, { params }: Params) {
       data,
       include: { customers: true },
     })
+
+    // Registrar no histórico quando técnico muda
+    if (validated.technician_id !== undefined && validated.technician_id !== existing.technician_id) {
+      const newTech = validated.technician_id
+        ? await prisma.userProfile.findUnique({ where: { id: validated.technician_id }, select: { name: true } })
+        : null
+      const oldTech = existing.technician_id
+        ? await prisma.userProfile.findUnique({ where: { id: existing.technician_id }, select: { name: true } })
+        : null
+
+      let notes = ''
+      if (!existing.technician_id && validated.technician_id) {
+        notes = `Tecnico atribuido: ${newTech?.name || 'Desconhecido'}`
+      } else if (existing.technician_id && !validated.technician_id) {
+        notes = `Tecnico removido (era: ${oldTech?.name || 'Desconhecido'})`
+      } else {
+        notes = `Tecnico alterado: ${oldTech?.name || '—'} → ${newTech?.name || '—'}`
+      }
+
+      await prisma.serviceOrderHistory.create({
+        data: {
+          company_id: user.companyId,
+          service_order_id: existing.id,
+          from_status_id: existing.status_id,
+          to_status_id: existing.status_id,
+          changed_by: user.id,
+          notes,
+        },
+      })
+    }
 
     logAudit({
       companyId: user.companyId,
