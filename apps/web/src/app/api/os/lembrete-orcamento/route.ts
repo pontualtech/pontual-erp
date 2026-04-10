@@ -262,7 +262,7 @@ export async function sendQuoteReminders(companyId: string, userId: string, spec
   const settingsMap: Record<string, string> = {}
   for (const s of allSettings) settingsMap[s.key] = s.value
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://erp.pontualtech.work'
+  const appUrl = process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'
 
   let orders = await getOsAwaitingApproval(companyId, settings.daysWaiting, settings.intervalDays, settings.maxReminders)
 

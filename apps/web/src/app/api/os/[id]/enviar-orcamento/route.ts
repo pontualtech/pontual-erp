@@ -415,10 +415,10 @@ function buildTemplateVars(os: any, settings: Record<string, string>, approvalLi
     company_bank: settings['company.bank'] || settings['banco'] || '',
     payment_conditions: paymentConditions,
     portal_os_link: (() => {
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'
+      const portalUrl = process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'
       const slug = os.companies?.slug || 'pontualtech'
       const accessTk = createAccessToken(os.customer_id, os.company_id)
-      return `${appUrl}/portal/${slug}/os/${os.id}?access=${accessTk}`
+      return `${portalUrl}/portal/${slug}/os/${os.id}?access=${accessTk}`
     })(),
   }
 }

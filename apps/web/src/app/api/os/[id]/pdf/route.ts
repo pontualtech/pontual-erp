@@ -331,8 +331,8 @@ export async function GET(req: NextRequest, { params }: Params) {
       payment_method: os.payment_method || '—',
       observations: os.reception_notes || '—',
       internal_notes: os.internal_notes || '',
-      portal_url: `https://erp.pontualtech.work/portal/pontualtech`,
-      portal_instructions: `Acompanhe sua OS online: https://erp.pontualtech.work/portal/pontualtech — Faca login com seu CPF/CNPJ e senha cadastrada. Voce pode consultar o status, aprovar orcamentos e abrir novas OS diretamente pelo portal.`,
+      portal_url: `https://portal.pontualtech.com.br/portal/pontualtech`,
+      portal_instructions: `Acompanhe sua OS online: https://portal.pontualtech.com.br/portal/pontualtech — Faca login com seu CPF/CNPJ e senha cadastrada. Voce pode consultar o status, aprovar orcamentos e abrir novas OS diretamente pelo portal.`,
       whatsapp_suporte: '(11) 2626-3841',
       whatsapp_link: 'https://wa.me/551126263841',
     }

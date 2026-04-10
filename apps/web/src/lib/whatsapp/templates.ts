@@ -1,4 +1,4 @@
-const PORTAL_BASE = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'
+const PORTAL_BASE = process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'
 
 interface TemplateParams {
   customerName: string
