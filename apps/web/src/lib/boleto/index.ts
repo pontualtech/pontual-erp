@@ -12,6 +12,18 @@ export interface InterConfig {
   pfxPassword: string
 }
 
+export interface ItauConfig {
+  clientId: string
+  clientSecret: string
+  pfxBase64: string
+  pfxPassword: string
+  agencia: string
+  conta: string
+  carteira: string
+  codigoBeneficiario: string
+  sandbox?: boolean
+}
+
 export interface StoneConfig {
   apiKey: string
   accountId: string
@@ -20,12 +32,12 @@ export interface StoneConfig {
 /**
  * Factory function to get the appropriate boleto provider
  */
-export function getBoletoProvider(providerName: string, config?: InterConfig | StoneConfig): BoletoProvider {
+export function getBoletoProvider(providerName: string, config?: InterConfig | ItauConfig | StoneConfig): BoletoProvider {
   switch (providerName.toLowerCase()) {
     case 'inter':
       return new InterBoletoProvider(config as InterConfig)
     case 'itau':
-      return new ItauBoletoProvider()
+      return new ItauBoletoProvider(config as ItauConfig)
     case 'stone':
       return new StoneBoletoProvider(config as StoneConfig)
     default:

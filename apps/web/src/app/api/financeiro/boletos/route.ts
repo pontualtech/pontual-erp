@@ -235,7 +235,47 @@ export async function POST(request: NextRequest) {
       stoneConfig = { apiKey, accountId: stoneMap['stone.account_id'] || '' }
     }
 
-    const provider = getBoletoProvider(providerName, interConfig || stoneConfig)
+    // Buscar credenciais do Itau
+    let itauConfig: any = undefined
+    if (providerName === 'itau') {
+      const fiscalCfg = await prisma.fiscalConfig.findUnique({ where: { company_id: user.companyId } })
+      const settings = (fiscalCfg?.settings || {}) as Record<string, any>
+      const itauSettings = await prisma.setting.findMany({
+        where: { company_id: user.companyId, key: { startsWith: 'itau.' } },
+      })
+      const itauMap: Record<string, string> = {}
+      itauSettings.forEach(s => { itauMap[s.key] = s.value })
+
+      const clientId = itauMap['itau.client_id'] || process.env.ITAU_CLIENT_ID || ''
+      const clientSecret = itauMap['itau.client_secret'] || process.env.ITAU_CLIENT_SECRET || ''
+
+      if (!clientId || !clientSecret) {
+        return NextResponse.json({ error: 'Client ID e Client Secret do Itau nao configurados. Va em Financeiro > CNAB > Configuracao.' }, { status: 400 })
+      }
+      if (!settings.certificate_base64) {
+        return NextResponse.json({ error: 'Certificado A1 nao instalado. Va em Configuracoes > Certificado A1.' }, { status: 400 })
+      }
+
+      let certPassword = ''
+      if (settings.certificate_password) {
+        const { decrypt } = await import('@/lib/encryption')
+        certPassword = decrypt(settings.certificate_password)
+      }
+
+      itauConfig = {
+        clientId,
+        clientSecret,
+        pfxBase64: settings.certificate_base64,
+        pfxPassword: certPassword,
+        agencia: itauMap['itau.agencia'] || '0001',
+        conta: itauMap['itau.conta'] || '',
+        carteira: itauMap['itau.carteira'] || '109',
+        codigoBeneficiario: itauMap['itau.codigo_beneficiario'] || '',
+        sandbox: itauMap['itau.sandbox'] === 'true',
+      }
+    }
+
+    const provider = getBoletoProvider(providerName, interConfig || itauConfig || stoneConfig)
 
     // Generate boleto
     const boletoResult = await provider.generateBoleto({
