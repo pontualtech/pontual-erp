@@ -42,7 +42,58 @@ export async function GET(req: NextRequest, { params }: Params) {
       orderBy: { installment_number: 'asc' },
     })
 
-    return success({ ...receivable, installments })
+    // Get bank accounts for reference
+    const accounts = await prisma.account.findMany({
+      where: { company_id: user.companyId, is_active: true },
+      select: { id: true, name: true, bank_name: true },
+      orderBy: { name: 'asc' },
+    })
+
+    // Get other pending receivables from the same customer (for unification)
+    let otherPending: any[] = []
+    if (receivable.customer_id && receivable.status === 'PENDENTE') {
+      otherPending = await prisma.accountReceivable.findMany({
+        where: {
+          company_id: user.companyId,
+          customer_id: receivable.customer_id,
+          status: 'PENDENTE',
+          deleted_at: null,
+          grouped_into_id: null,
+          id: { not: receivable.id },
+        },
+        select: {
+          id: true, description: true, total_amount: true,
+          due_date: true, payment_method: true,
+          service_orders: { select: { id: true, os_number: true } },
+        },
+        orderBy: { due_date: 'asc' },
+      })
+    }
+
+    // Get grouped receivables if this is a group parent
+    let groupedItems: any[] = []
+    if (receivable.group_id && !receivable.grouped_into_id) {
+      groupedItems = await prisma.accountReceivable.findMany({
+        where: {
+          group_id: receivable.group_id,
+          grouped_into_id: receivable.id,
+          deleted_at: null,
+        },
+        select: {
+          id: true, description: true, total_amount: true, due_date: true,
+          service_orders: { select: { id: true, os_number: true } },
+        },
+        orderBy: { due_date: 'asc' },
+      })
+    }
+
+    return success({
+      ...receivable,
+      installments,
+      accounts,
+      other_pending: otherPending,
+      grouped_items: groupedItems,
+    })
   } catch (err) {
     return handleError(err)
   }
