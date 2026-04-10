@@ -28,7 +28,7 @@ interface ContaReceber {
 }
 
 interface Installment {
-  id: string; number: number; amount: number; due_date: string
+  id: string; installment_number: number; amount: number; due_date: string
   status: string; paid_at: string | null
 }
 
@@ -269,7 +269,9 @@ export default function ContaReceberDetalhePage() {
   const isPaid = conta.status === 'RECEBIDO' || conta.status === 'PAGO'
   const isGroupParent = conta.group_id && !conta.grouped_into_id
   const sc = statusConfig[conta.status] || statusConfig.PENDENTE
-  const isOverdue = conta.status === 'PENDENTE' && new Date(conta.due_date) < new Date()
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const dueDay = new Date(conta.due_date + 'T00:00:00')
+  const isOverdue = conta.status === 'PENDENTE' && dueDay < today
   const effectiveSc = isOverdue ? statusConfig.VENCIDO : sc
 
   const selectedTotal = Array.from(selectedIds).reduce((sum, sid) => {
@@ -591,7 +593,7 @@ export default function ContaReceberDetalhePage() {
                     const instSc = statusConfig[inst.status] || statusConfig.PENDENTE
                     return (
                       <tr key={inst.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                        <td className="px-4 py-2.5 font-medium text-gray-900 dark:text-white">{inst.number}</td>
+                        <td className="px-4 py-2.5 font-medium text-gray-900 dark:text-white">{inst.installment_number}</td>
                         <td className="px-4 py-2.5 text-gray-900 dark:text-white">{fmt(inst.amount)}</td>
                         <td className="px-4 py-2.5 text-gray-600 dark:text-gray-400">{safeDate(inst.due_date, true)}</td>
                         <td className="px-4 py-2.5">
