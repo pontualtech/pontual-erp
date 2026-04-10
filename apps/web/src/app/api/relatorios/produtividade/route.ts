@@ -20,13 +20,13 @@ export async function GET(req: NextRequest) {
       where: { company_id: cid, module: 'os', is_final: true },
       select: { id: true },
     })
-    const finalIds = finalStatuses.map(s => `'${s.id}'`).join(',')
+    const finalIdsArr = finalStatuses.map(s => s.id)
 
-    if (!finalIds) {
+    if (finalIdsArr.length === 0) {
       return success({ technicians: [], summary: { totalCompleted: 0, avgRepairHours: 0, totalRevenue: 0 } })
     }
 
-    // Per-technician productivity with raw SQL
+    // Per-technician productivity with raw SQL (parameterized)
     const technicians: any[] = await prisma.$queryRawUnsafe(`
       SELECT
         so.technician_id,
@@ -40,12 +40,12 @@ export async function GET(req: NextRequest) {
       WHERE so.company_id = $1
         AND so.deleted_at IS NULL
         AND so.technician_id IS NOT NULL
-        AND so.status_id IN (${finalIds})
+        AND so.status_id = ANY($4::text[])
         AND so.updated_at >= $2::timestamptz
         AND so.updated_at <= ($3::date + interval '1 day')::timestamptz
       GROUP BY so.technician_id, up.name
       ORDER BY total_completed DESC
-    `, cid, `${dateFrom}T00:00:00Z`, dateTo)
+    `, cid, `${dateFrom}T00:00:00Z`, dateTo, finalIdsArr)
 
     const formatted = technicians.map(t => ({
       technicianId: t.technician_id,

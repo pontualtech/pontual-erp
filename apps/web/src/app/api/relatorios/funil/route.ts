@@ -54,19 +54,19 @@ export async function GET(req: NextRequest) {
       where: { company_id: cid, module: 'os', is_final: true },
       select: { id: true },
     })
-    const finalIds = finalStatuses.map(s => `'${s.id}'`).join(',')
+    const finalIdsArr = finalStatuses.map(s => s.id)
 
     let totalCompleted = 0
-    if (finalIds) {
+    if (finalIdsArr.length > 0) {
       const completedResult: any[] = await prisma.$queryRawUnsafe(`
         SELECT COUNT(*)::int AS count
         FROM service_orders
         WHERE company_id = $1
           AND deleted_at IS NULL
-          AND status_id IN (${finalIds})
+          AND status_id = ANY($4::text[])
           AND created_at >= $2::timestamptz
           AND created_at <= ($3::date + interval '1 day')::timestamptz
-      `, cid, `${dateFrom}T00:00:00Z`, dateTo)
+      `, cid, `${dateFrom}T00:00:00Z`, dateTo, finalIdsArr)
       totalCompleted = Number(completedResult[0]?.count || 0)
     }
 

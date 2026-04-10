@@ -67,7 +67,7 @@ function formatCurrency(cents: number) {
 }
 
 function formatDate(d: string) {
-  return new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+  return new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', timeZone: 'UTC' })
 }
 
 function formatAvisoDate(dateStr: string) {
