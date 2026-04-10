@@ -42,7 +42,14 @@ export async function GET(req: NextRequest, { params }: Params) {
       orderBy: { installment_number: 'asc' },
     })
 
-    return success({ ...payable, installments })
+    // Get bank accounts, categories, cost centers for edit
+    const [accounts, categories, costCenters] = await Promise.all([
+      prisma.account.findMany({ where: { company_id: user.companyId, is_active: true }, select: { id: true, name: true, bank_name: true }, orderBy: { name: 'asc' } }),
+      prisma.category.findMany({ where: { company_id: user.companyId }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
+      prisma.costCenter.findMany({ where: { company_id: user.companyId, is_active: true }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
+    ])
+
+    return success({ ...payable, installments, accounts, categories, cost_centers: costCenters })
   } catch (err) {
     return handleError(err)
   }
