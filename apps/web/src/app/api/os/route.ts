@@ -81,16 +81,22 @@ export async function GET(req: NextRequest) {
     const filterModel = url.get('equipmentModel')
     if (filterModel) where.equipment_model = { contains: filterModel, mode: 'insensitive' }
 
-    // Ocultar canceladas por padrão (status is_final = true)
-    // Quando um statusId específico é fornecido, ignorar hideCancelled (evita conflito)
+    // Ocultar entregues e/ou canceladas por padrão
     const hideCancelled = url.get('hideCancelled') === 'true'
-    if (hideCancelled && statusIds.length === 0) {
+    const hideDelivered = url.get('hideDelivered') === 'true'
+    if ((hideCancelled || hideDelivered) && statusIds.length === 0) {
       const finalStatuses = await prisma.moduleStatus.findMany({
         where: { company_id: user.companyId, module: 'os', is_final: true },
-        select: { id: true },
+        select: { id: true, name: true },
       })
-      if (finalStatuses.length > 0) {
-        where.status_id = { ...where.status_id, notIn: finalStatuses.map(s => s.id) }
+      const hideIds: string[] = []
+      for (const s of finalStatuses) {
+        const n = s.name.toLowerCase()
+        if (hideCancelled && n.includes('cancelad')) hideIds.push(s.id)
+        if (hideDelivered && (n.includes('entreg') || n.includes('finaliz'))) hideIds.push(s.id)
+      }
+      if (hideIds.length > 0) {
+        where.status_id = { ...where.status_id, notIn: hideIds }
       }
     }
 

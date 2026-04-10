@@ -168,6 +168,7 @@ export default function OSListPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [overdueFilter, setOverdueFilter] = useState(false)
   const [showCancelled, setShowCancelled] = useState(false)
+  const [showDelivered, setShowDelivered] = useState(false)
   const [allowedColumns, setAllowedColumns] = useState<string[]>([])
   const [ownOnly, setOwnOnly] = useState(false)
   const [myOsFilter, setMyOsFilter] = useState(false) // "Minhas OS" toggle, default set after auth loads
@@ -339,6 +340,7 @@ export default function OSListPage() {
     if (modelFilter) params.set('equipmentModel', modelFilter)
     if (overdueFilter) params.set('overdue', 'true')
     if (!showCancelled) params.set('hideCancelled', 'true')
+    if (!showDelivered) params.set('hideDelivered', 'true')
     if (ownOnly) params.set('own_only', 'true')
     // "Minhas OS" toggle: when active, explicitly send technicianId for any role
     if (myOsFilter && authUser) {
@@ -368,7 +370,7 @@ export default function OSListPage() {
       .finally(() => { if (!ctrl.signal.aborted) setLoading(false) })
   }
 
-  useEffect(() => { loadOS(); setSelected(new Set()) }, [debouncedSearch, statusFilter, typeFilter, locationFilter, equipFilter, brandFilter, modelFilter, overdueFilter, showCancelled, page, visibilityLoaded, ownOnly, myOsFilter, dateFrom, dateTo, sortField, sortDir])
+  useEffect(() => { loadOS(); setSelected(new Set()) }, [debouncedSearch, statusFilter, typeFilter, locationFilter, equipFilter, brandFilter, modelFilter, overdueFilter, showCancelled, showDelivered, page, visibilityLoaded, ownOnly, myOsFilter, dateFrom, dateTo, sortField, sortDir])
 
   function toggleSelect(id: string) {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -827,6 +829,11 @@ export default function OSListPage() {
             ) : null
           })()}
         </button>
+        <label className="flex items-center gap-1.5 cursor-pointer text-xs text-gray-500 hover:text-gray-700">
+          <input type="checkbox" checked={showDelivered} onChange={e => { setShowDelivered(e.target.checked); setPage(1) }}
+            className="rounded border-gray-300 h-3.5 w-3.5" />
+          Entregues
+        </label>
         <label className="flex items-center gap-1.5 cursor-pointer text-xs text-gray-500 hover:text-gray-700">
           <input type="checkbox" checked={showCancelled} onChange={e => { setShowCancelled(e.target.checked); setPage(1) }}
             className="rounded border-gray-300 h-3.5 w-3.5" />
