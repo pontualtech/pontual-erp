@@ -23,6 +23,14 @@ export async function POST(req: NextRequest, { params }: Params) {
     const body = await req.json()
     const data = baixaSchema.parse(body)
 
+    // Validate account ownership if provided
+    if (data.account_id) {
+      const account = await prisma.account.findFirst({
+        where: { id: data.account_id, company_id: user.companyId },
+      })
+      if (!account) return error('Conta bancaria nao pertence a esta empresa', 403)
+    }
+
     const previousReceived = existing.received_amount || 0
     const newReceivedTotal = previousReceived + data.received_amount
     const isReceivedInFull = newReceivedTotal >= existing.total_amount

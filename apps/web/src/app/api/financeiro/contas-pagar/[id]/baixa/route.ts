@@ -29,42 +29,53 @@ export async function POST(req: NextRequest, { params }: Params) {
     const body = await req.json()
     const data = baixaSchema.parse(body)
 
+    // Validate account ownership if provided
+    if (data.account_id) {
+      const account = await prisma.account.findFirst({
+        where: { id: data.account_id, company_id: user.companyId },
+      })
+      if (!account) return error('Conta bancaria nao pertence a esta empresa', 403)
+    }
+
     const previousPaid = existing.paid_amount || 0
     const newPaidTotal = previousPaid + data.paid_amount
     const isPaidInFull = newPaidTotal >= existing.total_amount
 
-    const payable = await prisma.accountPayable.update({
-      where: { id: params.id },
-      data: {
-        paid_amount: newPaidTotal,
-        status: isPaidInFull ? 'PAGO' : 'PENDENTE',
-        payment_method: existing.payment_method,
-        updated_at: new Date(),
-      },
-    })
-
-    // Record transaction in bank account if specified
-    if (data.account_id) {
-      await prisma.transaction.create({
+    // Atomic transaction: update payable + record bank transaction + update balance
+    const payable = await prisma.$transaction(async (tx) => {
+      const updated = await tx.accountPayable.update({
+        where: { id: params.id },
         data: {
-          company_id: user.companyId,
-          account_id: data.account_id,
-          transaction_type: 'DEBIT',
-          amount: data.paid_amount,
-          description: `Pgto: ${existing.description}`,
-          transaction_date: data.paid_at ? new Date(data.paid_at) : new Date(),
-        },
-      })
-
-      // Update bank account balance
-      await prisma.account.update({
-        where: { id: data.account_id },
-        data: {
-          current_balance: { decrement: data.paid_amount },
+          paid_amount: newPaidTotal,
+          status: isPaidInFull ? 'PAGO' : 'PENDENTE',
+          payment_method: existing.payment_method,
           updated_at: new Date(),
         },
       })
-    }
+
+      if (data.account_id) {
+        await tx.transaction.create({
+          data: {
+            company_id: user.companyId,
+            account_id: data.account_id,
+            transaction_type: 'DEBIT',
+            amount: data.paid_amount,
+            description: `Pgto: ${existing.description}`,
+            transaction_date: data.paid_at ? new Date(data.paid_at) : new Date(),
+          },
+        })
+
+        await tx.account.update({
+          where: { id: data.account_id },
+          data: {
+            current_balance: { decrement: data.paid_amount },
+            updated_at: new Date(),
+          },
+        })
+      }
+
+      return updated
+    })
 
     logAudit({
       companyId: user.companyId,
