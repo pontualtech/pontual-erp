@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/lib/use-auth'
 import {
   Loader2, Wrench, CheckCircle, Clock, AlertTriangle, Timer, TrendingUp,
   Zap, ShieldAlert, CalendarClock, Monitor, ArrowRight, Trophy, Target, Flame
@@ -11,8 +12,7 @@ import {
 
 interface Cards {
   em_andamento: number; completadas_hoje: number; completadas_semana: number
-  completadas_mes: number; taxa_garantia: number; garantias_mes: number
-  total_geral: number; total_completadas: number
+  completadas_mes: number; taxa_garantia: number; garantias_90d: number
 }
 interface Prazo { atrasadas: number; vencendo_hoje: number; no_prazo: number; sem_prazo: number }
 interface Performance { avg_repair_hours: number; avg_repair_days: number }
@@ -36,7 +36,10 @@ const prioConfig: Record<string, { label: string; color: string; icon: typeof Fl
   LOW: { label: 'Baixa', color: 'text-gray-600 bg-gray-50 dark:text-gray-400 dark:bg-gray-800', icon: Clock },
 }
 
+const REFRESH_INTERVAL = 60000 // Auto-refresh a cada 60s
+
 export default function TecnicoDashboard() {
+  const { isAdmin } = useAuth()
   const [loading, setLoading] = useState(true)
   const [cards, setCards] = useState<Cards | null>(null)
   const [prazo, setPrazo] = useState<Prazo | null>(null)
@@ -76,10 +79,12 @@ export default function TecnicoDashboard() {
 
   useEffect(() => {
     loadDashboard()
-    // Load technician list for admin selector
     fetch('/api/users?simple=true').then(r => r.json())
       .then(d => setTecnicos(d.data ?? []))
       .catch(() => {})
+    // Auto-refresh
+    const interval = setInterval(() => loadDashboard(selectedTech || undefined), REFRESH_INTERVAL)
+    return () => clearInterval(interval)
   }, [])
 
   if (loading) return (
@@ -101,7 +106,7 @@ export default function TecnicoDashboard() {
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">OS, prazos e performance</p>
         </div>
         {/* Admin: seletor de técnico */}
-        {tecnicos.length > 1 && (
+        {isAdmin && tecnicos.length > 1 && (
           <select title="Ver painel de outro tecnico" value={selectedTech}
             onChange={e => {
               const tid = e.target.value
@@ -119,10 +124,10 @@ export default function TecnicoDashboard() {
 
       {/* ─── KPI Cards ────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <KpiCard icon={Target} label="Total OS" value={cards?.total_geral ?? 0} color="text-gray-600 dark:text-gray-400" bg="bg-gray-50 dark:bg-gray-800" />
         <KpiCard icon={Wrench} label="Em Andamento" value={cards?.em_andamento ?? 0} color="text-blue-600 dark:text-blue-400" bg="bg-blue-50 dark:bg-blue-950" />
-        <KpiCard icon={Trophy} label="Completadas" value={cards?.total_completadas ?? 0} color="text-emerald-600 dark:text-emerald-400" bg="bg-emerald-50 dark:bg-emerald-950" />
-        <KpiCard icon={TrendingUp} label="Este Mes" value={cards?.completadas_mes ?? 0} color="text-purple-600 dark:text-purple-400" bg="bg-purple-50 dark:bg-purple-950" />
+        <KpiCard icon={CheckCircle} label="Hoje" value={cards?.completadas_hoje ?? 0} color="text-green-600 dark:text-green-400" bg="bg-green-50 dark:bg-green-950" />
+        <KpiCard icon={TrendingUp} label="Semana" value={cards?.completadas_semana ?? 0} color="text-indigo-600 dark:text-indigo-400" bg="bg-indigo-50 dark:bg-indigo-950" />
+        <KpiCard icon={Trophy} label="Este Mes" value={cards?.completadas_mes ?? 0} color="text-purple-600 dark:text-purple-400" bg="bg-purple-50 dark:bg-purple-950" />
         <KpiCard icon={Timer} label="Tempo Medio" value={`${perf?.avg_repair_days?.toFixed(1) ?? '—'}d`} color="text-amber-600 dark:text-amber-400" bg="bg-amber-50 dark:bg-amber-950" />
         <KpiCard icon={ShieldAlert} label="Garantia" value={`${cards?.taxa_garantia ?? 0}%`} color={Number(cards?.taxa_garantia) > 10 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'} bg={Number(cards?.taxa_garantia) > 10 ? 'bg-red-50 dark:bg-red-950' : 'bg-green-50 dark:bg-green-950'} />
       </div>
@@ -134,7 +139,7 @@ export default function TecnicoDashboard() {
           <h2 className="flex items-center gap-2 text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
             <CalendarClock className="h-4 w-4" /> Controle de Prazo
           </h2>
-          <div className="grid grid-cols-4 gap-3 mb-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
             <PrazoCard label="Atrasadas" count={prazo?.atrasadas ?? 0} color="text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800" />
             <PrazoCard label="Vence Hoje" count={prazo?.vencendo_hoje ?? 0} color="text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950 border-amber-200 dark:border-amber-800" />
             <PrazoCard label="No Prazo" count={prazo?.no_prazo ?? 0} color="text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800" />
@@ -270,7 +275,7 @@ export default function TecnicoDashboard() {
         {/* Últimas Completadas */}
         <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-5 shadow-sm">
           <h2 className="flex items-center gap-2 text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
-            <CheckCircle className="h-4 w-4" /> Ultimas Completadas
+            <CheckCircle className="h-4 w-4" /> Completadas Recentes
           </h2>
           {recent.length > 0 ? (
             <div className="space-y-3">

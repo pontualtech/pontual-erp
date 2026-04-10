@@ -36,22 +36,23 @@ export async function GET(req: NextRequest) {
     const statusMap = Object.fromEntries(allStatuses.map(s => [s.id, s]))
 
     // === KPI: Counts ===
-    const [emAndamento, completadasHoje, completadasSemana, completadasMes, garantiasMes, totalCompletadasMes, totalGeral, totalCompletadasGeral] = await Promise.all([
+    // Últimos 90 dias para taxa de garantia (mesmo período no numerador e denominador)
+    const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
+    const [emAndamento, completadasHoje, completadasSemana, completadasMes, garantias90d, completadas90d] = await Promise.all([
       prisma.serviceOrder.count({ where: { company_id: cid, technician_id: techId, deleted_at: null, status_id: { notIn: finalIds } } }),
       prisma.serviceOrder.count({ where: { company_id: cid, technician_id: techId, deleted_at: null, status_id: { in: finalIds }, updated_at: { gte: todayStart, lt: todayEnd } } }),
       prisma.serviceOrder.count({ where: { company_id: cid, technician_id: techId, deleted_at: null, status_id: { in: finalIds }, updated_at: { gte: weekStart } } }),
       prisma.serviceOrder.count({ where: { company_id: cid, technician_id: techId, deleted_at: null, status_id: { in: finalIds }, updated_at: { gte: monthStart } } }),
-      prisma.serviceOrder.count({ where: { company_id: cid, technician_id: techId, deleted_at: null, is_warranty: true } }),
-      prisma.serviceOrder.count({ where: { company_id: cid, technician_id: techId, deleted_at: null, status_id: { in: finalIds }, updated_at: { gte: monthStart } } }),
-      prisma.serviceOrder.count({ where: { company_id: cid, technician_id: techId, deleted_at: null } }),
-      prisma.serviceOrder.count({ where: { company_id: cid, technician_id: techId, deleted_at: null, status_id: { in: finalIds } } }),
+      prisma.serviceOrder.count({ where: { company_id: cid, technician_id: techId, deleted_at: null, is_warranty: true, updated_at: { gte: ninetyDaysAgo } } }),
+      prisma.serviceOrder.count({ where: { company_id: cid, technician_id: techId, deleted_at: null, status_id: { in: finalIds }, updated_at: { gte: ninetyDaysAgo } } }),
     ])
 
-    const taxaGarantia = totalCompletadasGeral > 0 ? Math.round((garantiasMes / totalCompletadasGeral) * 100) : 0
+    const taxaGarantia = completadas90d > 0 ? Math.round((garantias90d / completadas90d) * 100) : 0
 
     // === PRAZO: Vencendo hoje / Atrasadas / No prazo ===
     const pendingOS = await prisma.serviceOrder.findMany({
       where: { company_id: cid, technician_id: techId, deleted_at: null, status_id: { notIn: finalIds } },
+      take: 30,
       select: { id: true, os_number: true, estimated_delivery: true, created_at: true, priority: true, status_id: true,
         equipment_type: true, equipment_brand: true, equipment_model: true, reported_issue: true, total_cost: true,
         customers: { select: { legal_name: true } } },
@@ -146,9 +147,7 @@ export async function GET(req: NextRequest) {
         completadas_semana: completadasSemana,
         completadas_mes: completadasMes,
         taxa_garantia: taxaGarantia,
-        garantias_mes: garantiasMes,
-        total_geral: totalGeral,
-        total_completadas: totalCompletadasGeral,
+        garantias_90d: garantias90d,
       },
       prazo: { atrasadas, vencendo_hoje: vencendoHoje, no_prazo: noPrazo, sem_prazo: semPrazo },
       performance: { avg_repair_hours: avgRepairHours, avg_repair_days: avgRepairDays },
