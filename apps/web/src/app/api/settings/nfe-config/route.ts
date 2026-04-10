@@ -107,7 +107,8 @@ export async function GET() {
     const serie = data.serie || '1'
     try {
       const nfeSerie = await prisma.$queryRawUnsafe(
-        `SELECT last_number FROM nfe_series WHERE company_id = '${user.companyId}' AND serie = '${serie}'`
+        `SELECT last_number FROM nfe_series WHERE company_id = $1 AND serie = $2`,
+        user.companyId, serie
       ) as any[]
       if (nfeSerie.length > 0) data.proximo_numero = String(Number(nfeSerie[0].last_number) + 1)
     } catch {

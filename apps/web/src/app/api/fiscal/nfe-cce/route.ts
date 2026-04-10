@@ -28,9 +28,10 @@ export async function POST(req: NextRequest) {
     if (!invoice.access_key) return error('NF-e sem chave de acesso', 400)
 
     // Contar CCe anteriores para sequencial
-    const prevEvents = await prisma.$queryRawUnsafe(`
-      SELECT count(*) as c FROM nfe_events WHERE invoice_id = '${invoice.id}' AND event_type = 'CCE' AND status = 'SUCCESS'
-    `) as any[]
+    const prevEvents = await prisma.$queryRawUnsafe(
+      `SELECT count(*) as c FROM nfe_events WHERE invoice_id = $1 AND event_type = 'CCE' AND status = 'SUCCESS'`,
+      invoice.id
+    ) as any[]
     const nSeqEvento = String(Number(prevEvents[0]?.c || 0) + 1)
 
     // Certificado

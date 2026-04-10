@@ -76,20 +76,22 @@ export async function POST(req: NextRequest) {
 
     // Buscar/incrementar número da série
     const serie = serieParam || '1'
-    const nfeSerie = await prisma.$queryRawUnsafe(`
-      UPDATE nfe_series SET last_number = last_number + 1, updated_at = NOW()
-      WHERE company_id = '${user.companyId}' AND serie = '${serie}'
-      RETURNING last_number
-    `) as any[]
+    const nfeSerie = await prisma.$queryRawUnsafe(
+      `UPDATE nfe_series SET last_number = last_number + 1, updated_at = NOW()
+       WHERE company_id = $1 AND serie = $2
+       RETURNING last_number`,
+      user.companyId, serie
+    ) as any[]
 
     let numero: number
     if (nfeSerie.length > 0) {
       numero = nfeSerie[0].last_number
     } else {
-      await prisma.$executeRawUnsafe(`
-        INSERT INTO nfe_series (company_id, serie, last_number) VALUES ('${user.companyId}', '${serie}', 1)
-        ON CONFLICT (company_id, serie) DO UPDATE SET last_number = nfe_series.last_number + 1, updated_at = NOW()
-      `)
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO nfe_series (company_id, serie, last_number) VALUES ($1, $2, 1)
+         ON CONFLICT (company_id, serie) DO UPDATE SET last_number = nfe_series.last_number + 1, updated_at = NOW()`,
+        user.companyId, serie
+      )
       numero = 1
     }
 
