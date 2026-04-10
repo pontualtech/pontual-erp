@@ -1726,20 +1726,27 @@ export default function OSDetailPage() {
         </div>
       )}
 
-      {/* Button to create first quote version when none exist */}
-      {quoteVersions.length === 0 && os.service_order_items.length > 0 && (
-        <div className="rounded-xl border border-dashed border-indigo-300 bg-indigo-50/30 p-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <FileText className="h-5 w-5 text-indigo-400" />
-            <span className="text-sm text-indigo-700">Nenhum orcamento formal criado para esta OS</span>
-          </div>
-          <button type="button" onClick={handleCreateNewVersion} disabled={creatingVersion}
-            className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 transition-colors disabled:opacity-50">
-            {creatingVersion ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FilePlus className="h-3.5 w-3.5" />}
-            Criar Orcamento v1
-          </button>
-        </div>
-      )}
+      {/* Button to create first quote version — só mostra em status pré-aprovação */}
+      {(() => {
+        const statusName = currentStatus?.name?.toLowerCase() || ''
+        const isPostApproval = statusName.includes('aprovad') || statusName.includes('execu') || statusName.includes('aguardando pe') || statusName.includes('entreg') || statusName.includes('cancelad') || statusName.includes('finaliz') || statusName.includes('pronto') || statusName.includes('reparado')
+        if (quoteVersions.length === 0 && os.service_order_items.length > 0 && !isPostApproval) {
+          return (
+            <div className="rounded-xl border border-dashed border-indigo-300 bg-indigo-50/30 p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileText className="h-5 w-5 text-indigo-400" />
+                <span className="text-sm text-indigo-700">Nenhum orcamento formal criado para esta OS</span>
+              </div>
+              <button type="button" onClick={handleCreateNewVersion} disabled={creatingVersion}
+                className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 transition-colors disabled:opacity-50">
+                {creatingVersion ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FilePlus className="h-3.5 w-3.5" />}
+                Criar Orcamento v1
+              </button>
+            </div>
+          )
+        }
+        return null
+      })()}
 
       {/* ========== SAVE + BACK BUTTONS ========== */}
       <div className="flex items-center justify-between gap-3">
