@@ -257,7 +257,7 @@ export async function POST(req: NextRequest, { params }: Params) {
             card_fee_total: cardFeeTotal,
             net_amount: netAmount,
             notes: isCard
-              ? `Cartao ${installment_count}x — Taxa ${((cardFeeTotal / totalAmount) * 100).toFixed(2)}% (R$ ${(cardFeeTotal / 100).toFixed(2)}) — Liquido R$ ${(netAmount / 100).toFixed(2)} — Recebe em D+${daysToReceive} — OS-${String(os.os_number).padStart(4, '0')}${defaultAccountId ? ` — Conta: ${defaultAccountId}` : ''}`
+              ? `Cartao ${installment_count}x — Taxa ${totalAmount > 0 ? ((cardFeeTotal / totalAmount) * 100).toFixed(2) : '0.00'}% (R$ ${(cardFeeTotal / 100).toFixed(2)}) — Liquido R$ ${(netAmount / 100).toFixed(2)} — Recebe em D+${daysToReceive} — OS-${String(os.os_number).padStart(4, '0')}${defaultAccountId ? ` — Conta: ${defaultAccountId}` : ''}`
               : `Gerado automaticamente ao entregar OS-${String(os.os_number).padStart(4, '0')}${defaultAccountId ? ` — Conta: ${defaultAccountId}` : ''}`,
           },
         })
@@ -549,7 +549,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           companySlug: waCompany?.slug || 'pontualtech',
           osId: os.id,
           value: os.total_cost || undefined,
-          estimatedDelivery: (os as any).estimated_delivery ? String((os as any).estimated_delivery) : undefined,
+          estimatedDelivery: (updated as any).estimated_delivery ? String((updated as any).estimated_delivery) : undefined,
         })
         void sendWhatsApp(customerPhone, msg).catch(e =>
           console.log('[Transition] WhatsApp notification failed (ignored):', e)

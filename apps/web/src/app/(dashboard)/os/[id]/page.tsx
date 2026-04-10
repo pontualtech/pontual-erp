@@ -22,7 +22,7 @@ interface OSHistoryEntry {
   id: string; from_status_id: string | null; to_status_id: string | null
   changed_by: string | null; changed_by_name: string | null; notes: string | null; created_at: string
 }
-interface StatusDef { id: string; name: string; color: string; order: number; is_final?: boolean }
+interface StatusDef { id: string; name: string; color: string; order: number; is_final?: boolean; transitions?: string[] }
 interface OSDetail {
   id: string; os_number: number; status_id: string; priority: string; os_type: string
   equipment_type: string | null; equipment_brand: string | null; equipment_model: string | null
@@ -653,7 +653,7 @@ export default function OSDetailPage() {
     if (!os) return null
     const current = statusMap[os.status_id]
     if (!current) return null
-    return statusList.find(s => s.order === current.order + 1) ?? null
+    return statusList.filter(s => s.order > current.order).sort((a, b) => a.order - b.order)[0] ?? null
   }
 
   function needsTechnician(statusName: string): boolean {
@@ -937,7 +937,12 @@ export default function OSDetailPage() {
                 backgroundPosition: 'right 8px center',
               }}
             >
-              {statusList.map(s => (
+              {statusList.filter(s => {
+                if (s.id === os.status_id) return true // always show current
+                const allowed = currentStatus.transitions
+                if (Array.isArray(allowed) && allowed.length > 0) return allowed.includes(s.id)
+                return true // no restrictions configured → show all
+              }).map(s => (
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}
             </select>
