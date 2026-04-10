@@ -136,13 +136,14 @@ export default function FinanceiroPage() {
                       </div>
                       <div className="text-right flex-shrink-0">
                         <p className="text-xl font-bold text-gray-900 dark:text-gray-100">{item.total_cost_formatted}</p>
-                        {item.payment_status !== 'paid' && (
-                          <Link
-                            href={`/portal/${slug}/pagamento/${item.os_id}`}
-                            className="inline-block mt-2 px-4 py-2 bg-blue-600 dark:bg-blue-500 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors"
-                          >
-                            Pagar PIX
-                          </Link>
+                        {item.payment_status === 'paid' ? (
+                          <span className="inline-block mt-2 px-3 py-1.5 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-400 text-xs font-semibold rounded-lg">
+                            Paga
+                          </span>
+                        ) : (
+                          <span className="inline-block mt-2 px-3 py-1.5 bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-400 text-xs font-semibold rounded-lg">
+                            Pendente
+                          </span>
                         )}
                       </div>
                     </div>
