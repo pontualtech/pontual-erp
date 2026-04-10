@@ -55,14 +55,22 @@ export default function TecnicoDashboard() {
     setLoading(true)
     const params = techId ? `?tech_id=${techId}` : ''
     fetch(`/api/dashboard/tecnico${params}`)
-      .then(r => r.json())
-      .then(d => {
-        if (!d.data) { toast.error('Sem dados'); return }
-        setCards(d.data.cards); setPrazo(d.data.prazo); setPerf(d.data.performance)
-        setFila(d.data.fila_trabalho); setPipeline(d.data.pipeline)
-        setTopEquip(d.data.top_equipamentos); setRecent(d.data.recent_completed)
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
       })
-      .catch(() => toast.error('Erro ao carregar dashboard'))
+      .then(d => {
+        const data = d.data
+        if (!data) { toast.error('Sem dados retornados'); return }
+        setCards(data.cards ?? null)
+        setPrazo(data.prazo ?? null)
+        setPerf(data.performance ?? null)
+        setFila(data.fila_trabalho ?? [])
+        setPipeline(data.pipeline ?? [])
+        setTopEquip(data.top_equipamentos ?? [])
+        setRecent(data.recent_completed ?? [])
+      })
+      .catch(err => toast.error(`Erro: ${err.message}`))
       .finally(() => setLoading(false))
   }
 

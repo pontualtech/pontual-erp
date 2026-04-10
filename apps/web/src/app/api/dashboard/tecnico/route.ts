@@ -15,6 +15,7 @@ export async function GET(req: NextRequest) {
     const queryTechId = url.searchParams.get('tech_id')
     const isAdmin = user.roleName === 'admin' || user.roleName === 'administrador'
     const techId = (isAdmin && queryTechId) ? queryTechId : user.id
+    console.log('[Dashboard Tecnico]', { userId: user.id, roleName: user.roleName, isAdmin, queryTechId, techId, cid })
 
     const now = new Date()
     const todayStart = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }))

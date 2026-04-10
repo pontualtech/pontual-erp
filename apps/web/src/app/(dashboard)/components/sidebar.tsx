@@ -9,7 +9,7 @@ import type { AuthUser } from '@/lib/auth'
 import {
   ClipboardList, Users, Package, DollarSign, FileText,
   Settings, LayoutDashboard, Menu, X, ChevronDown, ChevronLeft, ChevronRight, MessageSquare, MessageCircle, Phone, Truck,
-  Building2, ShoppingCart, BarChart3, Activity,
+  Building2, ShoppingCart, BarChart3, Activity, Wrench,
 } from 'lucide-react'
 
 interface NavItem {
@@ -29,6 +29,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
     title: 'Geral',
     items: [
       { label: 'Dashboard', href: '/', icon: LayoutDashboard, module: 'dashboard', action: 'view' },
+      { label: 'Meu Painel', href: '/tecnico', icon: Wrench, module: 'os', action: 'view' },
     ],
   },
   {
