@@ -69,18 +69,17 @@ export async function POST(req: NextRequest) {
       isNewCustomer = true
     }
 
-    // 2. Idempotency: check for duplicate OS in last 10 minutes
+    // 2. Idempotency: check for duplicate OS in last 10 minutes (same customer)
     const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000)
     const existingOS = await prisma.serviceOrder.findFirst({
       where: {
         company_id: companyId,
         customer_id: customer.id,
-        equipment_type: equipamento || 'Impressora',
-        reported_issue: defeito || 'Sem descricao',
         created_at: { gte: tenMinAgo },
         deleted_at: null,
       },
       include: { module_statuses: { select: { name: true } } },
+      orderBy: { created_at: 'desc' },
     })
 
     if (existingOS) {
