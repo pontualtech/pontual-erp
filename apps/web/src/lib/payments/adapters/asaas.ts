@@ -21,9 +21,10 @@ export class AsaasProvider implements PaymentProvider {
     })
 
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
+      const err = await res.json().catch(() => ({})) as { errors?: Array<{ description?: string }>; message?: string }
+      const detail = err.errors?.[0]?.description || err.message || ''
       console.error('[Asaas API Error]', { status: res.status, path, err })
-      throw new Error(`Asaas API error: ${res.status}`)
+      throw new Error(detail ? `Asaas: ${detail}` : `Asaas API error: ${res.status}`)
     }
 
     return res.json()
@@ -77,11 +78,13 @@ export class AsaasProvider implements PaymentProvider {
       params.customerEmail
     )
 
-    const dueDate = params.dueDate || (() => {
-      const d = new Date()
-      d.setDate(d.getDate() + 1)
-      return d.toISOString().split('T')[0]
-    })()
+    // Asaas rejects past due dates — use tomorrow as minimum
+    const tomorrow = new Date()
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    const tomorrowStr = tomorrow.toISOString().split('T')[0]
+
+    let dueDate = params.dueDate || tomorrowStr
+    if (dueDate < tomorrowStr) dueDate = tomorrowStr
 
     const payload: Record<string, unknown> = {
       customer: customerData.id,
