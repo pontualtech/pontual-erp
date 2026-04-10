@@ -58,6 +58,15 @@ interface DashboardStats {
     status: string | null
     due_date: string
   }[]
+  techWorkload: {
+    id: string
+    name: string
+    total: number
+    em_execucao: number
+    atrasadas: number
+  }[]
+  semTecnico: number
+  osAtrasadas: number
 }
 
 /* ---------- Helpers ---------- */
@@ -502,6 +511,74 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      {/* Carga de Trabalho por Técnico */}
+      {stats && (stats.techWorkload?.length > 0 || stats.semTecnico > 0) && (
+        <div className="rounded-xl border bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-semibold text-gray-900 flex items-center gap-2">
+              <Wrench className="h-4 w-4 text-blue-600" /> Carga de Trabalho — Tecnicos
+            </h2>
+            <div className="flex gap-3 text-xs">
+              {(stats.osAtrasadas ?? 0) > 0 && (
+                <span className="px-2 py-1 rounded-full bg-red-100 text-red-700 font-semibold">{stats.osAtrasadas} atrasada{stats.osAtrasadas > 1 ? 's' : ''}</span>
+              )}
+              {(stats.semTecnico ?? 0) > 0 && (
+                <span className="px-2 py-1 rounded-full bg-amber-100 text-amber-700 font-semibold">{stats.semTecnico} sem tecnico</span>
+              )}
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-gray-50 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                  <th className="px-4 py-2.5">Tecnico</th>
+                  <th className="px-4 py-2.5 text-center">OS Pendentes</th>
+                  <th className="px-4 py-2.5 text-center">Em Execucao</th>
+                  <th className="px-4 py-2.5 text-center">Atrasadas</th>
+                  <th className="px-4 py-2.5">Carga</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {stats.techWorkload.map(tech => {
+                  const maxTotal = Math.max(...stats.techWorkload.map(t => t.total), 1)
+                  return (
+                    <tr key={tech.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-2.5">
+                        <Link href={`/tecnico?tech=${tech.id}`} className="font-medium text-gray-900 hover:text-blue-600">{tech.name}</Link>
+                      </td>
+                      <td className="px-4 py-2.5 text-center font-semibold text-gray-900">{tech.total}</td>
+                      <td className="px-4 py-2.5 text-center">
+                        <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium', tech.em_execucao > 0 ? 'bg-blue-100 text-blue-700' : 'text-gray-400')}>{tech.em_execucao}</span>
+                      </td>
+                      <td className="px-4 py-2.5 text-center">
+                        <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium', tech.atrasadas > 0 ? 'bg-red-100 text-red-700' : 'text-gray-400')}>{tech.atrasadas}</span>
+                      </td>
+                      <td className="px-4 py-2.5 w-40">
+                        <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                          <div className={cn('h-full rounded-full', tech.atrasadas > 0 ? 'bg-red-500' : 'bg-blue-500')}
+                            style={{ width: `${(tech.total / maxTotal) * 100}%` }} />
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+                {(stats.semTecnico ?? 0) > 0 && (
+                  <tr className="hover:bg-gray-50 bg-amber-50/50">
+                    <td className="px-4 py-2.5">
+                      <Link href="/os?filter=sem_tecnico" className="font-medium text-amber-700 hover:text-amber-900">Sem tecnico atribuido</Link>
+                    </td>
+                    <td className="px-4 py-2.5 text-center font-semibold text-amber-700">{stats.semTecnico}</td>
+                    <td className="px-4 py-2.5 text-center text-gray-400">—</td>
+                    <td className="px-4 py-2.5 text-center text-gray-400">—</td>
+                    <td className="px-4 py-2.5 text-xs text-amber-600">Atribuir tecnico</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

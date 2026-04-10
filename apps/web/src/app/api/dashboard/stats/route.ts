@@ -191,6 +191,36 @@ export async function GET() {
       }),
     ])
 
+    // ---- 6. OS por Técnico (carga de trabalho) ----
+    const techWorkload: any[] = await prisma.$queryRawUnsafe(`
+      SELECT
+        so.technician_id,
+        up.name AS tech_name,
+        COUNT(*)::int AS total,
+        COUNT(CASE WHEN so.status_id = ANY($2::text[]) THEN 1 END)::int AS em_execucao,
+        COUNT(CASE WHEN so.estimated_delivery IS NOT NULL AND so.estimated_delivery < NOW() THEN 1 END)::int AS atrasadas
+      FROM service_orders so
+      LEFT JOIN user_profiles up ON up.id = so.technician_id
+      WHERE so.company_id = $1 AND so.deleted_at IS NULL
+        AND so.status_id != ALL($3::text[])
+        AND so.technician_id IS NOT NULL
+      GROUP BY so.technician_id, up.name
+      ORDER BY total DESC
+    `, cid, execStatusIds, finalIds)
+
+    // ---- 7. OS sem técnico atribuído ----
+    const semTecnico = await prisma.serviceOrder.count({
+      where: { company_id: cid, deleted_at: null, technician_id: null, status_id: { notIn: finalIds } },
+    })
+
+    // ---- 8. OS atrasadas (estimated_delivery < today) ----
+    const osAtrasadas = await prisma.serviceOrder.count({
+      where: {
+        company_id: cid, deleted_at: null, status_id: { notIn: finalIds },
+        estimated_delivery: { lt: new Date() }, NOT: { estimated_delivery: null },
+      },
+    })
+
     // Check if user has financial permissions
     const canViewFinanceiro = user.roleName === 'admin' || await hasPermission(user.id, user.companyId, 'financeiro', 'view')
 
@@ -224,6 +254,15 @@ export async function GET() {
         status: r.status,
         due_date: r.due_date,
       })),
+      techWorkload: techWorkload.map(t => ({
+        id: t.technician_id,
+        name: t.tech_name || 'Sem nome',
+        total: Number(t.total),
+        em_execucao: Number(t.em_execucao),
+        atrasadas: Number(t.atrasadas),
+      })),
+      semTecnico,
+      osAtrasadas,
     })
   } catch (err) {
     return handleError(err)
