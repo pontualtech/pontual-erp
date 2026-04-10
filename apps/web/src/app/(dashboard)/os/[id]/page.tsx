@@ -162,6 +162,7 @@ export default function OSDetailPage() {
   const [cardFees, setCardFees] = useState<any[]>([])
   const [bankAccounts, setBankAccounts] = useState<{ id: string; name: string; bank_name: string | null }[]>([])
   const [paymentAccountId, setPaymentAccountId] = useState('')
+  const [defaultAccountMap, setDefaultAccountMap] = useState<Record<string, string>>({})
 
   // Print/Email modal
   const [showPrintModal, setShowPrintModal] = useState(false)
@@ -337,6 +338,15 @@ export default function OSDetailPage() {
     }).catch(() => toast.error('Erro ao carregar formas de pagamento'))
     fetch('/api/financeiro/card-fees').then(r => r.json()).then(d => setCardFees(d.data ?? [])).catch(() => toast.error('Erro ao carregar taxas de cartao'))
     fetch('/api/financeiro/contas-bancarias').then(r => r.json()).then(d => setBankAccounts(d.data ?? [])).catch(() => {})
+    fetch('/api/settings').then(r => r.json()).then(d => {
+      const map: Record<string, string> = {}
+      const accountDefaults = d.data?.account_default ?? {}
+      for (const [key, val] of Object.entries(accountDefaults)) {
+        const method = key.replace('account_default.', '')
+        if ((val as any)?.value) map[method] = (val as any).value
+      }
+      setDefaultAccountMap(map)
+    }).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -2443,11 +2453,16 @@ export default function OSDetailPage() {
               </p>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Forma de pagamento *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">1. Forma de pagamento *</label>
                 {paymentMethods.length > 0 ? (
                   <div className="grid grid-cols-2 gap-2">
                     {paymentMethods.map(pm => (
-                      <button key={pm.id} type="button" onClick={() => setPaymentMethod(pm.name)}
+                      <button key={pm.id} type="button" onClick={() => {
+                        setPaymentMethod(pm.name)
+                        // Auto-selecionar banco padrão configurado para esta forma
+                        const defaultAcc = defaultAccountMap[pm.name]
+                        setPaymentAccountId(defaultAcc || '')
+                      }}
                         className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium border-2 transition-colors ${
                           paymentMethod === pm.name
                             ? 'border-green-500 bg-green-50 text-green-700'
@@ -2536,25 +2551,40 @@ export default function OSDetailPage() {
                 )}
               </div>
 
-              {/* Conta bancária destino */}
-              {bankAccounts.length > 0 && (
+              {/* 2. Conta bancária destino — aparece após selecionar forma de pagamento */}
+              {bankAccounts.length > 0 && paymentMethod && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Conta bancaria destino</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    2. Conta bancaria destino {paymentAccountId && defaultAccountMap[paymentMethod] === paymentAccountId && (
+                      <span className="text-xs text-green-600 font-normal">(padrao para {paymentMethod})</span>
+                    )}
+                  </label>
                   <div className="grid grid-cols-2 gap-2">
-                    {bankAccounts.map(acc => (
-                      <button key={acc.id} type="button" onClick={() => setPaymentAccountId(paymentAccountId === acc.id ? '' : acc.id)}
-                        className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium border-2 transition-colors ${
-                          paymentAccountId === acc.id
-                            ? 'border-blue-500 bg-blue-50 text-blue-700'
-                            : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                        }`}>
-                        <span className={`h-6 w-6 rounded-full flex items-center justify-center text-[9px] font-bold text-white ${paymentAccountId === acc.id ? 'bg-blue-600' : 'bg-gray-400'}`}>
-                          {(acc.bank_name || acc.name).substring(0, 2).toUpperCase()}
-                        </span>
-                        {acc.bank_name || acc.name}
-                      </button>
-                    ))}
+                    {bankAccounts.map(acc => {
+                      const isDefault = defaultAccountMap[paymentMethod] === acc.id
+                      return (
+                        <button key={acc.id} type="button" onClick={() => setPaymentAccountId(paymentAccountId === acc.id ? '' : acc.id)}
+                          className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium border-2 transition-colors relative ${
+                            paymentAccountId === acc.id
+                              ? 'border-blue-500 bg-blue-50 text-blue-700'
+                              : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                          }`}>
+                          <span className={`h-6 w-6 rounded-full flex items-center justify-center text-[9px] font-bold text-white ${paymentAccountId === acc.id ? 'bg-blue-600' : 'bg-gray-400'}`}>
+                            {(acc.bank_name || acc.name).substring(0, 2).toUpperCase()}
+                          </span>
+                          <span className="truncate">{acc.bank_name || acc.name}</span>
+                          {isDefault && <span className="text-[9px] bg-green-100 text-green-700 rounded px-1 py-0.5 ml-auto">Padrao</span>}
+                        </button>
+                      )
+                    })}
                   </div>
+                  {!paymentAccountId && (
+                    <p className="text-xs text-amber-600 mt-1.5">Selecione a conta bancaria que recebera o pagamento</p>
+                  )}
+                  <a href="/config/contas-padrao" target="_blank" rel="noopener noreferrer"
+                    className="text-[10px] text-gray-400 hover:text-blue-500 mt-1 inline-block">
+                    Configurar contas padrao por forma de pagamento →
+                  </a>
                 </div>
               )}
 
