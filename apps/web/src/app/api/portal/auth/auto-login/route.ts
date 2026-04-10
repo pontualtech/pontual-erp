@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
     const sessionToken = createPortalToken(payload.cid, payload.mid)
 
     const customer = access.customers
-    const company = await prisma.companies.findFirst({
+    const company = await prisma.company.findFirst({
       where: { id: payload.mid },
       select: { id: true, name: true, slug: true },
     })
