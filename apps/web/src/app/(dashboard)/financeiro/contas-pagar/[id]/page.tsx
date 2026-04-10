@@ -96,18 +96,9 @@ export default function ContaPagarDetalhePage() {
         if (!c) { toast.error('Conta nao encontrada'); router.push('/financeiro/contas-pagar'); return }
         setConta(c)
         setBaixaAmount(String((c.total_amount - (c.paid_amount || 0)) / 100))
-        setAccounts(c.accounts ?? [])
-        setCategories(c.categories_list ?? c.categories ? [] : [])
-        setCostCenters(c.cost_centers_list ?? [])
-        setInstallments(c.installments ?? [])
-        // Populate from API response arrays
-        if (d.data.categories && Array.isArray(d.data.categories)) {
-          // categories is a single object relation, not array
-        }
-        // Use the parallel-loaded data
         setAccounts(d.data.accounts ?? [])
-        setCategories(d.data.categories_list ?? d.data.categories ?? [])
         setCostCenters(d.data.cost_centers ?? [])
+        setInstallments(d.data.installments ?? [])
         setEditForm({
           description: c.description,
           total_amount: String((c.total_amount || 0) / 100),
@@ -155,7 +146,8 @@ export default function ContaPagarDetalhePage() {
         cost_center_id: editForm.cost_center_id || null,
       }
       const amt = Math.round(parseFloat(editForm.total_amount) * 100)
-      if (!isNaN(amt) && amt > 0) payload.total_amount = amt
+      if (isNaN(amt) || amt <= 0) { toast.error('Valor deve ser maior que zero'); setSaving(false); return }
+      payload.total_amount = amt
       if (editForm.due_date) payload.due_date = editForm.due_date
 
       const res = await fetch(`/api/financeiro/contas-pagar/${id}`, {
@@ -204,7 +196,7 @@ export default function ContaPagarDetalhePage() {
   const isPaid = conta.status === 'PAGO'
   const isEditable = !isPaid && conta.status !== 'CANCELADO'
   const today = new Date(); today.setHours(0, 0, 0, 0)
-  const dueDay = new Date(conta.due_date + 'T00:00:00')
+  const dueDay = new Date(String(conta.due_date).substring(0, 10) + 'T00:00:00')
   const isOverdue = conta.status === 'PENDENTE' && dueDay < today
   const sc = statusConfig[isOverdue ? 'VENCIDO' : conta.status] || statusConfig.PENDENTE
   const currentPM = PAYMENT_METHODS.find(p => p.value === (editing ? editForm.payment_method : conta.payment_method))
@@ -306,7 +298,7 @@ export default function ContaPagarDetalhePage() {
         </div>
 
         {/* Vencimento + Categoria + Centro Custo */}
-        <div className="p-5 grid grid-cols-3 gap-6">
+        <div className="p-5 grid grid-cols-1 sm:grid-cols-3 gap-6">
           <div>
             <h3 className="flex items-center gap-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
               <Calendar className="h-3.5 w-3.5" /> Vencimento

@@ -65,6 +65,9 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       where: { id: params.id, company_id: user.companyId, deleted_at: null },
     })
     if (!existing) return error('Conta a pagar nao encontrada', 404)
+    if (['PAGO', 'CANCELADO'].includes(existing.status || '')) {
+      return error('Conta nao pode ser editada neste status', 400)
+    }
 
     const body = await req.json()
     const data = updatePayableSchema.parse(body)

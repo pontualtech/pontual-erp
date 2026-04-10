@@ -109,6 +109,9 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       where: { id: params.id, company_id: user.companyId, deleted_at: null },
     })
     if (!existing) return error('Conta a receber nao encontrada', 404)
+    if (['RECEBIDO', 'CANCELADO', 'AGRUPADO'].includes(existing.status || '')) {
+      return error('Conta nao pode ser editada neste status', 400)
+    }
 
     const body = await req.json()
     const data = updateReceivableSchema.parse(body)

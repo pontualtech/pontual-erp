@@ -160,6 +160,8 @@ export default function OSDetailPage() {
   const [paymentMethodsLoaded, setPaymentMethodsLoaded] = useState(false)
   const [installmentCount, setInstallmentCount] = useState(1)
   const [cardFees, setCardFees] = useState<any[]>([])
+  const [bankAccounts, setBankAccounts] = useState<{ id: string; name: string; bank_name: string | null }[]>([])
+  const [paymentAccountId, setPaymentAccountId] = useState('')
 
   // Print/Email modal
   const [showPrintModal, setShowPrintModal] = useState(false)
@@ -334,6 +336,7 @@ export default function OSDetailPage() {
       setPaymentMethodsLoaded(true)
     }).catch(() => toast.error('Erro ao carregar formas de pagamento'))
     fetch('/api/financeiro/card-fees').then(r => r.json()).then(d => setCardFees(d.data ?? [])).catch(() => toast.error('Erro ao carregar taxas de cartao'))
+    fetch('/api/financeiro/contas-bancarias').then(r => r.json()).then(d => setBankAccounts(d.data ?? [])).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -699,6 +702,7 @@ export default function OSDetailPage() {
       if (notes) body.notes = notes
       if (installments && installments > 1) body.installment_count = installments
       if (editTechnicianId) body.technician_id = editTechnicianId
+      if (paymentAccountId) body.account_id = paymentAccountId
 
       // If manual mode, do transition WITHOUT notification first, then ask
       if (!notifyAuto) {
@@ -2531,6 +2535,28 @@ export default function OSDetailPage() {
                   <p className="text-xs text-red-500 mt-1">Obrigatorio para finalizar a entrega</p>
                 )}
               </div>
+
+              {/* Conta bancária destino */}
+              {bankAccounts.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Conta bancaria destino</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {bankAccounts.map(acc => (
+                      <button key={acc.id} type="button" onClick={() => setPaymentAccountId(paymentAccountId === acc.id ? '' : acc.id)}
+                        className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium border-2 transition-colors ${
+                          paymentAccountId === acc.id
+                            ? 'border-blue-500 bg-blue-50 text-blue-700'
+                            : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                        }`}>
+                        <span className={`h-6 w-6 rounded-full flex items-center justify-center text-[9px] font-bold text-white ${paymentAccountId === acc.id ? 'bg-blue-600' : 'bg-gray-400'}`}>
+                          {(acc.bank_name || acc.name).substring(0, 2).toUpperCase()}
+                        </span>
+                        {acc.bank_name || acc.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Observacoes</label>

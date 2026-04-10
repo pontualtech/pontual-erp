@@ -174,7 +174,8 @@ export default function ContaReceberDetalhePage() {
         category_id: editForm.category_id || null,
       }
       const amt = Math.round(parseFloat(editForm.total_amount) * 100)
-      if (!isNaN(amt) && amt > 0) payload.total_amount = amt
+      if (isNaN(amt) || amt <= 0) { toast.error('Valor deve ser maior que zero'); setSaving(false); return }
+      payload.total_amount = amt
       if (editForm.due_date) payload.due_date = editForm.due_date
 
       const res = await fetch(`/api/financeiro/contas-receber/${id}`, {
@@ -258,7 +259,7 @@ export default function ContaReceberDetalhePage() {
   const isEditable = !isPaid && conta.status !== 'CANCELADO' && conta.status !== 'AGRUPADO'
   const isGroupParent = conta.group_id && !conta.grouped_into_id
   const today = new Date(); today.setHours(0, 0, 0, 0)
-  const dueDay = new Date(conta.due_date + 'T00:00:00')
+  const dueDay = new Date(String(conta.due_date).substring(0, 10) + 'T00:00:00')
   const isOverdue = conta.status === 'PENDENTE' && dueDay < today
   const sc = statusConfig[isOverdue ? 'VENCIDO' : conta.status] || statusConfig.PENDENTE
 

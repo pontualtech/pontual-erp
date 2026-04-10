@@ -16,7 +16,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const user = result
 
     const body = await req.json()
-    const { toStatusId, notes, payment_method, installment_count: rawInstallmentCount, technician_id: bodyTechnicianId, notify_whatsapp, notify_email, _resend_notify_only } = body
+    const { toStatusId, notes, payment_method, installment_count: rawInstallmentCount, technician_id: bodyTechnicianId, notify_whatsapp, notify_email, _resend_notify_only, account_id: bodyAccountId } = body
     // Notification flags: default true for backward compat, but frontend can set false
     const shouldNotifyWhatsApp = notify_whatsapp !== false
     const shouldNotifyEmail = notify_email !== false
@@ -186,7 +186,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         const defaultAccountSetting = await tx.setting.findFirst({
           where: { company_id: user.companyId, key: `account_default.${payment_method}` },
         })
-        const defaultAccountId = defaultAccountSetting?.value || null
+        const defaultAccountId = bodyAccountId || defaultAccountSetting?.value || null
 
         const totalAmount = os.total_cost ?? 0
         let cardFeeTotal = 0
