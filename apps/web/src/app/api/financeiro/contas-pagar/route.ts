@@ -33,6 +33,9 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search')
     const categoryId = searchParams.get('categoryId')
     const costCenterId = searchParams.get('costCenterId')
+    const paymentMethod = searchParams.get('paymentMethod')
+    const valueMin = searchParams.get('valueMin') ? Number(searchParams.get('valueMin')) : null
+    const valueMax = searchParams.get('valueMax') ? Number(searchParams.get('valueMax')) : null
 
     const where: any = { company_id: user.companyId, deleted_at: null }
 
@@ -48,6 +51,12 @@ export async function GET(request: NextRequest) {
     if (supplierId) where.supplier_id = supplierId
     if (categoryId) where.category_id = categoryId
     if (costCenterId) where.cost_center_id = costCenterId
+    if (paymentMethod) where.payment_method = paymentMethod
+    if (valueMin !== null || valueMax !== null) {
+      where.total_amount = {}
+      if (valueMin !== null) where.total_amount.gte = valueMin
+      if (valueMax !== null) where.total_amount.lte = valueMax
+    }
 
     if (search) {
       where.OR = [
@@ -106,12 +115,30 @@ export async function GET(request: NextRequest) {
     const vencendoHoje = { _sum: { total_amount: Number(s.hoje_sum) || 0 }, _count: Number(s.hoje_count) || 0 }
     const pagasMes = { _sum: { total_amount: Number(s.pagas_sum) || 0 }, _count: Number(s.pagas_count) || 0 }
 
+    // Filter options for dropdowns
+    const [filterCategories, filterCostCenters] = await Promise.all([
+      prisma.category.findMany({ where: { company_id: user.companyId }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
+      prisma.costCenter.findMany({ where: { company_id: user.companyId, is_active: true }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
+    ])
+
+    // Distinct payment methods from existing payables
+    const distinctPM = await prisma.accountPayable.findMany({
+      where: { company_id: user.companyId, deleted_at: null, payment_method: { not: null } },
+      distinct: ['payment_method'],
+      select: { payment_method: true },
+    })
+
     return NextResponse.json({
       data: payables,
       total,
       page,
       limit,
       totalPages: Math.ceil(total / limit),
+      filters: {
+        categories: filterCategories,
+        cost_centers: filterCostCenters,
+        payment_methods: distinctPM.map(p => p.payment_method).filter(Boolean).sort(),
+      },
       summary: {
         total_aberto: totalAberto._sum.total_amount || 0,
         total_aberto_count: totalAberto._count || 0,

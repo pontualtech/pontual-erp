@@ -90,6 +90,17 @@ export default function ContasPagarPage() {
   const [statusFilter, setStatusFilter] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState('')
+  const [costCenterFilter, setCostCenterFilter] = useState('')
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState('')
+  const [valueMin, setValueMin] = useState('')
+  const [valueMax, setValueMax] = useState('')
+  const [showAdvanced, setShowAdvanced] = useState(false)
+
+  // Filter options (from API)
+  const [filterCategories, setFilterCategories] = useState<{ id: string; name: string }[]>([])
+  const [filterCostCenters, setFilterCostCenters] = useState<{ id: string; name: string }[]>([])
+  const [filterPaymentMethods, setFilterPaymentMethods] = useState<string[]>([])
 
   // Modals
   const [deleteId, setDeleteId] = useState<string | null>(null)
@@ -113,6 +124,11 @@ export default function ContasPagarPage() {
     if (statusFilter) params.set('status', statusFilter)
     if (startDate) params.set('startDate', startDate)
     if (endDate) params.set('endDate', endDate)
+    if (categoryFilter) params.set('categoryId', categoryFilter)
+    if (costCenterFilter) params.set('costCenterId', costCenterFilter)
+    if (paymentMethodFilter) params.set('paymentMethod', paymentMethodFilter)
+    if (valueMin) params.set('valueMin', String(Math.round(Number(valueMin) * 100)))
+    if (valueMax) params.set('valueMax', String(Math.round(Number(valueMax) * 100)))
 
     fetch(`/api/financeiro/contas-pagar?${params}`)
       .then(r => r.json())
@@ -121,10 +137,15 @@ export default function ContasPagarPage() {
         setTotalPages(d.totalPages ?? 1)
         setTotal(d.total ?? 0)
         if (d.summary) setSummary(d.summary)
+        if (d.filters) {
+          setFilterCategories(d.filters.categories ?? [])
+          setFilterCostCenters(d.filters.cost_centers ?? [])
+          setFilterPaymentMethods(d.filters.payment_methods ?? [])
+        }
       })
       .catch(() => toast.error('Erro ao carregar contas'))
       .finally(() => setLoading(false))
-  }, [page, search, statusFilter, startDate, endDate])
+  }, [page, search, statusFilter, startDate, endDate, categoryFilter, costCenterFilter, paymentMethodFilter, valueMin, valueMax])
 
   useEffect(() => { loadContas(); setSelected(new Set()) }, [loadContas])
 
@@ -223,14 +244,12 @@ export default function ContasPagarPage() {
   }
 
   function clearFilters() {
-    setSearch('')
-    setStatusFilter('')
-    setStartDate('')
-    setEndDate('')
-    setPage(1)
+    setSearch(''); setStatusFilter(''); setStartDate(''); setEndDate('')
+    setCategoryFilter(''); setCostCenterFilter(''); setPaymentMethodFilter('')
+    setValueMin(''); setValueMax(''); setPage(1)
   }
 
-  const hasFilters = search || statusFilter || startDate || endDate
+  const hasFilters = search || statusFilter || startDate || endDate || categoryFilter || costCenterFilter || paymentMethodFilter || valueMin || valueMax
   const contaToDelete = contas.find(c => c.id === deleteId)
   const contaBaixa = contas.find(c => c.id === baixaId)
 
@@ -331,7 +350,7 @@ export default function ContasPagarPage() {
           </div>
           <div className="min-w-[150px]">
             <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
-            <select
+            <select title="Filtrar por status"
               value={statusFilter}
               onChange={e => { setStatusFilter(e.target.value); setPage(1) }}
               className="w-full rounded-md border bg-white py-2 px-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
@@ -345,8 +364,7 @@ export default function ContasPagarPage() {
           </div>
           <div className="min-w-[140px]">
             <label className="block text-xs font-medium text-gray-500 mb-1">De</label>
-            <input
-              type="date"
+            <input type="date" title="Data inicial"
               value={startDate}
               onChange={e => { setStartDate(e.target.value); setPage(1) }}
               className="w-full rounded-md border bg-white py-2 px-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
@@ -354,15 +372,21 @@ export default function ContasPagarPage() {
           </div>
           <div className="min-w-[140px]">
             <label className="block text-xs font-medium text-gray-500 mb-1">Ate</label>
-            <input
-              type="date"
+            <input type="date" title="Data final"
               value={endDate}
               onChange={e => { setEndDate(e.target.value); setPage(1) }}
               className="w-full rounded-md border bg-white py-2 px-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
             />
           </div>
+          <button type="button" onClick={() => setShowAdvanced(!showAdvanced)}
+            className={cn('flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm', showAdvanced ? 'bg-blue-50 border-blue-300 text-blue-700' : 'text-gray-600 hover:bg-gray-50')}>
+            <Filter className="h-4 w-4" /> Filtros
+            {(categoryFilter || costCenterFilter || paymentMethodFilter || valueMin || valueMax) && (
+              <span className="bg-blue-600 text-white rounded-full h-4 w-4 text-[10px] flex items-center justify-center font-bold">!</span>
+            )}
+          </button>
           {hasFilters && (
-            <button
+            <button type="button"
               onClick={clearFilters}
               className="flex items-center gap-1 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50"
             >
@@ -370,6 +394,48 @@ export default function ContasPagarPage() {
             </button>
           )}
         </div>
+
+        {/* Filtros Avançados */}
+        {showAdvanced && (
+          <div className="mt-3 pt-3 border-t grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Categoria</label>
+              <select title="Filtrar por categoria" value={categoryFilter} onChange={e => { setCategoryFilter(e.target.value); setPage(1) }}
+                className="w-full rounded-md border bg-white py-2 px-3 text-sm">
+                <option value="">Todas</option>
+                {filterCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Centro de Custo</label>
+              <select title="Filtrar por centro de custo" value={costCenterFilter} onChange={e => { setCostCenterFilter(e.target.value); setPage(1) }}
+                className="w-full rounded-md border bg-white py-2 px-3 text-sm">
+                <option value="">Todos</option>
+                {filterCostCenters.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Forma Pagamento</label>
+              <select title="Filtrar por forma de pagamento" value={paymentMethodFilter} onChange={e => { setPaymentMethodFilter(e.target.value); setPage(1) }}
+                className="w-full rounded-md border bg-white py-2 px-3 text-sm">
+                <option value="">Todas</option>
+                {filterPaymentMethods.map(pm => <option key={pm} value={pm}>{pm}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Valor Min (R$)</label>
+              <input type="number" title="Valor minimo" step="0.01" min="0" placeholder="0.00" value={valueMin}
+                onChange={e => { setValueMin(e.target.value); setPage(1) }}
+                className="w-full rounded-md border bg-white py-2 px-3 text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Valor Max (R$)</label>
+              <input type="number" title="Valor maximo" step="0.01" min="0" placeholder="0.00" value={valueMax}
+                onChange={e => { setValueMax(e.target.value); setPage(1) }}
+                className="w-full rounded-md border bg-white py-2 px-3 text-sm" />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Table */}
@@ -599,7 +665,7 @@ export default function ContasPagarPage() {
             <div className="space-y-3">
               <div>
                 <label className="block text-sm text-gray-600 mb-1">Valor pago (R$) *</label>
-                <input
+                <input title="Valor pago"
                   type="number"
                   step="0.01"
                   min="0.01"
@@ -610,7 +676,7 @@ export default function ContasPagarPage() {
               </div>
               <div>
                 <label className="block text-sm text-gray-600 mb-1">Data do pagamento</label>
-                <input
+                <input title="Data do pagamento"
                   type="date"
                   value={baixaDate}
                   onChange={e => setBaixaDate(e.target.value)}
@@ -619,7 +685,7 @@ export default function ContasPagarPage() {
               </div>
               <div>
                 <label className="block text-sm text-gray-600 mb-1">Conta bancaria</label>
-                <select
+                <select title="Conta bancaria"
                   value={baixaAccountId}
                   onChange={e => setBaixaAccountId(e.target.value)}
                   className="w-full px-3 py-2 border rounded-md text-sm"
