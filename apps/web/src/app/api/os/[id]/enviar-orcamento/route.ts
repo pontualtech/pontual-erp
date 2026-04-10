@@ -97,7 +97,7 @@ const DEFAULT_QUOTE_TEMPLATE = `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Orcamento - {{company_name}}</title>
+  <title>Orcamento Pronto - {{company_name}}</title>
 </head>
 <body style="margin:0;padding:0;background-color:#f1f5f9;font-family:Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f1f5f9;padding:32px 0;">
@@ -113,9 +113,9 @@ const DEFAULT_QUOTE_TEMPLATE = `<!DOCTYPE html>
                   <td align="center">
                     <div style="width:64px;height:64px;background:rgba(255,255,255,0.15);border-radius:16px;margin:0 auto 12px;line-height:64px;font-size:28px;">&#128736;</div>
                     <h1 style="margin:0 0 6px;color:#ffffff;font-size:24px;font-weight:800;letter-spacing:-0.3px;">{{company_name}}</h1>
-                    <p style="margin:0 0 4px;color:rgba(255,255,255,0.7);font-size:12px;">Assistencia Tecnica em Informatica</p>
+                    <p style="margin:0 0 4px;color:rgba(255,255,255,0.7);font-size:12px;">Assistencia Tecnica Profissional</p>
                     <div style="display:inline-block;background:rgba(255,255,255,0.2);border-radius:20px;padding:6px 20px;margin-top:10px;">
-                      <p style="margin:0;color:#ffffff;font-size:14px;font-weight:700;letter-spacing:0.3px;">DIAGNOSTICO CONCLUIDO</p>
+                      <p style="margin:0;color:#ffffff;font-size:14px;font-weight:700;letter-spacing:0.3px;">SEU ORCAMENTO ESTA PRONTO!</p>
                     </div>
                   </td>
                 </tr>
@@ -130,21 +130,19 @@ const DEFAULT_QUOTE_TEMPLATE = `<!DOCTYPE html>
               <p style="margin:0 0 16px;font-size:17px;color:#1e293b;line-height:1.4;">
                 Ola <strong>{{customer_name}}</strong>,
               </p>
+              <p style="margin:0 0 8px;font-size:14px;color:#475569;line-height:1.7;">
+                Temos uma boa noticia! Nossos tecnicos finalizaram a analise do seu
+                <strong style="color:#1e293b;">{{equipment}}</strong> (OS #{{os_number}}) e seu orcamento ja esta disponivel.
+              </p>
               <p style="margin:0 0 24px;font-size:14px;color:#475569;line-height:1.7;">
-                Nossos tecnicos finalizaram a analise do seu equipamento
-                <strong style="color:#1e293b;">{{equipment}}</strong> (OS #{{os_number}}) e preparamos o orcamento completo para voce.
+                Acesse seu <strong style="color:#1e40af;">Painel do Cliente</strong> para ver todos os detalhes, aprovar o servico e acompanhar cada etapa em tempo real.
               </p>
 
-              <!-- LAUDO TECNICO -->
-              {{laudo_section}}
-
-              <!-- Items table -->
-              {{items_table}}
-
-              <!-- Installment info (DESTAQUE) -->
+              <!-- VALOR DESTAQUE -->
               <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:20px;">
                 <tr>
                   <td style="background:linear-gradient(135deg,#1e40af 0%,#2563eb 100%);border-radius:12px;padding:28px 24px;text-align:center;">
+                    <p style="margin:0 0 4px;font-size:12px;color:rgba(255,255,255,0.7);text-transform:uppercase;letter-spacing:1px;font-weight:600;">Investimento</p>
                     <p style="margin:0 0 8px;font-size:30px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">
                       {{installment_info}}
                     </p>
@@ -158,127 +156,121 @@ const DEFAULT_QUOTE_TEMPLATE = `<!DOCTYPE html>
               <!-- Info pills -->
               <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:20px;">
                 <tr>
-                  <td width="50%" style="padding:0 6px 0 0;">
-                    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px 16px;text-align:center;">
+                  <td width="33%" style="padding:0 4px 0 0;">
+                    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px 12px;text-align:center;">
                       <p style="margin:0 0 2px;font-size:11px;color:#3b82f6;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Prazo</p>
-                      <p style="margin:0;font-size:14px;color:#1e40af;font-weight:600;">{{execution_days}}</p>
+                      <p style="margin:0;font-size:13px;color:#1e40af;font-weight:600;">{{execution_days}}</p>
                     </div>
                   </td>
-                  <td width="50%" style="padding:0 0 0 6px;">
-                    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 16px;text-align:center;">
+                  <td width="33%" style="padding:0 4px;">
+                    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 12px;text-align:center;">
                       <p style="margin:0 0 2px;font-size:11px;color:#16a34a;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Garantia</p>
-                      <p style="margin:0;font-size:14px;color:#15803d;font-weight:600;">{{warranty_period}}</p>
+                      <p style="margin:0;font-size:13px;color:#15803d;font-weight:600;">{{warranty_period}}</p>
+                    </div>
+                  </td>
+                  <td width="33%" style="padding:0 0 0 4px;">
+                    <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:14px 12px;text-align:center;">
+                      <p style="margin:0 0 2px;font-size:11px;color:#d97706;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Validade</p>
+                      <p style="margin:0;font-size:13px;color:#92400e;font-weight:600;">{{quote_validity}}</p>
                     </div>
                   </td>
                 </tr>
               </table>
 
+              <!-- MOTIVATIONAL TRIGGER + PORTAL CTA -->
+              <div style="background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%);border-radius:16px;padding:32px 24px;margin-bottom:24px;text-align:center;">
+                <div style="width:56px;height:56px;background:linear-gradient(135deg,#22c55e,#16a34a);border-radius:14px;margin:0 auto 16px;line-height:56px;font-size:24px;">&#128640;</div>
+                <p style="margin:0 0 8px;font-size:20px;font-weight:800;color:#ffffff;letter-spacing:-0.3px;">
+                  Seu equipamento pode voltar a funcionar!
+                </p>
+                <p style="margin:0 0 20px;font-size:14px;color:#94a3b8;line-height:1.6;">
+                  No seu Painel voce confere o diagnostico completo, todos os servicos e pecas detalhados, e aprova com apenas um clique.
+                </p>
+
+                <!-- Checklist motivacional -->
+                <table cellpadding="0" cellspacing="0" style="margin:0 auto 24px;text-align:left;">
+                  <tr>
+                    <td style="padding:4px 0;font-size:13px;color:#22c55e;">&#10003;</td>
+                    <td style="padding:4px 0 4px 8px;font-size:13px;color:#e2e8f0;">Veja o laudo tecnico detalhado</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:4px 0;font-size:13px;color:#22c55e;">&#10003;</td>
+                    <td style="padding:4px 0 4px 8px;font-size:13px;color:#e2e8f0;">Confira todos os servicos e pecas</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:4px 0;font-size:13px;color:#22c55e;">&#10003;</td>
+                    <td style="padding:4px 0 4px 8px;font-size:13px;color:#e2e8f0;">Aprove o servico em um clique</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:4px 0;font-size:13px;color:#22c55e;">&#10003;</td>
+                    <td style="padding:4px 0 4px 8px;font-size:13px;color:#e2e8f0;">Acompanhe cada etapa em tempo real</td>
+                  </tr>
+                </table>
+
+                <table cellpadding="0" cellspacing="0" style="margin:0 auto;">
+                  <tr>
+                    <td style="background:linear-gradient(135deg,#22c55e,#16a34a);border-radius:12px;box-shadow:0 4px 16px rgba(34,197,94,0.4);">
+                      <a href="{{portal_os_link}}" target="_blank"
+                         style="display:inline-block;color:#ffffff;text-decoration:none;font-size:17px;font-weight:800;padding:18px 48px;letter-spacing:0.3px;">
+                        ACESSAR MEU PAINEL
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+                <p style="font-size:11px;color:#64748b;margin:14px 0 0;">Primeiro acesso? Use seu CPF/CNPJ como login e crie sua senha.</p>
+              </div>
+
+              <!-- Urgencia sutil -->
+              <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:14px 16px;margin-bottom:24px;text-align:center;">
+                <p style="margin:0;font-size:13px;color:#92400e;line-height:1.5;">
+                  <strong>&#9200; Orcamento valido por {{quote_validity}}.</strong> Aprovando dentro do prazo, garantimos as condicoes e priorizamos seu atendimento.
+                </p>
+              </div>
+
               <!-- Eco tip -->
               <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 16px;margin-bottom:24px;">
                 <p style="margin:0;font-size:13px;color:#166534;line-height:1.6;">
-                  <strong>Voce sabia?</strong> Reparar seu equipamento custa ate 70% menos do que comprar um novo e ainda ajuda a reduzir o lixo eletronico.
+                  <strong>&#127793; Voce sabia?</strong> Reparar seu equipamento custa ate 70% menos do que comprar um novo e ainda ajuda a reduzir o lixo eletronico.
                 </p>
               </div>
 
-              <!-- Validity -->
-              <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:14px 16px;margin-bottom:28px;text-align:center;">
-                <p style="margin:0;font-size:14px;color:#92400e;font-weight:700;">
-                  ORCAMENTO VALIDO POR {{quote_validity}}
+              <!-- Conditions (compact) -->
+              <div style="border-top:2px solid #e2e8f0;padding-top:20px;margin-bottom:24px;">
+                <p style="margin:0 0 12px;font-size:13px;color:#1e293b;font-weight:700;">Formas de pagamento</p>
+                <p style="margin:0 0 16px;font-size:13px;color:#475569;line-height:1.6;">{{payment_conditions}}</p>
+                <table width="100%" cellpadding="0" cellspacing="0" style="font-size:12px;color:#64748b;">
+                  <tr>
+                    <td style="padding:4px 0;">PIX: {{company_pix}}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:4px 0;">Banco: {{company_bank}}</td>
+                  </tr>
+                </table>
+              </div>
+
+              <!-- Suporte DISCRETO -->
+              <div style="text-align:center;margin-bottom:24px;padding-top:8px;border-top:1px solid #f1f5f9;">
+                <p style="margin:0;font-size:11px;color:#94a3b8;">
+                  Precisa de ajuda? <a href="https://wa.me/{{company_whatsapp}}" target="_blank" style="color:#94a3b8;text-decoration:underline;">Fale conosco</a>
                 </p>
               </div>
 
-              <!-- CTA Button -->
-              <div style="text-align:center;margin-bottom:16px;">
-                <table cellpadding="0" cellspacing="0" style="margin:0 auto;">
-                  <tr>
-                    <td style="background:#22c55e;border-radius:10px;">
-                      <a href="{{approval_link}}" target="_blank"
-                         style="display:inline-block;color:#ffffff;text-decoration:none;font-size:17px;font-weight:800;padding:18px 48px;letter-spacing:0.3px;">
-                        APROVAR ORCAMENTO
-                      </a>
-                    </td>
-                  </tr>
-                </table>
-              </div>
-
-              <!-- WhatsApp -->
-              <div style="text-align:center;margin-bottom:32px;">
-                <p style="margin:0 0 10px;font-size:13px;color:#64748b;">Prefere falar com a gente?</p>
-                <table cellpadding="0" cellspacing="0" style="margin:0 auto;">
-                  <tr>
-                    <td style="background:#25d366;border-radius:8px;">
-                      <a href="https://wa.me/{{company_whatsapp}}" target="_blank"
-                         style="display:inline-block;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;padding:12px 28px;">
-                        Fale com nosso suporte
-                      </a>
-                    </td>
-                  </tr>
-                </table>
-              </div>
-
-              <!-- Portal do Cliente -->
-              <div style="background:#eff6ff;border:2px solid #3b82f6;border-radius:12px;padding:20px;margin-bottom:24px;text-align:center;">
-                <p style="font-size:14px;font-weight:700;color:#1e40af;margin:0 0 6px;">Acompanhe online pelo Portal do Cliente</p>
-                <p style="font-size:12px;color:#475569;margin:0 0 12px;">Consulte o status, aprove orcamentos e veja o historico completo.</p>
-                <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr>
-                  <td style="background:#1e40af;border-radius:8px;">
-                    <a href="{{portal_os_link}}" target="_blank" style="display:inline-block;color:#ffffff;text-decoration:none;font-size:13px;font-weight:700;padding:10px 24px;">ACESSAR MINHA OS</a>
-                  </td>
-                </tr></table>
-                <p style="font-size:11px;color:#94a3b8;margin:10px 0 0;">Primeiro acesso? Use seu CPF/CNPJ como login e crie sua senha.</p>
-              </div>
-
-              <!-- Conditions -->
-              <div style="border-top:2px solid #e2e8f0;padding-top:24px;margin-bottom:24px;">
-                <h3 style="margin:0 0 16px;font-size:15px;color:#1e293b;font-weight:700;">Condicoes</h3>
-                <table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;color:#475569;">
-                  <tr>
-                    <td style="padding:8px 0;font-weight:600;width:140px;vertical-align:top;color:#1e293b;">Pagamento:</td>
-                    <td style="padding:8px 0;">{{payment_conditions}}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding:8px 0;font-weight:600;vertical-align:top;color:#1e293b;">Prazo execucao:</td>
-                    <td style="padding:8px 0;">{{execution_days}} apos aprovacao</td>
-                  </tr>
-                  <tr>
-                    <td style="padding:8px 0;font-weight:600;vertical-align:top;color:#1e293b;">Garantia:</td>
-                    <td style="padding:8px 0;">{{warranty_period}} em todos os servicos realizados</td>
-                  </tr>
-                  <tr>
-                    <td style="padding:8px 0;font-weight:600;vertical-align:top;color:#1e293b;">Validade:</td>
-                    <td style="padding:8px 0;">{{quote_validity}}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding:8px 0;font-weight:600;vertical-align:top;color:#1e293b;">PIX:</td>
-                    <td style="padding:8px 0;">{{company_pix}}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding:8px 0;font-weight:600;vertical-align:top;color:#1e293b;">Banco:</td>
-                    <td style="padding:8px 0;">{{company_bank}}</td>
-                  </tr>
-                </table>
-              </div>
             </td>
           </tr>
 
           <!-- FOOTER -->
           <tr>
-            <td style="background:#1e293b;padding:28px 32px;text-align:center;">
-              <p style="margin:0 0 6px;font-size:15px;font-weight:700;color:#ffffff;">{{company_name}}</p>
-              <p style="margin:0 0 4px;font-size:12px;color:#94a3b8;">Assistencia Tecnica em Informatica</p>
-              <p style="margin:0 0 4px;font-size:12px;color:#94a3b8;">{{company_address}}</p>
-              <p style="margin:0 0 4px;font-size:12px;color:#94a3b8;">CNPJ: {{company_cnpj}}</p>
-              <p style="margin:0 0 4px;font-size:12px;color:#94a3b8;">Tel: {{company_phone}} | {{company_email}}</p>
-              <p style="margin:0 0 12px;font-size:12px;color:#94a3b8;">{{company_website}}</p>
-              <div style="border-top:1px solid #334155;padding-top:12px;">
-                <p style="margin:0;font-size:11px;color:#64748b;">Garantia de 3 meses em todos os servicos</p>
-              </div>
+            <td style="background:#1e293b;padding:24px 32px;text-align:center;">
+              <p style="margin:0 0 4px;font-size:14px;font-weight:700;color:#ffffff;">{{company_name}}</p>
+              <p style="margin:0 0 4px;font-size:11px;color:#64748b;">{{company_address}}</p>
+              <p style="margin:0 0 4px;font-size:11px;color:#64748b;">CNPJ: {{company_cnpj}} | Tel: {{company_phone}}</p>
+              <p style="margin:0;font-size:11px;color:#64748b;">{{company_email}} | {{company_website}}</p>
             </td>
           </tr>
 
         </table>
 
-        <!-- Unsubscribe / info -->
+        <!-- Footer info -->
         <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
           <tr>
             <td style="padding:16px 0;text-align:center;">

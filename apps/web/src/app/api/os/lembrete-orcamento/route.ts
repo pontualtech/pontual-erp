@@ -74,27 +74,27 @@ const DEFAULT_QUOTE_REMINDER_TEMPLATE = `<!DOCTYPE html>
                   </td>
                 </tr>
               </table>
-              <div style="text-align:center;margin:0 0 16px;">
-                <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr><td style="background:#22c55e;border-radius:10px;">
-                  <a href="{{approval_link}}" style="display:inline-block;color:#ffffff;text-decoration:none;font-size:16px;font-weight:800;padding:16px 40px;">
-                    APROVAR ORCAMENTO
-                  </a>
-                </td></tr></table>
+              <!-- MOTIVATIONAL CTA - Portal -->
+              <div style="background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%);border-radius:14px;padding:28px 20px;margin-bottom:20px;text-align:center;">
+                <p style="margin:0 0 8px;font-size:17px;font-weight:800;color:#ffffff;">Seu equipamento esta esperando!</p>
+                <p style="margin:0 0 20px;font-size:13px;color:#94a3b8;line-height:1.6;">
+                  Acesse seu Painel para ver o diagnostico completo, aprovar o servico e acompanhar tudo em tempo real.
+                </p>
+                <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr>
+                  <td style="background:linear-gradient(135deg,#22c55e,#16a34a);border-radius:10px;box-shadow:0 4px 16px rgba(34,197,94,0.4);">
+                    <a href="{{portal_os_link}}" style="display:inline-block;color:#ffffff;text-decoration:none;font-size:16px;font-weight:800;padding:16px 40px;">
+                      ACESSAR MEU PAINEL
+                    </a>
+                  </td>
+                </tr></table>
               </div>
               <div style="text-align:center;margin:0 0 24px;">
-                <a href="{{rejection_link}}" style="color:#dc2626;font-size:13px;font-weight:600;text-decoration:underline;">
-                  Recusar orcamento
+                <a href="{{rejection_link}}" style="color:#dc2626;font-size:12px;text-decoration:underline;">
+                  Nao tenho interesse
                 </a>
               </div>
-              <div style="text-align:center;margin:0 0 16px;">
-                <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr><td style="background:#25d366;border-radius:8px;">
-                  <a href="https://wa.me/551126263841" style="display:inline-block;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 28px;">
-                    Fale com nosso suporte
-                  </a>
-                </td></tr></table>
-              </div>
-              <p style="margin:16px 0 0;font-size:12px;color:#94a3b8;text-align:center;">
-                Responda este email ou ligue para {{company_phone}} em caso de duvidas.
+              <p style="margin:0;font-size:11px;color:#94a3b8;text-align:center;">
+                Precisa de ajuda? <a href="https://wa.me/{{company_whatsapp}}" style="color:#94a3b8;text-decoration:underline;">Fale conosco</a> | {{company_phone}}
               </p>
             </td>
           </tr>
@@ -285,6 +285,9 @@ export async function sendQuoteReminders(companyId: string, userId: string, spec
       const equipment = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ')
       const itemsTableHtml = buildItemsTableHtml(os.service_order_items)
 
+      const whatsapp = (settingsMap['company.whatsapp'] || settingsMap['whatsapp'] || settingsMap['company.phone'] || '').replace(/\D/g, '')
+      const portalOsLink = `${appUrl}/portal/${company.slug}/os/${os.id}`
+
       const vars: Record<string, string> = {
         customer_name: customer.legal_name || '—',
         os_number: String(os.os_number),
@@ -294,8 +297,10 @@ export async function sendQuoteReminders(companyId: string, userId: string, spec
         days_waiting: String(os.days_waiting),
         approval_link: approvalLink,
         rejection_link: rejectionLink,
+        portal_os_link: portalOsLink,
         company_name: company.name || 'Empresa',
         company_phone: settingsMap['company.phone'] || settingsMap['telefone'] || '—',
+        company_whatsapp: whatsapp,
         items_table: itemsTableHtml,
       }
 
