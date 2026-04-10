@@ -15,8 +15,8 @@ export interface InterConfig {
 export interface ItauConfig {
   clientId: string
   clientSecret: string
-  pfxBase64: string
-  pfxPassword: string
+  certPem: string      // .crt content (PEM or base64)
+  keyPem: string       // .key content (PEM or base64)
   agencia: string
   conta: string
   carteira: string

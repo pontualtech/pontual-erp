@@ -236,10 +236,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Buscar credenciais do Itau
+    // Itau uses .crt + .key (not .pfx) — stored in Settings as itau.cert_pem and itau.key_pem
     let itauConfig: any = undefined
     if (providerName === 'itau') {
-      const fiscalCfg = await prisma.fiscalConfig.findUnique({ where: { company_id: user.companyId } })
-      const settings = (fiscalCfg?.settings || {}) as Record<string, any>
       const itauSettings = await prisma.setting.findMany({
         where: { company_id: user.companyId, key: { startsWith: 'itau.' } },
       })
@@ -250,23 +249,21 @@ export async function POST(request: NextRequest) {
       const clientSecret = itauMap['itau.client_secret'] || process.env.ITAU_CLIENT_SECRET || ''
 
       if (!clientId || !clientSecret) {
-        return NextResponse.json({ error: 'Client ID e Client Secret do Itau nao configurados. Va em Financeiro > CNAB > Configuracao.' }, { status: 400 })
-      }
-      if (!settings.certificate_base64) {
-        return NextResponse.json({ error: 'Certificado A1 nao instalado. Va em Configuracoes > Certificado A1.' }, { status: 400 })
+        return NextResponse.json({ error: 'Client ID e Client Secret do Itau nao configurados. Va em Configuracoes > Boletos CNAB.' }, { status: 400 })
       }
 
-      let certPassword = ''
-      if (settings.certificate_password) {
-        const { decrypt } = await import('@/lib/encryption')
-        certPassword = decrypt(settings.certificate_password)
+      const certPem = itauMap['itau.cert_pem'] || process.env.ITAU_CERT_PEM || ''
+      const keyPem = itauMap['itau.key_pem'] || process.env.ITAU_KEY_PEM || ''
+
+      if (!certPem || !keyPem) {
+        return NextResponse.json({ error: 'Certificado (.crt) e chave privada (.key) do Itau nao configurados. Va em Configuracoes > Boletos CNAB.' }, { status: 400 })
       }
 
       itauConfig = {
         clientId,
         clientSecret,
-        pfxBase64: settings.certificate_base64,
-        pfxPassword: certPassword,
+        certPem,
+        keyPem,
         agencia: itauMap['itau.agencia'] || '0001',
         conta: itauMap['itau.conta'] || '',
         carteira: itauMap['itau.carteira'] || '109',
