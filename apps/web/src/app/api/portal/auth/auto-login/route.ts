@@ -19,28 +19,41 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Token invalido ou expirado' }, { status: 401 })
     }
 
-    // Validate customer still exists and has access
-    const access = await prisma.customerAccess.findFirst({
+    // Validate customer exists
+    const customer = await prisma.customers.findFirst({
+      where: { id: payload.cid, company_id: payload.mid, deleted_at: null },
+      select: { id: true, legal_name: true, trade_name: true, document_number: true, email: true },
+    })
+
+    if (!customer) {
+      return NextResponse.json({ error: 'Cliente nao encontrado' }, { status: 404 })
+    }
+
+    // Ensure customerAccess exists (auto-create if needed for magic link users)
+    let access = await prisma.customerAccess.findFirst({
       where: { customer_id: payload.cid, company_id: payload.mid },
-      include: {
-        customers: { select: { id: true, legal_name: true, trade_name: true, document_number: true, email: true } },
-      },
     })
 
     if (!access) {
-      return NextResponse.json({ error: 'Acesso nao encontrado' }, { status: 403 })
+      // Auto-provision portal access for magic link (no password needed)
+      access = await prisma.customerAccess.create({
+        data: {
+          customer_id: payload.cid,
+          company_id: payload.mid,
+          password_hash: '', // no password — magic link only
+          last_login_at: new Date(),
+        },
+      })
+    } else {
+      await prisma.customerAccess.update({
+        where: { id: access.id },
+        data: { last_login_at: new Date() },
+      })
     }
-
-    // Update last login
-    await prisma.customerAccess.update({
-      where: { id: access.id },
-      data: { last_login_at: new Date() },
-    })
 
     // Create session token (7 days) and set cookie
     const sessionToken = createPortalToken(payload.cid, payload.mid)
 
-    const customer = access.customers
     const company = await prisma.company.findFirst({
       where: { id: payload.mid },
       select: { id: true, name: true, slug: true },
