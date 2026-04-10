@@ -262,15 +262,21 @@ export async function POST(req: NextRequest, { params }: Params) {
           },
         })
 
-        // Parcelas — só para boleto parcelado (não para cartão, onde a Rede paga tudo junto)
-        if (installment_count > 1 && !isCard) {
+        // Parcelas — gerar para qualquer forma quando parcelado (cartão, boleto, etc.)
+        if (installment_count > 1) {
           const baseAmount = Math.floor(totalAmount / installment_count)
           const remainder = totalAmount - baseAmount * installment_count
           const installments = []
           const baseDate = new Date()
           for (let i = 0; i < installment_count; i++) {
             const instDueDate = new Date(baseDate)
-            instDueDate.setDate(instDueDate.getDate() + 30 * (i + 1))
+            if (isCard) {
+              // Cartão: operadora repassa em D+30 por parcela (padrão mercado)
+              instDueDate.setDate(instDueDate.getDate() + 30 * (i + 1))
+            } else {
+              // Boleto/outros: vencimento a cada 30 dias
+              instDueDate.setDate(instDueDate.getDate() + 30 * (i + 1))
+            }
             installments.push({
               company_id: user.companyId,
               parent_type: 'RECEIVABLE',
