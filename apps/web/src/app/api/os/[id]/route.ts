@@ -139,12 +139,16 @@ export async function PUT(req: NextRequest, { params }: Params) {
     const body = await req.json()
     const validated = updateOSSchema.parse(body)
 
-    // Técnico: pode se atribuir a qualquer OS, mas só editar campos de OS atribuída a ele
+    // Técnico: pode se atribuir a OS sem dono, mas não pode desatribuir
     if (isTecnico) {
       const isAssigningToSelf = validated.technician_id === user.id && !existing.technician_id
       const isOwnOS = existing.technician_id === user.id
       if (!isAssigningToSelf && !isOwnOS) {
         return error('Voce so pode editar OS atribuidas a voce', 403)
+      }
+      // Técnico não pode desatribuir (remover técnico ou trocar para outro) — só admin
+      if (isOwnOS && validated.technician_id !== undefined && validated.technician_id !== user.id) {
+        return error('Somente o administrador pode desatribuir ou trocar o tecnico', 403)
       }
     }
 
