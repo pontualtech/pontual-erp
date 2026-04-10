@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Validate customer exists
-    const customer = await prisma.customers.findFirst({
+    const customer = await prisma.customer.findFirst({
       where: { id: payload.cid, company_id: payload.mid, deleted_at: null },
       select: { id: true, legal_name: true, trade_name: true, document_number: true, email: true },
     })
