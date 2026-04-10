@@ -17,6 +17,11 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     let { nome, documento, telefone, email, cep, endereco, equipamento, marca, modelo, defeito, observacoes, origem } = body
 
+    // Normalizar strings vazias para undefined
+    if (typeof equipamento === 'string' && !equipamento.trim()) equipamento = undefined
+    if (typeof defeito === 'string' && !defeito.trim()) defeito = undefined
+    if (typeof nome === 'string' && !nome.trim()) nome = undefined
+
     if (!defeito && !equipamento) return botError('Campos "equipamento" e "defeito" sao obrigatorios')
 
     // Formatar no padrão do ERP
