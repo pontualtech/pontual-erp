@@ -15,7 +15,8 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (result instanceof NextResponse) return result
     const user = result
 
-    const { toStatusId, notes, payment_method, installment_count: rawInstallmentCount, technician_id: bodyTechnicianId, notify_whatsapp, notify_email } = await req.json()
+    const body = await req.json()
+    const { toStatusId, notes, payment_method, installment_count: rawInstallmentCount, technician_id: bodyTechnicianId, notify_whatsapp, notify_email, _resend_notify_only } = body
     // Notification flags: default true for backward compat, but frontend can set false
     const shouldNotifyWhatsApp = notify_whatsapp !== false
     const shouldNotifyEmail = notify_email !== false
@@ -34,6 +35,51 @@ export async function POST(req: NextRequest, { params }: Params) {
       where: { id: toStatusId, company_id: user.companyId, module: 'os' },
     })
     if (!toStatus) return error('Status de destino não encontrado', 404)
+
+    // ── RESEND ONLY: skip transition logic, just send notifications ──
+    if (_resend_notify_only) {
+      const currentStatus = await prisma.moduleStatus.findFirst({ where: { id: os.status_id, company_id: user.companyId, module: 'os' } })
+
+      // Email
+      if (shouldNotifyEmail && os.customers?.email) {
+        const statusMap: Record<string, string> = {
+          'Coletar': 'Recebido', 'Orcar': 'Em Analise', 'Negociar': 'Em Analise', 'LAUDO': 'Em Analise',
+          'Aguardando Aprovacao': 'Aguardando sua Aprovacao', 'Aprovado': 'Aprovado - Em Reparo',
+          'Em Execucao': 'Reparo em Andamento', 'Aguardando Peca': 'Aguardando Pecas',
+          'Entregar Reparado': 'Pronto para Retirada', 'Entregue': 'Entregue', 'Cancelada': 'Cancelada',
+        }
+        const friendlyTo = statusMap[toStatus.name] || toStatus.name
+        const companyData = await prisma.company.findUnique({ where: { id: user.companyId }, select: { name: true, slug: true } }).catch(() => null)
+        const osNum = String(os.os_number).padStart(4, '0')
+        sendEmail(
+          os.customers.email,
+          `OS #${osNum} — ${friendlyTo} — ${companyData?.name || 'Empresa'}`,
+          `<p>Sua OS #${osNum} foi atualizada para: <strong>${friendlyTo}</strong></p>`,
+        ).catch(() => {})
+      }
+
+      // WhatsApp
+      const customerPhone = os.customers?.mobile || os.customers?.phone
+      if (shouldNotifyWhatsApp && customerPhone) {
+        const templateKey = getTemplateForStatus(toStatus.name)
+        if (templateKey) {
+          const waCompany = await prisma.company.findUnique({ where: { id: user.companyId }, select: { name: true, slug: true } }).catch(() => null)
+          const templateFn = whatsappTemplates[templateKey]
+          const msg = templateFn({
+            customerName: os.customers?.legal_name?.split(' ')[0] || 'Cliente',
+            osNumber: os.os_number,
+            customerDoc: os.customers?.document_number || undefined,
+            companyName: waCompany?.name || 'Empresa',
+            companySlug: waCompany?.slug || 'pontualtech',
+            osId: os.id,
+            value: os.total_cost || undefined,
+          })
+          void sendWhatsApp(customerPhone, msg).catch(() => {})
+        }
+      }
+
+      return success({ id: os.id, resent: true })
+    }
 
     // Validate current status
     const currentStatus = await prisma.moduleStatus.findFirst({

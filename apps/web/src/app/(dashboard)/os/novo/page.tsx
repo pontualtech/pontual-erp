@@ -50,7 +50,7 @@ export default function NovaOSPage() {
     internal_notes: '',
     priority: 'MEDIUM',
     os_type: 'AVULSO',
-    os_location: 'EXTERNO',
+    os_location: '',
     technician_id: '',
     estimated_delivery: '',
   })
@@ -194,6 +194,7 @@ export default function NovaOSPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     const newErrors: Record<string, string> = {}
+    if (!form.os_location) newErrors.os_location = 'Selecione o local do equipamento'
     if (!form.customer_id) newErrors.customer_id = 'Selecione um cliente'
     if (!form.equipment_type) newErrors.equipment_type = 'Informe o tipo de equipamento'
     if (!form.reported_issue) newErrors.reported_issue = 'Descreva o problema relatado'
