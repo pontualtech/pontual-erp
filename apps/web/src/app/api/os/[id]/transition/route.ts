@@ -262,21 +262,17 @@ export async function POST(req: NextRequest, { params }: Params) {
           },
         })
 
-        // Parcelas — gerar para qualquer forma quando parcelado (cartão, boleto, etc.)
+        // Parcelas — gerar para qualquer forma quando parcelado
         if (installment_count > 1) {
           const baseAmount = Math.floor(totalAmount / installment_count)
           const remainder = totalAmount - baseAmount * installment_count
           const installments = []
           const baseDate = new Date()
+          // Intervalo entre parcelas: usar days_to_receive da config da operadora, ou 30 dias padrão
+          const intervalDias = (isCard && daysToReceive > 0) ? daysToReceive : 30
           for (let i = 0; i < installment_count; i++) {
             const instDueDate = new Date(baseDate)
-            if (isCard) {
-              // Cartão: operadora repassa em D+30 por parcela (padrão mercado)
-              instDueDate.setDate(instDueDate.getDate() + 30 * (i + 1))
-            } else {
-              // Boleto/outros: vencimento a cada 30 dias
-              instDueDate.setDate(instDueDate.getDate() + 30 * (i + 1))
-            }
+            instDueDate.setDate(instDueDate.getDate() + intervalDias * (i + 1))
             installments.push({
               company_id: user.companyId,
               parent_type: 'RECEIVABLE',
