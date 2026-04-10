@@ -190,32 +190,67 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between border-b px-5 py-3">
             <h2 className="font-semibold text-gray-900 flex items-center gap-2">
               <Bell className="h-4 w-4 text-amber-500" />
-              Avisos
+              Avisos ({avisos.length})
             </h2>
             <div className="flex items-center gap-2">
+              <button type="button" onClick={async () => {
+                await Promise.all(avisos.map(a => fetch(`/api/avisos/${a.id}/read`, { method: 'POST' })))
+                toast.success('Todos marcados como lidos')
+                loadAvisos()
+              }}
+                className="text-xs text-gray-500 hover:text-blue-600">Marcar todos como lidos</button>
               {isAdmin && (
-                <button type="button" onClick={() => setShowAvisoModal(true)}
-                  className="flex items-center gap-1 rounded bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700">
-                  <Plus className="h-3 w-3" /> Novo Aviso
-                </button>
+                <>
+                  <button type="button" onClick={async () => {
+                    if (!confirm(`Excluir todos os ${avisos.length} avisos?`)) return
+                    await Promise.all(avisos.map(a => fetch(`/api/avisos/${a.id}`, { method: 'DELETE' })))
+                    toast.success('Todos os avisos excluidos')
+                    loadAvisos()
+                  }}
+                    className="text-xs text-red-500 hover:text-red-700">Excluir todos</button>
+                  <button type="button" onClick={() => setShowAvisoModal(true)}
+                    className="flex items-center gap-1 rounded bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700">
+                    <Plus className="h-3 w-3" /> Novo
+                  </button>
+                </>
               )}
-              <Link href="/avisos" className="text-sm text-blue-600 hover:underline">Ver todos</Link>
             </div>
           </div>
           <div className="divide-y">
-            {avisos.slice(0, 3).map(aviso => (
-              <div key={aviso.id} className="px-5 py-3">
-                <div className="flex items-center gap-2 flex-wrap">
-                  {aviso.pinned && <Pin className="h-3 w-3 text-amber-500" />}
-                  <span className="font-medium text-gray-900">{aviso.title}</span>
-                  <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', priorityStyle[aviso.priority] || 'bg-gray-100 text-gray-600')}>
-                    {priorityLabel[aviso.priority] || aviso.priority}
-                  </span>
+            {avisos.slice(0, 5).map(aviso => (
+              <div key={aviso.id} className="px-5 py-3 flex items-start gap-3 group">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {aviso.pinned && <Pin className="h-3 w-3 text-amber-500" />}
+                    <span className="font-medium text-gray-900">{aviso.title}</span>
+                    <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', priorityStyle[aviso.priority] || 'bg-gray-100 text-gray-600')}>
+                      {priorityLabel[aviso.priority] || aviso.priority}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-sm text-gray-600 line-clamp-2">{aviso.message}</p>
+                  <div className="mt-1 flex items-center gap-2 text-xs text-gray-400">
+                    {aviso.author_name && <span>{aviso.author_name}</span>}
+                    <span>{formatAvisoDate(aviso.created_at)}</span>
+                  </div>
                 </div>
-                <p className="mt-0.5 text-sm text-gray-600 line-clamp-1">{aviso.message}</p>
-                <div className="mt-1 flex items-center gap-2 text-xs text-gray-400">
-                  {aviso.author_name && <span>{aviso.author_name}</span>}
-                  <span>{formatAvisoDate(aviso.created_at)}</span>
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                  <button type="button" title="Marcar como lido" onClick={async (e) => {
+                    e.stopPropagation()
+                    await fetch(`/api/avisos/${aviso.id}/read`, { method: 'POST' })
+                    toast.success('Marcado como lido')
+                  }} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-600">
+                    <Clock className="h-3.5 w-3.5" />
+                  </button>
+                  {isAdmin && (
+                    <button type="button" title="Excluir aviso" onClick={async (e) => {
+                      e.stopPropagation()
+                      await fetch(`/api/avisos/${aviso.id}`, { method: 'DELETE' })
+                      loadAvisos()
+                      toast.success('Aviso excluido')
+                    }} className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-600">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
