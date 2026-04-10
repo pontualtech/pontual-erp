@@ -70,8 +70,8 @@ const DEFAULT_QUOTE_REMINDER_TEMPLATE = `<!DOCTYPE html>
               <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:24px;">
                 <tr>
                   <td style="background:linear-gradient(135deg,#1e40af 0%,#2563eb 100%);border-radius:10px;padding:20px;text-align:center;">
-                    <p style="margin:0 0 4px;font-size:12px;color:rgba(255,255,255,0.7);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Valor Total</p>
-                    <p style="margin:0;font-size:28px;font-weight:800;color:#ffffff;">{{total_cost}}</p>
+                    <p style="margin:0 0 4px;font-size:12px;color:rgba(255,255,255,0.7);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Orcamento Pendente</p>
+                    <p style="margin:0;font-size:18px;font-weight:800;color:#ffffff;">Acesse o painel para ver os valores</p>
                   </td>
                 </tr>
               </table>

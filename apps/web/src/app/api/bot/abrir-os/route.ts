@@ -15,7 +15,12 @@ export async function POST(req: NextRequest) {
     if (auth instanceof NextResponse) return auth
 
     const body = await req.json()
+    // Accept aliases from n8n/external systems
     let { nome, documento, telefone, email, cep, endereco, equipamento, marca, modelo, defeito, observacoes, origem } = body
+    nome = nome || body.cliente_nome || body.name || body.customer_name
+    documento = documento || body.cpf_cnpj || body.cpf || body.cnpj || body.document
+    telefone = telefone || body.cliente_telefone || body.phone || body.mobile
+    email = email || body.cliente_email
 
     // Normalizar strings vazias para undefined
     if (typeof equipamento === 'string' && !equipamento.trim()) equipamento = undefined
