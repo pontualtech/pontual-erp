@@ -413,7 +413,9 @@ function buildTemplateVars(os: any, settings: Record<string, string>, approvalLi
     portal_os_link: (() => {
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'
       const slug = os.companies?.slug || 'pontualtech'
-      return `${appUrl}/portal/${slug}/os/${os.id}`
+      const doc = c?.document_number || ''
+      const base = `${appUrl}/portal/${slug}/os/${os.id}`
+      return doc ? `${base}?doc=${doc}` : base
     })(),
   }
 }

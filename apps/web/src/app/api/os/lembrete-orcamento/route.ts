@@ -286,7 +286,10 @@ export async function sendQuoteReminders(companyId: string, userId: string, spec
       const itemsTableHtml = buildItemsTableHtml(os.service_order_items)
 
       const whatsapp = (settingsMap['company.whatsapp'] || settingsMap['whatsapp'] || settingsMap['company.phone'] || '').replace(/\D/g, '')
-      const portalOsLink = `${appUrl}/portal/${company.slug}/os/${os.id}`
+      const customerDoc = customer.document_number || ''
+      const portalOsLink = customerDoc
+        ? `${appUrl}/portal/${company.slug}/os/${os.id}?doc=${customerDoc}`
+        : `${appUrl}/portal/${company.slug}/os/${os.id}`
 
       const vars: Record<string, string> = {
         customer_name: customer.legal_name || '—',

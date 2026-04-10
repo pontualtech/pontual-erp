@@ -13,6 +13,7 @@ export default function PortalLoginPage() {
 
   // Pre-fill document from URL param (from email links)
   const docFromUrl = searchParams.get('doc') || ''
+  const redirectAfterLogin = searchParams.get('redirect') || ''
 
   const [company, setCompany] = useState<{ name: string; logo?: string } | null>(null)
   const [document, setDocument] = useState('')
@@ -75,7 +76,7 @@ export default function PortalLoginPage() {
 
       toast.success('Login realizado com sucesso!')
       try { const { portalEvents } = await import('@/lib/analytics'); portalEvents.login('otp_2fa') } catch {}
-      router.push(`/portal/${slug}`)
+      router.push(redirectAfterLogin || `/portal/${slug}`)
     } catch {
       toast.error('Erro de conexao')
     } finally {
@@ -206,7 +207,7 @@ export default function PortalLoginPage() {
 
       toast.success('Login realizado com sucesso!')
       try { const { portalEvents } = await import('@/lib/analytics'); portalEvents.login('cpf_cnpj') } catch {}
-      router.push(`/portal/${slug}`)
+      router.push(redirectAfterLogin || `/portal/${slug}`)
     } catch {
       toast.error('Erro de conexao')
     } finally {

@@ -85,13 +85,20 @@ export default function PortalOSDetailPage() {
     fetch(`/api/portal/os/${osId}`)
       .then(r => {
         if (r.status === 401) {
-          router.push(`/portal/${slug}/login${docParam ? `?doc=${docParam}` : ''}`)
+          const redirect = encodeURIComponent(`/portal/${slug}/os/${osId}`)
+          router.push(`/portal/${slug}/login?${docParam ? `doc=${docParam}&` : ''}redirect=${redirect}`)
           return null
         }
         return r.json()
       })
       .then(res => {
-        if (res?.data) setOs(res.data)
+        if (res?.data) {
+          setOs(res.data)
+        } else if (res && !res.data) {
+          // OS not found for this customer — redirect to login with doc hint
+          const redirect = encodeURIComponent(`/portal/${slug}/os/${osId}`)
+          router.push(`/portal/${slug}/login?${docParam ? `doc=${docParam}&` : ''}redirect=${redirect}`)
+        }
       })
       .catch(() => toast.error('Erro ao carregar OS'))
       .finally(() => setLoading(false))
