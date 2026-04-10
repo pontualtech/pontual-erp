@@ -92,3 +92,45 @@ export function setPortalCookie(token: string): void {
     path: '/',
   })
 }
+
+// ─── Magic Access Token (auto-login via link) ───
+
+interface AccessPayload {
+  cid: string  // customer_id
+  mid: string  // company_id
+  exp: number
+}
+
+/**
+ * Gera token de acesso direto (magic link) para o portal.
+ * Valido por 48 horas. Cliente clica e entra sem login.
+ */
+export function createAccessToken(customerId: string, companyId: string): string {
+  const payload: AccessPayload = {
+    cid: customerId,
+    mid: companyId,
+    exp: Date.now() + 48 * 60 * 60 * 1000, // 48h
+  }
+  const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url')
+  const signature = createHmac('sha256', getSecret() + ':access').update(payloadB64).digest('base64url')
+  return `${payloadB64}.${signature}`
+}
+
+/**
+ * Valida token de acesso direto e retorna payload.
+ */
+export function verifyAccessToken(token: string): AccessPayload | null {
+  try {
+    const [payloadB64, signature] = token.split('.')
+    if (!payloadB64 || !signature) return null
+    const expectedSig = createHmac('sha256', getSecret() + ':access').update(payloadB64).digest('base64url')
+    const sigBuf = Buffer.from(signature)
+    const expectedBuf = Buffer.from(expectedSig)
+    if (sigBuf.length !== expectedBuf.length || !timingSafeEqual(sigBuf, expectedBuf)) return null
+    const payload: AccessPayload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'))
+    if (payload.exp < Date.now()) return null
+    return payload
+  } catch {
+    return null
+  }
+}

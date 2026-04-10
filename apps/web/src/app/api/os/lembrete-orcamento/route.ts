@@ -5,6 +5,7 @@ import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { sendEmail } from '@/lib/send-email'
 import { createHmac } from 'crypto'
+import { createAccessToken } from '@/lib/portal-auth'
 
 function fmtCents(cents: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cents / 100)
@@ -286,10 +287,8 @@ export async function sendQuoteReminders(companyId: string, userId: string, spec
       const itemsTableHtml = buildItemsTableHtml(os.service_order_items)
 
       const whatsapp = (settingsMap['company.whatsapp'] || settingsMap['whatsapp'] || settingsMap['company.phone'] || '').replace(/\D/g, '')
-      const customerDoc = customer.document_number || ''
-      const portalOsLink = customerDoc
-        ? `${appUrl}/portal/${company.slug}/os/${os.id}?doc=${customerDoc}`
-        : `${appUrl}/portal/${company.slug}/os/${os.id}`
+      const accessTk = createAccessToken(os.customer_id, os.company_id)
+      const portalOsLink = `${appUrl}/portal/${company.slug}/os/${os.id}?access=${accessTk}`
 
       const vars: Record<string, string> = {
         customer_name: customer.legal_name || '—',

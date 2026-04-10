@@ -5,6 +5,7 @@ import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { sendEmail } from '@/lib/send-email'
 import { createHmac } from 'crypto'
+import { createAccessToken } from '@/lib/portal-auth'
 
 type Params = { params: { id: string } }
 
@@ -217,7 +218,7 @@ const DEFAULT_QUOTE_TEMPLATE = `<!DOCTYPE html>
                     </td>
                   </tr>
                 </table>
-                <p style="font-size:11px;color:#64748b;margin:14px 0 0;">Primeiro acesso? Use seu CPF/CNPJ como login e crie sua senha.</p>
+                <p style="font-size:11px;color:#64748b;margin:14px 0 0;">Acesso seguro e automatico — basta clicar no botao acima.</p>
               </div>
 
               <!-- Urgencia sutil -->
@@ -413,9 +414,8 @@ function buildTemplateVars(os: any, settings: Record<string, string>, approvalLi
     portal_os_link: (() => {
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'
       const slug = os.companies?.slug || 'pontualtech'
-      const doc = c?.document_number || ''
-      const base = `${appUrl}/portal/${slug}/os/${os.id}`
-      return doc ? `${base}?doc=${doc}` : base
+      const accessTk = createAccessToken(os.customer_id, os.company_id)
+      return `${appUrl}/portal/${slug}/os/${os.id}?access=${accessTk}`
     })(),
   }
 }

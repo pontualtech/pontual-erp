@@ -9,10 +9,12 @@ interface TemplateParams {
   osId: string
   value?: number // centavos
   estimatedDelivery?: string // date string
+  accessToken?: string // magic link token for auto-login
 }
 
 function portalLink(p: TemplateParams) {
   const base = `${PORTAL_BASE}/portal/${p.companySlug}/os/${p.osId}`
+  if (p.accessToken) return `${base}?access=${p.accessToken}`
   return p.customerDoc ? `${base}?doc=${p.customerDoc}` : base
 }
 
@@ -40,7 +42,7 @@ export const whatsappTemplates = {
     `OS *#${p.osNumber}* — Valor: *${fmtValue(p.value)}*\n\n` +
     `Acesse seu *Painel do Cliente* para conferir o diagnostico completo, todos os detalhes e aprovar o servico:\n\n` +
     `👉 ${portalLink(p)}\n\n` +
-    `_Primeiro acesso? Use seu CPF/CNPJ como login._`,
+    `_Basta clicar no link acima para acessar._`,
 
   aprovado: (p: TemplateParams) =>
     `Ola, *${p.customerName}*! ✅\n\n` +

@@ -6,6 +6,7 @@ import { logAudit } from '@/lib/audit'
 import { sendEmail } from '@/lib/send-email'
 import { sendWhatsApp } from '@/lib/whatsapp/evolution'
 import { whatsappTemplates, getTemplateForStatus } from '@/lib/whatsapp/templates'
+import { createAccessToken } from '@/lib/portal-auth'
 
 type Params = { params: { id: string } }
 
@@ -65,6 +66,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         if (templateKey) {
           const waCompany = await prisma.company.findUnique({ where: { id: user.companyId }, select: { name: true, slug: true } }).catch(() => null)
           const templateFn = whatsappTemplates[templateKey]
+          const accessTk = createAccessToken(os.customer_id, os.company_id)
           const msg = templateFn({
             customerName: os.customers?.legal_name?.split(' ')[0] || 'Cliente',
             osNumber: os.os_number,
@@ -73,6 +75,7 @@ export async function POST(req: NextRequest, { params }: Params) {
             companySlug: waCompany?.slug || 'pontualtech',
             osId: os.id,
             value: os.total_cost || undefined,
+            accessToken: accessTk,
           })
           void sendWhatsApp(customerPhone, msg).catch(() => {})
         }
@@ -543,6 +546,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       if (templateKey) {
         const waCompany = await prisma.company.findUnique({ where: { id: user.companyId }, select: { name: true, slug: true } }).catch(() => null)
         const templateFn = whatsappTemplates[templateKey]
+        const accessTk = createAccessToken(os.customer_id, os.company_id)
         const msg = templateFn({
           customerName: os.customers?.legal_name?.split(' ')[0] || 'Cliente',
           osNumber: os.os_number,
@@ -552,6 +556,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           osId: os.id,
           value: os.total_cost || undefined,
           estimatedDelivery: (updated as any).estimated_delivery ? String((updated as any).estimated_delivery) : undefined,
+          accessToken: accessTk,
         })
         void sendWhatsApp(customerPhone, msg).catch(e =>
           console.log('[Transition] WhatsApp notification failed (ignored):', e)

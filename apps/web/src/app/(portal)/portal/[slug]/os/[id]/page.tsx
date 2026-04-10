@@ -63,6 +63,7 @@ export default function PortalOSDetailPage() {
   const slug = params.slug as string
   const osId = params.id as string
   const docParam = searchParams.get('doc') || ''
+  const accessToken = searchParams.get('access') || ''
 
   const [os, setOs] = useState<OSDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -145,10 +146,37 @@ export default function PortalOSDetailPage() {
   useEffect(() => {
     const savedCompany = localStorage.getItem('portal_company')
     const savedCustomer = localStorage.getItem('portal_customer')
-    if (savedCompany) setCompany(JSON.parse(savedCompany))
-    if (savedCustomer) setCustomer(JSON.parse(savedCustomer))
-    loadOS()
-    if (showNps) loadNps()
+    if (savedCompany) try { setCompany(JSON.parse(savedCompany)) } catch {}
+    if (savedCustomer) try { setCustomer(JSON.parse(savedCustomer)) } catch {}
+
+    // Magic link: auto-login via access token (no password/OTP needed)
+    if (accessToken) {
+      fetch('/api/portal/auth/auto-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: accessToken }),
+      })
+        .then(r => r.json())
+        .then(res => {
+          if (res?.data) {
+            localStorage.setItem('portal_customer', JSON.stringify(res.data.customer))
+            localStorage.setItem('portal_company', JSON.stringify(res.data.company))
+            setCompany(res.data.company)
+            setCustomer(res.data.customer)
+          }
+          // Load OS regardless (cookie was set by auto-login)
+          loadOS()
+          if (showNps) loadNps()
+        })
+        .catch(() => {
+          // Token failed — try loading anyway (might have existing cookie)
+          loadOS()
+          if (showNps) loadNps()
+        })
+    } else {
+      loadOS()
+      if (showNps) loadNps()
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [osId])
 
