@@ -133,10 +133,12 @@ export async function PUT(req: NextRequest, { params }: Params) {
     })
     if (!existing) return error('OS não encontrada', 404)
 
-    // Técnico pode editar: OS atribuídas a ele OU sem técnico (para se atribuir)
+    // Técnico só pode editar OS atribuídas a ele (não pode editar OS sem técnico, exceto para se atribuir)
     const roleNorm = user.roleName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-    if (roleNorm === 'tecnico' && existing.technician_id && existing.technician_id !== user.id) {
-      return error('Você só pode editar OS atribuídas a você', 403)
+    if (roleNorm === 'tecnico') {
+      if (!existing.technician_id || existing.technician_id !== user.id) {
+        return error('Você só pode editar OS atribuídas a você', 403)
+      }
     }
 
     const body = await req.json()

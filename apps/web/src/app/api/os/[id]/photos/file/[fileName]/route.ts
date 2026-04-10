@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { readFile } from 'fs/promises'
-import { join } from 'path'
+import { join, resolve } from 'path'
 import { existsSync } from 'fs'
+import { requirePermission } from '@/lib/auth'
 
 type Params = { params: { id: string; fileName: string } }
 
@@ -15,15 +16,29 @@ const MIME_MAP: Record<string, string> = {
 
 export async function GET(req: NextRequest, { params }: Params) {
   try {
+    // Authentication required
+    const result = await requirePermission('os', 'view')
+    if (result instanceof NextResponse) return result
+
     const { id, fileName } = params
 
-    // Sanitizar nome do arquivo
-    if (fileName.includes('..') || fileName.includes('/')) {
+    // Sanitizar nome do arquivo (incluindo backslash para Windows)
+    if (fileName.includes('..') || fileName.includes('/') || fileName.includes('\\')) {
+      return new NextResponse('Forbidden', { status: 403 })
+    }
+
+    // Validate id format (UUID only)
+    if (!/^[a-zA-Z0-9-]+$/.test(id)) {
       return new NextResponse('Forbidden', { status: 403 })
     }
 
     const baseDir = existsSync('/app/uploads') ? '/app/uploads' : join(process.cwd(), 'uploads')
-    const filePath = join(baseDir, 'os', id, fileName)
+    const filePath = resolve(join(baseDir, 'os', id, fileName))
+
+    // Ensure resolved path stays within uploads directory
+    if (!filePath.startsWith(resolve(baseDir))) {
+      return new NextResponse('Forbidden', { status: 403 })
+    }
 
     if (!existsSync(filePath)) {
       return new NextResponse('Not found', { status: 404 })
