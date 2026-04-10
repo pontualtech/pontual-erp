@@ -502,8 +502,8 @@ export default function ContaReceberDetalhePage() {
         </div>
       )}
 
-      {/* ─── Boleto/CNAB ─────────────────────── */}
-      {(conta.boleto_url || conta.status === 'PENDENTE') && (
+      {/* ─── Boleto/CNAB — só mostra para boleto ou quando já tem boleto gerado */}
+      {(conta.boleto_url || (conta.status === 'PENDENTE' && (!conta.payment_method || conta.payment_method.toLowerCase().includes('boleto')))) && (
         <div className={cn('rounded-2xl border p-5 shadow-sm', conta.boleto_url ? 'border-orange-200 dark:border-orange-800 bg-orange-50/50 dark:bg-orange-950/30' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900')}>
           <h3 className="flex items-center gap-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
             <FileText className="h-3.5 w-3.5 text-orange-600" /> Boleto / CNAB
