@@ -287,8 +287,14 @@ const DEFAULT_QUOTE_TEMPLATE = `<!DOCTYPE html>
 </html>`
 
 async function loadOSData(osId: string, companyId: string) {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(osId)
+  const isNumber = /^\d{1,10}$/.test(osId)
+  if (!isUuid && !isNumber) return null
+  const where = isUuid
+    ? { id: osId, company_id: companyId, deleted_at: null }
+    : { os_number: parseInt(osId, 10), company_id: companyId, deleted_at: null as any }
   const os = await prisma.serviceOrder.findFirst({
-    where: { id: osId, company_id: companyId, deleted_at: null },
+    where,
     include: {
       customers: true,
       service_order_items: { where: { deleted_at: null } },
