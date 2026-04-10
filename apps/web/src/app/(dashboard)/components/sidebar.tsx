@@ -19,6 +19,8 @@ interface NavItem {
   module?: string
   action?: string
   adminOnly?: boolean
+  /** Only show for these roles (lowercase, normalized) */
+  roles?: string[]
   /** Requires ANY of these permissions (OR logic) — item shows if user has at least one */
   requiredAnyPermission?: { module: string; action: string }[]
   children?: { label: string; href: string; icon: React.ElementType }[]
@@ -29,7 +31,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
     title: 'Geral',
     items: [
       { label: 'Dashboard', href: '/', icon: LayoutDashboard, module: 'dashboard', action: 'view' },
-      { label: 'Meu Painel', href: '/tecnico', icon: Wrench, module: 'os', action: 'view' },
+      { label: 'Meu Painel', href: '/tecnico', icon: Wrench, roles: ['tecnico', 'admin', 'administrador'] },
     ],
   },
   {
@@ -83,7 +85,7 @@ export function Sidebar({ user }: { user: AuthUser }) {
   const [open, setOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
-  const { isAdmin, hasPermission } = useAuth()
+  const { isAdmin, hasPermission, user: authUser } = useAuth()
 
   // Load collapsed preference from localStorage
   useEffect(() => {
@@ -106,6 +108,10 @@ export function Sidebar({ user }: { user: AuthUser }) {
       ...g,
       items: g.items.filter(i => {
         if (i.adminOnly) return isAdmin
+        if (i.roles) {
+          const userRole = (authUser?.role || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+          return i.roles.includes(userRole)
+        }
         if (i.requiredAnyPermission) {
           return isAdmin || i.requiredAnyPermission.some(p => hasPermission(p.module, p.action))
         }
