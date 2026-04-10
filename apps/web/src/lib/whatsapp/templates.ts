@@ -35,9 +35,12 @@ export const whatsappTemplates = {
     `📱 Acompanhe pelo portal:\n${portalLink(p)}`,
 
   orcamento: (p: TemplateParams) =>
-    `Ola, *${p.customerName}*! 📋\n\n` +
-    `O orcamento da sua OS *#${p.osNumber}* ficou em *${fmtValue(p.value)}*.\n\n` +
-    `✅ Aprove ou recuse diretamente pelo portal:\n${portalLink(p)}`,
+    `Ola, *${p.customerName}*! 🔔\n\n` +
+    `Boa noticia! Finalizamos a analise do seu equipamento.\n` +
+    `OS *#${p.osNumber}* — Valor: *${fmtValue(p.value)}*\n\n` +
+    `Acesse seu *Painel do Cliente* para conferir o diagnostico completo, todos os detalhes e aprovar o servico:\n\n` +
+    `👉 ${portalLink(p)}\n\n` +
+    `_Primeiro acesso? Use seu CPF/CNPJ como login._`,
 
   aprovado: (p: TemplateParams) =>
     `Ola, *${p.customerName}*! ✅\n\n` +
