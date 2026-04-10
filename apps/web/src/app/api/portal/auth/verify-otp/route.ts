@@ -75,25 +75,36 @@ export async function POST(req: NextRequest) {
       data: { used: true },
     })
 
-    // Load customer data for response
+    // Validate customer belongs to this company
+    const access = await prisma.customerAccess.findFirst({
+      where: { company_id, customer_id },
+    })
+    if (!access) {
+      return NextResponse.json(
+        { error: 'Acesso nao autorizado para esta empresa' },
+        { status: 403 }
+      )
+    }
+
+    // Load customer data for response (verified IDs from access record)
     const customer = await prisma.customer.findUnique({
-      where: { id: customer_id },
+      where: { id: access.customer_id },
       select: { id: true, legal_name: true },
     })
 
     const company = await prisma.company.findUnique({
-      where: { id: company_id },
+      where: { id: access.company_id },
       select: { id: true, name: true, slug: true },
     })
 
     // Update last login
-    await prisma.customerAccess.updateMany({
-      where: { company_id, customer_id },
+    await prisma.customerAccess.update({
+      where: { id: access.id },
       data: { last_login_at: new Date() },
     })
 
-    // Create session token
-    const token = createPortalToken(customer_id, company_id)
+    // Create session token using verified IDs from database
+    const token = createPortalToken(access.customer_id, access.company_id)
 
     const response = NextResponse.json({
       data: {

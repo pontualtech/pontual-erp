@@ -146,7 +146,7 @@ export async function GET(
           return {
             id: h.id,
             to_status: rawStatus ? { ...rawStatus, name: friendlyName, color: friendlyColor } : rawStatus,
-            notes: h.notes,
+            notes: h.changed_by === 'CLIENTE' ? h.notes : null,
             created_at: h.created_at,
           }
         }),

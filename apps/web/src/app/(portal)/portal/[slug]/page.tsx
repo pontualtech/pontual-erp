@@ -42,8 +42,8 @@ export default function PortalDashboardPage() {
   useEffect(() => {
     const savedCustomer = localStorage.getItem('portal_customer')
     const savedCompany = localStorage.getItem('portal_company')
-    if (savedCustomer) setCustomer(JSON.parse(savedCustomer))
-    if (savedCompany) setCompany(JSON.parse(savedCompany))
+    try { if (savedCustomer) setCustomer(JSON.parse(savedCustomer)) } catch {}
+    try { if (savedCompany) setCompany(JSON.parse(savedCompany)) } catch {}
 
     // Auth token is sent automatically via httpOnly cookie
     fetch('/api/portal/os?limit=10')
