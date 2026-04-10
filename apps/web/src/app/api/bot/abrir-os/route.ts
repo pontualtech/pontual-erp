@@ -25,6 +25,17 @@ export async function POST(req: NextRequest) {
     if (modelo) modelo = modelo.trim().toUpperCase()
     if (defeito) defeito = defeito.trim().charAt(0).toUpperCase() + defeito.trim().slice(1)
 
+    // Se equipamento é apenas marca+modelo combinados, usar tipo genérico
+    if (equipamento && marca && modelo) {
+      const equipNorm = (equipamento || '').trim().toUpperCase()
+      const marcaNorm = marca.trim().toUpperCase()
+      const modeloNorm = modelo.trim().toUpperCase()
+      const combo = `${marcaNorm} ${modeloNorm}`
+      if (equipNorm === combo || equipNorm === `${modeloNorm} ${marcaNorm}` || equipNorm === marcaNorm || equipNorm === modeloNorm) {
+        equipamento = null
+      }
+    }
+
     const companyId = auth.companyId
     const docDigits = (documento || '').replace(/\D/g, '')
 
