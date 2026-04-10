@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, Search, Download, Loader2, TrendingUp, TrendingDown,
   DollarSign, Wallet, Filter, X, ChevronUp, ChevronDown, ArrowUpDown,
-  Calendar, Building2, CreditCard, Tag, LayoutGrid
+  Calendar, Building2, CreditCard, Tag, LayoutGrid, Pencil, Save, ExternalLink
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -104,6 +104,11 @@ export default function ExtratoPage() {
   // Sort
   const [sortField, setSortField] = useState<SortField>('data')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
+
+  // Quick edit modal
+  const [editItem, setEditItem] = useState<ExtratoItem | null>(null)
+  const [editForm, setEditForm] = useState({ category_id: '', payment_method: '', cost_center_id: '', valor: '', vencimento: '', notes: '' })
+  const [editSaving, setEditSaving] = useState(false)
 
   // Debounce busca por texto (400ms)
   useEffect(() => {
@@ -222,6 +227,52 @@ export default function ExtratoPage() {
         toast.success(`${allItems.length} registros exportados`)
       })
       .catch(() => toast.error('Erro ao exportar CSV'))
+  }
+
+  // Quick edit: open modal and load full record from API
+  async function openQuickEdit(item: ExtratoItem) {
+    if (item.origem !== 'receber' && item.origem !== 'pagar') return
+    setEditItem(item)
+    try {
+      const endpoint = item.origem === 'receber' ? `/api/financeiro/contas-receber/${item.id}` : `/api/financeiro/contas-pagar/${item.id}`
+      const res = await fetch(endpoint)
+      const d = await res.json()
+      const c = d.data
+      if (c) {
+        setEditForm({
+          category_id: c.category_id || '',
+          payment_method: c.payment_method || '',
+          cost_center_id: c.cost_center_id || '',
+          valor: String((c.total_amount || 0) / 100),
+          vencimento: c.due_date ? new Date(c.due_date).toISOString().split('T')[0] : '',
+          notes: c.notes || '',
+        })
+      }
+    } catch { toast.error('Erro ao carregar dados') }
+  }
+
+  async function saveQuickEdit() {
+    if (!editItem) return
+    setEditSaving(true)
+    try {
+      const endpoint = editItem.origem === 'receber' ? `/api/financeiro/contas-receber/${editItem.id}` : `/api/financeiro/contas-pagar/${editItem.id}`
+      const payload: any = {
+        payment_method: editForm.payment_method || null,
+        category_id: editForm.category_id || null,
+        notes: editForm.notes || null,
+      }
+      if (editItem.origem === 'pagar') payload.cost_center_id = editForm.cost_center_id || null
+      const amt = Math.round(parseFloat(editForm.valor) * 100)
+      if (!isNaN(amt) && amt > 0) payload.total_amount = amt
+      if (editForm.vencimento) payload.due_date = editForm.vencimento
+
+      const res = await fetch(endpoint, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Erro') }
+      toast.success('Lancamento atualizado!')
+      setEditItem(null)
+      loadData()
+    } catch (err) { toast.error(err instanceof Error ? err.message : 'Erro ao salvar') }
+    finally { setEditSaving(false) }
   }
 
   // Active filter chips
@@ -516,10 +567,7 @@ export default function ExtratoPage() {
               </td></tr>
             ) : sortedItems.map(item => (
               <tr key={`${item.origem}-${item.id}`}
-                onClick={() => {
-                  if (item.origem === 'receber') router.push(`/financeiro/contas-receber/${item.id}`)
-                  else if (item.origem === 'pagar') router.push(`/financeiro/contas-pagar/${item.id}`)
-                }}
+                onClick={() => openQuickEdit(item)}
                 className={cn(
                   'hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors',
                   (item.origem === 'receber' || item.origem === 'pagar') && 'cursor-pointer'
@@ -590,6 +638,101 @@ export default function ExtratoPage() {
               className="rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-sm disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 transition-colors">Proxima</button>
             <button type="button" onClick={() => setPage(totalPages)} disabled={page >= totalPages}
               className="rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-sm disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 transition-colors">Ultima</button>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Quick Edit Modal ═══════════════════ */}
+      {editItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setEditItem(null)}>
+          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                  <Pencil className="h-5 w-5 text-blue-600" /> Editar Lancamento
+                </h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{editItem.descricao}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={cn('text-xs px-2 py-0.5 rounded font-medium',
+                  editItem.origem === 'receber' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'
+                )}>
+                  {editItem.origem === 'receber' ? 'A Receber' : 'A Pagar'}
+                </span>
+                <a href={editItem.origem === 'receber' ? `/financeiro/contas-receber/${editItem.id}` : `/financeiro/contas-pagar/${editItem.id}`}
+                  target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-blue-600 transition-colors" title="Abrir detalhe completo">
+                  <ExternalLink className="h-4 w-4" />
+                </a>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Valor (R$)</label>
+                  <input type="number" title="Valor" step="0.01" min="0" value={editForm.valor}
+                    onChange={e => setEditForm(f => ({ ...f, valor: e.target.value }))}
+                    className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2.5 text-sm text-gray-900 dark:text-white" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Vencimento</label>
+                  <input type="date" title="Vencimento" value={editForm.vencimento}
+                    onChange={e => setEditForm(f => ({ ...f, vencimento: e.target.value }))}
+                    className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2.5 text-sm text-gray-900 dark:text-white" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Categoria</label>
+                  <select title="Categoria" value={editForm.category_id}
+                    onChange={e => setEditForm(f => ({ ...f, category_id: e.target.value }))}
+                    className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2.5 text-sm text-gray-900 dark:text-white">
+                    <option value="">Sem categoria</option>
+                    {categorias.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Forma Pagamento</label>
+                  <select title="Forma de pagamento" value={editForm.payment_method}
+                    onChange={e => setEditForm(f => ({ ...f, payment_method: e.target.value }))}
+                    className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2.5 text-sm text-gray-900 dark:text-white">
+                    <option value="">—</option>
+                    {formasPagamento.map(f => <option key={f} value={f}>{f}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {editItem.origem === 'pagar' && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Centro de Custo</label>
+                  <select title="Centro de custo" value={editForm.cost_center_id}
+                    onChange={e => setEditForm(f => ({ ...f, cost_center_id: e.target.value }))}
+                    className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2.5 text-sm text-gray-900 dark:text-white">
+                    <option value="">Sem centro de custo</option>
+                    {centrosCusto.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Observacoes</label>
+                <textarea rows={2} value={editForm.notes}
+                  onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
+                  placeholder="Observacoes..."
+                  className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 resize-none" />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6 justify-end">
+              <button type="button" onClick={() => setEditItem(null)}
+                className="px-4 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300">Cancelar</button>
+              <button type="button" onClick={saveQuickEdit} disabled={editSaving}
+                className="px-4 py-2.5 text-sm bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2 font-medium">
+                {editSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                {editSaving ? 'Salvando...' : 'Salvar'}
+              </button>
+            </div>
           </div>
         </div>
       )}
