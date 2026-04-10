@@ -99,187 +99,190 @@ const DEFAULT_QUOTE_TEMPLATE = `<!DOCTYPE html>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Orcamento Pronto - {{company_name}}</title>
+  <!--[if mso]><style>table{border-collapse:collapse;}td,th{padding:0;}</style><![endif]-->
 </head>
-<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f1f5f9;padding:32px 0;">
+<body style="margin:0;padding:0;background-color:#0f172a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;-webkit-font-smoothing:antialiased;-webkit-text-size-adjust:100%;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#0f172a;padding:0;">
     <tr>
-      <td align="center">
-        <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+      <td align="center" style="padding:24px 16px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%;">
 
-          <!-- HEADER -->
+          <!-- LOGO BAR -->
           <tr>
-            <td style="background:linear-gradient(135deg,#1e40af 0%,#2563eb 50%,#3b82f6 100%);padding:36px 32px;text-align:center;">
-              <table width="100%" cellpadding="0" cellspacing="0">
+            <td style="padding:20px 0 24px;text-align:center;">
+              <p style="margin:0;font-size:16px;font-weight:700;color:#ffffff;letter-spacing:0.5px;">{{company_name}}</p>
+            </td>
+          </tr>
+
+          <!-- HERO CARD -->
+          <tr>
+            <td>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:20px;overflow:hidden;">
+
+                <!-- Status badge -->
                 <tr>
-                  <td align="center">
-                    <div style="width:64px;height:64px;background:rgba(255,255,255,0.15);border-radius:16px;margin:0 auto 12px;line-height:64px;font-size:28px;">&#128736;</div>
-                    <h1 style="margin:0 0 6px;color:#ffffff;font-size:24px;font-weight:800;letter-spacing:-0.3px;">{{company_name}}</h1>
-                    <p style="margin:0 0 4px;color:rgba(255,255,255,0.7);font-size:12px;">Assistencia Tecnica Profissional</p>
-                    <div style="display:inline-block;background:rgba(255,255,255,0.2);border-radius:20px;padding:6px 20px;margin-top:10px;">
-                      <p style="margin:0;color:#ffffff;font-size:14px;font-weight:700;letter-spacing:0.3px;">SEU ORCAMENTO ESTA PRONTO!</p>
-                    </div>
+                  <td style="padding:32px 28px 0;text-align:center;">
+                    <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
+                      <tr>
+                        <td style="background:#dcfce7;border-radius:24px;padding:8px 20px;">
+                          <p style="margin:0;font-size:12px;font-weight:700;color:#16a34a;text-transform:uppercase;letter-spacing:1px;">&#9679; Orcamento pronto</p>
+                        </td>
+                      </tr>
+                    </table>
                   </td>
                 </tr>
+
+                <!-- Greeting -->
+                <tr>
+                  <td style="padding:24px 28px 0;text-align:center;">
+                    <h1 style="margin:0 0 12px;font-size:22px;font-weight:800;color:#0f172a;line-height:1.3;">
+                      {{customer_name}}, seu orcamento esta pronto
+                    </h1>
+                    <p style="margin:0;font-size:15px;color:#64748b;line-height:1.6;">
+                      Finalizamos a analise do seu <strong style="color:#334155;">{{equipment}}</strong> e o orcamento completo esta disponivel no seu painel.
+                    </p>
+                  </td>
+                </tr>
+
+                <!-- OS info strip -->
+                <tr>
+                  <td style="padding:24px 28px 0;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border-radius:12px;border:1px solid #e2e8f0;">
+                      <tr>
+                        <td width="50%" style="padding:16px 20px;border-right:1px solid #e2e8f0;">
+                          <p style="margin:0 0 2px;font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Ordem de Servico</p>
+                          <p style="margin:0;font-size:18px;font-weight:800;color:#0f172a;">#{{os_number}}</p>
+                        </td>
+                        <td width="50%" style="padding:16px 20px;">
+                          <p style="margin:0 0 2px;font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Validade</p>
+                          <p style="margin:0;font-size:18px;font-weight:800;color:#0f172a;">{{quote_validity}}</p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- What's inside -->
+                <tr>
+                  <td style="padding:24px 28px 0;">
+                    <p style="margin:0 0 14px;font-size:13px;font-weight:700;color:#0f172a;text-transform:uppercase;letter-spacing:0.5px;">O que voce encontra no painel</p>
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;">
+                          <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+                            <td width="32" style="vertical-align:top;">
+                              <div style="width:28px;height:28px;background:#eff6ff;border-radius:8px;text-align:center;line-height:28px;font-size:14px;">&#128269;</div>
+                            </td>
+                            <td style="padding-left:12px;vertical-align:middle;">
+                              <p style="margin:0;font-size:14px;color:#334155;font-weight:600;">Diagnostico tecnico completo</p>
+                              <p style="margin:2px 0 0;font-size:12px;color:#94a3b8;">O que foi encontrado e o que precisa ser feito</p>
+                            </td>
+                          </tr></table>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;">
+                          <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+                            <td width="32" style="vertical-align:top;">
+                              <div style="width:28px;height:28px;background:#f0fdf4;border-radius:8px;text-align:center;line-height:28px;font-size:14px;">&#128176;</div>
+                            </td>
+                            <td style="padding-left:12px;vertical-align:middle;">
+                              <p style="margin:0;font-size:14px;color:#334155;font-weight:600;">Valores detalhados</p>
+                              <p style="margin:2px 0 0;font-size:12px;color:#94a3b8;">Servicos, pecas e condicoes de pagamento</p>
+                            </td>
+                          </tr></table>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;">
+                          <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+                            <td width="32" style="vertical-align:top;">
+                              <div style="width:28px;height:28px;background:#fef3c7;border-radius:8px;text-align:center;line-height:28px;font-size:14px;">&#9989;</div>
+                            </td>
+                            <td style="padding-left:12px;vertical-align:middle;">
+                              <p style="margin:0;font-size:14px;color:#334155;font-weight:600;">Aprovacao com um clique</p>
+                              <p style="margin:2px 0 0;font-size:12px;color:#94a3b8;">Aprove e ja iniciamos o reparo imediatamente</p>
+                            </td>
+                          </tr></table>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:10px 0;">
+                          <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+                            <td width="32" style="vertical-align:top;">
+                              <div style="width:28px;height:28px;background:#ede9fe;border-radius:8px;text-align:center;line-height:28px;font-size:14px;">&#128225;</div>
+                            </td>
+                            <td style="padding-left:12px;vertical-align:middle;">
+                              <p style="margin:0;font-size:14px;color:#334155;font-weight:600;">Acompanhamento em tempo real</p>
+                              <p style="margin:2px 0 0;font-size:12px;color:#94a3b8;">Cada etapa atualizada automaticamente</p>
+                            </td>
+                          </tr></table>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- CTA -->
+                <tr>
+                  <td style="padding:28px 28px 8px;text-align:center;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="background:#0f172a;border-radius:14px;">
+                          <a href="{{portal_os_link}}" target="_blank"
+                             style="display:block;color:#ffffff;text-decoration:none;font-size:16px;font-weight:800;padding:18px 24px;text-align:center;letter-spacing:0.3px;">
+                            VER MEU ORCAMENTO &#8594;
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td style="padding:8px 28px 28px;text-align:center;">
+                    <p style="margin:0;font-size:12px;color:#94a3b8;">Acesso seguro e instantaneo — sem senha.</p>
+                  </td>
+                </tr>
+
               </table>
             </td>
           </tr>
 
-          <!-- BODY -->
+          <!-- TRUST STRIP -->
           <tr>
-            <td style="padding:32px 32px 0;">
-              <!-- Greeting -->
-              <p style="margin:0 0 16px;font-size:17px;color:#1e293b;line-height:1.4;">
-                Ola <strong>{{customer_name}}</strong>,
-              </p>
-              <p style="margin:0 0 8px;font-size:14px;color:#475569;line-height:1.7;">
-                Temos uma boa noticia! Nossos tecnicos finalizaram a analise do seu
-                <strong style="color:#1e293b;">{{equipment}}</strong> (OS #{{os_number}}) e seu orcamento ja esta disponivel.
-              </p>
-              <p style="margin:0 0 24px;font-size:14px;color:#475569;line-height:1.7;">
-                Acesse seu <strong style="color:#1e40af;">Painel do Cliente</strong> para ver todos os detalhes, aprovar o servico e acompanhar cada etapa em tempo real.
-              </p>
-
-              <!-- VALOR DESTAQUE -->
-              <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:20px;">
+            <td style="padding:20px 0;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                 <tr>
-                  <td style="background:linear-gradient(135deg,#1e40af 0%,#2563eb 100%);border-radius:12px;padding:28px 24px;text-align:center;">
-                    <p style="margin:0 0 4px;font-size:12px;color:rgba(255,255,255,0.7);text-transform:uppercase;letter-spacing:1px;font-weight:600;">Investimento</p>
-                    <p style="margin:0 0 8px;font-size:30px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">
-                      {{installment_info}}
-                    </p>
-                    <p style="margin:0;font-size:14px;color:rgba(255,255,255,0.75);">
-                      Valor total: {{total_cost}}
-                    </p>
+                  <td width="33%" style="text-align:center;padding:0 4px;">
+                    <p style="margin:0 0 2px;font-size:20px;">&#128337;</p>
+                    <p style="margin:0;font-size:11px;color:#64748b;font-weight:600;">{{execution_days}}</p>
+                  </td>
+                  <td width="33%" style="text-align:center;padding:0 4px;">
+                    <p style="margin:0 0 2px;font-size:20px;">&#128737;</p>
+                    <p style="margin:0;font-size:11px;color:#64748b;font-weight:600;">{{warranty_period}}</p>
+                  </td>
+                  <td width="33%" style="text-align:center;padding:0 4px;">
+                    <p style="margin:0 0 2px;font-size:20px;">&#127793;</p>
+                    <p style="margin:0;font-size:11px;color:#64748b;font-weight:600;">Eco-friendly</p>
                   </td>
                 </tr>
               </table>
-
-              <!-- Info pills -->
-              <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:20px;">
-                <tr>
-                  <td width="33%" style="padding:0 4px 0 0;">
-                    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px 12px;text-align:center;">
-                      <p style="margin:0 0 2px;font-size:11px;color:#3b82f6;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Prazo</p>
-                      <p style="margin:0;font-size:13px;color:#1e40af;font-weight:600;">{{execution_days}}</p>
-                    </div>
-                  </td>
-                  <td width="33%" style="padding:0 4px;">
-                    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 12px;text-align:center;">
-                      <p style="margin:0 0 2px;font-size:11px;color:#16a34a;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Garantia</p>
-                      <p style="margin:0;font-size:13px;color:#15803d;font-weight:600;">{{warranty_period}}</p>
-                    </div>
-                  </td>
-                  <td width="33%" style="padding:0 0 0 4px;">
-                    <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:14px 12px;text-align:center;">
-                      <p style="margin:0 0 2px;font-size:11px;color:#d97706;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Validade</p>
-                      <p style="margin:0;font-size:13px;color:#92400e;font-weight:600;">{{quote_validity}}</p>
-                    </div>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- MOTIVATIONAL TRIGGER + PORTAL CTA -->
-              <div style="background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%);border-radius:16px;padding:32px 24px;margin-bottom:24px;text-align:center;">
-                <div style="width:56px;height:56px;background:linear-gradient(135deg,#22c55e,#16a34a);border-radius:14px;margin:0 auto 16px;line-height:56px;font-size:24px;">&#128640;</div>
-                <p style="margin:0 0 8px;font-size:20px;font-weight:800;color:#ffffff;letter-spacing:-0.3px;">
-                  Seu equipamento pode voltar a funcionar!
-                </p>
-                <p style="margin:0 0 20px;font-size:14px;color:#94a3b8;line-height:1.6;">
-                  No seu Painel voce confere o diagnostico completo, todos os servicos e pecas detalhados, e aprova com apenas um clique.
-                </p>
-
-                <!-- Checklist motivacional -->
-                <table cellpadding="0" cellspacing="0" style="margin:0 auto 24px;text-align:left;">
-                  <tr>
-                    <td style="padding:4px 0;font-size:13px;color:#22c55e;">&#10003;</td>
-                    <td style="padding:4px 0 4px 8px;font-size:13px;color:#e2e8f0;">Veja o laudo tecnico detalhado</td>
-                  </tr>
-                  <tr>
-                    <td style="padding:4px 0;font-size:13px;color:#22c55e;">&#10003;</td>
-                    <td style="padding:4px 0 4px 8px;font-size:13px;color:#e2e8f0;">Confira todos os servicos e pecas</td>
-                  </tr>
-                  <tr>
-                    <td style="padding:4px 0;font-size:13px;color:#22c55e;">&#10003;</td>
-                    <td style="padding:4px 0 4px 8px;font-size:13px;color:#e2e8f0;">Aprove o servico em um clique</td>
-                  </tr>
-                  <tr>
-                    <td style="padding:4px 0;font-size:13px;color:#22c55e;">&#10003;</td>
-                    <td style="padding:4px 0 4px 8px;font-size:13px;color:#e2e8f0;">Acompanhe cada etapa em tempo real</td>
-                  </tr>
-                </table>
-
-                <table cellpadding="0" cellspacing="0" style="margin:0 auto;">
-                  <tr>
-                    <td style="background:linear-gradient(135deg,#22c55e,#16a34a);border-radius:12px;box-shadow:0 4px 16px rgba(34,197,94,0.4);">
-                      <a href="{{portal_os_link}}" target="_blank"
-                         style="display:inline-block;color:#ffffff;text-decoration:none;font-size:17px;font-weight:800;padding:18px 48px;letter-spacing:0.3px;">
-                        ACESSAR MEU PAINEL
-                      </a>
-                    </td>
-                  </tr>
-                </table>
-                <p style="font-size:11px;color:#64748b;margin:14px 0 0;">Acesso seguro e automatico — basta clicar no botao acima.</p>
-              </div>
-
-              <!-- Urgencia sutil -->
-              <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:14px 16px;margin-bottom:24px;text-align:center;">
-                <p style="margin:0;font-size:13px;color:#92400e;line-height:1.5;">
-                  <strong>&#9200; Orcamento valido por {{quote_validity}}.</strong> Aprovando dentro do prazo, garantimos as condicoes e priorizamos seu atendimento.
-                </p>
-              </div>
-
-              <!-- Eco tip -->
-              <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 16px;margin-bottom:24px;">
-                <p style="margin:0;font-size:13px;color:#166534;line-height:1.6;">
-                  <strong>&#127793; Voce sabia?</strong> Reparar seu equipamento custa ate 70% menos do que comprar um novo e ainda ajuda a reduzir o lixo eletronico.
-                </p>
-              </div>
-
-              <!-- Conditions (compact) -->
-              <div style="border-top:2px solid #e2e8f0;padding-top:20px;margin-bottom:24px;">
-                <p style="margin:0 0 12px;font-size:13px;color:#1e293b;font-weight:700;">Formas de pagamento</p>
-                <p style="margin:0 0 16px;font-size:13px;color:#475569;line-height:1.6;">{{payment_conditions}}</p>
-                <table width="100%" cellpadding="0" cellspacing="0" style="font-size:12px;color:#64748b;">
-                  <tr>
-                    <td style="padding:4px 0;">PIX: {{company_pix}}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding:4px 0;">Banco: {{company_bank}}</td>
-                  </tr>
-                </table>
-              </div>
-
-              <!-- Suporte DISCRETO -->
-              <div style="text-align:center;margin-bottom:24px;padding-top:8px;border-top:1px solid #f1f5f9;">
-                <p style="margin:0;font-size:11px;color:#94a3b8;">
-                  Precisa de ajuda? <a href="https://wa.me/{{company_whatsapp}}" target="_blank" style="color:#94a3b8;text-decoration:underline;">Fale conosco</a>
-                </p>
-              </div>
-
             </td>
           </tr>
 
           <!-- FOOTER -->
           <tr>
-            <td style="background:#1e293b;padding:24px 32px;text-align:center;">
-              <p style="margin:0 0 4px;font-size:14px;font-weight:700;color:#ffffff;">{{company_name}}</p>
-              <p style="margin:0 0 4px;font-size:11px;color:#64748b;">{{company_address}}</p>
-              <p style="margin:0 0 4px;font-size:11px;color:#64748b;">CNPJ: {{company_cnpj}} | Tel: {{company_phone}}</p>
-              <p style="margin:0;font-size:11px;color:#64748b;">{{company_email}} | {{company_website}}</p>
-            </td>
-          </tr>
-
-        </table>
-
-        <!-- Footer info -->
-        <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
-          <tr>
-            <td style="padding:16px 0;text-align:center;">
-              <p style="margin:0;font-size:11px;color:#94a3b8;">
-                Este email foi enviado por {{company_name}} referente a OS #{{os_number}}.
+            <td style="padding:0 0 12px;text-align:center;">
+              <p style="margin:0 0 4px;font-size:12px;color:#475569;">{{company_name}}</p>
+              <p style="margin:0 0 4px;font-size:11px;color:#475569;">{{company_phone}} | {{company_email}}</p>
+              <p style="margin:0 0 12px;font-size:11px;color:#64748b;">
+                <a href="https://wa.me/{{company_whatsapp}}" target="_blank" style="color:#64748b;text-decoration:underline;">WhatsApp</a>
               </p>
+              <p style="margin:0;font-size:10px;color:#334155;">OS #{{os_number}} | {{company_cnpj}}</p>
             </td>
           </tr>
+
         </table>
       </td>
     </tr>

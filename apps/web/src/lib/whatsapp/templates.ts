@@ -38,11 +38,10 @@ export const whatsappTemplates = {
 
   orcamento: (p: TemplateParams) =>
     `Ola, *${p.customerName}*! 🔔\n\n` +
-    `Boa noticia! Finalizamos a analise do seu equipamento.\n` +
-    `OS *#${p.osNumber}* — Valor: *${fmtValue(p.value)}*\n\n` +
-    `Acesse seu *Painel do Cliente* para conferir o diagnostico completo, todos os detalhes e aprovar o servico:\n\n` +
+    `Boa noticia! Finalizamos a analise do seu equipamento e o orcamento da OS *#${p.osNumber}* esta pronto.\n\n` +
+    `Acesse seu painel para ver o diagnostico, valores detalhados e aprovar com um clique:\n\n` +
     `👉 ${portalLink(p)}\n\n` +
-    `_Basta clicar no link acima para acessar._`,
+    `_Acesso instantaneo — basta clicar._`,
 
   aprovado: (p: TemplateParams) =>
     `Ola, *${p.customerName}*! ✅\n\n` +
