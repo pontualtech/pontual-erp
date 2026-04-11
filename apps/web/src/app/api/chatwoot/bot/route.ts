@@ -317,15 +317,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  // Respond 200 immediately — process async
-  const response = NextResponse.json({ status: 'ok' })
+  // Process synchronously (Next.js may kill async after response)
+  try {
+    await processWebhook(body)
+  } catch (err) {
+    console.error('[Bot] Processing error:', err)
+  }
 
-  // Fire-and-forget async processing
-  processWebhook(body).catch(err => {
-    console.error('[Bot] Async processing error:', err)
-  })
-
-  return response
+  return NextResponse.json({ status: 'ok' })
 }
 
 // ---------------------------------------------------------------------------
