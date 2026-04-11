@@ -587,7 +587,7 @@ async function processWebhook(body: any) {
             const contactUpdate: Record<string, unknown> = {}
             if (vd.nome) contactUpdate.name = vd.nome
             if (vd.email) contactUpdate.email = vd.email
-            if (vd.telefone) contactUpdate.phone_number = `+55${(vd.telefone || '').replace(/\D/g, '')}`
+            if (vd.telefone) contactUpdate.phone_number = `+55${String(vd.telefone || '').replace(/\D/g, '')}`
             contactUpdate.custom_attributes = {
               cpf_cnpj: vd.cpf_cnpj || '',
               endereco: vd.endereco || '',
