@@ -356,11 +356,12 @@ async function processWebhook(body: any) {
   // Only process message_created
   if (event !== 'message_created') return
 
-  // Only incoming messages
+  // Only incoming messages (Chatwoot sends 0 for incoming, 1 for outgoing, or string)
   const messageType = body.message_type
-  if (messageType !== 'incoming') {
-    // Detect human agent outgoing messages (not from bot)
-    if (messageType === 'outgoing') {
+  const isIncoming = messageType === 'incoming' || messageType === 0
+  const isOutgoing = messageType === 'outgoing' || messageType === 1
+  if (!isIncoming) {
+    if (isOutgoing) {
       await handleHumanAgentMessage(body)
     }
     return
