@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json()
     // Accept aliases from n8n/external systems
-    let { nome, documento, telefone, email, cep, endereco, equipamento, marca, modelo, defeito, observacoes, origem } = body
+    let { nome, documento, telefone, email, cep, endereco, equipamento, marca, modelo, numero_serie, defeito, observacoes, origem } = body
     nome = nome || body.cliente_nome || body.name || body.customer_name
     documento = documento || body.cpf_cnpj || body.cpf || body.cnpj || body.document
     telefone = telefone || body.cliente_telefone || body.phone || body.mobile
@@ -149,6 +149,7 @@ export async function POST(req: NextRequest) {
           equipment_type: equipamento || 'Impressora',
           equipment_brand: marca || undefined,
           equipment_model: modelo || undefined,
+          serial_number: numero_serie || undefined,
           reported_issue: defeito || 'Sem descricao',
           reception_notes: observacoes || undefined,
           internal_notes: `[BOT ANA] OS aberta em ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}. Cliente: ${customer.legal_name}. Tel: ${telefone || 'N/I'}.`,
