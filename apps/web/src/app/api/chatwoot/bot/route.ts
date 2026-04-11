@@ -662,8 +662,22 @@ async function handleHumanAgentMessage(body: any) {
   if (!conversationId) return
 
   // Check if this is from the bot itself (ignore)
+  // The bot sends messages using CW_ADMIN_TOKEN — these come back as outgoing
+  // from the admin user. Ignore them to avoid self-triggering human takeover.
   const senderType = body.sender?.type
   if (senderType === 'agent_bot') return
+
+  // Ignore messages that the bot just sent (check if content starts with bot markers)
+  const content = body.content || ''
+  if (content.startsWith('[BOT') || content.startsWith('✅') || content.startsWith('*Pronto')) return
+
+  // If the outgoing message was sent within 2s of the last bot response, it's likely the bot itself
+  const botConvCheck = await prisma.botConversation.findUnique({ where: { chatwoot_conv_id: conversationId } })
+  if (botConvCheck) {
+    const lastUpdate = new Date(botConvCheck.updated_at).getTime()
+    const now = Date.now()
+    if (now - lastUpdate < 5000) return // Message sent within 5s of bot activity — likely the bot
+  }
 
   // An actual human agent sent a message — set takeover
   const botConv = await prisma.botConversation.findUnique({
