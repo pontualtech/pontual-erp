@@ -75,7 +75,7 @@ export default function PortalOSListPage() {
           setTotal(res.total)
         }
       })
-      .catch(() => { if (typeof window !== 'undefined' && window.toast) window.toast.error('Erro ao carregar ordens. Tente novamente.') })
+      .catch(() => { console.error('Erro ao carregar ordens de servico') })
       .finally(() => setLoading(false))
   }, [page, slug, router])
 
