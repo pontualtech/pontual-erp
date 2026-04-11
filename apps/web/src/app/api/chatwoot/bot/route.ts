@@ -353,19 +353,27 @@ async function processWebhook(body: any) {
     return
   }
 
+  // Handle agent assignment — human takeover
+  if (event === 'conversation_updated') {
+    const convId = body.id || body.conversation?.id
+    const assignee = body.assignee || body.conversation?.meta?.assignee
+    if (convId && assignee) {
+      await prisma.botConversation.updateMany({
+        where: { chatwoot_conv_id: convId },
+        data: { human_takeover: true, step: 'HUMAN' },
+      })
+      console.log(`[Bot] Conversation ${convId} assigned to ${assignee.name} — human takeover`)
+    }
+    return
+  }
+
   // Only process message_created
   if (event !== 'message_created') return
 
   // Only incoming messages (Chatwoot sends 0 for incoming, 1 for outgoing, or string)
   const messageType = body.message_type
   const isIncoming = messageType === 'incoming' || messageType === 0
-  const isOutgoing = messageType === 'outgoing' || messageType === 1
-  if (!isIncoming) {
-    if (isOutgoing) {
-      await handleHumanAgentMessage(body)
-    }
-    return
-  }
+  if (!isIncoming) return // Ignore all outgoing messages — human takeover is handled by assignment events only
 
   // Ignore private notes
   if (body.private) return
