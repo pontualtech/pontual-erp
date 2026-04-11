@@ -50,6 +50,8 @@ export async function POST(req: NextRequest) {
     const docDigits = (documento || '').replace(/\D/g, '')
 
     // 1. Find or create customer
+    // IMPORTANT: only search by document (exact match). Phone fallback ONLY when no document provided.
+    // This prevents linking OS to wrong customer when CPF doesn't exist but phone partially matches.
     let customer: any = null
     let isNewCustomer = false
 
@@ -57,19 +59,22 @@ export async function POST(req: NextRequest) {
       customer = await prisma.customer.findFirst({
         where: { company_id: companyId, document_number: docDigits, deleted_at: null },
       })
-    }
-
-    if (!customer && telefone) {
+      // If CPF/CNPJ provided but not found → new customer (do NOT fallback to phone)
+    } else if (telefone && !docDigits) {
+      // Only search by phone when NO document was provided (e.g. WhatsApp bot without CPF)
       const phoneDigits = telefone.replace(/\D/g, '')
-      customer = await prisma.customer.findFirst({
-        where: {
-          company_id: companyId, deleted_at: null,
-          OR: [
-            { mobile: { contains: phoneDigits.slice(-10) } },
-            { phone: { contains: phoneDigits.slice(-10) } },
-          ],
-        },
-      })
+      if (phoneDigits.length >= 10) {
+        customer = await prisma.customer.findFirst({
+          where: {
+            company_id: companyId, deleted_at: null,
+            OR: [
+              { mobile: phoneDigits },
+              { mobile: phoneDigits.startsWith('55') ? phoneDigits.slice(2) : `55${phoneDigits}` },
+              { phone: phoneDigits },
+            ],
+          },
+        })
+      }
     }
 
     if (!customer) {
@@ -88,14 +93,13 @@ export async function POST(req: NextRequest) {
         },
       })
       isNewCustomer = true
-    } else {
-      // Update existing customer with missing fields (email, phone, address from site form)
+    } else if (origem === 'site-pontualtech') {
+      // Update existing customer with data from site form (site data is more recent/explicit)
       const updates: Record<string, string> = {}
-      if (email && !customer.email) updates.email = email
-      if (telefone && !customer.mobile) updates.mobile = telefone.replace(/\D/g, '')
-      if (cep && !customer.address_zip) updates.address_zip = cep.replace(/\D/g, '')
-      if (endereco && !customer.address_street) updates.address_street = endereco
-      if (nome && !customer.legal_name?.trim()) updates.legal_name = nome
+      if (email) updates.email = email
+      if (telefone) updates.mobile = telefone.replace(/\D/g, '')
+      if (cep) updates.address_zip = cep.replace(/\D/g, '')
+      if (endereco) updates.address_street = endereco
       if (Object.keys(updates).length > 0) {
         customer = await prisma.customer.update({ where: { id: customer.id }, data: updates })
       }
