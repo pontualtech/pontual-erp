@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { authenticateBot } from '../_lib/auth'
 import { botSuccess, botError } from '../_lib/response'
+import { rateLimit } from '@/lib/rate-limit'
 
 /**
  * POST /api/bot/abrir-os
@@ -14,6 +15,10 @@ export async function POST(req: NextRequest) {
     const auth = authenticateBot(req)
     if (auth instanceof NextResponse) return auth
 
+    // Rate limit: max 30 OS creations per hour (prevents abuse/spam)
+    const rl = rateLimit(`abrir-os:${auth.companyId}`, 30, 60 * 60 * 1000)
+    if (!rl.allowed) return botError('Limite de criacao de OS atingido. Tente novamente em breve.', 429)
+
     const body = await req.json()
     // Accept aliases from n8n/external systems
     let { nome, documento, telefone, email, cep, endereco, equipamento, marca, modelo, numero_serie, defeito, observacoes, origem } = body
@@ -21,6 +26,16 @@ export async function POST(req: NextRequest) {
     documento = documento || body.cpf_cnpj || body.cpf || body.cnpj || body.document
     telefone = telefone || body.cliente_telefone || body.phone || body.mobile
     email = email || body.cliente_email
+
+    // Sanitize: strip HTML tags to prevent stored XSS
+    const stripHtml = (s: string) => s.replace(/<[^>]*>/g, '').trim()
+    if (nome) nome = stripHtml(nome)
+    if (defeito) defeito = stripHtml(defeito)
+    if (equipamento) equipamento = stripHtml(equipamento)
+    if (marca) marca = stripHtml(marca)
+    if (modelo) modelo = stripHtml(modelo)
+    if (observacoes) observacoes = stripHtml(observacoes)
+    if (endereco) endereco = stripHtml(endereco)
 
     // Normalizar strings vazias para undefined
     if (typeof equipamento === 'string' && !equipamento.trim()) equipamento = undefined

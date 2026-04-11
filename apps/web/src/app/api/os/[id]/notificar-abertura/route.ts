@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { success, error, handleError } from '@/lib/api-response'
 import { sendEmail } from '@/lib/send-email'
 import { sendWhatsApp } from '@/lib/whatsapp/evolution'
+import { rateLimit } from '@/lib/rate-limit'
 
 type Params = { params: { id: string } }
 
@@ -21,6 +22,12 @@ export async function POST(req: NextRequest, { params }: Params) {
     const expectedKey = process.env.INTERNAL_API_KEY || process.env.BOT_ANA_API_KEY || ''
     if (!expectedKey || internalKey !== expectedKey) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+    }
+
+    // Rate limit: max 3 notifications per OS per hour (prevents spam)
+    const rl = rateLimit(`notif-abertura:${params.id}`, 3, 60 * 60 * 1000)
+    if (!rl.allowed) {
+      return NextResponse.json({ error: 'Notificação já enviada recentemente' }, { status: 429 })
     }
 
     const body = await req.json().catch(() => ({}))
