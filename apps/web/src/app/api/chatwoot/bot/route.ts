@@ -604,6 +604,19 @@ async function processWebhook(body: any) {
               headers: cwHeaders(),
               body: JSON.stringify(contactUpdate),
             }).catch(() => {})
+
+            // Also update conversation sidebar with OS info
+            fetch(`${cwBase()}/conversations/${conversationId}/custom_attributes`, {
+              method: 'PATCH',
+              headers: cwHeaders(),
+              body: JSON.stringify({
+                custom_attributes: {
+                  os_numero: String(osNum),
+                  os_status: 'Coletar',
+                  equipamento: `${vd.marca || ''} ${vd.modelo || ''}`.trim() || 'Impressora',
+                },
+              }),
+            }).catch(() => {})
           }
         } else {
           await cwSendMessage(conversationId, '[BOT] Erro ao criar OS: ' + (erpData.erro || 'desconhecido'), true)
