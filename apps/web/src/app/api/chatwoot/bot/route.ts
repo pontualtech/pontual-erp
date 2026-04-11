@@ -393,8 +393,10 @@ async function processWebhook(body: any) {
   if (!isIncoming) return
 
   // Only process messages from contacts (customers), not from agents or bots
+  // Chatwoot webhook: sender.type may be undefined for contacts,
+  // but agents have sender.type='user' or 'agent_bot'
   const senderType = body.sender?.type || ''
-  if (senderType !== 'contact' && senderType !== 'Contact') return
+  if (senderType === 'user' || senderType === 'agent_bot' || senderType === 'User') return
 
   // Ignore private notes
   if (body.private) return
