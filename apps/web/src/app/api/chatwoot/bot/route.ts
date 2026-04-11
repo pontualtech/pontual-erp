@@ -493,9 +493,41 @@ async function processWebhook(body: any) {
 
     // Handle action tags
     if (parsed.action === 'ABRIR_OS' && parsed.vhsysData) {
-      updateData.step = 'AWAITING_CONFIRMATION'
-      updateData.data = parsed.vhsysData
-      await cwSetLabels(conversationId, ['aguardando_confirmacao_os'])
+      // Ana already confirmed with client — create OS immediately
+      try {
+        const erpResp = await fetch(`${ERP_BASE_URL}/api/bot/abrir-os`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Bot-Key': BOT_API_KEY },
+          body: JSON.stringify({
+            nome: parsed.vhsysData.nome || parsed.vhsysData.cliente || sender.name || 'Cliente WhatsApp',
+            documento: parsed.vhsysData.cpf_cnpj || '',
+            telefone: parsed.vhsysData.telefone || phone || '',
+            email: parsed.vhsysData.email || '',
+            cep: parsed.vhsysData.cep || '',
+            endereco: parsed.vhsysData.endereco || '',
+            equipamento: parsed.vhsysData.equipamento || 'Impressora',
+            marca: parsed.vhsysData.marca || '',
+            modelo: parsed.vhsysData.modelo || '',
+            defeito: parsed.vhsysData.defeito || 'Sem descricao',
+            origem: 'whatsapp_bot_ana',
+          }),
+        })
+        const erpData = await erpResp.json()
+        const osNum = erpData.os_numero || 0
+        const clienteNome = erpData.cliente_nome || parsed.vhsysData.nome || 'Cliente'
+        if (osNum > 0) {
+          await cwSendMessage(conversationId, `✅ *OS #${osNum}* aberta para ${clienteNome}!\n\n📱 Acompanhe: https://portal.pontualtech.com.br/portal/pontualtech`)
+          await cwSendMessage(conversationId, `[BOT ANA → ERP] OS #${osNum} | ${clienteNome}${erpData.cliente_novo ? ' (NOVO)' : ''}`, true)
+          await cwSetLabels(conversationId, ['os_aberta'])
+        } else {
+          await cwSendMessage(conversationId, '[BOT] Erro ao criar OS: ' + (erpData.erro || 'desconhecido'), true)
+        }
+      } catch (erpErr) {
+        console.error('[Bot] ERP abrir-os error:', erpErr)
+        await cwSendMessage(conversationId, '[BOT] Excecao ao criar OS. Verificar logs.', true)
+      }
+      updateData.step = 'IDLE'
+      updateData.data = {}
     } else if (parsed.action === 'TRANSFERIR_HUMANO') {
       updateData.human_takeover = true
       updateData.step = 'HUMAN'
