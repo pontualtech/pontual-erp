@@ -1,8 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { timingSafeEqual } from 'crypto'
 
-const BOT_KEY = process.env.BOT_ANA_API_KEY || ''
-const COMPANY_ID = process.env.BOT_ANA_COMPANY_ID || 'pontualtech-001'
+interface BotKeyEntry {
+  key: string
+  companyId: string
+}
+
+// Build list of bot API keys from env vars (multi-tenant support)
+// Each company has BOT_{PREFIX}_API_KEY and BOT_{PREFIX}_COMPANY_ID
+function loadBotKeys(): BotKeyEntry[] {
+  const keys: BotKeyEntry[] = []
+  const seen = new Set<string>()
+  for (const [name, value] of Object.entries(process.env)) {
+    const match = name.match(/^BOT_(.+)_API_KEY$/)
+    if (match && value) {
+      const prefix = match[1]
+      if (seen.has(prefix)) continue
+      seen.add(prefix)
+      const companyId = process.env[`BOT_${prefix}_COMPANY_ID`] || ''
+      if (companyId) {
+        keys.push({ key: value, companyId })
+      }
+    }
+  }
+  return keys
+}
+
+const BOT_KEYS = loadBotKeys()
 
 export interface BotContext {
   companyId: string
@@ -20,13 +44,15 @@ function safeEqual(a: string, b: string): boolean {
 export function authenticateBot(req: NextRequest): BotContext | NextResponse {
   const key = req.headers.get('x-bot-key') || ''
 
-  if (!BOT_KEY) {
+  if (BOT_KEYS.length === 0) {
     return NextResponse.json({ ok: false, erro: 'Bot API key nao configurada no servidor' }, { status: 500 })
   }
 
-  if (!safeEqual(key, BOT_KEY)) {
-    return NextResponse.json({ ok: false, erro: 'Chave de API invalida' }, { status: 401 })
+  for (const entry of BOT_KEYS) {
+    if (safeEqual(key, entry.key)) {
+      return { companyId: entry.companyId }
+    }
   }
 
-  return { companyId: COMPANY_ID }
+  return NextResponse.json({ ok: false, erro: 'Chave de API invalida' }, { status: 401 })
 }

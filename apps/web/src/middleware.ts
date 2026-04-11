@@ -5,6 +5,8 @@ import { updateSession } from '@/lib/supabase/middleware'
 const CORS_ORIGINS = [
   'https://pontualtech.com.br',
   'https://www.pontualtech.com.br',
+  'https://imprimitech.com.br',
+  'https://www.imprimitech.com.br',
 ]
 
 function withCors(response: NextResponse, origin: string): NextResponse {
