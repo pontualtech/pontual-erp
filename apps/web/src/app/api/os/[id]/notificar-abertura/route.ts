@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { success, error, handleError } from '@/lib/api-response'
 import { sendEmail } from '@/lib/send-email'
+import { sendWhatsApp } from '@/lib/whatsapp/evolution'
 
 type Params = { params: { id: string } }
 
@@ -181,17 +182,38 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     const subject = `OS-${osNum} aberta — ${equipment || 'Seu equipamento'} | ${companyName}`
 
-    await sendEmail(customer.email, subject, html)
+    // Send email
+    let emailSent = false
+    try {
+      await sendEmail(customer.email, subject, html)
+      emailSent = true
+    } catch (emailErr: any) {
+      console.error('[notificar-abertura] Email falhou:', emailErr.message)
+    }
+
+    // Send WhatsApp (fire-and-forget)
+    let whatsappSent = false
+    const phone = customer.mobile || customer.phone
+    if (phone) {
+      const whatsMsg = `✅ *${companyName}* — OS Registrada!\n\nOlá *${customerName}*! Sua ordem de serviço foi aberta com sucesso.\n\n🔧 *OS-${osNum}*\n📦 ${equipment || 'Equipamento'}\n⚠️ ${os.reported_issue || 'A diagnosticar'}\n📅 ${createdDate}\n\n📋 *Próximos passos:*\n1️⃣ Nossos técnicos vão analisar\n2️⃣ Você receberá o orçamento para aprovação\n3️⃣ Após aprovado, reparo em até 10 dias úteis\n\n🖥️ Acompanhe pelo Portal:\n${osDetailUrl}\n\nDúvidas? Responda esta mensagem ou ligue: ${companyPhone}`
+      const result = await sendWhatsApp(phone, whatsMsg)
+      whatsappSent = result.success
+    }
 
     // Update internal notes
-    await prisma.serviceOrder.update({
-      where: { id: os.id },
-      data: {
-        internal_notes: (os.internal_notes || '') + `\nEMAIL ABERTURA enviado para ${customer.email} em ${createdDate} ${createdTime}`,
-      },
-    })
+    const notifications = []
+    if (emailSent) notifications.push(`EMAIL para ${customer.email}`)
+    if (whatsappSent) notifications.push(`WHATSAPP para ${phone}`)
+    if (notifications.length > 0) {
+      await prisma.serviceOrder.update({
+        where: { id: os.id },
+        data: {
+          internal_notes: (os.internal_notes || '') + `\nNOTIFICAÇÃO ABERTURA: ${notifications.join(' + ')} em ${createdDate} ${createdTime}`,
+        },
+      })
+    }
 
-    return success({ sent: true, to: customer.email, subject })
+    return success({ sent: true, email: emailSent ? customer.email : null, whatsapp: whatsappSent ? phone : null, subject })
   } catch (err: any) {
     console.error('[notificar-abertura]', err.message)
     return handleError(err)
