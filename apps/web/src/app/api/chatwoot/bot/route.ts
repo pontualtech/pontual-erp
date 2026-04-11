@@ -453,6 +453,13 @@ async function processWebhook(body: any) {
         message_history: [],
       },
     })
+
+    // Assign conversation to Ana (agent ID 6) so messages show as "Ana"
+    fetch(`${cwBase()}/conversations/${conversationId}/assignments`, {
+      method: 'POST',
+      headers: cwHeaders(),
+      body: JSON.stringify({ assignee_id: 6 }),
+    }).catch(() => {})
   }
 
   // Idempotency check
