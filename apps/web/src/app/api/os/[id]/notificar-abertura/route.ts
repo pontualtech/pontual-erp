@@ -162,24 +162,16 @@ export async function POST(req: NextRequest, { params }: Params) {
     </div>
 
     <!-- CONTATO -->
-    <div style="border-top:1px solid #e2e8f0;padding-top:20px;margin-top:8px">
+    <div style="border-top:1px solid #e2e8f0;padding-top:20px;margin-top:8px;text-align:center">
       <p style="font-size:13px;color:#475569;margin:0 0 12px">
-        Duvidas? Fale conosco:
+        Duvidas? Fale com a gente pelo WhatsApp!
       </p>
-      <table style="font-size:13px;color:#334155;border-collapse:collapse">
-        <tr>
-          <td style="padding:4px 12px 4px 0">📞</td>
-          <td style="padding:4px 0">${companyPhone}</td>
-        </tr>
-        <tr>
-          <td style="padding:4px 12px 4px 0">💬</td>
-          <td style="padding:4px 0"><a href="https://wa.me/${companyWhatsApp}" style="color:#16a34a;text-decoration:none;font-weight:500">WhatsApp</a></td>
-        </tr>
-        <tr>
-          <td style="padding:4px 12px 4px 0">✉️</td>
-          <td style="padding:4px 0"><a href="mailto:${companyEmail}" style="color:#1e40af;text-decoration:none">${companyEmail}</a></td>
-        </tr>
-      </table>
+      <a href="https://wa.me/${companyWhatsApp}" style="display:inline-block;background:#25d366;color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:8px;font-weight:700;font-size:14px">
+        💬 Chamar no WhatsApp
+      </a>
+      <p style="font-size:12px;color:#94a3b8;margin:10px 0 0">
+        ✉️ <a href="mailto:${companyEmail}" style="color:#64748b;text-decoration:none">${companyEmail}</a>
+      </p>
     </div>
   </div>
 
@@ -214,7 +206,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     let whatsappSent = false
     const phone = customer.mobile || customer.phone
     if (phone) {
-      const whatsMsg = `✅ *${companyName}* — OS Registrada!\n\nOlá *${customerName}*! Sua ordem de serviço foi aberta com sucesso.\n\n🔧 *OS-${osNum}*\n📦 ${equipment || 'Equipamento'}\n⚠️ ${os.reported_issue || 'A diagnosticar'}\n📅 ${createdDate}\n\n🚚 *Coleta agendada para o próximo dia útil!*\nNossa equipe de logística entrará em contato para confirmar endereço e horário.\n\n📦 *Orientações:*\n• Cabos e fonte _não precisam_ ser enviados\n• Mantenha cartuchos/toner na máquina\n\n📋 *Próximos passos:*\n1️⃣ Coleta no próximo dia útil\n2️⃣ Diagnóstico e orçamento\n3️⃣ Aprovação pelo Portal\n4️⃣ Reparo e entrega com garantia\n\n🖥️ Acompanhe pelo Portal:\n${osDetailUrl}\n\nDúvidas? Responda esta mensagem ou ligue: ${companyPhone}`
+      const whatsMsg = `✅ *${companyName}* — OS Registrada!\n\nOlá *${customerName}*! Sua ordem de serviço foi aberta com sucesso.\n\n🔧 *OS-${osNum}*\n📦 ${equipment || 'Equipamento'}\n⚠️ ${os.reported_issue || 'A diagnosticar'}\n📅 ${createdDate}\n\n🚚 *Coleta agendada para o próximo dia útil!*\nNossa equipe de logística entrará em contato para confirmar endereço e horário.\n\n📦 *Orientações:*\n• Cabos e fonte _não precisam_ ser enviados\n• Mantenha cartuchos/toner na máquina\n\n📋 *Próximos passos:*\n1️⃣ Coleta no próximo dia útil\n2️⃣ Diagnóstico e orçamento\n3️⃣ Aprovação pelo Portal\n4️⃣ Reparo e entrega com garantia\n\n🖥️ Acompanhe pelo Portal:\n${osDetailUrl}\n\nDúvidas? Responda esta mensagem!`
       const result = await sendWhatsApp(phone, whatsMsg)
       whatsappSent = result.success
     }
