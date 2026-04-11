@@ -578,7 +578,18 @@ async function processWebhook(body: any) {
         const clienteNome = erpData.cliente_nome || parsed.vhsysData.nome || 'Cliente'
         if (osNum > 0) {
           await cwSendMessage(conversationId, `✅ *OS #${osNum}* aberta para ${clienteNome}!\n\n📱 Acompanhe pelo portal:\nhttps://portal.pontualtech.com.br/portal/pontualtech/login\n\n📞 Suporte: https://wa.me/551126263841`)
-          await cwSendMessage(conversationId, `[BOT ANA → ERP] OS #${osNum} | ${clienteNome}${erpData.cliente_novo ? ' (NOVO)' : ''}`, true)
+          // Private note with all links for agents (always visible in conversation)
+          const vdNote = parsed.vhsysData as Record<string, any>
+          const noteLines = [
+            `📋 *OS #${osNum}* — ${clienteNome}${erpData.cliente_novo ? ' (NOVO)' : ''}`,
+            `🖨️ ${String(vdNote.marca || '')} ${String(vdNote.modelo || '')} — ${String(vdNote.defeito || '')}`,
+            `📄 CPF: ${String(vdNote.cpf_cnpj || 'N/I')} | 📞 ${String(vdNote.telefone || phone || 'N/I')}`,
+            `📧 ${String(vdNote.email || 'N/I')} | 📍 ${String(vdNote.endereco || 'N/I')}`,
+            ``,
+            `🔗 ERP: https://erp.pontualtech.work/os/${osNum}`,
+            `🔗 Portal: https://portal.pontualtech.com.br/portal/pontualtech/login`,
+          ]
+          await cwSendMessage(conversationId, noteLines.join('\n'), true)
           await cwSetLabels(conversationId, ['os_aberta'])
 
           // Sync contact data to Chatwoot (keep CRM in sync with ERP)
