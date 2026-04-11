@@ -18,9 +18,7 @@ function safeEqual(a: string, b: string): boolean {
 }
 
 export function authenticateBot(req: NextRequest): BotContext | NextResponse {
-  const key = req.headers.get('x-bot-key')
-    || req.nextUrl.searchParams.get('key')
-    || ''
+  const key = req.headers.get('x-bot-key') || ''
 
   if (!BOT_KEY) {
     return NextResponse.json({ ok: false, erro: 'Bot API key nao configurada no servidor' }, { status: 500 })

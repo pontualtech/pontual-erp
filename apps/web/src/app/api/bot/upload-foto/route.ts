@@ -37,7 +37,8 @@ export async function POST(req: NextRequest) {
     })
     if (!os) return botError('OS nao encontrada', 404)
 
-    const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
+    const EXT_MAP: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }
+    const ext = EXT_MAP[file.type] ?? 'jpg'
     const safeName = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${ext}`
     const relPath = path.join(auth.companyId, osId, safeName)
     const fullPath = path.join(UPLOAD_DIR, relPath)

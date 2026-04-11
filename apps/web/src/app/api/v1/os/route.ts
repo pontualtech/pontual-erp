@@ -82,13 +82,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Status inicial não configurado' }, { status: 500 })
     }
 
-    // Criar com número atômico
+    // Criar com número atômico (advisory lock previne race condition)
     const os = await prisma.$transaction(async (tx) => {
+      const lockKey = Buffer.from(user.companyId).reduce((acc: number, b: number) => acc + b, 0)
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey})`
       const result = await tx.$queryRaw<{ next_number: number }[]>`
         SELECT COALESCE(MAX(os_number), 0) + 1 as next_number
         FROM service_orders
         WHERE company_id = ${user.companyId}
-        FOR UPDATE
       `
       const nextNumber = result[0]?.next_number || 1
 

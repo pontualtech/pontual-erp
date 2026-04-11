@@ -379,16 +379,16 @@ async function processWebhook(body: any) {
     return
   }
 
-  // Handle agent assignment — human takeover
+  // Handle agent assignment — human takeover (skip if assigned to Bot Ana herself, agent ID 6)
   if (event === 'conversation_updated') {
     const convId = body.id || body.conversation?.id
     const assignee = body.assignee || body.conversation?.meta?.assignee
-    if (convId && assignee) {
+    if (convId && assignee && assignee.id !== 6) {
       await prisma.botConversation.updateMany({
         where: { chatwoot_conv_id: convId },
         data: { human_takeover: true, step: 'HUMAN' },
       })
-      console.log(`[Bot] Conversation ${convId} assigned to ${assignee.name} — human takeover`)
+      console.log(`[Bot] Conversation ${convId} assigned to ${assignee.name} (ID ${assignee.id}) — human takeover`)
     }
     return
   }

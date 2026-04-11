@@ -171,14 +171,15 @@ export async function POST(req: NextRequest) {
 
     console.log(`[Bot abrir-os] OS #${os.os_number} | Cliente: ${customer.legal_name} ${isNewCustomer ? '(NOVO)' : ''}`)
 
-    // Fire-and-forget: enviar email de abertura ao cliente
-    if (customer.email) {
+    // Fire-and-forget: enviar email + WhatsApp de abertura ao cliente
+    if (customer.email || customer.mobile || customer.phone) {
       const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'
+      const internalKey = process.env.INTERNAL_API_KEY || process.env.BOT_ANA_API_KEY || ''
       fetch(`${baseUrl}/api/os/${os.id}/notificar-abertura`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Internal-Key': internalKey },
         body: JSON.stringify({ companyId: auth.companyId }),
-      }).catch(e => console.log('[Bot] Email abertura falhou (ignorado):', e.message))
+      }).catch(e => console.log('[Bot] Notificacao abertura falhou (ignorado):', e.message))
     }
 
     return botSuccess({

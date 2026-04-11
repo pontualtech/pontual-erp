@@ -16,7 +16,13 @@ type Params = { params: { id: string } }
  */
 export async function POST(req: NextRequest, { params }: Params) {
   try {
-    // Aceita chamada interna (sem auth) — usado pelo bot e webhooks
+    // Validate internal secret — prevents external abuse
+    const internalKey = req.headers.get('x-internal-key') || ''
+    const expectedKey = process.env.INTERNAL_API_KEY || process.env.BOT_ANA_API_KEY || ''
+    if (!expectedKey || internalKey !== expectedKey) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+    }
+
     const body = await req.json().catch(() => ({}))
 
     const os = await prisma.serviceOrder.findFirst({
@@ -150,7 +156,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       <ol style="font-size:12px;color:#713f12;margin:0;padding-left:18px;line-height:1.8">
         <li>Acesse <a href="${portalUrl}" style="color:#1e40af;font-weight:600">portal.pontualtech.com.br</a></li>
         <li>Login: seu <strong>CPF ou CNPJ</strong></li>
-        <li>Senha: <strong>os 5 primeiros digitos</strong> do seu CPF/CNPJ ${customer.document_number ? '(<strong>' + customer.document_number.substring(0, 5) + '...</strong>)' : ''}</li>
+        <li>Senha: <strong>os 5 primeiros digitos</strong> do seu CPF/CNPJ</li>
         <li>Pronto! Acompanhe suas OS, aprove orcamentos e mais</li>
       </ol>
     </div>
