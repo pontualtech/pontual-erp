@@ -1,4 +1,4 @@
-// Update Ana's prompt in Dify
+// Update Ana's prompt in Dify — fix portal URL, WhatsApp link, and outdated references
 async function main() {
   const loginResp = await fetch('https://dify.pontualtech.work/console/api/login', {
     method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -14,39 +14,45 @@ async function main() {
   const mc = app.model_config;
   let prompt = mc.pre_prompt;
 
-  const s6idx = prompt.indexOf('## 6. FECHAMENTO');
-  const s7idx = prompt.indexOf('## 7. GATILHOS');
+  console.log('Original length:', prompt.length);
 
-  const newSection6 = `## 6. FECHAMENTO E ABERTURA DE OS
+  // 1. Replace ALL old portal URLs
+  prompt = prompt.replace(/pontualtech\.com\.br\/#consulta-os/g, 'portal.pontualtech.com.br/portal/pontualtech/login');
+  prompt = prompt.replace(/pontualtech\.com\.br\/\#consulta-os/g, 'portal.pontualtech.com.br/portal/pontualtech/login');
 
-REGRA DE OURO: So peca confirmacao quando tiver TODOS os 7 dados obrigatorios:
-1. Nome completo
-2. CPF ou CNPJ
-3. Endereco completo com CEP
-4. E-mail
-5. Telefone de contato
-6. Marca e modelo do equipamento
-7. Descricao do defeito
+  // 2. Replace phone numbers with WhatsApp links
+  prompt = prompt.replace(/\(11\) 2626-3841/g, 'wa.me/551126263841');
+  prompt = prompt.replace(/551126263841/g, '551126263841');
 
-Se o cliente mandou varios dados de uma vez, EXTRAIA e ANOTE todos. So peca o que REALMENTE falta. NUNCA repita algo que o cliente ja informou.
+  // 3. Replace wa.me/551126263841 references to ensure format is correct
+  // Already correct format
 
-Se o telefone estiver faltando, pergunte: "E qual o melhor telefone pra nossa equipe confirmar o horario da retirada?"
+  // 4. Replace any suporte phone references with WhatsApp link format
+  prompt = prompt.replace(/nosso suporte esta a disposicao:\s*📞.*?551126263841/gs,
+    'nosso suporte via WhatsApp: wa.me/551126263841');
 
-Quando tiver TUDO, confirme de forma NATURAL, como uma conversa entre amigos. NAO use formato de formulario. Exemplo:
-"Deixa eu ver se peguei tudo certo... Carlos Lustosa, CPF terminando em 809, endereco na Rua Mooca 4179, Epson L355 que nao liga, contato por karlao@outlook.com e 12 99736-1519. Certinho tudo isso?"
+  // 5. Fix section 4 routing — update portal reference
+  prompt = prompt.replace(
+    /Encaminhe para o portal pontualtech\.com\.br\/#consulta-os/g,
+    'Encaminhe para o portal: portal.pontualtech.com.br/portal/pontualtech/login'
+  );
+  prompt = prompt.replace(
+    /Encaminhe para o portal portal\.pontualtech\.com\.br\/portal\/pontualtech\/login/g,
+    'Encaminhe para o portal: portal.pontualtech.com.br/portal/pontualtech/login'
+  );
 
-IMPORTANTE: SOMENTE apos o cliente confirmar, inclua no FINAL da sua resposta:
+  // 6. Fix suporte WhatsApp reference — use link instead of phone
+  prompt = prompt.replace(
+    /mande o link do suporte \(wa\.me\/551126263841\)/g,
+    'mande o link do suporte: wa.me/551126263841'
+  );
 
-[VHSYS_DATA]{"nome":"[nome]","cpf_cnpj":"[cpf/cnpj]","email":"[email]","cep":"[cep]","telefone":"[telefone]","endereco":"[endereco completo]","marca":"[marca]","modelo":"[modelo]","defeito":"[defeito]","equipamento":"[marca] [modelo]"}[/VHSYS_DATA]
-[ABRIR_OS]
+  console.log('Updated length:', prompt.length);
+  console.log('Has old portal:', prompt.includes('pontualtech.com.br/#consulta'));
+  console.log('Has new portal:', prompt.includes('portal.pontualtech.com.br'));
+  console.log('Has phone (11) 2626:', prompt.includes('(11) 2626'));
+  console.log('Has wa.me link:', prompt.includes('wa.me/551126263841'));
 
-Apos incluir as tags, diga algo natural como: "Show! To abrindo sua OS agora... A equipe ja vai entrar em contato pra combinar o melhor horario da coleta!"
-
-NAO diga "OS aberta com sucesso" — o sistema envia a confirmacao oficial automaticamente.
-
-`;
-
-  prompt = prompt.slice(0, s6idx) + newSection6 + prompt.slice(s7idx);
   mc.pre_prompt = prompt;
 
   const updateResp = await fetch('https://dify.pontualtech.work/console/api/apps/0cb2153a-562d-49fb-9f9d-0d81ed0c7a8d/model-config', {

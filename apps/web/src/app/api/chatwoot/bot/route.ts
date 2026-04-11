@@ -554,7 +554,7 @@ async function processWebhook(body: any) {
         const osNum = erpData.os_numero || 0
         const clienteNome = erpData.cliente_nome || parsed.vhsysData.nome || 'Cliente'
         if (osNum > 0) {
-          await cwSendMessage(conversationId, `✅ *OS #${osNum}* aberta para ${clienteNome}!\n\n📱 Acompanhe: https://portal.pontualtech.com.br/portal/pontualtech`)
+          await cwSendMessage(conversationId, `✅ *OS #${osNum}* aberta para ${clienteNome}!\n\n📱 Acompanhe pelo portal:\nhttps://portal.pontualtech.com.br/portal/pontualtech/login\n\n📞 Suporte: https://wa.me/551126263841`)
           await cwSendMessage(conversationId, `[BOT ANA → ERP] OS #${osNum} | ${clienteNome}${erpData.cliente_novo ? ' (NOVO)' : ''}`, true)
           await cwSetLabels(conversationId, ['os_aberta'])
         } else {
