@@ -30,8 +30,9 @@ export async function middleware(request: NextRequest) {
     return response
   }
 
-  // Skip ALL middleware for webhooks (they use their own auth: token/secret)
-  if (pathname.startsWith('/api/chatwoot/') || pathname.startsWith('/api/webhook/') || pathname.startsWith('/api/webhooks/')) {
+  // Skip auth for webhooks and internal notification endpoints (called by bot routes)
+  if (pathname.startsWith('/api/chatwoot/') || pathname.startsWith('/api/webhook/') || pathname.startsWith('/api/webhooks/')
+      || pathname.includes('/notificar-abertura') || pathname.includes('/notificar-pronto') || pathname.includes('/notificar-coleta')) {
     return NextResponse.next()
   }
 
