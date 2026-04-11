@@ -1,15 +1,41 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { updateSession } from '@/lib/supabase/middleware'
 
+// Origins allowed to call /api/bot/* from the browser (CORS)
+const CORS_ORIGINS = [
+  'https://pontualtech.com.br',
+  'https://www.pontualtech.com.br',
+]
+
+function withCors(response: NextResponse, origin: string): NextResponse {
+  response.headers.set('Access-Control-Allow-Origin', origin)
+  response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, OPTIONS')
+  response.headers.set('Access-Control-Allow-Headers', 'Content-Type, X-Bot-Key')
+  response.headers.set('Access-Control-Max-Age', '86400')
+  return response
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
+  const origin = request.headers.get('origin') || ''
+  const isAllowedOrigin = CORS_ORIGINS.includes(origin)
 
-  // PATCH 7: API routes without auth return 401 JSON (not HTML SPA shell)
+  // Bot API routes: skip auth, add CORS for pontualtech.com.br
+  if (pathname.startsWith('/api/bot/')) {
+    if (request.method === 'OPTIONS' && isAllowedOrigin) {
+      return withCors(new NextResponse(null, { status: 204 }), origin)
+    }
+    const response = NextResponse.next()
+    if (isAllowedOrigin) withCors(response, origin)
+    return response
+  }
+
   // Skip ALL middleware for webhooks (they use their own auth: token/secret)
-  if (pathname.startsWith('/api/chatwoot/') || pathname.startsWith('/api/webhook/') || pathname.startsWith('/api/webhooks/') || pathname.startsWith('/api/bot/')) {
+  if (pathname.startsWith('/api/chatwoot/') || pathname.startsWith('/api/webhook/') || pathname.startsWith('/api/webhooks/')) {
     return NextResponse.next()
   }
 
+  // PATCH 7: API routes without auth return 401 JSON (not HTML SPA shell)
   if (pathname.startsWith('/api/') && !pathname.startsWith('/api/auth/') && !pathname.startsWith('/api/portal/')) {
     const hasAuthCookie = request.cookies.getAll().some(c => c.name.includes('auth-token') || c.name.includes('supabase'))
     if (!hasAuthCookie) {
