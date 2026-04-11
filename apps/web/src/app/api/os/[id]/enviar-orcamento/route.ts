@@ -444,10 +444,10 @@ export async function GET(req: NextRequest, { params }: Params) {
     })
     const htmlTemplate = msgTemplate?.template || DEFAULT_QUOTE_TEMPLATE
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'
+    const portalBase = process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'
     const slug = os.companies?.slug || 'default'
     const token = generateOrcamentoToken(os.id)
-    const approvalLink = `${appUrl}/portal/${slug}/orcamento/${os.id}?token=${token}`
+    const approvalLink = `${portalBase}/portal/${slug}/orcamento/${os.id}?token=${token}`
 
     const vars = buildTemplateVars(os, settings, approvalLink)
     const renderedHtml = replaceTemplateVars(htmlTemplate, vars)
@@ -489,10 +489,10 @@ export async function POST(req: NextRequest, { params }: Params) {
     })
     const htmlTemplate = msgTemplate?.template || DEFAULT_QUOTE_TEMPLATE
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'
+    const portalBase = process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'
     const slug = os.companies?.slug || 'default'
     const token = generateOrcamentoToken(os.id)
-    const approvalLink = `${appUrl}/portal/${slug}/orcamento/${os.id}?token=${token}`
+    const approvalLink = `${portalBase}/portal/${slug}/orcamento/${os.id}?token=${token}`
 
     const vars = buildTemplateVars(os, settings, approvalLink)
     const renderedHtml = replaceTemplateVars(htmlTemplate, vars)

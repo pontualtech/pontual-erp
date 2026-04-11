@@ -200,7 +200,7 @@ export async function POST(req: NextRequest) {
 
     // Send verification email (fire-and-forget)
     if (formattedEmail && result.verifyToken) {
-      const verifyUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'}/portal/${company_slug}/verificar-email?token=${result.verifyToken}`
+      const verifyUrl = `${process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'}/portal/${company_slug}/verificar-email?token=${result.verifyToken}`
       const firstName = formattedName.split(' ')[0] || 'Cliente'
       void sendEmail(
         formattedEmail,

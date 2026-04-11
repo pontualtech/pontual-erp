@@ -433,7 +433,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           phone,
-          message: `Olá! Sua OS-${osNum} foi atualizada para: *${statusName}*.\n\nAcompanhe pelo portal: ${process.env.NEXT_PUBLIC_APP_URL}/portal/pontualtech/login`
+          message: `Olá! Sua OS-${osNum} foi atualizada para: *${statusName}*.\n\nAcompanhe pelo portal: ${process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'}/portal/pontualtech/login`
         })
       }).catch(() => {}) // fire and forget
     }
@@ -480,10 +480,10 @@ export async function POST(req: NextRequest, { params }: Params) {
       const companyName = os.customers?.company_id ? (await prisma.company.findUnique({ where: { id: user.companyId }, select: { name: true } }).catch(() => null))?.name || cfg['company.name'] || 'Empresa' : cfg['company.name'] || 'Empresa'
       const companyPhone = cfg['company.phone'] || ''
       const companyEmail = cfg['company.email'] || ''
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'
+      const portalBase = process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'
       const company = await prisma.company.findFirst({ where: { id: user.companyId }, select: { slug: true } })
       const portalSlug = company?.slug || 'pontualtech'
-      const portalUrl = `${appUrl}/portal/${portalSlug}/os/${os.id}`
+      const portalUrl = `${portalBase}/portal/${portalSlug}/os/${os.id}`
 
       const badgeColor = friendlyTo.includes('Pronto') ? '#16a34a' : friendlyTo.includes('Cancelada') ? '#dc2626' : friendlyTo.includes('Aguardando') ? '#f59e0b' : '#2563eb'
 

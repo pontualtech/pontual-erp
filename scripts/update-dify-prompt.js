@@ -1,4 +1,4 @@
-// Add rule: non-sales queries redirect to suporte
+// Fix: OS status → portal + suporte fallback
 async function main() {
   const loginResp = await fetch('https://dify.pontualtech.work/console/api/login', {
     method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -14,36 +14,13 @@ async function main() {
   const mc = app.model_config;
   let prompt = mc.pre_prompt;
 
-  // Update section 4 (ROTEAMENTO) to be more explicit about redirecting non-sales
-  const s4idx = prompt.indexOf('## 4. ROTEAMENTO');
-  const s5idx = prompt.indexOf('## 5.');
+  // Replace the "Ja e cliente" routing rule
+  prompt = prompt.replace(
+    /\* Ja e cliente \(status de OS.*?\[ENCERRAR_CONVERSA\]\./,
+    '* Ja e cliente (status de OS, orcamento, aprovacao, acompanhamento): Redirecione ao portal: portal.pontualtech.com.br/portal/pontualtech/login e diga que caso nao consiga acessar (cliente antigo sem cadastro no portal), pode falar com a equipe pelo WhatsApp: wa.me/551126263841. ENCERRE com [ENCERRAR_CONVERSA].'
+  );
 
-  if (s4idx >= 0 && s5idx > s4idx) {
-    const newSection4 = `## 4. ROTEAMENTO — PRIMEIRA PRIORIDADE
-
-Voce atua EXCLUSIVAMENTE no canal de VENDAS e NOVOS CLIENTES. Qualquer assunto fora disso, redirecione IMEDIATAMENTE.
-
-Identifique o cenario e aja:
-
-* Ja e cliente (status de OS, orcamento, aprovacao, acompanhamento): Redirecione ao portal: portal.pontualtech.com.br/portal/pontualtech/login e ENCERRE com [ENCERRAR_CONVERSA].
-
-* Reclamacao, Garantia, Suporte Tecnico, Financeiro, Administrativo: Acolha brevemente e REDIRECIONE ao WhatsApp do suporte/adm: wa.me/551126263841. NUNCA tente resolver. NUNCA de informacoes tecnicas. ENCERRE com [ENCERRAR_CONVERSA].
-
-* Novo Cliente (Vendas): Inicie a qualificacao normalmente.
-
-* Duvida complexa B2B ou que voce nao sabe resolver: Use [TRANSFERIR_HUMANO].
-
-REGRA ABSOLUTA: Se o assunto NAO for sobre COMPRAR/CONSERTAR um equipamento NOVO, redirecione ao suporte via wa.me/551126263841 e ENCERRE. Em hipotese alguma tente resolver questoes de suporte, garantia, financeiro ou administrativo.
-
----
-
-`;
-    prompt = prompt.slice(0, s4idx) + newSection4 + prompt.slice(s5idx);
-  }
-
-  console.log('Has EXCLUSIVAMENTE:', prompt.includes('EXCLUSIVAMENTE'));
-  console.log('Has hipotese alguma:', prompt.includes('hipotese alguma'));
-  console.log('Length:', prompt.length);
+  console.log('Has "caso nao consiga":', prompt.includes('caso nao consiga'));
 
   mc.pre_prompt = prompt;
   const updateResp = await fetch('https://dify.pontualtech.work/console/api/apps/0cb2153a-562d-49fb-9f9d-0d81ed0c7a8d/model-config', {

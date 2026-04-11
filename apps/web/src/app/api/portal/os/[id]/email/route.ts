@@ -61,7 +61,7 @@ export async function POST(
     const companyName = os.companies?.name || 'Empresa'
     const companySlug = os.companies?.slug || ''
     const customerName = os.customers?.legal_name || 'Cliente'
-    const portalUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'}/portal/${companySlug}/os/${os.id}`
+    const portalUrl = `${process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'}/portal/${companySlug}/os/${os.id}`
 
     // Build items table rows
     const itemsRows = os.service_order_items

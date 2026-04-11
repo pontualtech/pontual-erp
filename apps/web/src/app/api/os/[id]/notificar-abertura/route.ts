@@ -39,8 +39,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const companyWhatsApp = '551126263841'
     const companyEmail = companySettings['email'] || 'contato@pontualtech.com.br'
     const slug = company?.slug || 'pontualtech'
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'
-    const portalUrl = `${appUrl}/portal/${slug}`
+    const portalUrl = process.env.PORTAL_URL || `https://portal.pontualtech.com.br/portal/${slug}`
     const osDetailUrl = `${portalUrl}/os/${os.id}`
     const osNum = String(os.os_number).padStart(4, '0')
     const customerName = customer.legal_name?.split(' ')[0] || 'Cliente'
@@ -149,10 +148,10 @@ export async function POST(req: NextRequest, { params }: Params) {
     <div style="background:#fefce8;border:1px solid #fde68a;border-radius:10px;padding:16px;margin:0 0 24px">
       <p style="font-size:13px;font-weight:600;color:#854d0e;margin:0 0 8px">💡 Como acessar o Portal do Cliente:</p>
       <ol style="font-size:12px;color:#713f12;margin:0;padding-left:18px;line-height:1.8">
-        <li>Acesse <a href="${portalUrl}" style="color:#1e40af;font-weight:600">${portalUrl.replace('https://','')}</a></li>
-        <li>Use seu <strong>CPF ou CNPJ</strong> como login</li>
-        <li>No primeiro acesso, clique em <strong>"Criar senha"</strong></li>
-        <li>Pronto! Voce pode acompanhar todas as suas OS</li>
+        <li>Acesse <a href="${portalUrl}" style="color:#1e40af;font-weight:600">portal.pontualtech.com.br</a></li>
+        <li>Login: seu <strong>CPF ou CNPJ</strong></li>
+        <li>Senha: <strong>os 5 primeiros digitos</strong> do seu CPF/CNPJ ${customer.document_number ? '(<strong>' + customer.document_number.substring(0, 5) + '...</strong>)' : ''}</li>
+        <li>Pronto! Acompanhe suas OS, aprove orcamentos e mais</li>
       </ol>
     </div>
 

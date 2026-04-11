@@ -96,8 +96,9 @@ export async function POST(req: NextRequest) {
     // Enviar email de boas-vindas com instrucoes
     if (customer.email) {
       const firstName = customer.legal_name?.split(' ')[0] || 'Cliente'
-      const verifyUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'}/portal/${company.slug}/verificar-email?token=${verifyToken}`
-      const loginUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'}/portal/${company.slug}/login?doc=${digits}`
+      const portalBase = process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'
+      const verifyUrl = `${portalBase}/portal/${company.slug}/verificar-email?token=${verifyToken}`
+      const loginUrl = `${portalBase}/portal/${company.slug}/login?doc=${digits}`
 
       void sendEmail(
         customer.email,

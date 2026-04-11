@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Email nao cadastrado' }, { status: 400 })
     }
 
-    const verifyUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'}/portal/${company.slug}/verificar-email?token=${newToken}`
+    const verifyUrl = `${process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'}/portal/${company.slug}/verificar-email?token=${newToken}`
     const firstName = customer.legal_name?.split(' ')[0] || 'Cliente'
 
     const html = `
