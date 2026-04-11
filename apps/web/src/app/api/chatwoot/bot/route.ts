@@ -580,6 +580,31 @@ async function processWebhook(body: any) {
           await cwSendMessage(conversationId, `✅ *OS #${osNum}* aberta para ${clienteNome}!\n\n📱 Acompanhe pelo portal:\nhttps://portal.pontualtech.com.br/portal/pontualtech/login\n\n📞 Suporte: https://wa.me/551126263841`)
           await cwSendMessage(conversationId, `[BOT ANA → ERP] OS #${osNum} | ${clienteNome}${erpData.cliente_novo ? ' (NOVO)' : ''}`, true)
           await cwSetLabels(conversationId, ['os_aberta'])
+
+          // Sync contact data to Chatwoot (keep CRM in sync with ERP)
+          if (contactId) {
+            const vd = parsed.vhsysData
+            const contactUpdate: Record<string, unknown> = {}
+            if (vd.nome) contactUpdate.name = vd.nome
+            if (vd.email) contactUpdate.email = vd.email
+            if (vd.telefone) contactUpdate.phone_number = `+55${(vd.telefone || '').replace(/\D/g, '')}`
+            contactUpdate.custom_attributes = {
+              cpf_cnpj: vd.cpf_cnpj || '',
+              endereco: vd.endereco || '',
+              cep: vd.cep || '',
+              marca: vd.marca || '',
+              modelo: vd.modelo || '',
+              ultima_os: String(osNum),
+              erp_cliente_id: erpData.cliente_id || '',
+              erp_os_link: `https://erp.pontualtech.work/os/${osNum}`,
+              portal_link: `https://portal.pontualtech.com.br/portal/pontualtech/login`,
+            }
+            fetch(`${cwBase()}/contacts/${contactId}`, {
+              method: 'PUT',
+              headers: cwHeaders(),
+              body: JSON.stringify(contactUpdate),
+            }).catch(() => {})
+          }
         } else {
           await cwSendMessage(conversationId, '[BOT] Erro ao criar OS: ' + (erpData.erro || 'desconhecido'), true)
         }
