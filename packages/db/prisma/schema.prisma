@@ -1404,3 +1404,26 @@ model PaymentConfig {
   @@index([company_id], map: "idx_payment_configs_company")
   @@map("payment_configs")
 }
+
+model BotConversation {
+  id                  String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id          String
+  chatwoot_conv_id    Int
+  chatwoot_contact_id Int?
+  customer_id         String?
+  customer_phone      String?
+  inbox_id            Int?
+  dify_conv_id        String?  // Dify conversation_id for memory continuity
+  step                String   @default("IDLE")
+  data                Json     @default("{}")
+  message_history     Json     @default("[]") // last 20 messages for context
+  human_takeover      Boolean  @default(false)
+  last_message_id     String?  // for idempotency
+  created_at          DateTime @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime @updatedAt     @db.Timestamptz(6)
+
+  @@unique([chatwoot_conv_id])
+  @@index([customer_phone])
+  @@index([chatwoot_contact_id])
+  @@map("bot_conversations")
+}
