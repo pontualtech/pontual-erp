@@ -29,11 +29,11 @@ export async function POST(req: NextRequest) {
 
     if (!defeito && !equipamento) return botError('Campos "equipamento" e "defeito" sao obrigatorios')
 
-    // Formatar no padrão do ERP
-    if (nome) nome = nome.trim().toUpperCase()
-    if (marca) marca = marca.trim().toUpperCase()
-    if (modelo) modelo = modelo.trim().toUpperCase()
-    if (defeito) defeito = defeito.trim().charAt(0).toUpperCase() + defeito.trim().slice(1)
+    // Formatar no padrão do ERP (use toLocaleUpperCase for Portuguese accents)
+    if (nome) nome = nome.trim().toLocaleUpperCase('pt-BR')
+    if (marca) marca = marca.trim().toLocaleUpperCase('pt-BR')
+    if (modelo) modelo = modelo.trim().toLocaleUpperCase('pt-BR')
+    if (defeito) defeito = defeito.trim().charAt(0).toLocaleUpperCase('pt-BR') + defeito.trim().slice(1)
 
     // Se equipamento é apenas marca+modelo combinados, usar tipo genérico
     if (equipamento && marca && modelo) {
@@ -105,15 +105,19 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 2. Idempotency: check for duplicate OS in last 10 minutes (same customer)
+    // 2. Idempotency: check for duplicate OS in last 10 minutes (same customer + same equipment)
     const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000)
+    const dedupWhere: any = {
+      company_id: companyId,
+      customer_id: customer.id,
+      created_at: { gte: tenMinAgo },
+      deleted_at: null,
+    }
+    // Only match same equipment type+brand to allow multiple devices from same customer
+    if (equipamento) dedupWhere.equipment_type = equipamento
+    if (marca) dedupWhere.equipment_brand = marca
     const existingOS = await prisma.serviceOrder.findFirst({
-      where: {
-        company_id: companyId,
-        customer_id: customer.id,
-        created_at: { gte: tenMinAgo },
-        deleted_at: null,
-      },
+      where: dedupWhere,
       include: { module_statuses: { select: { name: true } } },
       orderBy: { created_at: 'desc' },
     })

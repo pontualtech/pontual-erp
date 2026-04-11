@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
       where.customers = { legal_name: { contains: busca, mode: 'insensitive' } }
     }
 
-    const ordens = await prisma.serviceOrder.findMany({
+    let ordens = await prisma.serviceOrder.findMany({
       where,
       take: limite,
       orderBy: { created_at: 'desc' },
@@ -60,6 +60,36 @@ export async function GET(req: NextRequest) {
         user_profiles: { select: { name: true } },
       },
     })
+
+    // Fallback: if CPF search (11 digits) returned 0, retry as phone number
+    if (ordens.length === 0 && digits.length === 11 && where.customers?.document_number) {
+      const phoneSuffix = digits.slice(-10)
+      ordens = await prisma.serviceOrder.findMany({
+        where: {
+          company_id: auth.companyId, deleted_at: null,
+          customers: {
+            OR: [
+              { mobile: { contains: phoneSuffix } },
+              { phone: { contains: phoneSuffix } },
+            ],
+          },
+        },
+        take: limite,
+        orderBy: { created_at: 'desc' },
+        include: {
+          customers: {
+            select: {
+              id: true, legal_name: true, trade_name: true, document_number: true,
+              mobile: true, phone: true, email: true,
+              address_street: true, address_number: true, address_complement: true,
+              address_neighborhood: true, address_city: true, address_state: true, address_zip: true,
+            },
+          },
+          module_statuses: { select: { name: true, color: true } },
+          user_profiles: { select: { name: true } },
+        },
+      })
+    }
 
     return botSuccess({
       total: ordens.length,
