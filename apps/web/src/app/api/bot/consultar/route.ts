@@ -48,7 +48,14 @@ export async function GET(req: NextRequest) {
       take: limite,
       orderBy: { created_at: 'desc' },
       include: {
-        customers: { select: { legal_name: true, document_number: true, mobile: true, phone: true, email: true } },
+        customers: {
+          select: {
+            id: true, legal_name: true, trade_name: true, document_number: true,
+            mobile: true, phone: true, email: true,
+            address_street: true, address_number: true, address_complement: true,
+            address_neighborhood: true, address_city: true, address_state: true, address_zip: true,
+          },
+        },
         module_statuses: { select: { name: true, color: true } },
         user_profiles: { select: { name: true } },
       },
@@ -57,12 +64,29 @@ export async function GET(req: NextRequest) {
     return botSuccess({
       total: ordens.length,
       busca,
+      // Include full customer data on first result (for form auto-fill)
+      cliente: ordens.length > 0 && ordens[0].customers ? {
+        id: ordens[0].customers.id,
+        nome: ordens[0].customers.legal_name,
+        nome_fantasia: ordens[0].customers.trade_name,
+        documento: ordens[0].customers.document_number,
+        telefone: ordens[0].customers.mobile || ordens[0].customers.phone || null,
+        email: ordens[0].customers.email,
+        endereco: ordens[0].customers.address_street,
+        numero: ordens[0].customers.address_number,
+        complemento: ordens[0].customers.address_complement,
+        bairro: ordens[0].customers.address_neighborhood,
+        cidade: ordens[0].customers.address_city,
+        uf: ordens[0].customers.address_state,
+        cep: ordens[0].customers.address_zip,
+      } : null,
       ordens: ordens.map(os => ({
         os_numero: os.os_number,
         os_id: os.id,
         cliente_nome: os.customers?.legal_name ?? null,
         cliente_documento: os.customers?.document_number ?? null,
         cliente_telefone: os.customers?.mobile || os.customers?.phone || null,
+        cliente_email: os.customers?.email ?? null,
         equipamento: [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' '),
         defeito: os.reported_issue,
         diagnostico: os.diagnosis,
