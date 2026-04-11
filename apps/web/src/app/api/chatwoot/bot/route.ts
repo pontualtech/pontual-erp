@@ -32,7 +32,7 @@ const ERP_BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech
 // Chatwoot config — admin token for sending, sender.type filter prevents self-trigger
 const CW_URL = process.env.CHATWOOT_URL || 'https://chat.pontualtech.work'
 const CW_ACCOUNT_ID = process.env.CHATWOOT_ACCOUNT_ID || '1'
-const CW_TOKEN = process.env.CW_ADMIN_TOKEN || process.env.CHATWOOT_API_TOKEN || ''
+const CW_TOKEN = process.env.CHATWOOT_API_TOKEN || process.env.CW_ADMIN_TOKEN || ''
 
 const DEBOUNCE_MS = 5000 // 5s debounce window
 const MAX_HISTORY = 20   // keep last 20 messages
