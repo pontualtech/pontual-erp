@@ -317,11 +317,34 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  // Process synchronously (Next.js may kill async after response)
-  try {
-    await processWebhook(body)
-  } catch (err) {
-    console.error('[Bot] Processing error:', err)
+  // Quick filter: only process relevant events before going async
+  const event = body.event
+  if (event !== 'message_created' && event !== 'conversation_status_changed' && event !== 'conversation_updated') {
+    return NextResponse.json({ status: 'ignored' })
+  }
+
+  // For message_created: only incoming from contacts
+  if (event === 'message_created') {
+    const mt = body.message_type
+    const isIncoming = mt === 'incoming' || mt === 0
+    if (!isIncoming) return NextResponse.json({ status: 'ignored' })
+    const senderType = body.sender?.type || ''
+    if (senderType !== 'contact' && senderType !== 'Contact') {
+      return NextResponse.json({ status: 'ignored' })
+    }
+  }
+
+  // Respond 200 immediately, then process async via setTimeout(0)
+  // Next.js App Router keeps the function alive for pending promises
+  // even after the response is sent, as long as they're scheduled
+  const processPromise = processWebhook(body).catch(err => {
+    console.error('[Bot] Async error:', err.message || err)
+  })
+
+  // Use waitUntil if available (Vercel/Edge runtime), otherwise just let it run
+  const ctx = (globalThis as any).__next_internal_action_context
+  if (ctx?.waitUntil) {
+    ctx.waitUntil(processPromise)
   }
 
   return NextResponse.json({ status: 'ok' })
