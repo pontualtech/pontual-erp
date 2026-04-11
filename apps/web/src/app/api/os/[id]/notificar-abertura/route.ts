@@ -106,14 +106,28 @@ export async function POST(req: NextRequest, { params }: Params) {
       </table>
     </div>
 
+    <!-- COLETA -->
+    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:20px;margin:0 0 24px">
+      <p style="font-size:15px;font-weight:700;color:#1e40af;margin:0 0 12px">🚚 Coleta agendada para o proximo dia util!</p>
+      <table style="font-size:13px;color:#334155;border-collapse:collapse;width:100%">
+        <tr><td style="padding:6px 0;line-height:1.6">Nossa equipe de <strong>logistica</strong> entrara em contato por <strong>telefone, WhatsApp ou e-mail</strong> para confirmar o endereco e horario da coleta.</td></tr>
+      </table>
+      <div style="background:#dbeafe;border-radius:8px;padding:12px;margin:12px 0 0">
+        <p style="font-size:12px;color:#1e40af;margin:0;line-height:1.6"><strong>📦 Orientacoes para envio:</strong><br>
+        • Cabos e fonte de energia <strong>nao precisam ser enviados</strong><br>
+        • Mantenha os <strong>cartuchos ou toner na maquina</strong> para testes finais<br>
+        • Horario de coleta: <strong>Seg a Sex, 09h as 17h</strong></p>
+      </div>
+    </div>
+
     <!-- PRÓXIMOS PASSOS -->
     <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:20px;margin:0 0 24px">
       <p style="font-size:14px;font-weight:700;color:#166534;margin:0 0 12px">📋 Proximos passos:</p>
       <table style="font-size:13px;color:#334155;border-collapse:collapse;width:100%">
-        <tr><td style="padding:4px 8px 4px 0;vertical-align:top">1️⃣</td><td style="padding:4px 0">Nossos tecnicos vao analisar seu equipamento</td></tr>
-        <tr><td style="padding:4px 8px 4px 0;vertical-align:top">2️⃣</td><td style="padding:4px 0">Voce recebera o orcamento por email para aprovacao</td></tr>
-        <tr><td style="padding:4px 8px 4px 0;vertical-align:top">3️⃣</td><td style="padding:4px 0">Apos aprovado, o reparo sera realizado em ate 10 dias uteis</td></tr>
-        <tr><td style="padding:4px 8px 4px 0;vertical-align:top">4️⃣</td><td style="padding:4px 0">Voce sera notificado quando o equipamento estiver pronto</td></tr>
+        <tr><td style="padding:4px 8px 4px 0;vertical-align:top">1️⃣</td><td style="padding:4px 0"><strong>Coleta:</strong> Nossa logistica busca seu equipamento no proximo dia util</td></tr>
+        <tr><td style="padding:4px 8px 4px 0;vertical-align:top">2️⃣</td><td style="padding:4px 0"><strong>Diagnostico:</strong> Nossos tecnicos analisam e enviam o orcamento</td></tr>
+        <tr><td style="padding:4px 8px 4px 0;vertical-align:top">3️⃣</td><td style="padding:4px 0"><strong>Aprovacao:</strong> Voce aprova pelo Portal ou WhatsApp</td></tr>
+        <tr><td style="padding:4px 8px 4px 0;vertical-align:top">4️⃣</td><td style="padding:4px 0"><strong>Reparo e Entrega:</strong> Consertamos e devolvemos com garantia</td></tr>
       </table>
     </div>
 
@@ -195,7 +209,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     let whatsappSent = false
     const phone = customer.mobile || customer.phone
     if (phone) {
-      const whatsMsg = `✅ *${companyName}* — OS Registrada!\n\nOlá *${customerName}*! Sua ordem de serviço foi aberta com sucesso.\n\n🔧 *OS-${osNum}*\n📦 ${equipment || 'Equipamento'}\n⚠️ ${os.reported_issue || 'A diagnosticar'}\n📅 ${createdDate}\n\n📋 *Próximos passos:*\n1️⃣ Nossos técnicos vão analisar\n2️⃣ Você receberá o orçamento para aprovação\n3️⃣ Após aprovado, reparo em até 10 dias úteis\n\n🖥️ Acompanhe pelo Portal:\n${osDetailUrl}\n\nDúvidas? Responda esta mensagem ou ligue: ${companyPhone}`
+      const whatsMsg = `✅ *${companyName}* — OS Registrada!\n\nOlá *${customerName}*! Sua ordem de serviço foi aberta com sucesso.\n\n🔧 *OS-${osNum}*\n📦 ${equipment || 'Equipamento'}\n⚠️ ${os.reported_issue || 'A diagnosticar'}\n📅 ${createdDate}\n\n🚚 *Coleta agendada para o próximo dia útil!*\nNossa equipe de logística entrará em contato para confirmar endereço e horário.\n\n📦 *Orientações:*\n• Cabos e fonte _não precisam_ ser enviados\n• Mantenha cartuchos/toner na máquina\n\n📋 *Próximos passos:*\n1️⃣ Coleta no próximo dia útil\n2️⃣ Diagnóstico e orçamento\n3️⃣ Aprovação pelo Portal\n4️⃣ Reparo e entrega com garantia\n\n🖥️ Acompanhe pelo Portal:\n${osDetailUrl}\n\nDúvidas? Responda esta mensagem ou ligue: ${companyPhone}`
       const result = await sendWhatsApp(phone, whatsMsg)
       whatsappSent = result.success
     }
