@@ -583,40 +583,62 @@ async function processWebhook(body: any) {
 
           // Sync contact data to Chatwoot (keep CRM in sync with ERP)
           if (contactId) {
-            const vd = parsed.vhsysData
+            const vd = parsed.vhsysData as Record<string, any>
             const contactUpdate: Record<string, unknown> = {}
-            if (vd.nome) contactUpdate.name = vd.nome
-            if (vd.email) contactUpdate.email = vd.email
-            if (vd.telefone) contactUpdate.phone_number = `+55${String(vd.telefone || '').replace(/\D/g, '')}`
+            if (vd.nome) contactUpdate.name = String(vd.nome)
+            if (vd.email) contactUpdate.email = String(vd.email)
+            if (vd.telefone) contactUpdate.phone_number = '+55' + String(vd.telefone).replace(/\D/g, '')
             contactUpdate.custom_attributes = {
-              cpf_cnpj: vd.cpf_cnpj || '',
-              endereco: vd.endereco || '',
-              cep: vd.cep || '',
-              marca: vd.marca || '',
-              modelo: vd.modelo || '',
+              cpf_cnpj: String(vd.cpf_cnpj || ''),
+              endereco: String(vd.endereco || ''),
+              cep: String(vd.cep || ''),
+              marca: String(vd.marca || ''),
+              modelo: String(vd.modelo || ''),
               ultima_os: String(osNum),
-              erp_cliente_id: erpData.cliente_id || '',
               erp_os_link: `https://erp.pontualtech.work/os/${osNum}`,
               portal_link: `https://portal.pontualtech.com.br/portal/pontualtech/login`,
+              erp_cliente_id: String(erpData.cliente_id || ''),
             }
-            fetch(`${cwBase()}/contacts/${contactId}`, {
-              method: 'PUT',
-              headers: cwHeaders(),
-              body: JSON.stringify(contactUpdate),
-            }).catch(() => {})
+            try {
+              const syncResp = await fetch(`${cwBase()}/contacts/${contactId}`, {
+                method: 'PUT',
+                headers: cwHeaders(),
+                body: JSON.stringify(contactUpdate),
+              })
+              if (!syncResp.ok) console.error('[Bot] Contact sync failed:', syncResp.status)
+              else console.log('[Bot] Contact synced:', contactId)
+            } catch (e) { console.error('[Bot] Contact sync error:', e) }
 
             // Also update conversation sidebar with OS info
-            fetch(`${cwBase()}/conversations/${conversationId}/custom_attributes`, {
-              method: 'PATCH',
-              headers: cwHeaders(),
-              body: JSON.stringify({
-                custom_attributes: {
-                  os_numero: String(osNum),
-                  os_status: 'Coletar',
-                  equipamento: `${vd.marca || ''} ${vd.modelo || ''}`.trim() || 'Impressora',
-                },
-              }),
-            }).catch(() => {})
+            try {
+              const convResp = await fetch(`${cwBase()}/conversations/${conversationId}/custom_attributes`, {
+                method: 'PATCH',
+                headers: cwHeaders(),
+                body: JSON.stringify({
+                  custom_attributes: {
+                    os_numero: String(osNum),
+                    os_status: 'Coletar',
+                    equipamento: `${String(vd.marca || '')} ${String(vd.modelo || '')}`.trim() || 'Impressora',
+                  },
+                }),
+              })
+              if (!convResp.ok) console.error('[Bot] Conversation custom_attributes sync failed:', convResp.status)
+            } catch (e) { console.error('[Bot] Conversation sync error:', e) }
+
+            // Save Chatwoot conversation link to ERP customer
+            if (erpData.cliente_id) {
+              try {
+                await fetch(`${ERP_BASE_URL}/api/bot/atualizar-cliente`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json', 'X-Bot-Key': BOT_API_KEY },
+                  body: JSON.stringify({
+                    cliente_id: erpData.cliente_id,
+                    chatwoot_contact_id: String(contactId),
+                    chatwoot_url: `${CW_URL}/app/accounts/${CW_ACCOUNT_ID}/conversations/${conversationId}`,
+                  }),
+                })
+              } catch (e) { console.error('[Bot] ERP customer update error:', e) }
+            }
           }
         } else {
           await cwSendMessage(conversationId, '[BOT] Erro ao criar OS: ' + (erpData.erro || 'desconhecido'), true)
