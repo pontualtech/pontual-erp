@@ -29,11 +29,11 @@ export async function POST(req: NextRequest) {
 
     if (!defeito && !equipamento) return botError('Campos "equipamento" e "defeito" sao obrigatorios')
 
-    // Formatar no padrão do ERP (use toLocaleUpperCase for Portuguese accents)
-    if (nome) nome = nome.trim().toLocaleUpperCase('pt-BR')
-    if (marca) marca = marca.trim().toLocaleUpperCase('pt-BR')
-    if (modelo) modelo = modelo.trim().toLocaleUpperCase('pt-BR')
-    if (defeito) defeito = defeito.trim().charAt(0).toLocaleUpperCase('pt-BR') + defeito.trim().slice(1)
+    // Formatar no padrão do ERP — NÃO fazer toUpperCase no defeito (preserva acentos no Alpine/Docker)
+    if (nome) nome = nome.trim().normalize('NFC').toUpperCase()
+    if (marca) marca = marca.trim().normalize('NFC').toUpperCase()
+    if (modelo) modelo = modelo.trim().normalize('NFC').toUpperCase()
+    if (defeito) defeito = defeito.trim().normalize('NFC')
 
     // Se equipamento é apenas marca+modelo combinados, usar tipo genérico
     if (equipamento && marca && modelo) {
