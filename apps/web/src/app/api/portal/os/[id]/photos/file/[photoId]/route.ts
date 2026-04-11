@@ -47,8 +47,8 @@ export async function GET(
       return NextResponse.redirect(photo.url)
     }
 
-    const fullPath = path.join(UPLOAD_DIR, photo.url)
-    if (!existsSync(fullPath)) {
+    const fullPath = path.resolve(path.join(UPLOAD_DIR, photo.url))
+    if (!fullPath.startsWith(path.resolve(UPLOAD_DIR)) || !existsSync(fullPath)) {
       return NextResponse.json({ error: 'Arquivo nao encontrado' }, { status: 404 })
     }
 

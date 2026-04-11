@@ -34,7 +34,9 @@ export async function POST(req: NextRequest) {
     const secret = req.nextUrl.searchParams.get('secret')
       || req.headers.get('authorization')?.replace('Bearer ', '')
     const expectedSecret = process.env.BOLETO_WEBHOOK_SECRET || process.env.CHATWOOT_WEBHOOK_SECRET
-    if (!secret || secret !== expectedSecret) {
+    const { timingSafeEqual } = require('crypto')
+    const safeEq = (a: string, b: string) => { try { return a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b)) } catch { return false } }
+    if (!secret || !expectedSecret || !safeEq(secret, expectedSecret)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 

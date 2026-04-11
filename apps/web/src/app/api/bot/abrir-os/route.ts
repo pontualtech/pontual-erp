@@ -227,6 +227,6 @@ export async function POST(req: NextRequest) {
     })
   } catch (err: any) {
     console.error('[Bot abrir-os]', err.message)
-    return botError('Erro interno: ' + (err.message || ''), 500)
+    return botError('Erro interno', 500)
   }
 }

@@ -35,7 +35,7 @@ const FIELD_MAP: Record<string, string> = {
 const KEY_MAP = Object.fromEntries(Object.entries(FIELD_MAP).map(([k, v]) => [v, k]))
 
 // Simple encryption for API key storage
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'pontual-erp-default-encryption-key-32b'
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || ''
 
 function encrypt(text: string): string {
   if (!text) return ''

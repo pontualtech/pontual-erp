@@ -57,7 +57,8 @@ async function loadBotConfig(companyId: string): Promise<BotConfig> {
   if (apiKey && apiKey.includes(':')) {
     // Encrypted with the same method as /api/settings/chatbot
     try {
-      const encKey = process.env.ENCRYPTION_KEY || 'pontual-erp-default-encryption-key-32b'
+      const encKey = process.env.ENCRYPTION_KEY
+      if (!encKey) throw new Error('ENCRYPTION_KEY not configured')
       const key = crypto.scryptSync(encKey, 'salt', 32)
       const [ivHex, encrypted] = apiKey.split(':')
       const iv = Buffer.from(ivHex, 'hex')
