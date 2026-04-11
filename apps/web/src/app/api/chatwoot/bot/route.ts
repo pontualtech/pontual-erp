@@ -124,7 +124,8 @@ interface DifyResponse {
 async function callDify(
   query: string,
   user: string,
-  conversationId?: string
+  conversationId?: string,
+  imageUrls?: string[]
 ): Promise<DifyResponse> {
   const payload: Record<string, unknown> = {
     inputs: {},
@@ -134,6 +135,14 @@ async function callDify(
   }
   if (conversationId) {
     payload.conversation_id = conversationId
+  }
+  // Send images to Dify for Gemini Vision processing
+  if (imageUrls && imageUrls.length > 0) {
+    payload.files = imageUrls.map(url => ({
+      type: 'image',
+      transfer_method: 'remote_url',
+      url,
+    }))
   }
 
   const res = await fetch(`${DIFY_BASE_URL}/v1/chat-messages`, {
@@ -415,18 +424,31 @@ async function processWebhook(body: any) {
   // Extract content and handle audio
   let content = body.content?.trim() || ''
 
-  // Check for audio attachments
+  // Process attachments: audio, images, video, documents
   const attachments = body.attachments || body.conversation?.messages?.[0]?.attachments || []
+  const imageUrls: string[] = []
+
   for (const att of attachments) {
-    if (att.file_type === 'audio' && att.data_url) {
-      const transcript = await transcribeAudio(att.data_url)
+    const fileType = att.file_type || ''
+    const url = att.data_url || att.url || ''
+    if (!url) continue
+
+    if (fileType === 'audio') {
+      const transcript = await transcribeAudio(url)
       if (transcript) {
         content = `[Audio transcrito]: ${transcript}\n\n${content}`.trim()
       }
+    } else if (fileType === 'image') {
+      imageUrls.push(url)
+      content = `${content}\n[Imagem enviada pelo cliente: ${url}]`.trim()
+    } else if (fileType === 'video') {
+      content = `${content}\n[Video enviado pelo cliente: ${url}]`.trim()
+    } else if (fileType === 'file') {
+      content = `${content}\n[Documento enviado: ${att.file_name || url}]`.trim()
     }
   }
 
-  if (!content) return
+  if (!content && imageUrls.length === 0) return
 
   // Extract sender info
   const sender = body.sender || body.conversation?.meta?.sender || {}
@@ -510,7 +532,8 @@ async function processWebhook(body: any) {
     const difyResponse = await callDify(
       query,
       userIdentifier,
-      botConv.dify_conv_id || undefined
+      botConv.dify_conv_id || undefined,
+      imageUrls.length > 0 ? imageUrls : undefined
     )
 
     if (!difyResponse.answer) {
