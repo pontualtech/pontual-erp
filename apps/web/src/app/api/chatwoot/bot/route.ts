@@ -34,7 +34,7 @@ const CW_URL = process.env.CHATWOOT_URL || 'https://chat.pontualtech.work'
 const CW_ACCOUNT_ID = process.env.CHATWOOT_ACCOUNT_ID || '1'
 const CW_TOKEN = process.env.CHATWOOT_API_TOKEN || process.env.CW_ADMIN_TOKEN || ''
 
-const DEBOUNCE_MS = 5000 // 5s debounce window
+const DEBOUNCE_MS = 2000 // 2s debounce window (Chatwoot timeout is ~15s)
 const MAX_HISTORY = 20   // keep last 20 messages
 
 // ---------------------------------------------------------------------------
@@ -317,7 +317,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  // Process synchronously — Next.js kills async after response
+  // Log webhook receipt to DB (diagnostic — proves webhook is arriving)
+  const convId = body.conversation?.id || 0
+  const event = body.event || '?'
+  const msgType = body.message_type
+  const senderType = body.sender?.type || '?'
+  try {
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO bot_conversations (id, company_id, chatwoot_conv_id, step, data, message_history, created_at, updated_at)
+       VALUES (gen_random_uuid(), 'LOG', $1, $2, '{}', '[]', NOW(), NOW())
+       ON CONFLICT DO NOTHING`,
+      99999000 + Math.floor(Math.random() * 999),
+      `LOG:${event}|mt:${msgType}|st:${senderType}|cv:${convId}`
+    )
+  } catch {}
+
+  // Process synchronously
   try {
     await processWebhook(body)
   } catch (err: any) {
@@ -327,8 +342,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ status: 'ok' })
 }
 
-// Increase Next.js route timeout (default 60s, Chatwoot retries on timeout)
-export const maxDuration = 60
+export const maxDuration = 120 // 2 min timeout
 
 // ---------------------------------------------------------------------------
 // Async webhook processor
