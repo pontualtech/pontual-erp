@@ -88,6 +88,17 @@ export async function POST(req: NextRequest) {
         },
       })
       isNewCustomer = true
+    } else {
+      // Update existing customer with missing fields (email, phone, address from site form)
+      const updates: Record<string, string> = {}
+      if (email && !customer.email) updates.email = email
+      if (telefone && !customer.mobile) updates.mobile = telefone.replace(/\D/g, '')
+      if (cep && !customer.address_zip) updates.address_zip = cep.replace(/\D/g, '')
+      if (endereco && !customer.address_street) updates.address_street = endereco
+      if (nome && !customer.legal_name?.trim()) updates.legal_name = nome
+      if (Object.keys(updates).length > 0) {
+        customer = await prisma.customer.update({ where: { id: customer.id }, data: updates })
+      }
     }
 
     // 2. Idempotency: check for duplicate OS in last 10 minutes (same customer)

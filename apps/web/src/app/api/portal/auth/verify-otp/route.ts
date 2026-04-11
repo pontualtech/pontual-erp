@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { createPortalToken } from '@/lib/portal-auth'
 import { timingSafeEqual } from 'crypto'
+import { rateLimit } from '@/lib/rate-limit'
 
 export async function POST(req: NextRequest) {
   try {
@@ -11,6 +12,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: 'Dados incompletos' },
         { status: 400 }
+      )
+    }
+
+    // Rate limit: max 10 OTP attempts per customer per 15 minutes
+    const rl = rateLimit(`otp-verify:${customer_id}`, 10, 15 * 60 * 1000)
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: 'Muitas tentativas. Aguarde alguns minutos.' },
+        { status: 429 }
       )
     }
 

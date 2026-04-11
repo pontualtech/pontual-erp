@@ -55,8 +55,8 @@ export default function PortalOSListPage() {
   useEffect(() => {
     const savedCompany = localStorage.getItem('portal_company')
     const savedCustomer = localStorage.getItem('portal_customer')
-    if (savedCompany) setCompany(JSON.parse(savedCompany))
-    if (savedCustomer) setCustomer(JSON.parse(savedCustomer))
+    try { if (savedCompany) setCompany(JSON.parse(savedCompany)) } catch {}
+    try { if (savedCustomer) setCustomer(JSON.parse(savedCustomer)) } catch {}
   }, [slug, router])
 
   useEffect(() => {
@@ -75,7 +75,7 @@ export default function PortalOSListPage() {
           setTotal(res.total)
         }
       })
-      .catch(() => {})
+      .catch(() => { if (typeof window !== 'undefined' && window.toast) window.toast.error('Erro ao carregar ordens. Tente novamente.') })
       .finally(() => setLoading(false))
   }, [page, slug, router])
 
