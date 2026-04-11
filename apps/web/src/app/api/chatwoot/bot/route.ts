@@ -29,11 +29,10 @@ const GROQ_API_KEY = process.env.GROQ_API_KEY || ''
 const BOT_API_KEY = process.env.BOT_ANA_API_KEY || ''
 const ERP_BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'
 
-// Chatwoot config — use bot agent token (sender.type = 'agent_bot', avoids self-trigger)
+// Chatwoot config — admin token for sending, sender.type filter prevents self-trigger
 const CW_URL = process.env.CHATWOOT_URL || 'https://chat.pontualtech.work'
 const CW_ACCOUNT_ID = process.env.CHATWOOT_ACCOUNT_ID || '1'
-const CW_BOT_TOKEN = process.env.CW_BOT_AGENT_TOKEN || 'DKK9G3pZgiBV52RRSSkrAX7m'
-const CW_TOKEN = CW_BOT_TOKEN // Use bot token for all messages
+const CW_TOKEN = process.env.CW_ADMIN_TOKEN || process.env.CHATWOOT_API_TOKEN || ''
 
 const DEBOUNCE_MS = 5000 // 5s debounce window
 const MAX_HISTORY = 20   // keep last 20 messages
