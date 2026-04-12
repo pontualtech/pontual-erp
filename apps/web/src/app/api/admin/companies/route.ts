@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requireSuperAdmin } from '@/lib/auth'
 import { success, paginated, error, handleError } from '@/lib/api-response'
+import { clearHostnameCache } from '@/lib/hostname-resolver'
+
+const RESERVED_SUBDOMAINS = [
+  'admin', 'api', 'www', 'mail', 'smtp', 'ftp', 'static', 'cdn', 'assets',
+  'app', 'erp', 'portal', 'painel', 'dashboard', 'login', 'auth',
+  'localhost', 'test', 'staging', 'dev', 'prod', 'ns1', 'ns2',
+]
 
 // GET /api/admin/companies — Listar todas as empresas
 export async function GET(req: NextRequest) {
@@ -10,8 +17,8 @@ export async function GET(req: NextRequest) {
     if (result instanceof NextResponse) return result
 
     const url = req.nextUrl
-    const page = parseInt(url.searchParams.get('page') || '1')
-    const limit = parseInt(url.searchParams.get('limit') || '50')
+    const page = Math.max(parseInt(url.searchParams.get('page') || '1'), 1)
+    const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '50'), 1), 200)
     const search = url.searchParams.get('search') || ''
 
     const where = search
@@ -55,9 +62,11 @@ export async function POST(req: NextRequest) {
     const existing = await prisma.company.findUnique({ where: { slug } })
     if (existing) return error('Slug já está em uso', 409)
 
-    // Validate subdomain uniqueness
+    // Validate subdomain
     const sub = subdomain || slug
     if (sub) {
+      if (RESERVED_SUBDOMAINS.includes(sub)) return error(`Subdomínio "${sub}" é reservado e não pode ser usado`)
+      if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(sub)) return error('Subdomínio inválido')
       const existingSub = await prisma.company.findFirst({ where: { subdomain: sub } })
       if (existingSub) return error('Subdomínio já está em uso', 409)
     }
@@ -72,6 +81,9 @@ export async function POST(req: NextRequest) {
         settings: {},
       },
     })
+
+    // Clear hostname cache so new subdomain resolves immediately
+    if (sub) clearHostnameCache()
 
     return success(company, 201)
   } catch (err) {

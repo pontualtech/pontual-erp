@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireSuperAdmin } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
+import { randomBytes } from 'crypto'
 
 // GET /api/admin/companies/[id]/users — Listar usuários da empresa
 export async function GET(
@@ -60,7 +61,7 @@ export async function POST(
     const supabase = createAdminClient()
 
     // Gerar senha se não fornecida
-    const userPassword = password || Math.random().toString(36).slice(-10) + 'A1!'
+    const userPassword = password || randomBytes(12).toString('base64url')
 
     // Criar no Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({

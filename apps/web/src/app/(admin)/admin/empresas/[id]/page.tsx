@@ -96,6 +96,7 @@ export default function CompanyDetailPage() {
 
   async function toggleActive() {
     if (!company) return
+    if (company.is_active && !window.confirm(`Desativar "${company.name}"? Todos os usuários desta empresa perderão acesso.`)) return
     try {
       const res = await fetch(`/api/admin/companies/${companyId}`, {
         method: 'PATCH',

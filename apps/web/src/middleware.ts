@@ -33,8 +33,13 @@ export async function middleware(request: NextRequest) {
   }
 
   // Skip auth for webhooks and internal notification endpoints (called by bot routes)
-  if (pathname.startsWith('/api/chatwoot/') || pathname.startsWith('/api/webhook/') || pathname.startsWith('/api/webhooks/')
-      || pathname.includes('/notificar-abertura') || pathname.includes('/notificar-pronto') || pathname.includes('/notificar-coleta')) {
+  if (pathname.startsWith('/api/chatwoot/') || pathname.startsWith('/api/webhook/') || pathname.startsWith('/api/webhooks/')) {
+    return NextResponse.next()
+  }
+  // Internal notification routes: exact path prefix match only
+  if (pathname.startsWith('/api/os/') && (
+    pathname.endsWith('/notificar-abertura') || pathname.endsWith('/notificar-pronto') || pathname.endsWith('/notificar-coleta')
+  )) {
     return NextResponse.next()
   }
 

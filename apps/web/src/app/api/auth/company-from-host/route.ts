@@ -21,7 +21,6 @@ export async function GET() {
 
     return NextResponse.json({
       data: {
-        id: company.id,
         slug: company.slug,
         name: company.name,
       },

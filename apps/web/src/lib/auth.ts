@@ -60,14 +60,19 @@ export async function getServerUser(): Promise<AuthUser | null> {
     if (!profile) return null
 
     const platformRole = userData.data.user.app_metadata?.platform_role
+    const email = userData.data.user.email!
+    // Double check: app_metadata + env allowlist
+    const allowedEmails = (process.env.SUPER_ADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean)
+    const isSuperAdmin = platformRole === 'super_admin' && (allowedEmails.length === 0 || allowedEmails.includes(email.toLowerCase()))
+
     return {
       id: userData.data.user.id,
-      email: userData.data.user.email!,
+      email,
       companyId: profile.company_id,
       roleId: profile.role_id,
       roleName: profile.roles.name.toLowerCase(),
       name: profile.name,
-      isSuperAdmin: platformRole === 'super_admin',
+      isSuperAdmin,
     }
   } catch {
     return null
