@@ -25,6 +25,7 @@ import { prisma } from '@pontual/db'
 // Selected by ?company= query param in webhook URL.
 interface BotCompanyConfig {
   companyId: string
+  slug: string
   allowedInboxes: number[]
   difyBaseUrl: string
   difyApiKey: string
@@ -32,11 +33,15 @@ interface BotCompanyConfig {
   cwUrl: string
   cwAccountId: string
   cwToken: string
+  portalUrl: string
+  supportWhatsApp: string
+  botOrigin: string
 }
 
 const COMPANY_CONFIGS: Record<string, BotCompanyConfig> = {
   pontualtech: {
     companyId: process.env.BOT_ANA_COMPANY_ID || 'pontualtech-001',
+    slug: 'pontualtech',
     allowedInboxes: [2, 4, 9],
     difyBaseUrl: process.env.DIFY_BASE_URL || 'https://dify.pontualtech.work',
     difyApiKey: process.env.DIFY_API_KEY || '',
@@ -44,16 +49,23 @@ const COMPANY_CONFIGS: Record<string, BotCompanyConfig> = {
     cwUrl: process.env.CHATWOOT_URL || 'https://chat.pontualtech.work',
     cwAccountId: process.env.CHATWOOT_ACCOUNT_ID || '1',
     cwToken: process.env.CHATWOOT_API_TOKEN || process.env.CW_ADMIN_TOKEN || '',
+    portalUrl: 'https://portal.pontualtech.com.br/portal/pontualtech/login',
+    supportWhatsApp: 'https://wa.me/551126263841',
+    botOrigin: 'whatsapp_bot_ana',
   },
   imprimitech: {
     companyId: process.env.BOT_IMPRI_COMPANY_ID || '86c829cf-32ed-4e40-80cd-59ce4178aa1a',
-    allowedInboxes: [3], // Vendas Imprimitech (inbox ID 3)
+    slug: 'imprimitech',
+    allowedInboxes: [3],
     difyBaseUrl: process.env.DIFY_IMPRI_BASE_URL || 'https://dify.imprimitech.com.br',
     difyApiKey: process.env.DIFY_IMPRI_API_KEY || 'app-X5O39z2STNNpj92FUfMnzwlQ',
     botApiKey: process.env.BOT_IMPRI_API_KEY || '',
     cwUrl: process.env.CW_IMPRI_URL || 'https://chat.imp.pontualtech.work',
     cwAccountId: process.env.CW_IMPRI_ACCOUNT_ID || '1',
     cwToken: process.env.CW_IMPRI_TOKEN || 'PmZodW8CiMzCvN8oTVa3Lk2S',
+    portalUrl: 'https://portal.imprimitech.com.br/portal/imprimitech/login',
+    supportWhatsApp: 'https://wa.me/551150439869',
+    botOrigin: 'whatsapp_bot_grazi',
   },
 }
 
@@ -75,6 +87,9 @@ let BOT_API_KEY = process.env.BOT_ANA_API_KEY || ''
 let CW_URL = process.env.CHATWOOT_URL || 'https://chat.pontualtech.work'
 let CW_ACCOUNT_ID = process.env.CHATWOOT_ACCOUNT_ID || '1'
 let CW_TOKEN = process.env.CHATWOOT_API_TOKEN || process.env.CW_ADMIN_TOKEN || ''
+let PORTAL_URL = 'https://portal.pontualtech.com.br/portal/pontualtech/login'
+let SUPPORT_WHATSAPP = 'https://wa.me/551126263841'
+let BOT_ORIGIN = 'whatsapp_bot_ana'
 
 const DEBOUNCE_MS = 2000 // 2s debounce window (Chatwoot timeout is ~15s)
 const MAX_HISTORY = 20   // keep last 20 messages
@@ -376,6 +391,9 @@ export async function POST(req: NextRequest) {
   CW_URL = cfg.cwUrl
   CW_ACCOUNT_ID = cfg.cwAccountId
   CW_TOKEN = cfg.cwToken
+  PORTAL_URL = PORTAL_URL
+  SUPPORT_WHATSAPP = SUPPORT_WHATSAPP
+  BOT_ORIGIN = BOT_ORIGIN
 
   let body: any
   try {
@@ -629,14 +647,14 @@ async function processWebhook(body: any) {
             marca: parsed.vhsysData.marca || '',
             modelo: parsed.vhsysData.modelo || '',
             defeito: parsed.vhsysData.defeito || 'Sem descricao',
-            origem: 'whatsapp_bot_ana',
+            origem: BOT_ORIGIN,
           }),
         })
         const erpData = await erpResp.json()
         const osNum = erpData.os_numero || 0
         const clienteNome = erpData.cliente_nome || parsed.vhsysData.nome || 'Cliente'
         if (osNum > 0) {
-          await cwSendMessage(conversationId, `✅ *OS #${osNum}* aberta para ${clienteNome}!\n\n📱 Acompanhe pelo portal:\nhttps://portal.pontualtech.com.br/portal/pontualtech/login\n\n📞 Suporte: https://wa.me/551126263841`)
+          await cwSendMessage(conversationId, `✅ *OS #${osNum}* aberta para ${clienteNome}!\n\n📱 Acompanhe pelo portal:\n${PORTAL_URL}\n\n📞 Suporte: ${SUPPORT_WHATSAPP}`)
           // Private note with all links for agents (always visible in conversation)
           const vdNote = parsed.vhsysData as Record<string, any>
           const noteLines = [
@@ -646,7 +664,7 @@ async function processWebhook(body: any) {
             `📧 ${String(vdNote.email || 'N/I')} | 📍 ${String(vdNote.endereco || 'N/I')}`,
             ``,
             `🔗 ERP: https://erp.pontualtech.work/os/${osNum}`,
-            `🔗 Portal: https://portal.pontualtech.com.br/portal/pontualtech/login`,
+            `🔗 Portal: ${PORTAL_URL}`,
           ]
           await cwSendMessage(conversationId, noteLines.join('\n'), true)
           await cwSetLabels(conversationId, ['os_aberta'])
@@ -666,7 +684,7 @@ async function processWebhook(body: any) {
               modelo: String(vd.modelo || ''),
               ultima_os: String(osNum),
               erp_os_link: `https://erp.pontualtech.work/os/${osNum}`,
-              portal_link: `https://portal.pontualtech.com.br/portal/pontualtech/login`,
+              portal_link: PORTAL_URL,
               erp_cliente_id: String(erpData.cliente_id || ''),
             }
             try {
