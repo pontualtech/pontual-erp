@@ -49,10 +49,10 @@ export async function PATCH(
     if (!existing) return error('Empresa não encontrada', 404)
 
     // Validate subdomain
-    const RESERVED = ['admin','api','www','mail','smtp','ftp','static','cdn','assets','app','erp','portal','painel','dashboard','login','auth','localhost','test','staging','dev','prod','ns1','ns2']
     if (subdomain !== undefined && subdomain !== existing.subdomain) {
       if (subdomain) {
-        if (RESERVED.includes(subdomain)) return error(`Subdomínio "${subdomain}" é reservado`)
+        const { RESERVED_SUBDOMAINS } = await import('@/lib/reserved-subdomains')
+        if (RESERVED_SUBDOMAINS.includes(subdomain)) return error(`Subdomínio "${subdomain}" é reservado`)
         if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(subdomain)) return error('Subdomínio inválido')
         const dup = await prisma.company.findFirst({ where: { subdomain, id: { not: params.id } } })
         if (dup) return error('Subdomínio já está em uso por outra empresa', 409)

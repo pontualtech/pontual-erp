@@ -48,7 +48,7 @@ export async function POST(
 
     // Verificar se já tem setup (se já tem roles, já foi feito)
     const existingRoles = await prisma.role.count({ where: { company_id: params.id } })
-    if (existingRoles > 0) return error('Empresa já possui setup inicial. Use force=true para refazer.', 409)
+    if (existingRoles > 0) return error('Empresa já possui setup inicial', 409)
 
     const setup = await prisma.$transaction(async (tx) => {
       // 1. Criar Roles

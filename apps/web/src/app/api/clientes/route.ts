@@ -109,6 +109,7 @@ export async function GET(req: NextRequest) {
       ? await prisma.serviceOrder.groupBy({
           by: ['customer_id'],
           where: {
+            company_id: user.companyId,
             customer_id: { in: customerIds },
             created_at: { gte: twelveMonthsAgo },
           },

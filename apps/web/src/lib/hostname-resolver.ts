@@ -39,6 +39,9 @@ function extractSubdomain(hostname: string): string | null {
  */
 export async function resolveHostname(hostname: string): Promise<CompanyHost | null> {
   // Check cache first
+  // Reject obviously invalid hostnames
+  if (!hostname || hostname.length > 253 || /[^a-zA-Z0-9.\-:]/.test(hostname)) return null
+
   const cached = cache.get(hostname)
   if (cached && cached.expires > Date.now()) return cached.data
 

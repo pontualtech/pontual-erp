@@ -3,12 +3,7 @@ import { prisma } from '@pontual/db'
 import { requireSuperAdmin } from '@/lib/auth'
 import { success, paginated, error, handleError } from '@/lib/api-response'
 import { clearHostnameCache } from '@/lib/hostname-resolver'
-
-const RESERVED_SUBDOMAINS = [
-  'admin', 'api', 'www', 'mail', 'smtp', 'ftp', 'static', 'cdn', 'assets',
-  'app', 'erp', 'portal', 'painel', 'dashboard', 'login', 'auth',
-  'localhost', 'test', 'staging', 'dev', 'prod', 'ns1', 'ns2',
-]
+import { RESERVED_SUBDOMAINS } from '@/lib/reserved-subdomains'
 
 // GET /api/admin/companies — Listar todas as empresas
 export async function GET(req: NextRequest) {

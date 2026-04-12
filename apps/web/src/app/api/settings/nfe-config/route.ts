@@ -163,10 +163,10 @@ export async function PUT(req: NextRequest) {
     if (body.serie && body.proximo_numero) {
       const nextNum = Math.max(0, parseInt(body.proximo_numero) - 1)
       try {
-        await prisma.$executeRawUnsafe(`
-          INSERT INTO nfe_series (company_id, serie, last_number) VALUES ('${user.companyId}', '${body.serie}', ${nextNum})
+        await prisma.$executeRaw`
+          INSERT INTO nfe_series (company_id, serie, last_number) VALUES (${user.companyId}, ${body.serie}, ${nextNum})
           ON CONFLICT (company_id, serie) DO UPDATE SET last_number = ${nextNum}, updated_at = NOW()
-        `)
+        `
       } catch {
         // nfe_series table may not exist yet
       }

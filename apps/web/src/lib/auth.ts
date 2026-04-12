@@ -47,7 +47,7 @@ export async function getServerUser(): Promise<AuthUser | null> {
     const hostCompany = await resolveHostname(hostname)
 
     // If hostname maps to a company, find the user's profile for THAT company
-    // Otherwise, find any active profile (backward compatible)
+    // Otherwise, find the first active profile (deterministic by oldest created)
     const profileWhere = hostCompany
       ? { id: userData.data.user.id, company_id: hostCompany.id, is_active: true }
       : { id: userData.data.user.id, is_active: true }
@@ -55,6 +55,7 @@ export async function getServerUser(): Promise<AuthUser | null> {
     const profile = await prisma.userProfile.findFirst({
       where: profileWhere,
       include: { roles: true },
+      orderBy: { created_at: 'asc' },
     })
 
     if (!profile) return null
@@ -63,7 +64,8 @@ export async function getServerUser(): Promise<AuthUser | null> {
     const email = userData.data.user.email!
     // Double check: app_metadata + env allowlist
     const allowedEmails = (process.env.SUPER_ADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean)
-    const isSuperAdmin = platformRole === 'super_admin' && (allowedEmails.length === 0 || allowedEmails.includes(email.toLowerCase()))
+    // Deny by default when allowlist is empty — SUPER_ADMIN_EMAILS must be set
+    const isSuperAdmin = platformRole === 'super_admin' && allowedEmails.length > 0 && allowedEmails.includes(email.toLowerCase())
 
     return {
       id: userData.data.user.id,

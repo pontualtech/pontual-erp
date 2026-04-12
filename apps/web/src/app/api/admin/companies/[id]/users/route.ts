@@ -52,7 +52,7 @@ export async function POST(
     })
     if (!role) return error('Perfil não encontrado nesta empresa', 404)
 
-    // Verificar se email já existe
+    // Verificar se email já existe nesta empresa
     const existingProfile = await prisma.userProfile.findFirst({
       where: { email, company_id: params.id },
     })
@@ -63,33 +63,57 @@ export async function POST(
     // Gerar senha se não fornecida
     const userPassword = password || randomBytes(12).toString('base64url')
 
-    // Criar no Supabase Auth
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-      email,
-      password: userPassword,
-      email_confirm: true,
-      app_metadata: { company_id: params.id, user_role: role.name.toLowerCase() },
-    })
+    // Verificar se o email já existe no Supabase Auth (cross-company)
+    // Se sim, reusar o auth user existente e apenas criar novo perfil
+    const { data: existingUsers } = await supabase.auth.admin.listUsers({ perPage: 1, page: 1 })
+    let authUserId: string | null = null
 
-    if (authError || !authData.user) {
-      return error(authError?.message ?? 'Erro ao criar usuário no auth', 500)
+    // Tentar buscar por email no auth
+    const existingAuthProfile = await prisma.userProfile.findFirst({ where: { email } })
+    if (existingAuthProfile) {
+      // Usuário já existe em outra empresa — reusar o auth ID
+      authUserId = existingAuthProfile.id
     }
 
-    // Criar perfil
-    const profile = await prisma.userProfile.create({
-      data: {
-        id: authData.user.id,
-        company_id: params.id,
-        name,
+    if (!authUserId) {
+      // Criar novo usuário no Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
         email,
-        phone: phone || null,
-        role_id: roleId,
-      },
-    })
+        password: userPassword,
+        email_confirm: true,
+        app_metadata: { company_id: params.id, user_role: role.name.toLowerCase() },
+      })
+
+      if (authError || !authData.user) {
+        return error(authError?.message ?? 'Erro ao criar usuário no auth', 500)
+      }
+      authUserId = authData.user.id
+    }
+
+    // Criar perfil (pode ter o mesmo user ID em outra empresa — multi-company)
+    let profile
+    try {
+      profile = await prisma.userProfile.create({
+        data: {
+          id: authUserId,
+          company_id: params.id,
+          name,
+          email,
+          phone: phone || null,
+          role_id: roleId,
+        },
+      })
+    } catch (profileErr) {
+      // Se o profile falhou e criamos um auth user novo, limpar o orphan
+      if (!existingAuthProfile) {
+        await supabase.auth.admin.deleteUser(authUserId).catch(() => {})
+      }
+      throw profileErr
+    }
 
     return success({
       ...profile,
-      generatedPassword: !password ? userPassword : undefined,
+      generatedPassword: !password && !existingAuthProfile ? userPassword : undefined,
       roleName: role.name,
     }, 201)
   } catch (err) {
