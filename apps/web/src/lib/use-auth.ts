@@ -11,6 +11,7 @@ interface AuthInfo {
   role: string
   companyId: string
   permissions: PermissionEntry[]
+  isSuperAdmin?: boolean
 }
 
 let cached: AuthInfo | null = null
@@ -34,6 +35,7 @@ export function useAuth() {
   }, [])
 
   const isAdmin = user?.role === 'admin'
+  const isSuperAdmin = user?.isSuperAdmin === true
 
   function hasPermission(module: string, action: string = 'view'): boolean {
     if (!user) return false
@@ -41,5 +43,5 @@ export function useAuth() {
     return user.permissions.some(p => p.module === module && p.action === action)
   }
 
-  return { user, isAdmin, hasPermission }
+  return { user, isAdmin, isSuperAdmin, hasPermission }
 }

@@ -35,6 +35,7 @@ export async function GET() {
         role: user.roleName,
         companyId: user.companyId,
         permissions,
+        isSuperAdmin: user.isSuperAdmin,
       },
     })
   } catch (err) {

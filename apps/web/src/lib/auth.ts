@@ -11,6 +11,7 @@ export interface AuthUser {
   roleId: string
   roleName: string
   name: string
+  isSuperAdmin: boolean
 }
 
 /**
@@ -46,6 +47,7 @@ export async function getServerUser(): Promise<AuthUser | null> {
 
     if (!profile) return null
 
+    const platformRole = userData.data.user.app_metadata?.platform_role
     return {
       id: userData.data.user.id,
       email: userData.data.user.email!,
@@ -53,10 +55,22 @@ export async function getServerUser(): Promise<AuthUser | null> {
       roleId: profile.role_id,
       roleName: profile.roles.name.toLowerCase(),
       name: profile.name,
+      isSuperAdmin: platformRole === 'super_admin',
     }
   } catch {
     return null
   }
+}
+
+/**
+ * Retorna o usuário se for super_admin da plataforma.
+ * Usado para proteger rotas /api/admin/*
+ */
+export async function requireSuperAdmin(): Promise<AuthUser | NextResponse> {
+  const user = await getServerUser()
+  if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+  if (!user.isSuperAdmin) return NextResponse.json({ error: 'Acesso restrito ao administrador da plataforma' }, { status: 403 })
+  return user
 }
 
 export async function hasPermission(

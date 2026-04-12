@@ -9,7 +9,7 @@ import type { AuthUser } from '@/lib/auth'
 import {
   ClipboardList, Users, Package, DollarSign, FileText,
   Settings, LayoutDashboard, Menu, X, ChevronDown, ChevronLeft, ChevronRight, MessageSquare, MessageCircle, Phone, Truck,
-  Building2, ShoppingCart, BarChart3, Activity, Wrench,
+  Building2, ShoppingCart, BarChart3, Activity, Wrench, Shield,
 } from 'lucide-react'
 
 interface NavItem {
@@ -19,6 +19,7 @@ interface NavItem {
   module?: string
   action?: string
   adminOnly?: boolean
+  superAdminOnly?: boolean
   /** Only show for these roles (lowercase, normalized) */
   roles?: string[]
   /** Requires ANY of these permissions (OR logic) — item shows if user has at least one */
@@ -78,6 +79,12 @@ const navGroups: { title: string; items: NavItem[] }[] = [
       { label: 'Configuracoes', href: '/config', icon: Settings, adminOnly: true },
     ],
   },
+  {
+    title: 'Plataforma',
+    items: [
+      { label: 'Super Admin', href: '/admin', icon: Shield, superAdminOnly: true },
+    ],
+  },
 ]
 
 export function Sidebar({ user }: { user: AuthUser }) {
@@ -85,7 +92,7 @@ export function Sidebar({ user }: { user: AuthUser }) {
   const [open, setOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
-  const { isAdmin, hasPermission, user: authUser } = useAuth()
+  const { isAdmin, isSuperAdmin, hasPermission, user: authUser } = useAuth()
 
   // Load collapsed preference from localStorage
   useEffect(() => {
@@ -107,6 +114,7 @@ export function Sidebar({ user }: { user: AuthUser }) {
     .map(g => ({
       ...g,
       items: g.items.filter(i => {
+        if (i.superAdminOnly) return isSuperAdmin
         if (i.adminOnly) return isAdmin
         if (i.roles) {
           const userRole = (authUser?.role || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
