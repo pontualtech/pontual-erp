@@ -73,8 +73,9 @@ const COMPANY_CONFIGS: Record<string, BotCompanyConfig> = {
 }
 
 // Default to pontualtech for backward compatibility
-function getCompanyConfig(companySlug?: string | null): BotCompanyConfig {
-  return COMPANY_CONFIGS[companySlug || 'pontualtech'] || COMPANY_CONFIGS.pontualtech
+function getCompanyConfig(companySlug?: string | null): BotCompanyConfig | null {
+  if (!companySlug) return COMPANY_CONFIGS.pontualtech
+  return COMPANY_CONFIGS[companySlug] || null
 }
 
 // These are set per-request now, but we keep defaults for backward compat
@@ -386,7 +387,14 @@ export async function POST(req: NextRequest) {
   // Multi-tenant: select company config by ?company= param (default: pontualtech)
   const companySlug = req.nextUrl.searchParams.get('company') || 'pontualtech'
   const cfg = getCompanyConfig(companySlug)
-  // Set module-level vars for backward compat with existing functions
+  if (!cfg) {
+    console.warn(`[Bot] Unknown company slug: ${companySlug}`)
+    return NextResponse.json({ status: 'ignored', reason: 'unknown company' })
+  }
+  // CRITICAL: Set module-level vars atomically before any await.
+  // These are read by helper functions (cwBase, cwHeaders, callDify, etc.)
+  // that don't receive cfg as parameter. This is safe because Node.js is
+  // single-threaded and no await happens between these assignments.
   ALLOWED_INBOXES = cfg.allowedInboxes
   COMPANY_ID = cfg.companyId
   DIFY_BASE_URL = cfg.difyBaseUrl
@@ -539,26 +547,25 @@ async function processWebhook(body: any) {
 
   console.log(`[Bot] Message from ${phone || 'unknown'} in conv ${conversationId}: ${content.substring(0, 80)}`)
 
-  // Find or create BotConversation
-  let botConv = await prisma.botConversation.findUnique({
+  // Find or create BotConversation (atomic upsert to prevent race conditions)
+  const isNew = !(await prisma.botConversation.findUnique({ where: { chatwoot_conv_id: conversationId }, select: { id: true } }))
+  let botConv = await prisma.botConversation.upsert({
     where: { chatwoot_conv_id: conversationId },
+    update: {}, // don't overwrite existing data
+    create: {
+      company_id: COMPANY_ID,
+      chatwoot_conv_id: conversationId,
+      chatwoot_contact_id: contactId || null,
+      customer_phone: phone || null,
+      inbox_id: inboxId || null,
+      step: 'IDLE',
+      data: {},
+      message_history: [],
+    },
   })
 
-  if (!botConv) {
-    botConv = await prisma.botConversation.create({
-      data: {
-        company_id: COMPANY_ID,
-        chatwoot_conv_id: conversationId,
-        chatwoot_contact_id: contactId || null,
-        customer_phone: phone || null,
-        inbox_id: inboxId || null,
-        step: 'IDLE',
-        data: {},
-        message_history: [],
-      },
-    })
-
-    // Assign conversation to Ana (agent ID 6) so messages show as "Ana"
+  if (isNew) {
+    // Assign conversation to bot agent so messages show as bot's name
     fetch(`${cwBase()}/conversations/${conversationId}/assignments`, {
       method: 'POST',
       headers: cwHeaders(),
@@ -619,7 +626,12 @@ async function processWebhook(body: any) {
     )
 
     if (!difyResponse.answer) {
-      console.warn('[Bot] Empty Dify response')
+      console.warn('[Bot] Empty Dify response — sending fallback and activating human takeover')
+      await cwSendMessage(conversationId, 'Ops, tive um probleminha aqui! 😅 Vou chamar alguem da equipe pra te ajudar, ta? Um momentinho!')
+      await prisma.botConversation.update({
+        where: { id: botConv.id },
+        data: { human_takeover: true, step: 'HUMAN' },
+      })
       return
     }
 
@@ -668,7 +680,7 @@ async function processWebhook(body: any) {
             `📄 CPF: ${String(vdNote.cpf_cnpj || 'N/I')} | 📞 ${String(vdNote.telefone || phone || 'N/I')}`,
             `📧 ${String(vdNote.email || 'N/I')} | 📍 ${String(vdNote.endereco || 'N/I')}`,
             ``,
-            `🔗 ERP: https://erp.pontualtech.work/os/${osNum}`,
+            `🔗 ERP: ${ERP_BASE_URL}/os/${osNum}`,
             `🔗 Portal: ${PORTAL_URL}`,
           ]
           await cwSendMessage(conversationId, noteLines.join('\n'), true)
@@ -688,7 +700,7 @@ async function processWebhook(body: any) {
               marca: String(vd.marca || ''),
               modelo: String(vd.modelo || ''),
               ultima_os: String(osNum),
-              erp_os_link: `https://erp.pontualtech.work/os/${osNum}`,
+              erp_os_link: `${ERP_BASE_URL}/os/${osNum}`,
               portal_link: PORTAL_URL,
               erp_cliente_id: String(erpData.cliente_id || ''),
             }
