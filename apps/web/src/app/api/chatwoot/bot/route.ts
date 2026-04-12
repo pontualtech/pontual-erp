@@ -36,6 +36,7 @@ interface BotCompanyConfig {
   portalUrl: string
   supportWhatsApp: string
   botOrigin: string
+  botAgentId: number // Chatwoot agent ID used by the bot (skip human_takeover for this ID)
 }
 
 const COMPANY_CONFIGS: Record<string, BotCompanyConfig> = {
@@ -52,6 +53,7 @@ const COMPANY_CONFIGS: Record<string, BotCompanyConfig> = {
     portalUrl: 'https://portal.pontualtech.com.br/portal/pontualtech/login',
     supportWhatsApp: 'https://wa.me/551126263841',
     botOrigin: 'whatsapp_bot_ana',
+    botAgentId: 6, // Ana agent in PontualTech Chatwoot
   },
   imprimitech: {
     companyId: process.env.BOT_IMPRI_COMPANY_ID || '86c829cf-32ed-4e40-80cd-59ce4178aa1a',
@@ -66,6 +68,7 @@ const COMPANY_CONFIGS: Record<string, BotCompanyConfig> = {
     portalUrl: 'https://portal.imprimitech.com.br/portal/imprimitech/login',
     supportWhatsApp: 'https://wa.me/551150439869',
     botOrigin: 'whatsapp_bot_grazi',
+    botAgentId: 9, // Grazi agent in Imprimitech Chatwoot
   },
 }
 
@@ -90,6 +93,7 @@ let CW_TOKEN = process.env.CHATWOOT_API_TOKEN || process.env.CW_ADMIN_TOKEN || '
 let PORTAL_URL = 'https://portal.pontualtech.com.br/portal/pontualtech/login'
 let SUPPORT_WHATSAPP = 'https://wa.me/551126263841'
 let BOT_ORIGIN = 'whatsapp_bot_ana'
+let BOT_AGENT_ID = 6
 
 const DEBOUNCE_MS = 2000 // 2s debounce window (Chatwoot timeout is ~15s)
 const MAX_HISTORY = 20   // keep last 20 messages
@@ -391,9 +395,10 @@ export async function POST(req: NextRequest) {
   CW_URL = cfg.cwUrl
   CW_ACCOUNT_ID = cfg.cwAccountId
   CW_TOKEN = cfg.cwToken
-  PORTAL_URL = PORTAL_URL
-  SUPPORT_WHATSAPP = SUPPORT_WHATSAPP
-  BOT_ORIGIN = BOT_ORIGIN
+  PORTAL_URL = cfg.portalUrl
+  SUPPORT_WHATSAPP = cfg.supportWhatsApp
+  BOT_ORIGIN = cfg.botOrigin
+  BOT_AGENT_ID = cfg.botAgentId
 
   let body: any
   try {
@@ -455,11 +460,11 @@ async function processWebhook(body: any) {
     return
   }
 
-  // Handle agent assignment — human takeover (skip if assigned to Bot Ana herself, agent ID 6)
+  // Handle agent assignment — human takeover (skip if assigned to bot's own agent)
   if (event === 'conversation_updated') {
     const convId = body.id || body.conversation?.id
     const assignee = body.assignee || body.conversation?.meta?.assignee
-    if (convId && assignee && assignee.id !== 6) {
+    if (convId && assignee && assignee.id !== BOT_AGENT_ID) {
       await prisma.botConversation.updateMany({
         where: { chatwoot_conv_id: convId },
         data: { human_takeover: true, step: 'HUMAN' },
@@ -557,7 +562,7 @@ async function processWebhook(body: any) {
     fetch(`${cwBase()}/conversations/${conversationId}/assignments`, {
       method: 'POST',
       headers: cwHeaders(),
-      body: JSON.stringify({ assignee_id: 6 }),
+      body: JSON.stringify({ assignee_id: BOT_AGENT_ID }),
     }).catch(() => {})
   }
 
