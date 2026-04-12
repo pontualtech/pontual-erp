@@ -21,18 +21,60 @@ import { prisma } from '@pontual/db'
 // Constants
 // ---------------------------------------------------------------------------
 
-const ALLOWED_INBOXES = [2, 4, 9]
-const COMPANY_ID = process.env.BOT_ANA_COMPANY_ID || 'pontualtech-001'
-const DIFY_BASE_URL = process.env.DIFY_BASE_URL || 'https://dify.pontualtech.work'
-const DIFY_API_KEY = process.env.DIFY_API_KEY || ''
+// Multi-tenant bot config: each company has its own Dify, Chatwoot, etc.
+// Selected by ?company= query param in webhook URL.
+interface BotCompanyConfig {
+  companyId: string
+  allowedInboxes: number[]
+  difyBaseUrl: string
+  difyApiKey: string
+  botApiKey: string
+  cwUrl: string
+  cwAccountId: string
+  cwToken: string
+}
+
+const COMPANY_CONFIGS: Record<string, BotCompanyConfig> = {
+  pontualtech: {
+    companyId: process.env.BOT_ANA_COMPANY_ID || 'pontualtech-001',
+    allowedInboxes: [2, 4, 9],
+    difyBaseUrl: process.env.DIFY_BASE_URL || 'https://dify.pontualtech.work',
+    difyApiKey: process.env.DIFY_API_KEY || '',
+    botApiKey: process.env.BOT_ANA_API_KEY || '',
+    cwUrl: process.env.CHATWOOT_URL || 'https://chat.pontualtech.work',
+    cwAccountId: process.env.CHATWOOT_ACCOUNT_ID || '1',
+    cwToken: process.env.CHATWOOT_API_TOKEN || process.env.CW_ADMIN_TOKEN || '',
+  },
+  imprimitech: {
+    companyId: process.env.BOT_IMPRI_COMPANY_ID || '86c829cf-32ed-4e40-80cd-59ce4178aa1a',
+    allowedInboxes: [3], // Vendas Imprimitech (inbox ID 3)
+    difyBaseUrl: process.env.DIFY_IMPRI_BASE_URL || 'https://dify.imprimitech.com.br',
+    difyApiKey: process.env.DIFY_IMPRI_API_KEY || 'app-X5O39z2STNNpj92FUfMnzwlQ',
+    botApiKey: process.env.BOT_IMPRI_API_KEY || '',
+    cwUrl: process.env.CW_IMPRI_URL || 'https://chat.imp.pontualtech.work',
+    cwAccountId: process.env.CW_IMPRI_ACCOUNT_ID || '1',
+    cwToken: process.env.CW_IMPRI_TOKEN || 'PmZodW8CiMzCvN8oTVa3Lk2S',
+  },
+}
+
+// Default to pontualtech for backward compatibility
+function getCompanyConfig(companySlug?: string | null): BotCompanyConfig {
+  return COMPANY_CONFIGS[companySlug || 'pontualtech'] || COMPANY_CONFIGS.pontualtech
+}
+
+// These are set per-request now, but we keep defaults for backward compat
 const GROQ_API_KEY = process.env.GROQ_API_KEY || ''
-const BOT_API_KEY = process.env.BOT_ANA_API_KEY || ''
 const ERP_BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'
 
-// Chatwoot config — admin token for sending, sender.type filter prevents self-trigger
-const CW_URL = process.env.CHATWOOT_URL || 'https://chat.pontualtech.work'
-const CW_ACCOUNT_ID = process.env.CHATWOOT_ACCOUNT_ID || '1'
-const CW_TOKEN = process.env.CHATWOOT_API_TOKEN || process.env.CW_ADMIN_TOKEN || ''
+// Legacy constants (used by functions that don't have config context yet)
+let ALLOWED_INBOXES = [2, 4, 9]
+let COMPANY_ID = process.env.BOT_ANA_COMPANY_ID || 'pontualtech-001'
+let DIFY_BASE_URL = process.env.DIFY_BASE_URL || 'https://dify.pontualtech.work'
+let DIFY_API_KEY = process.env.DIFY_API_KEY || ''
+let BOT_API_KEY = process.env.BOT_ANA_API_KEY || ''
+let CW_URL = process.env.CHATWOOT_URL || 'https://chat.pontualtech.work'
+let CW_ACCOUNT_ID = process.env.CHATWOOT_ACCOUNT_ID || '1'
+let CW_TOKEN = process.env.CHATWOOT_API_TOKEN || process.env.CW_ADMIN_TOKEN || ''
 
 const DEBOUNCE_MS = 2000 // 2s debounce window (Chatwoot timeout is ~15s)
 const MAX_HISTORY = 20   // keep last 20 messages
@@ -319,6 +361,19 @@ function getRecentMessages(history: HistoryEntry[], withinMs: number): HistoryEn
 // ---------------------------------------------------------------------------
 
 export async function POST(req: NextRequest) {
+  // Multi-tenant: select company config by ?company= param (default: pontualtech)
+  const companySlug = req.nextUrl.searchParams.get('company') || 'pontualtech'
+  const cfg = getCompanyConfig(companySlug)
+  // Set module-level vars for backward compat with existing functions
+  ALLOWED_INBOXES = cfg.allowedInboxes
+  COMPANY_ID = cfg.companyId
+  DIFY_BASE_URL = cfg.difyBaseUrl
+  DIFY_API_KEY = cfg.difyApiKey
+  BOT_API_KEY = cfg.botApiKey
+  CW_URL = cfg.cwUrl
+  CW_ACCOUNT_ID = cfg.cwAccountId
+  CW_TOKEN = cfg.cwToken
+
   let body: any
   try {
     body = await req.json()
