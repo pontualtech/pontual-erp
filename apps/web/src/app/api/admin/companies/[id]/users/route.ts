@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { requireSuperAdmin } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 
@@ -57,7 +57,7 @@ export async function POST(
     })
     if (existingProfile) return error('Já existe um usuário com este email nesta empresa', 409)
 
-    const supabase = createClient()
+    const supabase = createAdminClient()
 
     // Gerar senha se não fornecida
     const userPassword = password || Math.random().toString(36).slice(-10) + 'A1!'
