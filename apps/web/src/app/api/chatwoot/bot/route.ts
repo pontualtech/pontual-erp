@@ -178,13 +178,16 @@ async function callDify(
   if (conversationId) {
     payload.conversation_id = conversationId
   }
-  // Send images to Dify for Gemini Vision processing
+  // Send images/videos to Dify for Gemini Vision processing
   if (imageUrls && imageUrls.length > 0) {
-    payload.files = imageUrls.map(url => ({
-      type: 'image',
-      transfer_method: 'remote_url',
-      url,
-    }))
+    payload.files = imageUrls.map(url => {
+      const isVideo = /\.(mp4|mov|avi|webm|mkv|3gp)/i.test(url) || url.includes('video')
+      return {
+        type: isVideo ? 'video' : 'image',
+        transfer_method: 'remote_url',
+        url,
+      }
+    })
   }
 
   const res = await fetch(`${DIFY_BASE_URL}/v1/chat-messages`, {
@@ -495,9 +498,10 @@ async function processWebhook(body: any) {
       }
     } else if (fileType === 'image') {
       imageUrls.push(url)
-      content = `${content}\n[Imagem enviada pelo cliente: ${url}]`.trim()
+      content = `${content}\n[Imagem enviada pelo cliente]`.trim()
     } else if (fileType === 'video') {
-      content = `${content}\n[Video enviado pelo cliente: ${url}]`.trim()
+      imageUrls.push(url) // Gemini 2.5 Flash supports video via same files API
+      content = `${content}\n[Video enviado pelo cliente - analise o conteudo]`.trim()
     } else if (fileType === 'file') {
       content = `${content}\n[Documento enviado: ${att.file_name || url}]`.trim()
     }
