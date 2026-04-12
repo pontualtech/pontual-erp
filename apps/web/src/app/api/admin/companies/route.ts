@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     if (result instanceof NextResponse) return result
 
     const body = await req.json()
-    const { name, slug, logo } = body
+    const { name, slug, logo, subdomain, custom_domain } = body
 
     if (!name || !slug) return error('Nome e slug são obrigatórios')
     if (!/^[a-z0-9-]+$/.test(slug)) return error('Slug deve conter apenas letras minúsculas, números e hífens')
@@ -55,8 +55,22 @@ export async function POST(req: NextRequest) {
     const existing = await prisma.company.findUnique({ where: { slug } })
     if (existing) return error('Slug já está em uso', 409)
 
+    // Validate subdomain uniqueness
+    const sub = subdomain || slug
+    if (sub) {
+      const existingSub = await prisma.company.findFirst({ where: { subdomain: sub } })
+      if (existingSub) return error('Subdomínio já está em uso', 409)
+    }
+
     const company = await prisma.company.create({
-      data: { name, slug, logo: logo || null, settings: {} },
+      data: {
+        name,
+        slug,
+        subdomain: sub || null,
+        custom_domain: custom_domain || null,
+        logo: logo || null,
+        settings: {},
+      },
     })
 
     return success(company, 201)

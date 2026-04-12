@@ -13,6 +13,8 @@ model Company {
   id                  String              @id @default(dbgenerated("(gen_random_uuid())::text"))
   name                String
   slug                String              @unique
+  subdomain           String?             @unique
+  custom_domain       String?             @unique
   logo                String?
   settings            Json?               @default("{}")
   is_active           Boolean?            @default(true)

@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   ArrowLeft, Building2, Users, ClipboardList, UserCheck, Loader2,
-  Plus, X, Save, Copy, Shield, Trash2, Power, Key,
+  Plus, X, Save, Copy, Shield, Trash2, Power, Key, Globe, ExternalLink,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -31,6 +31,8 @@ interface CompanyDetail {
   id: string
   name: string
   slug: string
+  subdomain: string | null
+  custom_domain: string | null
   logo: string | null
   is_active: boolean
   settings: Record<string, unknown> | null
@@ -53,6 +55,8 @@ export default function CompanyDetailPage() {
   const [saving, setSaving] = useState(false)
   const [showAddUser, setShowAddUser] = useState(false)
   const [runningSetup, setRunningSetup] = useState(false)
+  const [domainForm, setDomainForm] = useState({ subdomain: '', custom_domain: '' })
+  const [savingDomain, setSavingDomain] = useState(false)
 
   function loadCompany() {
     setLoading(true)
@@ -62,6 +66,7 @@ export default function CompanyDetailPage() {
         if (d.data) {
           setCompany(d.data)
           setEditForm({ name: d.data.name, logo: d.data.logo || '' })
+          setDomainForm({ subdomain: d.data.subdomain || '', custom_domain: d.data.custom_domain || '' })
         }
       })
       .catch(() => toast.error('Erro ao carregar empresa'))
@@ -117,6 +122,27 @@ export default function CompanyDetailPage() {
       toast.error(err instanceof Error ? err.message : 'Erro')
     } finally {
       setRunningSetup(false)
+    }
+  }
+
+  async function saveDomain() {
+    setSavingDomain(true)
+    try {
+      const res = await fetch(`/api/admin/companies/${companyId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subdomain: domainForm.subdomain || null,
+          custom_domain: domainForm.custom_domain || null,
+        }),
+      })
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error) }
+      toast.success('Domínios atualizados!')
+      loadCompany()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro')
+    } finally {
+      setSavingDomain(false)
     }
   }
 
@@ -213,6 +239,65 @@ export default function CompanyDetailPage() {
         <button onClick={() => copyToClipboard(company.id)} className="rounded p-1 text-gray-600 hover:text-gray-400" title="Copiar">
           <Copy className="h-3.5 w-3.5" />
         </button>
+      </div>
+
+      {/* Domain Config */}
+      <div className="rounded-lg border border-gray-800 bg-gray-900 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-gray-300 flex items-center gap-2">
+            <Globe className="h-4 w-4 text-amber-400" />
+            Domínios de Acesso
+          </h2>
+          <button
+            onClick={saveDomain}
+            disabled={savingDomain}
+            className="flex items-center gap-1 rounded bg-amber-500 px-3 py-1 text-xs font-medium text-gray-900 hover:bg-amber-400 disabled:opacity-50"
+          >
+            {savingDomain ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+            Salvar
+          </button>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Subdomínio</label>
+            <div className="flex items-center gap-1">
+              <input
+                type="text"
+                value={domainForm.subdomain}
+                onChange={e => setDomainForm(prev => ({ ...prev, subdomain: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') }))}
+                placeholder={company.slug}
+                className="flex-1 rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-200 font-mono focus:border-amber-500 focus:ring-1 focus:ring-amber-500 placeholder:text-gray-600"
+              />
+              <span className="text-xs text-gray-500 whitespace-nowrap">.erp.pontualtech.work</span>
+            </div>
+            {domainForm.subdomain && (
+              <a
+                href={`https://${domainForm.subdomain}.erp.pontualtech.work`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-1 inline-flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300"
+              >
+                {domainForm.subdomain}.erp.pontualtech.work
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            )}
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Domínio Próprio (CNAME)</label>
+            <input
+              type="text"
+              value={domainForm.custom_domain}
+              onChange={e => setDomainForm(prev => ({ ...prev, custom_domain: e.target.value.toLowerCase() }))}
+              placeholder="erp.minhaempresa.com.br"
+              className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-200 font-mono focus:border-amber-500 focus:ring-1 focus:ring-amber-500 placeholder:text-gray-600"
+            />
+            {domainForm.custom_domain && (
+              <p className="mt-1 text-xs text-gray-500">
+                CNAME: <code className="text-amber-400">{domainForm.custom_domain}</code> → <code className="text-gray-400">erp.pontualtech.work</code>
+              </p>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* KPI Cards */}

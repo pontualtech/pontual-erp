@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { NextResponse } from 'next/server'
 import { headers } from 'next/headers'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { resolveHostname } from './hostname-resolver'
 
 export interface AuthUser {
   id: string
@@ -40,8 +41,19 @@ export async function getServerUser(): Promise<AuthUser | null> {
 
     if (!userData.data.user) return null
 
+    // Resolve hostname to company (subdomain or custom domain)
+    const headersList = headers()
+    const hostname = headersList.get('host') || ''
+    const hostCompany = await resolveHostname(hostname)
+
+    // If hostname maps to a company, find the user's profile for THAT company
+    // Otherwise, find any active profile (backward compatible)
+    const profileWhere = hostCompany
+      ? { id: userData.data.user.id, company_id: hostCompany.id, is_active: true }
+      : { id: userData.data.user.id, is_active: true }
+
     const profile = await prisma.userProfile.findFirst({
-      where: { id: userData.data.user.id, is_active: true },
+      where: profileWhere,
       include: { roles: true },
     })
 

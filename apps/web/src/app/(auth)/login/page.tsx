@@ -1,19 +1,34 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
 import { toast } from 'sonner'
+
+interface HostCompany {
+  id: string
+  slug: string
+  name: string
+}
 
 export default function LoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [hostCompany, setHostCompany] = useState<HostCompany | null>(null)
   const [showForgotPassword, setShowForgotPassword] = useState(false)
   const [forgotEmail, setForgotEmail] = useState('')
   const [forgotLoading, setForgotLoading] = useState(false)
   const [forgotMessage, setForgotMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+
+  // Detect company from hostname (subdomain or custom domain)
+  useEffect(() => {
+    fetch('/api/auth/company-from-host')
+      .then(r => r.json())
+      .then(d => { if (d.data) setHostCompany(d.data) })
+      .catch(() => {})
+  }, [])
 
   async function handleForgotPassword(e: React.FormEvent) {
     e.preventDefault()
@@ -81,8 +96,12 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="w-full max-w-md p-8 bg-white rounded-lg shadow-md">
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-gray-900">PontualERP</h1>
-          <p className="text-gray-500 mt-2">Faça login para acessar o sistema</p>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {hostCompany ? hostCompany.name : 'PontualERP'}
+          </h1>
+          <p className="text-gray-500 mt-2">
+            {hostCompany ? 'Acesse seu sistema de gestão' : 'Faça login para acessar o sistema'}
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
