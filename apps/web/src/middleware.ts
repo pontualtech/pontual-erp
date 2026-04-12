@@ -41,7 +41,8 @@ export async function middleware(request: NextRequest) {
   // PATCH 7: API routes without auth return 401 JSON (not HTML SPA shell)
   if (pathname.startsWith('/api/') && !pathname.startsWith('/api/auth/') && !pathname.startsWith('/api/portal/')) {
     const hasAuthCookie = request.cookies.getAll().some(c => c.name.includes('auth-token') || c.name.includes('supabase'))
-    if (!hasAuthCookie) {
+    const hasBearerToken = request.headers.get('authorization')?.startsWith('Bearer ')
+    if (!hasAuthCookie && !hasBearerToken) {
       return NextResponse.json(
         { error: 'Não autenticado' },
         { status: 401, headers: { 'Content-Type': 'application/json' } }
