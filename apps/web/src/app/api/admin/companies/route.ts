@@ -15,13 +15,16 @@ export async function GET(req: NextRequest) {
     const page = Math.max(parseInt(url.searchParams.get('page') || '1'), 1)
     const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '50'), 1), 200)
     const search = url.searchParams.get('search') || ''
+    const includeInactive = url.searchParams.get('include_inactive') === 'true'
 
-    const where = search
-      ? { OR: [
-          { name: { contains: search, mode: 'insensitive' as const } },
-          { slug: { contains: search, mode: 'insensitive' as const } },
-        ] }
-      : {}
+    const where: Record<string, unknown> = {}
+    if (!includeInactive) where.is_active = true
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { slug: { contains: search, mode: 'insensitive' } },
+      ]
+    }
 
     const [companies, total] = await Promise.all([
       prisma.company.findMany({
@@ -52,7 +55,12 @@ export async function POST(req: NextRequest) {
     const { name, slug, logo, subdomain, custom_domain } = body
 
     if (!name || !slug) return error('Nome e slug são obrigatórios')
+    if (typeof name !== 'string' || name.length > 200) return error('Nome deve ter no máximo 200 caracteres')
+    // Strip HTML tags from name to prevent stored XSS
+    const safeName = name.replace(/<[^>]*>/g, '').trim()
+    if (!safeName) return error('Nome inválido')
     if (!/^[a-z0-9-]+$/.test(slug)) return error('Slug deve conter apenas letras minúsculas, números e hífens')
+    if (slug.length > 63) return error('Slug deve ter no máximo 63 caracteres')
 
     const existing = await prisma.company.findUnique({ where: { slug } })
     if (existing) return error('Slug já está em uso', 409)
@@ -68,7 +76,7 @@ export async function POST(req: NextRequest) {
 
     const company = await prisma.company.create({
       data: {
-        name,
+        name: safeName,
         slug,
         subdomain: sub || null,
         custom_domain: custom_domain || null,

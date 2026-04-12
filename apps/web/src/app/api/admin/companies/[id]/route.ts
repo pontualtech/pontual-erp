@@ -68,7 +68,11 @@ export async function PATCH(
     }
 
     const data: Record<string, unknown> = {}
-    if (name !== undefined) data.name = name
+    if (name !== undefined) {
+      if (typeof name !== 'string' || name.length > 200) return error('Nome deve ter no máximo 200 caracteres')
+      data.name = name.replace(/<[^>]*>/g, '').trim()
+      if (!data.name) return error('Nome inválido')
+    }
     if (logo !== undefined) data.logo = logo
     if (is_active !== undefined) data.is_active = is_active
     if (settings !== undefined) data.settings = settings
