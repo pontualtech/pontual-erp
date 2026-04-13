@@ -65,9 +65,12 @@ export async function PUT(request: NextRequest, { params }: Params) {
       return error('Cargos padrão não podem ser renomeados', 403)
     }
 
-    const updated = await prisma.role.update({
-      where: { id: params.id },
+    await prisma.role.updateMany({
+      where: { id: params.id, company_id: admin.companyId },
       data,
+    })
+    const updated = await prisma.role.findFirst({
+      where: { id: params.id, company_id: admin.companyId },
     })
 
     logAudit({
@@ -77,10 +80,10 @@ export async function PUT(request: NextRequest, { params }: Params) {
       action: 'update_role',
       entityId: params.id,
       oldValue: { name: existing.name },
-      newValue: { name: updated.name },
+      newValue: { name: updated!.name },
     })
 
-    return success(updated)
+    return success(updated!)
   } catch (err) {
     return handleError(err)
   }
@@ -101,7 +104,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     if (role.is_system) return error('Cargos de sistema não podem ser excluídos', 403)
     if (role._count.user_profiles > 0) return error('Cargo possui usuários vinculados. Mova-os primeiro.', 400)
 
-    await prisma.role.delete({ where: { id: params.id } })
+    await prisma.role.deleteMany({ where: { id: params.id, company_id: admin.companyId } })
 
     logAudit({
       companyId: admin.companyId,

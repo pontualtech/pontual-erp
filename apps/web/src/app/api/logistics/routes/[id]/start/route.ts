@@ -21,7 +21,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (route.status === 'COMPLETED') return error('Rota já foi concluída', 422)
 
     const updated = await prisma.logisticsRoute.update({
-      where: { id: params.id },
+      where: { id: params.id, company_id: user.companyId },
       data: {
         status: 'IN_PROGRESS',
         started_at: new Date(),

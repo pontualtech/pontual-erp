@@ -61,7 +61,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     const purchase = await prisma.purchase.update({
-      where: { id: params.id },
+      where: { id: params.id, company_id: user.companyId },
       data: {
         ...data,
         expected_delivery: data.expected_delivery !== undefined

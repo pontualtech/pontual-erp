@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { hash } from 'bcryptjs'
 import { sendCompanyEmail } from '@/lib/send-email'
+import { escapeHtml } from '@/lib/escape-html'
 
 // Rate limiter em memória: 5 tentativas por documento a cada 15 minutos
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
@@ -129,7 +130,7 @@ export async function POST(req: NextRequest) {
         `
         <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto;">
           <h2 style="color: #1e40af;">Senha Resetada</h2>
-          <p>Ola, <strong>${customer.legal_name || customer.trade_name || 'Cliente'}</strong>!</p>
+          <p>Ola, <strong>${escapeHtml(customer.legal_name || customer.trade_name || 'Cliente')}</strong>!</p>
           <p>Sua senha do Portal do Cliente foi resetada com sucesso.</p>
           <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 16px; margin: 16px 0;">
             <p style="margin: 0; color: #1e40af;">
@@ -141,7 +142,7 @@ export async function POST(req: NextRequest) {
           </p>
           <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
           <p style="color: #9ca3af; font-size: 12px;">
-            ${company.name} - Portal do Cliente
+            ${escapeHtml(company.name)} - Portal do Cliente
           </p>
         </div>
         `

@@ -10,8 +10,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Nao autenticado' }, { status: 401 })
     }
 
-    const customer = await prisma.customer.findUnique({
-      where: { id: portalUser.customer_id },
+    const customer = await prisma.customer.findFirst({
+      where: { id: portalUser.customer_id, company_id: portalUser.company_id },
       select: {
         id: true,
         legal_name: true,
@@ -52,8 +52,8 @@ export async function PUT(req: NextRequest) {
     const { email, phone, mobile, address_street, address_number, address_complement, address_neighborhood, address_city, address_state, address_zip } = body
 
     // Load current data for comparison
-    const current = await prisma.customer.findUnique({
-      where: { id: portalUser.customer_id },
+    const current = await prisma.customer.findFirst({
+      where: { id: portalUser.customer_id, company_id: portalUser.company_id },
       select: { legal_name: true, email: true, phone: true, mobile: true, address_street: true, address_number: true, address_city: true, address_state: true },
     })
 

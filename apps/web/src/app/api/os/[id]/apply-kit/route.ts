@@ -66,7 +66,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const total_cost = allItems.reduce((s, i) => s + i.total_price, 0)
 
     await prisma.serviceOrder.update({
-      where: { id: params.id },
+      where: { id: params.id, company_id: user.companyId },
       data: { total_parts, total_services, total_cost },
     })
 

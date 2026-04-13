@@ -22,7 +22,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (stop.status === 'FAILED') return error('Parada marcada como falha', 422)
 
     const updated = await prisma.logisticsStop.update({
-      where: { id: params.id },
+      where: { id: params.id, company_id: user.companyId },
       data: {
         status: 'ARRIVED',
         arrived_at: new Date(),

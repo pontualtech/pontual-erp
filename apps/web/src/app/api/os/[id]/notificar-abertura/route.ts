@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { timingSafeEqual } from 'crypto'
 import { prisma } from '@pontual/db'
 import { success, error, handleError } from '@/lib/api-response'
 import { sendCompanyEmail } from '@/lib/send-email'
 import { sendWhatsApp } from '@/lib/whatsapp/evolution'
 import { rateLimit } from '@/lib/rate-limit'
+import { escapeHtml } from '@/lib/escape-html'
 
 type Params = { params: { id: string } }
 
@@ -20,7 +22,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     // Validate internal secret — prevents external abuse
     const internalKey = req.headers.get('x-internal-key') || ''
     const expectedKey = process.env.INTERNAL_API_KEY || process.env.BOT_ANA_API_KEY || ''
-    if (!expectedKey || internalKey !== expectedKey) {
+    if (!expectedKey || !internalKey || internalKey.length !== expectedKey.length || !timingSafeEqual(Buffer.from(internalKey), Buffer.from(expectedKey))) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
     }
 
@@ -76,7 +78,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
   <!-- HEADER -->
   <div style="background:linear-gradient(135deg,#1e40af,#3b82f6);padding:30px 24px;text-align:center">
-    <h1 style="color:#ffffff;margin:0;font-size:22px;font-weight:700">${companyName}</h1>
+    <h1 style="color:#ffffff;margin:0;font-size:22px;font-weight:700">${escapeHtml(companyName)}</h1>
     <p style="color:#bfdbfe;margin:6px 0 0;font-size:13px">Assistencia Tecnica em Informatica</p>
   </div>
 
@@ -85,7 +87,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     <!-- Greeting -->
     <p style="font-size:16px;color:#1e293b;margin:0 0 8px">
-      Ola <strong>${customerName}</strong>! 👋
+      Ola <strong>${escapeHtml(customerName)}</strong>! 👋
     </p>
     <p style="font-size:14px;color:#475569;line-height:1.6;margin:0 0 24px">
       Sua ordem de servico foi registrada com sucesso. Abaixo estao os detalhes:
@@ -99,28 +101,28 @@ export async function POST(req: NextRequest, { params }: Params) {
           <p style="font-size:28px;color:#1e40af;margin:4px 0 0;font-weight:800;font-family:monospace">OS-${osNum}</p>
         </div>
         <div style="background:${os.module_statuses?.color || '#3b82f6'}22;color:${os.module_statuses?.color || '#3b82f6'};padding:6px 14px;border-radius:20px;font-size:13px;font-weight:600">
-          ${os.module_statuses?.name || 'Aberta'}
+          ${escapeHtml(os.module_statuses?.name || 'Aberta')}
         </div>
       </div>
 
       <table style="width:100%;font-size:13px;color:#334155;border-collapse:collapse">
         <tr>
           <td style="padding:6px 0;color:#64748b;width:120px">Cliente</td>
-          <td style="padding:6px 0;font-weight:500">${fullName}</td>
+          <td style="padding:6px 0;font-weight:500">${escapeHtml(fullName)}</td>
         </tr>
         <tr>
           <td style="padding:6px 0;color:#64748b">Equipamento</td>
-          <td style="padding:6px 0;font-weight:500">${equipment || 'Impressora'}</td>
+          <td style="padding:6px 0;font-weight:500">${escapeHtml(equipment) || 'Impressora'}</td>
         </tr>
         <tr>
           <td style="padding:6px 0;color:#64748b">Defeito</td>
-          <td style="padding:6px 0;font-weight:500">${os.reported_issue || 'A diagnosticar'}</td>
+          <td style="padding:6px 0;font-weight:500">${escapeHtml(os.reported_issue) || 'A diagnosticar'}</td>
         </tr>
         <tr>
           <td style="padding:6px 0;color:#64748b">Data</td>
           <td style="padding:6px 0;font-weight:500">${createdDate} as ${createdTime}</td>
         </tr>
-        ${os.equipment_brand ? `<tr><td style="padding:6px 0;color:#64748b">Marca/Modelo</td><td style="padding:6px 0;font-weight:500">${os.equipment_brand} ${os.equipment_model || ''}</td></tr>` : ''}
+        ${os.equipment_brand ? `<tr><td style="padding:6px 0;color:#64748b">Marca/Modelo</td><td style="padding:6px 0;font-weight:500">${escapeHtml(os.equipment_brand)} ${escapeHtml(os.equipment_model || '')}</td></tr>` : ''}
       </table>
     </div>
 
@@ -190,11 +192,11 @@ export async function POST(req: NextRequest, { params }: Params) {
 
   <!-- FOOTER -->
   <div style="background:#1e293b;padding:20px 24px;text-align:center">
-    <p style="color:#94a3b8;font-size:12px;margin:0 0 4px">${companyName}</p>
+    <p style="color:#94a3b8;font-size:12px;margin:0 0 4px">${escapeHtml(companyName)}</p>
     <p style="color:#64748b;font-size:11px;margin:0">
-      ${companySettings['address'] || companySettings['endereco'] || 'Sao Paulo — SP'}
+      ${escapeHtml(companySettings['address'] || companySettings['endereco'] || 'Sao Paulo — SP')}
     </p>
-    ${companySettings['cnpj'] ? `<p style="color:#64748b;font-size:11px;margin:4px 0 0">CNPJ: ${companySettings['cnpj']}</p>` : ''}
+    ${companySettings['cnpj'] ? `<p style="color:#64748b;font-size:11px;margin:4px 0 0">CNPJ: ${escapeHtml(companySettings['cnpj'])}</p>` : ''}
     <p style="color:#475569;font-size:10px;margin:12px 0 0">
       Este email foi enviado automaticamente. Nao responda diretamente.
     </p>

@@ -62,7 +62,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
     const validatedData = updateOSSchema.parse(body)
 
     const os = await prisma.serviceOrder.update({
-      where: { id: params.id },
+      where: { id: params.id, company_id: user.companyId },
       data: validatedData as any,
       include: { customers: true },
     })

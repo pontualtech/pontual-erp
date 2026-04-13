@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { sendCompanyEmail } from '@/lib/send-email'
+import { rateLimit } from '@/lib/rate-limit'
 
 export async function POST(req: NextRequest) {
   try {
@@ -8,6 +9,11 @@ export async function POST(req: NextRequest) {
 
     if (!customer_id || !company_slug) {
       return NextResponse.json({ error: 'Dados incompletos' }, { status: 400 })
+    }
+
+    const rl = rateLimit(`resend-verify:${customer_id}`, 3, 5 * 60 * 1000) // 3 per 5 minutes
+    if (!rl.allowed) {
+      return NextResponse.json({ error: 'Muitas tentativas. Aguarde alguns minutos.' }, { status: 429 })
     }
 
     const company = await prisma.company.findUnique({

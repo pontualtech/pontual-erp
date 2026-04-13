@@ -38,7 +38,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     // Operação atômica: atualizar status + criar transação + atualizar saldo
     const receivable = await prisma.$transaction(async (tx) => {
       const updated = await tx.accountReceivable.update({
-        where: { id: params.id },
+        where: { id: params.id, company_id: user.companyId },
         data: {
           received_amount: newReceivedTotal,
           status: isReceivedInFull ? 'RECEBIDO' : 'PENDENTE',

@@ -116,7 +116,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
       // Update receivable
       return tx.accountReceivable.update({
-        where: { id: params.id },
+        where: { id: params.id, company_id: user.companyId },
         data: {
           status: 'RECEBIDO',
           received_amount: anticipatedAmount,

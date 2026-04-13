@@ -169,7 +169,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
     if (data.warranty_until) data.warranty_until = new Date(data.warranty_until)
 
     const os = await prisma.serviceOrder.update({
-      where: { id: existing.id },
+      where: { id: existing.id, company_id: user.companyId },
       data,
       include: { customers: true },
     })
@@ -235,7 +235,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     if (!existing) return error('OS não encontrada', 404)
 
     await prisma.serviceOrder.update({
-      where: { id: existing.id },
+      where: { id: existing.id, company_id: user.companyId },
       data: { deleted_at: new Date() },
     })
 

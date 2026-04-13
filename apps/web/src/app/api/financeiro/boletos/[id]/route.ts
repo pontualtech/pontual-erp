@@ -141,7 +141,7 @@ export async function DELETE(
     boletoMeta.cancelledAt = new Date().toISOString()
 
     await prisma.accountReceivable.update({
-      where: { id: receivable.id },
+      where: { id: receivable.id, company_id: user.companyId },
       data: {
         pix_code: JSON.stringify(boletoMeta),
         status: 'CANCELADO',

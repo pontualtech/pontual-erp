@@ -75,9 +75,12 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     const updateData: any = { ...data, updated_at: new Date() }
     if (data.due_date) updateData.due_date = new Date(data.due_date)
 
-    const payable = await prisma.accountPayable.update({
-      where: { id: params.id },
+    await prisma.accountPayable.updateMany({
+      where: { id: params.id, company_id: user.companyId },
       data: updateData,
+    })
+    const payable = await prisma.accountPayable.findFirst({
+      where: { id: params.id, company_id: user.companyId },
     })
 
     logAudit({
@@ -85,12 +88,12 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       userId: user.id,
       module: 'financeiro',
       action: 'payable.update',
-      entityId: payable.id,
+      entityId: payable!.id,
       oldValue: { description: existing.description, total_amount: existing.total_amount, status: existing.status },
       newValue: data as any,
     })
 
-    return success(payable)
+    return success(payable!)
   } catch (err) {
     return handleError(err)
   }
@@ -107,8 +110,8 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     })
     if (!existing) return error('Conta a pagar nao encontrada', 404)
 
-    await prisma.accountPayable.update({
-      where: { id: params.id },
+    await prisma.accountPayable.updateMany({
+      where: { id: params.id, company_id: user.companyId },
       data: { deleted_at: new Date() },
     })
 

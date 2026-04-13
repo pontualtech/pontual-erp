@@ -162,7 +162,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const updated = await prisma.$transaction(async (tx) => {
       // 1. Atualizar OS
       const updatedOS = await tx.serviceOrder.update({
-        where: { id: params.id },
+        where: { id: params.id, company_id: user.companyId },
         data: updateData,
         include: { customers: true },
       })

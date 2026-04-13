@@ -72,9 +72,12 @@ export async function PUT(req: NextRequest, { params }: Params) {
     // Validar com Zod strict — rejeita campos não permitidos
     const validatedData = updateCustomerSchema.parse(body)
 
-    const customer = await prisma.customer.update({
-      where: { id: params.id },
+    await prisma.customer.updateMany({
+      where: { id: params.id, company_id: user.companyId },
       data: validatedData as any,
+    })
+    const customer = await prisma.customer.findFirst({
+      where: { id: params.id, company_id: user.companyId },
     })
 
     logAudit({
@@ -82,12 +85,12 @@ export async function PUT(req: NextRequest, { params }: Params) {
       userId: user.id,
       module: 'clientes',
       action: 'update',
-      entityId: customer.id,
+      entityId: customer!.id,
       oldValue: existing as any,
       newValue: validatedData,
     })
 
-    return success(customer)
+    return success(customer!)
   } catch (err) {
     return handleError(err)
   }
@@ -104,8 +107,8 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     })
     if (!existing) return error('Cliente não encontrado', 404)
 
-    await prisma.customer.update({
-      where: { id: params.id },
+    await prisma.customer.updateMany({
+      where: { id: params.id, company_id: user.companyId },
       data: { deleted_at: new Date() },
     })
 

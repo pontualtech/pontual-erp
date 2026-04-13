@@ -20,12 +20,15 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     delete body.company_id
     delete body.id
 
-    const status = await prisma.moduleStatus.update({
-      where: { id: params.id },
+    await prisma.moduleStatus.updateMany({
+      where: { id: params.id, company_id: user.companyId },
       data: body,
     })
+    const status = await prisma.moduleStatus.findFirst({
+      where: { id: params.id, company_id: user.companyId },
+    })
 
-    return success(status)
+    return success(status!)
   } catch (err) {
     return handleError(err)
   }
@@ -51,7 +54,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
       return error('Não é possível excluir o status padrão', 400)
     }
 
-    await prisma.moduleStatus.delete({ where: { id: params.id } })
+    await prisma.moduleStatus.deleteMany({ where: { id: params.id, company_id: user.companyId } })
     return success({ deleted: true })
   } catch (err) {
     return handleError(err)

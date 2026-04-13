@@ -60,9 +60,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const body = await request.json()
     const data = updateProductSchema.parse(body)
 
-    const product = await prisma.product.update({
-      where: { id: params.id },
+    await prisma.product.updateMany({
+      where: { id: params.id, company_id: user.companyId },
       data,
+    })
+    const product = await prisma.product.findFirst({
+      where: { id: params.id, company_id: user.companyId },
     })
 
     logAudit({
@@ -70,12 +73,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       userId: user.id,
       module: 'estoque',
       action: 'product.update',
-      entityId: product.id,
+      entityId: product!.id,
       oldValue: { name: existing.name, sale_price: existing.sale_price },
-      newValue: { name: product.name, sale_price: product.sale_price },
+      newValue: { name: product!.name, sale_price: product!.sale_price },
     })
 
-    return success(product)
+    return success(product!)
   } catch (err) {
     return handleError(err)
   }
@@ -92,8 +95,8 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
     })
     if (!existing) return error('Produto não encontrado', 404)
 
-    await prisma.product.update({
-      where: { id: params.id },
+    await prisma.product.updateMany({
+      where: { id: params.id, company_id: user.companyId },
       data: { deleted_at: new Date() },
     })
 

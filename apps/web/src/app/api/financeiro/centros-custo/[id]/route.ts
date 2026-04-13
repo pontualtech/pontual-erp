@@ -59,13 +59,16 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       if (!parent) return error('Centro de custo pai não encontrado', 404)
     }
 
-    const costCenter = await prisma.costCenter.update({
-      where: { id: params.id },
+    await prisma.costCenter.updateMany({
+      where: { id: params.id, company_id: user.companyId },
       data: {
         ...(data.name !== undefined && { name: data.name }),
         ...(data.parent_id !== undefined && { parent_id: data.parent_id }),
         ...(data.is_active !== undefined && { is_active: data.is_active }),
       },
+    })
+    const costCenter = await prisma.costCenter.findFirst({
+      where: { id: params.id, company_id: user.companyId },
     })
 
     logAudit({
@@ -73,12 +76,12 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       userId: user.id,
       module: 'financeiro',
       action: 'cost_center.update',
-      entityId: costCenter.id,
+      entityId: costCenter!.id,
       oldValue: { name: existing.name, is_active: existing.is_active },
       newValue: data as Record<string, unknown>,
     })
 
-    return success(costCenter)
+    return success(costCenter!)
   } catch (err) {
     return handleError(err)
   }
@@ -111,8 +114,8 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
       return error(`Centro de custo possui ${childCount} filho(s). Remova ou mova os filhos antes de excluir.`, 409)
     }
 
-    await prisma.costCenter.delete({
-      where: { id: params.id },
+    await prisma.costCenter.deleteMany({
+      where: { id: params.id, company_id: user.companyId },
     })
 
     logAudit({

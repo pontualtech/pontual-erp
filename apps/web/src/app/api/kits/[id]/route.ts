@@ -27,19 +27,22 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       if (typeof item.unit_price !== 'number' || item.unit_price < 0) return error('Preco invalido em um dos itens')
     }
 
-    const updated = await prisma.setting.update({
-      where: { id: params.id },
+    await prisma.setting.updateMany({
+      where: { id: params.id, company_id: user.companyId },
       data: {
         value: JSON.stringify({ name: name.trim(), items }),
         updated_at: new Date(),
       },
     })
+    const updated = await prisma.setting.findFirst({
+      where: { id: params.id, company_id: user.companyId },
+    })
 
     return success({
-      id: updated.id,
-      key: updated.key,
+      id: updated!.id,
+      key: updated!.key,
       value: { name: name.trim(), items },
-      updated_at: updated.updated_at,
+      updated_at: updated!.updated_at,
     })
   } catch (err) {
     return handleError(err)
@@ -57,7 +60,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     })
     if (!setting) return error('Kit nao encontrado', 404)
 
-    await prisma.setting.delete({ where: { id: params.id } })
+    await prisma.setting.deleteMany({ where: { id: params.id, company_id: user.companyId } })
 
     return success({ deleted: true })
   } catch (err) {

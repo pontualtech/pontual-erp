@@ -6,6 +6,7 @@ import { logAudit } from '@/lib/audit'
 import { sendCompanyEmail } from '@/lib/send-email'
 import { createHmac } from 'crypto'
 import { createAccessToken } from '@/lib/portal-auth'
+import { escapeHtml } from '@/lib/escape-html'
 
 type Params = { params: { id: string } }
 
@@ -55,7 +56,7 @@ function buildItemsTable(items: any[]): string {
       const item = servicos[idx]
       const bg = idx % 2 === 0 ? '#ffffff' : '#f8fafc'
       html += `<tr style="background:${bg};">
-        <td style="padding:12px 16px;font-size:13px;color:#1e293b;border-bottom:1px solid #f1f5f9;">${item.description || '\u2014'}</td>
+        <td style="padding:12px 16px;font-size:13px;color:#1e293b;border-bottom:1px solid #f1f5f9;">${escapeHtml(item.description) || '\u2014'}</td>
         <td style="padding:12px 16px;font-size:13px;color:#475569;border-bottom:1px solid #f1f5f9;text-align:center;">${item.quantity}</td>
         <td style="padding:12px 16px;font-size:13px;color:#475569;border-bottom:1px solid #f1f5f9;text-align:right;">${fmtCents(item.unit_price)}</td>
         <td style="padding:12px 16px;font-size:13px;font-weight:700;color:#1e293b;border-bottom:1px solid #f1f5f9;text-align:right;">${fmtCents(item.total_price)}</td>
@@ -81,7 +82,7 @@ function buildItemsTable(items: any[]): string {
       const item = pecas[idx]
       const bg = idx % 2 === 0 ? '#ffffff' : '#faf5ff'
       html += `<tr style="background:${bg};">
-        <td style="padding:12px 16px;font-size:13px;color:#1e293b;border-bottom:1px solid #f1f5f9;">${item.description || '\u2014'}</td>
+        <td style="padding:12px 16px;font-size:13px;color:#1e293b;border-bottom:1px solid #f1f5f9;">${escapeHtml(item.description) || '\u2014'}</td>
         <td style="padding:12px 16px;font-size:13px;color:#475569;border-bottom:1px solid #f1f5f9;text-align:center;">${item.quantity}</td>
         <td style="padding:12px 16px;font-size:13px;color:#475569;border-bottom:1px solid #f1f5f9;text-align:right;">${fmtCents(item.unit_price)}</td>
         <td style="padding:12px 16px;font-size:13px;font-weight:700;color:#1e293b;border-bottom:1px solid #f1f5f9;text-align:right;">${fmtCents(item.total_price)}</td>
@@ -369,19 +370,19 @@ function buildTemplateVars(os: any, settings: Record<string, string>, approvalLi
             <tr>
               <td style="padding:0 0 12px;vertical-align:top;">
                 <p style="margin:0 0 4px;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Problema Relatado</p>
-                <p style="margin:0;font-size:14px;color:#1e293b;line-height:1.5;">${os.reported_issue || '\u2014'}</p>
+                <p style="margin:0;font-size:14px;color:#1e293b;line-height:1.5;">${escapeHtml(os.reported_issue) || '\u2014'}</p>
               </td>
             </tr>
             ${laudo ? `<tr>
               <td style="padding:12px 0;border-top:1px solid #f1f5f9;vertical-align:top;">
                 <p style="margin:0 0 4px;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Diagnostico / Laudo</p>
-                <p style="margin:0;font-size:14px;color:#1e293b;line-height:1.5;">${laudo}</p>
+                <p style="margin:0;font-size:14px;color:#1e293b;line-height:1.5;">${escapeHtml(laudo)}</p>
               </td>
             </tr>` : ''}
             ${obs ? `<tr>
               <td style="padding:12px 0 0;border-top:1px solid #f1f5f9;vertical-align:top;">
                 <p style="margin:0 0 4px;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Observacoes</p>
-                <p style="margin:0;font-size:14px;color:#1e293b;line-height:1.5;">${obs}</p>
+                <p style="margin:0;font-size:14px;color:#1e293b;line-height:1.5;">${escapeHtml(obs)}</p>
               </td>
             </tr>` : ''}
           </table>
@@ -390,12 +391,12 @@ function buildTemplateVars(os: any, settings: Record<string, string>, approvalLi
     : ''
 
   return {
-    customer_name: c?.legal_name || c?.trade_name || 'Cliente',
-    equipment,
-    equipment_serial: os.serial_number || '',
+    customer_name: escapeHtml(c?.legal_name || c?.trade_name || 'Cliente'),
+    equipment: escapeHtml(equipment),
+    equipment_serial: escapeHtml(os.serial_number || ''),
     os_number: osNumber,
-    reported_issue: os.reported_issue || '',
-    laudo,
+    reported_issue: escapeHtml(os.reported_issue || ''),
+    laudo: escapeHtml(laudo),
     laudo_section: laudoSection,
     items_table: itemsTable,
     total_cost: fmtCents(totalCost),
@@ -404,16 +405,16 @@ function buildTemplateVars(os: any, settings: Record<string, string>, approvalLi
     warranty_period: warrantyPeriod,
     execution_days: executionDays,
     quote_validity: quoteValidity,
-    company_name: companyName,
-    company_phone: settings['company.phone'] || settings['telefone'] || '',
+    company_name: escapeHtml(companyName),
+    company_phone: escapeHtml(settings['company.phone'] || settings['telefone'] || ''),
     company_whatsapp: whatsapp,
-    company_address: companyAddress,
-    company_cnpj: settings['company.cnpj'] || settings['cnpj'] || '',
-    company_email: settings['company.email'] || settings['email'] || '',
-    company_website: settings['company.website'] || settings['website'] || '',
-    company_pix: settings['company.pix'] || settings['pix'] || '',
-    company_bank: settings['company.bank'] || settings['banco'] || '',
-    payment_conditions: paymentConditions,
+    company_address: escapeHtml(companyAddress),
+    company_cnpj: escapeHtml(settings['company.cnpj'] || settings['cnpj'] || ''),
+    company_email: escapeHtml(settings['company.email'] || settings['email'] || ''),
+    company_website: escapeHtml(settings['company.website'] || settings['website'] || ''),
+    company_pix: escapeHtml(settings['company.pix'] || settings['pix'] || ''),
+    company_bank: escapeHtml(settings['company.bank'] || settings['banco'] || ''),
+    payment_conditions: escapeHtml(paymentConditions),
     portal_os_link: (() => {
       const portalUrl = process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'
       const slug = os.companies?.slug || 'pontualtech'

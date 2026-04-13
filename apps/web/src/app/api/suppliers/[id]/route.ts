@@ -63,9 +63,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const body = await request.json()
     const data = updateSupplierSchema.parse(body)
 
-    const supplier = await prisma.supplier.update({
-      where: { id: params.id },
+    await prisma.supplier.updateMany({
+      where: { id: params.id, company_id: user.companyId },
       data,
+    })
+    const supplier = await prisma.supplier.findFirst({
+      where: { id: params.id, company_id: user.companyId },
     })
 
     logAudit({
@@ -73,12 +76,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       userId: user.id,
       module: 'estoque',
       action: 'supplier.update',
-      entityId: supplier.id,
+      entityId: supplier!.id,
       oldValue: { name: existing.name },
-      newValue: { name: supplier.name },
+      newValue: { name: supplier!.name },
     })
 
-    return success(supplier)
+    return success(supplier!)
   } catch (err) {
     return handleError(err)
   }
@@ -96,8 +99,8 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
     if (!existing) return error('Fornecedor não encontrado', 404)
 
     // Soft-delete: just deactivate
-    await prisma.supplier.update({
-      where: { id: params.id },
+    await prisma.supplier.updateMany({
+      where: { id: params.id, company_id: user.companyId },
       data: { is_active: false },
     })
 

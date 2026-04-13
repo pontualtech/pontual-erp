@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { hash } from 'bcryptjs'
 import { sendCompanyEmail } from '@/lib/send-email'
+import { escapeHtml } from '@/lib/escape-html'
 
 function maskEmail(email: string): string {
   const [local, domain] = email.split('@')
@@ -110,11 +111,11 @@ export async function POST(req: NextRequest) {
 <body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
   <div style="max-width:480px;margin:0 auto;padding:24px;">
     <div style="background:#1e40af;border-radius:12px 12px 0 0;padding:20px;text-align:center;">
-      <h1 style="color:white;margin:0;font-size:18px;">${company.name}</h1>
+      <h1 style="color:white;margin:0;font-size:18px;">${escapeHtml(company.name)}</h1>
       <p style="color:#bfdbfe;margin:6px 0 0;font-size:13px;">Portal do Cliente</p>
     </div>
     <div style="background:white;padding:24px;border-radius:0 0 12px 12px;">
-      <p style="color:#374151;font-size:14px;">Ola, <strong>${firstName}</strong>!</p>
+      <p style="color:#374151;font-size:14px;">Ola, <strong>${escapeHtml(firstName)}</strong>!</p>
       <p style="color:#6b7280;font-size:14px;">Seu acesso ao Portal do Cliente foi ativado.</p>
       <div style="background:#eff6ff;border:2px solid #2563eb;border-radius:12px;padding:16px;margin:16px 0;text-align:center;">
         <p style="color:#6b7280;font-size:12px;margin:0 0 4px;">Sua senha inicial:</p>

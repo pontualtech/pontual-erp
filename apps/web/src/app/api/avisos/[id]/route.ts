@@ -30,12 +30,15 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (body.require_read !== undefined) data.require_read = body.require_read
     if (body.expires_at !== undefined) data.expires_at = body.expires_at ? new Date(body.expires_at) : null
 
-    const announcement = await prisma.announcement.update({
-      where: { id: params.id },
+    await prisma.announcement.updateMany({
+      where: { id: params.id, company_id: user.companyId },
       data,
     })
+    const announcement = await prisma.announcement.findFirst({
+      where: { id: params.id, company_id: user.companyId },
+    })
 
-    return success(announcement)
+    return success(announcement!)
   } catch (err) {
     return handleError(err)
   }
@@ -56,8 +59,8 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     })
     if (!existing) return error('Aviso nao encontrado', 404)
 
-    await prisma.announcement.delete({
-      where: { id: params.id },
+    await prisma.announcement.deleteMany({
+      where: { id: params.id, company_id: user.companyId },
     })
 
     return success({ deleted: true })

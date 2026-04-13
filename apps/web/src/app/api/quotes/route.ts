@@ -58,35 +58,44 @@ export async function POST(req: NextRequest) {
     })
     if (!os) return error('OS não encontrada', 404)
 
-    // Auto-increment quote number
-    const lastQuote = await prisma.quote.findFirst({
-      where: { company_id: user.companyId },
-      orderBy: { quote_number: 'desc' },
-      select: { quote_number: true },
-    })
-
     const totalAmount = os.service_order_items.reduce((s, i) => s + i.total_price, 0)
 
-    // Copy OS items into quote items
-    const quote = await prisma.quote.create({
-      data: {
-        company_id: user.companyId,
-        service_order_id: serviceOrderId,
-        quote_number: (lastQuote?.quote_number || 0) + 1,
-        status: 'DRAFT',
-        total_amount: totalAmount,
-        valid_until: validUntil ? new Date(validUntil) : null,
-        notes: notes || null,
-        quote_items: {
-          create: os.service_order_items.map(item => ({
-            description: item.description,
-            quantity: item.quantity,
-            unit_price: item.unit_price,
-            total_price: item.total_price,
-          })),
+    // Create quote with atomic number generation (prevent race condition)
+    const quote = await prisma.$transaction(async (tx) => {
+      // Advisory lock per company to prevent race condition on numbering
+      // pg_advisory_xact_lock is released automatically at end of transaction
+      const lockKey = Buffer.from(user.companyId).reduce((acc: number, b: number) => acc + b, 0)
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey + 200000})`
+
+      const lastQuote = await tx.quote.findFirst({
+        where: { company_id: user.companyId },
+        orderBy: { quote_number: 'desc' },
+        select: { quote_number: true },
+      })
+
+      const newQuoteNumber = (lastQuote?.quote_number || 0) + 1
+
+      // Copy OS items into quote items
+      return tx.quote.create({
+        data: {
+          company_id: user.companyId,
+          service_order_id: serviceOrderId,
+          quote_number: newQuoteNumber,
+          status: 'DRAFT',
+          total_amount: totalAmount,
+          valid_until: validUntil ? new Date(validUntil) : null,
+          notes: notes || null,
+          quote_items: {
+            create: os.service_order_items.map(item => ({
+              description: item.description,
+              quantity: item.quantity,
+              unit_price: item.unit_price,
+              total_price: item.total_price,
+            })),
+          },
         },
-      },
-      include: { quote_items: true },
+        include: { quote_items: true },
+      })
     })
 
     logAudit({

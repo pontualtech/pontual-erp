@@ -69,9 +69,12 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (body.category !== undefined) data.category = body.category
     data.updated_at = new Date()
 
-    const ticket = await prisma.ticket.update({
-      where: { id: params.id },
+    await prisma.ticket.updateMany({
+      where: { id: params.id, company_id: user.companyId },
       data,
+    })
+    const ticket = await prisma.ticket.findFirst({
+      where: { id: params.id, company_id: user.companyId },
     })
 
     logAudit({
@@ -79,12 +82,12 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       userId: user.id,
       module: 'tickets',
       action: 'update',
-      entityId: ticket.id,
+      entityId: ticket!.id,
       oldValue: existing as any,
       newValue: body,
     })
 
-    return success(ticket)
+    return success(ticket!)
   } catch (err) {
     return handleError(err)
   }
@@ -101,8 +104,8 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     })
     if (!existing) return error('Ticket nao encontrado', 404)
 
-    await prisma.ticket.update({
-      where: { id: params.id },
+    await prisma.ticket.updateMany({
+      where: { id: params.id, company_id: user.companyId },
       data: { deleted_at: new Date() },
     })
 

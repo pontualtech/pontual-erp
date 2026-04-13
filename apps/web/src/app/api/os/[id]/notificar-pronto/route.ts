@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { sendCompanyEmail } from '@/lib/send-email'
+import { escapeHtml } from '@/lib/escape-html'
 
 type Params = { params: { id: string } }
 
@@ -87,13 +88,13 @@ ${companyName}`
             <td style="background:linear-gradient(135deg,#1e40af 0%,#2563eb 50%,#3b82f6 100%);padding:36px 32px;text-align:center;">
               <div style="width:56px;height:56px;background:rgba(255,255,255,0.15);border-radius:14px;margin:0 auto 12px;line-height:56px;font-size:28px;">&#127881;</div>
               <h1 style="margin:0 0 4px;color:#ffffff;font-size:22px;font-weight:800;">Equipamento Pronto!</h1>
-              <p style="margin:0;color:rgba(255,255,255,0.7);font-size:12px;">${companyName}</p>
+              <p style="margin:0;color:rgba(255,255,255,0.7);font-size:12px;">${escapeHtml(companyName)}</p>
             </td>
           </tr>
           <!-- BODY -->
           <tr>
             <td style="padding:32px 32px 0;">
-              <p style="font-size:16px;margin:0 0 16px;color:#1e293b;">Ola <strong>${customerFirstName}</strong>,</p>
+              <p style="font-size:16px;margin:0 0 16px;color:#1e293b;">Ola <strong>${escapeHtml(customerFirstName)}</strong>,</p>
               <p style="font-size:14px;color:#475569;margin:0 0 24px;line-height:1.7;">
                 Temos uma otima noticia! O reparo do seu equipamento foi concluido com sucesso!
               </p>
@@ -101,7 +102,7 @@ ${companyName}`
               <div style="background:#f8fafc;border:2px solid #e2e8f0;border-radius:10px;overflow:hidden;margin:0 0 24px;">
                 <div style="padding:16px;">
                   <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;color:#1e293b;">
-                    <tr><td style="padding:6px 0;font-weight:700;width:130px;color:#64748b;">Equipamento:</td><td style="padding:6px 0;font-weight:600;">${equipment}</td></tr>
+                    <tr><td style="padding:6px 0;font-weight:700;width:130px;color:#64748b;">Equipamento:</td><td style="padding:6px 0;font-weight:600;">${escapeHtml(equipment)}</td></tr>
                     <tr><td style="padding:6px 0;font-weight:700;color:#64748b;">OS:</td><td style="padding:6px 0;font-weight:600;">#${osNum}</td></tr>
                     <tr><td style="padding:6px 0;font-weight:700;color:#64748b;">Status:</td><td style="padding:6px 0;font-weight:800;color:#16a34a;">${isLoja ? 'Pronto para retirada' : 'Pronto — aguardando entrega'}</td></tr>
                   </table>
@@ -138,11 +139,11 @@ ${companyName}`
           <!-- FOOTER -->
           <tr>
             <td style="background:#1e293b;padding:28px 32px;text-align:center;">
-              <p style="margin:0 0 4px;font-size:14px;font-weight:700;color:#ffffff;">${companyName}</p>
+              <p style="margin:0 0 4px;font-size:14px;font-weight:700;color:#ffffff;">${escapeHtml(companyName)}</p>
               <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">Assistencia Tecnica em Informatica</p>
-              <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">${companyAddress}</p>
-              <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">CNPJ: ${companyCnpj}</p>
-              <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">Tel: ${companyPhone} | ${companyEmail}</p>
+              <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">${escapeHtml(companyAddress)}</p>
+              <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">CNPJ: ${escapeHtml(companyCnpj)}</p>
+              <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">Tel: ${escapeHtml(companyPhone)} | ${escapeHtml(companyEmail)}</p>
               <p style="margin:0 0 10px;font-size:11px;color:#94a3b8;">${companyWebsite}</p>
               <div style="border-top:1px solid #334155;padding-top:10px;">
                 <p style="margin:0;font-size:10px;color:#64748b;">Garantia de 3 meses em todos os servicos</p>

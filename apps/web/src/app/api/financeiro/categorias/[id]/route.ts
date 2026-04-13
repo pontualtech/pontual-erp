@@ -76,9 +76,12 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       if (!parent) return error('Categoria pai não encontrada ou tipo incompatível', 404)
     }
 
-    const category = await prisma.category.update({
-      where: { id: params.id },
+    await prisma.category.updateMany({
+      where: { id: params.id, company_id: user.companyId },
       data: updateData,
+    })
+    const category = await prisma.category.findFirst({
+      where: { id: params.id, company_id: user.companyId },
     })
 
     logAudit({
@@ -86,14 +89,14 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       userId: user.id,
       module: 'financeiro',
       action: 'category.update',
-      entityId: category.id,
+      entityId: category!.id,
       oldValue: { name: existing.name, module: existing.module },
       newValue: updateData as Record<string, unknown>,
     })
 
     return success({
-      ...category,
-      type: category.module === 'financeiro_receita' ? 'RECEITA' : 'DESPESA',
+      ...category!,
+      type: category!.module === 'financeiro_receita' ? 'RECEITA' : 'DESPESA',
     })
   } catch (err) {
     return handleError(err)
@@ -131,8 +134,8 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
       return error(`Categoria em uso em ${usedInReceivable} conta(s) a receber. Remova as referências antes de excluir.`, 409)
     }
 
-    await prisma.category.delete({
-      where: { id: params.id },
+    await prisma.category.deleteMany({
+      where: { id: params.id, company_id: user.companyId },
     })
 
     logAudit({

@@ -68,9 +68,12 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       updateData.current_balance = (existing.current_balance ?? 0) + diff
     }
 
-    const account = await prisma.account.update({
-      where: { id: params.id },
+    await prisma.account.updateMany({
+      where: { id: params.id, company_id: user.companyId },
       data: updateData,
+    })
+    const account = await prisma.account.findFirst({
+      where: { id: params.id, company_id: user.companyId },
     })
 
     logAudit({
@@ -78,12 +81,12 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       userId: user.id,
       module: 'financeiro',
       action: 'account.update',
-      entityId: account.id,
+      entityId: account!.id,
       oldValue: { name: existing.name, account_type: existing.account_type },
       newValue: data as Record<string, unknown>,
     })
 
-    return success(account)
+    return success(account!)
   } catch (err) {
     return handleError(err)
   }
@@ -108,8 +111,8 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
       return error(`Conta possui ${txCount} transação(ões). Remova as transações antes de excluir.`, 409)
     }
 
-    await prisma.account.delete({
-      where: { id: params.id },
+    await prisma.account.deleteMany({
+      where: { id: params.id, company_id: user.companyId },
     })
 
     logAudit({

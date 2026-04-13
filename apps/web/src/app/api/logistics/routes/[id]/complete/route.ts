@@ -32,7 +32,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
 
     const updated = await prisma.logisticsRoute.update({
-      where: { id: params.id },
+      where: { id: params.id, company_id: user.companyId },
       data: {
         status: 'COMPLETED',
         completed_at: new Date(),

@@ -67,7 +67,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     // Update quote status
     const updated = await prisma.quote.update({
-      where: { id: params.id },
+      where: { id: params.id, company_id: user.companyId },
       data: {
         status: 'SENT',
         sent_at: new Date(),

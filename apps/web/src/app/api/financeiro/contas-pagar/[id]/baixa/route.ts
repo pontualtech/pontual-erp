@@ -44,7 +44,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     // Atomic transaction: update payable + record bank transaction + update balance
     const payable = await prisma.$transaction(async (tx) => {
       const updated = await tx.accountPayable.update({
-        where: { id: params.id },
+        where: { id: params.id, company_id: user.companyId },
         data: {
           paid_amount: newPaidTotal,
           status: isPaidInFull ? 'PAGO' : 'PENDENTE',

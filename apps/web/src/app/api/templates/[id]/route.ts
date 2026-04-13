@@ -45,8 +45,8 @@ export async function PUT(req: NextRequest, { params }: Params) {
       })
     }
 
-    const template = await prisma.printTemplate.update({
-      where: { id: params.id },
+    await prisma.printTemplate.updateMany({
+      where: { id: params.id, company_id: user.companyId },
       data: {
         ...(name !== undefined && { name }),
         ...(html_template !== undefined && { html_template }),
@@ -56,18 +56,21 @@ export async function PUT(req: NextRequest, { params }: Params) {
         updated_at: new Date(),
       },
     })
+    const template = await prisma.printTemplate.findFirst({
+      where: { id: params.id, company_id: user.companyId },
+    })
 
     logAudit({
       companyId: user.companyId,
       userId: user.id,
       module: 'config',
       action: 'update_template',
-      entityId: template.id,
+      entityId: template!.id,
       oldValue: { name: existing.name, is_default: existing.is_default },
-      newValue: { name: template.name, is_default: template.is_default },
+      newValue: { name: template!.name, is_default: template!.is_default },
     })
 
-    return success(template)
+    return success(template!)
   } catch (err) {
     return handleError(err)
   }
@@ -88,8 +91,8 @@ export async function DELETE(req: NextRequest, { params }: Params) {
       return error('Não é possível excluir o template padrão. Defina outro como padrão primeiro.', 400)
     }
 
-    await prisma.printTemplate.delete({
-      where: { id: params.id },
+    await prisma.printTemplate.deleteMany({
+      where: { id: params.id, company_id: user.companyId },
     })
 
     logAudit({

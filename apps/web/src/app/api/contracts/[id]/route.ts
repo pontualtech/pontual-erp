@@ -55,9 +55,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (body.notes !== undefined) updateData.notes = body.notes
     if (body.customer_id) updateData.customer_id = body.customer_id
 
-    const updated = await prisma.contract.update({
-      where: { id: params.id },
+    await prisma.contract.updateMany({
+      where: { id: params.id, company_id: user.companyId },
       data: updateData,
+    })
+    const updated = await prisma.contract.findFirst({
+      where: { id: params.id, company_id: user.companyId },
       include: {
         customers: { select: { id: true, legal_name: true } },
       },
@@ -70,10 +73,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       action: 'update',
       entityId: params.id,
       oldValue: { status: existing.status },
-      newValue: { status: updated.status },
+      newValue: { status: updated!.status },
     })
 
-    return success(updated)
+    return success(updated!)
   } catch (err) {
     return handleError(err)
   }
@@ -91,8 +94,8 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     if (!existing) return error('Contrato não encontrado', 404)
 
     // Soft delete: set status to CANCELLED
-    await prisma.contract.update({
-      where: { id: params.id },
+    await prisma.contract.updateMany({
+      where: { id: params.id, company_id: user.companyId },
       data: { status: 'CANCELLED', updated_at: new Date() },
     })
 

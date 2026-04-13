@@ -18,8 +18,8 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
     const body = await req.json()
 
-    const updated = await prisma.priceTable.update({
-      where: { id: params.id },
+    await prisma.priceTable.updateMany({
+      where: { id: params.id, company_id: user.companyId },
       data: {
         equipment_type: body.equipment_type !== undefined ? (body.equipment_type || null) : undefined,
         brand: body.brand !== undefined ? (body.brand || null) : undefined,
@@ -32,8 +32,11 @@ export async function PUT(req: NextRequest, { params }: Params) {
         is_active: body.is_active !== undefined ? body.is_active : undefined,
       },
     })
+    const updated = await prisma.priceTable.findFirst({
+      where: { id: params.id, company_id: user.companyId },
+    })
 
-    return success(updated)
+    return success(updated!)
   } catch (err) {
     return handleError(err)
   }
@@ -50,7 +53,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     })
     if (!existing) return error('Entrada nao encontrada', 404)
 
-    await prisma.priceTable.delete({ where: { id: params.id } })
+    await prisma.priceTable.deleteMany({ where: { id: params.id, company_id: user.companyId } })
 
     return success({ deleted: true })
   } catch (err) {

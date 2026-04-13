@@ -42,7 +42,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const updated = await prisma.$transaction(async (tx) => {
       // 1. Update stop
       const updatedStop = await tx.logisticsStop.update({
-        where: { id: params.id },
+        where: { id: params.id, company_id: user.companyId },
         data: {
           status: 'COMPLETED',
           completed_at: new Date(),

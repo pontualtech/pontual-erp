@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
+import { rateLimit } from '@/lib/rate-limit'
 
 export async function POST(req: NextRequest) {
   try {
+    const rl = rateLimit(`check-doc:${req.ip || 'unknown'}`, 10, 60 * 1000) // 10 per minute
+    if (!rl.allowed) {
+      return NextResponse.json({ error: 'Muitas tentativas' }, { status: 429 })
+    }
+
     const { document, company_slug } = await req.json()
 
     if (!document || !company_slug) {

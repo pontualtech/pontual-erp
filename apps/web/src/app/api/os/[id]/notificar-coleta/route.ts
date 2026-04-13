@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { sendCompanyEmail } from '@/lib/send-email'
+import { escapeHtml } from '@/lib/escape-html'
 
 type Params = { params: { id: string } }
 
@@ -134,14 +135,14 @@ Equipe ${companyName}`
             <td style="background:linear-gradient(135deg,#1e40af 0%,#2563eb 50%,#3b82f6 100%);padding:36px 32px;text-align:center;">
               <div style="width:56px;height:56px;background:rgba(255,255,255,0.15);border-radius:14px;margin:0 auto 12px;line-height:56px;font-size:28px;">&#128666;</div>
               <h1 style="margin:0 0 4px;color:#ffffff;font-size:22px;font-weight:800;">Confirmacao de Coleta</h1>
-              <p style="margin:0;color:rgba(255,255,255,0.7);font-size:12px;">${companyName}</p>
+              <p style="margin:0;color:rgba(255,255,255,0.7);font-size:12px;">${escapeHtml(companyName)}</p>
             </td>
           </tr>
           <!-- BODY -->
           <tr>
             <td style="padding:32px 32px 0;">
               <p style="font-size:16px;margin:0 0 4px;color:#1e293b;">
-                Tudo certo, <strong>${customerName}</strong>!
+                Tudo certo, <strong>${escapeHtml(customerName)}</strong>!
               </p>
               <p style="font-size:14px;color:#475569;margin:0 0 24px;line-height:1.7;">
                 OS ${osNumbers} aberta com sucesso! Seu agendamento ja esta com nossa logistica.
@@ -154,7 +155,7 @@ Equipe ${companyName}`
                 <div style="padding:16px;">
                   ${allEquipments.map((e, i) => `
                     <p style="margin:0 0 6px;font-size:14px;color:#1e293b;">
-                      <strong>${i + 1}.</strong> ${e.desc} <span style="color:#64748b;">(OS #${e.num})</span>
+                      <strong>${i + 1}.</strong> ${escapeHtml(e.desc)} <span style="color:#64748b;">(OS #${e.num})</span>
                     </p>
                   `).join('')}
                 </div>
@@ -209,7 +210,7 @@ Equipe ${companyName}`
 
               ${customerEmail ? `
                 <p style="font-size:12px;color:#64748b;margin:0 0 4px;">
-                  Historico enviado para: <strong>${customerEmail}</strong>
+                  Historico enviado para: <strong>${escapeHtml(customerEmail)}</strong>
                 </p>
                 <p style="font-size:11px;color:#94a3b8;margin:0 0 16px;">
                   Verifique tambem a pasta de Spam/Lixo Eletronico
@@ -220,11 +221,11 @@ Equipe ${companyName}`
           <!-- FOOTER -->
           <tr>
             <td style="background:#1e293b;padding:28px 32px;text-align:center;">
-              <p style="margin:0 0 4px;font-size:14px;font-weight:700;color:#ffffff;">${companyName}</p>
+              <p style="margin:0 0 4px;font-size:14px;font-weight:700;color:#ffffff;">${escapeHtml(companyName)}</p>
               <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">Assistencia Tecnica em Informatica</p>
-              <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">${companyAddress}</p>
-              <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">CNPJ: ${companyCnpj}</p>
-              <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">Tel: ${companyPhone} | ${companyEmail2}</p>
+              <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">${escapeHtml(companyAddress)}</p>
+              <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">CNPJ: ${escapeHtml(companyCnpj)}</p>
+              <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">Tel: ${escapeHtml(companyPhone)} | ${escapeHtml(companyEmail2)}</p>
               <div style="border-top:1px solid #334155;padding-top:10px;margin-top:10px;">
                 <p style="margin:0;font-size:10px;color:#64748b;">Garantia de 3 meses em todos os servicos</p>
               </div>

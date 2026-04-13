@@ -49,6 +49,19 @@ export async function POST(req: NextRequest) {
     const context = buildContext(searchResults)
     const systemPrompt = getSystemPrompt(company?.name || 'Empresa', context)
 
+    // Validate session ownership if session_id provided
+    if (session_id) {
+      const existingSession = await prisma.aiChatSession.findFirst({
+        where: { id: session_id, company_id: portalUser.company_id, customer_id: portalUser.customer_id },
+      })
+      if (!existingSession) {
+        return new Response(JSON.stringify({ error: 'Sessao invalida' }), {
+          status: 403,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+    }
+
     // Create or get session
     let sessionId = session_id
     if (!sessionId) {

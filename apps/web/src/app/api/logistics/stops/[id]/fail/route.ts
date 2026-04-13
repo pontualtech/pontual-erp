@@ -28,7 +28,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     const updated = await prisma.$transaction(async (tx) => {
       const updatedStop = await tx.logisticsStop.update({
-        where: { id: params.id },
+        where: { id: params.id, company_id: user.companyId },
         data: {
           status: 'FAILED',
           failure_reason,

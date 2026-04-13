@@ -6,6 +6,7 @@ import { logAudit } from '@/lib/audit'
 import { writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
 import { existsSync } from 'fs'
+import { escapeHtml } from '@/lib/escape-html'
 
 type Params = { params: { id: string } }
 
@@ -75,9 +76,9 @@ export async function POST(req: NextRequest, { params }: Params) {
 <body>
 <h1>Termo de ${termType}</h1>
 <div class="field"><span class="label">OS:</span> ${String(os.os_number).padStart(4, '0')}</div>
-<div class="field"><span class="label">Cliente:</span> ${os.customers?.legal_name || 'N/A'}</div>
-<div class="field"><span class="label">Equipamento:</span> ${[os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ')}</div>
-<div class="field"><span class="label">Endereço:</span> ${stop.address}</div>
+<div class="field"><span class="label">Cliente:</span> ${escapeHtml(os.customers?.legal_name || 'N/A')}</div>
+<div class="field"><span class="label">Equipamento:</span> ${escapeHtml([os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' '))}</div>
+<div class="field"><span class="label">Endereço:</span> ${escapeHtml(stop.address)}</div>
 <div class="field"><span class="label">Data/Hora:</span> ${new Date().toLocaleString('pt-BR')}</div>
 <div class="field"><span class="label">Tipo:</span> ${termType}</div>
 <div class="sig">

@@ -381,6 +381,8 @@ model Customer {
   payments             Payment[]
 
   @@unique([company_id, vhsys_id])
+  // Partial unique index on (company_id, document_number) WHERE document_number IS NOT NULL AND document_number != ''
+  // Applied via raw SQL — see prisma/partial-indexes.sql
   @@index([company_id], map: "idx_customers_company")
   @@index([document_number], map: "idx_customers_document")
   @@map("customers")
@@ -571,6 +573,8 @@ model Product {
   purchase_items       PurchaseItem[]
   default_supplier     Supplier?         @relation(fields: [supplier_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
+  // Partial unique index on (company_id, barcode) WHERE barcode IS NOT NULL AND barcode != ''
+  // Applied via raw SQL — see prisma/partial-indexes.sql
   @@index([barcode], map: "idx_products_barcode")
   @@index([company_id], map: "idx_products_company")
   @@map("products")

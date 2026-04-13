@@ -50,7 +50,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     allowedFields.updated_at = new Date()
 
     const updated = await prisma.logisticsRoute.update({
-      where: { id: params.id },
+      where: { id: params.id, company_id: user.companyId },
       data: allowedFields,
       include: {
         stops: { orderBy: { sequence: 'asc' } },
@@ -87,8 +87,8 @@ export async function DELETE(req: NextRequest, { params }: Params) {
 
     // Delete stops first, then route
     await prisma.$transaction([
-      prisma.logisticsStop.deleteMany({ where: { route_id: params.id } }),
-      prisma.logisticsRoute.delete({ where: { id: params.id } }),
+      prisma.logisticsStop.deleteMany({ where: { route_id: params.id, company_id: user.companyId } }),
+      prisma.logisticsRoute.delete({ where: { id: params.id, company_id: user.companyId } }),
     ])
 
     logAudit({

@@ -6,6 +6,7 @@ import { logAudit } from '@/lib/audit'
 import { sendCompanyEmail } from '@/lib/send-email'
 import { createHmac } from 'crypto'
 import { createAccessToken } from '@/lib/portal-auth'
+import { escapeHtml } from '@/lib/escape-html'
 
 function fmtCents(cents: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cents / 100)
@@ -225,7 +226,7 @@ function buildItemsTableHtml(items: { description: string; quantity: number; uni
   for (const item of items) {
     const typeLabel = item.item_type === 'SERVICO' ? 'Serviço' : 'Peça'
     rows += `<tr>
-      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;">${item.description}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;">${escapeHtml(item.description)}</td>
       <td style="padding:8px 12px;text-align:center;border-bottom:1px solid #f1f5f9;font-size:13px;">${typeLabel}</td>
       <td style="padding:8px 12px;text-align:center;border-bottom:1px solid #f1f5f9;font-size:13px;">${item.quantity}</td>
       <td style="padding:8px 12px;text-align:right;border-bottom:1px solid #f1f5f9;font-size:13px;">${fmtCents(item.unit_price)}</td>
@@ -291,17 +292,17 @@ export async function sendQuoteReminders(companyId: string, userId: string, spec
       const portalOsLink = `${appUrl}/portal/${company.slug}/os/${os.id}?access=${accessTk}`
 
       const vars: Record<string, string> = {
-        customer_name: customer.legal_name || '—',
+        customer_name: escapeHtml(customer.legal_name || '—'),
         os_number: String(os.os_number),
-        equipment,
-        diagnosis: os.diagnosis || '—',
+        equipment: escapeHtml(equipment),
+        diagnosis: escapeHtml(os.diagnosis || '—'),
         total_cost: fmtCents(os.total_cost || 0),
         days_waiting: String(os.days_waiting),
         approval_link: approvalLink,
         rejection_link: rejectionLink,
         portal_os_link: portalOsLink,
-        company_name: company.name || 'Empresa',
-        company_phone: settingsMap['company.phone'] || settingsMap['telefone'] || '—',
+        company_name: escapeHtml(company.name || 'Empresa'),
+        company_phone: escapeHtml(settingsMap['company.phone'] || settingsMap['telefone'] || '—'),
         company_whatsapp: whatsapp,
         items_table: itemsTableHtml,
       }

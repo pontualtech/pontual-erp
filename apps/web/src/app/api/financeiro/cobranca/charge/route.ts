@@ -7,6 +7,7 @@ import type { BillingType } from '@/lib/payments/types'
 import { sendWhatsApp } from '@/lib/whatsapp/evolution'
 import { sendCompanyEmail } from '@/lib/send-email'
 import { z } from 'zod'
+import { escapeHtml } from '@/lib/escape-html'
 
 const createChargeSchema = z.object({
   receivable_id: z.string().min(1),
@@ -286,14 +287,14 @@ function buildChargeEmailHtml(params: {
 <table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:20px auto;background:#fff;border-radius:8px;overflow:hidden">
   <tr>
     <td style="background:#059669;padding:24px 32px">
-      <h1 style="color:#fff;margin:0;font-size:20px">${params.companyName}</h1>
+      <h1 style="color:#fff;margin:0;font-size:20px">${escapeHtml(params.companyName)}</h1>
       <p style="color:#d1fae5;margin:4px 0 0;font-size:14px">Cobranca</p>
     </td>
   </tr>
   <tr>
     <td style="padding:32px">
       <p style="font-size:16px;color:#1f2937;margin:0 0 16px">
-        Ola, <strong>${params.customerName}</strong>!
+        Ola, <strong>${escapeHtml(params.customerName)}</strong>!
       </p>
       <p style="font-size:14px;color:#4b5563;margin:0 0 24px">
         Voce tem uma cobranca pendente. Confira os detalhes:
@@ -313,7 +314,7 @@ function buildChargeEmailHtml(params: {
         </tr>` : ''}
         ${params.description ? `<tr>
           <td style="padding:12px 16px;font-size:13px;color:#6b7280">Referencia</td>
-          <td style="padding:12px 16px;font-size:14px;color:#1f2937;text-align:right">${params.description}</td>
+          <td style="padding:12px 16px;font-size:14px;color:#1f2937;text-align:right">${escapeHtml(params.description)}</td>
         </tr>` : ''}
       </table>
       <a href="${params.invoiceUrl}" style="display:block;text-align:center;background:#059669;color:#fff;padding:14px 24px;border-radius:8px;text-decoration:none;font-size:16px;font-weight:bold">
@@ -326,7 +327,7 @@ function buildChargeEmailHtml(params: {
   </tr>
   <tr>
     <td style="background:#f9fafb;padding:16px 32px;text-align:center">
-      <p style="font-size:12px;color:#9ca3af;margin:0">${params.companyName} — Cobranca automatica</p>
+      <p style="font-size:12px;color:#9ca3af;margin:0">${escapeHtml(params.companyName)} — Cobranca automatica</p>
     </td>
   </tr>
 </table>
