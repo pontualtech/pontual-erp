@@ -398,7 +398,8 @@ export async function POST(req: NextRequest) {
   const webhookSecret = process.env.BOT_WEBHOOK_SECRET
   if (webhookSecret) {
     const token = req.nextUrl.searchParams.get('token')
-    if (!token || token !== webhookSecret) {
+    if (!token || token.length !== webhookSecret.length
+      || !require('crypto').timingSafeEqual(Buffer.from(token), Buffer.from(webhookSecret))) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
   }

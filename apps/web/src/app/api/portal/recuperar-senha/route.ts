@@ -104,9 +104,11 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Generate random temporary password (8 chars alphanumeric)
+    // Generate cryptographically secure random password (8 chars alphanumeric)
+    const { randomBytes } = await import('crypto')
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
-    const newPassword = Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+    const bytes = randomBytes(8)
+    const newPassword = Array.from(bytes, (b) => chars[b % chars.length]).join('')
     const password_hash = await hash(newPassword, 10)
 
     // Atualizar senha
@@ -115,7 +117,7 @@ export async function POST(req: NextRequest) {
       data: { password_hash },
     })
 
-    // Se cliente tem email, envia notificacao
+    // Se cliente tem email, envia a nova senha
     let emailHint: string | null = null
     if (customer.email) {
       emailHint = maskEmail(customer.email)
@@ -131,7 +133,7 @@ export async function POST(req: NextRequest) {
           <p>Sua senha do Portal do Cliente foi resetada com sucesso.</p>
           <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 16px; margin: 16px 0;">
             <p style="margin: 0; color: #1e40af;">
-              <strong>Sua nova senha:</strong> os 5 primeiros digitos do seu CPF/CNPJ
+              <strong>Sua nova senha temporaria:</strong> <code style="font-size: 18px; letter-spacing: 2px;">${newPassword}</code>
             </p>
           </div>
           <p style="color: #6b7280; font-size: 14px;">
@@ -149,7 +151,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       email_hint: emailHint,
-      message: 'Senha resetada! Use os 5 primeiros digitos do seu CPF/CNPJ.',
+      message: emailHint
+        ? `Senha resetada! Uma nova senha temporaria foi enviada para ${emailHint}.`
+        : 'Senha resetada! Nao encontramos um email cadastrado. Entre em contato com o suporte para receber sua nova senha.',
     })
   } catch (err) {
     console.error('[Portal Recuperar Senha Error]', err)
