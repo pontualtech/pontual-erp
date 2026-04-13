@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { listConversations, isChatwootConfigured } from '@/lib/chatwoot'
 import { error, handleError } from '@/lib/api-response'
+import { getServerUser } from '@/lib/auth'
 
 export async function GET(req: NextRequest) {
   try {
+    const user = await getServerUser()
+    if (!user) return error('Nao autenticado', 401)
+
     if (!isChatwootConfigured()) {
       return error('Chatwoot nao configurado (CHATWOOT_API_TOKEN ausente)', 503)
     }

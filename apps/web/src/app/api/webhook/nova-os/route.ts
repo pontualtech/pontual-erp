@@ -42,13 +42,14 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json()
-    const { nome, documento, telefone, email, cep, endereco, equipamento, marca, modelo, defeito, observacoes, vhsys_os_id, vhsys_os_number, origem } = body
+    const { nome, documento, telefone, email, cep, endereco, equipamento, marca, modelo, defeito, observacoes, vhsys_os_id, vhsys_os_number, origem, company_id: bodyCompanyId } = body
 
     if (!defeito && !equipamento) {
       return NextResponse.json({ error: 'equipamento e defeito sao obrigatorios' }, { status: 400 })
     }
 
-    const companyId = 'pontualtech-001'
+    // Resolve company: from body, or from env, or default (backward compat)
+    const companyId = bodyCompanyId || process.env.WEBHOOK_DEFAULT_COMPANY_ID || 'pontualtech-001'
 
     // 1. Find or create customer
     let customer: any = null

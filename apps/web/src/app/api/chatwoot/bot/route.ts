@@ -60,11 +60,11 @@ const COMPANY_CONFIGS: Record<string, BotCompanyConfig> = {
     slug: 'imprimitech',
     allowedInboxes: [3],
     difyBaseUrl: process.env.DIFY_IMPRI_BASE_URL || 'https://dify.imprimitech.com.br',
-    difyApiKey: process.env.DIFY_IMPRI_API_KEY || 'app-X5O39z2STNNpj92FUfMnzwlQ',
+    difyApiKey: process.env.DIFY_IMPRI_API_KEY || '',
     botApiKey: process.env.BOT_IMPRI_API_KEY || '',
     cwUrl: process.env.CW_IMPRI_URL || 'https://chat.imp.pontualtech.work',
     cwAccountId: process.env.CW_IMPRI_ACCOUNT_ID || '1',
-    cwToken: process.env.CW_IMPRI_TOKEN || 'PmZodW8CiMzCvN8oTVa3Lk2S',
+    cwToken: process.env.CW_IMPRI_TOKEN || '',
     portalUrl: 'https://portal.imprimitech.com.br/portal/imprimitech/login',
     supportWhatsApp: 'https://wa.me/551150439869',
     botOrigin: 'whatsapp_bot_grazi',
@@ -78,23 +78,9 @@ function getCompanyConfig(companySlug?: string | null): BotCompanyConfig | null 
   return COMPANY_CONFIGS[companySlug] || null
 }
 
-// These are set per-request now, but we keep defaults for backward compat
+// Immutable constants (safe across concurrent requests)
 const GROQ_API_KEY = process.env.GROQ_API_KEY || ''
 const ERP_BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'
-
-// Legacy constants (used by functions that don't have config context yet)
-let ALLOWED_INBOXES = [2, 4, 9]
-let COMPANY_ID = process.env.BOT_ANA_COMPANY_ID || 'pontualtech-001'
-let DIFY_BASE_URL = process.env.DIFY_BASE_URL || 'https://dify.pontualtech.work'
-let DIFY_API_KEY = process.env.DIFY_API_KEY || ''
-let BOT_API_KEY = process.env.BOT_ANA_API_KEY || ''
-let CW_URL = process.env.CHATWOOT_URL || 'https://chat.pontualtech.work'
-let CW_ACCOUNT_ID = process.env.CHATWOOT_ACCOUNT_ID || '1'
-let CW_TOKEN = process.env.CHATWOOT_API_TOKEN || process.env.CW_ADMIN_TOKEN || ''
-let PORTAL_URL = 'https://portal.pontualtech.com.br/portal/pontualtech/login'
-let SUPPORT_WHATSAPP = 'https://wa.me/551126263841'
-let BOT_ORIGIN = 'whatsapp_bot_ana'
-let BOT_AGENT_ID = 6
 
 const DEBOUNCE_WAIT_MS = 3000 // 3s — wait for client to finish typing before processing
 const LOCK_EXPIRE_MS = 15000  // 15s — lock auto-expires if holder crashes
@@ -104,21 +90,22 @@ const MAX_HISTORY = 20        // keep last 20 messages
 // Chatwoot API helpers
 // ---------------------------------------------------------------------------
 
-function cwBase() {
-  return `${CW_URL}/api/v1/accounts/${CW_ACCOUNT_ID}`
+// All Chatwoot helpers now receive cfg to avoid module-level mutable state (race-condition safe)
+function cwBase(cfg: BotCompanyConfig) {
+  return `${cfg.cwUrl}/api/v1/accounts/${cfg.cwAccountId}`
 }
 
-function cwHeaders() {
+function cwHeaders(cfg: BotCompanyConfig) {
   return {
     'Content-Type': 'application/json',
-    api_access_token: CW_TOKEN,
+    api_access_token: cfg.cwToken,
   }
 }
 
-async function cwSendMessage(conversationId: number, content: string, isPrivate = false) {
-  const res = await fetch(`${cwBase()}/conversations/${conversationId}/messages`, {
+async function cwSendMessage(cfg: BotCompanyConfig, conversationId: number, content: string, isPrivate = false) {
+  const res = await fetch(`${cwBase(cfg)}/conversations/${conversationId}/messages`, {
     method: 'POST',
-    headers: cwHeaders(),
+    headers: cwHeaders(cfg),
     body: JSON.stringify({
       content,
       message_type: 'outgoing',
@@ -132,10 +119,9 @@ async function cwSendMessage(conversationId: number, content: string, isPrivate 
   }
 }
 
-async function cwSetLabels(conversationId: number, labels: string[]) {
-  // Get current labels first
-  const convRes = await fetch(`${cwBase()}/conversations/${conversationId}`, {
-    headers: cwHeaders(),
+async function cwSetLabels(cfg: BotCompanyConfig, conversationId: number, labels: string[]) {
+  const convRes = await fetch(`${cwBase(cfg)}/conversations/${conversationId}`, {
+    headers: cwHeaders(cfg),
   })
   let currentLabels: string[] = []
   if (convRes.ok) {
@@ -144,17 +130,17 @@ async function cwSetLabels(conversationId: number, labels: string[]) {
   }
   const merged = [...new Set([...currentLabels, ...labels])]
 
-  await fetch(`${cwBase()}/conversations/${conversationId}/labels`, {
+  await fetch(`${cwBase(cfg)}/conversations/${conversationId}/labels`, {
     method: 'POST',
-    headers: cwHeaders(),
+    headers: cwHeaders(cfg),
     body: JSON.stringify({ labels: merged }),
   })
 }
 
-async function cwResolve(conversationId: number) {
-  await fetch(`${cwBase()}/conversations/${conversationId}/toggle_status`, {
+async function cwResolve(cfg: BotCompanyConfig, conversationId: number) {
+  await fetch(`${cwBase(cfg)}/conversations/${conversationId}/toggle_status`, {
     method: 'POST',
-    headers: cwHeaders(),
+    headers: cwHeaders(cfg),
     body: JSON.stringify({ status: 'resolved' }),
   })
 }
@@ -162,20 +148,18 @@ async function cwResolve(conversationId: number) {
 /**
  * Send response split by paragraphs with delays for simulated typing.
  * HARD CAP: maximum 2 messages (matching prompt rule "MÁXIMO 2 BALÕES").
- * If Dify returns 3+ paragraphs, merge the extras into the second message.
  */
-async function cwSendWithTyping(conversationId: number, text: string) {
+async function cwSendWithTyping(cfg: BotCompanyConfig, conversationId: number, text: string) {
   const paragraphs = text.split(/\n\n+/).filter(p => p.trim())
   if (paragraphs.length <= 1) {
-    await cwSendMessage(conversationId, text)
+    await cwSendMessage(cfg, conversationId, text)
     return
   }
-  // Max 2 balloons: first paragraph standalone, rest merged into second
   const first = paragraphs[0].trim()
   const rest = paragraphs.slice(1).map(p => p.trim()).join('\n\n')
-  await cwSendMessage(conversationId, first)
+  await cwSendMessage(cfg, conversationId, first)
   await new Promise(r => setTimeout(r, 1200))
-  await cwSendMessage(conversationId, rest)
+  await cwSendMessage(cfg, conversationId, rest)
 }
 
 // ---------------------------------------------------------------------------
@@ -188,6 +172,7 @@ interface DifyResponse {
 }
 
 async function callDify(
+  cfg: BotCompanyConfig,
   query: string,
   user: string,
   conversationId?: string,
@@ -202,7 +187,6 @@ async function callDify(
   if (conversationId) {
     payload.conversation_id = conversationId
   }
-  // Send images/videos to Dify for Gemini Vision processing
   if (imageUrls && imageUrls.length > 0) {
     payload.files = imageUrls.map(url => {
       const isVideo = /\.(mp4|mov|avi|webm|mkv|3gp)/i.test(url) || url.includes('video')
@@ -214,11 +198,11 @@ async function callDify(
     })
   }
 
-  const res = await fetch(`${DIFY_BASE_URL}/v1/chat-messages`, {
+  const res = await fetch(`${cfg.difyBaseUrl}/v1/chat-messages`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${DIFY_API_KEY}`,
+      Authorization: `Bearer ${cfg.difyApiKey}`,
     },
     body: JSON.stringify(payload),
   })
@@ -231,15 +215,14 @@ async function callDify(
     }
   }
 
-  // Fallback: try streaming mode (some Dify+Gemini combos don't support blocking)
   console.warn(`[Bot] Dify blocking failed (${res.status}), trying streaming...`)
 
   const streamPayload = { ...payload, response_mode: 'streaming' }
-  const streamRes = await fetch(`${DIFY_BASE_URL}/v1/chat-messages`, {
+  const streamRes = await fetch(`${cfg.difyBaseUrl}/v1/chat-messages`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${DIFY_API_KEY}`,
+      Authorization: `Bearer ${cfg.difyApiKey}`,
     },
     body: JSON.stringify(streamPayload),
   })
@@ -403,22 +386,15 @@ export async function POST(req: NextRequest) {
     console.warn(`[Bot] Unknown company slug: ${companySlug}`)
     return NextResponse.json({ status: 'ignored', reason: 'unknown company' })
   }
-  // CRITICAL: Set module-level vars atomically before any await.
-  // These are read by helper functions (cwBase, cwHeaders, callDify, etc.)
-  // that don't receive cfg as parameter. This is safe because Node.js is
-  // single-threaded and no await happens between these assignments.
-  ALLOWED_INBOXES = cfg.allowedInboxes
-  COMPANY_ID = cfg.companyId
-  DIFY_BASE_URL = cfg.difyBaseUrl
-  DIFY_API_KEY = cfg.difyApiKey
-  BOT_API_KEY = cfg.botApiKey
-  CW_URL = cfg.cwUrl
-  CW_ACCOUNT_ID = cfg.cwAccountId
-  CW_TOKEN = cfg.cwToken
-  PORTAL_URL = cfg.portalUrl
-  SUPPORT_WHATSAPP = cfg.supportWhatsApp
-  BOT_ORIGIN = cfg.botOrigin
-  BOT_AGENT_ID = cfg.botAgentId
+
+  // Webhook authentication: require ?token= matching BOT_WEBHOOK_SECRET env var
+  const webhookSecret = process.env.BOT_WEBHOOK_SECRET
+  if (webhookSecret) {
+    const token = req.nextUrl.searchParams.get('token')
+    if (!token || token !== webhookSecret) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+  }
 
   let body: any
   try {
@@ -427,24 +403,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  // Log webhook receipt to DB (diagnostic — proves webhook is arriving)
+  // Log webhook receipt to DB (diagnostic)
   const convId = body.conversation?.id || 0
   const event = body.event || '?'
   const msgType = body.message_type
   const senderType = body.sender?.type || '?'
   try {
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO bot_conversations (id, company_id, chatwoot_conv_id, step, data, message_history, created_at, updated_at)
-       VALUES (gen_random_uuid(), 'LOG', $1, $2, '{}', '[]', NOW(), NOW())
-       ON CONFLICT DO NOTHING`,
-      99999000 + Math.floor(Math.random() * 999),
-      `LOG:${event}|mt:${msgType}|st:${senderType}|cv:${convId}`
-    )
+    await prisma.$executeRaw`
+      INSERT INTO bot_conversations (id, company_id, chatwoot_conv_id, step, data, message_history, created_at, updated_at)
+      VALUES (gen_random_uuid(), 'LOG', ${99999000 + Math.floor(Math.random() * 999)}, ${`LOG:${event}|mt:${msgType}|st:${senderType}|cv:${convId}`}, '{}', '[]', NOW(), NOW())
+      ON CONFLICT DO NOTHING
+    `
   } catch {}
 
-  // Process synchronously
+  // Process synchronously — cfg is passed through to avoid global mutation
   try {
-    await processWebhook(body)
+    await processWebhook(cfg, body)
   } catch (err: any) {
     console.error('[Bot] Error:', err.message || err)
   }
@@ -455,10 +429,10 @@ export async function POST(req: NextRequest) {
 export const maxDuration = 120 // 2 min timeout
 
 // ---------------------------------------------------------------------------
-// Async webhook processor
+// Async webhook processor (receives cfg to avoid module-level mutable state)
 // ---------------------------------------------------------------------------
 
-async function processWebhook(body: any) {
+async function processWebhook(cfg: BotCompanyConfig, body: any) {
   const event = body.event
 
   // Handle conversation resolved — reset bot state
@@ -484,7 +458,7 @@ async function processWebhook(body: any) {
   if (event === 'conversation_updated') {
     const convId = body.id || body.conversation?.id
     const assignee = body.assignee || body.conversation?.meta?.assignee
-    if (convId && assignee && assignee.id !== BOT_AGENT_ID) {
+    if (convId && assignee && assignee.id !== cfg.botAgentId) {
       await prisma.botConversation.updateMany({
         where: { chatwoot_conv_id: convId },
         data: { human_takeover: true, step: 'HUMAN' },
@@ -521,7 +495,7 @@ async function processWebhook(body: any) {
 
   // Filter by allowed inboxes
   const inboxId = body.inbox?.id || body.conversation?.inbox_id
-  if (inboxId && !ALLOWED_INBOXES.includes(inboxId)) {
+  if (inboxId && !cfg.allowedInboxes.includes(inboxId)) {
     return
   }
 
@@ -573,7 +547,7 @@ async function processWebhook(body: any) {
     where: { chatwoot_conv_id: conversationId },
     update: {}, // don't overwrite existing data
     create: {
-      company_id: COMPANY_ID,
+      company_id: cfg.companyId,
       chatwoot_conv_id: conversationId,
       chatwoot_contact_id: contactId || null,
       customer_phone: phone || null,
@@ -587,10 +561,10 @@ async function processWebhook(body: any) {
 
   if (isNew) {
     // Assign conversation to bot agent so messages show as bot's name
-    fetch(`${cwBase()}/conversations/${conversationId}/assignments`, {
+    fetch(`${cwBase(cfg)}/conversations/${conversationId}/assignments`, {
       method: 'POST',
-      headers: cwHeaders(),
-      body: JSON.stringify({ assignee_id: BOT_AGENT_ID }),
+      headers: cwHeaders(cfg),
+      body: JSON.stringify({ assignee_id: cfg.botAgentId }),
     }).catch(() => {})
   }
 
@@ -713,7 +687,7 @@ async function processWebhook(body: any) {
 
     // Handle OS confirmation flow
     if (botConv.step === 'AWAITING_CONFIRMATION') {
-      await handleOSConfirmation(botConv, query, conversationId)
+      await handleOSConfirmation(cfg, botConv, query, conversationId)
       await releaseLock(botConv.id)
       return
     }
@@ -722,6 +696,7 @@ async function processWebhook(body: any) {
     try {
       const userIdentifier = phone || contactId?.toString() || `conv_${conversationId}`
       const difyResponse = await callDify(
+        cfg,
         query,
         userIdentifier,
         botConv.dify_conv_id || undefined,
@@ -730,7 +705,7 @@ async function processWebhook(body: any) {
 
       if (!difyResponse.answer) {
         console.warn('[Bot] Empty Dify response — sending fallback and activating human takeover')
-        await cwSendMessage(conversationId, 'Ops, tive um probleminha aqui! 😅 Vou chamar alguem da equipe pra te ajudar, ta? Um momentinho!')
+        await cwSendMessage(cfg, conversationId, 'Ops, tive um probleminha aqui! 😅 Vou chamar alguem da equipe pra te ajudar, ta? Um momentinho!')
         await prisma.botConversation.update({
           where: { id: botConv.id },
           data: { human_takeover: true, step: 'HUMAN' },
@@ -756,7 +731,7 @@ async function processWebhook(body: any) {
       try {
         const erpResp = await fetch(`${ERP_BASE_URL}/api/bot/abrir-os`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Bot-Key': BOT_API_KEY },
+          headers: { 'Content-Type': 'application/json', 'X-Bot-Key': cfg.botApiKey },
           body: JSON.stringify({
             nome: parsed.vhsysData.nome || parsed.vhsysData.cliente || sender.name || 'Cliente WhatsApp',
             documento: parsed.vhsysData.cpf_cnpj || '',
@@ -768,14 +743,14 @@ async function processWebhook(body: any) {
             marca: parsed.vhsysData.marca || '',
             modelo: parsed.vhsysData.modelo || '',
             defeito: parsed.vhsysData.defeito || 'Sem descricao',
-            origem: BOT_ORIGIN,
+            origem: cfg.botOrigin,
           }),
         })
         const erpData = await erpResp.json()
         const osNum = erpData.os_numero || 0
         const clienteNome = erpData.cliente_nome || parsed.vhsysData.nome || 'Cliente'
         if (osNum > 0) {
-          await cwSendMessage(conversationId, `✅ *OS #${osNum}* aberta para ${clienteNome}!\n\n📱 Acompanhe pelo portal:\n${PORTAL_URL}\n\n📞 Suporte: ${SUPPORT_WHATSAPP}`)
+          await cwSendMessage(cfg, conversationId, `✅ *OS #${osNum}* aberta para ${clienteNome}!\n\n📱 Acompanhe pelo portal:\n${cfg.portalUrl}\n\n📞 Suporte: ${cfg.supportWhatsApp}`)
           // Private note with all links for agents (always visible in conversation)
           const vdNote = parsed.vhsysData as Record<string, any>
           const noteLines = [
@@ -785,10 +760,10 @@ async function processWebhook(body: any) {
             `📧 ${String(vdNote.email || 'N/I')} | 📍 ${String(vdNote.endereco || 'N/I')}`,
             ``,
             `🔗 ERP: ${ERP_BASE_URL}/os/${osNum}`,
-            `🔗 Portal: ${PORTAL_URL}`,
+            `🔗 Portal: ${cfg.portalUrl}`,
           ]
-          await cwSendMessage(conversationId, noteLines.join('\n'), true)
-          await cwSetLabels(conversationId, ['os_aberta'])
+          await cwSendMessage(cfg, conversationId, noteLines.join('\n'), true)
+          await cwSetLabels(cfg, conversationId, ['os_aberta'])
 
           // Sync contact data to Chatwoot (keep CRM in sync with ERP)
           if (contactId) {
@@ -805,13 +780,13 @@ async function processWebhook(body: any) {
               modelo: String(vd.modelo || ''),
               ultima_os: String(osNum),
               erp_os_link: `${ERP_BASE_URL}/os/${osNum}`,
-              portal_link: PORTAL_URL,
+              portal_link: cfg.portalUrl,
               erp_cliente_id: String(erpData.cliente_id || ''),
             }
             try {
-              const syncResp = await fetch(`${cwBase()}/contacts/${contactId}`, {
+              const syncResp = await fetch(`${cwBase(cfg)}/contacts/${contactId}`, {
                 method: 'PUT',
-                headers: cwHeaders(),
+                headers: cwHeaders(cfg),
                 body: JSON.stringify(contactUpdate),
               })
               if (!syncResp.ok) console.error('[Bot] Contact sync failed:', syncResp.status)
@@ -820,9 +795,9 @@ async function processWebhook(body: any) {
 
             // Also update conversation sidebar with OS info
             try {
-              const convResp = await fetch(`${cwBase()}/conversations/${conversationId}/custom_attributes`, {
+              const convResp = await fetch(`${cwBase(cfg)}/conversations/${conversationId}/custom_attributes`, {
                 method: 'PATCH',
-                headers: cwHeaders(),
+                headers: cwHeaders(cfg),
                 body: JSON.stringify({
                   custom_attributes: {
                     os_numero: String(osNum),
@@ -839,29 +814,29 @@ async function processWebhook(body: any) {
               try {
                 await fetch(`${ERP_BASE_URL}/api/bot/atualizar-cliente`, {
                   method: 'PATCH',
-                  headers: { 'Content-Type': 'application/json', 'X-Bot-Key': BOT_API_KEY },
+                  headers: { 'Content-Type': 'application/json', 'X-Bot-Key': cfg.botApiKey },
                   body: JSON.stringify({
                     cliente_id: erpData.cliente_id,
                     chatwoot_contact_id: String(contactId),
-                    chatwoot_url: `${CW_URL}/app/accounts/${CW_ACCOUNT_ID}/conversations/${conversationId}`,
+                    chatwoot_url: `${cfg.cwUrl}/app/accounts/${cfg.cwAccountId}/conversations/${conversationId}`,
                   }),
                 })
               } catch (e) { console.error('[Bot] ERP customer update error:', e) }
             }
           }
         } else {
-          await cwSendMessage(conversationId, '[BOT] Erro ao criar OS: ' + (erpData.erro || 'desconhecido'), true)
+          await cwSendMessage(cfg, conversationId, '[BOT] Erro ao criar OS: ' + (erpData.erro || 'desconhecido'), true)
         }
       } catch (erpErr) {
         console.error('[Bot] ERP abrir-os error:', erpErr)
-        await cwSendMessage(conversationId, '[BOT] Excecao ao criar OS. Verificar logs.', true)
+        await cwSendMessage(cfg, conversationId, '[BOT] Excecao ao criar OS. Verificar logs.', true)
       }
       updateData.step = 'IDLE'
       updateData.data = {}
     } else if (parsed.action === 'TRANSFERIR_HUMANO') {
       updateData.human_takeover = true
       updateData.step = 'HUMAN'
-      await cwSendMessage(conversationId, '[BOT] Cliente solicitou atendente humano.', true)
+      await cwSendMessage(cfg, conversationId, '[BOT] Cliente solicitou atendente humano.', true)
     } else if (parsed.action === 'ENCERRAR_CONVERSA') {
       updateData.step = 'IDLE'
       updateData.data = {}
@@ -874,24 +849,24 @@ async function processWebhook(body: any) {
 
     // Send response to client
     if (parsed.cleanText) {
-      await cwSendWithTyping(conversationId, parsed.cleanText)
+      await cwSendWithTyping(cfg, conversationId, parsed.cleanText)
     }
 
     // Post-send actions
     if (parsed.action === 'ENCERRAR_CONVERSA') {
       await new Promise(r => setTimeout(r, 2000))
-      await cwResolve(conversationId)
+      await cwResolve(cfg, conversationId)
     }
 
       // Log to chatbot_logs
-      await logBotMessage(conversationId, query, parsed.cleanText, parsed.action || 'CHAT', phone)
+      await logBotMessage(cfg, conversationId, query, parsed.cleanText, parsed.action || 'CHAT', phone)
     } catch (err) {
       console.error('[Bot] Dify call error:', err)
-      await cwSendMessage(
+      await cwSendMessage(cfg,
         conversationId,
         'Desculpe, estou com dificuldade para processar sua mensagem. Um atendente sera notificado.'
       )
-      await cwSendMessage(conversationId, '[BOT] Erro ao chamar Dify AI. Verificar logs.', true)
+      await cwSendMessage(cfg, conversationId, '[BOT] Erro ao chamar Dify AI. Verificar logs.', true)
       break // don't retry on Dify errors
     }
 
@@ -908,6 +883,7 @@ async function processWebhook(body: any) {
 // ---------------------------------------------------------------------------
 
 async function handleOSConfirmation(
+  cfg: BotCompanyConfig,
   botConv: any,
   content: string,
   conversationId: number
@@ -929,7 +905,7 @@ async function handleOSConfirmation(
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Bot-Key': BOT_API_KEY,
+          'X-Bot-Key': cfg.botApiKey,
         },
         body: JSON.stringify({
           nome: osData.nome || osData.cliente_nome || osData.name,
@@ -950,25 +926,25 @@ async function handleOSConfirmation(
       const result = await res.json()
 
       if (result.ok) {
-        await cwSendMessage(
+        await cwSendMessage(cfg,
           conversationId,
           `OS #${result.dados?.os_numero || result.data?.os_numero} criada com sucesso! Voce recebera atualizacoes sobre o andamento do servico.`
         )
-        await cwSetLabels(conversationId, ['os_criada_bot'])
+        await cwSetLabels(cfg, conversationId, ['os_criada_bot'])
       } else {
-        await cwSendMessage(
+        await cwSendMessage(cfg,
           conversationId,
           `Houve um erro ao criar a OS: ${result.erro || result.error || 'Erro desconhecido'}. Um atendente vai ajudar voce.`
         )
-        await cwSendMessage(conversationId, `[BOT] Erro ao criar OS: ${JSON.stringify(result)}`, true)
+        await cwSendMessage(cfg, conversationId, `[BOT] Erro ao criar OS: ${JSON.stringify(result)}`, true)
       }
     } catch (err: any) {
       console.error('[Bot] OS creation error:', err)
-      await cwSendMessage(
+      await cwSendMessage(cfg,
         conversationId,
         'Desculpe, houve um erro tecnico ao abrir a OS. Um atendente sera notificado.'
       )
-      await cwSendMessage(conversationId, `[BOT] Erro tecnico abrir-os: ${err.message}`, true)
+      await cwSendMessage(cfg, conversationId, `[BOT] Erro tecnico abrir-os: ${err.message}`, true)
     }
 
     // Reset state
@@ -977,57 +953,16 @@ async function handleOSConfirmation(
       data: { step: 'IDLE', data: {} },
     })
   } else if (isReject) {
-    await cwSendMessage(conversationId, 'Tudo bem, a abertura da OS foi cancelada. Se precisar de algo mais, e so me dizer!')
+    await cwSendMessage(cfg, conversationId, 'Tudo bem, a abertura da OS foi cancelada. Se precisar de algo mais, e so me dizer!')
     await prisma.botConversation.update({
       where: { id: botConv.id },
       data: { step: 'IDLE', data: {} },
     })
   } else {
-    // Unclear — re-ask or forward to Dify for interpretation
-    await cwSendMessage(
+    await cwSendMessage(cfg,
       conversationId,
       'Por favor, confirme: deseja abrir a OS? Responda *sim* para confirmar ou *nao* para cancelar.'
     )
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Human agent detection
-// ---------------------------------------------------------------------------
-
-async function handleHumanAgentMessage(body: any) {
-  const conversationId = body.conversation?.id
-  if (!conversationId) return
-
-  // Check if this is from the bot itself (ignore)
-  // The bot sends messages using CW_ADMIN_TOKEN — these come back as outgoing
-  // from the admin user. Ignore them to avoid self-triggering human takeover.
-  const senderType = body.sender?.type
-  if (senderType === 'agent_bot') return
-
-  // Ignore messages that the bot just sent (check if content starts with bot markers)
-  const content = body.content || ''
-  if (content.startsWith('[BOT') || content.startsWith('✅') || content.startsWith('*Pronto')) return
-
-  // If the outgoing message was sent within 2s of the last bot response, it's likely the bot itself
-  const botConvCheck = await prisma.botConversation.findUnique({ where: { chatwoot_conv_id: conversationId } })
-  if (botConvCheck) {
-    const lastUpdate = new Date(botConvCheck.updated_at).getTime()
-    const now = Date.now()
-    if (now - lastUpdate < 5000) return // Message sent within 5s of bot activity — likely the bot
-  }
-
-  // An actual human agent sent a message — set takeover
-  const botConv = await prisma.botConversation.findUnique({
-    where: { chatwoot_conv_id: conversationId },
-  })
-
-  if (botConv && !botConv.human_takeover) {
-    await prisma.botConversation.update({
-      where: { id: botConv.id },
-      data: { human_takeover: true, step: 'HUMAN' },
-    })
-    console.log(`[Bot] Human agent detected in conv ${conversationId} — takeover enabled`)
   }
 }
 
@@ -1036,6 +971,7 @@ async function handleHumanAgentMessage(body: any) {
 // ---------------------------------------------------------------------------
 
 async function logBotMessage(
+  cfg: BotCompanyConfig,
   conversationId: number,
   userMessage: string,
   botResponse: string,
@@ -1045,7 +981,7 @@ async function logBotMessage(
   try {
     await prisma.chatbotLog.create({
       data: {
-        company_id: COMPANY_ID,
+        company_id: cfg.companyId,
         customer_phone: phone || null,
         intent: action,
         message_in: userMessage.substring(0, 2000),

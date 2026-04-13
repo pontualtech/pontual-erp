@@ -104,8 +104,9 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Gerar nova senha = 5 primeiros digitos do documento
-    const newPassword = cleanDoc.slice(0, 5)
+    // Generate random temporary password (8 chars alphanumeric)
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
+    const newPassword = Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
     const password_hash = await hash(newPassword, 10)
 
     // Atualizar senha

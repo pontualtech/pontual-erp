@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { sendMessageToPhone, isChatwootConfigured } from '@/lib/chatwoot'
 import { error, handleError } from '@/lib/api-response'
+import { getServerUser } from '@/lib/auth'
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getServerUser()
+    if (!user) return error('Nao autenticado', 401)
+
     if (!isChatwootConfigured()) {
       // Silently skip if not configured
       return NextResponse.json({ data: { skipped: true, reason: 'Chatwoot nao configurado' } })
