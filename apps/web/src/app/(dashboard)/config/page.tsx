@@ -50,6 +50,7 @@ const sections = [
     title: 'Sistema',
     items: [
       { label: 'Avisos', href: '/config/avisos', icon: Bell, desc: 'Leitura obrigatoria, prioridade minima, polling' },
+      { label: 'Configuracao de Email', href: '/config/email', icon: Mail, desc: 'Provedor de envio (Resend ou SMTP), remetente, teste' },
       { label: 'Notificacoes', href: '/config/notificacoes', icon: Bell, desc: 'Email, WhatsApp, alertas internos' },
       { label: 'Backup', href: '/config/backup', icon: Database, desc: 'Exportar dados e backups' },
       { label: 'Aparencia', href: '/config/aparencia', icon: Palette, desc: 'Tema, cores, logo no PDF' },

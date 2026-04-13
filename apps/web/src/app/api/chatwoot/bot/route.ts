@@ -492,32 +492,11 @@ async function processWebhook(body: any) {
   const senderType = body.sender?.type || ''
   const outgoingConvId: number = body.conversation?.id
 
-  if (isOutgoing && !body.private && outgoingConvId) {
-    // Check if this outgoing message was sent by the bot itself.
-    // Bot messages have content_attributes.bot_sent = true (set in cwSendMessage).
-    // Human messages typed in the Chatwoot UI don't have this flag.
-    const contentAttrs = body.content_attributes || {}
-    const isBotMessage = contentAttrs.bot_sent === true
-
-    if (!isBotMessage && (senderType === 'user' || senderType === 'User')) {
-      // A real human agent typed a message — activate takeover
-      const botConv = await prisma.botConversation.findUnique({
-        where: { chatwoot_conv_id: outgoingConvId },
-        select: { human_takeover: true },
-      })
-      // Only activate if bot is currently active (not already in takeover)
-      if (botConv && !botConv.human_takeover) {
-        await prisma.botConversation.update({
-          where: { chatwoot_conv_id: outgoingConvId },
-          data: { human_takeover: true, step: 'HUMAN' },
-        })
-        console.log(`[Bot] Human agent ${body.sender?.name} sent message in conv ${outgoingConvId} — human takeover activated`)
-        // Notify agent: bot stopped, resolve to reactivate
-        await cwSendMessage(outgoingConvId, `⚠️ Bot pausado — ${body.sender?.name || 'agente'} assumiu a conversa. Para o bot voltar a responder, clique em *Resolver* quando terminar.`, true)
-      }
-    }
-    return
-  }
+  // Outgoing messages: just return. Human takeover is handled ONLY via
+  // conversation_updated (agent assignment) — not by detecting outgoing messages.
+  // The outgoing detection was causing false positives because bot messages
+  // sent via admin token appeared as human agent messages.
+  if (isOutgoing) return
 
   // Only process incoming messages from customers
   const isIncoming = messageType === 'incoming' || messageType === 0
