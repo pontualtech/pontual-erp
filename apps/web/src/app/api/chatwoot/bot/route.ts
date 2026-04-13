@@ -641,115 +641,114 @@ async function processWebhook(body: any) {
   // Step 3: Wait for more messages to accumulate
   await new Promise(r => setTimeout(r, DEBOUNCE_WAIT_MS))
 
-  // Step 4: Re-read bot conversation to get ALL pending messages
-  botConv = await prisma.botConversation.findUnique({ where: { id: botConv.id } }) as any
-  if (!botConv) return
+  // Step 4–7: Processing loop — keeps running until no more pending messages
+  // This catches "straggler" messages that arrive during Dify processing
+  const MAX_LOOPS = 3 // safety cap to prevent infinite loops
+  for (let loopIdx = 0; loopIdx < MAX_LOOPS; loopIdx++) {
+    // Re-read bot conversation to get ALL pending messages
+    botConv = await prisma.botConversation.findUnique({ where: { id: botConv.id } }) as any
+    if (!botConv) return // botConv deleted — lock is gone with it
 
-  // Re-check human takeover (might have been set during our wait)
-  if (botConv.human_takeover) {
-    await releaseLock(botConv.id)
-    console.log(`[Bot] Conv ${conversationId}: human takeover activated during debounce, aborting`)
-    return
-  }
-
-  // Step 5: Consolidate all pending messages into one query
-  const pendingMsgs = (botConv.pending_messages || []) as Array<{ content: string; imageUrls?: string[]; messageId: string; ts: number }>
-  if (pendingMsgs.length === 0) {
-    await releaseLock(botConv.id)
-    return
-  }
-
-  // Build consolidated query and collect all image URLs
-  let query = pendingMsgs.map(m => m.content).join('\n')
-  const allImageUrls: string[] = pendingMsgs.flatMap(m => m.imageUrls || [])
-
-  console.log(`[Bot] Conv ${conversationId}: processing ${pendingMsgs.length} consolidated message(s)`)
-
-  // Step 6: Clear pending messages and add to history
-  const history = (botConv.message_history || []) as unknown as HistoryEntry[]
-  const updatedHistory = addToHistory(history, 'user', query)
-
-  await prisma.botConversation.update({
-    where: { id: botConv.id },
-    data: {
-      pending_messages: [],
-      message_history: updatedHistory as any,
-    },
-  })
-
-  // Use allImageUrls instead of imageUrls from here on
-  const imageUrls = allImageUrls
-
-  // Auto-enrich: detect CEP or CNPJ in the consolidated query
-  const cepMatch = query.match(/\b(\d{5})-?(\d{3})\b/)
-  const cnpjMatch = query.match(/\b(\d{2})\.?(\d{3})\.?(\d{3})\/?(\d{4})-?(\d{2})\b/)
-
-  if (cepMatch) {
-    const cep = (cepMatch[1] + cepMatch[2]).replace(/\D/g, '')
-    try {
-      const cepRes = await fetch(`https://viacep.com.br/ws/${cep}/json/`, { signal: AbortSignal.timeout(3000) })
-      const cepData = await cepRes.json()
-      if (!cepData.erro) {
-        query += `\n[DADOS DO CEP ${cep}: ${cepData.logradouro || ''}, ${cepData.bairro || ''}, ${cepData.localidade || ''}-${cepData.uf || ''}]`
-        console.log(`[Bot] CEP enriched: ${cep} → ${cepData.logradouro}, ${cepData.bairro}`)
-      }
-    } catch { /* ignore CEP lookup failure */ }
-  }
-
-  if (cnpjMatch) {
-    const cnpj = query.match(/\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/)?.[0]?.replace(/\D/g, '') || ''
-    if (cnpj.length === 14) {
-      try {
-        const cnpjRes = await fetch(`https://receitaws.com.br/v1/cnpj/${cnpj}`, {
-          headers: { Accept: 'application/json' },
-          signal: AbortSignal.timeout(5000),
-        })
-        const cnpjData = await cnpjRes.json()
-        if (cnpjData.nome) {
-          query += `\n[DADOS DO CNPJ ${cnpj}: Razao Social: ${cnpjData.nome}, Fantasia: ${cnpjData.fantasia || 'N/A'}, Endereco: ${cnpjData.logradouro || ''} ${cnpjData.numero || ''}, ${cnpjData.bairro || ''}, ${cnpjData.municipio || ''}-${cnpjData.uf || ''}, CEP: ${cnpjData.cep || ''}, Tel: ${cnpjData.telefone || ''}, Email: ${cnpjData.email || ''}]`
-          console.log(`[Bot] CNPJ enriched: ${cnpj} → ${cnpjData.nome}`)
-        }
-      } catch { /* ignore CNPJ lookup failure */ }
-    }
-  }
-
-  // Handle OS confirmation flow
-  if (botConv.step === 'AWAITING_CONFIRMATION') {
-    await handleOSConfirmation(botConv, query, conversationId)
-    await releaseLock(botConv.id)
-    return
-  }
-
-  // Call Dify
-  try {
-    const userIdentifier = phone || contactId?.toString() || `conv_${conversationId}`
-    const difyResponse = await callDify(
-      query,
-      userIdentifier,
-      botConv.dify_conv_id || undefined,
-      imageUrls.length > 0 ? imageUrls : undefined
-    )
-
-    if (!difyResponse.answer) {
-      console.warn('[Bot] Empty Dify response — sending fallback and activating human takeover')
-      await cwSendMessage(conversationId, 'Ops, tive um probleminha aqui! 😅 Vou chamar alguem da equipe pra te ajudar, ta? Um momentinho!')
-      await prisma.botConversation.update({
-        where: { id: botConv.id },
-        data: { human_takeover: true, step: 'HUMAN' },
-      })
+    // Re-check human takeover (might have been set during our wait)
+    if (botConv.human_takeover) {
+      await releaseLock(botConv.id)
+      console.log(`[Bot] Conv ${conversationId}: human takeover activated during debounce, aborting`)
       return
     }
 
-    // Parse response for action tags
-    const parsed = parseDifyResponse(difyResponse.answer)
+    // Read pending messages
+    const pendingMsgs = (botConv.pending_messages || []) as Array<{ content: string; imageUrls?: string[]; messageId: string; ts: number }>
+    if (pendingMsgs.length === 0) break // no more messages to process
 
-    // Save dify_conv_id and update history
-    const assistantHistory = addToHistory(updatedHistory, 'assistant', parsed.cleanText)
+    // Build consolidated query and collect all image URLs
+    let query = pendingMsgs.map(m => m.content).join('\n')
+    const imageUrls: string[] = pendingMsgs.flatMap(m => m.imageUrls || [])
 
-    const updateData: any = {
-      dify_conv_id: difyResponse.conversation_id || botConv.dify_conv_id,
-      message_history: assistantHistory as any,
+    console.log(`[Bot] Conv ${conversationId}: loop ${loopIdx + 1} — processing ${pendingMsgs.length} consolidated message(s)`)
+
+    // Clear pending messages and add to history
+    const history = (botConv.message_history || []) as unknown as HistoryEntry[]
+    const updatedHistory = addToHistory(history, 'user', query)
+
+    await prisma.botConversation.update({
+      where: { id: botConv.id },
+      data: {
+        pending_messages: [],
+        message_history: updatedHistory as any,
+      },
+    })
+
+    // Auto-enrich: detect CEP or CNPJ in the consolidated query
+    const cepMatch = query.match(/\b(\d{5})-?(\d{3})\b/)
+    const cnpjMatch = query.match(/\b(\d{2})\.?(\d{3})\.?(\d{3})\/?(\d{4})-?(\d{2})\b/)
+
+    if (cepMatch) {
+      const cep = (cepMatch[1] + cepMatch[2]).replace(/\D/g, '')
+      try {
+        const cepRes = await fetch(`https://viacep.com.br/ws/${cep}/json/`, { signal: AbortSignal.timeout(3000) })
+        const cepData = await cepRes.json()
+        if (!cepData.erro) {
+          query += `\n[DADOS DO CEP ${cep}: ${cepData.logradouro || ''}, ${cepData.bairro || ''}, ${cepData.localidade || ''}-${cepData.uf || ''}]`
+          console.log(`[Bot] CEP enriched: ${cep} → ${cepData.logradouro}, ${cepData.bairro}`)
+        }
+      } catch { /* ignore CEP lookup failure */ }
     }
+
+    if (cnpjMatch) {
+      const cnpj = query.match(/\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/)?.[0]?.replace(/\D/g, '') || ''
+      if (cnpj.length === 14) {
+        try {
+          const cnpjRes = await fetch(`https://receitaws.com.br/v1/cnpj/${cnpj}`, {
+            headers: { Accept: 'application/json' },
+            signal: AbortSignal.timeout(5000),
+          })
+          const cnpjData = await cnpjRes.json()
+          if (cnpjData.nome) {
+            query += `\n[DADOS DO CNPJ ${cnpj}: Razao Social: ${cnpjData.nome}, Fantasia: ${cnpjData.fantasia || 'N/A'}, Endereco: ${cnpjData.logradouro || ''} ${cnpjData.numero || ''}, ${cnpjData.bairro || ''}, ${cnpjData.municipio || ''}-${cnpjData.uf || ''}, CEP: ${cnpjData.cep || ''}, Tel: ${cnpjData.telefone || ''}, Email: ${cnpjData.email || ''}]`
+            console.log(`[Bot] CNPJ enriched: ${cnpj} → ${cnpjData.nome}`)
+          }
+        } catch { /* ignore CNPJ lookup failure */ }
+      }
+    }
+
+    // Handle OS confirmation flow
+    if (botConv.step === 'AWAITING_CONFIRMATION') {
+      await handleOSConfirmation(botConv, query, conversationId)
+      await releaseLock(botConv.id)
+      return
+    }
+
+    // Call Dify
+    try {
+      const userIdentifier = phone || contactId?.toString() || `conv_${conversationId}`
+      const difyResponse = await callDify(
+        query,
+        userIdentifier,
+        botConv.dify_conv_id || undefined,
+        imageUrls.length > 0 ? imageUrls : undefined
+      )
+
+      if (!difyResponse.answer) {
+        console.warn('[Bot] Empty Dify response — sending fallback and activating human takeover')
+        await cwSendMessage(conversationId, 'Ops, tive um probleminha aqui! 😅 Vou chamar alguem da equipe pra te ajudar, ta? Um momentinho!')
+        await prisma.botConversation.update({
+          where: { id: botConv.id },
+          data: { human_takeover: true, step: 'HUMAN' },
+        })
+        await releaseLock(botConv.id)
+        return
+      }
+
+      // Parse response for action tags
+      const parsed = parseDifyResponse(difyResponse.answer)
+
+      // Save dify_conv_id and update history
+      const assistantHistory = addToHistory(updatedHistory, 'assistant', parsed.cleanText)
+
+      const updateData: any = {
+        dify_conv_id: difyResponse.conversation_id || botConv.dify_conv_id,
+        message_history: assistantHistory as any,
+      }
 
     // Handle action tags
     if (parsed.action === 'ABRIR_OS' && parsed.vhsysData) {
@@ -884,19 +883,24 @@ async function processWebhook(body: any) {
       await cwResolve(conversationId)
     }
 
-    // Log to chatbot_logs
-    await logBotMessage(conversationId, query, parsed.cleanText, parsed.action || 'CHAT', phone)
-  } catch (err) {
-    console.error('[Bot] Dify call error:', err)
-    await cwSendMessage(
-      conversationId,
-      'Desculpe, estou com dificuldade para processar sua mensagem. Um atendente sera notificado.'
-    )
-    await cwSendMessage(conversationId, '[BOT] Erro ao chamar Dify AI. Verificar logs.', true)
-  } finally {
-    // ALWAYS release the lock when done (success or error)
-    await releaseLock(botConv.id)
-  }
+      // Log to chatbot_logs
+      await logBotMessage(conversationId, query, parsed.cleanText, parsed.action || 'CHAT', phone)
+    } catch (err) {
+      console.error('[Bot] Dify call error:', err)
+      await cwSendMessage(
+        conversationId,
+        'Desculpe, estou com dificuldade para processar sua mensagem. Um atendente sera notificado.'
+      )
+      await cwSendMessage(conversationId, '[BOT] Erro ao chamar Dify AI. Verificar logs.', true)
+      break // don't retry on Dify errors
+    }
+
+    // Brief pause before checking for stragglers (give webhooks time to save)
+    await new Promise(r => setTimeout(r, 500))
+  } // end processing loop
+
+  // ALWAYS release the lock when done
+  await releaseLock(botConv.id)
 }
 
 // ---------------------------------------------------------------------------
