@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/use-auth'
 import {
-  ClipboardList, Wrench, Truck, DollarSign,
+  ClipboardList, Wrench, Truck, DollarSign, PackageCheck,
   Bell, Pin, Plus, X, Clock, TrendingUp, Target,
   ArrowRight, Loader2,
 } from 'lucide-react'
@@ -33,6 +33,7 @@ interface DashboardStats {
     osAbertasHoje: number
     osEmExecucao: number
     osProntas: number
+    osColetar: number
     faturamentoMesCents: number
   }
   osPerWeek: { week: string; count: number }[]
@@ -173,6 +174,7 @@ export default function DashboardPage() {
 
   const cards = [
     { label: 'OS Abertas Hoje', value: stats?.cards.osAbertasHoje ?? 0, icon: ClipboardList, color: 'text-blue-600 bg-blue-50' },
+    { label: 'Aguardando Coleta', value: stats?.cards.osColetar ?? 0, icon: PackageCheck, color: 'text-purple-600 bg-purple-50' },
     { label: 'OS em Execucao', value: stats?.cards.osEmExecucao ?? 0, icon: Wrench, color: 'text-amber-600 bg-amber-50' },
     { label: 'Prontas p/ Entrega', value: stats?.cards.osProntas ?? 0, icon: Truck, color: 'text-emerald-600 bg-emerald-50' },
     ...(canViewFinanceiro ? [{ label: 'Faturamento do Mes', value: formatCurrency(stats?.cards.faturamentoMesCents ?? 0), icon: DollarSign, color: 'text-green-600 bg-green-50' }] : []),

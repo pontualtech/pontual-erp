@@ -17,10 +17,23 @@ export async function GET() {
       orderBy: { order: 'asc' },
     })
     const finalIds = allStatuses.filter(s => s.is_final).map(s => s.id)
+    // Cancelled statuses (subset of final) — exclude from "prontas" count
+    const cancelledIds = allStatuses
+      .filter(s => s.is_final && /cancel|recusad/i.test(s.name))
+      .map(s => s.id)
+    // "Prontas" = ready for delivery by technician (NOT is_final, NOT cancelled)
+    // Match: "pronta", "entregar reparado", "em rota", "rota de entrega"
+    const prontaIds = allStatuses
+      .filter(s => /pronta|entregar\s*repar|rota.*entrega|em\s*rota/i.test(s.name))
+      .map(s => s.id)
+    // "Coletar" = waiting for pickup from customer
+    const coletarIds = allStatuses
+      .filter(s => /coletar|coleta/i.test(s.name))
+      .map(s => s.id)
 
     // Find the "Em Execução" status id (match status name containing "Execu", case-insensitive)
     const execStatusIds = allStatuses
-      .filter(s => /execu[çc]/i.test(s.name))
+      .filter(s => /execu[çc]|em\s*andamento/i.test(s.name))
       .map(s => s.id)
 
     // ---- Date boundaries (use UTC to avoid timezone mismatches with DB) ----
@@ -36,6 +49,7 @@ export async function GET() {
       osAbertasHoje,
       osEmExecucao,
       osProntas,
+      osColetar,
       faturamentoMesCents,
     ] = await Promise.all([
       // OS abertas hoje (excluindo finalizadas)
@@ -48,30 +62,34 @@ export async function GET() {
         },
       }),
 
-      // D-01 FIX: OS em execução — only those with status name matching "Execu*"
+      // OS em execução — status name matching "Execu*" or "Em Andamento"
       execStatusIds.length > 0
         ? prisma.serviceOrder.count({
             where: { company_id: cid, deleted_at: null, status_id: { in: execStatusIds } },
           })
         : Promise.resolve(0),
 
-      // OS prontas para entrega (status final)
-      prisma.serviceOrder.count({
-        where: {
-          company_id: cid,
-          deleted_at: null,
-          status_id: { in: finalIds },
-          actual_delivery: null,
-        },
-      }),
+      // OS prontas para entrega — status "Pronta p/ Entrega", "Entregar Reparado", etc.
+      // NOT is_final (excludes Entregue/Cancelada)
+      prontaIds.length > 0
+        ? prisma.serviceOrder.count({
+            where: { company_id: cid, deleted_at: null, status_id: { in: prontaIds } },
+          })
+        : Promise.resolve(0),
 
-      // D-04 FIX: Faturamento do mes — same logic as BI Comissão:
-      // sum total_cost from OS with is_final=true status, updated this month
+      // OS aguardando coleta — status "Coletar"
+      coletarIds.length > 0
+        ? prisma.serviceOrder.count({
+            where: { company_id: cid, deleted_at: null, status_id: { in: coletarIds } },
+          })
+        : Promise.resolve(0),
+
+      // Faturamento do mes — OS finalizadas (excluindo canceladas)
       prisma.serviceOrder.aggregate({
         where: {
           company_id: cid,
           deleted_at: null,
-          ...(finalIds.length > 0 ? { status_id: { in: finalIds } } : {}),
+          ...(finalIds.length > 0 ? { status_id: { in: finalIds.filter(id => !cancelledIds.includes(id)) } } : {}),
           updated_at: { gte: monthStart },
         },
         _sum: { total_cost: true },
@@ -229,6 +247,7 @@ export async function GET() {
         osAbertasHoje,
         osEmExecucao,
         osProntas,
+        osColetar,
         ...(canViewFinanceiro ? { faturamentoMesCents: faturamentoMesCents._sum.total_cost ?? 0 } : {}),
       },
       osPerWeek: osPerWeek.map(w => ({ week: w.week, count: Number(w.count) })),
