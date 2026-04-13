@@ -7,7 +7,7 @@ import { useAuth } from '@/lib/use-auth'
 import {
   ClipboardList, Wrench, Truck, DollarSign, PackageCheck,
   Bell, Pin, Plus, X, Clock, TrendingUp, Target,
-  ArrowRight, Loader2,
+  ArrowRight, Loader2, Settings, Eye, EyeOff, ChevronUp, ChevronDown, GripVertical,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -129,6 +129,60 @@ export default function DashboardPage() {
   const [showAvisoModal, setShowAvisoModal] = useState(false)
   const [avisoForm, setAvisoForm] = useState({ title: '', message: '', priority: 'NORMAL', pinned: false, expires_at: '' })
 
+  // Dashboard customization
+  const [showCustomize, setShowCustomize] = useState(false)
+  const [widgetPrefs, setWidgetPrefs] = useState<Array<{ id: string; visible: boolean }>>([
+    { id: 'avisos', visible: true },
+    { id: 'summary_cards', visible: true },
+    { id: 'chart_os_week', visible: true },
+    { id: 'chart_pipeline', visible: true },
+    { id: 'metrics', visible: true },
+    { id: 'recent_os', visible: true },
+    { id: 'receivables', visible: true },
+    { id: 'tech_workload', visible: true },
+  ])
+
+  const WIDGET_LABELS: Record<string, string> = {
+    avisos: 'Avisos',
+    summary_cards: 'Cards de Resumo',
+    chart_os_week: 'Grafico OS por Semana',
+    chart_pipeline: 'Pipeline de OS',
+    metrics: 'Metricas (Tempo Reparo, Aprovacao, Ticket)',
+    recent_os: 'Ultimas OS',
+    receivables: 'Contas a Receber',
+    tech_workload: 'Carga por Tecnico',
+  }
+
+  const isWidgetVisible = (id: string) => widgetPrefs.find(w => w.id === id)?.visible ?? true
+
+  const toggleWidget = (id: string) => {
+    setWidgetPrefs(prev => prev.map(w => w.id === id ? { ...w, visible: !w.visible } : w))
+  }
+
+  const moveWidget = (id: string, dir: -1 | 1) => {
+    setWidgetPrefs(prev => {
+      const idx = prev.findIndex(w => w.id === id)
+      if (idx < 0) return prev
+      const newIdx = idx + dir
+      if (newIdx < 0 || newIdx >= prev.length) return prev
+      const copy = [...prev]
+      ;[copy[idx], copy[newIdx]] = [copy[newIdx], copy[idx]]
+      return copy
+    })
+  }
+
+  const savePrefs = async () => {
+    try {
+      await fetch('/api/dashboard/preferences', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ widgets: widgetPrefs }),
+      })
+      toast.success('Dashboard personalizado salvo!')
+      setShowCustomize(false)
+    } catch { toast.error('Erro ao salvar') }
+  }
+
   const loadAvisos = () => {
     fetch('/api/avisos').then(r => r.json()).then(d => setAvisos(d.data ?? [])).catch(() => {})
   }
@@ -144,6 +198,9 @@ export default function DashboardPage() {
     if (!canViewDashboard) return
     Promise.all([
       fetch('/api/dashboard/stats').then(r => r.json()).then(d => setStats(d.data)).catch(() => toast.error('Erro ao carregar dashboard')),
+      fetch('/api/dashboard/preferences').then(r => r.json()).then(d => {
+        if (d.data?.widgets?.length) setWidgetPrefs(d.data.widgets)
+      }).catch(() => {}),
     ]).finally(() => setLoading(false))
     loadAvisos()
   }, [canViewDashboard])
@@ -184,10 +241,72 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+        <button
+          type="button"
+          onClick={() => setShowCustomize(true)}
+          className="flex items-center gap-2 rounded-lg border bg-white px-3 py-1.5 text-sm text-gray-600 shadow-sm hover:bg-gray-50 transition-colors"
+        >
+          <Settings className="h-4 w-4" />
+          Personalizar
+        </button>
+      </div>
+
+      {/* ===== Customization Modal ===== */}
+      {showCustomize && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowCustomize(false)}>
+          <div className="mx-4 w-full max-w-md rounded-2xl bg-white shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b px-5 py-4">
+              <h2 className="text-lg font-semibold text-gray-900">Personalizar Dashboard</h2>
+              <button type="button" title="Fechar" onClick={() => setShowCustomize(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="max-h-[60vh] overflow-y-auto p-5">
+              <p className="mb-4 text-sm text-gray-500">Ative/desative e reordene os widgets do seu dashboard.</p>
+              <div className="space-y-1">
+                {widgetPrefs.map((w, idx) => (
+                  <div key={w.id} className={cn(
+                    'flex items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors',
+                    w.visible ? 'bg-white border-gray-200' : 'bg-gray-50 border-gray-100 opacity-60'
+                  )}>
+                    <GripVertical className="h-4 w-4 text-gray-300 shrink-0" />
+                    <button type="button" onClick={() => toggleWidget(w.id)}
+                      className={cn('shrink-0 rounded p-1', w.visible ? 'text-blue-600' : 'text-gray-400')}>
+                      {w.visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                    </button>
+                    <span className="flex-1 text-sm font-medium text-gray-700">{WIDGET_LABELS[w.id] || w.id}</span>
+                    <div className="flex shrink-0">
+                      <button type="button" title="Mover para cima" onClick={() => moveWidget(w.id, -1)} disabled={idx === 0}
+                        className="rounded p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-20">
+                        <ChevronUp className="h-4 w-4" />
+                      </button>
+                      <button type="button" title="Mover para baixo" onClick={() => moveWidget(w.id, 1)} disabled={idx === widgetPrefs.length - 1}
+                        className="rounded p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-20">
+                        <ChevronDown className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 border-t px-5 py-4">
+              <button type="button" onClick={() => setShowCustomize(false)}
+                className="rounded-lg border px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
+                Cancelar
+              </button>
+              <button type="button" onClick={savePrefs}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
+                Salvar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ===== Avisos ===== */}
-      {avisos.length > 0 && (
+      {isWidgetVisible('avisos') && avisos.length > 0 && (
         <div className="rounded-xl border bg-white shadow-sm">
           <div className="flex items-center justify-between border-b px-5 py-3">
             <h2 className="font-semibold text-gray-900 flex items-center gap-2">
@@ -331,7 +450,7 @@ export default function DashboardPage() {
       )}
 
       {/* ===== Summary Cards ===== */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {isWidgetVisible('summary_cards') && <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {cards.map(card => {
           const Icon = card.icon
           return (
@@ -350,12 +469,12 @@ export default function DashboardPage() {
             </div>
           )
         })}
-      </div>
+      </div>}
 
       {/* ===== Charts Row ===== */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* OS por Semana */}
-        <div className="rounded-xl border bg-white p-5 shadow-sm">
+        {isWidgetVisible('chart_os_week') && <div className="rounded-xl border bg-white p-5 shadow-sm">
           <h2 className="mb-4 font-semibold text-gray-900">OS por Semana</h2>
           {loading ? (
             <div className="flex h-52 items-center justify-center">
@@ -376,10 +495,10 @@ export default function DashboardPage() {
               </BarChart>
             </ResponsiveContainer>
           )}
-        </div>
+        </div>}
 
         {/* Pipeline de OS */}
-        <div className="rounded-xl border bg-white p-5 shadow-sm">
+        {isWidgetVisible('chart_pipeline') && <div className="rounded-xl border bg-white p-5 shadow-sm">
           <h2 className="mb-4 font-semibold text-gray-900">Pipeline de OS</h2>
           {loading ? (
             <div className="flex h-52 items-center justify-center">
@@ -422,11 +541,11 @@ export default function DashboardPage() {
               </PieChart>
             </ResponsiveContainer>
           )}
-        </div>
+        </div>}
       </div>
 
       {/* ===== Metrics Row ===== */}
-      <div className={cn('grid grid-cols-1 gap-4', canViewFinanceiro ? 'sm:grid-cols-3' : 'sm:grid-cols-2')}>
+      {isWidgetVisible('metrics') && <div className={cn('grid grid-cols-1 gap-4', canViewFinanceiro ? 'sm:grid-cols-3' : 'sm:grid-cols-2')}>
         <div className="rounded-xl border bg-white p-5 shadow-sm">
           <div className="flex items-center gap-3">
             <div className="rounded-xl bg-purple-50 p-2.5">
@@ -470,12 +589,12 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
-      </div>
+      </div>}
 
       {/* ===== Recent Activity ===== */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Ultimas OS */}
-        <div className="rounded-xl border bg-white shadow-sm">
+        {isWidgetVisible('recent_os') && <div className="rounded-xl border bg-white shadow-sm">
           <div className="flex items-center justify-between border-b px-5 py-3">
             <h2 className="font-semibold text-gray-900">Ultimas OS</h2>
             <Link href="/os" className="flex items-center gap-1 text-sm text-blue-600 hover:underline">
@@ -507,10 +626,10 @@ export default function DashboardPage() {
               ))
             )}
           </div>
-        </div>
+        </div>}
 
         {/* Ultimas Contas a Receber — only for users with financeiro.view */}
-        {canViewFinanceiro && (
+        {isWidgetVisible('receivables') && canViewFinanceiro && (
           <div className="rounded-xl border bg-white shadow-sm">
             <div className="flex items-center justify-between border-b px-5 py-3">
               <h2 className="font-semibold text-gray-900">Contas a Receber</h2>
@@ -550,7 +669,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Carga de Trabalho por Técnico */}
-      {stats && (stats.techWorkload?.length > 0 || stats.semTecnico > 0) && (
+      {isWidgetVisible('tech_workload') && stats && (stats.techWorkload?.length > 0 || stats.semTecnico > 0) && (
         <div className="rounded-xl border bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold text-gray-900 flex items-center gap-2">
