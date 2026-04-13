@@ -512,6 +512,8 @@ async function processWebhook(body: any) {
           data: { human_takeover: true, step: 'HUMAN' },
         })
         console.log(`[Bot] Human agent ${body.sender?.name} sent message in conv ${outgoingConvId} — human takeover activated`)
+        // Notify agent: bot stopped, resolve to reactivate
+        await cwSendMessage(outgoingConvId, `⚠️ Bot pausado — ${body.sender?.name || 'agente'} assumiu a conversa. Para o bot voltar a responder, clique em *Resolver* quando terminar.`, true)
       }
     }
     return
