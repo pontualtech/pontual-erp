@@ -485,15 +485,29 @@ async function processWebhook(body: any) {
   // Only process message_created
   if (event !== 'message_created') return
 
-  // Only incoming messages (Chatwoot sends 0 for incoming, 1 for outgoing, or string)
+  // Detect outgoing messages from HUMAN agents → activate human takeover
   const messageType = body.message_type
+  const isOutgoing = messageType === 'outgoing' || messageType === 1
+  const senderType = body.sender?.type || ''
+  const senderIsAgent = senderType === 'user' || senderType === 'User'
+  const senderIsBot = body.sender?.id === BOT_AGENT_ID
+  const outgoingConvId: number = body.conversation?.id
+
+  if (isOutgoing && senderIsAgent && !senderIsBot && !body.private && outgoingConvId) {
+    // A human agent typed a message — activate takeover immediately
+    await prisma.botConversation.updateMany({
+      where: { chatwoot_conv_id: outgoingConvId, human_takeover: false },
+      data: { human_takeover: true, step: 'HUMAN' },
+    })
+    console.log(`[Bot] Human agent ${body.sender?.name || body.sender?.id} sent message in conv ${outgoingConvId} — human takeover activated`)
+    return
+  }
+
+  // Only process incoming messages from customers
   const isIncoming = messageType === 'incoming' || messageType === 0
   if (!isIncoming) return
 
-  // Only process messages from contacts (customers), not from agents or bots
-  // Chatwoot webhook: sender.type may be undefined for contacts,
-  // but agents have sender.type='user' or 'agent_bot'
-  const senderType = body.sender?.type || ''
+  // Ignore agent bot messages
   if (senderType === 'user' || senderType === 'agent_bot' || senderType === 'User') return
 
   // Ignore private notes
