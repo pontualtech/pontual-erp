@@ -617,8 +617,7 @@ async function processWebhook(body: any) {
   const history = (botConv.message_history || []) as unknown as HistoryEntry[]
   const updatedHistory = addToHistory(history, 'user', content)
 
-  // Save message to history and update last_message_id + debounce timestamp
-  const now = Date.now()
+  // Save message to history and update last_message_id
   await prisma.botConversation.update({
     where: { id: botConv.id },
     data: {
@@ -626,45 +625,27 @@ async function processWebhook(body: any) {
       last_message_id: messageId,
       customer_phone: phone || botConv.customer_phone,
       chatwoot_contact_id: contactId || botConv.chatwoot_contact_id,
-      last_user_msg_at: new Date(now),
+      last_user_msg_at: new Date(),
     },
   })
 
-  // DEBOUNCE: Wait for client to finish typing before responding.
-  // Sleep for DEBOUNCE_MS, then check if another message arrived during the wait.
-  // If yes, this request exits — the newer request will handle all messages.
-  await new Promise(resolve => setTimeout(resolve, DEBOUNCE_MS))
-
-  // Re-read the conversation to check if a newer message arrived
-  const freshConv = await prisma.botConversation.findUnique({
-    where: { id: botConv.id },
-    select: { last_message_id: true, last_user_msg_at: true, human_takeover: true },
-  })
-
-  // If a newer message arrived during our wait, exit — that request will handle it
-  if (freshConv && freshConv.last_message_id !== messageId) {
-    console.log(`[Bot] Debounce: newer message arrived in conv ${conversationId}, skipping this one`)
-    return
+  // DEBOUNCE: Check if another message arrived recently.
+  // If the previous message was less than DEBOUNCE_MS ago, skip —
+  // the next message's webhook will consolidate and process everything.
+  const prevMsgTime = botConv.last_user_msg_at ? new Date(botConv.last_user_msg_at).getTime() : 0
+  const timeSincePrev = Date.now() - prevMsgTime
+  if (prevMsgTime > 0 && timeSincePrev < DEBOUNCE_MS) {
+    console.log(`[Bot] Debounce: msg arrived ${timeSincePrev}ms after previous, skipping (will be consolidated by next)`)
+    return NextResponse.json({ status: 'ok', debounced: true })
   }
 
-  // If human took over during wait, exit
-  if (freshConv?.human_takeover) {
-    console.log(`[Bot] Human takeover activated during debounce wait, skipping`)
-    return
-  }
-
-  // Re-read full history to get ALL messages that arrived during debounce window
-  const freshFullConv = await prisma.botConversation.findUnique({
-    where: { id: botConv.id },
-  })
-  const freshHistory = (freshFullConv?.message_history || []) as unknown as HistoryEntry[]
-  const recentUserMsgs = getRecentMessages(freshHistory, DEBOUNCE_MS + 1000) // extra 1s margin
+  // This message is the first after a pause — consolidate recent messages
+  const recentUserMsgs = getRecentMessages(updatedHistory, DEBOUNCE_MS + 1000)
   let query = content
 
-  // Consolidate all user messages from the debounce window
   if (recentUserMsgs.length > 1) {
     query = recentUserMsgs.map(m => m.content).join('\n')
-    console.log(`[Bot] Debounce: consolidated ${recentUserMsgs.length} messages into one query`)
+    console.log(`[Bot] Consolidated ${recentUserMsgs.length} messages into one query`)
   }
 
   // Handle OS confirmation flow
