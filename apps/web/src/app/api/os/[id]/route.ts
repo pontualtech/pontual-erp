@@ -130,6 +130,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
     const existing = await prisma.serviceOrder.findFirst({
       where: putWhere as any,
+      include: { module_statuses: { select: { is_final: true } } },
     })
     if (!existing) return error('OS não encontrada', 404)
 
@@ -138,6 +139,15 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
     const body = await req.json()
     const validated = updateOSSchema.parse(body)
+
+    // BL-02: Se OS está em status final, bloquear edição de campos críticos
+    if ((existing as any).module_statuses?.is_final) {
+      const blockedFields = ['total_cost', 'customer_id', 'technician_id', 'discount_amount'] as const
+      const attempted = blockedFields.filter(f => (validated as any)[f] !== undefined)
+      if (attempted.length > 0) {
+        return error(`OS em status final — nao e possivel alterar: ${attempted.join(', ')}`, 400)
+      }
+    }
 
     // Técnico: pode se atribuir a OS sem dono, mas não pode desatribuir
     if (isTecnico) {

@@ -86,7 +86,10 @@ async function loadBotConfig(companyId: string): Promise<BotConfig> {
 
 function validateWebhookToken(req: NextRequest): boolean {
   const secret = process.env.CHATWOOT_WEBHOOK_SECRET
-  if (!secret) return true // No secret configured = accept all
+  if (!secret) {
+    console.warn('[Webhook] CHATWOOT_WEBHOOK_SECRET not configured — rejecting all webhooks')
+    return false // Fail-closed: reject if no secret configured
+  }
 
   const token = req.headers.get('x-chatwoot-webhook-token')
     || req.nextUrl.searchParams.get('token')

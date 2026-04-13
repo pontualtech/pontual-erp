@@ -262,6 +262,23 @@ async function transcribeAudio(audioUrl: string): Promise<string> {
   }
 
   try {
+    // Block SSRF - only allow https URLs from known domains
+    try {
+      const parsed = new URL(audioUrl)
+      if (parsed.protocol !== 'https:') {
+        console.warn('[Bot] Blocked non-HTTPS audio URL')
+        return ''
+      }
+      // Block internal IPs
+      const hostname = parsed.hostname
+      if (hostname === 'localhost' || hostname.startsWith('127.') || hostname.startsWith('10.') || hostname.startsWith('192.168.') || hostname.startsWith('172.') || hostname === '169.254.169.254' || hostname === '0.0.0.0' || hostname === '::1') {
+        console.warn('[Bot] Blocked internal audio URL')
+        return ''
+      }
+    } catch {
+      return ''
+    }
+
     // Download audio file
     const audioRes = await fetch(audioUrl)
     if (!audioRes.ok) {

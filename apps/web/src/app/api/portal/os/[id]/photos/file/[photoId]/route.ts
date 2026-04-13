@@ -59,6 +59,7 @@ export async function GET(
     return new NextResponse(fileBuffer, {
       headers: {
         'Content-Type': contentType,
+        'X-Content-Type-Options': 'nosniff',
         'Cache-Control': 'private, max-age=3600',
         'Content-Disposition': `inline; filename="os-photo-${params.photoId}.${ext}"`,
       },

@@ -7,6 +7,10 @@ import {
   getSefazEndpoints, getUfCodigo,
 } from '@/lib/nfe/sefaz'
 
+function escapeXml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')
+}
+
 /**
  * POST /api/fiscal/nfe-cce — Carta de Correção Eletrônica
  * Body: { invoice_id: string, correcao: string }
@@ -68,7 +72,7 @@ export async function POST(req: NextRequest) {
         <verEvento>1.00</verEvento>
         <detEvento versao="1.00">
           <descEvento>Carta de Correcao</descEvento>
-          <xCorrecao>${correcao}</xCorrecao>
+          <xCorrecao>${escapeXml(correcao)}</xCorrecao>
           <xCondUso>A Carta de Correcao e disciplinada pelo paragrafo 1o-A do art. 7o do Convenio S/N, de 15 de dezembro de 1970 e pode ser utilizada para regularizacao de erro ocorrido na emissao de documento fiscal, desde que o erro nao esteja relacionado com: I - as variaveis que determinam o valor do imposto tais como: base de calculo, aliquota, diferenca de preco, quantidade, valor da operacao ou da prestacao; II - a correcao de dados cadastrais que implique mudanca do remetente ou do destinatario; III - a data de emissao ou de saida.</xCondUso>
         </detEvento>
       </infEvento>

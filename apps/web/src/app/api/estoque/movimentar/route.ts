@@ -23,27 +23,35 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const data = movementSchema.parse(body)
 
-    const product = await prisma.product.findFirst({
+    // Verify product exists before entering transaction
+    const productCheck = await prisma.product.findFirst({
       where: { id: data.product_id, company_id: user.companyId, deleted_at: null },
+      select: { id: true },
     })
-    if (!product) return error('Produto não encontrado', 404)
+    if (!productCheck) return error('Produto não encontrado', 404)
 
-    const currentStock = product.current_stock ?? 0
-    let newStock: number
+    // BL-15: Use interactive transaction with FOR UPDATE to prevent race conditions
+    const movement = await prisma.$transaction(async (tx) => {
+      const [product] = await tx.$queryRaw<{ current_stock: number }[]>`
+        SELECT current_stock FROM products WHERE id = ${data.product_id} AND company_id = ${user.companyId} AND deleted_at IS NULL FOR UPDATE
+      `
+      if (!product) throw new Error('Produto não encontrado')
 
-    if (data.movement_type === 'ENTRY') {
-      newStock = currentStock + data.quantity
-    } else if (data.movement_type === 'EXIT') {
-      if (currentStock < data.quantity) {
-        return error('Estoque disponível insuficiente', 422)
+      const currentStock = product.current_stock ?? 0
+      let newStock: number
+
+      if (data.movement_type === 'ENTRY') {
+        newStock = currentStock + data.quantity
+      } else if (data.movement_type === 'EXIT') {
+        if (currentStock < data.quantity) {
+          throw new Error('Estoque disponível insuficiente')
+        }
+        newStock = currentStock - data.quantity
+      } else {
+        newStock = data.quantity // ADJUSTMENT sets absolute value
       }
-      newStock = currentStock - data.quantity
-    } else {
-      newStock = data.quantity // ADJUSTMENT sets absolute value
-    }
 
-    const [movement] = await prisma.$transaction([
-      prisma.stockMovement.create({
+      const mov = await tx.stockMovement.create({
         data: {
           company_id: user.companyId,
           product_id: data.product_id,
@@ -54,14 +62,15 @@ export async function POST(request: NextRequest) {
           notes: data.notes,
           user_id: user.id,
         },
-      }),
-      prisma.product.update({
+      })
+
+      await tx.product.update({
         where: { id: data.product_id },
-        data: {
-          current_stock: newStock,
-        },
-      }),
-    ])
+        data: { current_stock: newStock },
+      })
+
+      return { mov, newStock }
+    })
 
     logAudit({
       companyId: user.companyId,
@@ -69,11 +78,14 @@ export async function POST(request: NextRequest) {
       module: 'estoque',
       action: `stock.${data.movement_type.toLowerCase()}`,
       entityId: data.product_id,
-      newValue: { movement_type: data.movement_type, reason: data.reason, quantity: data.quantity, stockAfter: newStock },
+      newValue: { movement_type: data.movement_type, reason: data.reason, quantity: data.quantity, stockAfter: movement.newStock },
     })
 
-    return success(movement, 201)
-  } catch (err) {
+    return success(movement.mov, 201)
+  } catch (err: any) {
+    if (err?.message === 'Estoque disponível insuficiente') {
+      return error('Estoque disponível insuficiente', 422)
+    }
     return handleError(err)
   }
 }

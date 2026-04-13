@@ -27,6 +27,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const body = await request.json()
     const data = adjustSchema.parse(body)
 
+    if (data.quantity < 0) return error('Quantidade nao pode ser negativa', 400)
+
     const currentStock = product.current_stock ?? 0
     const newStock = data.quantity // Adjustment sets absolute value
     const diff = newStock - currentStock

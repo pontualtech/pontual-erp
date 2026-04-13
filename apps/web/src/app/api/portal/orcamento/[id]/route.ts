@@ -202,10 +202,11 @@ export async function POST(request: NextRequest, { params }: Params) {
         if (dow !== 0 && dow !== 6) diasUteis++
       }
 
-      // Determinar valor aprovado (com ou sem desconto)
-      const hasDiscount = typeof discounted_cost === 'number' && discounted_cost > 0 && discounted_cost < (os.total_cost || 0)
-      const approvedCostValue = hasDiscount ? discounted_cost : (os.total_cost || 0)
-      const discountNote = hasDiscount ? ` — COM DESCONTO de ${discount_percent || '?'}% (de ${fmtCents(os.total_cost || 0)} para ${fmtCents(discounted_cost)})` : ''
+      // Valor aprovado = total_cost da OS (definido pelo ERP, nunca pelo cliente)
+      // SECURITY: discounted_cost do body é IGNORADO — desconto só pode ser aplicado
+      // pelo ERP internamente via discount_amount no service_order
+      const approvedCostValue = os.total_cost || 0
+      const discountNote = ''
 
       // Nota interna com data, hora e IP
       const now = new Date()
@@ -234,7 +235,7 @@ export async function POST(request: NextRequest, { params }: Params) {
             from_status_id: os.status_id,
             to_status_id: approvedStatus.id,
             changed_by: 'portal',
-            notes: hasDiscount ? `Orcamento aprovado COM DESCONTO de ${discount_percent || '?'}% pelo cliente via portal` : 'Orçamento aprovado pelo cliente via portal',
+            notes: false ?`Orcamento aprovado COM DESCONTO de ${discount_percent || '?'}% pelo cliente via portal` : 'Orçamento aprovado pelo cliente via portal',
           },
         })
       })
@@ -260,7 +261,7 @@ export async function POST(request: NextRequest, { params }: Params) {
         module: 'os',
         action: 'quote_approved_by_customer',
         entityId: os.id,
-        newValue: { customer_name: customerName, os_number: os.os_number, total_cost: os.total_cost, approved_cost: approvedCostValue, discount_percent: hasDiscount ? discount_percent : null, estimated_delivery: previsaoStr },
+        newValue: { customer_name: customerName, os_number: os.os_number, total_cost: os.total_cost, approved_cost: approvedCostValue, discount_percent: false ?discount_percent : null, estimated_delivery: previsaoStr },
       })
 
       // 1. Aviso interno URGENTE para técnicos
@@ -268,7 +269,7 @@ export async function POST(request: NextRequest, { params }: Params) {
         data: {
           company_id: os.company_id,
           title: `✅ OS ${osNum} APROVADA — ${customerName}`,
-          message: `O cliente ${customerName} aprovou o orçamento da OS ${osNum} (${equipment}) no valor de ${fmtValue}${hasDiscount ? ` (COM DESCONTO de ${discount_percent}% — valor original: ${fmtCents(os.total_cost || 0)})` : ''}.\n\nPrevisão de entrega: ${previsaoStr} (10 dias úteis).\n\nIniciar o reparo imediatamente!`,
+          message: `O cliente ${customerName} aprovou o orçamento da OS ${osNum} (${equipment}) no valor de ${fmtValue}.\n\nPrevisão de entrega: ${previsaoStr} (10 dias úteis).\n\nIniciar o reparo imediatamente!`,
           priority: 'URGENTE',
           require_read: true,
           author_name: 'Sistema',

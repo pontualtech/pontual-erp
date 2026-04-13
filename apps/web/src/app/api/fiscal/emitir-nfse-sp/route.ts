@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
     const certPassword = settings.certificate_password ? decrypt(settings.certificate_password) : ''
 
     // 2. Buscar cliente
-    const customer = await prisma.customer.findUnique({ where: { id: customer_id } })
+    const customer = await prisma.customer.findFirst({ where: { id: customer_id, company_id: user.companyId } })
     if (!customer) {
       return NextResponse.json({ error: 'Cliente não encontrado' }, { status: 404 })
     }

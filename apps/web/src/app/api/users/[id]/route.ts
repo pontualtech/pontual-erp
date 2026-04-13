@@ -43,6 +43,35 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     const body = await request.json()
 
+    // F-04: Only admins can change roles
+    if (body.roleId && admin.roleName !== 'admin') {
+      return error('Apenas administradores podem alterar cargos', 403)
+    }
+    // Block self-role-change
+    if (body.roleId && params.id === admin.id) {
+      return error('Nao e possivel alterar seu proprio cargo', 400)
+    }
+
+    // BL-18: Prevent deactivating the last admin
+    if (body.isActive === false) {
+      const targetUser = await prisma.userProfile.findFirst({
+        where: { id: params.id, company_id: admin.companyId },
+        include: { roles: { select: { name: true } } },
+      })
+      if (targetUser?.roles?.name?.toLowerCase() === 'admin') {
+        const activeAdmins = await prisma.userProfile.count({
+          where: {
+            company_id: admin.companyId,
+            is_active: true,
+            roles: { name: { equals: 'admin', mode: 'insensitive' } },
+          },
+        })
+        if (activeAdmins <= 1) {
+          return error('Nao e possivel desativar o ultimo administrador', 400)
+        }
+      }
+    }
+
     // Se está atribuindo role, validar separadamente
     if (body.roleId && Object.keys(body).length === 1) {
       const { roleId } = assignRoleSchema.parse(body)

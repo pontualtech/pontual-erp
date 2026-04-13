@@ -37,8 +37,13 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     const os = await prisma.serviceOrder.findFirst({
       where: { id: params.id, company_id: user.companyId, deleted_at: null },
+      include: { module_statuses: { select: { is_final: true, name: true } } },
     })
     if (!os) return error('OS não encontrada', 404)
+
+    if ((os as any).module_statuses?.is_final) {
+      return error('Nao e possivel adicionar itens a uma OS finalizada', 400)
+    }
 
     const body = await req.json()
     const totalPrice = Math.round(Number(body.quantity || 1) * (body.unit_price || body.unitPrice || 0))

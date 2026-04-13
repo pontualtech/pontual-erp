@@ -50,6 +50,7 @@ export async function GET(req: NextRequest, { params }: Params) {
     return new NextResponse(buffer, {
       headers: {
         'Content-Type': contentType,
+        'X-Content-Type-Options': 'nosniff',
         'Cache-Control': 'public, max-age=31536000, immutable',
       },
     })

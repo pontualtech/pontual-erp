@@ -95,18 +95,10 @@ async function processInterWebhook(body: any) {
     })
   }
 
-  if (!receivable && nossoNumero) {
-    // Search by nossoNumero in pix_code JSON field — filtrar por company_id do receivable
-    const candidates = await prisma.accountReceivable.findMany({
-      where: { boleto_url: { not: null }, status: 'PENDENTE' },
-      take: 100,
-    })
-    receivable = candidates.find(c => {
-      try {
-        const meta = JSON.parse(c.pix_code || '{}')
-        return meta.nossoNumero === nossoNumero
-      } catch { return false }
-    }) || null
+  if (!receivable && nossoNumero && receivable === null) {
+    // Fallback removed: searching ALL pending receivables by nossoNumero is too broad
+    // and risks cross-tenant data access. The seuNumero lookup above should be sufficient.
+    console.warn(`[INTER WEBHOOK] nossoNumero fallback skipped (cross-tenant risk) for nossoNumero=${nossoNumero}`)
   }
 
   if (!receivable) {

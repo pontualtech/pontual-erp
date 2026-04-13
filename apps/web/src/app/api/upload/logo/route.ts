@@ -15,8 +15,8 @@ export async function POST(req: NextRequest) {
     if (!file) return error('Arquivo é obrigatório', 400)
 
     const ext = file.name.toLowerCase().split('.').pop()
-    if (!['png', 'jpg', 'jpeg', 'svg', 'webp'].includes(ext || '')) {
-      return error('Formato inválido. Envie PNG, JPG, SVG ou WebP.', 400)
+    if (!['png', 'jpg', 'jpeg', 'webp'].includes(ext || '')) {
+      return error('Formato inválido. Envie PNG, JPG ou WebP.', 400)
     }
 
     if (file.size > 500 * 1024) {
@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     const base64 = Buffer.from(buffer).toString('base64')
     const mimeMap: Record<string, string> = {
       png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
-      svg: 'image/svg+xml', webp: 'image/webp',
+      webp: 'image/webp',
     }
     const mime = mimeMap[ext || 'png'] || 'image/png'
     const dataUrl = `data:${mime};base64,${base64}`

@@ -75,9 +75,11 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Senha padrao = primeiros 5 digitos do documento, HASHADA com bcrypt
-    const digits = cleanDoc.replace(/\D/g, '')
-    const defaultPassword = digits.substring(0, 5)
+    // Senha aleatória segura (8 chars alfanuméricos)
+    const { randomBytes } = await import('crypto')
+    const pwChars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
+    const bytes = randomBytes(8)
+    const defaultPassword = Array.from(bytes, (b) => pwChars[b % pwChars.length]).join('')
     const passwordHash = await hash(defaultPassword, 10)
 
     const verifyToken = crypto.randomUUID()
@@ -98,7 +100,7 @@ export async function POST(req: NextRequest) {
       const firstName = customer.legal_name?.split(' ')[0] || 'Cliente'
       const portalBase = process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'
       const verifyUrl = `${portalBase}/portal/${company.slug}/verificar-email?token=${verifyToken}`
-      const loginUrl = `${portalBase}/portal/${company.slug}/login?doc=${digits}`
+      const loginUrl = `${portalBase}/portal/${company.slug}/login?doc=${cleanDoc}`
 
       void sendCompanyEmail(
         company.id,

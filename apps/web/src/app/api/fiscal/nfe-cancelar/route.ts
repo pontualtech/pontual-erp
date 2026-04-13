@@ -8,6 +8,10 @@ import {
   getSefazEndpoints, getUfCodigo,
 } from '@/lib/nfe/sefaz'
 
+function escapeXml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')
+}
+
 /**
  * POST /api/fiscal/nfe-cancelar
  * Body: { invoice_id: string, justificativa: string }
@@ -55,7 +59,7 @@ export async function POST(req: NextRequest) {
     const tpEvento = '110111' // Cancelamento
     const idEvento = `ID${tpEvento}${invoice.access_key}${nSeqEvento.padStart(2, '0')}`
 
-    const eventoXml = `<evento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00"><infEvento Id="${idEvento}"><cOrgao>${cUF}</cOrgao><tpAmb>${ambiente}</tpAmb><CNPJ>${cnpj}</CNPJ><chNFe>${invoice.access_key}</chNFe><dhEvento>${dhEvento}</dhEvento><tpEvento>${tpEvento}</tpEvento><nSeqEvento>${nSeqEvento}</nSeqEvento><verEvento>1.00</verEvento><detEvento versao="1.00"><descEvento>Cancelamento</descEvento><nProt>${invoice.provider_ref}</nProt><xJust>${justificativa}</xJust></detEvento></infEvento></evento>`
+    const eventoXml = `<evento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00"><infEvento Id="${idEvento}"><cOrgao>${cUF}</cOrgao><tpAmb>${ambiente}</tpAmb><CNPJ>${cnpj}</CNPJ><chNFe>${invoice.access_key}</chNFe><dhEvento>${dhEvento}</dhEvento><tpEvento>${tpEvento}</tpEvento><nSeqEvento>${nSeqEvento}</nSeqEvento><verEvento>1.00</verEvento><detEvento versao="1.00"><descEvento>Cancelamento</descEvento><nProt>${invoice.provider_ref}</nProt><xJust>${escapeXml(justificativa)}</xJust></detEvento></infEvento></evento>`
 
     const signedEvento = signXml(eventoXml, cert.privateKeyPem, cert.certificatePem, 'infEvento')
 
