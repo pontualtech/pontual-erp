@@ -196,6 +196,7 @@ model PrintTemplate {
   updated_at    DateTime? @default(now()) @db.Timestamptz(6)
   companies     Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
+  @@index([company_id])
   @@map("print_templates")
 }
 
@@ -210,6 +211,7 @@ model MessageTemplate {
   updated_at DateTime? @default(now()) @db.Timestamptz(6)
   companies  Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
+  @@index([company_id])
   @@map("message_templates")
 }
 
@@ -301,6 +303,7 @@ model DashboardWidget {
   updated_at  DateTime? @default(now()) @db.Timestamptz(6)
   companies   Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
+  @@index([company_id])
   @@map("dashboard_widgets")
 }
 
@@ -456,6 +459,7 @@ model ServiceOrderItem {
   deleted_at       DateTime?    @db.Timestamptz(6)
   service_orders   ServiceOrder @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
+  @@index([company_id])
   @@map("service_order_items")
 }
 
@@ -472,6 +476,7 @@ model ServiceOrderHistory {
   service_orders                                                        ServiceOrder  @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   module_statuses_service_order_history_to_status_idTomodule_statuses   ModuleStatus  @relation("service_order_history_to_status_idTomodule_statuses", fields: [to_status_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
+  @@index([company_id])
   @@map("service_order_history")
 }
 
@@ -584,6 +589,7 @@ model StockMovement {
   created_at    DateTime? @default(now()) @db.Timestamptz(6)
   products      Product   @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
+  @@index([company_id])
   @@map("stock_movements")
 }
 
@@ -631,6 +637,7 @@ model StockAlert {
   acknowledged_at DateTime? @db.Timestamptz(6)
   products        Product   @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
+  @@index([company_id])
   @@map("stock_alerts")
 }
 
@@ -651,6 +658,7 @@ model Account {
   companies       Company       @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   transactions    Transaction[]
 
+  @@index([company_id])
   @@map("accounts")
 }
 
@@ -691,6 +699,7 @@ model AccountPayable {
   cost_centers   CostCenter? @relation(fields: [cost_center_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   customers      Customer?   @relation(fields: [supplier_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
+  @@index([company_id])
   @@map("accounts_payable")
 }
 
@@ -731,6 +740,7 @@ model AccountReceivable {
   customers          Customer?     @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   service_orders     ServiceOrder? @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
+  @@index([company_id])
   @@map("accounts_receivable")
 }
 
@@ -747,6 +757,7 @@ model Installment {
   status             String?   @default("PENDENTE")
   created_at         DateTime? @default(now()) @db.Timestamptz(6)
 
+  @@index([company_id])
   @@map("installments")
 }
 
@@ -763,6 +774,7 @@ model Transaction {
   created_at       DateTime? @default(now()) @db.Timestamptz(6)
   accounts         Account   @relation(fields: [account_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
+  @@index([company_id])
   @@map("transactions")
 }
 
@@ -899,6 +911,7 @@ model TicketMessage {
   created_at      DateTime? @default(now()) @db.Timestamptz(6)
   tickets         Ticket    @relation(fields: [ticket_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
+  @@index([company_id])
   @@index([ticket_id], map: "idx_ticket_messages_ticket")
   @@map("ticket_messages")
 }

@@ -18,7 +18,17 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
     const body = await req.json()
     const current = JSON.parse(existing.value)
-    const updated = { ...current, ...body }
+
+    // Whitelist allowed fields to prevent mass assignment
+    const ALLOWED_FIELDS = [
+      'name', 'active', 'installments', 'fees', 'type', 'description',
+      'default', 'order', 'min_value', 'max_value', 'gateway', 'gateway_id',
+    ]
+    const sanitized: Record<string, any> = {}
+    for (const key of ALLOWED_FIELDS) {
+      if (key in body) sanitized[key] = body[key]
+    }
+    const updated = { ...current, ...sanitized }
 
     await prisma.setting.update({
       where: { id: params.id },

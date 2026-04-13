@@ -149,6 +149,6 @@ export async function PUT(req: NextRequest) {
     })
   } catch (err: any) {
     console.error('[Bot atualizar-os]', err.message)
-    return botError('Erro interno: ' + (err.message || ''), 500)
+    return botError('Erro interno', 500)
   }
 }

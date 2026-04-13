@@ -37,7 +37,8 @@ export async function POST(req: NextRequest) {
     })
 
     if (updateError) {
-      return NextResponse.json({ error: 'Erro ao atualizar senha: ' + updateError.message }, { status: 500 })
+      console.error('[change-password] Update error:', updateError)
+      return NextResponse.json({ error: 'Erro ao atualizar senha' }, { status: 500 })
     }
 
     return NextResponse.json({ success: true })

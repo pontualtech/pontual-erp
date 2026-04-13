@@ -270,6 +270,13 @@ async function transcribeAudio(audioUrl: string): Promise<string> {
     }
 
     const audioBuffer = await audioRes.arrayBuffer()
+
+    const MAX_AUDIO_SIZE = 25 * 1024 * 1024 // 25MB
+    if (audioBuffer.byteLength > MAX_AUDIO_SIZE) {
+      console.warn('[Bot] Audio too large, skipping transcription')
+      return ''
+    }
+
     const formData = new FormData()
     formData.append('file', new Blob([audioBuffer], { type: 'audio/ogg' }), 'audio.ogg')
     formData.append('model', 'whisper-large-v3')

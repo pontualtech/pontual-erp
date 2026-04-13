@@ -1,11 +1,15 @@
-import { NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { success, error, handleError } from '@/lib/api-response'
+import { getServerUser } from '@/lib/auth'
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: { cnpj: string } }
 ) {
   try {
+    const user = await getServerUser()
+    if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+
     const cnpj = params.cnpj.replace(/\D/g, '')
     if (cnpj.length !== 14) return error('CNPJ inválido — deve ter 14 dígitos', 400)
 

@@ -168,6 +168,6 @@ export async function POST(req: NextRequest) {
     })
   } catch (err: any) {
     console.error('[Webhook nova-os] Error:', err.message)
-    return NextResponse.json({ error: err.message || 'Erro interno' }, { status: 500 })
+    return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
   }
 }

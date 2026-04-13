@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server'
+import { timingSafeEqual } from 'crypto'
 import { prisma } from '@pontual/db'
 import { success, error, handleError } from '@/lib/api-response'
 import { sendOverdueReminders } from '@/app/api/financeiro/cobranca/route'
@@ -18,7 +19,8 @@ export async function GET(request: NextRequest) {
     }
 
     const authHeader = request.headers.get('authorization')
-    if (!authHeader || authHeader !== `Bearer ${cronSecret}`) {
+    const expected = `Bearer ${cronSecret}`
+    if (!authHeader || authHeader.length !== expected.length || !timingSafeEqual(Buffer.from(authHeader), Buffer.from(expected))) {
       return error('Não autorizado', 401)
     }
 

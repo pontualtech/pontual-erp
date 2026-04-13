@@ -14,7 +14,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
-import crypto from 'crypto'
+import crypto, { timingSafeEqual } from 'crypto'
 import { detectIntent, type AIProvider, type CustomerContext } from '@/lib/ai/detect-intent'
 import {
   findCustomerByPhone,
@@ -90,7 +90,8 @@ function validateWebhookToken(req: NextRequest): boolean {
 
   const token = req.headers.get('x-chatwoot-webhook-token')
     || req.nextUrl.searchParams.get('token')
-  return token === secret
+  if (!token || token.length !== secret.length) return false
+  return timingSafeEqual(Buffer.from(token), Buffer.from(secret))
 }
 
 // ---------------------------------------------------------------------------
@@ -160,10 +161,9 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Fallback company ID — use first company if customer not found
+    // Fallback company ID — use env default (never random findFirst)
     if (!companyId) {
-      const firstCompany = await prisma.company.findFirst({ select: { id: true } })
-      companyId = firstCompany?.id || ''
+      companyId = process.env.DEFAULT_COMPANY_ID || process.env.BOT_ANA_COMPANY_ID || ''
     }
 
     if (!companyId) {

@@ -32,8 +32,14 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     const body = await req.json().catch(() => ({}))
 
+    // Extract companyId from body (bot/webhook context)
+    const companyId = body.companyId || body.company_id
+    if (!companyId) {
+      return NextResponse.json({ error: 'companyId obrigatório' }, { status: 400 })
+    }
+
     const os = await prisma.serviceOrder.findFirst({
-      where: { id: params.id, deleted_at: null },
+      where: { id: params.id, company_id: companyId, deleted_at: null },
       include: {
         customers: true,
         companies: true,

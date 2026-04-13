@@ -84,7 +84,7 @@ export async function POST(
   } catch (err) {
     console.error('[Cancel] Error:', err)
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Erro ao cancelar cobranca' },
+      { error: 'Erro ao cancelar cobranca' },
       { status: 500 }
     )
   }

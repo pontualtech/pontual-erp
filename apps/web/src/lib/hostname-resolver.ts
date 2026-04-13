@@ -70,6 +70,12 @@ export async function resolveHostname(hostname: string): Promise<CompanyHost | n
     }
   }
 
+  // Prevent unbounded cache growth
+  const MAX_CACHE_SIZE = 1000
+  if (cache.size >= MAX_CACHE_SIZE) {
+    cache.clear()
+  }
+
   // Cache result (even null, to avoid repeated DB hits for unknown hosts)
   cache.set(hostname, { data: company, expires: Date.now() + CACHE_TTL })
 

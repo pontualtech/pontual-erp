@@ -264,7 +264,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Dados invalidos', details: err.errors }, { status: 400 })
     }
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Erro ao criar cobranca' },
+      { error: 'Erro ao criar cobranca' },
       { status: 500 }
     )
   }

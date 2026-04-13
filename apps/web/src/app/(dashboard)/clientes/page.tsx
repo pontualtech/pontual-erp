@@ -210,7 +210,7 @@ export default function ClientesPage() {
                     {c.last_os_at ? new Date(c.last_os_at).toLocaleDateString('pt-BR') : '—'}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center justify-end gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                       <button type="button" onClick={() => router.push(`/clientes/${c.id}`)} title="Ver"
                         className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-blue-600"><Eye className="h-4 w-4" /></button>
                       <button type="button" onClick={() => router.push(`/clientes/${c.id}/editar`)} title="Editar"

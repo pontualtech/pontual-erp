@@ -28,7 +28,7 @@ export async function PATCH(req: NextRequest) {
   }
 
   await prisma.customer.update({
-    where: { id: cliente_id },
+    where: { id: cliente_id, company_id: auth.companyId },
     data: { custom_data: updatedData },
   })
 

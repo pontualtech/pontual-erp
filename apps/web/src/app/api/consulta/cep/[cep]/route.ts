@@ -1,11 +1,15 @@
-import { NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { success, error, handleError } from '@/lib/api-response'
+import { getServerUser } from '@/lib/auth'
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: { cep: string } }
 ) {
   try {
+    const user = await getServerUser()
+    if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+
     const cep = params.cep.replace(/\D/g, '')
     if (cep.length !== 8) return error('CEP inválido — deve ter 8 dígitos', 400)
 
