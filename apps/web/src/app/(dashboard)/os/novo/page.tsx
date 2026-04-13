@@ -846,7 +846,7 @@ function NovoClienteForm({ onCreated }: { onCreated: (c: Cliente) => void }) {
             </button>
           </div>
         </div>
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-6 gap-2">
           <div className="col-span-3">
             <label className="block text-xs text-gray-500 mb-0.5">Rua</label>
             <input type="text" value={f.address_street} onChange={e => update('address_street', e.target.value)}
@@ -856,6 +856,11 @@ function NovoClienteForm({ onCreated }: { onCreated: (c: Cliente) => void }) {
             <label className="block text-xs text-gray-500 mb-0.5">N</label>
             <input type="text" value={f.address_number} onChange={e => update('address_number', e.target.value)}
               placeholder="N" className={inp} />
+          </div>
+          <div className="col-span-2">
+            <label className="block text-xs text-gray-500 mb-0.5">Complemento</label>
+            <input type="text" value={f.address_complement} onChange={e => update('address_complement', e.target.value)}
+              placeholder="Apto, Bloco, Sala..." className={inp} />
           </div>
         </div>
         <div className="grid grid-cols-3 gap-2">
