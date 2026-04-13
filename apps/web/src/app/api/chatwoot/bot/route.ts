@@ -629,18 +629,8 @@ async function processWebhook(body: any) {
     },
   })
 
-  // DEBOUNCE: Check if another message arrived recently.
-  // If the previous message was less than DEBOUNCE_MS ago, skip —
-  // the next message's webhook will consolidate and process everything.
-  const prevMsgTime = botConv.last_user_msg_at ? new Date(botConv.last_user_msg_at).getTime() : 0
-  const timeSincePrev = Date.now() - prevMsgTime
-  if (prevMsgTime > 0 && timeSincePrev < DEBOUNCE_MS) {
-    console.log(`[Bot] Debounce: msg arrived ${timeSincePrev}ms after previous, skipping (will be consolidated by next)`)
-    return NextResponse.json({ status: 'ok', debounced: true })
-  }
-
-  // This message is the first after a pause — consolidate recent messages
-  const recentUserMsgs = getRecentMessages(updatedHistory, DEBOUNCE_MS + 1000)
+  // Consolidate recent user messages from the debounce window into one query
+  const recentUserMsgs = getRecentMessages(updatedHistory, DEBOUNCE_MS)
   let query = content
 
   if (recentUserMsgs.length > 1) {
