@@ -640,6 +640,39 @@ async function processWebhook(body: any) {
     console.log(`[Bot] Consolidated ${recentUserMsgs.length} messages into one query`)
   }
 
+  // Auto-enrich: detect CEP or CNPJ in the message and append lookup data
+  const cepMatch = content.match(/\b(\d{5})-?(\d{3})\b/)
+  const cnpjMatch = content.match(/\b(\d{2})\.?(\d{3})\.?(\d{3})\/?(\d{4})-?(\d{2})\b/)
+
+  if (cepMatch) {
+    const cep = (cepMatch[1] + cepMatch[2]).replace(/\D/g, '')
+    try {
+      const cepRes = await fetch(`https://viacep.com.br/ws/${cep}/json/`, { signal: AbortSignal.timeout(3000) })
+      const cepData = await cepRes.json()
+      if (!cepData.erro) {
+        query += `\n[DADOS DO CEP ${cep}: ${cepData.logradouro || ''}, ${cepData.bairro || ''}, ${cepData.localidade || ''}-${cepData.uf || ''}]`
+        console.log(`[Bot] CEP enriched: ${cep} → ${cepData.logradouro}, ${cepData.bairro}`)
+      }
+    } catch { /* ignore CEP lookup failure */ }
+  }
+
+  if (cnpjMatch) {
+    const cnpj = content.match(/\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/)?.[0]?.replace(/\D/g, '') || ''
+    if (cnpj.length === 14) {
+      try {
+        const cnpjRes = await fetch(`https://receitaws.com.br/v1/cnpj/${cnpj}`, {
+          headers: { Accept: 'application/json' },
+          signal: AbortSignal.timeout(5000),
+        })
+        const cnpjData = await cnpjRes.json()
+        if (cnpjData.nome) {
+          query += `\n[DADOS DO CNPJ ${cnpj}: Razao Social: ${cnpjData.nome}, Fantasia: ${cnpjData.fantasia || 'N/A'}, Endereco: ${cnpjData.logradouro || ''} ${cnpjData.numero || ''}, ${cnpjData.bairro || ''}, ${cnpjData.municipio || ''}-${cnpjData.uf || ''}, CEP: ${cnpjData.cep || ''}, Tel: ${cnpjData.telefone || ''}, Email: ${cnpjData.email || ''}]`
+          console.log(`[Bot] CNPJ enriched: ${cnpj} → ${cnpjData.nome}`)
+        }
+      } catch { /* ignore CNPJ lookup failure */ }
+    }
+  }
+
   // Handle OS confirmation flow
   if (botConv.step === 'AWAITING_CONFIRMATION') {
     await handleOSConfirmation(botConv, content, conversationId)
