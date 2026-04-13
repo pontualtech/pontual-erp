@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
+import { getNextOsNumber } from '@/lib/os-number'
 
 /**
  * POST /api/webhook/nova-os
@@ -110,11 +111,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Status de OS nao configurado' }, { status: 500 })
     }
 
-    // 3. Create OS with atomic number
-    const result = await prisma.$queryRaw<{ n: number }[]>`
-      SELECT COALESCE(MAX(os_number), 0) + 1 as n FROM service_orders WHERE company_id = ${companyId}
-    `
-    const osNumber = result[0]?.n || 1
+    // 3. Create OS with atomic number (respects os.next_number setting)
+    const osNumber = await getNextOsNumber(companyId)
 
     const os = await prisma.serviceOrder.create({
       data: {

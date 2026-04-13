@@ -3,7 +3,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
-import { sendEmail } from '@/lib/send-email'
+import { sendCompanyEmail } from '@/lib/send-email'
 import { createHmac } from 'crypto'
 import { createAccessToken } from '@/lib/portal-auth'
 
@@ -309,7 +309,7 @@ export async function sendQuoteReminders(companyId: string, userId: string, spec
       const html = replaceTemplateVars(htmlTemplate, vars)
       const subject = `Orçamento Pendente - OS-${os.os_number} - ${company.name}`
 
-      const sent = await sendEmail(customer.email, subject, html)
+      const sent = await sendCompanyEmail(companyId, customer.email, subject, html)
 
       if (sent) {
         sentCount++

@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, paginated, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
+import { getNextOsNumber } from '@/lib/os-number'
 
 export async function GET(req: NextRequest) {
   try {
@@ -209,12 +210,7 @@ export async function POST(req: NextRequest) {
       // pg_advisory_xact_lock é liberado automaticamente ao fim da transação
       const lockKey = Buffer.from(user.companyId).reduce((acc, b) => acc + b, 0)
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey})`
-      const result = await tx.$queryRaw<{ next_number: number }[]>`
-        SELECT COALESCE(MAX(os_number), 0) + 1 as next_number
-        FROM service_orders
-        WHERE company_id = ${user.companyId}
-      `
-      const nextNumber = result[0]?.next_number || 1
+      const nextNumber = await getNextOsNumber(user.companyId, tx as any)
 
       const created = await tx.serviceOrder.create({
         data: {

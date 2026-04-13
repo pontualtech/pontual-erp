@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
-import { sendEmail } from '@/lib/send-email'
+import { sendCompanyEmail } from '@/lib/send-email'
 import { createHmac } from 'crypto'
 import { rateLimit, getClientIp } from '@/lib/rate-limit'
 
@@ -348,7 +348,7 @@ export async function POST(request: NextRequest, { params }: Params) {
   </table>
 </body>
 </html>`
-        sendEmail(customerEmail, `Orcamento Aprovado — OS #${osNum} — ${companyName}`, emailHtml).catch(() => {})
+        sendCompanyEmail(os.company_id, customerEmail, `Orcamento Aprovado — OS #${osNum} — ${companyName}`, emailHtml).catch(() => {})
       }
 
       // 3. WhatsApp/Chatwoot para equipe (fire-and-forget)
@@ -523,7 +523,7 @@ export async function POST(request: NextRequest, { params }: Params) {
   </table>
 </body>
 </html>`
-        sendEmail(customerEmail2, `Orcamento OS #${osNum2} — ${companyName2}`, emailHtml2).catch(() => {})
+        sendCompanyEmail(os.company_id, customerEmail2, `Orcamento OS #${osNum2} — ${companyName2}`, emailHtml2).catch(() => {})
       }
 
       return success({ action: 'rejected', message: 'Orçamento recusado. A empresa foi notificada.' })

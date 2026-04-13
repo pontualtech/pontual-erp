@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { hash } from 'bcryptjs'
-import { sendEmail } from '@/lib/send-email'
+import { sendCompanyEmail } from '@/lib/send-email'
 
 // Simple in-memory rate limiter: 3 registrations per IP per hour
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
@@ -202,7 +202,8 @@ export async function POST(req: NextRequest) {
     if (formattedEmail && result.verifyToken) {
       const verifyUrl = `${process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'}/portal/${company_slug}/verificar-email?token=${result.verifyToken}`
       const firstName = formattedName.split(' ')[0] || 'Cliente'
-      void sendEmail(
+      void sendCompanyEmail(
+        company.id,
         formattedEmail,
         `Verifique seu email - ${company.name}`,
         `<!DOCTYPE html><html><head><meta charset="utf-8"></head>

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { getPortalUserFromRequest } from '@/lib/portal-auth'
-import { sendEmail } from '@/lib/send-email'
+import { sendCompanyEmail } from '@/lib/send-email'
 
 export async function POST(
   req: NextRequest,
@@ -183,7 +183,7 @@ export async function POST(
 </html>`
 
     const subject = `OS #${os.os_number} - ${companyName}`
-    const sent = await sendEmail(email, subject, html)
+    const sent = await sendCompanyEmail(portalUser.company_id, email, subject, html)
 
     if (!sent) {
       return NextResponse.json({ error: 'Falha ao enviar email' }, { status: 500 })

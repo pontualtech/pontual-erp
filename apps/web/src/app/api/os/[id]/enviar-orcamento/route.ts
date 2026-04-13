@@ -3,7 +3,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
-import { sendEmail } from '@/lib/send-email'
+import { sendCompanyEmail } from '@/lib/send-email'
 import { createHmac } from 'crypto'
 import { createAccessToken } from '@/lib/portal-auth'
 
@@ -501,7 +501,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const osNumber = String(os.os_number).padStart(4, '0')
     const subject = `Orcamento OS-${osNumber} - ${companyName}`
 
-    const sent = await sendEmail(recipientEmail, subject, renderedHtml)
+    const sent = await sendCompanyEmail(user.companyId, recipientEmail, subject, renderedHtml)
     if (!sent) {
       return error('Erro ao enviar email. Verifique a configuracao do RESEND_API_KEY.', 500)
     }

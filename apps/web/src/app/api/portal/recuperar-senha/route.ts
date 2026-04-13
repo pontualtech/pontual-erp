@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { hash } from 'bcryptjs'
-import { sendEmail } from '@/lib/send-email'
+import { sendCompanyEmail } from '@/lib/send-email'
 
 // Rate limiter em memória: 5 tentativas por documento a cada 15 minutos
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
@@ -119,7 +119,8 @@ export async function POST(req: NextRequest) {
     if (customer.email) {
       emailHint = maskEmail(customer.email)
 
-      await sendEmail(
+      await sendCompanyEmail(
+        company.id,
         customer.email,
         'Senha Resetada - Portal do Cliente',
         `

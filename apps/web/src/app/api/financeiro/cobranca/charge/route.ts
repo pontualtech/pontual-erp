@@ -5,7 +5,7 @@ import { logAudit } from '@/lib/audit'
 import { getPaymentProvider } from '@/lib/payments/factory'
 import type { BillingType } from '@/lib/payments/types'
 import { sendWhatsApp } from '@/lib/whatsapp/evolution'
-import { sendEmail } from '@/lib/send-email'
+import { sendCompanyEmail } from '@/lib/send-email'
 import { z } from 'zod'
 
 const createChargeSchema = z.object({
@@ -201,7 +201,8 @@ export async function POST(request: NextRequest) {
         invoiceUrl: charge.invoiceUrl,
       })
 
-      sendEmail(
+      sendCompanyEmail(
+        user.companyId,
         customer.email,
         `Cobranca ${companyName} - ${valueStr}`,
         emailHtml

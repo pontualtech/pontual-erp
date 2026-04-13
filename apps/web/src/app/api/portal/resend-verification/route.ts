@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
-import { sendEmail } from '@/lib/send-email'
+import { sendCompanyEmail } from '@/lib/send-email'
 
 export async function POST(req: NextRequest) {
   try {
@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
   </div>
 </body></html>`
 
-    await sendEmail(customer.email, `Verifique seu email - ${company.name}`, html)
+    await sendCompanyEmail(company.id, customer.email, `Verifique seu email - ${company.name}`, html)
 
     return NextResponse.json({
       data: { success: true, message: 'Email de verificacao reenviado!' },

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { getPortalUserFromRequest } from '@/lib/portal-auth'
-import { sendEmail } from '@/lib/send-email'
+import { sendCompanyEmail } from '@/lib/send-email'
 
 export async function GET(req: NextRequest) {
   try {
@@ -113,7 +113,8 @@ export async function PUT(req: NextRequest) {
       .map(([k, v]) => `<li><strong>${k}:</strong> ${v}</li>`)
       .join('')
 
-    void sendEmail(
+    void sendCompanyEmail(
+      portalUser.company_id,
       'contato@pontualtech.com.br',
       `[Portal] Cliente atualizou cadastro - ${current.legal_name}`,
       `<h3>Cliente atualizou dados pelo portal</h3>

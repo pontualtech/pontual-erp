@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { hash } from 'bcryptjs'
-import { sendEmail } from '@/lib/send-email'
+import { sendCompanyEmail } from '@/lib/send-email'
 
 function maskEmail(email: string): string {
   const [local, domain] = email.split('@')
@@ -100,7 +100,8 @@ export async function POST(req: NextRequest) {
       const verifyUrl = `${portalBase}/portal/${company.slug}/verificar-email?token=${verifyToken}`
       const loginUrl = `${portalBase}/portal/${company.slug}/login?doc=${digits}`
 
-      void sendEmail(
+      void sendCompanyEmail(
+        company.id,
         customer.email,
         `Bem-vindo ao Portal do Cliente - ${company.name}`,
         `<!DOCTYPE html><html><head><meta charset="utf-8"></head>

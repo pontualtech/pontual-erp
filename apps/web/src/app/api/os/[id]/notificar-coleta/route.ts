@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
-import { sendEmail } from '@/lib/send-email'
+import { sendCompanyEmail } from '@/lib/send-email'
 
 type Params = { params: { id: string } }
 
@@ -241,7 +241,8 @@ Equipe ${companyName}`
 
     // Enviar email
     if (channels.includes('email') && customerEmail) {
-      const sent = await sendEmail(
+      const sent = await sendCompanyEmail(
+        user.companyId,
         customerEmail,
         `Confirmacao de Coleta — OS ${osNumbers} — Pontual Tech`,
         emailHtml

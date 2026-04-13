@@ -3,7 +3,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
-import { sendEmail } from '@/lib/send-email'
+import { sendCompanyEmail } from '@/lib/send-email'
 import { sendWhatsApp } from '@/lib/whatsapp/evolution'
 import { whatsappTemplates, getTemplateForStatus } from '@/lib/whatsapp/templates'
 import { createAccessToken } from '@/lib/portal-auth'
@@ -52,7 +52,8 @@ export async function POST(req: NextRequest, { params }: Params) {
         const friendlyTo = statusMap[toStatus.name] || toStatus.name
         const companyData = await prisma.company.findUnique({ where: { id: user.companyId }, select: { name: true, slug: true } }).catch(() => null)
         const osNum = String(os.os_number).padStart(4, '0')
-        sendEmail(
+        sendCompanyEmail(
+          user.companyId,
           os.customers.email,
           `OS #${osNum} — ${friendlyTo} — ${companyData?.name || 'Empresa'}`,
           `<p>Sua OS #${osNum} foi atualizada para: <strong>${friendlyTo}</strong></p>`,
@@ -532,7 +533,8 @@ export async function POST(req: NextRequest, { params }: Params) {
 </body>
 </html>`
 
-      sendEmail(
+      sendCompanyEmail(
+        user.companyId,
         os.customers.email,
         `OS #${osNum} — ${friendlyTo} — ${companyName}`,
         emailHtml,

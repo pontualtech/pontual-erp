@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
-import { sendEmail } from '@/lib/send-email'
+import { sendCompanyEmail } from '@/lib/send-email'
 
 type RouteParams = { params: { id: string } }
 
@@ -52,7 +52,8 @@ export async function POST(_req: NextRequest, { params }: RouteParams) {
     </div>
   `
 
-  await sendEmail(
+  await sendCompanyEmail(
+    user.companyId,
     invoice.customers.email,
     `NFS-e #${invoice.invoice_number} - ${company?.name || 'ERP'}`,
     html

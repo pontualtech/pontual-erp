@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
-import { sendEmail } from '@/lib/send-email'
+import { sendCompanyEmail } from '@/lib/send-email'
 
 /**
  * POST /api/financeiro/boletos/enviar-email
@@ -151,7 +151,8 @@ export async function POST(req: NextRequest) {
         </div>
       `
 
-      const sent = await sendEmail(
+      const sent = await sendCompanyEmail(
+        user.companyId,
         receivable.customers.email,
         `Boleto R$ ${valor} — Venc. ${vencimento} — ${companyName}`,
         html

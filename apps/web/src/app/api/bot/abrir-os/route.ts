@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { authenticateBot } from '../_lib/auth'
 import { botSuccess, botError } from '../_lib/response'
 import { rateLimit } from '@/lib/rate-limit'
+import { getNextOsNumber } from '@/lib/os-number'
 
 /**
  * POST /api/bot/abrir-os
@@ -166,10 +167,7 @@ export async function POST(req: NextRequest) {
     const os = await prisma.$transaction(async (tx) => {
       const lockKey = Buffer.from(companyId).reduce((acc, b) => acc + b, 0)
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey})`
-      const result = await tx.$queryRaw<{ n: number }[]>`
-        SELECT COALESCE(MAX(os_number), 0) + 1 as n FROM service_orders WHERE company_id = ${companyId}
-      `
-      const osNumber = result[0]?.n || 1
+      const osNumber = await getNextOsNumber(companyId, tx as any)
 
       const created = await tx.serviceOrder.create({
         data: {

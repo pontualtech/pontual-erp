@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
-import { sendEmail } from '@/lib/send-email'
+import { sendCompanyEmail } from '@/lib/send-email'
 
 type Params = { params: { id: string } }
 
@@ -159,7 +159,7 @@ ${companyName}`
     const results: { channel: string; status: string }[] = []
 
     if (channels.includes('email') && customerEmail) {
-      const sent = await sendEmail(customerEmail, `Equipamento Pronto — OS #${osNum} — ${companyName}`, emailHtml)
+      const sent = await sendCompanyEmail(user.companyId, customerEmail, `Equipamento Pronto — OS #${osNum} — ${companyName}`, emailHtml)
       results.push({ channel: 'email', status: sent ? 'enviado' : 'erro' })
     } else if (channels.includes('email') && !customerEmail) {
       results.push({ channel: 'email', status: 'sem_email' })

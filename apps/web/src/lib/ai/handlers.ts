@@ -10,6 +10,7 @@ import {
   type ConversationStep,
 } from './conversation-state'
 import type { CustomerContext } from './detect-intent'
+import { getNextOsNumber } from '@/lib/os-number'
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -283,11 +284,8 @@ async function continueOrcamentoFlow(
           })
 
           if (initialStatus && finalCustomerId) {
-            // 3. Create OS with atomic number
-            const result = await prisma.$queryRaw<{ n: number }[]>`
-              SELECT COALESCE(MAX(os_number), 0) + 1 as n FROM service_orders WHERE company_id = ${companyId}
-            `
-            osNumber = result[0]?.n || 1
+            // 3. Create OS with atomic number (respects os.next_number setting)
+            osNumber = await getNextOsNumber(companyId)
 
             await prisma.serviceOrder.create({
               data: {

@@ -4,7 +4,7 @@ import { createPortalToken } from '@/lib/portal-auth'
 import { compare } from 'bcryptjs'
 import { rateLimit } from '@/lib/rate-limit'
 import { randomInt } from 'crypto'
-import { sendEmail } from '@/lib/send-email'
+import { sendCompanyEmail } from '@/lib/send-email'
 
 function generateOtp(): string {
   return String(randomInt(100000, 999999))
@@ -138,7 +138,8 @@ export async function POST(req: NextRequest) {
     const customerEmail = customer.email
     if (customerEmail) {
       const firstName = customer.legal_name?.split(' ')[0] || 'Cliente'
-      void sendEmail(
+      void sendCompanyEmail(
+        company.id,
         customerEmail,
         `Codigo de verificacao - ${company.name}`,
         otpEmailHtml(otpCode, firstName, company.name)

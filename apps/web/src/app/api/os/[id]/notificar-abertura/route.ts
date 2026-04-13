@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { success, error, handleError } from '@/lib/api-response'
-import { sendEmail } from '@/lib/send-email'
+import { sendCompanyEmail } from '@/lib/send-email'
 import { sendWhatsApp } from '@/lib/whatsapp/evolution'
 import { rateLimit } from '@/lib/rate-limit'
 
@@ -203,7 +203,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     // Send email
     let emailSent = false
     try {
-      await sendEmail(customer.email, subject, html)
+      await sendCompanyEmail(os.company_id, customer.email, subject, html)
       emailSent = true
     } catch (emailErr: any) {
       console.error('[notificar-abertura] Email falhou:', emailErr.message)
