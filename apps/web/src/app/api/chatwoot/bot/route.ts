@@ -96,8 +96,9 @@ let SUPPORT_WHATSAPP = 'https://wa.me/551126263841'
 let BOT_ORIGIN = 'whatsapp_bot_ana'
 let BOT_AGENT_ID = 6
 
-const DEBOUNCE_MS = 4000 // 4s debounce window — wait for client to finish typing
-const MAX_HISTORY = 20   // keep last 20 messages
+const DEBOUNCE_WAIT_MS = 3000 // 3s — wait for client to finish typing before processing
+const LOCK_EXPIRE_MS = 15000  // 15s — lock auto-expires if holder crashes
+const MAX_HISTORY = 20        // keep last 20 messages
 
 // ---------------------------------------------------------------------------
 // Chatwoot API helpers
@@ -160,6 +161,8 @@ async function cwResolve(conversationId: number) {
 
 /**
  * Send response split by paragraphs with delays for simulated typing.
+ * HARD CAP: maximum 2 messages (matching prompt rule "MÁXIMO 2 BALÕES").
+ * If Dify returns 3+ paragraphs, merge the extras into the second message.
  */
 async function cwSendWithTyping(conversationId: number, text: string) {
   const paragraphs = text.split(/\n\n+/).filter(p => p.trim())
@@ -167,12 +170,12 @@ async function cwSendWithTyping(conversationId: number, text: string) {
     await cwSendMessage(conversationId, text)
     return
   }
-  for (let i = 0; i < paragraphs.length; i++) {
-    if (i > 0) {
-      await new Promise(r => setTimeout(r, 1200))
-    }
-    await cwSendMessage(conversationId, paragraphs[i].trim())
-  }
+  // Max 2 balloons: first paragraph standalone, rest merged into second
+  const first = paragraphs[0].trim()
+  const rest = paragraphs.slice(1).map(p => p.trim()).join('\n\n')
+  await cwSendMessage(conversationId, first)
+  await new Promise(r => setTimeout(r, 1200))
+  await cwSendMessage(conversationId, rest)
 }
 
 // ---------------------------------------------------------------------------
@@ -380,6 +383,14 @@ function getRecentMessages(history: HistoryEntry[], withinMs: number): HistoryEn
   return history.filter(m => m.role === 'user' && m.ts >= cutoff)
 }
 
+/** Release the debounce processing lock so the next batch can proceed */
+async function releaseLock(botConvId: string) {
+  await prisma.botConversation.update({
+    where: { id: botConvId },
+    data: { processing_lock: null },
+  })
+}
+
 // ---------------------------------------------------------------------------
 // Main handler
 // ---------------------------------------------------------------------------
@@ -524,7 +535,7 @@ async function processWebhook(body: any) {
 
   // Process attachments: audio, images, video, documents
   const attachments = body.attachments || body.conversation?.messages?.[0]?.attachments || []
-  const imageUrls: string[] = []
+  const thisMessageImageUrls: string[] = []
 
   for (const att of attachments) {
     const fileType = att.file_type || ''
@@ -537,17 +548,17 @@ async function processWebhook(body: any) {
         content = `[Audio transcrito]: ${transcript}\n\n${content}`.trim()
       }
     } else if (fileType === 'image') {
-      imageUrls.push(url)
+      thisMessageImageUrls.push(url)
       content = `${content}\n[Imagem enviada pelo cliente]`.trim()
     } else if (fileType === 'video') {
-      imageUrls.push(url) // Gemini 2.5 Flash supports video via same files API
+      thisMessageImageUrls.push(url) // Gemini 2.5 Flash supports video via same files API
       content = `${content}\n[Video enviado pelo cliente - analise o conteudo]`.trim()
     } else if (fileType === 'file') {
       content = `${content}\n[Documento enviado: ${att.file_name || url}]`.trim()
     }
   }
 
-  if (!content && imageUrls.length === 0) return
+  if (!content && thisMessageImageUrls.length === 0) return
 
   // Extract sender info
   const sender = body.sender || body.conversation?.meta?.sender || {}
@@ -570,6 +581,7 @@ async function processWebhook(body: any) {
       step: 'IDLE',
       data: {},
       message_history: [],
+      pending_messages: [],
     },
   })
 
@@ -594,34 +606,83 @@ async function processWebhook(body: any) {
     return
   }
 
-  // Debounce: consolidate recent messages from last 5s
-  const history = (botConv.message_history || []) as unknown as HistoryEntry[]
-  const updatedHistory = addToHistory(history, 'user', content)
+  // -----------------------------------------------------------------------
+  // DEBOUNCE: DB-based lock to consolidate rapid messages
+  // -----------------------------------------------------------------------
+  // Step 1: Save this message to pending_messages array (always, regardless of lock)
+  const pendingMsg = { content, imageUrls: thisMessageImageUrls, messageId, ts: Date.now() }
+  // Append as array element: jsonb_array || jsonb_array = merged array
+  await prisma.$executeRaw`
+    UPDATE bot_conversations
+    SET pending_messages = COALESCE(pending_messages, '[]'::jsonb) || ${JSON.stringify([pendingMsg])}::jsonb,
+        last_message_id = ${messageId},
+        customer_phone = COALESCE(${phone || null}, customer_phone),
+        chatwoot_contact_id = COALESCE(${contactId || null}, chatwoot_contact_id),
+        last_user_msg_at = NOW()
+    WHERE id = ${botConv.id}
+  `
 
-  // Save message to history and update last_message_id
+  // Step 2: Try to acquire the processing lock (atomic — only 1 request wins)
+  const lockResult = await prisma.$executeRaw`
+    UPDATE bot_conversations
+    SET processing_lock = NOW()
+    WHERE id = ${botConv.id}
+      AND (processing_lock IS NULL OR processing_lock < NOW() - INTERVAL '15 seconds')
+  `
+
+  if (lockResult === 0) {
+    // Another request already holds the lock — it will process our message
+    console.log(`[Bot] Conv ${conversationId}: lock held by another request, message queued`)
+    return
+  }
+
+  console.log(`[Bot] Conv ${conversationId}: lock acquired, waiting ${DEBOUNCE_WAIT_MS}ms for more messages...`)
+
+  // Step 3: Wait for more messages to accumulate
+  await new Promise(r => setTimeout(r, DEBOUNCE_WAIT_MS))
+
+  // Step 4: Re-read bot conversation to get ALL pending messages
+  botConv = await prisma.botConversation.findUnique({ where: { id: botConv.id } }) as any
+  if (!botConv) return
+
+  // Re-check human takeover (might have been set during our wait)
+  if (botConv.human_takeover) {
+    await releaseLock(botConv.id)
+    console.log(`[Bot] Conv ${conversationId}: human takeover activated during debounce, aborting`)
+    return
+  }
+
+  // Step 5: Consolidate all pending messages into one query
+  const pendingMsgs = (botConv.pending_messages || []) as Array<{ content: string; imageUrls?: string[]; messageId: string; ts: number }>
+  if (pendingMsgs.length === 0) {
+    await releaseLock(botConv.id)
+    return
+  }
+
+  // Build consolidated query and collect all image URLs
+  let query = pendingMsgs.map(m => m.content).join('\n')
+  const allImageUrls: string[] = pendingMsgs.flatMap(m => m.imageUrls || [])
+
+  console.log(`[Bot] Conv ${conversationId}: processing ${pendingMsgs.length} consolidated message(s)`)
+
+  // Step 6: Clear pending messages and add to history
+  const history = (botConv.message_history || []) as unknown as HistoryEntry[]
+  const updatedHistory = addToHistory(history, 'user', query)
+
   await prisma.botConversation.update({
     where: { id: botConv.id },
     data: {
+      pending_messages: [],
       message_history: updatedHistory as any,
-      last_message_id: messageId,
-      customer_phone: phone || botConv.customer_phone,
-      chatwoot_contact_id: contactId || botConv.chatwoot_contact_id,
-      last_user_msg_at: new Date(),
     },
   })
 
-  // Consolidate recent user messages from the debounce window into one query
-  const recentUserMsgs = getRecentMessages(updatedHistory, DEBOUNCE_MS)
-  let query = content
+  // Use allImageUrls instead of imageUrls from here on
+  const imageUrls = allImageUrls
 
-  if (recentUserMsgs.length > 1) {
-    query = recentUserMsgs.map(m => m.content).join('\n')
-    console.log(`[Bot] Consolidated ${recentUserMsgs.length} messages into one query`)
-  }
-
-  // Auto-enrich: detect CEP or CNPJ in the message and append lookup data
-  const cepMatch = content.match(/\b(\d{5})-?(\d{3})\b/)
-  const cnpjMatch = content.match(/\b(\d{2})\.?(\d{3})\.?(\d{3})\/?(\d{4})-?(\d{2})\b/)
+  // Auto-enrich: detect CEP or CNPJ in the consolidated query
+  const cepMatch = query.match(/\b(\d{5})-?(\d{3})\b/)
+  const cnpjMatch = query.match(/\b(\d{2})\.?(\d{3})\.?(\d{3})\/?(\d{4})-?(\d{2})\b/)
 
   if (cepMatch) {
     const cep = (cepMatch[1] + cepMatch[2]).replace(/\D/g, '')
@@ -636,7 +697,7 @@ async function processWebhook(body: any) {
   }
 
   if (cnpjMatch) {
-    const cnpj = content.match(/\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/)?.[0]?.replace(/\D/g, '') || ''
+    const cnpj = query.match(/\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/)?.[0]?.replace(/\D/g, '') || ''
     if (cnpj.length === 14) {
       try {
         const cnpjRes = await fetch(`https://receitaws.com.br/v1/cnpj/${cnpj}`, {
@@ -654,7 +715,8 @@ async function processWebhook(body: any) {
 
   // Handle OS confirmation flow
   if (botConv.step === 'AWAITING_CONFIRMATION') {
-    await handleOSConfirmation(botConv, content, conversationId)
+    await handleOSConfirmation(botConv, query, conversationId)
+    await releaseLock(botConv.id)
     return
   }
 
@@ -823,7 +885,7 @@ async function processWebhook(body: any) {
     }
 
     // Log to chatbot_logs
-    await logBotMessage(conversationId, content, parsed.cleanText, parsed.action || 'CHAT', phone)
+    await logBotMessage(conversationId, query, parsed.cleanText, parsed.action || 'CHAT', phone)
   } catch (err) {
     console.error('[Bot] Dify call error:', err)
     await cwSendMessage(
@@ -831,6 +893,9 @@ async function processWebhook(body: any) {
       'Desculpe, estou com dificuldade para processar sua mensagem. Um atendente sera notificado.'
     )
     await cwSendMessage(conversationId, '[BOT] Erro ao chamar Dify AI. Verificar logs.', true)
+  } finally {
+    // ALWAYS release the lock when done (success or error)
+    await releaseLock(botConv.id)
   }
 }
 
