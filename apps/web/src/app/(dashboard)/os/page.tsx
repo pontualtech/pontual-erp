@@ -144,26 +144,38 @@ export default function OSListPage() {
   }, [])
   const [statusMap, setStatusMap] = useState<Record<string, { name: string; color: string }>>({})
   const [loading, setLoading] = useState(true)
-  // Filters initialized from URL query params (persisted across navigation)
-  const [search, setSearch] = useState(searchParams.get('q') || '')
-  const [debouncedSearch, setDebouncedSearch] = useState(searchParams.get('q') || '')
+
+  // Restore filters: sessionStorage (robust) > URL params > defaults
+  const saved = useRef<Record<string, string>>({})
+  if (typeof window !== 'undefined' && Object.keys(saved.current).length === 0) {
+    try {
+      const raw = sessionStorage.getItem('os_filters')
+      if (raw) saved.current = JSON.parse(raw)
+    } catch {}
+    // URL params override sessionStorage (for direct links)
+    if (searchParams.get('status')) saved.current.status = searchParams.get('status')!
+    if (searchParams.get('q')) saved.current.q = searchParams.get('q')!
+  }
+
+  const [search, setSearch] = useState(saved.current.q || '')
+  const [debouncedSearch, setDebouncedSearch] = useState(saved.current.q || '')
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [statusFilter, setStatusFilter] = useState<string[]>(searchParams.get('status')?.split(',').filter(Boolean) || [])
-  const [typeFilter, setTypeFilter] = useState(searchParams.get('type') || '')
-  const [locationFilter, setLocationFilter] = useState(searchParams.get('location') || '')
-  const [equipFilter, setEquipFilter] = useState(searchParams.get('equip') || '')
-  const [brandFilter, setBrandFilter] = useState(searchParams.get('brand') || '')
-  const [modelFilter, setModelFilter] = useState(searchParams.get('model') || '')
+  const [statusFilter, setStatusFilter] = useState<string[]>(saved.current.status?.split(',').filter(Boolean) || [])
+  const [typeFilter, setTypeFilter] = useState(saved.current.type || '')
+  const [locationFilter, setLocationFilter] = useState(saved.current.location || '')
+  const [equipFilter, setEquipFilter] = useState(saved.current.equip || '')
+  const [brandFilter, setBrandFilter] = useState(saved.current.brand || '')
+  const [modelFilter, setModelFilter] = useState(saved.current.model || '')
   const [equipTypes, setEquipTypes] = useState<string[]>([])
   const [brandOptions, setBrandOptions] = useState<string[]>([])
   const [modelOptions, setModelOptions] = useState<string[]>([])
   const [osLocationLabel, setOsLocationLabel] = useState<Record<string, string>>({ LOJA: 'Loja', EXTERNO: 'Externo' })
-  const [dateFrom, setDateFrom] = useState(searchParams.get('from') || '')
-  const [dateTo, setDateTo] = useState(searchParams.get('to') || '')
+  const [dateFrom, setDateFrom] = useState(saved.current.from || '')
+  const [dateTo, setDateTo] = useState(saved.current.to || '')
   const [totalFiltered, setTotalFiltered] = useState(0)
-  const [page, setPage] = useState(parseInt(searchParams.get('page') || '1') || 1)
+  const [page, setPage] = useState(parseInt(saved.current.page || '1') || 1)
   const [totalPages, setTotalPages] = useState(1)
-  const [view, setView] = useState<'table' | 'kanban'>((searchParams.get('view') as 'table' | 'kanban') || 'table')
+  const [view, setView] = useState<'table' | 'kanban'>((saved.current.view as 'table' | 'kanban') || 'table')
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(new Set())
   const [showColumnPicker, setShowColumnPicker] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -172,21 +184,27 @@ export default function OSListPage() {
   const [sortField, setSortField] = useState<string>('os_number')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [overdueFilter, setOverdueFilter] = useState(searchParams.get('overdue') === '1')
-  // Sync filters to URL (so browser back preserves them)
+  // Persist filters to sessionStorage + URL (survives Next.js client navigation)
   useEffect(() => {
-    const params = new URLSearchParams()
-    if (debouncedSearch) params.set('q', debouncedSearch)
-    if (statusFilter.length) params.set('status', statusFilter.join(','))
-    if (typeFilter) params.set('type', typeFilter)
-    if (locationFilter) params.set('location', locationFilter)
-    if (equipFilter) params.set('equip', equipFilter)
-    if (brandFilter) params.set('brand', brandFilter)
-    if (modelFilter) params.set('model', modelFilter)
-    if (dateFrom) params.set('from', dateFrom)
-    if (dateTo) params.set('to', dateTo)
-    if (overdueFilter) params.set('overdue', '1')
-    if (page > 1) params.set('page', String(page))
-    if (view !== 'table') params.set('view', view)
+    const data: Record<string, string> = {}
+    if (debouncedSearch) data.q = debouncedSearch
+    if (statusFilter.length) data.status = statusFilter.join(',')
+    if (typeFilter) data.type = typeFilter
+    if (locationFilter) data.location = locationFilter
+    if (equipFilter) data.equip = equipFilter
+    if (brandFilter) data.brand = brandFilter
+    if (modelFilter) data.model = modelFilter
+    if (dateFrom) data.from = dateFrom
+    if (dateTo) data.to = dateTo
+    if (overdueFilter) data.overdue = '1'
+    if (page > 1) data.page = String(page)
+    if (view !== 'table') data.view = view
+
+    // Save to sessionStorage (primary — always works with client-side nav)
+    try { sessionStorage.setItem('os_filters', JSON.stringify(data)) } catch {}
+
+    // Also update URL for shareable links + browser back
+    const params = new URLSearchParams(data)
     const qs = params.toString()
     const newUrl = qs ? `${pathname}?${qs}` : pathname
     window.history.replaceState(null, '', newUrl)
@@ -909,7 +927,7 @@ export default function OSListPage() {
           </button>
         </div>
         {(statusFilter.length > 0 || dateFrom || dateTo || overdueFilter || search || brandFilter || modelFilter || equipFilter || typeFilter || locationFilter) && (
-          <button type="button" onClick={() => { setStatusFilter([]); setDateFrom(''); setDateTo(''); setOverdueFilter(false); setSearch(''); setBrandFilter(''); setModelFilter(''); setEquipFilter(''); setTypeFilter(''); setLocationFilter(''); setPage(1) }}
+          <button type="button" onClick={() => { setStatusFilter([]); setDateFrom(''); setDateTo(''); setOverdueFilter(false); setSearch(''); setBrandFilter(''); setModelFilter(''); setEquipFilter(''); setTypeFilter(''); setLocationFilter(''); setPage(1); try { sessionStorage.removeItem('os_filters') } catch {} }}
             className="text-xs text-blue-600 hover:underline ml-1">Limpar filtros</button>
         )}
       </div>
