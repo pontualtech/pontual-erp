@@ -158,6 +158,11 @@ export default function OSDetailPage() {
   const [showAprovacaoModal, setShowAprovacaoModal] = useState(false)
   const [aprovacaoChannels, setAprovacaoChannels] = useState<Set<string>>(new Set(['email', 'whatsapp']))
   const [sendingAprovacao, setSendingAprovacao] = useState(false)
+  // Cancel modal
+  const [showCancelModal, setShowCancelModal] = useState(false)
+  const [cancelStatusId, setCancelStatusId] = useState<string | null>(null)
+  const [cancelReason, setCancelReason] = useState('')
+  const [cancelObs, setCancelObs] = useState('')
   const [tiposOS, setTiposOS] = useState<{ key: string; label: string }[]>([])
   const [locaisOS, setLocaisOS] = useState<{ key: string; label: string }[]>([])
   const [paymentMethod, setPaymentMethod] = useState('Pix')
@@ -718,8 +723,27 @@ export default function OSDetailPage() {
     return n.includes('reparad') || n.includes('pronta')
   }
 
+  const CANCEL_REASONS = [
+    'Cliente desistiu do servico',
+    'Erro de preenchimento / OS duplicada',
+    'Cliente disse que ia trazer mas nao trouxe',
+    'Equipamento sem conserto (irreparavel)',
+    'Cliente optou por comprar equipamento novo',
+    'Orcamento recusado — valor inviavel para o cliente',
+    'Cliente nao responde / sem contato',
+    'Outro motivo (descrever abaixo)',
+  ]
+
   function openTransitionFor(target: StatusDef) {
     if (!os) return
+    // Intercept cancellation — require reason
+    if (target.name.toLowerCase().includes('cancel')) {
+      setCancelStatusId(target.id)
+      setCancelReason('')
+      setCancelObs('')
+      setShowCancelModal(true)
+      return
+    }
     const isDelivery = (target.is_final && !target.name.toLowerCase().includes('cancel'))
     if (isDelivery && (os.total_cost ?? 0) > 0) {
       setPaymentMethod('')
@@ -2454,6 +2478,66 @@ export default function OSDetailPage() {
                 className="flex-1 px-4 py-2.5 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 font-medium flex items-center justify-center gap-2">
                 {sendingAprovacao ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 {sendingAprovacao ? 'Enviando...' : 'Enviar Notificacao'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========== CANCEL REASON MODAL ========== */}
+      {showCancelModal && os && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => !transitioning && setShowCancelModal(false)}>
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold flex items-center gap-2 text-red-700">
+                <X className="h-5 w-5" /> Cancelar OS #{os.os_number}
+              </h2>
+              <button type="button" onClick={() => setShowCancelModal(false)} disabled={transitioning}
+                title="Fechar" className="p-1 rounded-lg hover:bg-gray-100 text-gray-400">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-lg bg-red-50 border border-red-200 p-4">
+                <p className="text-sm font-medium text-red-900">
+                  OS {os.os_number} — {[os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ')}
+                </p>
+                <p className="text-sm text-red-700 mt-1">{os.customers?.legal_name}</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Motivo do cancelamento *</label>
+                <div className="space-y-1.5">
+                  {CANCEL_REASONS.map(reason => (
+                    <button key={reason} type="button" onClick={() => setCancelReason(reason)}
+                      className={cn('w-full text-left rounded-lg border-2 px-3 py-2 text-sm transition-all',
+                        cancelReason === reason ? 'border-red-500 bg-red-50 text-red-800 font-medium' : 'border-gray-200 hover:border-red-300 text-gray-700')}>
+                      {reason}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Observacao adicional (opcional)</label>
+                <textarea value={cancelObs} onChange={e => setCancelObs(e.target.value)}
+                  placeholder="Detalhes adicionais sobre o cancelamento..."
+                  rows={2} className="w-full px-3 py-2 border rounded-lg text-sm resize-none" />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-5">
+              <button type="button" onClick={() => setShowCancelModal(false)} disabled={transitioning}
+                className="flex-1 px-4 py-2.5 text-sm border rounded-lg hover:bg-gray-50">Voltar</button>
+              <button type="button" disabled={transitioning || !cancelReason} onClick={async () => {
+                if (!cancelStatusId || !cancelReason) return
+                const fullNote = `CANCELAMENTO: ${cancelReason}${cancelObs ? ` — ${cancelObs}` : ''}`
+                setShowCancelModal(false)
+                doTransition(cancelStatusId, undefined, fullNote)
+              }}
+                className="flex-1 px-4 py-2.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 font-medium">
+                {transitioning ? 'Cancelando...' : 'Confirmar Cancelamento'}
               </button>
             </div>
           </div>
