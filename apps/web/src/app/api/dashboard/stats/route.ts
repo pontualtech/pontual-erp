@@ -226,10 +226,16 @@ export async function GET() {
       ORDER BY total DESC
     `, cid, execStatusIds, finalIds)
 
-    // ---- 7. OS sem técnico atribuído ----
-    const semTecnico = await prisma.serviceOrder.count({
-      where: { company_id: cid, deleted_at: null, technician_id: null, status_id: { notIn: finalIds } },
-    })
+    // ---- 7. OS sem técnico atribuído (só conta a partir de "Aprovado") ----
+    // Before Aprovado (Coletar, Orçar, Aguardando Aprovação), technician is not expected
+    const needsTechStatusIds = allStatuses
+      .filter(s => !s.is_final && /aprovado|execu[çc]|andamento|peca|pe[çc]a|entregar|pronto|reparado/i.test(s.name))
+      .map(s => s.id)
+    const semTecnico = needsTechStatusIds.length > 0
+      ? await prisma.serviceOrder.count({
+          where: { company_id: cid, deleted_at: null, technician_id: null, status_id: { in: needsTechStatusIds } },
+        })
+      : 0
 
     // ---- 8. OS atrasadas (estimated_delivery < today) ----
     const osAtrasadas = await prisma.serviceOrder.count({
