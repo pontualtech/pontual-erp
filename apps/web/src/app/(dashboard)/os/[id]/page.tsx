@@ -155,6 +155,9 @@ export default function OSDetailPage() {
   const [showProntoModal, setShowProntoModal] = useState(false)
   const [prontoChannels, setProntoChannels] = useState<Set<string>>(new Set(['email', 'whatsapp']))
   const [sendingPronto, setSendingPronto] = useState(false)
+  const [showAprovacaoModal, setShowAprovacaoModal] = useState(false)
+  const [aprovacaoChannels, setAprovacaoChannels] = useState<Set<string>>(new Set(['email', 'whatsapp']))
+  const [sendingAprovacao, setSendingAprovacao] = useState(false)
   const [tiposOS, setTiposOS] = useState<{ key: string; label: string }[]>([])
   const [locaisOS, setLocaisOS] = useState<{ key: string; label: string }[]>([])
   const [paymentMethod, setPaymentMethod] = useState('Pix')
@@ -1111,6 +1114,12 @@ export default function OSDetailPage() {
             <button type="button" onClick={() => setShowColetaModal(true)}
               className="flex items-center gap-1.5 rounded-lg border border-sky-300 bg-sky-50 px-3 py-1.5 text-sm font-medium text-sky-700 hover:bg-sky-100 transition-colors">
               <Truck className="h-4 w-4" /> Notificar Coleta
+            </button>
+          )}
+          {currentStatus?.name?.toLowerCase().includes('aprovad') && (
+            <button type="button" onClick={() => setShowAprovacaoModal(true)}
+              className="flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-100 transition-colors">
+              <Mail className="h-4 w-4" /> Notificar Aprovacao
             </button>
           )}
           {(currentStatus?.name?.toLowerCase().includes('reparad') || currentStatus?.name?.toLowerCase().includes('pronta')) && (
@@ -2357,6 +2366,94 @@ export default function OSDetailPage() {
                 className="flex-1 px-4 py-2.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium flex items-center justify-center gap-2">
                 {sendingPronto ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 {sendingPronto ? 'Enviando...' : 'Enviar Notificacao'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========== APROVACAO NOTIFICATION MODAL ========== */}
+      {showAprovacaoModal && os && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => !sendingAprovacao && setShowAprovacaoModal(false)}>
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <Mail className="h-5 w-5 text-emerald-600" />
+                Notificar Aprovacao
+              </h2>
+              <button type="button" onClick={() => setShowAprovacaoModal(false)} disabled={sendingAprovacao}
+                title="Fechar" className="p-1 rounded-lg hover:bg-gray-100 text-gray-400">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-4">
+                <p className="text-sm font-medium text-emerald-900">
+                  OS {os.os_number} — {[os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ')}
+                </p>
+                <p className="text-sm text-emerald-700 mt-1">{os.customers?.legal_name}</p>
+                {os.total_cost > 0 && <p className="text-sm font-bold text-emerald-800 mt-1">Valor: {fmt(os.total_cost)}</p>}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Enviar por:</label>
+                <div className="flex gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={aprovacaoChannels.has('email')}
+                      onChange={e => setAprovacaoChannels(prev => { const n = new Set(prev); e.target.checked ? n.add('email') : n.delete('email'); return n })}
+                      className="rounded border-gray-300 h-4 w-4 text-emerald-600" />
+                    <Mail className="h-4 w-4 text-gray-500" />
+                    <span className="text-sm text-gray-700">Email</span>
+                    {os.customers?.email
+                      ? <span className="text-xs text-gray-400">{os.customers.email}</span>
+                      : <span className="text-xs text-red-400">Sem email</span>}
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={aprovacaoChannels.has('whatsapp')}
+                      onChange={e => setAprovacaoChannels(prev => { const n = new Set(prev); e.target.checked ? n.add('whatsapp') : n.delete('whatsapp'); return n })}
+                      className="rounded border-gray-300 h-4 w-4 text-green-600" />
+                    <MessageCircle className="h-4 w-4 text-gray-500" />
+                    <span className="text-sm text-gray-700">WhatsApp</span>
+                    {(os.customers?.mobile || os.customers?.phone)
+                      ? <span className="text-xs text-gray-400">{os.customers.mobile || os.customers.phone}</span>
+                      : <span className="text-xs text-red-400">Sem telefone</span>}
+                  </label>
+                </div>
+              </div>
+
+              <div className="rounded-lg border bg-gray-50 p-3 text-xs text-gray-600">
+                <p className="font-medium text-gray-700 mb-1">O cliente vai receber:</p>
+                <p>Confirmacao detalhada da aprovacao do orcamento</p>
+                <p>Informacoes de prazo, formas de pagamento (PIX/Cartao)</p>
+                <p>Horarios de entrega + WhatsApp de contato</p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-5">
+              <button type="button" onClick={() => setShowAprovacaoModal(false)} disabled={sendingAprovacao}
+                className="flex-1 px-4 py-2.5 text-sm border rounded-lg hover:bg-gray-50">Cancelar</button>
+              <button type="button" disabled={sendingAprovacao || aprovacaoChannels.size === 0} onClick={async () => {
+                setSendingAprovacao(true)
+                try {
+                  const res = await fetch(`/api/os/${id}/notificar-aprovacao`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ channels: Array.from(aprovacaoChannels) }),
+                  })
+                  const data = await res.json()
+                  if (!res.ok) throw new Error(data.error || 'Erro')
+                  const enviados = (data.data?.results || []).filter((r: any) => r.status === 'enviado')
+                  if (enviados.length > 0) toast.success(`Notificacao de aprovacao enviada via ${enviados.map((r: any) => r.channel).join(' e ')}!`)
+                  const erros = (data.data?.results || []).filter((r: any) => r.status !== 'enviado')
+                  erros.forEach((r: any) => toast.error(`${r.channel}: ${r.status === 'sem_email' ? 'Sem email' : r.status === 'sem_telefone' ? 'Sem telefone' : 'Erro'}`))
+                  setShowAprovacaoModal(false)
+                } catch (err: any) { toast.error(err.message) }
+                finally { setSendingAprovacao(false) }
+              }}
+                className="flex-1 px-4 py-2.5 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 font-medium flex items-center justify-center gap-2">
+                {sendingAprovacao ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                {sendingAprovacao ? 'Enviando...' : 'Enviar Notificacao'}
               </button>
             </div>
           </div>
