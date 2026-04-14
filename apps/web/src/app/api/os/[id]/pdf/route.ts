@@ -292,10 +292,15 @@ export async function GET(req: NextRequest, { params }: Params) {
       || '—'
 
     const template = req.nextUrl.searchParams.get('template') || 'os_full'
-    const companyName = company?.name || settingsMap['company_name'] || settingsMap['company.nome_fantasia'] || 'PontualTech'
-    const companyPhone = settingsMap['phone'] || settingsMap['company.phone'] || settingsMap['company.whatsapp'] || '(11) 2626-3841'
-    const companyEmail = settingsMap['email'] || settingsMap['email.from_address'] || settingsMap['company.email'] || 'contato@pontualtech.com.br'
-    const companyCnpj = settingsMap['cnpj'] || settingsMap['company.cnpj'] || '32.772.178/0001-47'
+    const companySlug = company?.slug || 'pontualtech'
+    const companyName = company?.name || settingsMap['company_name'] || settingsMap['company.nome_fantasia'] || '—'
+    const companyPhone = settingsMap['phone'] || settingsMap['company.phone'] || settingsMap['company.whatsapp'] || '—'
+    const companyEmail = settingsMap['email'] || settingsMap['email.from_address'] || settingsMap['company.email'] || '—'
+    const companyCnpj = settingsMap['cnpj'] || settingsMap['cnab.cnpj'] || settingsMap['company.cnpj'] || '—'
+    const portalBaseUrl = process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'
+    const portalUrl = `${portalBaseUrl}/portal/${companySlug}`
+    const whatsappNum = settingsMap['bot.config.support_whatsapp'] || settingsMap['company.whatsapp'] || companyPhone
+    const whatsappDigits = whatsappNum.replace(/\D/g, '')
     const osNum = String(os.os_number)
     const equipment = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ')
     const warrantyPeriod = settingsMap['quote.warranty'] || '90 dias'
@@ -331,10 +336,10 @@ export async function GET(req: NextRequest, { params }: Params) {
       payment_method: os.payment_method || '—',
       observations: os.reception_notes || '—',
       internal_notes: os.internal_notes || '',
-      portal_url: `https://portal.pontualtech.com.br/portal/pontualtech`,
-      portal_instructions: `Acompanhe sua OS online: https://portal.pontualtech.com.br/portal/pontualtech — Faca login com seu CPF/CNPJ e senha cadastrada. Voce pode consultar o status, aprovar orcamentos e abrir novas OS diretamente pelo portal.`,
-      whatsapp_suporte: '(11) 2626-3841',
-      whatsapp_link: 'https://wa.me/551126263841',
+      portal_url: portalUrl,
+      portal_instructions: `Acompanhe sua OS online: ${portalUrl} — Faca login com seu CPF/CNPJ e senha cadastrada. Voce pode consultar o status, aprovar orcamentos e abrir novas OS diretamente pelo portal.`,
+      whatsapp_suporte: whatsappNum,
+      whatsapp_link: `https://wa.me/${whatsappDigits}`,
     }
 
     // Selecionar template

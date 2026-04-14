@@ -26,8 +26,28 @@ export async function GET(req: NextRequest) {
 
   const company = await prisma.company.findUnique({
     where: { id: user.companyId },
-    select: { name: true },
+    select: { name: true, slug: true },
   })
+
+  // Load company settings for CNPJ, phone, email, address
+  const companySettings = await prisma.setting.findMany({
+    where: { company_id: user.companyId },
+  })
+  const sm: Record<string, string> = {}
+  for (const s of companySettings) sm[s.key] = s.value
+  const companyPhone = sm['phone'] || sm['company.phone'] || sm['company.whatsapp'] || '-'
+  const companyEmail = sm['email'] || sm['email.from_address'] || sm['company.email'] || '-'
+  const companyCnpj = sm['cnpj'] || sm['cnab.cnpj'] || sm['company.cnpj'] || '-'
+  const companySlug = company?.slug || 'pontualtech'
+  const portalBaseUrl = process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'
+  const portalUrl = `${portalBaseUrl}/portal/${companySlug}`
+  const whatsappNum = sm['bot.config.support_whatsapp'] || sm['company.whatsapp'] || companyPhone
+  const companyAddr = [sm['address_street'] || sm['cnab.endereco'], sm['address_number'] || sm['company.number'], sm['address_complement']].filter(Boolean).join(', ')
+    + (sm['address_neighborhood'] || sm['cnab.bairro'] ? ` — ${sm['address_neighborhood'] || sm['cnab.bairro']}` : '')
+    + (sm['address_zip'] || sm['cnab.cep'] ? ` — CEP ${sm['address_zip'] || sm['cnab.cep']}` : '')
+    + (sm['address_city'] || sm['cnab.cidade'] ? ` — ${sm['address_city'] || sm['cnab.cidade']}` : '')
+    + (sm['address_state'] || sm['cnab.uf'] ? `/${sm['address_state'] || sm['cnab.uf']}` : '')
+    || '-'
 
   const osList = await prisma.serviceOrder.findMany({
     where: { id: { in: ids }, company_id: user.companyId, deleted_at: null },
@@ -66,7 +86,14 @@ export async function GET(req: NextRequest) {
       </tr>`).join('')
 
     const vars: Record<string, string> = {
-      company_name: company?.name || 'ERP',
+      company_name: company?.name || '-',
+      company_cnpj: companyCnpj,
+      company_phone: companyPhone,
+      company_email: companyEmail,
+      company_address: companyAddr,
+      portal_url: portalUrl,
+      whatsapp_suporte: whatsappNum,
+      whatsapp_link: `https://wa.me/${whatsappNum.replace(/\D/g, '')}`,
       os_number: String(os.os_number).padStart(4, '0'),
       status: os.module_statuses?.name || '-',
       status_color: os.module_statuses?.color || '#6b7280',
