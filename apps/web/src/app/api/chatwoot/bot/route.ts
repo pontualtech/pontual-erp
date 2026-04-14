@@ -561,9 +561,12 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
         data: {
           human_takeover: false,
           // KEEP dify_conv_id — preserves conversation memory in Dify
-          // so if client messages again, Ana remembers the context
           step: 'IDLE',
           data: '{}',
+          // CLEAR follow-up — resolved conversations should NOT receive follow-ups
+          follow_up_next_at: null,
+          follow_up_count: 0,
+          follow_up_paused_at: null,
         },
       })
       console.log(`[Bot] Conversation ${convId} resolved — state reset (Dify memory preserved)`)

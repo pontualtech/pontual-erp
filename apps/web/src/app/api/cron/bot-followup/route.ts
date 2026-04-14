@@ -157,6 +157,22 @@ export async function GET(request: NextRequest) {
           continue
         }
 
+        // Skip if conversation is resolved in Chatwoot (double-check)
+        try {
+          const convRes = await fetch(
+            `${cwCfg.cwUrl}/api/v1/accounts/${cwCfg.cwAccountId}/conversations/${conv.chatwoot_conv_id}`,
+            { headers: { api_access_token: cwCfg.cwToken }, signal: AbortSignal.timeout(5000) }
+          )
+          if (convRes.ok) {
+            const convData = await convRes.json()
+            if (convData.status === 'resolved') {
+              await clearFollowUp(conv.id)
+              skipped++
+              continue
+            }
+          }
+        } catch {} // If Chatwoot is down, proceed with follow-up anyway
+
         const maxAttempts = parseInt(cfg['bot.followup.max_attempts'] || '3')
         const nextCount = conv.follow_up_count + 1
 
