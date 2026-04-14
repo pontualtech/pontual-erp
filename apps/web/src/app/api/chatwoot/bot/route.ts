@@ -730,14 +730,24 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       )
 
       if (!difyResponse.answer) {
-        console.warn('[Bot] Empty Dify response — sending fallback and activating human takeover')
-        await cwSendMessage(cfg, conversationId, 'Ops, tive um probleminha aqui! 😅 Vou chamar alguem da equipe pra te ajudar, ta? Um momentinho!')
-        await prisma.botConversation.update({
-          where: { id: botConv.id },
-          data: { human_takeover: true, step: 'HUMAN' },
-        })
-        await releaseLock(botConv.id)
-        return
+        // Retry once before giving up — Dify/Gemini sometimes returns empty on first try
+        console.warn('[Bot] Empty Dify response — retrying once...')
+        await new Promise(r => setTimeout(r, 1500))
+        const retry = await callDify(cfg, query, userIdentifier, botConv.dify_conv_id || undefined, imageUrls.length > 0 ? imageUrls : undefined)
+        if (retry.answer) {
+          console.log('[Bot] Retry succeeded')
+          Object.assign(difyResponse, retry)
+        } else {
+          console.error('[Bot] Retry also empty — fallback to support link')
+          const supportUrl = `https://wa.me/${(cfg.supportWhatsApp || '').replace(/\D/g, '') || '551126263841'}`
+          await cwSendMessage(cfg, conversationId, `Desculpa, tive uma dificuldade tecnica! 😅 Para nao te deixar esperando, fale com nosso suporte pelo WhatsApp: ${supportUrl}`)
+          await prisma.botConversation.update({
+            where: { id: botConv.id },
+            data: { human_takeover: true, step: 'HUMAN' },
+          })
+          await releaseLock(botConv.id)
+          return
+        }
       }
 
       // Parse response for action tags
