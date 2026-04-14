@@ -15,6 +15,9 @@ const INTERVAL_PRESETS = [
   { label: '24 horas', value: '1440' },
   { label: '48 horas', value: '2880' },
   { label: '72 horas', value: '4320' },
+  { label: '7 dias', value: '10080' },
+  { label: '14 dias', value: '20160' },
+  { label: '30 dias', value: '43200' },
 ]
 
 const DAY_OPTIONS = [
@@ -36,6 +39,12 @@ interface FollowUpConfig {
   'bot.followup.msg_1': string
   'bot.followup.msg_2': string
   'bot.followup.msg_3': string
+  'bot.followup.interval_4_minutes': string
+  'bot.followup.interval_5_minutes': string
+  'bot.followup.interval_6_minutes': string
+  'bot.followup.msg_4': string
+  'bot.followup.msg_5': string
+  'bot.followup.msg_6': string
   'bot.followup.business_hours_only': string
   'bot.followup.business_hour_start': string
   'bot.followup.business_hour_end': string
@@ -49,9 +58,15 @@ const DEFAULTS: FollowUpConfig = {
   'bot.followup.interval_1_minutes': '60',
   'bot.followup.interval_2_minutes': '1440',
   'bot.followup.interval_3_minutes': '4320',
-  'bot.followup.msg_1': 'Oi! 😊 Vi que voce nao respondeu. Posso te ajudar com algo? Estou aqui para o que precisar!',
-  'bot.followup.msg_2': 'Ola! Passando para saber se ainda precisa de ajuda. Se tiver qualquer duvida sobre nossos servicos, e so me chamar! 🔧',
-  'bot.followup.msg_3': 'Oi! Essa e minha ultima mensagem para nao te incomodar. Se precisar de assistencia tecnica no futuro, estamos a disposicao! Ate mais! 👋',
+  'bot.followup.interval_4_minutes': '10080',
+  'bot.followup.interval_5_minutes': '20160',
+  'bot.followup.interval_6_minutes': '43200',
+  'bot.followup.msg_1': 'Oi! 😊 Vi que voce nao respondeu. Posso te ajudar com algo?',
+  'bot.followup.msg_2': 'Ola! Passando para saber se ainda precisa de ajuda. E so me chamar! 🔧',
+  'bot.followup.msg_3': 'Oi! Essa e minha ultima mensagem automatica. Se precisar, estamos a disposicao! 👋',
+  'bot.followup.msg_4': 'Ola! Faz uma semana que conversamos. Se precisar de assistencia tecnica, estamos aqui!',
+  'bot.followup.msg_5': 'Oi! So passando para lembrar que estamos a disposicao. Qualquer duvida, e so chamar!',
+  'bot.followup.msg_6': 'Ola! Faz um tempo que nao nos falamos. Se precisar de servicos tecnicos, conte conosco! 🔧',
   'bot.followup.business_hours_only': 'true',
   'bot.followup.business_hour_start': '8',
   'bot.followup.business_hour_end': '18',
@@ -62,7 +77,11 @@ const DEFAULTS: FollowUpConfig = {
 function formatMinutes(m: number): string {
   if (m < 60) return `${m} min`
   if (m < 1440) return `${Math.round(m / 60)}h`
-  return `${Math.round(m / 1440)} dia(s)`
+  const days = Math.round(m / 1440)
+  if (days === 7) return '1 semana'
+  if (days === 14) return '2 semanas'
+  if (days >= 28 && days <= 31) return '1 mes'
+  return `${days} dias`
 }
 
 export default function BotFollowUpConfigPage() {
@@ -161,17 +180,17 @@ export default function BotFollowUpConfigPage() {
         <>
           <div className="rounded-lg border bg-white p-5 shadow-sm">
             <h2 className="font-semibold text-gray-900 mb-4 flex items-center gap-2"><Clock className="h-5 w-5 text-blue-500" /> Sequencia de Follow-up</h2>
-            <p className="text-sm text-gray-500 mb-4">Configure ate 3 mensagens escalonadas. Cada uma e enviada se o cliente nao responder apos o intervalo definido.</p>
+            <p className="text-sm text-gray-500 mb-4">Configure ate 6 mensagens escalonadas. Cada uma e enviada se o cliente nao responder apos o intervalo definido.</p>
 
             {/* Max attempts */}
             <div className="mb-5">
               <label className="block text-xs text-gray-500 mb-1">Numero maximo de follow-ups</label>
-              <div className="flex gap-2">
-                {[1, 2, 3].map(n => (
+              <div className="flex flex-wrap gap-2">
+                {[1, 2, 3, 4, 5, 6].map(n => (
                   <button key={n} type="button" onClick={() => upd('bot.followup.max_attempts', String(n))}
                     className={cn('px-4 py-2 rounded-lg border text-sm font-medium transition-colors',
                       maxAttempts === n ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50')}>
-                    {n} mensagem{n > 1 ? 's' : ''}
+                    {n}
                   </button>
                 ))}
               </div>
@@ -179,15 +198,19 @@ export default function BotFollowUpConfigPage() {
 
             {/* Timeline items */}
             <div className="space-y-6">
-              {[1, 2, 3].filter(n => n <= maxAttempts).map(n => {
+              {[1, 2, 3, 4, 5, 6].filter(n => n <= maxAttempts).map(n => {
                 const intervalKey = `bot.followup.interval_${n}_minutes` as keyof FollowUpConfig
                 const msgKey = `bot.followup.msg_${n}` as keyof FollowUpConfig
                 const intervalValue = config[intervalKey] || '60'
-                const colors = n === 1
-                  ? { bg: 'bg-blue-50', border: 'border-blue-200', dot: 'bg-blue-500', text: 'text-blue-700' }
-                  : n === 2
-                    ? { bg: 'bg-amber-50', border: 'border-amber-200', dot: 'bg-amber-500', text: 'text-amber-700' }
-                    : { bg: 'bg-red-50', border: 'border-red-200', dot: 'bg-red-500', text: 'text-red-700' }
+                const COLOR_MAP: Record<number, { bg: string; border: string; dot: string; text: string }> = {
+                  1: { bg: 'bg-blue-50', border: 'border-blue-200', dot: 'bg-blue-500', text: 'text-blue-700' },
+                  2: { bg: 'bg-amber-50', border: 'border-amber-200', dot: 'bg-amber-500', text: 'text-amber-700' },
+                  3: { bg: 'bg-orange-50', border: 'border-orange-200', dot: 'bg-orange-500', text: 'text-orange-700' },
+                  4: { bg: 'bg-purple-50', border: 'border-purple-200', dot: 'bg-purple-500', text: 'text-purple-700' },
+                  5: { bg: 'bg-pink-50', border: 'border-pink-200', dot: 'bg-pink-500', text: 'text-pink-700' },
+                  6: { bg: 'bg-red-50', border: 'border-red-200', dot: 'bg-red-500', text: 'text-red-700' },
+                }
+                const colors = COLOR_MAP[n] || COLOR_MAP[6]
 
                 return (
                   <div key={n} className={cn('rounded-xl border p-4', colors.border, colors.bg)}>
@@ -239,15 +262,19 @@ export default function BotFollowUpConfigPage() {
               <p className="text-xs font-medium text-gray-500 mb-2">Resumo da sequencia:</p>
               <div className="flex items-center gap-2 text-xs text-gray-600">
                 <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Cliente nao responde</span>
-                {[1, 2, 3].filter(n => n <= maxAttempts).map(n => {
+                {[1, 2, 3, 4, 5, 6].filter(n => n <= maxAttempts).map(n => {
                   const intervalKey = `bot.followup.interval_${n}_minutes` as keyof FollowUpConfig
+                  const BADGE_COLORS: Record<number, string> = {
+                    1: 'bg-blue-100 text-blue-700', 2: 'bg-amber-100 text-amber-700',
+                    3: 'bg-orange-100 text-orange-700', 4: 'bg-purple-100 text-purple-700',
+                    5: 'bg-pink-100 text-pink-700', 6: 'bg-red-100 text-red-700',
+                  }
                   return (
                     <span key={n} className="flex items-center gap-1">
                       <span className="text-gray-400">→</span>
                       <span className="bg-white border px-2 py-0.5 rounded-full">{formatMinutes(parseInt(config[intervalKey] || '60'))}</span>
                       <span className="text-gray-400">→</span>
-                      <span className={cn('px-2 py-0.5 rounded-full font-medium',
-                        n === 1 ? 'bg-blue-100 text-blue-700' : n === 2 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700')}>
+                      <span className={cn('px-2 py-0.5 rounded-full font-medium', BADGE_COLORS[n] || BADGE_COLORS[6])}>
                         #{n}
                       </span>
                     </span>

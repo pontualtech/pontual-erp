@@ -10,9 +10,15 @@ const FOLLOWUP_KEYS = [
   'bot.followup.interval_1_minutes',
   'bot.followup.interval_2_minutes',
   'bot.followup.interval_3_minutes',
+  'bot.followup.interval_4_minutes',
+  'bot.followup.interval_5_minutes',
+  'bot.followup.interval_6_minutes',
   'bot.followup.msg_1',
   'bot.followup.msg_2',
   'bot.followup.msg_3',
+  'bot.followup.msg_4',
+  'bot.followup.msg_5',
+  'bot.followup.msg_6',
   'bot.followup.business_hours_only',
   'bot.followup.business_hour_start',
   'bot.followup.business_hour_end',
@@ -24,12 +30,18 @@ const FOLLOWUP_KEYS = [
 const DEFAULTS: Record<string, string> = {
   'bot.followup.enabled': 'true',
   'bot.followup.max_attempts': '3',
-  'bot.followup.interval_1_minutes': '60',       // 1h after silence
-  'bot.followup.interval_2_minutes': '1440',      // 24h after silence
-  'bot.followup.interval_3_minutes': '4320',      // 72h after silence
-  'bot.followup.msg_1': 'Oi! 😊 Vi que voce nao respondeu. Posso te ajudar com algo? Estou aqui para o que precisar!',
-  'bot.followup.msg_2': 'Ola! Passando para saber se ainda precisa de ajuda. Se tiver qualquer duvida sobre nossos servicos, e so me chamar! 🔧',
-  'bot.followup.msg_3': 'Oi! Essa e minha ultima mensagem para nao te incomodar. Se precisar de assistencia tecnica no futuro, estamos a disposicao! Ate mais! 👋',
+  'bot.followup.interval_1_minutes': '60',        // 1h
+  'bot.followup.interval_2_minutes': '1440',       // 24h
+  'bot.followup.interval_3_minutes': '4320',       // 72h
+  'bot.followup.interval_4_minutes': '10080',      // 7 dias
+  'bot.followup.interval_5_minutes': '20160',      // 14 dias
+  'bot.followup.interval_6_minutes': '43200',      // 30 dias
+  'bot.followup.msg_1': 'Oi! 😊 Vi que voce nao respondeu. Posso te ajudar com algo?',
+  'bot.followup.msg_2': 'Ola! Passando para saber se ainda precisa de ajuda. E so me chamar! 🔧',
+  'bot.followup.msg_3': 'Oi! Essa e minha ultima mensagem automatica. Se precisar, estamos a disposicao! 👋',
+  'bot.followup.msg_4': 'Ola! Faz uma semana que conversamos. Se precisar de assistencia tecnica, estamos aqui!',
+  'bot.followup.msg_5': 'Oi! So passando para lembrar que estamos a disposicao. Qualquer duvida, e so chamar!',
+  'bot.followup.msg_6': 'Ola! Faz um tempo que nao nos falamos. Se precisar de servicos tecnicos, conte conosco! 🔧',
   'bot.followup.business_hours_only': 'true',
   'bot.followup.business_hour_start': '8',
   'bot.followup.business_hour_end': '18',
