@@ -124,8 +124,9 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     const newTotal = newQty * newPrice
 
     const updated = await prisma.$transaction(async (tx) => {
-      const upd = await tx.serviceOrderItem.update({
-        where: { id: itemId, company_id: user.companyId },
+      // updateMany accepts any where clause (no unique constraint needed)
+      await tx.serviceOrderItem.updateMany({
+        where: { id: itemId, company_id: user.companyId, deleted_at: null },
         data: {
           description: newDesc || item.description,
           quantity: newQty,
@@ -142,12 +143,12 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       const total_services = items.filter(i => i.item_type !== 'PECA').reduce((s, i) => s + i.total_price, 0)
       const total_cost = items.reduce((s, i) => s + i.total_price, 0)
 
-      await tx.serviceOrder.update({
+      await tx.serviceOrder.updateMany({
         where: { id: params.id, company_id: user.companyId },
         data: { total_parts, total_services, total_cost },
       })
 
-      return upd
+      return { id: itemId, description: newDesc, quantity: newQty, unit_price: newPrice, total_price: newTotal }
     })
 
     logAudit({
