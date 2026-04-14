@@ -93,7 +93,9 @@ Qualquer duvida:
 ${companyPhone}${whatsappUrl ? '\n' + whatsappUrl : ''}
 
 Atenciosamente,
-Equipe ${companyName}`
+Equipe ${companyName}
+
+⚙️ Esta e uma mensagem automatica.`
 
         try {
           const appUrl = process.env.NEXT_PUBLIC_APP_URL || ''
@@ -206,6 +208,9 @@ Equipe ${companyName}`
   <p style="margin:0 0 4px;font-size:14px;font-weight:700;color:#fff;">${e(companyName)}</p>
   <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">📍 ${e(companyAddress)}${companyCep ? ` — CEP ${e(companyCep)}` : ''}</p>
   <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">📞 ${e(companyPhone)} | ✉️ ${e(companyEmailAddr)} | CNPJ: ${e(companyCnpj)}</p>
+  <div style="border-top:1px solid #334155;padding-top:10px;margin-top:10px;">
+    <p style="margin:0;font-size:10px;color:#64748b;">⚙️ Esta e uma mensagem automatica. Nao responda diretamente este email.</p>
+  </div>
 </td></tr>
 </table></td></tr></table></body></html>`
         }

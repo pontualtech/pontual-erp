@@ -280,7 +280,8 @@ const DEFAULT_QUOTE_TEMPLATE = `<!DOCTYPE html>
               <p style="margin:0 0 12px;font-size:11px;color:#64748b;">
                 <a href="https://wa.me/{{company_whatsapp}}" target="_blank" style="color:#64748b;text-decoration:underline;">WhatsApp</a>
               </p>
-              <p style="margin:0;font-size:10px;color:#334155;">OS #{{os_number}} | {{company_cnpj}}</p>
+              <p style="margin:0 0 8px;font-size:10px;color:#334155;">OS #{{os_number}} | {{company_cnpj}}</p>
+              <p style="margin:0;font-size:10px;color:#64748b;">⚙️ Esta e uma mensagem automatica. Nao responda diretamente este email.</p>
             </td>
           </tr>
 

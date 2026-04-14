@@ -66,7 +66,9 @@ ${companyPhone}
 ${whatsappUrl}
 
 Obrigado pela confianca!
-${companyName}`
+${companyName}
+
+⚙️ Esta e uma mensagem automatica.`
 
     // ===== EMAIL =====
     // Load additional company data for footer
@@ -146,7 +148,7 @@ ${companyName}`
               <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">Tel: ${escapeHtml(companyPhone)} | ${escapeHtml(companyEmail)}</p>
               <p style="margin:0 0 10px;font-size:11px;color:#94a3b8;">${companyWebsite}</p>
               <div style="border-top:1px solid #334155;padding-top:10px;">
-                <p style="margin:0;font-size:10px;color:#64748b;">Garantia de 3 meses em todos os servicos</p>
+                <p style="margin:0;font-size:10px;color:#64748b;">⚙️ Esta e uma mensagem automatica. Nao responda diretamente este email.</p>
               </div>
             </td>
           </tr>

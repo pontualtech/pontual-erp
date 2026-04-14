@@ -68,7 +68,7 @@ const DEFAULT_EMAIL_TEMPLATE = `<!DOCTYPE html>
               <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">{{company_address}}</p>
               <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">CNPJ: {{company_cnpj}} | Tel: {{company_phone}} | {{company_email}}</p>
               <div style="border-top:1px solid #334155;padding-top:10px;margin-top:10px;">
-                <p style="margin:0;font-size:10px;color:#64748b;">Garantia de 3 meses em todos os servicos</p>
+                <p style="margin:0;font-size:10px;color:#64748b;">⚙️ Esta e uma mensagem automatica. Nao responda diretamente este email.</p>
               </div>
             </td>
           </tr>

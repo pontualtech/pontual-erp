@@ -70,7 +70,7 @@ export default function PortalOSDetailPage() {
   const [comment, setComment] = useState('')
   const [actionLoading, setActionLoading] = useState(false)
   const [approvePayment, setApprovePayment] = useState<string | null>(null)
-  const [company, setCompany] = useState<{ name: string } | null>(null)
+  const [company, setCompany] = useState<{ name: string; phone?: string; whatsapp?: string; email?: string; address?: string; cnpj?: string; horario?: string; pix_chave?: string; pix_banco?: string; default_business_days?: string } | null>(null)
   const [customer, setCustomer] = useState<{ id: string; name: string } | null>(null)
   const [npsScore, setNpsScore] = useState<number | null>(null)
   const [npsComment, setNpsComment] = useState('')
@@ -247,6 +247,11 @@ export default function PortalOSDetailPage() {
 
   const isAguardandoAprovacao = os?.status.name.toLowerCase().includes('aguardando') &&
     os?.status.name.toLowerCase().includes('aprov')
+
+  const isAprovado = os?.status.name.toLowerCase().includes('aprovado') ||
+    os?.status.name.toLowerCase().includes('aprovad')
+
+  const showCondicoesReparo = isAguardandoAprovacao || isAprovado
 
   const isProntaOuEntregue = os?.status.name.toLowerCase().includes('pronta') ||
     os?.status.name.toLowerCase().includes('entregue')
@@ -582,6 +587,93 @@ export default function PortalOSDetailPage() {
                 <div>
                   <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">Diagnostico / Laudo</h4>
                   <p className="text-gray-800 dark:text-gray-200 text-sm font-medium whitespace-pre-wrap">{os.diagnosis}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Condicoes do Reparo — visivel quando aguardando aprovacao ou aprovado */}
+        {showCondicoesReparo && (
+          <div className="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-700 mb-6 overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100 dark:border-zinc-800 bg-gradient-to-r from-blue-50 to-emerald-50 dark:from-blue-950 dark:to-emerald-950">
+              <h2 className="font-semibold text-gray-900 dark:text-gray-100 text-lg">Condicoes do Reparo</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Informacoes importantes sobre o servico</p>
+            </div>
+            <div className="p-5 space-y-5">
+
+              {/* Prazo */}
+              <div className="flex gap-3">
+                <div className="flex-shrink-0 w-10 h-10 bg-blue-100 dark:bg-blue-900 rounded-lg flex items-center justify-center text-lg">🛠️</div>
+                <div>
+                  <h4 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">Prazo de Execucao</h4>
+                  <ul className="mt-1 text-sm text-gray-600 dark:text-gray-400 space-y-1">
+                    <li>O prazo de execucao e de ate <strong>{company?.default_business_days || '10'} dias uteis</strong> a partir da aprovacao</li>
+                    <li>Nosso compromisso e finalizar o quanto antes</li>
+                    <li>Voce sera notificado assim que o equipamento estiver pronto</li>
+                  </ul>
+                </div>
+              </div>
+
+              {/* Pagamento */}
+              <div className="flex gap-3">
+                <div className="flex-shrink-0 w-10 h-10 bg-emerald-100 dark:bg-emerald-900 rounded-lg flex items-center justify-center text-lg">💳</div>
+                <div>
+                  <h4 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">Formas de Pagamento (na Entrega)</h4>
+                  <ul className="mt-1 text-sm text-gray-600 dark:text-gray-400 space-y-1">
+                    <li><strong>Cartao de Credito:</strong> ate 3x sem juros</li>
+                    <li><strong>Cartao de Debito:</strong> a vista</li>
+                    <li><strong>PIX / Transferencia:</strong> Chave (CNPJ): <span className="font-mono text-gray-800 dark:text-gray-200">{company?.pix_chave || company?.cnpj || '—'}</span></li>
+                    {company?.pix_banco && <li>Banco: {company.pix_banco}</li>}
+                    <li>Favorecido: {company?.name}</li>
+                    <li><strong>Dinheiro:</strong> a vista na entrega</li>
+                  </ul>
+                </div>
+              </div>
+
+              {/* Garantia */}
+              <div className="flex gap-3">
+                <div className="flex-shrink-0 w-10 h-10 bg-purple-100 dark:bg-purple-900 rounded-lg flex items-center justify-center text-lg">🛡️</div>
+                <div>
+                  <h4 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">Garantia</h4>
+                  <ul className="mt-1 text-sm text-gray-600 dark:text-gray-400 space-y-1">
+                    <li>Todo servico possui garantia conforme descrito no orcamento</li>
+                    <li>Pecas substituidas com garantia do fabricante</li>
+                    <li>Acompanhe pelo portal a qualquer momento</li>
+                  </ul>
+                </div>
+              </div>
+
+              {/* Entrega e Horarios */}
+              <div className="flex gap-3">
+                <div className="flex-shrink-0 w-10 h-10 bg-amber-100 dark:bg-amber-900 rounded-lg flex items-center justify-center text-lg">🚚</div>
+                <div>
+                  <h4 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">Entrega e Horarios</h4>
+                  <ul className="mt-1 text-sm text-gray-600 dark:text-gray-400 space-y-1">
+                    <li>Antes da entrega, entraremos em contato para confirmar</li>
+                    <li><strong>Horarios:</strong> {company?.horario || 'Seg a Qui 08:00-18:00 | Sex 08:00-17:00'}</li>
+                    {company?.address && <li><strong>Endereco:</strong> {company.address}</li>}
+                  </ul>
+                </div>
+              </div>
+
+              {/* Contato */}
+              {(company?.phone || company?.whatsapp) && (
+                <div className="flex gap-3">
+                  <div className="flex-shrink-0 w-10 h-10 bg-green-100 dark:bg-green-900 rounded-lg flex items-center justify-center text-lg">📞</div>
+                  <div>
+                    <h4 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">Duvidas?</h4>
+                    <div className="mt-1 text-sm text-gray-600 dark:text-gray-400 space-y-1">
+                      {company.phone && <p>Telefone: <strong>{company.phone}</strong></p>}
+                      {company.whatsapp && (
+                        <a href={`https://wa.me/${company.whatsapp.replace(/\D/g, '')}`}
+                          target="_blank" rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 mt-1 px-4 py-2 bg-green-500 text-white rounded-lg text-sm font-medium hover:bg-green-600 transition-colors">
+                          💬 Falar pelo WhatsApp
+                        </a>
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

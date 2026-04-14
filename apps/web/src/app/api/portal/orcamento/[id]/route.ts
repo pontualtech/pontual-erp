@@ -488,7 +488,7 @@ export async function POST(request: NextRequest, { params }: Params) {
               <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">${companyAddress2}</p>
               <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">CNPJ: ${companyCnpj2} | Tel: ${companyPhone2} | ${companyEmailAddr2}</p>
               <div style="border-top:1px solid #334155;padding-top:10px;margin-top:10px;">
-                <p style="margin:0;font-size:10px;color:#64748b;">Garantia de 3 meses em todos os servicos</p>
+                <p style="margin:0;font-size:10px;color:#64748b;">⚙️ Esta e uma mensagem automatica. Nao responda diretamente este email.</p>
               </div>
             </td>
           </tr>
@@ -596,7 +596,7 @@ function buildApprovalEmailHtml(d: ApprovalEmailData): string {
   <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">📍 ${e(d.companyAddress)}${d.companyCep ? ` — CEP ${e(d.companyCep)}` : ''}</p>
   <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">📞 ${e(d.companyPhone)} | ✉️ ${e(d.companyEmailAddr)} | CNPJ: ${e(d.companyCnpj)}</p>
   <div style="border-top:1px solid #334155;padding-top:10px;margin-top:10px;">
-    <p style="margin:0;font-size:10px;color:#64748b;">Garantia em todos os servicos conforme descrito no orcamento</p>
+    <p style="margin:0;font-size:10px;color:#64748b;">⚙️ Esta e uma mensagem automatica. Nao responda diretamente este email.</p>
   </div>
 </td></tr>
 

@@ -179,7 +179,8 @@ export async function POST(request: NextRequest) {
         `Forma de pagamento: *${billingLabel[data.billing_type]}*\n\n` +
         `📱 Pague agora pelo link:\n${charge.invoiceUrl}\n\n` +
         (receivable.description ? `Ref: ${receivable.description}\n` : '') +
-        `Qualquer duvida, entre em contato conosco!`
+        `Qualquer duvida, entre em contato conosco!\n\n` +
+        `⚙️ Esta e uma mensagem automatica.`
 
       sendWhatsApp(customer.mobile, whatsMsg).then(r => {
         if (r.success) sentVia.push('whatsapp')
@@ -327,7 +328,7 @@ function buildChargeEmailHtml(params: {
   </tr>
   <tr>
     <td style="background:#f9fafb;padding:16px 32px;text-align:center">
-      <p style="font-size:12px;color:#9ca3af;margin:0">${escapeHtml(params.companyName)} — Cobranca automatica</p>
+      <p style="font-size:12px;color:#9ca3af;margin:0">⚙️ Esta e uma mensagem automatica. Nao responda diretamente este email.</p>
     </td>
   </tr>
 </table>

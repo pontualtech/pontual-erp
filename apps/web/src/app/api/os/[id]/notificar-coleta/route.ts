@@ -115,7 +115,9 @@ ${companyPhone}
 ${whatsappUrl}
 
 Obrigado pela confianca!
-Equipe ${companyName}`
+Equipe ${companyName}
+
+⚙️ Esta e uma mensagem automatica.`
 
     // ===== EMAIL HTML =====
     const companyCnpj = cfg['company.cnpj'] || cfg['cnpj'] || '32.772.178/0001-47'
@@ -227,7 +229,7 @@ Equipe ${companyName}`
               <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">CNPJ: ${escapeHtml(companyCnpj)}</p>
               <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">Tel: ${escapeHtml(companyPhone)} | ${escapeHtml(companyEmail2)}</p>
               <div style="border-top:1px solid #334155;padding-top:10px;margin-top:10px;">
-                <p style="margin:0;font-size:10px;color:#64748b;">Garantia de 3 meses em todos os servicos</p>
+                <p style="margin:0;font-size:10px;color:#64748b;">⚙️ Esta e uma mensagem automatica. Nao responda diretamente este email.</p>
               </div>
             </td>
           </tr>
