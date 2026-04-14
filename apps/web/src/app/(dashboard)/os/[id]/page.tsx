@@ -744,7 +744,8 @@ export default function OSDetailPage() {
       setShowCancelModal(true)
       return
     }
-    const isDelivery = (target.is_final && !target.name.toLowerCase().includes('cancel'))
+    const isCancelOrRefuse = /cancel|recusad/i.test(target.name)
+    const isDelivery = (target.is_final && !isCancelOrRefuse)
     if (isDelivery && (os.total_cost ?? 0) > 0) {
       setPaymentMethod('')
       setPaymentNotes('')

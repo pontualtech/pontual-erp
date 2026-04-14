@@ -105,7 +105,9 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
 
     // If target is a final status (Entregue) and OS has a total, require payment_method
-    const isFinalDelivery = toStatus.is_final && toStatus.name !== 'Cancelada' && (os.total_cost ?? 0) > 0
+    // Skip payment requirement for cancel/refuse statuses (no payment expected)
+    const isCancelOrRefuse = /cancel|recusad/i.test(toStatus.name)
+    const isFinalDelivery = toStatus.is_final && !isCancelOrRefuse && (os.total_cost ?? 0) > 0
     if (isFinalDelivery && !payment_method) {
       return error('Forma de pagamento é obrigatória para finalizar a OS', 400)
     }
