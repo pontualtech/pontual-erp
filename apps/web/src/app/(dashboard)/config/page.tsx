@@ -39,6 +39,7 @@ const sections = [
       { label: 'Certificado A1', href: '/config/certificado', icon: FileKey, desc: 'Instalar certificado digital para NF-e/NFS-e' },
       { label: 'Chatwoot / WhatsApp', href: '/integracoes/chatwoot', icon: MessageSquare, desc: 'Conversas e mensagens via WhatsApp' },
       { label: 'Chatbot / IA', href: '/config/chatbot', icon: Bot, desc: 'WhatsApp bot, IA, respostas automaticas' },
+      { label: 'Follow-up Automatico', href: '/config/bot-followup', icon: MessageSquare, desc: 'Mensagens automaticas quando cliente nao responde' },
       { label: 'Sincronizar VHSys', href: '/config/sync-vhsys', icon: RefreshCw, desc: 'Importar OS, clientes e servicos do VHSys' },
       { label: 'Cobrança Automática', href: '/config/cobranca', icon: Mail, desc: 'Lembrete de pagamento por email' },
       { label: 'Email de Orcamento', href: '/config/orcamento-email', icon: FileText, desc: 'Template e condicoes do orcamento por email' },

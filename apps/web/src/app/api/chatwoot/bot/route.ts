@@ -607,9 +607,22 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
   }
 
   // -----------------------------------------------------------------------
+  // FOLLOW-UP: Check for opt-out keywords and reset follow-up timer
+  // -----------------------------------------------------------------------
+  const optOutDetected = await checkFollowUpOptOut(cfg.companyId, content)
+  if (optOutDetected) {
+    await prisma.botConversation.update({
+      where: { id: botConv.id },
+      data: { follow_up_opted_out: true, follow_up_next_at: null },
+    })
+    console.log(`[Bot] Conv ${conversationId}: customer opted out of follow-ups`)
+  }
+
+  // -----------------------------------------------------------------------
   // DEBOUNCE: DB-based lock to consolidate rapid messages
   // -----------------------------------------------------------------------
   // Step 1: Save this message to pending_messages array (always, regardless of lock)
+  // Also RESET follow-up timer — customer just replied, so cancel pending follow-up
   const pendingMsg = { content, imageUrls: thisMessageImageUrls, messageId, ts: Date.now() }
   // Append as array element: jsonb_array || jsonb_array = merged array
   await prisma.$executeRaw`
@@ -618,7 +631,10 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
         last_message_id = ${messageId},
         customer_phone = COALESCE(${phone || null}, customer_phone),
         chatwoot_contact_id = COALESCE(${contactId || null}, chatwoot_contact_id),
-        last_user_msg_at = NOW()
+        last_user_msg_at = NOW(),
+        follow_up_count = 0,
+        follow_up_next_at = NULL,
+        follow_up_paused_at = NULL
     WHERE id = ${botConv.id}
   `
 
@@ -896,6 +912,17 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       await cwResolve(cfg, conversationId)
     }
 
+    // Schedule follow-up if conversation is still active (not ended, not transferred)
+    if (!parsed.action || parsed.action === 'NENHUMA_ACAO') {
+      await scheduleFollowUp(cfg.companyId, botConv.id)
+    } else {
+      // Conversation ended or transferred — clear any follow-up
+      await prisma.botConversation.update({
+        where: { id: botConv.id },
+        data: { follow_up_next_at: null, follow_up_paused_at: null },
+      })
+    }
+
       // Log to chatbot_logs
       await logBotMessage(cfg, conversationId, query, parsed.cleanText, parsed.action || 'CHAT', phone)
     } catch (err) {
@@ -1026,5 +1053,62 @@ async function logBotMessage(
     })
   } catch (err) {
     console.error('[Bot] Failed to log:', err)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Follow-up helpers
+// ---------------------------------------------------------------------------
+
+/** Default follow-up settings (same as cron route) */
+const FOLLOWUP_DEFAULTS: Record<string, string> = {
+  'bot.followup.enabled': 'true',
+  'bot.followup.interval_1_minutes': '60',
+  'bot.followup.opt_out_keywords': 'parar,cancelar,nao quero,sair,stop,pare,nao me mande,nao envie',
+}
+
+/** Cache follow-up settings per company (refreshed every 5 min) */
+const followUpSettingsCache = new Map<string, { data: Record<string, string>; ts: number }>()
+const CACHE_TTL = 5 * 60 * 1000
+
+async function getFollowUpSettings(companyId: string): Promise<Record<string, string>> {
+  const cached = followUpSettingsCache.get(companyId)
+  if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.data
+
+  const settings = await prisma.setting.findMany({
+    where: { company_id: companyId, key: { startsWith: 'bot.followup.' } },
+  })
+  const cfg = { ...FOLLOWUP_DEFAULTS }
+  for (const s of settings) cfg[s.key] = s.value
+  followUpSettingsCache.set(companyId, { data: cfg, ts: Date.now() })
+  return cfg
+}
+
+/** Check if customer message contains opt-out keywords */
+async function checkFollowUpOptOut(companyId: string, content: string): Promise<boolean> {
+  const cfg = await getFollowUpSettings(companyId)
+  const keywords = (cfg['bot.followup.opt_out_keywords'] || '').split(',').map(k => k.trim().toLowerCase()).filter(Boolean)
+  const normalized = content.toLowerCase().trim()
+  return keywords.some(kw => normalized.includes(kw))
+}
+
+/** Schedule the first follow-up after bot responds */
+async function scheduleFollowUp(companyId: string, botConvId: string) {
+  try {
+    const cfg = await getFollowUpSettings(companyId)
+    if (cfg['bot.followup.enabled'] !== 'true') return
+
+    const intervalMinutes = parseInt(cfg['bot.followup.interval_1_minutes'] || '60')
+    const nextAt = new Date(Date.now() + intervalMinutes * 60 * 1000)
+
+    await prisma.botConversation.update({
+      where: { id: botConvId },
+      data: {
+        follow_up_next_at: nextAt,
+        follow_up_paused_at: new Date(),
+      },
+    })
+  } catch (err) {
+    console.error('[Bot] Failed to schedule follow-up:', err)
   }
 }

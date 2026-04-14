@@ -1445,11 +1445,17 @@ model BotConversation {
   last_user_msg_at    DateTime? @db.Timestamptz(6) // debounce: timestamp of last user message
   processing_lock     DateTime? @db.Timestamptz(6) // debounce lock: NULL=free, timestamp=locked
   pending_messages    Json      @default("[]") // messages queued during debounce window
+  // Follow-up system
+  follow_up_count     Int       @default(0)    // how many follow-ups sent so far
+  follow_up_next_at   DateTime? @db.Timestamptz(6) // when to send next follow-up (null = none scheduled)
+  follow_up_opted_out Boolean   @default(false) // customer said "stop" or similar
+  follow_up_paused_at DateTime? @db.Timestamptz(6) // conversation went silent at this time
   created_at          DateTime @default(now()) @db.Timestamptz(6)
   updated_at          DateTime @updatedAt     @db.Timestamptz(6)
 
   @@unique([chatwoot_conv_id])
   @@index([customer_phone])
   @@index([chatwoot_contact_id])
+  @@index([follow_up_next_at]) // cron queries by this field
   @@map("bot_conversations")
 }

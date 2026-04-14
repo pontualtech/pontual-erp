@@ -1,0 +1,281 @@
+import { NextRequest } from 'next/server'
+import { timingSafeEqual } from 'crypto'
+import { prisma } from '@pontual/db'
+import { success, error, handleError } from '@/lib/api-response'
+
+/**
+ * GET /api/cron/bot-followup
+ *
+ * Called by external cron (n8n, crontab) every 5 minutes.
+ * Processes all bot conversations that have a pending follow-up.
+ *
+ * Flow:
+ *   1. Find conversations where follow_up_next_at <= NOW()
+ *   2. Load company-specific follow-up settings (messages, intervals)
+ *   3. Send the appropriate follow-up message via Chatwoot
+ *   4. Schedule the next follow-up or mark as complete
+ *
+ * Protected by CRON_SECRET in Authorization header.
+ */
+
+// Multi-tenant bot config (mirrors the bot route)
+interface BotCompanyConfig {
+  companyId: string
+  slug: string
+  cwUrl: string
+  cwAccountId: string
+  cwToken: string
+  supportWhatsApp: string
+}
+
+const COMPANY_CONFIGS: Record<string, BotCompanyConfig> = {
+  'pontualtech-001': {
+    companyId: process.env.BOT_ANA_COMPANY_ID || 'pontualtech-001',
+    slug: 'pontualtech',
+    cwUrl: process.env.CHATWOOT_URL || 'https://chat.pontualtech.work',
+    cwAccountId: process.env.CHATWOOT_ACCOUNT_ID || '1',
+    cwToken: process.env.CHATWOOT_API_TOKEN || process.env.CW_ADMIN_TOKEN || '',
+    supportWhatsApp: 'https://wa.me/551126263841',
+  },
+  '86c829cf-32ed-4e40-80cd-59ce4178aa1a': {
+    companyId: process.env.BOT_IMPRI_COMPANY_ID || '86c829cf-32ed-4e40-80cd-59ce4178aa1a',
+    slug: 'imprimitech',
+    cwUrl: process.env.CW_IMPRI_URL || 'https://chat.imp.pontualtech.work',
+    cwAccountId: process.env.CW_IMPRI_ACCOUNT_ID || '1',
+    cwToken: process.env.CW_IMPRI_TOKEN || '',
+    supportWhatsApp: 'https://wa.me/551150439869',
+  },
+}
+
+// Default follow-up settings (used when company has no custom config)
+const DEFAULTS: Record<string, string> = {
+  'bot.followup.enabled': 'true',
+  'bot.followup.max_attempts': '3',
+  'bot.followup.interval_1_minutes': '60',
+  'bot.followup.interval_2_minutes': '1440',
+  'bot.followup.interval_3_minutes': '4320',
+  'bot.followup.msg_1': 'Oi! 😊 Vi que voce nao respondeu. Posso te ajudar com algo? Estou aqui para o que precisar!',
+  'bot.followup.msg_2': 'Ola! Passando para saber se ainda precisa de ajuda. Se tiver qualquer duvida sobre nossos servicos, e so me chamar! 🔧',
+  'bot.followup.msg_3': 'Oi! Essa e minha ultima mensagem para nao te incomodar. Se precisar de assistencia tecnica no futuro, estamos a disposicao! Ate mais! 👋',
+  'bot.followup.business_hours_only': 'true',
+  'bot.followup.business_hour_start': '8',
+  'bot.followup.business_hour_end': '18',
+  'bot.followup.business_days': '1,2,3,4,5',
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    // Validate cron secret
+    const cronSecret = process.env.CRON_SECRET
+    if (!cronSecret) {
+      console.error('[Cron/BotFollowUp] CRON_SECRET not configured')
+      return error('Cron not configured', 503)
+    }
+
+    const authHeader = request.headers.get('authorization')
+    const expected = `Bearer ${cronSecret}`
+    if (!authHeader || authHeader.length !== expected.length
+      || !timingSafeEqual(Buffer.from(authHeader), Buffer.from(expected))) {
+      return error('Unauthorized', 401)
+    }
+
+    // Find all conversations with pending follow-ups
+    const now = new Date()
+    const pendingConvs = await prisma.botConversation.findMany({
+      where: {
+        follow_up_next_at: { lte: now },
+        follow_up_opted_out: false,
+        human_takeover: false,
+        company_id: { not: 'LOG' }, // exclude diagnostic log entries
+      },
+      take: 100, // batch limit
+    })
+
+    if (pendingConvs.length === 0) {
+      return success({ processed: 0, message: 'No pending follow-ups' })
+    }
+
+    // Group by company_id to load settings per company
+    const companyIds = [...new Set(pendingConvs.map(c => c.company_id))]
+    const settingsMap = new Map<string, Record<string, string>>()
+
+    for (const companyId of companyIds) {
+      const settings = await prisma.setting.findMany({
+        where: {
+          company_id: companyId,
+          key: { startsWith: 'bot.followup.' },
+        },
+      })
+      const cfg = { ...DEFAULTS }
+      for (const s of settings) {
+        cfg[s.key] = s.value
+      }
+      settingsMap.set(companyId, cfg)
+    }
+
+    let sent = 0
+    let skipped = 0
+    const errors: string[] = []
+
+    for (const conv of pendingConvs) {
+      try {
+        const cfg = settingsMap.get(conv.company_id) || DEFAULTS
+        const cwCfg = COMPANY_CONFIGS[conv.company_id]
+
+        // Skip if follow-up disabled for this company
+        if (cfg['bot.followup.enabled'] !== 'true') {
+          await clearFollowUp(conv.id)
+          skipped++
+          continue
+        }
+
+        // Skip if no Chatwoot config
+        if (!cwCfg) {
+          console.warn(`[Cron/BotFollowUp] No Chatwoot config for company ${conv.company_id}`)
+          await clearFollowUp(conv.id)
+          skipped++
+          continue
+        }
+
+        const maxAttempts = parseInt(cfg['bot.followup.max_attempts'] || '3')
+        const nextCount = conv.follow_up_count + 1
+
+        // Already hit max follow-ups
+        if (nextCount > maxAttempts) {
+          await clearFollowUp(conv.id)
+          skipped++
+          continue
+        }
+
+        // Check business hours
+        if (cfg['bot.followup.business_hours_only'] === 'true') {
+          const nowBR = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }))
+          const hour = nowBR.getHours()
+          const dayOfWeek = nowBR.getDay() // 0=Sun, 1=Mon, ...
+          const startHour = parseInt(cfg['bot.followup.business_hour_start'] || '8')
+          const endHour = parseInt(cfg['bot.followup.business_hour_end'] || '18')
+          const allowedDays = (cfg['bot.followup.business_days'] || '1,2,3,4,5').split(',').map(Number)
+
+          if (!allowedDays.includes(dayOfWeek) || hour < startHour || hour >= endHour) {
+            // Outside business hours — reschedule for next business day at start hour
+            const nextBizDate = getNextBusinessDay(nowBR, allowedDays, startHour)
+            await prisma.botConversation.update({
+              where: { id: conv.id },
+              data: { follow_up_next_at: nextBizDate },
+            })
+            skipped++
+            continue
+          }
+        }
+
+        // Get the message for this follow-up number
+        const msgKey = `bot.followup.msg_${nextCount}`
+        let message = cfg[msgKey] || cfg['bot.followup.msg_1'] || 'Oi! Ainda precisa de ajuda?'
+
+        // Replace placeholders
+        message = message
+          .replace(/\{\{suporte\}\}/g, cwCfg.supportWhatsApp)
+          .replace(/\{\{empresa\}\}/g, cwCfg.slug === 'pontualtech' ? 'PontualTech' : 'Imprimitech')
+
+        // Send via Chatwoot
+        const sendRes = await fetch(
+          `${cwCfg.cwUrl}/api/v1/accounts/${cwCfg.cwAccountId}/conversations/${conv.chatwoot_conv_id}/messages`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              api_access_token: cwCfg.cwToken,
+            },
+            body: JSON.stringify({
+              content: message,
+              message_type: 'outgoing',
+              private: false,
+              content_attributes: { bot_sent: true, follow_up: nextCount },
+            }),
+          }
+        )
+
+        if (!sendRes.ok) {
+          const errBody = await sendRes.text()
+          console.error(`[Cron/BotFollowUp] Send failed conv ${conv.chatwoot_conv_id}: ${sendRes.status} ${errBody}`)
+          errors.push(`Conv ${conv.chatwoot_conv_id}: send failed ${sendRes.status}`)
+          continue
+        }
+
+        // Update follow-up state
+        const nextFollowUpAt = nextCount < maxAttempts
+          ? getNextFollowUpTime(now, nextCount + 1, cfg)
+          : null // no more follow-ups
+
+        await prisma.botConversation.update({
+          where: { id: conv.id },
+          data: {
+            follow_up_count: nextCount,
+            follow_up_next_at: nextFollowUpAt,
+          },
+        })
+
+        // Internal note for agents
+        await fetch(
+          `${cwCfg.cwUrl}/api/v1/accounts/${cwCfg.cwAccountId}/conversations/${conv.chatwoot_conv_id}/messages`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              api_access_token: cwCfg.cwToken,
+            },
+            body: JSON.stringify({
+              content: `[BOT] 📬 Follow-up #${nextCount}/${maxAttempts} enviado automaticamente.${nextFollowUpAt ? ` Proximo: ${nextFollowUpAt.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}` : ' (ultimo)'}`,
+              message_type: 'outgoing',
+              private: true,
+            }),
+          }
+        ).catch(() => {})
+
+        console.log(`[Cron/BotFollowUp] Sent follow-up #${nextCount} to conv ${conv.chatwoot_conv_id} (${cwCfg.slug})`)
+        sent++
+      } catch (err) {
+        console.error(`[Cron/BotFollowUp] Error processing conv ${conv.id}:`, err)
+        errors.push(`Conv ${conv.id}: ${err instanceof Error ? err.message : 'unknown'}`)
+      }
+    }
+
+    return success({ processed: pendingConvs.length, sent, skipped, errors })
+  } catch (err) {
+    return handleError(err)
+  }
+}
+
+/** Clear follow-up schedule for a conversation */
+async function clearFollowUp(botConvId: string) {
+  await prisma.botConversation.update({
+    where: { id: botConvId },
+    data: { follow_up_next_at: null },
+  })
+}
+
+/** Calculate the next follow-up time based on interval settings */
+function getNextFollowUpTime(from: Date, attemptNumber: number, cfg: Record<string, string>): Date {
+  const key = `bot.followup.interval_${attemptNumber}_minutes`
+  const minutes = parseInt(cfg[key] || '1440') // default 24h
+  return new Date(from.getTime() + minutes * 60 * 1000)
+}
+
+/** Find the next business day at the given start hour (São Paulo timezone) */
+function getNextBusinessDay(now: Date, allowedDays: number[], startHour: number): Date {
+  const next = new Date(now)
+  next.setHours(startHour, 0, 0, 0)
+
+  // If we're past start hour today, move to next day
+  if (now.getHours() >= startHour) {
+    next.setDate(next.getDate() + 1)
+  }
+
+  // Find next allowed day (max 7 iterations)
+  for (let i = 0; i < 7; i++) {
+    if (allowedDays.includes(next.getDay())) break
+    next.setDate(next.getDate() + 1)
+  }
+
+  return next
+}
