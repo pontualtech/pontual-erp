@@ -42,7 +42,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
-    const result = await requirePermission('compras', 'update')
+    const result = await requirePermission('compras', 'edit')
     if (result instanceof NextResponse) return result
     const user = result
 
