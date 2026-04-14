@@ -190,19 +190,27 @@ function cleanBotResponse(text: string): string {
   // Step 1: Split into paragraphs
   let paragraphs = text.split(/\n\n+/).map(p => p.trim()).filter(Boolean)
 
-  // Step 2: Remove duplicate/similar paragraphs (keeps first occurrence)
-  // This is the core fix — AI often says the same thing 2-3 times in different words
+  // Step 2: Remove duplicate/similar paragraphs
+  // AI often repeats the same idea with different words. We use multiple strategies:
   const unique: string[] = []
   for (const p of paragraphs) {
-    const isDuplicate = unique.some(existing => wordSimilarity(existing, p) > 0.55)
+    const isDuplicate = unique.some(existing =>
+      wordSimilarity(existing, p) > 0.35 || // word overlap (cleaned of punctuation)
+      phraseSimilarity(existing, p)          // key phrase detection
+    )
     if (!isDuplicate) unique.push(p)
   }
   paragraphs = unique
 
-  // Step 3: Join — no truncation, let the flow continue naturally
+  // Step 3: Hard cap at 3 paragraphs — forces conciseness
+  if (paragraphs.length > 3) {
+    paragraphs = paragraphs.slice(0, 3)
+  }
+
+  // Step 4: Join
   let result = paragraphs.join('\n\n')
 
-  // Step 4: Strip excessive emojis (max 4 per message)
+  // Step 5: Strip excessive emojis (max 4 per message)
   let emojiCount = 0
   result = result.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, (match) => {
     emojiCount++
@@ -212,14 +220,48 @@ function cleanBotResponse(text: string): string {
   return result.trim()
 }
 
-/** Calculate word overlap ratio between two strings (0-1) */
+/** Normalize text for comparison: lowercase, strip punctuation, remove accents */
+function normalizeForCompare(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove accents
+    .replace(/[^\w\s]/g, ' ') // strip punctuation
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/** Calculate word overlap ratio (0-1), with punctuation cleaned */
 function wordSimilarity(a: string, b: string): number {
-  const wordsA = new Set(a.toLowerCase().split(/\s+/).filter(w => w.length > 3))
-  const wordsB = new Set(b.toLowerCase().split(/\s+/).filter(w => w.length > 3))
+  const wordsA = new Set(normalizeForCompare(a).split(' ').filter(w => w.length > 3))
+  const wordsB = new Set(normalizeForCompare(b).split(' ').filter(w => w.length > 3))
   if (wordsA.size === 0 || wordsB.size === 0) return 0
   let overlap = 0
   for (const w of wordsA) { if (wordsB.has(w)) overlap++ }
   return overlap / Math.min(wordsA.size, wordsB.size)
+}
+
+/** Detect semantically similar phrases even with different wording */
+function phraseSimilarity(a: string, b: string): boolean {
+  const na = normalizeForCompare(a)
+  const nb = normalizeForCompare(b)
+
+  // Key phrase groups — if both paragraphs contain phrases from same group, they're duplicates
+  const PHRASE_GROUPS = [
+    ['diagnostico', 'avaliacao', 'avaliar', 'tecnico', 'laboratorio'],
+    ['coleta gratuita', 'buscar', 'retirada', 'coleta', 'bairro', 'cep'],
+    ['nao vendemos', 'nao fazemos venda', 'nao vende', 'manutencao completa', 'pecas avulsas'],
+    ['que chato', 'puxa', 'sinto muito', 'lamento'],
+    ['sem compromisso', 'gratuito', 'gratis', 'orcamento gratuito'],
+    ['transferir', 'atendente', 'humano', 'suporte'],
+  ]
+
+  for (const group of PHRASE_GROUPS) {
+    const aHits = group.filter(phrase => na.includes(phrase)).length
+    const bHits = group.filter(phrase => nb.includes(phrase)).length
+    if (aHits >= 1 && bHits >= 1) return true
+  }
+
+  return false
 }
 
 // ---------------------------------------------------------------------------
