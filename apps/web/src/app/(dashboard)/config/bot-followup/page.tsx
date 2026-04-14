@@ -309,20 +309,24 @@ export default function BotFollowUpConfigPage() {
                 {/* Hours */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Inicio (hora)</label>
-                    <select value={config['bot.followup.business_hour_start']} onChange={e => upd('bot.followup.business_hour_start', e.target.value)} title="Hora inicio" className={inp}>
-                      {Array.from({ length: 24 }, (_, i) => (
-                        <option key={i} value={String(i)}>{String(i).padStart(2, '0')}:00</option>
-                      ))}
-                    </select>
+                    <label className="block text-xs text-gray-500 mb-1">Inicio</label>
+                    <input
+                      type="time"
+                      title="Hora de inicio"
+                      value={`${String(config['bot.followup.business_hour_start'] || '8').padStart(2, '0')}:00`}
+                      onChange={e => upd('bot.followup.business_hour_start', String(parseInt(e.target.value.split(':')[0]) || 0))}
+                      className={inp}
+                    />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Fim (hora)</label>
-                    <select value={config['bot.followup.business_hour_end']} onChange={e => upd('bot.followup.business_hour_end', e.target.value)} title="Hora fim" className={inp}>
-                      {Array.from({ length: 24 }, (_, i) => (
-                        <option key={i} value={String(i)}>{String(i).padStart(2, '0')}:00</option>
-                      ))}
-                    </select>
+                    <label className="block text-xs text-gray-500 mb-1">Fim</label>
+                    <input
+                      type="time"
+                      title="Hora de fim"
+                      value={`${String(config['bot.followup.business_hour_end'] || '18').padStart(2, '0')}:00`}
+                      onChange={e => upd('bot.followup.business_hour_end', String(parseInt(e.target.value.split(':')[0]) || 0))}
+                      className={inp}
+                    />
                   </div>
                 </div>
 
