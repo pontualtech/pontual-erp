@@ -741,7 +741,8 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
         } else {
           console.error('[Bot] Retry also empty — fallback to support link')
           const supportUrl = `https://wa.me/${(cfg.supportWhatsApp || '').replace(/\D/g, '') || '551126263841'}`
-          await cwSendMessage(cfg, conversationId, `Desculpa, tive uma dificuldade tecnica! 😅 Para nao te deixar esperando, fale com nosso suporte pelo WhatsApp: ${supportUrl}`)
+          // Don't say anything to the client — only internal note for the agent
+          await cwSendMessage(cfg, conversationId, `[BOT] ⚠️ Dify retornou vazio 2x para esta conversa. Atendente precisa assumir. Query: "${query.slice(0, 100)}"`, true)
           await prisma.botConversation.update({
             where: { id: botConv.id },
             data: { human_takeover: true, step: 'HUMAN' },
@@ -899,11 +900,8 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       await logBotMessage(cfg, conversationId, query, parsed.cleanText, parsed.action || 'CHAT', phone)
     } catch (err) {
       console.error('[Bot] Dify call error:', err)
-      await cwSendMessage(cfg,
-        conversationId,
-        'Desculpe, estou com dificuldade para processar sua mensagem. Um atendente sera notificado.'
-      )
-      await cwSendMessage(cfg, conversationId, '[BOT] Erro ao chamar Dify AI. Verificar logs.', true)
+      // Don't say anything to the client — only internal note
+      await cwSendMessage(cfg, conversationId, `[BOT] ⚠️ Erro ao chamar Dify AI. Atendente precisa assumir. Erro: ${err instanceof Error ? err.message : 'desconhecido'}`, true)
       break // don't retry on Dify errors
     }
 
@@ -978,11 +976,8 @@ async function handleOSConfirmation(
       }
     } catch (err: any) {
       console.error('[Bot] OS creation error:', err)
-      await cwSendMessage(cfg,
-        conversationId,
-        'Desculpe, houve um erro tecnico ao abrir a OS. Um atendente sera notificado.'
-      )
-      await cwSendMessage(cfg, conversationId, `[BOT] Erro tecnico abrir-os: ${err.message}`, true)
+      // Don't say anything to the client — only internal note
+      await cwSendMessage(cfg, conversationId, `[BOT] ⚠️ Erro ao criar OS. Atendente precisa intervir. Erro: ${err.message}`, true)
     }
 
     // Reset state
