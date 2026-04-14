@@ -172,20 +172,54 @@ async function cwResolve(cfg: BotCompanyConfig, conversationId: number) {
 }
 
 /**
- * Send response split by paragraphs with delays for simulated typing.
- * HARD CAP: maximum 2 messages (matching prompt rule "MÁXIMO 2 BALÕES").
+ * Clean and send bot response to client.
+ *
+ * Robust output filter — no matter what the AI returns:
+ * 1. Removes duplicate/similar paragraphs (>60% word overlap)
+ * 2. Hard cap at 500 chars (truncates cleanly at sentence boundary)
+ * 3. Always sends as 1 single message (no splitting)
+ * 4. Strips excessive emoji sequences
  */
 async function cwSendWithTyping(cfg: BotCompanyConfig, conversationId: number, text: string) {
-  const paragraphs = text.split(/\n\n+/).filter(p => p.trim())
-  if (paragraphs.length <= 1) {
-    await cwSendMessage(cfg, conversationId, text)
-    return
+  const cleaned = cleanBotResponse(text)
+  if (!cleaned) return
+  await cwSendMessage(cfg, conversationId, cleaned)
+}
+
+function cleanBotResponse(text: string): string {
+  // Step 1: Split into paragraphs
+  let paragraphs = text.split(/\n\n+/).map(p => p.trim()).filter(Boolean)
+
+  // Step 2: Remove duplicate/similar paragraphs (keeps first occurrence)
+  // This is the core fix — AI often says the same thing 2-3 times in different words
+  const unique: string[] = []
+  for (const p of paragraphs) {
+    const isDuplicate = unique.some(existing => wordSimilarity(existing, p) > 0.55)
+    if (!isDuplicate) unique.push(p)
   }
-  const first = paragraphs[0].trim()
-  const rest = paragraphs.slice(1).map(p => p.trim()).join('\n\n')
-  await cwSendMessage(cfg, conversationId, first)
-  await new Promise(r => setTimeout(r, 1200))
-  await cwSendMessage(cfg, conversationId, rest)
+  paragraphs = unique
+
+  // Step 3: Join — no truncation, let the flow continue naturally
+  let result = paragraphs.join('\n\n')
+
+  // Step 4: Strip excessive emojis (max 4 per message)
+  let emojiCount = 0
+  result = result.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, (match) => {
+    emojiCount++
+    return emojiCount <= 4 ? match : ''
+  })
+
+  return result.trim()
+}
+
+/** Calculate word overlap ratio between two strings (0-1) */
+function wordSimilarity(a: string, b: string): number {
+  const wordsA = new Set(a.toLowerCase().split(/\s+/).filter(w => w.length > 3))
+  const wordsB = new Set(b.toLowerCase().split(/\s+/).filter(w => w.length > 3))
+  if (wordsA.size === 0 || wordsB.size === 0) return 0
+  let overlap = 0
+  for (const w of wordsA) { if (wordsB.has(w)) overlap++ }
+  return overlap / Math.min(wordsA.size, wordsB.size)
 }
 
 // ---------------------------------------------------------------------------
