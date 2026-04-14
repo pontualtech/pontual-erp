@@ -102,20 +102,28 @@ function cwHeaders(cfg: BotCompanyConfig) {
   }
 }
 
-async function cwSendMessage(cfg: BotCompanyConfig, conversationId: number, content: string, isPrivate = false) {
-  const res = await fetch(`${cwBase(cfg)}/conversations/${conversationId}/messages`, {
-    method: 'POST',
-    headers: cwHeaders(cfg),
-    body: JSON.stringify({
-      content,
-      message_type: 'outgoing',
-      private: isPrivate,
-      content_attributes: { bot_sent: true },
-    }),
-  })
-  if (!res.ok) {
-    const body = await res.text()
-    console.error(`[Bot] Chatwoot send failed ${res.status}: ${body}`)
+async function cwSendMessage(cfg: BotCompanyConfig, conversationId: number, content: string, isPrivate = false): Promise<boolean> {
+  try {
+    const res = await fetch(`${cwBase(cfg)}/conversations/${conversationId}/messages`, {
+      method: 'POST',
+      headers: cwHeaders(cfg),
+      body: JSON.stringify({
+        content,
+        message_type: 'outgoing',
+        private: isPrivate,
+        content_attributes: { bot_sent: true },
+      }),
+      signal: AbortSignal.timeout(10000), // 10s timeout
+    })
+    if (!res.ok) {
+      const body = await res.text()
+      console.error(`[Bot] Chatwoot send failed ${res.status}: ${body}`)
+      return false
+    }
+    return true
+  } catch (err) {
+    console.error(`[Bot] Chatwoot send error:`, err instanceof Error ? err.message : err)
+    return false
   }
 }
 
@@ -205,6 +213,7 @@ async function callDify(
       Authorization: `Bearer ${cfg.difyApiKey}`,
     },
     body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(30000), // 30s timeout — prevents lock from being held if Dify hangs
   })
 
   if (res.ok) {
@@ -225,6 +234,7 @@ async function callDify(
       Authorization: `Bearer ${cfg.difyApiKey}`,
     },
     body: JSON.stringify(streamPayload),
+    signal: AbortSignal.timeout(45000), // 45s timeout for streaming fallback
   })
 
   if (!streamRes.ok) {
@@ -427,19 +437,6 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
-
-  // Log webhook receipt to DB (diagnostic)
-  const convId = body.conversation?.id || 0
-  const event = body.event || '?'
-  const msgType = body.message_type
-  const senderType = body.sender?.type || '?'
-  try {
-    await prisma.$executeRaw`
-      INSERT INTO bot_conversations (id, company_id, chatwoot_conv_id, step, data, message_history, created_at, updated_at)
-      VALUES (gen_random_uuid(), 'LOG', ${99999000 + Math.floor(Math.random() * 999)}, ${`LOG:${event}|mt:${msgType}|st:${senderType}|cv:${convId}`}, '{}', '[]', NOW(), NOW())
-      ON CONFLICT DO NOTHING
-    `
-  } catch {}
 
   // Process synchronously — cfg is passed through to avoid global mutation
   try {
@@ -1067,13 +1064,16 @@ const FOLLOWUP_DEFAULTS: Record<string, string> = {
   'bot.followup.opt_out_keywords': 'parar,cancelar,nao quero,sair,stop,pare,nao me mande,nao envie',
 }
 
-/** Cache follow-up settings per company (refreshed every 5 min) */
+/** Cache follow-up settings per company (refreshed every 5 min, max 50 entries) */
 const followUpSettingsCache = new Map<string, { data: Record<string, string>; ts: number }>()
 const CACHE_TTL = 5 * 60 * 1000
+const CACHE_MAX = 50
 
 async function getFollowUpSettings(companyId: string): Promise<Record<string, string>> {
   const cached = followUpSettingsCache.get(companyId)
   if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.data
+  // Evict oldest entries if cache is too large
+  if (followUpSettingsCache.size >= CACHE_MAX) followUpSettingsCache.clear()
 
   const settings = await prisma.setting.findMany({
     where: { company_id: companyId, key: { startsWith: 'bot.followup.' } },
@@ -1089,6 +1089,9 @@ async function checkFollowUpOptOut(companyId: string, content: string): Promise<
   const cfg = await getFollowUpSettings(companyId)
   const keywords = (cfg['bot.followup.opt_out_keywords'] || '').split(',').map(k => k.trim().toLowerCase()).filter(Boolean)
   const normalized = content.toLowerCase().trim()
+  // Only trigger opt-out if message is short (< 50 chars) or the keyword is the entire message
+  // This prevents false positives like "quero parar de ter problema com minha impressora"
+  if (normalized.length > 50) return false
   return keywords.some(kw => normalized.includes(kw))
 }
 

@@ -89,10 +89,15 @@ async function processInterWebhook(body: any) {
   let receivable = null
 
   if (seuNumero) {
-    // Buscar com filtro company_id quando disponível no seuNumero (formato: companyId:receivableId)
     receivable = await prisma.accountReceivable.findFirst({
       where: { id: seuNumero, boleto_url: { not: null } },
+      include: { companies: { select: { id: true, is_active: true } } },
     })
+    // Reject if company is inactive (defense-in-depth)
+    if (receivable && !(receivable as any).companies?.is_active) {
+      console.warn(`[INTER WEBHOOK] Receivable ${seuNumero} belongs to inactive company`)
+      receivable = null
+    }
   }
 
   if (!receivable && nossoNumero && receivable === null) {

@@ -231,6 +231,7 @@ model Category {
   other_categories    Category[]          @relation("categoriesTocategories")
   products            Product[]
 
+  @@index([company_id, module])
   @@map("categories")
 }
 
@@ -466,6 +467,7 @@ model ServiceOrderItem {
   service_orders   ServiceOrder @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([company_id])
+  @@index([service_order_id])
   @@map("service_order_items")
 }
 
@@ -708,6 +710,8 @@ model AccountPayable {
   customers      Customer?   @relation(fields: [supplier_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([company_id])
+  @@index([company_id, status])
+  @@index([company_id, due_date])
   @@map("accounts_payable")
 }
 
@@ -749,6 +753,9 @@ model AccountReceivable {
   service_orders     ServiceOrder? @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([company_id])
+  @@index([company_id, status])
+  @@index([company_id, due_date])
+  @@index([company_id, customer_id])
   @@map("accounts_receivable")
 }
 

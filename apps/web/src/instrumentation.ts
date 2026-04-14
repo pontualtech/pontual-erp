@@ -6,9 +6,13 @@
  * for tasks like bot follow-up, quote reminders, and billing reminders.
  */
 
+let cronStarted = false
+
 export async function register() {
   // Only run crons on the server (not during build or edge)
-  if (process.env.NEXT_RUNTIME === 'nodejs') {
+  // Guard prevents duplicate intervals on hot reload (dev mode)
+  if (process.env.NEXT_RUNTIME === 'nodejs' && !cronStarted) {
+    cronStarted = true
     startCronJobs()
   }
 }

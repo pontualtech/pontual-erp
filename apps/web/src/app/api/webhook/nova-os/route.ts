@@ -112,26 +112,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Status de OS nao configurado' }, { status: 500 })
     }
 
-    // 3. Create OS with atomic number (respects os.next_number setting)
-    const osNumber = await getNextOsNumber(companyId)
-
-    const os = await prisma.serviceOrder.create({
-      data: {
-        company_id: companyId,
-        os_number: osNumber,
-        customer_id: customer.id,
-        status_id: coletarStatus.id,
-        priority: 'MEDIUM',
-        os_type: 'AVULSO',
-        os_location: 'EXTERNO',
-        equipment_type: equipamento || 'Impressora',
-        equipment_brand: marca || undefined,
-        equipment_model: modelo || undefined,
-        reported_issue: defeito || 'Sem descricao',
-        reception_notes: observacoes || undefined,
-        vhsys_id: vhsys_os_id || undefined,
-        internal_notes: `[BOT ANA] OS aberta via WhatsApp/n8n em ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}. Cliente: ${customer.legal_name}. Tel: ${telefone || 'N/I'}. ${vhsys_os_number ? 'VHSys OS #' + vhsys_os_number : ''}`,
-      },
+    // 3. Create OS with atomic number inside transaction (prevents duplicate os_numbers)
+    const { os, osNumber } = await prisma.$transaction(async (tx) => {
+      // Advisory lock prevents concurrent OS creation from getting same number
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${companyId}))`
+      const num = await getNextOsNumber(companyId, tx)
+      const created = await tx.serviceOrder.create({
+        data: {
+          company_id: companyId,
+          os_number: num,
+          customer_id: customer.id,
+          status_id: coletarStatus.id,
+          priority: 'MEDIUM',
+          os_type: 'AVULSO',
+          os_location: 'EXTERNO',
+          equipment_type: equipamento || 'Impressora',
+          equipment_brand: marca || undefined,
+          equipment_model: modelo || undefined,
+          reported_issue: defeito || 'Sem descricao',
+          reception_notes: observacoes || undefined,
+          vhsys_id: vhsys_os_id || undefined,
+          internal_notes: `[BOT ANA] OS aberta via WhatsApp/n8n em ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}. Cliente: ${customer.legal_name}. Tel: ${telefone || 'N/I'}. ${vhsys_os_number ? 'VHSys OS #' + vhsys_os_number : ''}`,
+        },
+      })
+      return { os: created, osNumber: num }
     })
 
     // 4. History
@@ -152,7 +156,10 @@ export async function POST(req: NextRequest) {
       const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'
       fetch(`${baseUrl}/api/os/${os.id}/notificar-abertura`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Internal-Key': process.env.INTERNAL_API_KEY || process.env.BOT_ANA_API_KEY || '',
+        },
         body: JSON.stringify({ companyId }),
       }).catch(e => console.log('[Webhook] Email abertura falhou (ignorado):', e.message))
     }

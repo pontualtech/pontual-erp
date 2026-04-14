@@ -11,7 +11,7 @@ import { prisma } from '@pontual/db'
  */
 export async function getNextOsNumber(
   companyId: string,
-  tx?: typeof prisma,
+  tx?: any,
 ): Promise<number> {
   const db = tx || prisma
 
