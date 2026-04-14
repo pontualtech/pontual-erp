@@ -28,23 +28,37 @@ interface BotCompanyConfig {
   supportWhatsApp: string
 }
 
-const COMPANY_CONFIGS: Record<string, BotCompanyConfig> = {
-  'pontualtech-001': {
-    companyId: process.env.BOT_ANA_COMPANY_ID || 'pontualtech-001',
-    slug: 'pontualtech',
-    cwUrl: process.env.CHATWOOT_URL || 'https://chat.pontualtech.work',
-    cwAccountId: process.env.CHATWOOT_ACCOUNT_ID || '1',
-    cwToken: process.env.CHATWOOT_API_TOKEN || process.env.CW_ADMIN_TOKEN || '',
-    supportWhatsApp: 'https://wa.me/551126263841',
-  },
-  '86c829cf-32ed-4e40-80cd-59ce4178aa1a': {
-    companyId: process.env.BOT_IMPRI_COMPANY_ID || '86c829cf-32ed-4e40-80cd-59ce4178aa1a',
-    slug: 'imprimitech',
-    cwUrl: process.env.CW_IMPRI_URL || 'https://chat.imp.pontualtech.work',
-    cwAccountId: process.env.CW_IMPRI_ACCOUNT_ID || '1',
-    cwToken: process.env.CW_IMPRI_TOKEN || '',
-    supportWhatsApp: 'https://wa.me/551150439869',
-  },
+// ENV-based secrets (API tokens must stay in env vars)
+const ENV_TOKENS: Record<string, string> = {
+  'pontualtech-001': process.env.CHATWOOT_API_TOKEN || process.env.CW_ADMIN_TOKEN || '',
+  '86c829cf-32ed-4e40-80cd-59ce4178aa1a': process.env.CW_IMPRI_TOKEN || '',
+}
+
+/** Load bot company config from DB settings (cached per request batch) */
+const cwConfigCache = new Map<string, BotCompanyConfig | null>()
+
+async function getCompanyCwConfig(companyId: string): Promise<BotCompanyConfig | null> {
+  if (cwConfigCache.has(companyId)) return cwConfigCache.get(companyId)!
+
+  const settings = await prisma.setting.findMany({
+    where: { company_id: companyId, key: { startsWith: 'bot.config.' } },
+  })
+  if (settings.length === 0) { cwConfigCache.set(companyId, null); return null }
+
+  const db: Record<string, string> = {}
+  for (const s of settings) db[s.key] = s.value
+
+  const cfg: BotCompanyConfig = {
+    companyId,
+    slug: db['bot.config.slug'] || companyId,
+    cwUrl: db['bot.config.cw_url'] || '',
+    cwAccountId: db['bot.config.cw_account_id'] || '1',
+    cwToken: ENV_TOKENS[companyId] || '',
+    supportWhatsApp: db['bot.config.support_whatsapp'] || '',
+  }
+
+  cwConfigCache.set(companyId, cfg.cwUrl ? cfg : null)
+  return cfg.cwUrl ? cfg : null
 }
 
 // Default follow-up settings (used when company has no custom config)
@@ -126,7 +140,7 @@ export async function GET(request: NextRequest) {
     for (const conv of pendingConvs) {
       try {
         const cfg = settingsMap.get(conv.company_id) || DEFAULTS
-        const cwCfg = COMPANY_CONFIGS[conv.company_id]
+        const cwCfg = await getCompanyCwConfig(conv.company_id)
 
         // Skip if follow-up disabled for this company
         if (cfg['bot.followup.enabled'] !== 'true') {

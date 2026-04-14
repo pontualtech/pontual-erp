@@ -39,43 +39,61 @@ interface BotCompanyConfig {
   botAgentId: number // Chatwoot agent ID used by the bot (skip human_takeover for this ID)
 }
 
-const COMPANY_CONFIGS: Record<string, BotCompanyConfig> = {
+// ENV-based fallbacks (API keys MUST stay in env vars for security)
+const ENV_CONFIGS: Record<string, Partial<BotCompanyConfig>> = {
   pontualtech: {
     companyId: process.env.BOT_ANA_COMPANY_ID || 'pontualtech-001',
-    slug: 'pontualtech',
-    allowedInboxes: [2, 4, 9],
-    difyBaseUrl: process.env.DIFY_BASE_URL || 'https://dify.pontualtech.work',
     difyApiKey: process.env.DIFY_API_KEY || '',
     botApiKey: process.env.BOT_ANA_API_KEY || '',
-    cwUrl: process.env.CHATWOOT_URL || 'https://chat.pontualtech.work',
-    cwAccountId: process.env.CHATWOOT_ACCOUNT_ID || '1',
     cwToken: process.env.CHATWOOT_API_TOKEN || process.env.CW_ADMIN_TOKEN || '',
-    portalUrl: 'https://portal.pontualtech.com.br/portal/pontualtech/login',
-    supportWhatsApp: 'https://wa.me/551126263841',
-    botOrigin: 'whatsapp_bot_ana',
-    botAgentId: 6, // Ana agent in PontualTech Chatwoot
   },
   imprimitech: {
     companyId: process.env.BOT_IMPRI_COMPANY_ID || '86c829cf-32ed-4e40-80cd-59ce4178aa1a',
-    slug: 'imprimitech',
-    allowedInboxes: [3],
-    difyBaseUrl: process.env.DIFY_IMPRI_BASE_URL || 'https://dify.imprimitech.com.br',
     difyApiKey: process.env.DIFY_IMPRI_API_KEY || '',
     botApiKey: process.env.BOT_IMPRI_API_KEY || '',
-    cwUrl: process.env.CW_IMPRI_URL || 'https://chat.imp.pontualtech.work',
-    cwAccountId: process.env.CW_IMPRI_ACCOUNT_ID || '1',
     cwToken: process.env.CW_IMPRI_TOKEN || '',
-    portalUrl: 'https://portal.imprimitech.com.br/portal/imprimitech/login',
-    supportWhatsApp: 'https://wa.me/551150439869',
-    botOrigin: 'whatsapp_bot_grazi',
-    botAgentId: 9, // Grazi agent in Imprimitech Chatwoot
   },
 }
 
-// Default to pontualtech for backward compatibility
-function getCompanyConfig(companySlug?: string | null): BotCompanyConfig | null {
-  if (!companySlug) return COMPANY_CONFIGS.pontualtech
-  return COMPANY_CONFIGS[companySlug] || null
+// DB-loaded config cache (5 min TTL)
+const botConfigCache = new Map<string, { cfg: BotCompanyConfig; ts: number }>()
+const BOT_CFG_TTL = 5 * 60 * 1000
+
+async function getCompanyConfig(companySlug?: string | null): Promise<BotCompanyConfig | null> {
+  const slug = companySlug || 'pontualtech'
+  const envCfg = ENV_CONFIGS[slug]
+  if (!envCfg?.companyId) return null
+
+  // Check cache
+  const cached = botConfigCache.get(slug)
+  if (cached && Date.now() - cached.ts < BOT_CFG_TTL) return cached.cfg
+  if (botConfigCache.size >= CACHE_MAX) botConfigCache.clear()
+
+  // Load from DB settings
+  const settings = await prisma.setting.findMany({
+    where: { company_id: envCfg.companyId, key: { startsWith: 'bot.config.' } },
+  })
+  const dbCfg: Record<string, string> = {}
+  for (const s of settings) dbCfg[s.key] = s.value
+
+  const cfg: BotCompanyConfig = {
+    companyId: envCfg.companyId!,
+    slug: dbCfg['bot.config.slug'] || slug,
+    allowedInboxes: (dbCfg['bot.config.allowed_inboxes'] || '2,4,9').split(',').map(Number),
+    difyBaseUrl: dbCfg['bot.config.dify_base_url'] || `https://dify.${slug === 'pontualtech' ? 'pontualtech.work' : 'imprimitech.com.br'}`,
+    difyApiKey: envCfg.difyApiKey || '',
+    botApiKey: envCfg.botApiKey || '',
+    cwUrl: dbCfg['bot.config.cw_url'] || `https://chat.${slug === 'pontualtech' ? 'pontualtech.work' : 'imp.pontualtech.work'}`,
+    cwAccountId: dbCfg['bot.config.cw_account_id'] || '1',
+    cwToken: envCfg.cwToken || '',
+    portalUrl: dbCfg['bot.config.portal_url'] || '',
+    supportWhatsApp: dbCfg['bot.config.support_whatsapp'] || '',
+    botOrigin: dbCfg['bot.config.bot_origin'] || `whatsapp_bot_${slug}`,
+    botAgentId: parseInt(dbCfg['bot.config.bot_agent_id'] || '0'),
+  }
+
+  botConfigCache.set(slug, { cfg, ts: Date.now() })
+  return cfg
 }
 
 // Immutable constants (safe across concurrent requests)
@@ -415,7 +433,7 @@ async function releaseLock(botConvId: string) {
 export async function POST(req: NextRequest) {
   // Multi-tenant: select company config by ?company= param (default: pontualtech)
   const companySlug = req.nextUrl.searchParams.get('company') || 'pontualtech'
-  const cfg = getCompanyConfig(companySlug)
+  const cfg = await getCompanyConfig(companySlug)
   if (!cfg) {
     console.warn(`[Bot] Unknown company slug: ${companySlug}`)
     return NextResponse.json({ status: 'ignored', reason: 'unknown company' })
