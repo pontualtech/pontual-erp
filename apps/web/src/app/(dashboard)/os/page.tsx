@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { cn, formatDocument } from '@/lib/utils'
-import { Plus, Search, List, LayoutGrid, Settings2, Eye, EyeOff, Trash2, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Clock, AlertTriangle, Printer, FileSpreadsheet, Mail, Columns3, MoreVertical, Copy, Receipt, ChevronDown, RefreshCw, SearchX, Send, UserPlus, Download } from 'lucide-react'
+import { Plus, Search, List, LayoutGrid, Settings2, Eye, EyeOff, Trash2, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Clock, AlertTriangle, Printer, FileSpreadsheet, Mail, Columns3, MoreVertical, Copy, Receipt, ChevronDown, RefreshCw, SearchX, Send, UserPlus, Download, Bell, Truck, MessageSquare } from 'lucide-react'
 import { toast } from 'sonner'
 import { exportToExcel, exportToCSV, exportToPDF } from '@/lib/export-data'
 import { useAuth } from '@/lib/use-auth'
@@ -230,6 +230,10 @@ export default function OSListPage() {
   const [tecnicos, setTecnicos] = useState<{ id: string; name: string }[]>([])
   const [showBulkAssign, setShowBulkAssign] = useState(false)
   const [bulkAssigning, setBulkAssigning] = useState(false)
+  const [showBulkNotify, setShowBulkNotify] = useState(false)
+  const [bulkNotifying, setBulkNotifying] = useState(false)
+  const [notifyChannels, setNotifyChannels] = useState({ email: true, whatsapp: true })
+  const [showBulkPrintMenu, setShowBulkPrintMenu] = useState(false)
 
   // Técnico: pre-filter by "Aprovado" status + oldest first on first load
   const [defaultFilterApplied, setDefaultFilterApplied] = useState(false)
@@ -272,6 +276,8 @@ export default function OSListPage() {
         if (showBulkStatus) { setShowBulkStatus(false); return }
         if (showExportMenu) { setShowExportMenu(false); return }
         if (showBulkAssign) { setShowBulkAssign(false); return }
+        if (showBulkNotify) { setShowBulkNotify(false); return }
+        if (showBulkPrintMenu) { setShowBulkPrintMenu(false); return }
         if (showColumnPicker) { setShowColumnPicker(false); return }
         if (showStatusFilter) { setShowStatusFilter(false); return }
         if (actionMenuId) { setActionMenuId(null); return }
@@ -279,7 +285,7 @@ export default function OSListPage() {
     }
     document.addEventListener('keydown', handleEsc)
     return () => document.removeEventListener('keydown', handleEsc)
-  }, [showBulkDelete, nfseModalOS, emittingNfse, showBulkStatus, showExportMenu, showBulkAssign, showColumnPicker, showStatusFilter, actionMenuId])
+  }, [showBulkDelete, nfseModalOS, emittingNfse, showBulkStatus, showExportMenu, showBulkAssign, showBulkNotify, showBulkPrintMenu, showColumnPicker, showStatusFilter, actionMenuId])
 
   // Load role-based visibility config
   useEffect(() => {
@@ -630,6 +636,58 @@ export default function OSListPage() {
     setShowBulkAssign(false); setBulkAssigning(false); setSelected(new Set()); loadOS()
   }
 
+  // Bulk print individual OS documents using templates
+  function bulkPrintOS(template: string) {
+    const ids = Array.from(selected)
+    if (ids.length === 0) { toast.error('Selecione pelo menos uma OS'); return }
+    setShowBulkPrintMenu(false)
+    const url = `/api/os/bulk-print?ids=${ids.join(',')}&template=${template}`
+    const w = window.open('', '_blank')
+    if (!w) { toast.error('Popup bloqueado — permita popups'); return }
+    w.document.write('<html><body><p>Carregando...</p></body></html>')
+    fetch(url)
+      .then(r => r.text())
+      .then(html => { w.document.open(); w.document.write(html); w.document.close() })
+      .catch(() => { w.close(); toast.error('Erro ao carregar impressao') })
+  }
+
+  // Bulk notify customers of selected OS
+  async function bulkNotifyOS() {
+    setBulkNotifying(true)
+    try {
+      const res = await fetch('/api/os/bulk-notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selected), channels: notifyChannels }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        const d = data.data
+        const parts = []
+        if (d.emailOk > 0) parts.push(`${d.emailOk} email(s)`)
+        if (d.whatsappOk > 0) parts.push(`${d.whatsappOk} WhatsApp`)
+        if (d.errors > 0) parts.push(`${d.errors} erro(s)`)
+        toast.success(`Notificações enviadas: ${parts.join(', ')}`)
+      } else {
+        toast.error(data.error || 'Erro ao notificar')
+      }
+    } catch {
+      toast.error('Erro ao notificar em massa')
+    }
+    setShowBulkNotify(false); setBulkNotifying(false); setSelected(new Set())
+  }
+
+  // Quick filter: "Coletas do dia" — select status "Coletar" and today's date
+  function filterColetasDoDia() {
+    const coletarIds = Object.entries(statusMap)
+      .filter(([, v]) => /coletar|coleta/i.test(v.name))
+      .map(([id]) => id)
+    if (coletarIds.length === 0) { toast.error('Status "Coletar" não encontrado'); return }
+    setStatusFilter(coletarIds)
+    setPage(1)
+    toast.success('Filtro: Coletas do dia')
+  }
+
   // Effective visible columns = allowed by role - hidden by user
   const effectiveColumns = allowedColumns.filter(c => !hiddenByUser.has(c))
 
@@ -799,8 +857,7 @@ export default function OSListPage() {
           <>
             <select title="Imprimir selecionados" onChange={e => {
               if (!e.target.value) return
-              const ids = Array.from(selected)
-              ids.forEach(osId => printSingleOS(osId, e.target.value))
+              bulkPrintOS(e.target.value)
               e.target.value = ''
             }}
               className="rounded-lg border bg-white px-3 py-2 text-sm text-gray-700 cursor-pointer">
@@ -973,6 +1030,11 @@ export default function OSListPage() {
             <LayoutGrid className="h-3.5 w-3.5" />
           </button>
         </div>
+        <button type="button" onClick={filterColetasDoDia}
+          title="Filtrar OS com status Coletar"
+          className="flex items-center gap-1 rounded-md border bg-white px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-purple-50 hover:border-purple-300 hover:text-purple-700 transition-colors">
+          <Truck className="h-3.5 w-3.5" /> Coletas do dia
+        </button>
         {(statusFilter.length > 0 || dateFrom || dateTo || overdueFilter || search || brandFilter || modelFilter || equipFilter || typeFilter || locationFilter) && (
           <button type="button" onClick={() => { setStatusFilter([]); setDateFrom(''); setDateTo(''); setOverdueFilter(false); setSearch(''); setBrandFilter(''); setModelFilter(''); setEquipFilter(''); setTypeFilter(''); setLocationFilter(''); setPage(1); try { sessionStorage.removeItem('os_filters') } catch {} }}
             className="text-xs text-blue-600 hover:underline ml-1">Limpar filtros</button>
@@ -1261,9 +1323,46 @@ export default function OSListPage() {
                 })()}
               </span>
               <div className="flex gap-2">
-                <button type="button" onClick={printOS} title="Imprimir selecionadas"
-                  className="flex items-center gap-1.5 px-3 py-1 text-sm border rounded-md hover:bg-white text-gray-600">
-                  <Printer className="h-3.5 w-3.5" /> Imprimir
+                {/* Batch print OS documents (individual, with page breaks) */}
+                <div className="relative">
+                  <button type="button" onClick={() => setShowBulkPrintMenu(!showBulkPrintMenu)} title="Imprimir OS individuais"
+                    className="flex items-center gap-1.5 px-3 py-1 text-sm border rounded-md hover:bg-white text-gray-600">
+                    <Printer className="h-3.5 w-3.5" /> Imprimir <ChevronDown className="h-3 w-3" />
+                  </button>
+                  {showBulkPrintMenu && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setShowBulkPrintMenu(false)} />
+                      <div className="absolute left-0 bottom-full mb-1 z-20 w-52 rounded-lg border bg-white shadow-lg py-1">
+                        <div className="px-3 py-1.5 text-xs font-medium text-gray-400 uppercase">Imprimir {selected.size} OS</div>
+                        <button type="button" onClick={() => bulkPrintOS('os_full')}
+                          className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 w-full">
+                          <Printer className="h-3.5 w-3.5 text-gray-400" /> OS Completa
+                        </button>
+                        <button type="button" onClick={() => bulkPrintOS('os_pickup')}
+                          className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 w-full">
+                          <Printer className="h-3.5 w-3.5 text-gray-400" /> Ordem de Coleta
+                        </button>
+                        <button type="button" onClick={() => bulkPrintOS('os_delivery_repair')}
+                          className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 w-full">
+                          <Printer className="h-3.5 w-3.5 text-gray-400" /> Entrega Reparado
+                        </button>
+                        <button type="button" onClick={() => bulkPrintOS('os_delivery_norepair')}
+                          className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 w-full">
+                          <Printer className="h-3.5 w-3.5 text-gray-400" /> Entrega sem Reparo
+                        </button>
+                        <div className="border-t my-1" />
+                        <button type="button" onClick={() => { printOS(); setShowBulkPrintMenu(false) }}
+                          className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-50 w-full">
+                          <FileSpreadsheet className="h-3.5 w-3.5 text-gray-400" /> Tabela Resumo
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+                {/* Bulk notify */}
+                <button type="button" onClick={() => setShowBulkNotify(true)} title="Notificar clientes das OS selecionadas"
+                  className="flex items-center gap-1.5 px-3 py-1 text-sm border rounded-md hover:bg-white text-green-700 border-green-300 bg-green-50">
+                  <Bell className="h-3.5 w-3.5" /> Notificar
                 </button>
                 <div className="relative">
                   <button type="button" onClick={() => setShowExportMenu(!showExportMenu)} title="Exportar"
@@ -1497,6 +1596,64 @@ export default function OSListPage() {
                 className="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 flex items-center gap-2">
                 {bulkDeleting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 {bulkDeleting ? 'Excluindo...' : `Excluir ${selected.size}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Notify Modal */}
+      {showBulkNotify && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => !bulkNotifying && setShowBulkNotify(false)}>
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-2 mb-4">
+              <Bell className="h-5 w-5 text-green-600" />
+              <h2 className="text-lg font-semibold">Notificar {selected.size} cliente(s)</h2>
+            </div>
+            <p className="text-sm text-gray-600 mb-4">
+              Enviar notificação de status para os clientes das OS selecionadas.
+              As mensagens seguem o template configurado para cada status.
+            </p>
+            <div className="space-y-3 mb-4">
+              <div className="rounded-lg bg-gray-50 p-3 text-sm max-h-32 overflow-y-auto">
+                {osList.filter(os => selected.has(os.id)).map(os => {
+                  const st = statusMap[os.status_id]
+                  return (
+                    <div key={os.id} className="flex items-center justify-between py-0.5">
+                      <span className="text-gray-700">OS-{String(os.os_number).padStart(4, '0')} — {os.customers?.legal_name || 'Sem cliente'}</span>
+                      <span className="text-xs rounded-full px-2 py-0.5" style={st ? { backgroundColor: st.color + '20', color: st.color } : {}}>
+                        {st?.name || ''}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 cursor-pointer text-sm">
+                  <input type="checkbox" checked={notifyChannels.email}
+                    onChange={e => setNotifyChannels(prev => ({ ...prev, email: e.target.checked }))}
+                    className="rounded border-gray-300 text-blue-600 h-4 w-4" />
+                  <Mail className="h-4 w-4 text-blue-500" /> Email
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer text-sm">
+                  <input type="checkbox" checked={notifyChannels.whatsapp}
+                    onChange={e => setNotifyChannels(prev => ({ ...prev, whatsapp: e.target.checked }))}
+                    className="rounded border-gray-300 text-green-600 h-4 w-4" />
+                  <MessageSquare className="h-4 w-4 text-green-500" /> WhatsApp
+                </label>
+              </div>
+              {!notifyChannels.email && !notifyChannels.whatsapp && (
+                <p className="text-xs text-red-500">Selecione pelo menos um canal de notificação.</p>
+              )}
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button type="button" onClick={() => setShowBulkNotify(false)} disabled={bulkNotifying}
+                className="px-4 py-2 text-sm border rounded-md hover:bg-gray-50">Cancelar</button>
+              <button type="button" onClick={bulkNotifyOS}
+                disabled={bulkNotifying || (!notifyChannels.email && !notifyChannels.whatsapp)}
+                className="flex items-center gap-2 px-4 py-2 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 font-medium">
+                {bulkNotifying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                {bulkNotifying ? 'Enviando...' : `Notificar ${selected.size}`}
               </button>
             </div>
           </div>
