@@ -67,8 +67,8 @@ export default function KitsPage() {
     if (query.length < 2) { setSearchResults([]); return }
     setSearching(true)
     try {
-      const unit = type === 'SERVICO' ? 'SV' : ''
-      const res = await fetch(`/api/produtos?search=${encodeURIComponent(query)}&limit=8${unit ? `&unit=${unit}` : ''}`)
+      const typeFilter = type === 'SERVICO' ? '&type=servico' : '&type=produto'
+      const res = await fetch(`/api/produtos?search=${encodeURIComponent(query)}&limit=8${typeFilter}`)
       const d = await res.json()
       setSearchResults(d.data ?? [])
     } catch { setSearchResults([]) }

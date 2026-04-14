@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     const user = result
 
     const body = await req.json()
-    const { name, items } = body
+    const { name, items, laudo } = body
 
     if (!name?.trim()) return error('Nome do kit e obrigatorio')
     if (!items || !Array.isArray(items) || items.length === 0) return error('Kit deve ter pelo menos um item')
@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
       data: {
         company_id: user.companyId,
         key,
-        value: JSON.stringify({ name: name.trim(), items }),
+        value: JSON.stringify({ name: name.trim(), laudo: laudo || null, items }),
         type: 'json',
       },
     })

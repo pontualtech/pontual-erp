@@ -17,7 +17,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (!setting) return error('Kit nao encontrado', 404)
 
     const body = await req.json()
-    const { name, items } = body
+    const { name, items, laudo } = body
 
     if (!name?.trim()) return error('Nome do kit e obrigatorio')
     if (!items || !Array.isArray(items) || items.length === 0) return error('Kit deve ter pelo menos um item')
@@ -30,7 +30,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     await prisma.setting.updateMany({
       where: { id: params.id, company_id: user.companyId },
       data: {
-        value: JSON.stringify({ name: name.trim(), items }),
+        value: JSON.stringify({ name: name.trim(), laudo: laudo || null, items }),
         updated_at: new Date(),
       },
     })
