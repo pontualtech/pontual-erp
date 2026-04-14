@@ -4,8 +4,9 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { cn, formatDocument } from '@/lib/utils'
-import { Plus, Search, List, LayoutGrid, Settings2, Eye, EyeOff, Trash2, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Clock, AlertTriangle, Printer, FileSpreadsheet, Mail, Columns3, MoreVertical, Copy, Receipt, ChevronDown, RefreshCw, SearchX, Send, UserPlus } from 'lucide-react'
+import { Plus, Search, List, LayoutGrid, Settings2, Eye, EyeOff, Trash2, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Clock, AlertTriangle, Printer, FileSpreadsheet, Mail, Columns3, MoreVertical, Copy, Receipt, ChevronDown, RefreshCw, SearchX, Send, UserPlus, Download } from 'lucide-react'
 import { toast } from 'sonner'
+import { exportToExcel, exportToCSV, exportToPDF } from '@/lib/export-data'
 import { useAuth } from '@/lib/use-auth'
 
 interface KanbanColumn {
@@ -221,6 +222,7 @@ export default function OSListPage() {
   const [showStatusFilter, setShowStatusFilter] = useState(false)
   const [actionMenuId, setActionMenuId] = useState<string | null>(null)
   const [showBulkStatus, setShowBulkStatus] = useState(false)
+  const [showExportMenu, setShowExportMenu] = useState(false)
   const [nfseModalOS, setNfseModalOS] = useState<any>(null)
   const [nfseDesc, setNfseDesc] = useState('')
   const [emittingNfse, setEmittingNfse] = useState(false)
@@ -268,6 +270,7 @@ export default function OSListPage() {
         if (showBulkDelete) { setShowBulkDelete(false); return }
         if (nfseModalOS && !emittingNfse) { setNfseModalOS(null); return }
         if (showBulkStatus) { setShowBulkStatus(false); return }
+        if (showExportMenu) { setShowExportMenu(false); return }
         if (showBulkAssign) { setShowBulkAssign(false); return }
         if (showColumnPicker) { setShowColumnPicker(false); return }
         if (showStatusFilter) { setShowStatusFilter(false); return }
@@ -276,7 +279,7 @@ export default function OSListPage() {
     }
     document.addEventListener('keydown', handleEsc)
     return () => document.removeEventListener('keydown', handleEsc)
-  }, [showBulkDelete, nfseModalOS, emittingNfse, showBulkStatus, showBulkAssign, showColumnPicker, showStatusFilter, actionMenuId])
+  }, [showBulkDelete, nfseModalOS, emittingNfse, showBulkStatus, showExportMenu, showBulkAssign, showColumnPicker, showStatusFilter, actionMenuId])
 
   // Load role-based visibility config
   useEffect(() => {
@@ -671,6 +674,50 @@ export default function OSListPage() {
     a.click()
     URL.revokeObjectURL(url)
     toast.success(`${selectedOS.length} OS exportadas para CSV`)
+  }
+
+  const exportColumns = [
+    { key: 'os_number', label: 'Numero OS' },
+    { key: 'created_at', label: 'Data', format: (v: string) => v ? new Date(v).toLocaleDateString('pt-BR') : '' },
+    { key: 'customer_name', label: 'Cliente' },
+    { key: 'equipment_type', label: 'Equipamento' },
+    { key: 'equipment_brand', label: 'Marca' },
+    { key: 'equipment_model', label: 'Modelo' },
+    { key: 'os_type', label: 'Tipo' },
+    { key: 'os_location', label: 'Local' },
+    { key: 'status_name', label: 'Status' },
+    { key: 'total_cost', label: 'Valor', format: (v: number) => v ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v / 100) : '' },
+    { key: 'technician_name', label: 'Tecnico' },
+  ]
+
+  function handleExport(format: 'excel' | 'csv' | 'pdf') {
+    const selectedOS = osList.filter(os => selected.has(os.id))
+    const dataToExport = selectedOS.length > 0 ? selectedOS : osList
+    if (dataToExport.length === 0) { toast.error('Nenhuma OS para exportar'); return }
+
+    const mappedData = dataToExport.map(os => ({
+      os_number: `OS-${String(os.os_number).padStart(4, '0')}`,
+      created_at: os.created_at,
+      customer_name: os.customers?.legal_name || '',
+      equipment_type: os.equipment_type || '',
+      equipment_brand: os.equipment_brand || '',
+      equipment_model: os.equipment_model || '',
+      os_type: osTypeLabel[os.os_type] || os.os_type,
+      os_location: os.os_location || '',
+      status_name: statusMap[os.status_id]?.name || '',
+      total_cost: os.total_cost || 0,
+      technician_name: os.user_profiles?.name || '',
+    }))
+
+    const filename = `ordens-servico-${new Date().toISOString().split('T')[0]}`
+    const title = 'Ordens de Servico'
+    const params = { filename, title, columns: exportColumns, data: mappedData }
+
+    if (format === 'excel') exportToExcel(params)
+    else if (format === 'csv') exportToCSV(params)
+    else exportToPDF(params)
+
+    toast.success(`${dataToExport.length} OS exportadas para ${format.toUpperCase()}`)
   }
 
   // Print selected OS
@@ -1218,10 +1265,31 @@ export default function OSListPage() {
                   className="flex items-center gap-1.5 px-3 py-1 text-sm border rounded-md hover:bg-white text-gray-600">
                   <Printer className="h-3.5 w-3.5" /> Imprimir
                 </button>
-                <button type="button" onClick={exportCSV} title="Exportar para planilha"
-                  className="flex items-center gap-1.5 px-3 py-1 text-sm border rounded-md hover:bg-white text-gray-600">
-                  <FileSpreadsheet className="h-3.5 w-3.5" /> CSV
-                </button>
+                <div className="relative">
+                  <button type="button" onClick={() => setShowExportMenu(!showExportMenu)} title="Exportar"
+                    className="flex items-center gap-1.5 px-3 py-1 text-sm border rounded-md hover:bg-white text-gray-600">
+                    <Download className="h-3.5 w-3.5" /> Exportar <ChevronDown className="h-3 w-3" />
+                  </button>
+                  {showExportMenu && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setShowExportMenu(false)} />
+                      <div className="absolute right-0 bottom-full mb-1 z-20 w-48 rounded-lg border bg-white shadow-lg py-1">
+                        <button type="button" onClick={() => { handleExport('excel'); setShowExportMenu(false) }}
+                          className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 w-full">
+                          <FileSpreadsheet className="h-3.5 w-3.5 text-green-600" /> Excel (.xlsx)
+                        </button>
+                        <button type="button" onClick={() => { handleExport('csv'); setShowExportMenu(false) }}
+                          className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 w-full">
+                          <FileSpreadsheet className="h-3.5 w-3.5 text-blue-600" /> CSV
+                        </button>
+                        <button type="button" onClick={() => { handleExport('pdf'); setShowExportMenu(false) }}
+                          className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 w-full">
+                          <FileSpreadsheet className="h-3.5 w-3.5 text-red-600" /> PDF
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
                 <button type="button" onClick={emailOS} title="Enviar por email"
                   className="flex items-center gap-1.5 px-3 py-1 text-sm border rounded-md hover:bg-white text-gray-600">
                   <Mail className="h-3.5 w-3.5" /> Email
