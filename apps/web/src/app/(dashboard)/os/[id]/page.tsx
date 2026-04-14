@@ -464,14 +464,18 @@ export default function OSDetailPage() {
     if (!editingItem) return
     setSavingItem(true)
     try {
+      const priceInReais = parseFloat(editItemData.unit_price || '0')
+      const priceInCents = isNaN(priceInReais) ? 0 : Math.round(priceInReais * 100)
+      const qty = parseInt(editItemData.quantity) || 1
+
       const res = await fetch(`/api/os/${id}/items`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemId: editingItem,
           description: editItemData.description.trim(),
-          quantity: parseInt(editItemData.quantity) || 1,
-          unit_price: Math.round(parseFloat(editItemData.unit_price || '0') * 100),
+          quantity: qty,
+          unit_price: priceInCents,
         }),
       })
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Erro') }
@@ -1419,7 +1423,7 @@ export default function OSDetailPage() {
                     {editingItem === item.id ? (<>
                       <td className="py-1"><input type="text" title="Descricao" value={editItemData.description} onChange={e => setEditItemData(d => ({ ...d, description: e.target.value }))} className="w-full rounded border px-2 py-1 text-sm" autoFocus /></td>
                       <td className="py-1 w-20"><input type="number" title="Quantidade" min="1" value={editItemData.quantity} onChange={e => setEditItemData(d => ({ ...d, quantity: e.target.value }))} className="w-full rounded border px-2 py-1 text-sm text-right" /></td>
-                      <td className="py-1 w-28"><input type="number" title="Valor unitario" min="0" step="10" value={editItemData.unit_price} onChange={e => setEditItemData(d => ({ ...d, unit_price: e.target.value }))} className="w-full rounded border px-2 py-1 text-sm text-right" /></td>
+                      <td className="py-1 w-28"><input type="number" title="Valor unitario" min="0" step="any" value={editItemData.unit_price} onChange={e => setEditItemData(d => ({ ...d, unit_price: e.target.value }))} className="w-full rounded border px-2 py-1 text-sm text-right" /></td>
                       <td className="py-2.5 text-right font-medium text-gray-400">{fmt(Math.round((parseFloat(editItemData.quantity) || 1) * (parseFloat(editItemData.unit_price) || 0) * 100))}</td>
                       <td className="py-2.5 text-right flex gap-0.5">
                         <button type="button" onClick={handleSaveItem} disabled={savingItem} title="Salvar" className="p-1 rounded hover:bg-green-50 text-green-600 disabled:opacity-50">{savingItem ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}</button>
@@ -1532,7 +1536,7 @@ export default function OSDetailPage() {
                     {editingItem === item.id ? (<>
                       <td className="py-1"><input type="text" title="Descricao" value={editItemData.description} onChange={e => setEditItemData(d => ({ ...d, description: e.target.value }))} className="w-full rounded border px-2 py-1 text-sm" autoFocus /></td>
                       <td className="py-1 w-20"><input type="number" title="Quantidade" min="1" value={editItemData.quantity} onChange={e => setEditItemData(d => ({ ...d, quantity: e.target.value }))} className="w-full rounded border px-2 py-1 text-sm text-right" /></td>
-                      <td className="py-1 w-28"><input type="number" title="Valor unitario" min="0" step="10" value={editItemData.unit_price} onChange={e => setEditItemData(d => ({ ...d, unit_price: e.target.value }))} className="w-full rounded border px-2 py-1 text-sm text-right" /></td>
+                      <td className="py-1 w-28"><input type="number" title="Valor unitario" min="0" step="any" value={editItemData.unit_price} onChange={e => setEditItemData(d => ({ ...d, unit_price: e.target.value }))} className="w-full rounded border px-2 py-1 text-sm text-right" /></td>
                       <td className="py-2.5 text-right font-medium text-gray-400">{fmt(Math.round((parseFloat(editItemData.quantity) || 1) * (parseFloat(editItemData.unit_price) || 0) * 100))}</td>
                       <td className="py-2.5 text-right flex gap-0.5">
                         <button type="button" onClick={handleSaveItem} disabled={savingItem} title="Salvar" className="p-1 rounded hover:bg-green-50 text-green-600 disabled:opacity-50">{savingItem ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}</button>

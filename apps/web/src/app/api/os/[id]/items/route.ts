@@ -118,14 +118,19 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     })
     if (!item) return error('Item não encontrado', 404)
 
-    const newQty = quantity != null ? Math.max(1, Math.round(Number(quantity))) : item.quantity
-    const newPrice = unit_price != null ? Math.max(0, Math.round(Number(unit_price))) : item.unit_price
+    const rawQty = quantity != null ? Math.round(Number(quantity)) : null
+    const rawPrice = unit_price != null ? Math.round(Number(unit_price)) : null
+
+    // Guard against NaN (browser may send empty string for number inputs with step validation)
+    const newQty = rawQty != null && !isNaN(rawQty) ? Math.max(1, rawQty) : item.quantity
+    const newPrice = rawPrice != null && !isNaN(rawPrice) ? Math.max(0, rawPrice) : item.unit_price
     const newDesc = description != null ? String(description).trim() : item.description
     const newTotal = newQty * newPrice
 
+    console.log(`[Items PATCH] itemId=${itemId} qty=${newQty} price=${newPrice} total=${newTotal} desc=${newDesc.slice(0, 30)}`)
+
     const updated = await prisma.$transaction(async (tx) => {
-      // updateMany accepts any where clause (no unique constraint needed)
-      await tx.serviceOrderItem.updateMany({
+      const result = await tx.serviceOrderItem.updateMany({
         where: { id: itemId, company_id: user.companyId, deleted_at: null },
         data: {
           description: newDesc || item.description,
@@ -134,6 +139,10 @@ export async function PATCH(req: NextRequest, { params }: Params) {
           total_price: newTotal,
         },
       })
+
+      if (result.count === 0) {
+        throw new Error('Item nao encontrado para atualizar')
+      }
 
       // Recalculate OS totals
       const items = await tx.serviceOrderItem.findMany({
