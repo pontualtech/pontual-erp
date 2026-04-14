@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
+import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { cn, formatDocument } from '@/lib/utils'
 import { Plus, Search, List, LayoutGrid, Settings2, Eye, EyeOff, Trash2, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Clock, AlertTriangle, Printer, FileSpreadsheet, Mail, Columns3, MoreVertical, Copy, Receipt, ChevronDown, RefreshCw, SearchX, Send, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
@@ -112,6 +113,9 @@ const osTypeColor: Record<string, string> = {
 
 export default function OSListPage() {
   const { isAdmin, user: authUser, hasPermission } = useAuth()
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const pathname = usePathname()
   const normalizedRole = authUser?.role?.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() || ''
   const isTecnico = normalizedRole === 'tecnico'
   const isMotorista = normalizedRole === 'motorista'
@@ -140,25 +144,26 @@ export default function OSListPage() {
   }, [])
   const [statusMap, setStatusMap] = useState<Record<string, { name: string; color: string }>>({})
   const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
+  // Filters initialized from URL query params (persisted across navigation)
+  const [search, setSearch] = useState(searchParams.get('q') || '')
+  const [debouncedSearch, setDebouncedSearch] = useState(searchParams.get('q') || '')
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [statusFilter, setStatusFilter] = useState<string[]>([])
-  const [typeFilter, setTypeFilter] = useState('')
-  const [locationFilter, setLocationFilter] = useState('')
-  const [equipFilter, setEquipFilter] = useState('')
-  const [brandFilter, setBrandFilter] = useState('')
-  const [modelFilter, setModelFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState<string[]>(searchParams.get('status')?.split(',').filter(Boolean) || [])
+  const [typeFilter, setTypeFilter] = useState(searchParams.get('type') || '')
+  const [locationFilter, setLocationFilter] = useState(searchParams.get('location') || '')
+  const [equipFilter, setEquipFilter] = useState(searchParams.get('equip') || '')
+  const [brandFilter, setBrandFilter] = useState(searchParams.get('brand') || '')
+  const [modelFilter, setModelFilter] = useState(searchParams.get('model') || '')
   const [equipTypes, setEquipTypes] = useState<string[]>([])
   const [brandOptions, setBrandOptions] = useState<string[]>([])
   const [modelOptions, setModelOptions] = useState<string[]>([])
   const [osLocationLabel, setOsLocationLabel] = useState<Record<string, string>>({ LOJA: 'Loja', EXTERNO: 'Externo' })
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
+  const [dateFrom, setDateFrom] = useState(searchParams.get('from') || '')
+  const [dateTo, setDateTo] = useState(searchParams.get('to') || '')
   const [totalFiltered, setTotalFiltered] = useState(0)
-  const [page, setPage] = useState(1)
+  const [page, setPage] = useState(parseInt(searchParams.get('page') || '1') || 1)
   const [totalPages, setTotalPages] = useState(1)
-  const [view, setView] = useState<'table' | 'kanban'>('table')
+  const [view, setView] = useState<'table' | 'kanban'>((searchParams.get('view') as 'table' | 'kanban') || 'table')
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(new Set())
   const [showColumnPicker, setShowColumnPicker] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -166,7 +171,27 @@ export default function OSListPage() {
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [sortField, setSortField] = useState<string>('os_number')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
-  const [overdueFilter, setOverdueFilter] = useState(false)
+  const [overdueFilter, setOverdueFilter] = useState(searchParams.get('overdue') === '1')
+  // Sync filters to URL (so browser back preserves them)
+  useEffect(() => {
+    const params = new URLSearchParams()
+    if (debouncedSearch) params.set('q', debouncedSearch)
+    if (statusFilter.length) params.set('status', statusFilter.join(','))
+    if (typeFilter) params.set('type', typeFilter)
+    if (locationFilter) params.set('location', locationFilter)
+    if (equipFilter) params.set('equip', equipFilter)
+    if (brandFilter) params.set('brand', brandFilter)
+    if (modelFilter) params.set('model', modelFilter)
+    if (dateFrom) params.set('from', dateFrom)
+    if (dateTo) params.set('to', dateTo)
+    if (overdueFilter) params.set('overdue', '1')
+    if (page > 1) params.set('page', String(page))
+    if (view !== 'table') params.set('view', view)
+    const qs = params.toString()
+    const newUrl = qs ? `${pathname}?${qs}` : pathname
+    window.history.replaceState(null, '', newUrl)
+  }, [debouncedSearch, statusFilter, typeFilter, locationFilter, equipFilter, brandFilter, modelFilter, dateFrom, dateTo, overdueFilter, page, view, pathname])
+
   const [showCancelled, setShowCancelled] = useState(false)
   const [showDelivered, setShowDelivered] = useState(false)
   const [allowedColumns, setAllowedColumns] = useState<string[]>([])
