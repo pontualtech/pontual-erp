@@ -234,6 +234,7 @@ export default function OSListPage() {
   const [bulkNotifying, setBulkNotifying] = useState(false)
   const [notifyChannels, setNotifyChannels] = useState({ email: true, whatsapp: true })
   const [showBulkPrintMenu, setShowBulkPrintMenu] = useState(false)
+  const [showLogisticaMenu, setShowLogisticaMenu] = useState(false)
 
   // Técnico: pre-filter by "Aprovado" status + oldest first on first load
   const [defaultFilterApplied, setDefaultFilterApplied] = useState(false)
@@ -278,6 +279,7 @@ export default function OSListPage() {
         if (showBulkAssign) { setShowBulkAssign(false); return }
         if (showBulkNotify) { setShowBulkNotify(false); return }
         if (showBulkPrintMenu) { setShowBulkPrintMenu(false); return }
+        if (showLogisticaMenu) { setShowLogisticaMenu(false); return }
         if (showColumnPicker) { setShowColumnPicker(false); return }
         if (showStatusFilter) { setShowStatusFilter(false); return }
         if (actionMenuId) { setActionMenuId(null); return }
@@ -285,7 +287,7 @@ export default function OSListPage() {
     }
     document.addEventListener('keydown', handleEsc)
     return () => document.removeEventListener('keydown', handleEsc)
-  }, [showBulkDelete, nfseModalOS, emittingNfse, showBulkStatus, showExportMenu, showBulkAssign, showBulkNotify, showBulkPrintMenu, showColumnPicker, showStatusFilter, actionMenuId])
+  }, [showBulkDelete, nfseModalOS, emittingNfse, showBulkStatus, showExportMenu, showBulkAssign, showBulkNotify, showBulkPrintMenu, showLogisticaMenu, showColumnPicker, showStatusFilter, actionMenuId])
 
   // Load role-based visibility config
   useEffect(() => {
@@ -677,15 +679,27 @@ export default function OSListPage() {
     setShowBulkNotify(false); setBulkNotifying(false); setSelected(new Set())
   }
 
-  // Quick filter: "Coletas do dia" — select status "Coletar" and today's date
-  function filterColetasDoDia() {
-    const coletarIds = Object.entries(statusMap)
+  // Quick filters for logistics
+  function filterColetas() {
+    const ids = Object.entries(statusMap)
       .filter(([, v]) => /coletar|coleta/i.test(v.name))
       .map(([id]) => id)
-    if (coletarIds.length === 0) { toast.error('Status "Coletar" não encontrado'); return }
-    setStatusFilter(coletarIds)
+    if (ids.length === 0) { toast.error('Status "Coletar" não encontrado'); return }
+    setStatusFilter(ids)
     setPage(1)
-    toast.success('Filtro: Coletas do dia')
+    setShowLogisticaMenu(false)
+    toast.success('Filtro: Coletas')
+  }
+
+  function filterEntregas() {
+    const ids = Object.entries(statusMap)
+      .filter(([, v]) => /pronta|entregar\s*repar|rota.*entrega|em\s*rota|entrega/i.test(v.name) && !/entreg(ue|ado)/i.test(v.name))
+      .map(([id]) => id)
+    if (ids.length === 0) { toast.error('Status de entrega não encontrado'); return }
+    setStatusFilter(ids)
+    setPage(1)
+    setShowLogisticaMenu(false)
+    toast.success('Filtro: Entregas')
   }
 
   // Effective visible columns = allowed by role - hidden by user
@@ -1030,11 +1044,28 @@ export default function OSListPage() {
             <LayoutGrid className="h-3.5 w-3.5" />
           </button>
         </div>
-        <button type="button" onClick={filterColetasDoDia}
-          title="Filtrar OS com status Coletar"
-          className="flex items-center gap-1 rounded-md border bg-white px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-purple-50 hover:border-purple-300 hover:text-purple-700 transition-colors">
-          <Truck className="h-3.5 w-3.5" /> Coletas do dia
-        </button>
+        <div className="relative">
+          <button type="button" onClick={() => setShowLogisticaMenu(!showLogisticaMenu)}
+            title="Filtros rápidos de logística"
+            className="flex items-center gap-1 rounded-md border bg-white px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-purple-50 hover:border-purple-300 hover:text-purple-700 transition-colors">
+            <Truck className="h-3.5 w-3.5" /> Logística <ChevronDown className="h-3 w-3" />
+          </button>
+          {showLogisticaMenu && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setShowLogisticaMenu(false)} />
+              <div className="absolute left-0 top-full mt-1 z-20 w-48 rounded-lg border bg-white shadow-lg py-1">
+                <button type="button" onClick={filterColetas}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 w-full">
+                  <Truck className="h-3.5 w-3.5 text-purple-500" /> Coletas do dia
+                </button>
+                <button type="button" onClick={filterEntregas}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 w-full">
+                  <Send className="h-3.5 w-3.5 text-green-500" /> Entregas do dia
+                </button>
+              </div>
+            </>
+          )}
+        </div>
         {(statusFilter.length > 0 || dateFrom || dateTo || overdueFilter || search || brandFilter || modelFilter || equipFilter || typeFilter || locationFilter) && (
           <button type="button" onClick={() => { setStatusFilter([]); setDateFrom(''); setDateTo(''); setOverdueFilter(false); setSearch(''); setBrandFilter(''); setModelFilter(''); setEquipFilter(''); setTypeFilter(''); setLocationFilter(''); setPage(1); try { sessionStorage.removeItem('os_filters') } catch {} }}
             className="text-xs text-blue-600 hover:underline ml-1">Limpar filtros</button>
