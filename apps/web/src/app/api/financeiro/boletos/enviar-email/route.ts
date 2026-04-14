@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { sendCompanyEmail } from '@/lib/send-email'
+import { escapeHtml } from '@/lib/escape-html'
 
 /**
  * POST /api/financeiro/boletos/enviar-email
@@ -78,13 +79,13 @@ export async function POST(req: NextRequest) {
       const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
           <div style="background: linear-gradient(135deg, #f97316, #ea580c); padding: 24px; border-radius: 12px 12px 0 0;">
-            <h2 style="color: white; margin: 0; font-size: 20px;">${companyName}</h2>
+            <h2 style="color: white; margin: 0; font-size: 20px;">${escapeHtml(companyName)}</h2>
             <p style="color: rgba(255,255,255,0.9); margin: 4px 0 0; font-size: 14px;">Cobranca</p>
           </div>
 
           <div style="background: #fff; border: 1px solid #e5e7eb; border-top: none; padding: 24px; border-radius: 0 0 12px 12px;">
             <p style="font-size: 15px; margin: 0 0 16px;">
-              Prezado(a) <strong>${receivable.customers.legal_name}</strong>,
+              Prezado(a) <strong>${escapeHtml(receivable.customers.legal_name)}</strong>,
             </p>
             <p style="font-size: 14px; color: #555; margin: 0 0 20px;">
               Segue abaixo os dados para pagamento:
@@ -92,7 +93,7 @@ export async function POST(req: NextRequest) {
 
             <div style="background: #f8f9fa; border-radius: 8px; padding: 16px; margin: 0 0 20px;">
               <p style="margin: 0 0 4px; font-size: 13px; color: #666;">Descricao</p>
-              <p style="margin: 0 0 16px; font-size: 15px; font-weight: 600;">${receivable.description}</p>
+              <p style="margin: 0 0 16px; font-size: 15px; font-weight: 600;">${escapeHtml(receivable.description)}</p>
 
               <div style="display: flex; gap: 24px;">
                 <div>
@@ -144,7 +145,7 @@ export async function POST(req: NextRequest) {
 
             <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e5e7eb;">
               <p style="font-size: 11px; color: #999; margin: 0; text-align: center;">
-                ${companyName} — Boleto gerado eletronicamente via Banco Inter (077)
+                ${escapeHtml(companyName)} — Boleto gerado eletronicamente via Banco Inter (077)
               </p>
             </div>
           </div>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { getPortalUserFromRequest } from '@/lib/portal-auth'
 import { sendCompanyEmail } from '@/lib/send-email'
+import { escapeHtml } from '@/lib/escape-html'
 
 export async function POST(
   req: NextRequest,
@@ -73,7 +74,7 @@ export async function POST(
               ${item.item_type === 'PECA' ? 'Peca' : 'Servico'}
             </span>
           </td>
-          <td style="padding: 8px 12px; border-bottom: 1px solid #e5e7eb; font-size: 14px; color: #111827;">${item.description}</td>
+          <td style="padding: 8px 12px; border-bottom: 1px solid #e5e7eb; font-size: 14px; color: #111827;">${escapeHtml(item.description)}</td>
           <td style="padding: 8px 12px; border-bottom: 1px solid #e5e7eb; font-size: 14px; color: #6b7280; text-align: center;">${item.quantity}</td>
           <td style="padding: 8px 12px; border-bottom: 1px solid #e5e7eb; font-size: 14px; color: #6b7280; text-align: right;">${fmt(item.unit_price)}</td>
           <td style="padding: 8px 12px; border-bottom: 1px solid #e5e7eb; font-size: 14px; color: #111827; font-weight: 500; text-align: right;">${fmt(item.total_price)}</td>
@@ -112,13 +113,13 @@ export async function POST(
   <div style="max-width: 600px; margin: 0 auto; padding: 24px;">
     <!-- Header -->
     <div style="background: #1e40af; border-radius: 12px 12px 0 0; padding: 24px; text-align: center;">
-      <h1 style="color: white; margin: 0; font-size: 20px;">${companyName}</h1>
+      <h1 style="color: white; margin: 0; font-size: 20px;">${escapeHtml(companyName)}</h1>
       <p style="color: #bfdbfe; margin: 8px 0 0; font-size: 14px;">Ordem de Servico</p>
     </div>
 
     <!-- Body -->
     <div style="background: white; padding: 24px; border-radius: 0 0 12px 12px;">
-      <p style="color: #374151; font-size: 14px; margin: 0 0 16px;">Ola, <strong>${customerName}</strong>!</p>
+      <p style="color: #374151; font-size: 14px; margin: 0 0 16px;">Ola, <strong>${escapeHtml(customerName)}</strong>!</p>
       <p style="color: #6b7280; font-size: 14px; margin: 0 0 24px;">Segue o resumo da sua Ordem de Servico:</p>
 
       <!-- OS Info -->
@@ -135,7 +136,7 @@ export async function POST(
           <tr>
             <td style="padding: 4px 0; font-size: 14px; color: #6b7280;">Status</td>
             <td style="padding: 4px 0; text-align: right;">
-              <span style="display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; background: ${statusColor}20; color: ${statusColor};">${statusName}</span>
+              <span style="display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; background: ${statusColor}20; color: ${statusColor};">${escapeHtml(statusName)}</span>
             </td>
           </tr>
         </table>
@@ -144,15 +145,15 @@ export async function POST(
       <!-- Equipment -->
       <div style="margin-bottom: 20px;">
         <h3 style="font-size: 12px; font-weight: 600; color: #6b7280; text-transform: uppercase; margin: 0 0 8px;">Equipamento</h3>
-        <p style="font-size: 14px; color: #111827; margin: 0; font-weight: 500;">${os.equipment_type}${os.equipment_brand ? ` - ${os.equipment_brand}` : ''}${os.equipment_model ? ` ${os.equipment_model}` : ''}</p>
-        ${os.serial_number ? `<p style="font-size: 13px; color: #6b7280; margin: 4px 0 0;">S/N: ${os.serial_number}</p>` : ''}
+        <p style="font-size: 14px; color: #111827; margin: 0; font-weight: 500;">${escapeHtml(os.equipment_type)}${os.equipment_brand ? ` - ${escapeHtml(os.equipment_brand)}` : ''}${os.equipment_model ? ` ${escapeHtml(os.equipment_model)}` : ''}</p>
+        ${os.serial_number ? `<p style="font-size: 13px; color: #6b7280; margin: 4px 0 0;">S/N: ${escapeHtml(os.serial_number)}</p>` : ''}
       </div>
 
       <!-- Diagnosis -->
       ${os.diagnosis ? `
       <div style="margin-bottom: 20px;">
         <h3 style="font-size: 12px; font-weight: 600; color: #6b7280; text-transform: uppercase; margin: 0 0 8px;">Diagnostico / Laudo</h3>
-        <p style="font-size: 14px; color: #374151; margin: 0; white-space: pre-wrap;">${os.diagnosis}</p>
+        <p style="font-size: 14px; color: #374151; margin: 0; white-space: pre-wrap;">${escapeHtml(os.diagnosis)}</p>
       </div>` : ''}
 
       <!-- Items -->
@@ -176,7 +177,7 @@ export async function POST(
 
     <!-- Footer -->
     <div style="text-align: center; padding: 16px; font-size: 12px; color: #9ca3af;">
-      Enviado por ${companyName} via PontualERP
+      Enviado por ${escapeHtml(companyName)} via PontualERP
     </div>
   </div>
 </body>

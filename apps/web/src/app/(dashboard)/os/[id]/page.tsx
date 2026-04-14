@@ -201,6 +201,7 @@ export default function OSDetailPage() {
   const [editTechnicianId, setEditTechnicianId] = useState('')
   const [editPaymentMethod, setEditPaymentMethod] = useState('')
   const [editEstimatedDelivery, setEditEstimatedDelivery] = useState('')
+  const [customBusinessDays, setCustomBusinessDays] = useState('')
   const [editActualDelivery, setEditActualDelivery] = useState('')
   const [savingAll, setSavingAll] = useState(false)
   const [financeiroExpanded, setFinanceiroExpanded] = useState(true)
@@ -750,6 +751,7 @@ export default function OSDetailPage() {
       if (installments && installments > 1) body.installment_count = installments
       if (editTechnicianId) body.technician_id = editTechnicianId
       if (paymentAccountId) body.account_id = paymentAccountId
+      if (customBusinessDays) body.business_days = parseInt(customBusinessDays)
 
       // If manual mode, do transition WITHOUT notification first, then ask
       if (!notifyAuto) {
@@ -1677,6 +1679,15 @@ export default function OSDetailPage() {
                 <input type="date" value={editEstimatedDelivery} title="Data de previsão"
                   onChange={e => setEditEstimatedDelivery(e.target.value)}
                   className="w-full px-2 py-1.5 border rounded text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 uppercase font-medium mb-1">Prazo (dias uteis)</label>
+                <input type="number" min="1" max="90" value={customBusinessDays}
+                  onChange={e => setCustomBusinessDays(e.target.value)}
+                  placeholder="10"
+                  title="Dias uteis para previsao (padrao: 10)"
+                  className="w-full px-2 py-1.5 border rounded text-sm" />
+                <p className="text-xs text-gray-400 mt-0.5">Usado ao aprovar OS</p>
               </div>
             </div>
           </div>

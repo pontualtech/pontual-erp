@@ -143,12 +143,21 @@ export async function POST(req: NextRequest, { params }: Params) {
       if (bodyTechnicianId) updateData.technician_id = bodyTechnicianId
     }
 
-    // Se Aprovado, calcular previsão de 10 dias úteis
+    // Se Aprovado, calcular previsão de N dias úteis (configurável, padrão 10)
     const isAprovado = toNameLower.includes('aprovado')
     if (isAprovado) {
+      // Allow override from request body, else read from company setting, else default 10
+      let defaultDays = 10
+      const setting = await prisma.setting.findFirst({
+        where: { company_id: user.companyId, key: 'os.default_business_days' },
+      })
+      if (setting?.value) defaultDays = parseInt(setting.value) || 10
+
+      const targetDays = body.business_days ? Math.max(1, parseInt(body.business_days)) : defaultDays
+
       let diasUteis = 0
       const data = new Date()
-      while (diasUteis < 10) {
+      while (diasUteis < targetDays) {
         data.setDate(data.getDate() + 1)
         const dow = data.getDay()
         if (dow !== 0 && dow !== 6) diasUteis++ // pula sab/dom

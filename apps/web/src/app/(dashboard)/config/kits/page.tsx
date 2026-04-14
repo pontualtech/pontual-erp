@@ -1,23 +1,32 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import { ArrowLeft, Layers, Plus, Trash2, Loader2, Edit, X, Save, Wrench, Package } from 'lucide-react'
+import { ArrowLeft, Layers, Plus, Trash2, Loader2, Edit, X, Save, Wrench, Package, Search, FileText } from 'lucide-react'
 
 interface KitItem {
   description: string
   unit_price: number
   quantity: number
   item_type: 'SERVICO' | 'PECA'
+  product_id?: string | null
 }
 
 interface Kit {
   id: string
   key: string
-  value: { name: string; items: KitItem[] }
+  value: { name: string; laudo?: string; items: KitItem[] }
   created_at: string
+}
+
+interface Produto {
+  id: string
+  name: string
+  brand: string | null
+  sale_price: number
+  unit: string
 }
 
 function fmt(cents: number) {
@@ -32,9 +41,16 @@ export default function KitsPage() {
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [kitName, setKitName] = useState('')
+  const [kitLaudo, setKitLaudo] = useState('')
   const [kitItems, setKitItems] = useState<KitItem[]>([])
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  // Product search per item
+  const [searchIdx, setSearchIdx] = useState<number | null>(null)
+  const [searchText, setSearchText] = useState('')
+  const [searchResults, setSearchResults] = useState<Produto[]>([])
+  const [searching, setSearching] = useState(false)
 
   function loadKits() {
     fetch('/api/kits')
@@ -46,11 +62,37 @@ export default function KitsPage() {
 
   useEffect(() => { loadKits() }, [])
 
+  // Debounced product search
+  const searchProdutos = useCallback(async (query: string, type: string) => {
+    if (query.length < 2) { setSearchResults([]); return }
+    setSearching(true)
+    try {
+      const unit = type === 'SERVICO' ? 'SV' : ''
+      const res = await fetch(`/api/produtos?search=${encodeURIComponent(query)}&limit=8${unit ? `&unit=${unit}` : ''}`)
+      const d = await res.json()
+      setSearchResults(d.data ?? [])
+    } catch { setSearchResults([]) }
+    finally { setSearching(false) }
+  }, [])
+
+  useEffect(() => {
+    if (searchIdx === null || !searchText) { setSearchResults([]); return }
+    const timer = setTimeout(() => {
+      const item = kitItems[searchIdx]
+      if (item) searchProdutos(searchText, item.item_type)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [searchText, searchIdx, kitItems, searchProdutos])
+
   function resetForm() {
     setKitName('')
+    setKitLaudo('')
     setKitItems([])
     setEditingId(null)
     setShowForm(false)
+    setSearchIdx(null)
+    setSearchText('')
+    setSearchResults([])
   }
 
   function openNewKit() {
@@ -62,6 +104,7 @@ export default function KitsPage() {
   function openEditKit(kit: Kit) {
     setEditingId(kit.id)
     setKitName(kit.value.name)
+    setKitLaudo(kit.value.laudo || '')
     setKitItems([...kit.value.items])
     setShowForm(true)
   }
@@ -72,12 +115,27 @@ export default function KitsPage() {
 
   function removeKitItem(idx: number) {
     setKitItems(kitItems.filter((_, i) => i !== idx))
+    if (searchIdx === idx) { setSearchIdx(null); setSearchText(''); setSearchResults([]) }
   }
 
   function updateKitItem(idx: number, field: keyof KitItem, value: any) {
     const updated = [...kitItems]
     updated[idx] = { ...updated[idx], [field]: value }
     setKitItems(updated)
+  }
+
+  function selectProduct(idx: number, p: Produto) {
+    const updated = [...kitItems]
+    updated[idx] = {
+      ...updated[idx],
+      description: p.name + (p.brand ? ` (${p.brand})` : ''),
+      unit_price: p.sale_price,
+      product_id: p.id,
+    }
+    setKitItems(updated)
+    setSearchIdx(null)
+    setSearchText('')
+    setSearchResults([])
   }
 
   async function handleSave() {
@@ -89,11 +147,13 @@ export default function KitsPage() {
     try {
       const payload = {
         name: kitName.trim(),
+        laudo: kitLaudo.trim() || null,
         items: validItems.map(i => ({
           description: i.description.trim(),
           unit_price: Math.round(i.unit_price),
           quantity: i.quantity || 1,
           item_type: i.item_type,
+          product_id: i.product_id || null,
         })),
       }
 
@@ -152,7 +212,7 @@ export default function KitsPage() {
           </Link>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Kits de Servico</h1>
-            <p className="text-sm text-gray-500">Kits pre-definidos para adicionar rapidamente na OS</p>
+            <p className="text-sm text-gray-500">Kits pre-definidos com laudo padrao para adicionar rapidamente na OS</p>
           </div>
         </div>
         {!showForm && (
@@ -178,10 +238,24 @@ export default function KitsPage() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Nome do Kit *</label>
             <input type="text" value={kitName} onChange={e => setKitName(e.target.value)}
-              placeholder="Ex: Manutencao preventiva impressora"
+              placeholder="Ex: Manutencao preventiva Epson L3250"
               className="w-full px-3 py-2.5 border rounded-lg text-sm focus:border-purple-500 focus:ring-1 focus:ring-purple-200" />
           </div>
 
+          {/* Laudo padrao */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              <FileText className="h-4 w-4 inline mr-1 text-purple-500" />
+              Laudo Padrao (opcional)
+            </label>
+            <textarea value={kitLaudo} onChange={e => setKitLaudo(e.target.value)}
+              placeholder="Texto padrao do laudo tecnico que sera preenchido automaticamente ao aplicar o kit na OS..."
+              rows={3}
+              className="w-full px-3 py-2.5 border rounded-lg text-sm focus:border-purple-500 focus:ring-1 focus:ring-purple-200 resize-none" />
+            <p className="text-xs text-gray-400 mt-1">Este texto sera inserido no campo &quot;Laudo Tecnico&quot; da OS ao aplicar o kit</p>
+          </div>
+
+          {/* Items */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="text-sm font-medium text-gray-700">Itens do Kit</label>
@@ -193,46 +267,82 @@ export default function KitsPage() {
 
             <div className="space-y-2">
               {kitItems.map((item, idx) => (
-                <div key={idx} className="flex items-start gap-2 bg-white rounded-lg border p-3">
-                  <div className="flex-1 grid grid-cols-12 gap-2">
-                    <div className="col-span-5">
-                      <label className="block text-xs text-gray-500 mb-0.5">Descricao</label>
-                      <input type="text" value={item.description}
-                        onChange={e => updateKitItem(idx, 'description', e.target.value)}
-                        placeholder="Descricao do item"
-                        className="w-full px-2 py-1.5 border rounded text-sm" />
-                    </div>
-                    <div className="col-span-2">
-                      <label className="block text-xs text-gray-500 mb-0.5">Tipo</label>
-                      <select value={item.item_type} title="Tipo do item"
-                        onChange={e => updateKitItem(idx, 'item_type', e.target.value)}
-                        className="w-full px-2 py-1.5 border rounded text-sm bg-white">
-                        <option value="SERVICO">Servico</option>
-                        <option value="PECA">Peca</option>
-                      </select>
-                    </div>
-                    <div className="col-span-2">
-                      <label className="block text-xs text-gray-500 mb-0.5">V.Unit (centavos)</label>
-                      <input type="number" min="0" value={item.unit_price}
-                        onChange={e => updateKitItem(idx, 'unit_price', parseInt(e.target.value) || 0)}
-                        placeholder="0"
-                        className="w-full px-2 py-1.5 border rounded text-sm" />
-                    </div>
-                    <div className="col-span-2">
-                      <label className="block text-xs text-gray-500 mb-0.5">Qtd</label>
-                      <input type="number" min="1" value={item.quantity}
-                        onChange={e => updateKitItem(idx, 'quantity', parseInt(e.target.value) || 1)}
-                        className="w-full px-2 py-1.5 border rounded text-sm" />
-                    </div>
-                    <div className="col-span-1 flex items-end justify-center pb-1">
-                      {kitItems.length > 1 && (
-                        <button type="button" onClick={() => removeKitItem(idx)} title="Remover item"
-                          className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-600">
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      )}
+                <div key={idx} className="bg-white rounded-lg border p-3 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <div className="flex-1 grid grid-cols-12 gap-2">
+                      {/* Search + Description */}
+                      <div className="col-span-5 relative">
+                        <label className="block text-xs text-gray-500 mb-0.5">Buscar servico/produto</label>
+                        <div className="relative">
+                          <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-gray-400" />
+                          <input type="text"
+                            value={searchIdx === idx ? searchText : item.description}
+                            onChange={e => {
+                              if (searchIdx !== idx) setSearchIdx(idx)
+                              setSearchText(e.target.value)
+                              updateKitItem(idx, 'description', e.target.value)
+                              updateKitItem(idx, 'product_id', null)
+                            }}
+                            onFocus={() => { setSearchIdx(idx); setSearchText(item.description) }}
+                            placeholder="Digite para buscar ou insira manualmente"
+                            className="w-full pl-7 pr-2 py-1.5 border rounded text-sm" />
+                        </div>
+                        {/* Search dropdown */}
+                        {searchIdx === idx && searchResults.length > 0 && (
+                          <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                            {searchResults.map(p => (
+                              <button key={p.id} type="button"
+                                onClick={() => selectProduct(idx, p)}
+                                className="w-full px-3 py-2 text-left text-sm hover:bg-purple-50 flex justify-between">
+                                <span className="truncate">{p.name}{p.brand ? ` (${p.brand})` : ''}</span>
+                                <span className="text-gray-400 ml-2 shrink-0">{fmt(p.sale_price)}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        {searchIdx === idx && searching && (
+                          <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg p-3 text-center">
+                            <Loader2 className="h-4 w-4 animate-spin mx-auto text-purple-500" />
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="col-span-2">
+                        <label className="block text-xs text-gray-500 mb-0.5">Tipo</label>
+                        <select value={item.item_type} title="Tipo do item"
+                          onChange={e => updateKitItem(idx, 'item_type', e.target.value)}
+                          className="w-full px-2 py-1.5 border rounded text-sm bg-white">
+                          <option value="SERVICO">Servico</option>
+                          <option value="PECA">Peca</option>
+                        </select>
+                      </div>
+                      <div className="col-span-2">
+                        <label className="block text-xs text-gray-500 mb-0.5">V.Unit (R$)</label>
+                        <input type="number" min="0" step="0.01"
+                          value={(item.unit_price / 100).toFixed(2)}
+                          onChange={e => updateKitItem(idx, 'unit_price', Math.round(parseFloat(e.target.value || '0') * 100))}
+                          placeholder="0,00"
+                          className="w-full px-2 py-1.5 border rounded text-sm text-right" />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="block text-xs text-gray-500 mb-0.5">Qtd</label>
+                        <input type="number" title="Quantidade" min="1" value={item.quantity}
+                          onChange={e => updateKitItem(idx, 'quantity', parseInt(e.target.value) || 1)}
+                          className="w-full px-2 py-1.5 border rounded text-sm" />
+                      </div>
+                      <div className="col-span-1 flex items-end justify-center pb-1">
+                        {kitItems.length > 1 && (
+                          <button type="button" onClick={() => removeKitItem(idx)} title="Remover item"
+                            className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-600">
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
+                  {item.product_id && (
+                    <p className="text-xs text-green-600 pl-1">Vinculado ao catalogo</p>
+                  )}
                 </div>
               ))}
             </div>
@@ -265,7 +375,7 @@ export default function KitsPage() {
         <div className="rounded-xl border bg-white p-12 text-center">
           <Layers className="h-12 w-12 text-gray-300 mx-auto mb-3" />
           <p className="text-gray-500 text-sm">Nenhum kit cadastrado</p>
-          <p className="text-gray-400 text-xs mt-1">Kits permitem adicionar varios itens de uma vez na OS</p>
+          <p className="text-gray-400 text-xs mt-1">Kits permitem adicionar varios itens + laudo padrao de uma vez na OS</p>
           <button type="button" onClick={openNewKit}
             className="mt-4 inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-purple-700 transition-colors">
             <Plus className="h-4 w-4" /> Criar primeiro kit
@@ -307,6 +417,16 @@ export default function KitsPage() {
                     </button>
                   </div>
                 </div>
+
+                {/* Laudo preview */}
+                {data.laudo && (
+                  <div className="mb-3 px-2 py-1.5 bg-purple-50 rounded-lg border border-purple-100">
+                    <p className="text-xs text-purple-700 font-medium flex items-center gap-1 mb-0.5">
+                      <FileText className="h-3 w-3" /> Laudo padrao
+                    </p>
+                    <p className="text-xs text-purple-600 line-clamp-2">{data.laudo}</p>
+                  </div>
+                )}
 
                 {/* Items preview */}
                 <div className="space-y-1 mb-3">

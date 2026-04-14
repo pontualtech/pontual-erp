@@ -20,6 +20,8 @@ const EMPRESA_KEYS = [
   // NFS-e Servico
   'nfse.codigo_municipio', 'nfse.aliquota_iss', 'nfse.codigo_servico',
   'company.crt',
+  // OS Settings
+  'os.default_business_days',
 ]
 
 // Mapa campo do form -> chave no banco
@@ -56,6 +58,8 @@ const FIELD_MAP: Record<string, string> = {
   aliquota_iss: 'nfse.aliquota_iss',
   codigo_servico: 'nfse.codigo_servico',
   crt: 'company.crt',
+  // OS Settings
+  os_default_business_days: 'os.default_business_days',
 }
 
 // Inverso

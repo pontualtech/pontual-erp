@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { sendCompanyEmail } from '@/lib/send-email'
 import { rateLimit } from '@/lib/rate-limit'
+import { escapeHtml } from '@/lib/escape-html'
 
 export async function POST(req: NextRequest) {
   try {
@@ -61,11 +62,11 @@ export async function POST(req: NextRequest) {
 <body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
   <div style="max-width:480px;margin:0 auto;padding:24px;">
     <div style="background:#1e40af;border-radius:12px 12px 0 0;padding:20px;text-align:center;">
-      <h1 style="color:white;margin:0;font-size:18px;">${company.name}</h1>
+      <h1 style="color:white;margin:0;font-size:18px;">${escapeHtml(company.name)}</h1>
       <p style="color:#bfdbfe;margin:6px 0 0;font-size:13px;">Verificacao de Email</p>
     </div>
     <div style="background:white;padding:24px;border-radius:0 0 12px 12px;">
-      <p style="color:#374151;font-size:14px;margin:0 0 16px;">Ola, <strong>${firstName}</strong>!</p>
+      <p style="color:#374151;font-size:14px;margin:0 0 16px;">Ola, <strong>${escapeHtml(firstName)}</strong>!</p>
       <p style="color:#6b7280;font-size:14px;margin:0 0 20px;">Clique no botao abaixo para verificar seu email:</p>
       <div style="text-align:center;margin:0 0 20px;">
         <a href="${verifyUrl}" style="display:inline-block;padding:12px 32px;background:#2563eb;color:white;text-decoration:none;border-radius:8px;font-size:14px;font-weight:600;">
@@ -74,7 +75,7 @@ export async function POST(req: NextRequest) {
       </div>
       <p style="color:#9ca3af;font-size:12px;margin:0;">Se voce nao criou esta conta, ignore este email.</p>
     </div>
-    <div style="text-align:center;padding:12px;font-size:11px;color:#9ca3af;">Enviado por ${company.name} via PontualERP</div>
+    <div style="text-align:center;padding:12px;font-size:11px;color:#9ca3af;">Enviado por ${escapeHtml(company.name)} via PontualERP</div>
   </div>
 </body></html>`
 

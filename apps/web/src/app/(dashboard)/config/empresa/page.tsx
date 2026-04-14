@@ -41,6 +41,8 @@ interface EmpresaConfig {
   aliquota_iss: string
   codigo_servico: string
   crt: string
+  // OS Settings
+  os_default_business_days: string
 }
 
 const CRT_OPTIONS = [
@@ -59,6 +61,7 @@ export default function ConfigEmpresaPage() {
     from_name: '', from_address: '', resend_configured: 'false',
     quote_url: '', portal_url: '', app_url_env: '',
     nfse_codigo_municipio: '', aliquota_iss: '', codigo_servico: '', crt: '1',
+    os_default_business_days: '10',
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -199,6 +202,20 @@ export default function ConfigEmpresaPage() {
             <select value={config.crt} onChange={e => upd('crt', e.target.value)} title="CRT" className={inp}>
               {CRT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
+          </div>
+        </div>
+      </div>
+
+      {/* OS Settings */}
+      <div className="rounded-xl border bg-white p-5 shadow-sm">
+        <h2 className="font-semibold text-gray-900 mb-4">Ordem de Servico</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Prazo padrao (dias uteis)</label>
+            <input type="number" min="1" max="90" value={config.os_default_business_days}
+              onChange={e => upd('os_default_business_days', e.target.value)}
+              placeholder="10" className={inp} />
+            <p className="text-xs text-gray-400 mt-1">Dias uteis para previsao de entrega ao aprovar OS (padrao: 10)</p>
           </div>
         </div>
       </div>
