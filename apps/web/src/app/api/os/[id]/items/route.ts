@@ -94,6 +94,78 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
 }
 
+export async function PATCH(req: NextRequest, { params }: Params) {
+  try {
+    const result = await requirePermission('os', 'edit')
+    if (result instanceof NextResponse) return result
+    const user = result
+
+    const body = await req.json()
+    const { itemId, description, quantity, unit_price } = body
+    if (!itemId) return error('itemId é obrigatório', 400)
+
+    const os = await prisma.serviceOrder.findFirst({
+      where: { id: params.id, company_id: user.companyId, deleted_at: null },
+      include: { module_statuses: { select: { is_final: true } } },
+    })
+    if (!os) return error('OS não encontrada', 404)
+    if ((os as any).module_statuses?.is_final) {
+      return error('Nao e possivel editar itens de uma OS finalizada', 400)
+    }
+
+    const item = await prisma.serviceOrderItem.findFirst({
+      where: { id: itemId, service_order_id: params.id, company_id: user.companyId, deleted_at: null },
+    })
+    if (!item) return error('Item não encontrado', 404)
+
+    const newQty = quantity != null ? Math.max(1, Math.round(Number(quantity))) : item.quantity
+    const newPrice = unit_price != null ? Math.max(0, Math.round(Number(unit_price))) : item.unit_price
+    const newDesc = description != null ? String(description).trim() : item.description
+    const newTotal = newQty * newPrice
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const upd = await tx.serviceOrderItem.update({
+        where: { id: itemId, company_id: user.companyId },
+        data: {
+          description: newDesc || item.description,
+          quantity: newQty,
+          unit_price: newPrice,
+          total_price: newTotal,
+        },
+      })
+
+      // Recalculate OS totals
+      const items = await tx.serviceOrderItem.findMany({
+        where: { service_order_id: params.id, deleted_at: null },
+      })
+      const total_parts = items.filter(i => i.item_type === 'PECA').reduce((s, i) => s + i.total_price, 0)
+      const total_services = items.filter(i => i.item_type !== 'PECA').reduce((s, i) => s + i.total_price, 0)
+      const total_cost = items.reduce((s, i) => s + i.total_price, 0)
+
+      await tx.serviceOrder.update({
+        where: { id: params.id, company_id: user.companyId },
+        data: { total_parts, total_services, total_cost },
+      })
+
+      return upd
+    })
+
+    logAudit({
+      companyId: user.companyId,
+      userId: user.id,
+      module: 'os',
+      action: 'edit_item',
+      entityId: params.id,
+      oldValue: { description: item.description, quantity: item.quantity, unit_price: item.unit_price },
+      newValue: { description: newDesc, quantity: newQty, unit_price: newPrice },
+    })
+
+    return success(updated)
+  } catch (err) {
+    return handleError(err)
+  }
+}
+
 export async function DELETE(req: NextRequest, { params }: Params) {
   try {
     const result = await requirePermission('os', 'edit')

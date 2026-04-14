@@ -127,6 +127,9 @@ export default function OSDetailPage() {
   const [itemProductId, setItemProductId] = useState<string | null>(null)
   const [addingItem, setAddingItem] = useState(false)
   const [deletingItem, setDeletingItem] = useState<string | null>(null)
+  const [editingItem, setEditingItem] = useState<string | null>(null)
+  const [editItemData, setEditItemData] = useState<{ description: string; quantity: string; unit_price: string }>({ description: '', quantity: '1', unit_price: '0' })
+  const [savingItem, setSavingItem] = useState(false)
   const [showQuickRegister, setShowQuickRegister] = useState(false)
   const [quickName, setQuickName] = useState('')
   const [quickPrice, setQuickPrice] = useState('')
@@ -444,6 +447,40 @@ export default function OSDetailPage() {
       toast.error(err instanceof Error ? err.message : 'Erro')
     } finally {
       setDeletingItem(null)
+    }
+  }
+
+  function startEditItem(item: any) {
+    setEditingItem(item.id)
+    setEditItemData({
+      description: item.description || '',
+      quantity: String(item.quantity || 1),
+      unit_price: String((item.unit_price || 0) / 100),
+    })
+  }
+
+  async function handleSaveItem() {
+    if (!editingItem) return
+    setSavingItem(true)
+    try {
+      const res = await fetch(`/api/os/${id}/items`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemId: editingItem,
+          description: editItemData.description.trim(),
+          quantity: parseInt(editItemData.quantity) || 1,
+          unit_price: Math.round(parseFloat(editItemData.unit_price || '0') * 100),
+        }),
+      })
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Erro') }
+      toast.success('Item atualizado')
+      setEditingItem(null)
+      loadOS()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro')
+    } finally {
+      setSavingItem(false)
     }
   }
 
@@ -1377,17 +1414,25 @@ export default function OSDetailPage() {
                 {servicos.map((item, idx) => (
                   <tr key={item.id} className="group hover:bg-amber-50/30 transition-colors">
                     <td className="py-2.5 text-center text-gray-400 text-xs">{idx + 1}</td>
-                    <td className="py-2.5">{item.description || '--'}</td>
-                    <td className="py-2.5 text-right">{item.quantity}</td>
-                    <td className="py-2.5 text-right text-gray-500">{fmt(item.unit_price)}</td>
-                    <td className="py-2.5 text-right font-medium">{fmt(item.total_price)}</td>
-                    <td className="py-2.5 text-right">
-                      <button type="button" onClick={() => handleDeleteItem(item.id)} title="Remover"
-                        disabled={deletingItem === item.id}
-                        className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-50 text-gray-400 hover:text-red-600 disabled:opacity-50 transition-opacity">
-                        {deletingItem === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                      </button>
-                    </td>
+                    {editingItem === item.id ? (<>
+                      <td className="py-1"><input type="text" title="Descricao" value={editItemData.description} onChange={e => setEditItemData(d => ({ ...d, description: e.target.value }))} className="w-full rounded border px-2 py-1 text-sm" autoFocus /></td>
+                      <td className="py-1 w-20"><input type="number" title="Quantidade" min="1" value={editItemData.quantity} onChange={e => setEditItemData(d => ({ ...d, quantity: e.target.value }))} className="w-full rounded border px-2 py-1 text-sm text-right" /></td>
+                      <td className="py-1 w-28"><input type="number" title="Valor unitario" min="0" step="0.01" value={editItemData.unit_price} onChange={e => setEditItemData(d => ({ ...d, unit_price: e.target.value }))} className="w-full rounded border px-2 py-1 text-sm text-right" /></td>
+                      <td className="py-2.5 text-right font-medium text-gray-400">{fmt(Math.round((parseFloat(editItemData.quantity) || 1) * (parseFloat(editItemData.unit_price) || 0) * 100))}</td>
+                      <td className="py-2.5 text-right flex gap-0.5">
+                        <button type="button" onClick={handleSaveItem} disabled={savingItem} title="Salvar" className="p-1 rounded hover:bg-green-50 text-green-600 disabled:opacity-50">{savingItem ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}</button>
+                        <button type="button" onClick={() => setEditingItem(null)} title="Cancelar" className="p-1 rounded hover:bg-gray-100 text-gray-400"><X className="h-3.5 w-3.5" /></button>
+                      </td>
+                    </>) : (<>
+                      <td className="py-2.5 cursor-pointer hover:text-amber-700" onClick={() => startEditItem(item)}>{item.description || '--'}</td>
+                      <td className="py-2.5 text-right cursor-pointer hover:text-amber-700" onClick={() => startEditItem(item)}>{item.quantity}</td>
+                      <td className="py-2.5 text-right text-gray-500 cursor-pointer hover:text-amber-700" onClick={() => startEditItem(item)}>{fmt(item.unit_price)}</td>
+                      <td className="py-2.5 text-right font-medium">{fmt(item.total_price)}</td>
+                      <td className="py-2.5 text-right flex gap-0.5">
+                        <button type="button" onClick={() => startEditItem(item)} title="Editar" className="p-1 rounded sm:opacity-0 sm:group-hover:opacity-100 hover:bg-amber-50 text-gray-400 hover:text-amber-600 transition-opacity"><Edit className="h-3.5 w-3.5" /></button>
+                        <button type="button" onClick={() => handleDeleteItem(item.id)} title="Remover" disabled={deletingItem === item.id} className="p-1 rounded sm:opacity-0 sm:group-hover:opacity-100 hover:bg-red-50 text-gray-400 hover:text-red-600 disabled:opacity-50 transition-opacity">{deletingItem === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}</button>
+                      </td>
+                    </>)}
                   </tr>
                 ))}
               </tbody>
@@ -1482,17 +1527,25 @@ export default function OSDetailPage() {
                 {pecas.map((item, idx) => (
                   <tr key={item.id} className="group hover:bg-blue-50/30 transition-colors">
                     <td className="py-2.5 text-center text-gray-400 text-xs">{idx + 1}</td>
-                    <td className="py-2.5">{item.description || '--'}</td>
-                    <td className="py-2.5 text-right">{item.quantity}</td>
-                    <td className="py-2.5 text-right text-gray-500">{fmt(item.unit_price)}</td>
-                    <td className="py-2.5 text-right font-medium">{fmt(item.total_price)}</td>
-                    <td className="py-2.5 text-right">
-                      <button type="button" onClick={() => handleDeleteItem(item.id)} title="Remover"
-                        disabled={deletingItem === item.id}
-                        className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-50 text-gray-400 hover:text-red-600 disabled:opacity-50 transition-opacity">
-                        {deletingItem === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                      </button>
-                    </td>
+                    {editingItem === item.id ? (<>
+                      <td className="py-1"><input type="text" title="Descricao" value={editItemData.description} onChange={e => setEditItemData(d => ({ ...d, description: e.target.value }))} className="w-full rounded border px-2 py-1 text-sm" autoFocus /></td>
+                      <td className="py-1 w-20"><input type="number" title="Quantidade" min="1" value={editItemData.quantity} onChange={e => setEditItemData(d => ({ ...d, quantity: e.target.value }))} className="w-full rounded border px-2 py-1 text-sm text-right" /></td>
+                      <td className="py-1 w-28"><input type="number" title="Valor unitario" min="0" step="0.01" value={editItemData.unit_price} onChange={e => setEditItemData(d => ({ ...d, unit_price: e.target.value }))} className="w-full rounded border px-2 py-1 text-sm text-right" /></td>
+                      <td className="py-2.5 text-right font-medium text-gray-400">{fmt(Math.round((parseFloat(editItemData.quantity) || 1) * (parseFloat(editItemData.unit_price) || 0) * 100))}</td>
+                      <td className="py-2.5 text-right flex gap-0.5">
+                        <button type="button" onClick={handleSaveItem} disabled={savingItem} title="Salvar" className="p-1 rounded hover:bg-green-50 text-green-600 disabled:opacity-50">{savingItem ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}</button>
+                        <button type="button" onClick={() => setEditingItem(null)} title="Cancelar" className="p-1 rounded hover:bg-gray-100 text-gray-400"><X className="h-3.5 w-3.5" /></button>
+                      </td>
+                    </>) : (<>
+                      <td className="py-2.5 cursor-pointer hover:text-blue-700" onClick={() => startEditItem(item)}>{item.description || '--'}</td>
+                      <td className="py-2.5 text-right cursor-pointer hover:text-blue-700" onClick={() => startEditItem(item)}>{item.quantity}</td>
+                      <td className="py-2.5 text-right text-gray-500 cursor-pointer hover:text-blue-700" onClick={() => startEditItem(item)}>{fmt(item.unit_price)}</td>
+                      <td className="py-2.5 text-right font-medium">{fmt(item.total_price)}</td>
+                      <td className="py-2.5 text-right flex gap-0.5">
+                        <button type="button" onClick={() => startEditItem(item)} title="Editar" className="p-1 rounded sm:opacity-0 sm:group-hover:opacity-100 hover:bg-blue-50 text-gray-400 hover:text-blue-600 transition-opacity"><Edit className="h-3.5 w-3.5" /></button>
+                        <button type="button" onClick={() => handleDeleteItem(item.id)} title="Remover" disabled={deletingItem === item.id} className="p-1 rounded sm:opacity-0 sm:group-hover:opacity-100 hover:bg-red-50 text-gray-400 hover:text-red-600 disabled:opacity-50 transition-opacity">{deletingItem === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}</button>
+                      </td>
+                    </>)}
                   </tr>
                 ))}
               </tbody>
