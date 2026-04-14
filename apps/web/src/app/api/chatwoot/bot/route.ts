@@ -460,7 +460,7 @@ export const maxDuration = 120 // 2 min timeout
 async function processWebhook(cfg: BotCompanyConfig, body: any) {
   const event = body.event
 
-  // Handle conversation resolved — reset bot state
+  // Handle conversation resolved — reset bot state BUT keep Dify memory
   if (event === 'conversation_status_changed') {
     const status = body.status || body.conversation?.status
     const convId = body.id || body.conversation?.id
@@ -469,12 +469,13 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
         where: { chatwoot_conv_id: convId },
         data: {
           human_takeover: false,
-          dify_conv_id: null,
+          // KEEP dify_conv_id — preserves conversation memory in Dify
+          // so if client messages again, Ana remembers the context
           step: 'IDLE',
           data: '{}',
         },
       })
-      console.log(`[Bot] Conversation ${convId} resolved — state reset`)
+      console.log(`[Bot] Conversation ${convId} resolved — state reset (Dify memory preserved)`)
     }
     return
   }
