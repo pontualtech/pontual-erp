@@ -272,6 +272,24 @@ const DEFAULT_QUOTE_TEMPLATE = `<!DOCTYPE html>
             </td>
           </tr>
 
+          <!-- ACOMPANHE SUA OS -->
+          <tr>
+            <td style="padding:0 20px 24px;">
+              <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:16px;text-align:center;">
+                <p style="margin:0 0 8px;font-size:14px;font-weight:700;color:#0369a1;">📱 Acompanhe sua OS</p>
+                <p style="margin:0 0 12px;font-size:13px;color:#0c4a6e;">Acesse o Portal do Cliente ou consulte pelo nosso site:</p>
+                <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr>
+                  <td style="padding:0 6px;"><a href="{{portal_os_link}}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Portal do Cliente</a></td>
+                  <td style="padding:0 6px;"><a href="{{company_website}}/#consulta-os" style="display:inline-block;padding:10px 20px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Consultar no Site</a></td>
+                </tr></table>
+                <p style="margin:12px 0 0;font-size:13px;color:#0c4a6e;">Duvidas? Fale com nosso suporte:</p>
+                <table cellpadding="0" cellspacing="0" style="margin:8px auto 0;"><tr>
+                  <td><a href="https://wa.me/{{company_whatsapp}}" style="display:inline-block;padding:10px 24px;background:#25d366;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">💬 WhatsApp Suporte</a></td>
+                </tr></table>
+              </div>
+            </td>
+          </tr>
+
           <!-- FOOTER -->
           <tr>
             <td style="padding:0 0 12px;text-align:center;">

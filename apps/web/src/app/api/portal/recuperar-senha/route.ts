@@ -140,6 +140,10 @@ export async function POST(req: NextRequest) {
           <p style="color: #6b7280; font-size: 14px;">
             Recomendamos que troque sua senha no primeiro acesso para maior seguranca.
           </p>
+          <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:16px;margin:24px 0;text-align:center;">
+            <p style="margin:0 0 8px;font-size:14px;font-weight:700;color:#0369a1;">🔐 Acesse o Portal do Cliente</p>
+            <a href="${process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'}/portal/${company.slug}/login" style="display:inline-block;padding:10px 24px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Ir para o Portal</a>
+          </div>
           <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
           <p style="color: #9ca3af; font-size: 12px;">
             ${escapeHtml(company.name)} - Portal do Cliente

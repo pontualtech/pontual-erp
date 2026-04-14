@@ -125,6 +125,10 @@ export async function POST(req: NextRequest) {
       <div style="text-align:center;margin:20px 0;">
         <a href="${loginUrl}" style="display:inline-block;padding:12px 32px;background:#2563eb;color:white;text-decoration:none;border-radius:8px;font-size:14px;font-weight:600;">Acessar Portal</a>
       </div>
+      <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:16px;margin:16px 0;text-align:center;">
+        <p style="margin:0 0 8px;font-size:14px;font-weight:700;color:#0369a1;">🔐 Acesse o Portal do Cliente</p>
+        <a href="${loginUrl}" style="display:inline-block;padding:10px 24px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Ir para o Portal</a>
+      </div>
       <p style="color:#9ca3af;font-size:11px;margin:16px 0 0;">Recomendamos trocar sua senha no primeiro acesso.</p>
     </div>
   </div>
