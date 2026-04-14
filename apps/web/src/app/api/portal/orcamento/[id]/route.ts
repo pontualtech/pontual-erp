@@ -5,6 +5,7 @@ import { logAudit } from '@/lib/audit'
 import { sendCompanyEmail } from '@/lib/send-email'
 import { createHmac } from 'crypto'
 import { rateLimit, getClientIp } from '@/lib/rate-limit'
+import { escapeHtml } from '@/lib/escape-html'
 
 type Params = { params: { id: string } }
 
@@ -277,79 +278,52 @@ export async function POST(request: NextRequest, { params }: Params) {
         },
       })
 
-      // 2. Email de confirmação ao cliente
+      // 2. Email de confirmação ao cliente (template editável via Settings)
       const customerEmail = os.customers?.email
-      const companyEmailAddr = cfg['company.email'] || cfg['email'] || 'contato@pontualtech.com.br'
-      const companyCnpj = cfg['company.cnpj'] || cfg['cnpj'] || '32.772.178/0001-47'
-      const companyAddress = cfg['company.address'] || cfg['endereco'] || 'Rua Ouvidor Peleja, 660 — Vila Mariana — CEP 04128-001 — Sao Paulo/SP'
+      const companyEmailAddr = cfg['company.email'] || cfg['email'] || ''
+      const companyCnpj = cfg['cnab.cnpj'] || cfg['company.cnpj'] || ''
+      const companyAddress = [cfg['cnab.endereco'], cfg['company.number'], cfg['cnab.bairro'], cfg['cnab.cidade'], cfg['cnab.uf']].filter(Boolean).join(', ') || ''
+      const companyCep = cfg['cnab.cep'] || ''
+      const pixKey = cfg['pix.chave'] || companyCnpj
+      const pixBanco = cfg['pix.banco'] || ''
+      const horario = cfg['company.horario'] || 'Seg a Qui 08:00-18:00 | Sex 08:00-17:00'
+
       if (customerEmail) {
-        const emailHtml = `<!DOCTYPE html>
-<html lang="pt-BR">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:Arial,Helvetica,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f1f5f9;padding:32px 0;">
-    <tr>
-      <td align="center">
-        <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
-          <tr>
-            <td style="background:linear-gradient(135deg,#15803d 0%,#22c55e 100%);padding:36px 32px;text-align:center;">
-              <div style="width:56px;height:56px;background:rgba(255,255,255,0.15);border-radius:14px;margin:0 auto 12px;line-height:56px;font-size:28px;">&#9989;</div>
-              <h1 style="margin:0 0 4px;color:#ffffff;font-size:22px;font-weight:800;">Orcamento Aprovado!</h1>
-              <p style="margin:0;color:rgba(255,255,255,0.7);font-size:12px;">${companyName}</p>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:32px 32px 0;">
-              <p style="font-size:16px;margin:0 0 16px;color:#1e293b;">Ola <strong>${customerFirstName}</strong>,</p>
-              <p style="font-size:14px;color:#475569;margin:0 0 24px;line-height:1.7;">
-                Seu orcamento para a OS <strong>#${osNum}</strong> foi aprovado com sucesso!
-                Nossa equipe tecnica ja esta ciente e o reparo comeca a partir de agora.
-              </p>
+        // Try to load custom template from DB, fallback to built-in
+        const customTemplate = await prisma.setting.findFirst({
+          where: { company_id: os.company_id, key: 'email.template_aprovacao' },
+        })
 
-              <div style="background:#f8fafc;border:2px solid #e2e8f0;border-radius:10px;overflow:hidden;margin:0 0 24px;">
-                <div style="padding:16px;">
-                  <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;color:#1e293b;">
-                    <tr><td style="padding:6px 0;font-weight:700;width:150px;color:#64748b;">Equipamento:</td><td style="padding:6px 0;font-weight:600;">${equipment}</td></tr>
-                    <tr><td style="padding:6px 0;font-weight:700;color:#64748b;">Valor aprovado:</td><td style="padding:6px 0;font-weight:800;font-size:18px;color:#15803d;">${fmtValue}</td></tr>
-                    <tr><td style="padding:6px 0;font-weight:700;color:#64748b;">Previsao entrega:</td><td style="padding:6px 0;font-weight:700;">${previsaoStr}</td></tr>
-                    <tr><td style="padding:6px 0;font-weight:700;color:#64748b;">Prazo:</td><td style="padding:6px 0;">10 dias uteis a partir de hoje</td></tr>
-                  </table>
-                </div>
-              </div>
+        let emailHtml: string
+        if (customTemplate?.value) {
+          // Custom template with variable replacement
+          emailHtml = customTemplate.value
+            .replace(/\{\{cliente_nome\}\}/g, escapeHtml(customerFirstName))
+            .replace(/\{\{cliente_nome_completo\}\}/g, escapeHtml(customerName))
+            .replace(/\{\{os_numero\}\}/g, String(osNum))
+            .replace(/\{\{equipamento\}\}/g, escapeHtml(equipment))
+            .replace(/\{\{valor\}\}/g, fmtValue)
+            .replace(/\{\{previsao\}\}/g, previsaoStr)
+            .replace(/\{\{empresa_nome\}\}/g, escapeHtml(companyName))
+            .replace(/\{\{empresa_endereco\}\}/g, escapeHtml(companyAddress))
+            .replace(/\{\{empresa_cep\}\}/g, escapeHtml(companyCep))
+            .replace(/\{\{empresa_cnpj\}\}/g, escapeHtml(companyCnpj))
+            .replace(/\{\{empresa_telefone\}\}/g, escapeHtml(companyPhone))
+            .replace(/\{\{empresa_email\}\}/g, escapeHtml(companyEmailAddr))
+            .replace(/\{\{empresa_whatsapp\}\}/g, whatsappUrl)
+            .replace(/\{\{pix_chave\}\}/g, escapeHtml(pixKey))
+            .replace(/\{\{pix_banco\}\}/g, escapeHtml(pixBanco))
+            .replace(/\{\{horario\}\}/g, escapeHtml(horario))
+        } else {
+          // Built-in professional template
+          emailHtml = buildApprovalEmailHtml({
+            customerFirstName, osNum: String(osNum), equipment, fmtValue, previsaoStr,
+            companyName, companyAddress, companyCep, companyCnpj, companyPhone,
+            companyEmailAddr, whatsappUrl, pixKey, pixBanco, horario,
+          })
+        }
 
-              <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:16px;margin:0 0 24px;">
-                <p style="margin:0;font-size:14px;color:#1e40af;line-height:1.6;">
-                  <strong>Proximo passo:</strong> Nossa equipe vai iniciar o reparo e voce sera notificado quando o equipamento estiver pronto para retirada/entrega.
-                </p>
-              </div>
-
-              <div style="text-align:center;margin:0 0 32px;">
-                <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr><td style="background:#25d366;border-radius:8px;">
-                  <a href="${whatsappUrl}" style="display:inline-block;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 28px;">
-                    Fale com nosso suporte
-                  </a>
-                </td></tr></table>
-              </div>
-            </td>
-          </tr>
-          <tr>
-            <td style="background:#1e293b;padding:24px 32px;text-align:center;">
-              <p style="margin:0 0 4px;font-size:14px;font-weight:700;color:#ffffff;">${companyName}</p>
-              <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">Assistencia Tecnica em Informatica</p>
-              <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">${companyAddress}</p>
-              <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">CNPJ: ${companyCnpj} | Tel: ${companyPhone} | ${companyEmailAddr}</p>
-              <div style="border-top:1px solid #334155;padding-top:10px;margin-top:10px;">
-                <p style="margin:0;font-size:10px;color:#64748b;">Garantia de 3 meses em todos os servicos</p>
-              </div>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`
-        sendCompanyEmail(os.company_id, customerEmail, `Orcamento Aprovado — OS #${osNum} — ${companyName}`, emailHtml).catch(() => {})
+        sendCompanyEmail(os.company_id, customerEmail, `Aprovacao Confirmada — Orcamento #${osNum} — ${companyName}`, emailHtml).catch(() => {})
       }
 
       // 3. WhatsApp/Chatwoot para equipe (fire-and-forget)
@@ -534,4 +508,97 @@ export async function POST(request: NextRequest, { params }: Params) {
   } catch (err) {
     return handleError(err)
   }
+}
+
+// ---------------------------------------------------------------------------
+// Professional approval email template (built-in default)
+// ---------------------------------------------------------------------------
+
+interface ApprovalEmailData {
+  customerFirstName: string; osNum: string; equipment: string; fmtValue: string
+  previsaoStr: string; companyName: string; companyAddress: string; companyCep: string
+  companyCnpj: string; companyPhone: string; companyEmailAddr: string; whatsappUrl: string
+  pixKey: string; pixBanco: string; horario: string
+}
+
+function buildApprovalEmailHtml(d: ApprovalEmailData): string {
+  const e = escapeHtml
+  return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:32px 0;"><tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.08);">
+
+<!-- Header -->
+<tr><td style="background:linear-gradient(135deg,#15803d,#22c55e);padding:36px 32px;text-align:center;">
+  <div style="font-size:36px;margin:0 0 8px;">✅</div>
+  <h1 style="margin:0 0 4px;color:#fff;font-size:20px;">Aprovacao Confirmada — Orcamento ${e(d.companyName)}</h1>
+  <p style="margin:0;color:rgba(255,255,255,.7);font-size:12px;">OS #${e(d.osNum)}</p>
+</td></tr>
+
+<!-- Body -->
+<tr><td style="padding:32px;">
+  <p style="font-size:15px;color:#1e293b;margin:0 0 16px;">Prezado(a) <strong>${e(d.customerFirstName)}</strong>,</p>
+  <p style="font-size:14px;color:#475569;line-height:1.7;margin:0 0 24px;">
+    Recebemos sua aprovacao e agradecemos pela confianca! Ja demos o sinal verde para nossa equipe tecnica e o reparo do seu equipamento sera iniciado imediatamente.
+  </p>
+
+  <!-- Resumo OS -->
+  <div style="background:#f8fafc;border:2px solid #e2e8f0;border-radius:10px;padding:16px;margin:0 0 24px;">
+    <table width="100%" style="font-size:14px;color:#1e293b;">
+      <tr><td style="padding:6px 0;font-weight:700;width:150px;color:#64748b;">Equipamento:</td><td style="padding:6px 0;font-weight:600;">${e(d.equipment)}</td></tr>
+      <tr><td style="padding:6px 0;font-weight:700;color:#64748b;">Valor aprovado:</td><td style="padding:6px 0;font-weight:800;font-size:18px;color:#15803d;">${d.fmtValue}</td></tr>
+      <tr><td style="padding:6px 0;font-weight:700;color:#64748b;">Previsao entrega:</td><td style="padding:6px 0;font-weight:700;">${d.previsaoStr}</td></tr>
+    </table>
+  </div>
+
+  <!-- Servico e Prazos -->
+  <div style="margin:0 0 24px;">
+    <h3 style="margin:0 0 8px;font-size:14px;color:#1e293b;">🛠️ Sobre o Servico e Prazos</h3>
+    <ul style="margin:0;padding:0 0 0 20px;font-size:13px;color:#475569;line-height:1.8;">
+      <li><strong>Inicio da Contagem:</strong> O prazo comeca a contar a partir de agora.</li>
+      <li><strong>Agilidade:</strong> Nosso compromisso e finalizar e entregar o mais rapido possivel.</li>
+      <li><strong>Aviso de Conclusao:</strong> Voce recebera uma notificacao assim que o servico for finalizado.</li>
+    </ul>
+  </div>
+
+  <!-- Pagamento -->
+  <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:16px;margin:0 0 24px;">
+    <h3 style="margin:0 0 8px;font-size:14px;color:#1e40af;">💳 Formas de Pagamento (na Entrega)</h3>
+    <ul style="margin:0;padding:0 0 0 20px;font-size:13px;color:#1e40af;line-height:1.8;">
+      <li><strong>Cartao de Credito:</strong> Parcelamos em ate 3x sem juros</li>
+      <li><strong>PIX / Transferencia:</strong>${d.pixBanco ? ` ${e(d.pixBanco)} —` : ''} Chave PIX (CNPJ): ${e(d.pixKey)}</li>
+      <li>Favorecido: ${e(d.companyName)}</li>
+    </ul>
+  </div>
+
+  <!-- Entrega -->
+  <div style="margin:0 0 24px;">
+    <h3 style="margin:0 0 8px;font-size:14px;color:#1e293b;">🚚 Entrega e Horarios</h3>
+    <p style="font-size:13px;color:#475569;line-height:1.7;margin:0;">
+      Antes de levarmos o equipamento, entraremos em contato para confirmar se havera alguem no local.<br>
+      <strong>Horarios:</strong> ${e(d.horario)}
+    </p>
+  </div>
+
+  <!-- CTA -->
+  <div style="text-align:center;margin:0 0 16px;">
+    <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr><td style="background:#25d366;border-radius:8px;">
+      <a href="${d.whatsappUrl}" style="display:inline-block;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 28px;">
+        💬 Fale conosco pelo WhatsApp
+      </a>
+    </td></tr></table>
+  </div>
+</td></tr>
+
+<!-- Footer -->
+<tr><td style="background:#1e293b;padding:24px 32px;text-align:center;">
+  <p style="margin:0 0 4px;font-size:14px;font-weight:700;color:#fff;">${e(d.companyName)}</p>
+  <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">📍 ${e(d.companyAddress)}${d.companyCep ? ` — CEP ${e(d.companyCep)}` : ''}</p>
+  <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">📞 ${e(d.companyPhone)} | ✉️ ${e(d.companyEmailAddr)} | CNPJ: ${e(d.companyCnpj)}</p>
+  <div style="border-top:1px solid #334155;padding-top:10px;margin-top:10px;">
+    <p style="margin:0;font-size:10px;color:#64748b;">Garantia em todos os servicos conforme descrito no orcamento</p>
+  </div>
+</td></tr>
+
+</table></td></tr></table></body></html>`
 }
