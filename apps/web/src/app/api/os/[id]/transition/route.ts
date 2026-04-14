@@ -400,6 +400,21 @@ export async function POST(req: NextRequest, { params }: Params) {
       console.error('[AUTO-NOTIFICATION] Erro ao registrar notificação automática:', autoNotifErr)
     }
 
+    // ====== NOTIFICATION RULES: check if auto-notification is enabled for this status ======
+    const notifRuleSetting = await prisma.setting.findUnique({
+      where: { company_id_key: { company_id: user.companyId, key: `notif.rule.${toStatusId}` } },
+    }).catch(() => null)
+
+    let notifRule = { mode: 'auto' as string, email: true, whatsapp: true, email_subject: '', email_message: '', whatsapp_message: '' }
+    if (notifRuleSetting?.value) {
+      try { notifRule = { ...notifRule, ...JSON.parse(notifRuleSetting.value) } } catch {}
+    }
+
+    // If mode is 'off' or 'manual', skip automatic notifications
+    const autoNotifEnabled = notifRule.mode === 'auto'
+    const shouldSendEmail = shouldNotifyEmail && autoNotifEnabled && notifRule.email
+    const shouldSendWhatsApp = shouldNotifyWhatsApp && autoNotifEnabled && notifRule.whatsapp
+
     // Fora da transação: notificações (fire and forget, não precisa ser atômica)
     if (isReparado) {
       const osNum = String(os.os_number).padStart(4, '0')
@@ -433,8 +448,8 @@ export async function POST(req: NextRequest, { params }: Params) {
       newValue: { statusId: toStatusId, notes, payment_method },
     })
 
-    // Notify customer via Chatwoot (fire and forget)
-    if (os.customers?.mobile || os.customers?.phone) {
+    // Notify customer via Chatwoot (fire and forget) — respects notification rules
+    if (shouldSendWhatsApp && (os.customers?.mobile || os.customers?.phone)) {
       const phone = os.customers.mobile || os.customers.phone
       const statusName = toStatus.name
       const osNum = String(os.os_number).padStart(4, '0')
@@ -449,7 +464,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
 
     // ====== EMAIL NOTIFICATION: notify customer of status change (fire-and-forget) ======
-    if (shouldNotifyEmail && os.customers?.email) {
+    if (shouldSendEmail && os.customers?.email) {
       const statusMap: Record<string, string> = {
         'Coletar': 'Recebido',
         'Orcar': 'Em Analise',
@@ -550,28 +565,44 @@ export async function POST(req: NextRequest, { params }: Params) {
       ).catch(e => console.log('[Transition] Email notification failed (ignored):', e.message))
     }
 
-    // WhatsApp notification (fire-and-forget)
+    // WhatsApp notification via Evolution API (fire-and-forget) — respects notification rules
     const customerPhone = os.customers?.mobile || os.customers?.phone
-    if (shouldNotifyWhatsApp && customerPhone) {
-      const templateKey = getTemplateForStatus(toStatus.name)
-      if (templateKey) {
-        const waCompany = await prisma.company.findUnique({ where: { id: user.companyId }, select: { name: true, slug: true } }).catch(() => null)
-        const templateFn = whatsappTemplates[templateKey]
-        const accessTk = createAccessToken(os.customer_id, os.company_id)
-        const msg = templateFn({
-          customerName: os.customers?.legal_name?.split(' ')[0] || 'Cliente',
-          osNumber: os.os_number,
-          customerDoc: os.customers?.document_number || undefined,
-          companyName: waCompany?.name || 'Empresa',
-          companySlug: waCompany?.slug || 'pontualtech',
-          osId: os.id,
-          value: os.total_cost || undefined,
-          estimatedDelivery: (updated as any).estimated_delivery ? String((updated as any).estimated_delivery) : undefined,
-          accessToken: accessTk,
-        })
-        void sendWhatsApp(customerPhone, msg).catch(e =>
-          console.log('[Transition] WhatsApp notification failed (ignored):', e)
+    if (shouldSendWhatsApp && customerPhone) {
+      const customerFirstName = (os.customers?.legal_name || 'Cliente').split(' ')[0]
+      const osNum = String(os.os_number).padStart(4, '0')
+      const equipment = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ') || 'Equipamento'
+
+      // Use custom message from admin if configured, otherwise use template system
+      if (notifRule.whatsapp_message) {
+        const customMsg = notifRule.whatsapp_message
+          .replace(/\{\{cliente_nome\}\}/g, customerFirstName)
+          .replace(/\{\{os_numero\}\}/g, osNum)
+          .replace(/\{\{equipamento\}\}/g, equipment)
+          .replace(/\{\{status\}\}/g, toStatus.name)
+        void sendWhatsApp(customerPhone, customMsg).catch(e =>
+          console.log('[Transition] WhatsApp custom notification failed (ignored):', e)
         )
+      } else {
+        const templateKey = getTemplateForStatus(toStatus.name)
+        if (templateKey) {
+          const waCompany = await prisma.company.findUnique({ where: { id: user.companyId }, select: { name: true, slug: true } }).catch(() => null)
+          const templateFn = whatsappTemplates[templateKey]
+          const accessTk = createAccessToken(os.customer_id, os.company_id)
+          const msg = templateFn({
+            customerName: customerFirstName,
+            osNumber: os.os_number,
+            customerDoc: os.customers?.document_number || undefined,
+            companyName: waCompany?.name || 'Empresa',
+            companySlug: waCompany?.slug || 'pontualtech',
+            osId: os.id,
+            value: os.total_cost || undefined,
+            estimatedDelivery: (updated as any).estimated_delivery ? String((updated as any).estimated_delivery) : undefined,
+            accessToken: accessTk,
+          })
+          void sendWhatsApp(customerPhone, msg).catch(e =>
+            console.log('[Transition] WhatsApp notification failed (ignored):', e)
+          )
+        }
       }
     }
 
