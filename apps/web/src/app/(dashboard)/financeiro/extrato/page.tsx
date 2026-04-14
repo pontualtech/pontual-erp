@@ -6,10 +6,12 @@ import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, Search, Download, Loader2, TrendingUp, TrendingDown,
   DollarSign, Wallet, Filter, X, ChevronUp, ChevronDown, ArrowUpDown,
-  Calendar, Building2, CreditCard, Tag, LayoutGrid, Pencil, Save, ExternalLink
+  Calendar, Building2, CreditCard, Tag, LayoutGrid, Pencil, Save, ExternalLink,
+  FileSpreadsheet, FileText, FileDown
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { exportToExcel, exportToCSV, exportToPDF } from '@/lib/export-data'
 
 // ─── Types ───────────────────────────────────────────────
 interface ExtratoItem {
@@ -70,6 +72,16 @@ const DATE_PRESETS = [
 type SortField = 'data' | 'descricao' | 'entidade' | 'categoria' | 'forma_pagamento' | 'valor'
 type SortDir = 'asc' | 'desc'
 
+const exportColumnsExtrato = [
+  { key: 'date', label: 'Data', format: (v: string) => v ? new Date(v).toLocaleDateString('pt-BR') : '' },
+  { key: 'description', label: 'Descricao' },
+  { key: 'type', label: 'Tipo' },
+  { key: 'amount', label: 'Valor', format: (v: number) => v ? (v/100).toFixed(2) : '' },
+  { key: 'balance', label: 'Saldo', format: (v: number) => v ? (v/100).toFixed(2) : '' },
+  { key: 'account_name', label: 'Conta' },
+  { key: 'category_name', label: 'Categoria' },
+]
+
 // ─── Component ───────────────────────────────────────────
 export default function ExtratoPage() {
   const router = useRouter()
@@ -104,6 +116,10 @@ export default function ExtratoPage() {
   // Sort
   const [sortField, setSortField] = useState<SortField>('data')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
+
+  // Export
+  const [showExportMenu, setShowExportMenu] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
   // Quick edit modal
   const [editItem, setEditItem] = useState<ExtratoItem | null>(null)
@@ -193,8 +209,7 @@ export default function ExtratoPage() {
     return sortDir === 'asc' ? <ChevronUp className="h-3 w-3 text-blue-600" /> : <ChevronDown className="h-3 w-3 text-blue-600" />
   }
 
-  function exportCSV() {
-    // Busca TODOS os registros (sem paginação) para exportar completo
+  async function fetchAllExtrato(): Promise<ExtratoItem[]> {
     const params = new URLSearchParams()
     if (fromDate) params.set('from', fromDate)
     if (toDate) params.set('to', toDate)
@@ -209,25 +224,52 @@ export default function ExtratoPage() {
     if (valueMax) params.set('value_max', valueMax)
     params.set('page', '1')
     params.set('limit', '10000')
-
-    toast.info('Gerando CSV...')
-    fetch(`/api/financeiro/extrato?${params}`)
-      .then(r => r.json())
-      .then(d => {
-        const allItems: ExtratoItem[] = d.data?.items ?? []
-        const header = 'Data;Lancamento;Entidade;Conta Bancaria;Centro Custo;Categoria;Forma Pagamento;Valor;Tipo\n'
-        const rows = allItems.map(i =>
-          `${safeDate(i.data)};${i.descricao};${i.entidade};${i.conta_bancaria};${i.centro_custo};${i.categoria};${i.forma_pagamento};${(i.valor / 100).toFixed(2).replace('.', ',')};${i.tipo}`
-        ).join('\n')
-        const bom = '\uFEFF'
-        const blob = new Blob([bom + header + rows], { type: 'text/csv;charset=utf-8' })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a'); a.href = url; a.download = `extrato_${fromDate}_${toDate}.csv`; a.click()
-        setTimeout(() => URL.revokeObjectURL(url), 1000)
-        toast.success(`${allItems.length} registros exportados`)
-      })
-      .catch(() => toast.error('Erro ao exportar CSV'))
+    const res = await fetch(`/api/financeiro/extrato?${params}`)
+    const d = await res.json()
+    return d.data?.items ?? []
   }
+
+  function prepareExtratoExportData(data: ExtratoItem[]) {
+    let runningBalance = resumo?.saldo_anterior ?? 0
+    return data.map(i => {
+      runningBalance += i.tipo === 'ENTRADA' ? i.valor : -i.valor
+      return {
+        date: i.data,
+        description: i.descricao,
+        type: i.tipo,
+        amount: i.valor,
+        balance: runningBalance,
+        account_name: i.conta_bancaria,
+        category_name: i.categoria,
+      }
+    })
+  }
+
+  async function handleExport(format: 'excel' | 'csv' | 'pdf') {
+    setShowExportMenu(false)
+    setExporting(true)
+    try {
+      const allItems = await fetchAllExtrato()
+      const data = prepareExtratoExportData(allItems)
+      const opts = { filename: `extrato_${fromDate}_${toDate}`, title: 'Extrato Financeiro', columns: exportColumnsExtrato, data }
+      if (format === 'excel') exportToExcel(opts)
+      else if (format === 'csv') exportToCSV(opts)
+      else exportToPDF(opts)
+      toast.success(`Exportado ${allItems.length} registro(s) em ${format.toUpperCase()}`)
+    } catch {
+      toast.error('Erro ao exportar')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  // Close export menu on outside click
+  useEffect(() => {
+    if (!showExportMenu) return
+    const handler = () => setShowExportMenu(false)
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [showExportMenu])
 
   // Quick edit: open modal and load full record from API
   async function openQuickEdit(item: ExtratoItem) {
@@ -319,9 +361,34 @@ export default function ExtratoPage() {
             <p className="text-sm text-gray-500 dark:text-gray-400">Lancamentos consolidados por periodo</p>
           </div>
         </div>
-        <button type="button" onClick={exportCSV} className="flex items-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-          <Download className="h-4 w-4" /> Exportar CSV
-        </button>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setShowExportMenu(!showExportMenu) }}
+            disabled={exporting}
+            className="flex items-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-50"
+          >
+            {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            Exportar
+            <ChevronDown className="h-3.5 w-3.5" />
+          </button>
+          {showExportMenu && (
+            <div className="absolute right-0 z-10 mt-1 w-48 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 py-1 shadow-lg">
+              <button type="button" onClick={() => handleExport('excel')}
+                className="flex w-full items-center gap-2 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800">
+                <FileSpreadsheet className="h-4 w-4 text-green-600" /> Excel (.xlsx)
+              </button>
+              <button type="button" onClick={() => handleExport('csv')}
+                className="flex w-full items-center gap-2 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800">
+                <FileText className="h-4 w-4 text-blue-600" /> CSV (.csv)
+              </button>
+              <button type="button" onClick={() => handleExport('pdf')}
+                className="flex w-full items-center gap-2 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800">
+                <FileDown className="h-4 w-4 text-red-600" /> PDF (.pdf)
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Resumo Cards */}
