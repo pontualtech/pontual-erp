@@ -76,6 +76,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
     title: 'Sistema',
     items: [
       { label: 'Log Portal', href: '/portal-log', icon: Activity, adminOnly: true },
+      { label: 'Logs de Atividade', href: '/logs', icon: Activity, adminOnly: true },
       { label: 'Configuracoes', href: '/config', icon: Settings, adminOnly: true },
     ],
   },

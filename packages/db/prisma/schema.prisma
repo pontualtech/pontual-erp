@@ -276,17 +276,21 @@ model CompanyModule {
 }
 
 model AuditLog {
-  id         String    @id @default(dbgenerated("(gen_random_uuid())::text"))
-  company_id String
-  user_id    String
-  module     String
-  action     String
-  entity_id  String?
-  old_value  Json?
-  new_value  Json?
-  created_at DateTime? @default(now()) @db.Timestamptz(6)
+  id          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id  String
+  user_id     String
+  module      String
+  action      String
+  entity_id   String?
+  old_value   Json?
+  new_value   Json?
+  ip_address  String?
+  user_agent  String?
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
 
   @@index([company_id, created_at(sort: Desc)], map: "idx_audit_logs_company")
+  @@index([module])
+  @@index([user_id])
   @@map("audit_logs")
 }
 
