@@ -2,23 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Save, Loader2, MessageCircle, Clock, Shield, Plus, Trash2, RotateCcw } from 'lucide-react'
+import { ArrowLeft, Save, Loader2, MessageCircle, Clock, Shield, RotateCcw, Power } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-
-const INTERVAL_PRESETS = [
-  { label: '30 min', value: '30' },
-  { label: '1 hora', value: '60' },
-  { label: '2 horas', value: '120' },
-  { label: '6 horas', value: '360' },
-  { label: '12 horas', value: '720' },
-  { label: '24 horas', value: '1440' },
-  { label: '48 horas', value: '2880' },
-  { label: '72 horas', value: '4320' },
-  { label: '7 dias', value: '10080' },
-  { label: '14 dias', value: '20160' },
-  { label: '30 dias', value: '43200' },
-]
 
 const DAY_OPTIONS = [
   { value: 0, label: 'Dom' },
@@ -30,72 +16,66 @@ const DAY_OPTIONS = [
   { value: 6, label: 'Sab' },
 ]
 
-interface FollowUpConfig {
-  'bot.followup.enabled': string
-  'bot.followup.max_attempts': string
-  'bot.followup.interval_1_minutes': string
-  'bot.followup.interval_2_minutes': string
-  'bot.followup.interval_3_minutes': string
-  'bot.followup.msg_1': string
-  'bot.followup.msg_2': string
-  'bot.followup.msg_3': string
-  'bot.followup.interval_4_minutes': string
-  'bot.followup.interval_5_minutes': string
-  'bot.followup.interval_6_minutes': string
-  'bot.followup.msg_4': string
-  'bot.followup.msg_5': string
-  'bot.followup.msg_6': string
-  'bot.followup.business_hours_only': string
-  'bot.followup.business_hour_start': string
-  'bot.followup.business_hour_end': string
-  'bot.followup.business_days': string
-  'bot.followup.opt_out_keywords': string
-}
+const COLORS = [
+  { bg: 'bg-blue-50', border: 'border-blue-200', dot: 'bg-blue-500', text: 'text-blue-700' },
+  { bg: 'bg-amber-50', border: 'border-amber-200', dot: 'bg-amber-500', text: 'text-amber-700' },
+  { bg: 'bg-orange-50', border: 'border-orange-200', dot: 'bg-orange-500', text: 'text-orange-700' },
+  { bg: 'bg-purple-50', border: 'border-purple-200', dot: 'bg-purple-500', text: 'text-purple-700' },
+  { bg: 'bg-pink-50', border: 'border-pink-200', dot: 'bg-pink-500', text: 'text-pink-700' },
+  { bg: 'bg-red-50', border: 'border-red-200', dot: 'bg-red-500', text: 'text-red-700' },
+]
 
-const DEFAULTS: FollowUpConfig = {
-  'bot.followup.enabled': 'true',
-  'bot.followup.max_attempts': '3',
-  'bot.followup.interval_1_minutes': '60',
-  'bot.followup.interval_2_minutes': '1440',
-  'bot.followup.interval_3_minutes': '4320',
-  'bot.followup.interval_4_minutes': '10080',
-  'bot.followup.interval_5_minutes': '20160',
-  'bot.followup.interval_6_minutes': '43200',
-  'bot.followup.msg_1': 'Oi! 😊 Vi que voce nao respondeu. Posso te ajudar com algo?',
-  'bot.followup.msg_2': 'Ola! Passando para saber se ainda precisa de ajuda. E so me chamar! 🔧',
-  'bot.followup.msg_3': 'Oi! Essa e minha ultima mensagem automatica. Se precisar, estamos a disposicao! 👋',
-  'bot.followup.msg_4': 'Ola! Faz uma semana que conversamos. Se precisar de assistencia tecnica, estamos aqui!',
-  'bot.followup.msg_5': 'Oi! So passando para lembrar que estamos a disposicao. Qualquer duvida, e so chamar!',
-  'bot.followup.msg_6': 'Ola! Faz um tempo que nao nos falamos. Se precisar de servicos tecnicos, conte conosco! 🔧',
-  'bot.followup.business_hours_only': 'true',
-  'bot.followup.business_hour_start': '8',
-  'bot.followup.business_hour_end': '18',
-  'bot.followup.business_days': '1,2,3,4,5',
-  'bot.followup.opt_out_keywords': 'parar,cancelar,nao quero,sair,stop,pare,nao me mande,nao envie',
-}
-
-function formatMinutes(m: number): string {
+function formatInterval(m: number): string {
   if (m < 60) return `${m} min`
-  if (m < 1440) return `${Math.round(m / 60)}h`
-  const days = Math.round(m / 1440)
-  if (days === 7) return '1 semana'
-  if (days === 14) return '2 semanas'
-  if (days >= 28 && days <= 31) return '1 mes'
-  return `${days} dias`
+  if (m < 1440) {
+    const h = Math.floor(m / 60)
+    return `${h}h`
+  }
+  const d = Math.round(m / 1440)
+  if (d === 7) return '1 semana'
+  if (d === 14) return '2 semanas'
+  if (d >= 28 && d <= 31) return '1 mes'
+  return `${d} dias`
+}
+
+// Convert minutes to human-readable input value
+function minsToTimeStr(mins: string): string {
+  const m = parseInt(mins) || 60
+  if (m < 60) return mins
+  if (m < 1440) return String(Math.round(m / 60))
+  return String(Math.round(m / 1440))
+}
+
+function minsToUnit(mins: string): string {
+  const m = parseInt(mins) || 60
+  if (m < 60) return 'min'
+  if (m < 1440) return 'horas'
+  return 'dias'
+}
+
+function timeToMins(value: string, unit: string): string {
+  const n = parseInt(value) || 1
+  if (unit === 'min') return String(n)
+  if (unit === 'horas') return String(n * 60)
+  return String(n * 1440)
 }
 
 export default function BotFollowUpConfigPage() {
-  const [config, setConfig] = useState<FollowUpConfig>(DEFAULTS)
+  const [config, setConfig] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     fetch('/api/settings/bot-followup')
       .then(r => r.json())
-      .then(d => { if (d.data) setConfig(prev => ({ ...prev, ...d.data })) })
-      .catch(() => toast.error('Erro ao carregar configuracoes'))
+      .then(d => { if (d.data) setConfig(d.data) })
+      .catch(() => toast.error('Erro ao carregar'))
       .finally(() => setLoading(false))
   }, [])
+
+  function upd(key: string, value: string) {
+    setConfig(prev => ({ ...prev, [key]: value }))
+  }
 
   async function handleSave() {
     setSaving(true)
@@ -105,40 +85,40 @@ export default function BotFollowUpConfigPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
       })
-      if (!res.ok) { const d = await res.json(); throw new Error(d.error) }
-      toast.success('Configuracoes de follow-up salvas!')
+      if (!res.ok) throw new Error('Erro ao salvar')
+      toast.success('Configuracoes salvas!')
     } catch (err: any) { toast.error(err.message) }
     finally { setSaving(false) }
   }
 
-  function upd(key: keyof FollowUpConfig, value: string) {
-    setConfig(prev => ({ ...prev, [key]: value }))
-  }
-
   function toggleDay(day: number) {
-    const current = config['bot.followup.business_days'].split(',').map(Number).filter(n => !isNaN(n))
-    const updated = current.includes(day)
-      ? current.filter(d => d !== day)
-      : [...current, day].sort()
+    const current = (config['bot.followup.business_days'] || '1,2,3,4,5').split(',').map(Number).filter(n => !isNaN(n))
+    const updated = current.includes(day) ? current.filter(d => d !== day) : [...current, day].sort()
     upd('bot.followup.business_days', updated.join(','))
   }
 
-  function handleRestore() {
-    setConfig(DEFAULTS)
-    toast.info('Valores padrao restaurados (salve para aplicar)')
-  }
-
   const isEnabled = config['bot.followup.enabled'] === 'true'
-  const activeDays = config['bot.followup.business_days'].split(',').map(Number)
   const maxAttempts = parseInt(config['bot.followup.max_attempts'] || '3')
+  const activeDays = (config['bot.followup.business_days'] || '1,2,3,4,5').split(',').map(Number)
   const inp = 'w-full px-3 py-2 border rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-200'
+
+  // Toggle a specific follow-up on/off by adjusting max_attempts
+  function toggleFollowUp(n: number) {
+    if (n <= maxAttempts) {
+      // Turning off: set max to n-1
+      upd('bot.followup.max_attempts', String(n - 1))
+    } else {
+      // Turning on: set max to n
+      upd('bot.followup.max_attempts', String(n))
+    }
+  }
 
   if (loading) return <div className="flex items-center justify-center py-16 text-gray-400"><Loader2 className="h-5 w-5 animate-spin mr-2" /> Carregando...</div>
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-5 max-w-4xl pb-10">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-3">
           <Link href="/config" className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100"><ArrowLeft className="h-5 w-5" /></Link>
           <div>
@@ -147,190 +127,168 @@ export default function BotFollowUpConfigPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={handleRestore} className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 border rounded-lg px-3 py-2">
-            <RotateCcw className="h-3.5 w-3.5" /> Restaurar padrao
-          </button>
           <button type="button" onClick={handleSave} disabled={saving}
-            className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+            className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {saving ? 'Salvando...' : 'Salvar'}
           </button>
         </div>
       </div>
 
-      {/* Section 1: Ativar/Desativar */}
-      <div className="rounded-lg border bg-white p-5 shadow-sm">
+      {/* Toggle global */}
+      <div className="rounded-xl border bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="font-semibold text-gray-900">Follow-up Ativo</h2>
-            <p className="text-sm text-gray-500 mt-0.5">Quando ativado, o bot envia mensagens automaticas para clientes que nao responderam</p>
+            <p className="text-sm text-gray-500 mt-0.5">O bot envia mensagens automaticas para clientes que nao responderam</p>
           </div>
-          <button
-            type="button"
-            onClick={() => upd('bot.followup.enabled', isEnabled ? 'false' : 'true')}
-            className={cn('relative inline-flex h-6 w-11 items-center rounded-full transition-colors', isEnabled ? 'bg-blue-600' : 'bg-gray-300')}
-          >
-            <span className={cn('inline-block h-4 w-4 transform rounded-full bg-white transition-transform', isEnabled ? 'translate-x-6' : 'translate-x-1')} />
+          <button type="button" onClick={() => upd('bot.followup.enabled', isEnabled ? 'false' : 'true')}
+            className={cn('relative inline-flex h-7 w-12 items-center rounded-full transition-colors', isEnabled ? 'bg-blue-600' : 'bg-gray-300')}>
+            <span className={cn('inline-block h-5 w-5 transform rounded-full bg-white transition-transform shadow', isEnabled ? 'translate-x-6' : 'translate-x-1')} />
           </button>
         </div>
       </div>
 
-      {/* Section 2: Timeline Visual */}
       {isEnabled && (
         <>
-          <div className="rounded-lg border bg-white p-5 shadow-sm">
-            <h2 className="font-semibold text-gray-900 mb-4 flex items-center gap-2"><Clock className="h-5 w-5 text-blue-500" /> Sequencia de Follow-up</h2>
-            <p className="text-sm text-gray-500 mb-4">Configure ate 6 mensagens escalonadas. Cada uma e enviada se o cliente nao responder apos o intervalo definido.</p>
+          {/* 6 Follow-up cards */}
+          <div className="space-y-3">
+            {[1, 2, 3, 4, 5, 6].map(n => {
+              const color = COLORS[n - 1]
+              const isActive = n <= maxAttempts
+              const intervalMins = config[`bot.followup.interval_${n}_minutes`] || '60'
+              const msg = config[`bot.followup.msg_${n}`] || ''
 
-            {/* Max attempts */}
-            <div className="mb-5">
-              <label className="block text-xs text-gray-500 mb-1">Numero maximo de follow-ups</label>
-              <div className="flex flex-wrap gap-2">
-                {[1, 2, 3, 4, 5, 6].map(n => (
-                  <button key={n} type="button" onClick={() => upd('bot.followup.max_attempts', String(n))}
-                    className={cn('px-4 py-2 rounded-lg border text-sm font-medium transition-colors',
-                      maxAttempts === n ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50')}>
-                    {n}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Timeline items */}
-            <div className="space-y-6">
-              {[1, 2, 3, 4, 5, 6].filter(n => n <= maxAttempts).map(n => {
-                const intervalKey = `bot.followup.interval_${n}_minutes` as keyof FollowUpConfig
-                const msgKey = `bot.followup.msg_${n}` as keyof FollowUpConfig
-                const intervalValue = config[intervalKey] || '60'
-                const COLOR_MAP: Record<number, { bg: string; border: string; dot: string; text: string }> = {
-                  1: { bg: 'bg-blue-50', border: 'border-blue-200', dot: 'bg-blue-500', text: 'text-blue-700' },
-                  2: { bg: 'bg-amber-50', border: 'border-amber-200', dot: 'bg-amber-500', text: 'text-amber-700' },
-                  3: { bg: 'bg-orange-50', border: 'border-orange-200', dot: 'bg-orange-500', text: 'text-orange-700' },
-                  4: { bg: 'bg-purple-50', border: 'border-purple-200', dot: 'bg-purple-500', text: 'text-purple-700' },
-                  5: { bg: 'bg-pink-50', border: 'border-pink-200', dot: 'bg-pink-500', text: 'text-pink-700' },
-                  6: { bg: 'bg-red-50', border: 'border-red-200', dot: 'bg-red-500', text: 'text-red-700' },
-                }
-                const colors = COLOR_MAP[n] || COLOR_MAP[6]
-
-                return (
-                  <div key={n} className={cn('rounded-xl border p-4', colors.border, colors.bg)}>
-                    <div className="flex items-center gap-2 mb-3">
-                      <div className={cn('h-3 w-3 rounded-full', colors.dot)} />
-                      <span className={cn('font-semibold text-sm', colors.text)}>Follow-up #{n}</span>
-                      <span className="text-xs text-gray-500">— enviado {formatMinutes(parseInt(intervalValue))} apos silencio</span>
+              return (
+                <div key={n} className={cn('rounded-xl border transition-all', isActive ? `${color.border} ${color.bg}` : 'border-gray-200 bg-gray-50 opacity-60')}>
+                  {/* Header with toggle */}
+                  <div className="flex items-center justify-between p-4 pb-0">
+                    <div className="flex items-center gap-2">
+                      <div className={cn('h-3 w-3 rounded-full', isActive ? color.dot : 'bg-gray-300')} />
+                      <span className={cn('font-semibold text-sm', isActive ? color.text : 'text-gray-400')}>
+                        Follow-up #{n}
+                      </span>
+                      {isActive && (
+                        <span className="text-xs text-gray-500">— {formatInterval(parseInt(intervalMins))} apos silencio</span>
+                      )}
+                      {!isActive && (
+                        <span className="text-xs text-gray-400">— desligado</span>
+                      )}
                     </div>
+                    <button type="button" title={isActive ? 'Desligar' : 'Ligar'} onClick={() => toggleFollowUp(n)}
+                      className={cn('relative inline-flex h-6 w-10 items-center rounded-full transition-colors',
+                        isActive ? 'bg-green-500' : 'bg-gray-300')}>
+                      <span className={cn('inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-sm',
+                        isActive ? 'translate-x-5' : 'translate-x-1')} />
+                    </button>
+                  </div>
 
-                    {/* Interval */}
-                    <div className="mb-3">
-                      <label className="block text-xs text-gray-500 mb-1">Intervalo de espera</label>
-                      <div className="flex flex-wrap gap-1.5">
-                        {INTERVAL_PRESETS.map(p => (
-                          <button key={p.value} type="button" onClick={() => upd(intervalKey, p.value)}
-                            className={cn('rounded-full px-3 py-1 text-xs font-medium border transition-colors',
-                              intervalValue === p.value ? `${colors.text} ${colors.bg} ${colors.border}` : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50')}>
-                            {p.label}
-                          </button>
-                        ))}
-                        <div className="flex items-center gap-1">
-                          <input type="number" min="5" value={intervalValue}
-                            onChange={e => upd(intervalKey, e.target.value)}
-                            className="w-20 px-2 py-1 border rounded-lg text-xs text-center" />
-                          <span className="text-xs text-gray-400">min</span>
+                  {/* Content (only when active) */}
+                  {isActive && (
+                    <div className="p-4 pt-3 space-y-3">
+                      {/* Interval */}
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Enviar apos</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min="1"
+                            title="Valor do intervalo"
+                            value={minsToTimeStr(intervalMins)}
+                            onChange={e => upd(`bot.followup.interval_${n}_minutes`, timeToMins(e.target.value, minsToUnit(intervalMins)))}
+                            className="w-20 px-3 py-2 border rounded-lg text-sm text-center font-medium"
+                          />
+                          <select
+                            title="Unidade de tempo"
+                            value={minsToUnit(intervalMins)}
+                            onChange={e => upd(`bot.followup.interval_${n}_minutes`, timeToMins(minsToTimeStr(intervalMins), e.target.value))}
+                            className="px-3 py-2 border rounded-lg text-sm bg-white"
+                          >
+                            <option value="min">minutos</option>
+                            <option value="horas">horas</option>
+                            <option value="dias">dias</option>
+                          </select>
+                          <span className="text-xs text-gray-400">sem resposta do cliente</span>
                         </div>
                       </div>
-                    </div>
 
-                    {/* Message */}
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">Mensagem</label>
-                      <textarea
-                        value={config[msgKey]}
-                        onChange={e => upd(msgKey, e.target.value)}
-                        rows={3}
-                        className={inp}
-                        placeholder="Mensagem do follow-up..."
-                      />
-                      <p className="text-[10px] text-gray-400 mt-0.5">Variaveis: {'{{empresa}}'} {'{{suporte}}'}</p>
+                      {/* Message */}
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Mensagem</label>
+                        <textarea
+                          value={msg}
+                          onChange={e => upd(`bot.followup.msg_${n}`, e.target.value)}
+                          rows={3}
+                          className={inp}
+                          placeholder="Mensagem do follow-up..."
+                        />
+                        <p className="text-[10px] text-gray-400 mt-0.5">
+                          Use *texto* para negrito no WhatsApp. Variaveis: {'{{empresa}}'} {'{{suporte}}'}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                )
-              })}
-            </div>
-
-            {/* Visual timeline summary */}
-            <div className="mt-5 p-3 bg-gray-50 rounded-lg">
-              <p className="text-xs font-medium text-gray-500 mb-2">Resumo da sequencia:</p>
-              <div className="flex items-center gap-2 text-xs text-gray-600">
-                <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Cliente nao responde</span>
-                {[1, 2, 3, 4, 5, 6].filter(n => n <= maxAttempts).map(n => {
-                  const intervalKey = `bot.followup.interval_${n}_minutes` as keyof FollowUpConfig
-                  const BADGE_COLORS: Record<number, string> = {
-                    1: 'bg-blue-100 text-blue-700', 2: 'bg-amber-100 text-amber-700',
-                    3: 'bg-orange-100 text-orange-700', 4: 'bg-purple-100 text-purple-700',
-                    5: 'bg-pink-100 text-pink-700', 6: 'bg-red-100 text-red-700',
-                  }
-                  return (
-                    <span key={n} className="flex items-center gap-1">
-                      <span className="text-gray-400">→</span>
-                      <span className="bg-white border px-2 py-0.5 rounded-full">{formatMinutes(parseInt(config[intervalKey] || '60'))}</span>
-                      <span className="text-gray-400">→</span>
-                      <span className={cn('px-2 py-0.5 rounded-full font-medium', BADGE_COLORS[n] || BADGE_COLORS[6])}>
-                        #{n}
-                      </span>
-                    </span>
-                  )
-                })}
-                <span className="text-gray-400">→</span>
-                <span className="bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full font-medium">Encerra</span>
-              </div>
-            </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
 
-          {/* Section 3: Horario Comercial */}
-          <div className="rounded-lg border bg-white p-5 shadow-sm">
-            <h2 className="font-semibold text-gray-900 mb-4 flex items-center gap-2"><Clock className="h-5 w-5 text-green-500" /> Horario Comercial</h2>
-            <p className="text-sm text-gray-500 mb-4">Follow-ups so sao enviados no horario e dias permitidos. Mensagens fora do horario sao reagendadas automaticamente.</p>
+          {/* Resumo visual */}
+          <div className="rounded-xl border bg-white p-4 shadow-sm">
+            <p className="text-xs font-medium text-gray-500 mb-2">Resumo da sequencia ativa:</p>
+            <div className="flex flex-wrap items-center gap-1.5 text-xs text-gray-600">
+              <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Bot responde</span>
+              {[1, 2, 3, 4, 5, 6].filter(n => n <= maxAttempts).map(n => {
+                const mins = config[`bot.followup.interval_${n}_minutes`] || '60'
+                return (
+                  <span key={n} className="flex items-center gap-1">
+                    <span className="text-gray-400">→</span>
+                    <span className="bg-white border px-2 py-0.5 rounded-full">{formatInterval(parseInt(mins))}</span>
+                    <span className="text-gray-400">→</span>
+                    <span className={cn('px-2 py-0.5 rounded-full font-medium', COLORS[n - 1].bg, COLORS[n - 1].text)}>#{n}</span>
+                  </span>
+                )
+              })}
+              <span className="text-gray-400">→</span>
+              <span className="bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full font-medium">Encerra</span>
+            </div>
+            {maxAttempts === 0 && <p className="text-xs text-gray-400 mt-1">Nenhum follow-up ativo</p>}
+          </div>
 
+          {/* Horario Comercial */}
+          <div className="rounded-xl border bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between mb-4">
-              <span className="text-sm text-gray-700">Respeitar horario comercial</span>
-              <button
-                type="button"
+              <div>
+                <h2 className="font-semibold text-gray-900 flex items-center gap-2"><Clock className="h-5 w-5 text-green-500" /> Horario Comercial</h2>
+                <p className="text-sm text-gray-500 mt-0.5">Follow-ups so sao enviados no horario e dias permitidos</p>
+              </div>
+              <button type="button"
                 onClick={() => upd('bot.followup.business_hours_only', config['bot.followup.business_hours_only'] === 'true' ? 'false' : 'true')}
-                className={cn('relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
-                  config['bot.followup.business_hours_only'] === 'true' ? 'bg-green-500' : 'bg-gray-300')}
-              >
-                <span className={cn('inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
-                  config['bot.followup.business_hours_only'] === 'true' ? 'translate-x-6' : 'translate-x-1')} />
+                className={cn('relative inline-flex h-6 w-10 items-center rounded-full transition-colors',
+                  config['bot.followup.business_hours_only'] === 'true' ? 'bg-green-500' : 'bg-gray-300')}>
+                <span className={cn('inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-sm',
+                  config['bot.followup.business_hours_only'] === 'true' ? 'translate-x-5' : 'translate-x-1')} />
               </button>
             </div>
 
             {config['bot.followup.business_hours_only'] === 'true' && (
               <div className="space-y-4">
-                {/* Hours */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Inicio</label>
-                    <input
-                      type="time"
-                      title="Hora de inicio"
+                    <input type="time" title="Hora inicio"
                       value={`${String(config['bot.followup.business_hour_start'] || '8').padStart(2, '0')}:00`}
                       onChange={e => upd('bot.followup.business_hour_start', String(parseInt(e.target.value.split(':')[0]) || 0))}
-                      className={inp}
-                    />
+                      className={inp} />
                   </div>
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Fim</label>
-                    <input
-                      type="time"
-                      title="Hora de fim"
+                    <input type="time" title="Hora fim"
                       value={`${String(config['bot.followup.business_hour_end'] || '18').padStart(2, '0')}:00`}
                       onChange={e => upd('bot.followup.business_hour_end', String(parseInt(e.target.value.split(':')[0]) || 0))}
-                      className={inp}
-                    />
+                      className={inp} />
                   </div>
                 </div>
-
-                {/* Days */}
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Dias permitidos</label>
                   <div className="flex gap-1.5">
@@ -347,21 +305,17 @@ export default function BotFollowUpConfigPage() {
             )}
           </div>
 
-          {/* Section 4: Opt-out */}
-          <div className="rounded-lg border bg-white p-5 shadow-sm">
-            <h2 className="font-semibold text-gray-900 mb-2 flex items-center gap-2"><Shield className="h-5 w-5 text-red-500" /> Opt-out (Descadastro)</h2>
-            <p className="text-sm text-gray-500 mb-4">Se o cliente enviar qualquer uma dessas palavras, os follow-ups param automaticamente. Conforme LGPD.</p>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Palavras-chave (separadas por virgula)</label>
-              <textarea
-                value={config['bot.followup.opt_out_keywords']}
-                onChange={e => upd('bot.followup.opt_out_keywords', e.target.value)}
-                rows={2}
-                className={inp}
-                placeholder="parar, cancelar, sair, stop..."
-              />
-              <p className="text-[10px] text-gray-400 mt-0.5">O bot detecta essas palavras em qualquer parte da mensagem e para de enviar follow-ups</p>
-            </div>
+          {/* Opt-out */}
+          <div className="rounded-xl border bg-white p-5 shadow-sm">
+            <h2 className="font-semibold text-gray-900 mb-1 flex items-center gap-2"><Shield className="h-5 w-5 text-red-500" /> Opt-out (LGPD)</h2>
+            <p className="text-sm text-gray-500 mb-3">Se o cliente enviar essas palavras, os follow-ups param automaticamente</p>
+            <textarea
+              value={config['bot.followup.opt_out_keywords'] || ''}
+              onChange={e => upd('bot.followup.opt_out_keywords', e.target.value)}
+              rows={2}
+              className={inp}
+              placeholder="parar, cancelar, sair, stop..."
+            />
           </div>
         </>
       )}
