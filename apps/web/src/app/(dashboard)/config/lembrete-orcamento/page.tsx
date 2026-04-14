@@ -88,6 +88,11 @@ export default function LembreteOrcamentoConfigPage() {
           interval_days: parseInt(flat['quote_reminder.interval_days'] || '3', 10),
           max_reminders: parseInt(flat['quote_reminder.max_reminders'] || '3', 10),
         })
+        // Load saved template
+        if (flat['quote_reminder.email_template']) {
+          setTemplate(flat['quote_reminder.email_template'])
+          setSavedTemplate(flat['quote_reminder.email_template'])
+        }
       }
 
       // Load awaiting items
