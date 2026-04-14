@@ -405,7 +405,8 @@ export async function POST(req: NextRequest, { params }: Params) {
       where: { company_id_key: { company_id: user.companyId, key: `notif.rule.${toStatusId}` } },
     }).catch(() => null)
 
-    let notifRule = { mode: 'auto' as string, email: true, whatsapp: true, email_subject: '', email_message: '', whatsapp_message: '' }
+    // Default: 'manual' for new/unconfigured statuses (safe — admin must explicitly enable auto)
+    let notifRule = { mode: 'manual' as string, email: true, whatsapp: true, email_subject: '', email_message: '', whatsapp_message: '' }
     if (notifRuleSetting?.value) {
       try { notifRule = { ...notifRule, ...JSON.parse(notifRuleSetting.value) } } catch {}
     }

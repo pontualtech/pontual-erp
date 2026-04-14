@@ -27,8 +27,9 @@ export interface NotifRule {
   whatsapp_message: string
 }
 
+// Default for new/unconfigured statuses: manual (safe — admin must explicitly enable auto)
 const DEFAULT_RULE: NotifRule = {
-  mode: 'auto',
+  mode: 'manual',
   email: true,
   whatsapp: true,
   email_subject: '',

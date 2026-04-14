@@ -29,8 +29,9 @@ const MODE_CONFIG = {
   off: { label: 'Desligado', desc: 'Nao envia', icon: XCircle, color: 'bg-gray-400', ring: 'ring-gray-200' },
 }
 
+// Default for new/unconfigured statuses: manual (safe — admin must explicitly enable auto)
 const DEFAULT_RULE: NotifRule = {
-  mode: 'auto',
+  mode: 'manual',
   email: true,
   whatsapp: true,
   email_subject: '',
