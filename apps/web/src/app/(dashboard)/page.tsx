@@ -7,7 +7,7 @@ import { useAuth } from '@/lib/use-auth'
 import {
   ClipboardList, Wrench, Truck, DollarSign, PackageCheck,
   Bell, Pin, Plus, X, Clock, TrendingUp, Target,
-  ArrowRight, Loader2, Settings, Eye, EyeOff, ChevronUp, ChevronDown, GripVertical,
+  ArrowRight, Loader2, Settings, Eye, EyeOff,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -271,22 +271,11 @@ export default function DashboardPage() {
                     'flex items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors',
                     w.visible ? 'bg-white border-gray-200' : 'bg-gray-50 border-gray-100 opacity-60'
                   )}>
-                    <GripVertical className="h-4 w-4 text-gray-300 shrink-0" />
                     <button type="button" onClick={() => toggleWidget(w.id)}
                       className={cn('shrink-0 rounded p-1', w.visible ? 'text-blue-600' : 'text-gray-400')}>
                       {w.visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
                     </button>
                     <span className="flex-1 text-sm font-medium text-gray-700">{WIDGET_LABELS[w.id] || w.id}</span>
-                    <div className="flex shrink-0">
-                      <button type="button" title="Mover para cima" onClick={() => moveWidget(w.id, -1)} disabled={idx === 0}
-                        className="rounded p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-20">
-                        <ChevronUp className="h-4 w-4" />
-                      </button>
-                      <button type="button" title="Mover para baixo" onClick={() => moveWidget(w.id, 1)} disabled={idx === widgetPrefs.length - 1}
-                        className="rounded p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-20">
-                        <ChevronDown className="h-4 w-4" />
-                      </button>
-                    </div>
                   </div>
                 ))}
               </div>

@@ -641,8 +641,9 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
   await new Promise(r => setTimeout(r, DEBOUNCE_WAIT_MS))
 
   // Step 4–7: Processing loop — keeps running until no more pending messages
-  // This catches "straggler" messages that arrive during Dify processing
-  const MAX_LOOPS = 3 // safety cap to prevent infinite loops
+  // Wrapped in try/finally to guarantee lock release even on unexpected errors
+  const MAX_LOOPS = 3
+  try {
   for (let loopIdx = 0; loopIdx < MAX_LOOPS; loopIdx++) {
     // Re-read bot conversation to get ALL pending messages
     botConv = await prisma.botConversation.findUnique({ where: { id: botConv.id } }) as any
@@ -898,9 +899,10 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
     // Brief pause before checking for stragglers (give webhooks time to save)
     await new Promise(r => setTimeout(r, 500))
   } // end processing loop
-
-  // ALWAYS release the lock when done
-  await releaseLock(botConv.id)
+  } finally {
+    // ALWAYS release the lock — even on unexpected errors
+    if (botConv?.id) await releaseLock(botConv.id)
+  }
 }
 
 // ---------------------------------------------------------------------------

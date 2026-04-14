@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
     return success({
       id: setting.id,
       key: setting.key,
-      value: { name: name.trim(), items },
+      value: { name: name.trim(), laudo: laudo || null, items },
       created_at: setting.created_at,
     }, 201)
   } catch (err) {
