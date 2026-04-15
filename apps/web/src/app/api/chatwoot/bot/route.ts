@@ -1027,9 +1027,12 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       data: updateData,
     })
 
-    // Send response to client
+    // Send response to client (sanitize wa.me links — template buttons handle support contact)
     if (parsed.cleanText) {
-      await cwSendWithTyping(cfg, conversationId, parsed.cleanText)
+      let responseText = parsed.cleanText
+        .replace(/Fale com eles por aqui:\s*https?:\/\/wa\.me\/\d+/gi, 'Responda esta mensagem para falar com nosso suporte!')
+        .replace(/https?:\/\/wa\.me\/\d+/gi, 'Responda esta mensagem para falar conosco!')
+      await cwSendWithTyping(cfg, conversationId, responseText)
     }
 
     // Post-send actions
