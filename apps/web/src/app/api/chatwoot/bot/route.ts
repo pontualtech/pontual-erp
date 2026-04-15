@@ -898,7 +898,20 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
         const osNum = erpData.os_numero || 0
         const clienteNome = erpData.cliente_nome || parsed.vhsysData.nome || 'Cliente'
         if (osNum > 0) {
-          await cwSendMessage(cfg, conversationId, `✅ *OS #${osNum}* aberta para ${clienteNome}!\n\n📱 Acompanhe pelo portal:\n${cfg.portalUrl}\n\n📞 Suporte: ${cfg.supportWhatsApp}`)
+          await cwSendMessage(cfg, conversationId, `✅ *OS #${osNum}* aberta para ${clienteNome}!`)
+          // Send professional template with button via Cloud API
+          try {
+            const { sendWhatsAppTemplate } = await import('@/lib/whatsapp/cloud-api')
+            const osEquip = [parsed.vhsysData?.marca, parsed.vhsysData?.modelo].filter(Boolean).join(' ') || parsed.vhsysData?.equipamento || 'Equipamento'
+            const osDefect = parsed.vhsysData?.defeito || 'A diagnosticar'
+            await sendWhatsAppTemplate(cfg.companyId, phone, 'pt_os_aberta_v2', 'pt_BR', [
+              { type: 'body', parameters: [
+                { type: 'text', text: String(osNum).padStart(4, '0') },
+                { type: 'text', text: osEquip },
+                { type: 'text', text: osDefect },
+              ] }
+            ])
+          } catch {} // fire and forget
           // Private note with all links for agents (always visible in conversation)
           const vdNote = parsed.vhsysData as Record<string, any>
           const noteLines = [
