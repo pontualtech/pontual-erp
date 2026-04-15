@@ -41,7 +41,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (_resend_notify_only) {
       const currentStatus = await prisma.moduleStatus.findFirst({ where: { id: os.status_id, company_id: user.companyId, module: 'os' } })
 
-      // Email
+      // Email — full professional template (same as normal transition)
       if (shouldNotifyEmail && os.customers?.email) {
         const statusMap: Record<string, string> = {
           'Coletar': 'Recebido', 'Orcar': 'Em Analise', 'Negociar': 'Em Analise', 'LAUDO': 'Em Analise',
@@ -49,14 +49,33 @@ export async function POST(req: NextRequest, { params }: Params) {
           'Em Execucao': 'Reparo em Andamento', 'Aguardando Peca': 'Aguardando Pecas',
           'Entregar Reparado': 'Pronto para Retirada', 'Entregue': 'Entregue', 'Cancelada': 'Cancelada',
         }
+        const friendlyFrom = currentStatus ? (statusMap[currentStatus.name] || currentStatus.name) : '—'
         const friendlyTo = statusMap[toStatus.name] || toStatus.name
-        const companyData = await prisma.company.findUnique({ where: { id: user.companyId }, select: { name: true, slug: true } }).catch(() => null)
         const osNum = String(os.os_number).padStart(4, '0')
+        const equipment = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ') || 'Equipamento'
+        const customerFirstName = (os.customers.legal_name || 'Cliente').split(' ')[0]
+
+        // Load company data for footer
+        const emailSettings = await prisma.setting.findMany({ where: { company_id: user.companyId } }).catch(() => [])
+        const cfg: Record<string, string> = {}
+        for (const s of emailSettings) cfg[s.key] = s.value
+        const companyData = await prisma.company.findUnique({ where: { id: user.companyId }, select: { name: true, slug: true } }).catch(() => null)
+        const companyName = companyData?.name || cfg['company.name'] || 'Empresa'
+        const companyPhone = cfg['company.phone'] || ''
+        const companyEmail = cfg['company.email'] || ''
+        const portalBase = process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'
+        const portalSlug = companyData?.slug || 'pontualtech'
+        const portalUrl = `${portalBase}/portal/${portalSlug}/os/${os.id}`
+
+        const emailHtml = buildOsStatusEmailHtml({
+          customerFirstName, osNum, equipment, friendlyFrom, friendlyTo,
+          companyName, companyPhone, companyEmail, portalUrl,
+        })
         sendCompanyEmail(
           user.companyId,
           os.customers.email,
-          `OS #${osNum} — ${friendlyTo} — ${companyData?.name || 'Empresa'}`,
-          `<p>Sua OS #${osNum} foi atualizada para: <strong>${friendlyTo}</strong></p>`,
+          `OS #${osNum} — ${friendlyTo} — ${companyName}`,
+          emailHtml,
         ).catch(() => {})
       }
 
@@ -478,19 +497,6 @@ export async function POST(req: NextRequest, { params }: Params) {
       const friendlyFrom = statusMap[currentStatus.name] || currentStatus.name
       const friendlyTo = statusMap[toStatus.name] || toStatus.name
 
-      const statusMessages: Record<string, string> = {
-        'Recebido': 'Recebemos seu equipamento! Em breve iniciaremos a analise.',
-        'Em Analise': 'Nossos tecnicos estao analisando seu equipamento.',
-        'Aguardando sua Aprovacao': 'Enviamos o orcamento para sua aprovacao. Confira os detalhes no portal.',
-        'Aprovado - Em Reparo': 'Orcamento aprovado! O reparo ja foi iniciado.',
-        'Reparo em Andamento': 'O reparo do seu equipamento esta em andamento.',
-        'Aguardando Pecas': 'Estamos aguardando a chegada de pecas para continuar o reparo.',
-        'Pronto para Retirada': 'Seu equipamento esta pronto! Entre em contato para retirar.',
-        'Entregue': 'Seu equipamento foi entregue. Obrigado pela confianca!',
-        'Cancelada': 'Esta ordem de servico foi cancelada.',
-      }
-      const statusMsg = statusMessages[friendlyTo] || `Status atualizado para: ${friendlyTo}`
-
       const customerFirstName = (os.customers.legal_name || 'Cliente').split(' ')[0]
       const osNum = String(os.os_number).padStart(4, '0')
       const equipment = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ') || 'Equipamento'
@@ -507,52 +513,10 @@ export async function POST(req: NextRequest, { params }: Params) {
       const portalSlug = company?.slug || 'pontualtech'
       const portalUrl = `${portalBase}/portal/${portalSlug}/os/${os.id}`
 
-      const badgeColor = friendlyTo.includes('Pronto') ? '#16a34a' : friendlyTo.includes('Cancelada') ? '#dc2626' : friendlyTo.includes('Aguardando') ? '#f59e0b' : '#2563eb'
-
-      const emailHtml = `<!DOCTYPE html>
-<html lang="pt-BR">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:Arial,Helvetica,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f1f5f9;padding:32px 0;">
-    <tr><td align="center">
-      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
-        <tr><td style="background:linear-gradient(135deg,#1e40af 0%,#2563eb 50%,#3b82f6 100%);padding:32px;text-align:center;">
-          <h1 style="margin:0 0 4px;color:#fff;font-size:20px;font-weight:800;">Atualizacao da sua OS</h1>
-          <p style="margin:0;color:rgba(255,255,255,0.7);font-size:12px;">${companyName}</p>
-        </td></tr>
-        <tr><td style="padding:32px;">
-          <p style="font-size:16px;margin:0 0 16px;color:#1e293b;">Ola <strong>${customerFirstName}</strong>,</p>
-          <p style="font-size:14px;color:#475569;margin:0 0 24px;line-height:1.6;">Sua OS <strong>#${osNum}</strong> teve uma atualizacao!</p>
-          <div style="background:#f8fafc;border:2px solid #e2e8f0;border-radius:10px;padding:16px;margin:0 0 20px;">
-            <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;color:#1e293b;">
-              <tr><td style="padding:6px 0;color:#64748b;font-weight:700;width:120px;">Equipamento:</td><td style="padding:6px 0;font-weight:600;">${equipment}</td></tr>
-              <tr><td style="padding:6px 0;color:#64748b;font-weight:700;">OS:</td><td style="padding:6px 0;font-weight:600;">#${osNum}</td></tr>
-              <tr><td style="padding:6px 0;color:#64748b;font-weight:700;">Status:</td><td style="padding:6px 0;">
-                <span style="background:#94a3b8;color:#fff;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600;">${friendlyFrom}</span>
-                <span style="margin:0 6px;color:#64748b;">&#8594;</span>
-                <span style="background:${badgeColor};color:#fff;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600;">${friendlyTo}</span>
-              </td></tr>
-            </table>
-          </div>
-          <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px;margin:0 0 24px;">
-            <p style="margin:0;font-size:14px;color:#1e40af;line-height:1.5;">${statusMsg}</p>
-          </div>
-          <div style="text-align:center;margin:0 0 8px;">
-            <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr><td style="background:#2563eb;border-radius:8px;">
-              <a href="${portalUrl}" style="display:inline-block;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:14px 32px;">VER MINHA OS</a>
-            </td></tr></table>
-          </div>
-        </td></tr>
-        <tr><td style="background:#1e293b;padding:24px 32px;text-align:center;">
-          <p style="margin:0 0 4px;font-size:14px;font-weight:700;color:#fff;">${companyName}</p>
-          ${companyPhone ? `<p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">Tel: ${companyPhone}</p>` : ''}
-          ${companyEmail ? `<p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">${companyEmail}</p>` : ''}
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`
+      const emailHtml = buildOsStatusEmailHtml({
+        customerFirstName, osNum, equipment, friendlyFrom, friendlyTo,
+        companyName, companyPhone, companyEmail, portalUrl,
+      })
 
       sendCompanyEmail(
         user.companyId,
@@ -585,4 +549,76 @@ export async function POST(req: NextRequest, { params }: Params) {
   } catch (err) {
     return handleError(err)
   }
+}
+
+// ── Reusable email HTML builder for OS status notifications ──
+function buildOsStatusEmailHtml(p: {
+  customerFirstName: string
+  osNum: string
+  equipment: string
+  friendlyFrom: string
+  friendlyTo: string
+  companyName: string
+  companyPhone: string
+  companyEmail: string
+  portalUrl: string
+}): string {
+  const statusMessages: Record<string, string> = {
+    'Recebido': 'Recebemos seu equipamento! Em breve iniciaremos a analise.',
+    'Em Analise': 'Nossos tecnicos estao analisando seu equipamento.',
+    'Aguardando sua Aprovacao': 'Enviamos o orcamento para sua aprovacao. Confira os detalhes no portal.',
+    'Aprovado - Em Reparo': 'Orcamento aprovado! O reparo ja foi iniciado.',
+    'Reparo em Andamento': 'O reparo do seu equipamento esta em andamento.',
+    'Aguardando Pecas': 'Estamos aguardando a chegada de pecas para continuar o reparo.',
+    'Pronto para Retirada': 'Seu equipamento esta pronto! Entre em contato para retirar.',
+    'Entregue': 'Seu equipamento foi entregue. Obrigado pela confianca!',
+    'Cancelada': 'Esta ordem de servico foi cancelada.',
+  }
+  const statusMsg = statusMessages[p.friendlyTo] || `Status atualizado para: ${p.friendlyTo}`
+  const badgeColor = p.friendlyTo.includes('Pronto') ? '#16a34a' : p.friendlyTo.includes('Cancelada') ? '#dc2626' : p.friendlyTo.includes('Aguardando') ? '#f59e0b' : '#2563eb'
+
+  return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f1f5f9;padding:32px 0;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+        <tr><td style="background:linear-gradient(135deg,#1e40af 0%,#2563eb 50%,#3b82f6 100%);padding:32px;text-align:center;">
+          <h1 style="margin:0 0 4px;color:#fff;font-size:20px;font-weight:800;">Atualizacao da sua OS</h1>
+          <p style="margin:0;color:rgba(255,255,255,0.7);font-size:12px;">${p.companyName}</p>
+        </td></tr>
+        <tr><td style="padding:32px;">
+          <p style="font-size:16px;margin:0 0 16px;color:#1e293b;">Ola <strong>${p.customerFirstName}</strong>,</p>
+          <p style="font-size:14px;color:#475569;margin:0 0 24px;line-height:1.6;">Sua OS <strong>#${p.osNum}</strong> teve uma atualizacao!</p>
+          <div style="background:#f8fafc;border:2px solid #e2e8f0;border-radius:10px;padding:16px;margin:0 0 20px;">
+            <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;color:#1e293b;">
+              <tr><td style="padding:6px 0;color:#64748b;font-weight:700;width:120px;">Equipamento:</td><td style="padding:6px 0;font-weight:600;">${p.equipment}</td></tr>
+              <tr><td style="padding:6px 0;color:#64748b;font-weight:700;">OS:</td><td style="padding:6px 0;font-weight:600;">#${p.osNum}</td></tr>
+              <tr><td style="padding:6px 0;color:#64748b;font-weight:700;">Status:</td><td style="padding:6px 0;">
+                <span style="background:#94a3b8;color:#fff;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600;">${p.friendlyFrom}</span>
+                <span style="margin:0 6px;color:#64748b;">&#8594;</span>
+                <span style="background:${badgeColor};color:#fff;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600;">${p.friendlyTo}</span>
+              </td></tr>
+            </table>
+          </div>
+          <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px;margin:0 0 24px;">
+            <p style="margin:0;font-size:14px;color:#1e40af;line-height:1.5;">${statusMsg}</p>
+          </div>
+          <div style="text-align:center;margin:0 0 8px;">
+            <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr><td style="background:#2563eb;border-radius:8px;">
+              <a href="${p.portalUrl}" style="display:inline-block;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:14px 32px;">VER MINHA OS</a>
+            </td></tr></table>
+          </div>
+        </td></tr>
+        <tr><td style="background:#1e293b;padding:24px 32px;text-align:center;">
+          <p style="margin:0 0 4px;font-size:14px;font-weight:700;color:#fff;">${p.companyName}</p>
+          ${p.companyPhone ? `<p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">Tel: ${p.companyPhone}</p>` : ''}
+          ${p.companyEmail ? `<p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">${p.companyEmail}</p>` : ''}
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`
 }
