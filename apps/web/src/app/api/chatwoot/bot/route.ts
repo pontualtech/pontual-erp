@@ -1027,11 +1027,11 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       data: updateData,
     })
 
-    // Send response to client (sanitize wa.me links — template buttons handle support contact)
+    // Send response to client — ensure wa.me links use the correct company support number
     if (parsed.cleanText) {
+      const supportNum = (cfg.supportWhatsApp || '').replace(/\D/g, '') || '551126263841'
       let responseText = parsed.cleanText
-        .replace(/Fale com eles por aqui:\s*https?:\/\/wa\.me\/\d+/gi, 'Responda esta mensagem para falar com nosso suporte!')
-        .replace(/https?:\/\/wa\.me\/\d+/gi, 'Responda esta mensagem para falar conosco!')
+        .replace(/https?:\/\/wa\.me\/\d+/gi, `https://wa.me/${supportNum}`)
       await cwSendWithTyping(cfg, conversationId, responseText)
     }
 
