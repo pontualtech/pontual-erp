@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { ArrowLeft, Loader2, Package, Wrench } from 'lucide-react'
+import { MoneyInput } from '@/app/(dashboard)/components/money-input'
 
 export default function EditarProdutoPage() {
   const { id } = useParams<{ id: string }>()
@@ -117,11 +118,11 @@ export default function EditarProdutoPage() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Preço de Custo (R$)</label>
-              <input type="number" step="0.01" min="0" value={form.cost_price} onChange={e => update('cost_price', e.target.value)} placeholder="0,00" className={inp} />
+              <MoneyInput value={parseFloat(form.cost_price) || 0} onChange={v => update('cost_price', String(v))} placeholder="0,00" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Preço de Venda (R$)</label>
-              <input type="number" step="0.01" min="0" value={form.sale_price} onChange={e => update('sale_price', e.target.value)} placeholder="0,00" className={inp} />
+              <MoneyInput value={parseFloat(form.sale_price) || 0} onChange={v => update('sale_price', String(v))} placeholder="0,00" />
             </div>
           </div>
         </div>

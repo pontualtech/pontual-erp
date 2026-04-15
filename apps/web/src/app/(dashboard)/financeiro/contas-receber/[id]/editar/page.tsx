@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { MoneyInput } from '@/app/(dashboard)/components/money-input'
 
 interface Category {
   id: string
@@ -107,8 +108,8 @@ export default function EditarContaReceberPage() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Valor (R$)</label>
-              <input type="number" step="0.01" min="0" value={form.total_amount}
-                onChange={e => updateForm('total_amount', e.target.value)} className={inp} />
+              <MoneyInput value={parseFloat(form.total_amount) || 0}
+                onChange={v => updateForm('total_amount', String(v))} placeholder="0,00" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Vencimento</label>

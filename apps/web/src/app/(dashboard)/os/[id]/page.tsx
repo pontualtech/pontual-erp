@@ -7,6 +7,7 @@ import { cn, formatDocument } from '@/lib/utils'
 import { toast } from 'sonner'
 import { useAuth } from '@/lib/use-auth'
 import { ArrowLeft, Edit, Camera, History, Info, Package, Plus, Trash2, Loader2, Search, Wrench, CreditCard, X, Printer, Mail, Send, Copy, FilePlus, User, Monitor, FileText, Clock, ChevronDown, ChevronUp, AlertTriangle, Save, Check, Layers, DollarSign, ExternalLink, Receipt, Truck, MessageCircle } from 'lucide-react'
+import { MoneyInput } from '@/app/(dashboard)/components/money-input'
 
 interface Customer {
   id: string; legal_name: string; trade_name: string | null; person_type: string
@@ -1457,7 +1458,7 @@ export default function OSDetailPage() {
                     {editingItem === item.id ? (<>
                       <td className="py-1"><input type="text" title="Descricao" value={editItemData.description} onChange={e => setEditItemData(d => ({ ...d, description: e.target.value }))} className="w-full rounded border px-2 py-1 text-sm" autoFocus /></td>
                       <td className="py-1 w-20"><input type="number" title="Quantidade" min="1" value={editItemData.quantity} onChange={e => setEditItemData(d => ({ ...d, quantity: e.target.value }))} className="w-full rounded border px-2 py-1 text-sm text-right" /></td>
-                      <td className="py-1 w-28"><input type="number" title="Valor unitario" min="0" step="any" value={editItemData.unit_price} onChange={e => setEditItemData(d => ({ ...d, unit_price: e.target.value }))} className="w-full rounded border px-2 py-1 text-sm text-right" /></td>
+                      <td className="py-1 w-32"><MoneyInput title="Valor unitario" value={parseFloat(editItemData.unit_price) || 0} onChange={v => setEditItemData(d => ({ ...d, unit_price: String(v) }))} className="w-full" /></td>
                       <td className="py-2.5 text-right font-medium text-gray-400">{fmt(Math.round((parseFloat(editItemData.quantity) || 1) * (parseFloat(editItemData.unit_price) || 0) * 100))}</td>
                       <td className="py-2.5 text-right flex gap-0.5">
                         <button type="button" onClick={handleSaveItem} disabled={savingItem} title="Salvar" className="p-1 rounded hover:bg-green-50 text-green-600 disabled:opacity-50">{savingItem ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}</button>
@@ -1570,7 +1571,7 @@ export default function OSDetailPage() {
                     {editingItem === item.id ? (<>
                       <td className="py-1"><input type="text" title="Descricao" value={editItemData.description} onChange={e => setEditItemData(d => ({ ...d, description: e.target.value }))} className="w-full rounded border px-2 py-1 text-sm" autoFocus /></td>
                       <td className="py-1 w-20"><input type="number" title="Quantidade" min="1" value={editItemData.quantity} onChange={e => setEditItemData(d => ({ ...d, quantity: e.target.value }))} className="w-full rounded border px-2 py-1 text-sm text-right" /></td>
-                      <td className="py-1 w-28"><input type="number" title="Valor unitario" min="0" step="any" value={editItemData.unit_price} onChange={e => setEditItemData(d => ({ ...d, unit_price: e.target.value }))} className="w-full rounded border px-2 py-1 text-sm text-right" /></td>
+                      <td className="py-1 w-32"><MoneyInput title="Valor unitario" value={parseFloat(editItemData.unit_price) || 0} onChange={v => setEditItemData(d => ({ ...d, unit_price: String(v) }))} className="w-full" /></td>
                       <td className="py-2.5 text-right font-medium text-gray-400">{fmt(Math.round((parseFloat(editItemData.quantity) || 1) * (parseFloat(editItemData.unit_price) || 0) * 100))}</td>
                       <td className="py-2.5 text-right flex gap-0.5">
                         <button type="button" onClick={handleSaveItem} disabled={savingItem} title="Salvar" className="p-1 rounded hover:bg-green-50 text-green-600 disabled:opacity-50">{savingItem ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}</button>
@@ -3265,8 +3266,8 @@ function InlineAddItemForm({
                 placeholder="Nome" className="w-full px-3 py-2 border rounded-lg text-sm bg-white" />
             </div>
             <div>
-              <input type="number" step="0.01" min="0" value={quickPrice} onChange={e => setQuickPrice(e.target.value)}
-                placeholder="Preco R$" className="w-full px-3 py-2 border rounded-lg text-sm bg-white" />
+              <MoneyInput value={parseFloat(quickPrice) || 0} onChange={v => setQuickPrice(String(v))}
+                placeholder="0,00" />
             </div>
           </div>
           <button type="button" onClick={handleQuickRegister} disabled={quickSaving}
@@ -3293,9 +3294,8 @@ function InlineAddItemForm({
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">V.Unit (R$)</label>
-          <input type="number" step="0.01" min="0" value={itemPrice} onChange={e => setItemPrice(e.target.value)}
-            placeholder="0,00"
-            className="w-full px-3 py-2 border rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-200 bg-white" />
+          <MoneyInput value={parseFloat(itemPrice) || 0} onChange={v => setItemPrice(String(v))}
+            placeholder="0,00" />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Total</label>

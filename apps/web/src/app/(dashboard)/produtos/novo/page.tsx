@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Loader2, Package, Wrench, ArrowLeft } from 'lucide-react'
+import { MoneyInput } from '@/app/(dashboard)/components/money-input'
 import Link from 'next/link'
 
 export default function NovoProdutoPage() {
@@ -164,17 +165,13 @@ export default function NovoProdutoPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 {tipo === 'servico' ? 'Custo (R$)' : 'Preço de Custo (R$)'}
               </label>
-              <input type="number" step="0.01" min="0" value={form.cost_price}
-                onChange={e => update('cost_price', e.target.value)}
-                placeholder="0,00" className={inp} />
+              <MoneyInput value={parseFloat(form.cost_price) || 0} onChange={v => update('cost_price', String(v))} placeholder="0,00" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 {tipo === 'servico' ? 'Valor Cobrado (R$)' : 'Preço de Venda (R$)'}
               </label>
-              <input type="number" step="0.01" min="0" value={form.sale_price}
-                onChange={e => update('sale_price', e.target.value)}
-                placeholder="0,00" className={inp} />
+              <MoneyInput value={parseFloat(form.sale_price) || 0} onChange={v => update('sale_price', String(v))} placeholder="0,00" />
             </div>
           </div>
         </div>

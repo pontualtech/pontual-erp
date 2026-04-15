@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { ArrowLeft, Plus, Trash2, Loader2, Edit, X, Save, DollarSign, Clock, Upload, Search } from 'lucide-react'
+import { MoneyInput } from '@/app/(dashboard)/components/money-input'
 
 interface PriceEntry {
   id: string
@@ -345,8 +346,8 @@ export default function TabelaPrecosPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Preco Padrao (R$)</label>
-                  <input type="number" step="0.01" min="0" value={formPrice} onChange={e => setFormPrice(e.target.value)}
-                    placeholder="0,00" className="w-full px-3 py-2 border rounded-lg text-sm" />
+                  <MoneyInput value={parseFloat(formPrice) || 0}
+                    onChange={v => setFormPrice(String(v))} placeholder="0,00" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Tempo Estimado (min)</label>

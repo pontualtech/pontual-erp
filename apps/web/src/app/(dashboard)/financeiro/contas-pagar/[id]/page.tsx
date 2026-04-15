@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/lib/use-auth'
 import { cn } from '@/lib/utils'
+import { MoneyInput } from '@/app/(dashboard)/components/money-input'
 
 // ─── Types ───────────────────────────────────
 interface ContaPagar {
@@ -264,9 +265,8 @@ export default function ContaPagarDetalhePage() {
             {editing ? (
               <div>
                 <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Valor (R$)</label>
-                <input type="number" title="Valor total" step="0.01" min="0" value={editForm.total_amount}
-                  onChange={e => setEditForm(f => ({ ...f, total_amount: e.target.value }))}
-                  className="block mt-1 text-2xl font-bold text-right w-40 bg-transparent border-b-2 border-blue-300 dark:border-blue-700 text-gray-900 dark:text-white focus:border-blue-500 outline-none pb-1" />
+                <MoneyInput value={parseFloat(editForm.total_amount) || 0}
+                  onChange={v => setEditForm(f => ({ ...f, total_amount: String(v) }))} placeholder="0,00" />
               </div>
             ) : (
               <p className="text-3xl font-bold text-gray-900 dark:text-white">{fmt(conta.total_amount)}</p>
@@ -433,8 +433,8 @@ export default function ContaPagarDetalhePage() {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Valor (R$)</label>
-                <input type="number" title="Valor" step="0.01" min="0" value={baixaAmount} onChange={e => setBaixaAmount(e.target.value)}
-                  className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-xl text-gray-900 dark:text-white" />
+                <MoneyInput value={parseFloat(baixaAmount) || 0}
+                  onChange={v => setBaixaAmount(String(v))} placeholder="0,00" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Data</label>

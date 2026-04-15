@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { ArrowLeft, Layers, Plus, Trash2, Loader2, Edit, X, Save, Wrench, Package, Search, FileText } from 'lucide-react'
+import { MoneyInput } from '@/app/(dashboard)/components/money-input'
 
 interface KitItem {
   description: string
@@ -318,11 +319,9 @@ export default function KitsPage() {
                       </div>
                       <div className="col-span-2">
                         <label className="block text-xs text-gray-500 mb-0.5">V.Unit (R$)</label>
-                        <input type="number" min="0" step="0.01"
-                          value={(item.unit_price / 100).toFixed(2)}
-                          onChange={e => updateKitItem(idx, 'unit_price', Math.round(parseFloat(e.target.value || '0') * 100))}
-                          placeholder="0,00"
-                          className="w-full px-2 py-1.5 border rounded text-sm text-right" />
+                        <MoneyInput value={item.unit_price / 100}
+                          onChange={v => updateKitItem(idx, 'unit_price', Math.round(v * 100))}
+                          placeholder="0,00" />
                       </div>
                       <div className="col-span-2">
                         <label className="block text-xs text-gray-500 mb-0.5">Qtd</label>

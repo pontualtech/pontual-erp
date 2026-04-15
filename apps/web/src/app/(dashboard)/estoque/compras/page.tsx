@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Plus, Search, Eye, PackageCheck, XCircle, Loader2, ShoppingCart, ArrowLeft } from 'lucide-react'
+import { MoneyInput } from '@/app/(dashboard)/components/money-input'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
@@ -365,12 +366,12 @@ export default function ComprasPage() {
                           setForm({ ...form, items })
                         }}
                         placeholder="Qtd" className="w-20 px-3 py-2 border rounded-md text-sm" />
-                      <input type="number" step="0.01" min="0" value={item.unit_cost}
-                        onChange={e => {
-                          const items = [...form.items]; items[idx] = { ...items[idx], unit_cost: e.target.value }
+                      <MoneyInput value={parseFloat(item.unit_cost) || 0}
+                        onChange={v => {
+                          const items = [...form.items]; items[idx] = { ...items[idx], unit_cost: String(v) }
                           setForm({ ...form, items })
                         }}
-                        placeholder="R$ Custo" className="w-28 px-3 py-2 border rounded-md text-sm" />
+                        placeholder="0,00" className="w-28" />
                       {form.items.length > 1 && (
                         <button type="button" onClick={() => removeItem(idx)}
                           className="rounded p-2 text-gray-400 hover:bg-red-50 hover:text-red-600">

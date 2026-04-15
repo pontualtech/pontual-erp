@@ -12,6 +12,7 @@ import {
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { exportToExcel, exportToCSV, exportToPDF } from '@/lib/export-data'
+import { MoneyInput } from '@/app/(dashboard)/components/money-input'
 
 // ─── Types ───────────────────────────────────────────────
 interface ExtratoItem {
@@ -546,15 +547,13 @@ export default function ExtratoPage() {
             </div>
             <div>
               <label className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Valor Min (R$)</label>
-              <input type="number" step="0.01" min="0" value={valueMin} onChange={e => { setValueMin(e.target.value); setPage(1) }}
-                placeholder="0.00"
-                className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400" />
+              <MoneyInput showPrefix={false} value={parseFloat(valueMin) || 0}
+                onChange={v => { setValueMin(String(v)); setPage(1) }} placeholder="0,00" />
             </div>
             <div>
               <label className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Valor Max (R$)</label>
-              <input type="number" step="0.01" min="0" value={valueMax} onChange={e => { setValueMax(e.target.value); setPage(1) }}
-                placeholder="0.00"
-                className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400" />
+              <MoneyInput showPrefix={false} value={parseFloat(valueMax) || 0}
+                onChange={v => { setValueMax(String(v)); setPage(1) }} placeholder="0,00" />
             </div>
           </div>
         )}
@@ -737,9 +736,8 @@ export default function ExtratoPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Valor (R$)</label>
-                  <input type="number" title="Valor" step="0.01" min="0" value={editForm.valor}
-                    onChange={e => setEditForm(f => ({ ...f, valor: e.target.value }))}
-                    className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2.5 text-sm text-gray-900 dark:text-white" />
+                  <MoneyInput value={parseFloat(editForm.valor) || 0}
+                    onChange={v => setEditForm(f => ({ ...f, valor: String(v) }))} placeholder="0,00" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Vencimento</label>

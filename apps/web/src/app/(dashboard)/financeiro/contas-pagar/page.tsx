@@ -11,6 +11,7 @@ import {
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/use-auth'
+import { MoneyInput } from '@/app/(dashboard)/components/money-input'
 import { exportToExcel, exportToCSV, exportToPDF, importFromFile } from '@/lib/export-data'
 
 interface Supplier {
@@ -617,15 +618,13 @@ export default function ContasPagarPage() {
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">Valor Min (R$)</label>
-              <input type="number" title="Valor minimo" step="0.01" min="0" placeholder="0.00" value={valueMin}
-                onChange={e => { setValueMin(e.target.value); setPage(1) }}
-                className="w-full rounded-md border bg-white py-2 px-3 text-sm" />
+              <MoneyInput showPrefix={false} value={parseFloat(valueMin) || 0}
+                onChange={v => { setValueMin(String(v)); setPage(1) }} placeholder="0,00" />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">Valor Max (R$)</label>
-              <input type="number" title="Valor maximo" step="0.01" min="0" placeholder="0.00" value={valueMax}
-                onChange={e => { setValueMax(e.target.value); setPage(1) }}
-                className="w-full rounded-md border bg-white py-2 px-3 text-sm" />
+              <MoneyInput showPrefix={false} value={parseFloat(valueMax) || 0}
+                onChange={v => { setValueMax(String(v)); setPage(1) }} placeholder="0,00" />
             </div>
           </div>
         )}
