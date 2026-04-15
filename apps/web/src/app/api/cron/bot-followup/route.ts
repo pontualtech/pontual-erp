@@ -209,16 +209,40 @@ export async function GET(request: NextRequest) {
         // Look up latest OS for this customer to fill template params
         let osNum = '0000'
         let equipment = 'Equipamento'
+
+        // Try by customer_id first, then fall back to phone number lookup
+        let latestOs = null
         if (conv.customer_id) {
-          const latestOs = await prisma.serviceOrder.findFirst({
+          latestOs = await prisma.serviceOrder.findFirst({
             where: { customer_id: conv.customer_id, company_id: conv.company_id, deleted_at: null },
             orderBy: { created_at: 'desc' },
             select: { os_number: true, equipment_type: true, equipment_brand: true, equipment_model: true },
           }).catch(() => null)
-          if (latestOs) {
-            osNum = String(latestOs.os_number).padStart(4, '0')
-            equipment = [latestOs.equipment_type, latestOs.equipment_brand, latestOs.equipment_model].filter(Boolean).join(' ') || 'Equipamento'
+        }
+        if (!latestOs && conv.customer_phone) {
+          // Search by phone number — strip +55 and non-digits for flexible matching
+          const cleanPhone = conv.customer_phone.replace(/\D/g, '').replace(/^55/, '')
+          const customerByPhone = await prisma.customer.findFirst({
+            where: {
+              company_id: conv.company_id,
+              OR: [
+                { mobile: { contains: cleanPhone } },
+                { phone: { contains: cleanPhone } },
+              ],
+            },
+            select: { id: true },
+          }).catch(() => null)
+          if (customerByPhone) {
+            latestOs = await prisma.serviceOrder.findFirst({
+              where: { customer_id: customerByPhone.id, company_id: conv.company_id, deleted_at: null },
+              orderBy: { created_at: 'desc' },
+              select: { os_number: true, equipment_type: true, equipment_brand: true, equipment_model: true },
+            }).catch(() => null)
           }
+        }
+        if (latestOs) {
+          osNum = String(latestOs.os_number).padStart(4, '0')
+          equipment = [latestOs.equipment_type, latestOs.equipment_brand, latestOs.equipment_model].filter(Boolean).join(' ') || 'Equipamento'
         }
 
         const phone = conv.customer_phone
