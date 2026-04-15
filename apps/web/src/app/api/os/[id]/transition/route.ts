@@ -4,7 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { sendCompanyEmail } from '@/lib/send-email'
-import { sendWhatsAppCloud } from '@/lib/whatsapp/cloud-api'
+import { sendWhatsAppCloud, sendWhatsAppTemplate } from '@/lib/whatsapp/cloud-api'
 import { whatsappTemplates, getTemplateForStatus } from '@/lib/whatsapp/templates'
 import { createAccessToken } from '@/lib/portal-auth'
 
@@ -451,19 +451,21 @@ export async function POST(req: NextRequest, { params }: Params) {
       newValue: { statusId: toStatusId, notes, payment_method },
     })
 
-    // Notify customer via Chatwoot (fire and forget) — respects notification rules
+    // Notify customer via WhatsApp Cloud API template (fire and forget)
     if (shouldSendWhatsApp && (os.customers?.mobile || os.customers?.phone)) {
-      const phone = os.customers.mobile || os.customers.phone
+      const phone = (os.customers.mobile || os.customers.phone) as string
       const statusName = toStatus.name
       const osNum = String(os.os_number).padStart(4, '0')
-      fetch(`${process.env.NEXT_PUBLIC_APP_URL || ''}/api/integracoes/chatwoot/enviar`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone,
-          message: `Olá! Sua OS-${osNum} foi atualizada para: *${statusName}*.\n\nAcompanhe pelo portal: ${process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'}/portal/pontualtech/login`
-        })
-      }).catch(() => {}) // fire and forget
+      const equipment = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ') || 'Equipamento'
+
+      // Send via template with buttons (works outside 24h window)
+      sendWhatsAppTemplate(user.companyId, phone, 'pontualtech_status_os', 'pt_BR', [
+        { type: 'body', parameters: [
+          { type: 'text', text: osNum },
+          { type: 'text', text: statusName },
+          { type: 'text', text: equipment },
+        ] }
+      ]).catch(() => {})
     }
 
     // ====== EMAIL NOTIFICATION: notify customer of status change (fire-and-forget) ======
