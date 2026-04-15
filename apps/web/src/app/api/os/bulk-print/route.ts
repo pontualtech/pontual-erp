@@ -19,9 +19,21 @@ export async function GET(req: NextRequest) {
   const ids = idsParam.split(',').filter(Boolean).slice(0, 50) // max 50
   if (ids.length === 0) return new NextResponse('Nenhuma OS informada', { status: 400 })
 
-  const template = await prisma.printTemplate.findFirst({
+  // Try exact match first, then fallback to similar types
+  let template = await prisma.printTemplate.findFirst({
     where: { company_id: user.companyId, type: templateType, is_active: true },
   })
+  // Fallback: os_delivery_repair/os_delivery_norepair → os_delivery or os_full
+  if (!template && templateType.startsWith('os_delivery')) {
+    template = await prisma.printTemplate.findFirst({
+      where: { company_id: user.companyId, type: 'os_delivery', is_active: true },
+    })
+  }
+  if (!template) {
+    template = await prisma.printTemplate.findFirst({
+      where: { company_id: user.companyId, type: 'os_full', is_active: true },
+    })
+  }
   if (!template) return new NextResponse(`Template "${templateType}" nao encontrado`, { status: 404 })
 
   const company = await prisma.company.findUnique({
