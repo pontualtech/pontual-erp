@@ -77,7 +77,7 @@ export function ThemeToggle() {
       {open && (
         <div className="absolute right-0 top-full mt-2 w-64 bg-white dark:bg-zinc-800 rounded-xl shadow-xl dark:shadow-zinc-900/50 border border-gray-200 dark:border-zinc-700 p-3 z-50 animate-in fade-in slide-in-from-top-2">
           {/* Theme Mode */}
-          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 px-1">Aparência</p>
+          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 capitalize tracking-wider mb-2 px-1">Aparência</p>
           <div className="grid grid-cols-3 gap-1.5 mb-4">
             {THEMES.map(t => (
               <button

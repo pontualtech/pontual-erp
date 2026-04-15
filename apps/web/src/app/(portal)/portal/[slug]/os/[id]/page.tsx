@@ -447,7 +447,7 @@ export default function PortalOSDetailPage() {
             })
             return (
               <div className="mb-6">
-                <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase mb-3">Progresso</h3>
+                <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 capitalize mb-3">Progresso</h3>
                 <div className="flex flex-col gap-0">
                   {os.all_statuses.map((s, i) => {
                     const currentOrder = os.status.order ?? 0
@@ -533,7 +533,7 @@ export default function PortalOSDetailPage() {
           {/* Equipment Info */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2">Equipamento</h3>
+              <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 capitalize mb-2">Equipamento</h3>
               <p className="text-gray-900 dark:text-gray-100 font-medium">{os.equipment_type}</p>
               {(os.equipment_brand || os.equipment_model) && (
                 <p className="text-gray-600 dark:text-gray-400 text-sm">
@@ -545,25 +545,25 @@ export default function PortalOSDetailPage() {
               )}
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2">Problema Relatado</h3>
+              <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 capitalize mb-2">Problema Relatado</h3>
               <p className="text-gray-700 dark:text-gray-300">{os.reported_issue}</p>
             </div>
             {os.diagnosis && (
               <div className="sm:col-span-2">
-                <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2">Diagnostico</h3>
+                <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 capitalize mb-2">Diagnostico</h3>
                 <p className="text-gray-700 dark:text-gray-300">{os.diagnosis}</p>
               </div>
             )}
             {os.estimated_delivery && (
               <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-900 rounded-lg p-4">
-                <h3 className="text-sm font-semibold text-blue-700 dark:text-blue-400 uppercase mb-2">Previsao de Entrega</h3>
+                <h3 className="text-sm font-semibold text-blue-700 dark:text-blue-400 capitalize mb-2">Previsao de Entrega</h3>
                 <p className="text-xl font-bold text-blue-900 dark:text-blue-300">{new Date(os.estimated_delivery).toLocaleDateString('pt-BR')}</p>
                 <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">Prazo maximo de 10 dias uteis apos aprovacao. Sempre tentamos entregar o quanto antes!</p>
               </div>
             )}
             {os.warranty_until && (
               <div>
-                <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2">Garantia ate</h3>
+                <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 capitalize mb-2">Garantia ate</h3>
                 <p className="text-gray-900 dark:text-gray-100">{new Date(os.warranty_until).toLocaleDateString('pt-BR')}</p>
               </div>
             )}
@@ -579,13 +579,13 @@ export default function PortalOSDetailPage() {
             <div className="p-5 space-y-4">
               {os.reported_issue && (
                 <div>
-                  <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">Problema Relatado</h4>
+                  <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 capitalize mb-1">Problema Relatado</h4>
                   <p className="text-gray-700 dark:text-gray-300 text-sm whitespace-pre-wrap">{os.reported_issue}</p>
                 </div>
               )}
               {os.diagnosis && (
                 <div>
-                  <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">Diagnostico / Laudo</h4>
+                  <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 capitalize mb-1">Diagnostico / Laudo</h4>
                   <p className="text-gray-800 dark:text-gray-200 text-sm font-medium whitespace-pre-wrap">{os.diagnosis}</p>
                 </div>
               )}
@@ -779,11 +779,11 @@ export default function PortalOSDetailPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/50">
-                    <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Tipo</th>
-                    <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Descricao</th>
-                    <th className="text-center px-5 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Qtd</th>
-                    <th className="text-right px-5 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Unit.</th>
-                    <th className="text-right px-5 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Total</th>
+                    <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 capitalize">Tipo</th>
+                    <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 capitalize">Descricao</th>
+                    <th className="text-center px-5 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 capitalize">Qtd</th>
+                    <th className="text-right px-5 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 capitalize">Unit.</th>
+                    <th className="text-right px-5 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 capitalize">Total</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-zinc-800">

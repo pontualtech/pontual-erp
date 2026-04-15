@@ -378,11 +378,11 @@ export default function PortalDashboardPage() {
                 <table className="w-full">
                   <thead className="bg-gray-50 dark:bg-zinc-800/50 border-b border-gray-100 dark:border-zinc-800">
                     <tr>
-                      <th className="text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider px-5 py-3">Numero</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider px-5 py-3">Equipamento</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider px-5 py-3">Status</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider px-5 py-3">Data</th>
-                      <th className="text-right text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider px-5 py-3">Acao</th>
+                      <th className="text-left text-xs font-semibold text-gray-500 dark:text-gray-400 capitalize tracking-wider px-5 py-3">Numero</th>
+                      <th className="text-left text-xs font-semibold text-gray-500 dark:text-gray-400 capitalize tracking-wider px-5 py-3">Equipamento</th>
+                      <th className="text-left text-xs font-semibold text-gray-500 dark:text-gray-400 capitalize tracking-wider px-5 py-3">Status</th>
+                      <th className="text-left text-xs font-semibold text-gray-500 dark:text-gray-400 capitalize tracking-wider px-5 py-3">Data</th>
+                      <th className="text-right text-xs font-semibold text-gray-500 dark:text-gray-400 capitalize tracking-wider px-5 py-3">Acao</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 dark:divide-zinc-800">

@@ -5,6 +5,10 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
 
+function toTitleCase(str: string): string {
+  return str.toLowerCase().replace(/(?:^|\s|[-/])\S/g, c => c.toUpperCase())
+}
+
 const STEPS = ['Identificacao', 'Dados Pessoais', 'Endereco', 'Senha']
 
 const UF_OPTIONS = [
@@ -113,7 +117,7 @@ export default function CadastroPage() {
       .then(r => { if (!r.ok) throw new Error('CNPJ nao encontrado'); return r.json() })
       .then(data => {
         if (cancelled) return
-        if (data.razao_social) setNome(data.razao_social.toUpperCase())
+        if (data.razao_social) setNome(toTitleCase(data.razao_social))
         if (data.cep) {
           const cepClean = data.cep.replace(/\D/g, '')
           setCep(formatCep(cepClean))
@@ -122,17 +126,17 @@ export default function CadastroPage() {
             .then(r => r.json())
             .then(cepData => {
               if (cancelled || cepData.erro) return
-              if (cepData.logradouro) setLogradouro(cepData.logradouro.toUpperCase())
-              if (cepData.bairro) setBairro(cepData.bairro.toUpperCase())
-              if (cepData.localidade) setCidade(cepData.localidade.toUpperCase())
+              if (cepData.logradouro) setLogradouro(toTitleCase(cepData.logradouro))
+              if (cepData.bairro) setBairro(toTitleCase(cepData.bairro))
+              if (cepData.localidade) setCidade(toTitleCase(cepData.localidade))
               if (cepData.uf) setUf(cepData.uf.toUpperCase())
             }).catch(() => {})
         }
-        if (data.logradouro) setLogradouro(data.logradouro.toUpperCase())
+        if (data.logradouro) setLogradouro(toTitleCase(data.logradouro))
         if (data.numero) setNumero(data.numero)
-        if (data.complemento) setComplemento(data.complemento.toUpperCase())
-        if (data.bairro) setBairro(data.bairro.toUpperCase())
-        if (data.municipio) setCidade(data.municipio.toUpperCase())
+        if (data.complemento) setComplemento(toTitleCase(data.complemento))
+        if (data.bairro) setBairro(toTitleCase(data.bairro))
+        if (data.municipio) setCidade(toTitleCase(data.municipio))
         if (data.uf) setUf(data.uf.toUpperCase())
         setCnpjFetched(digits)
         toast.success('Dados do CNPJ preenchidos!')
@@ -161,9 +165,9 @@ export default function CadastroPage() {
       if (res.ok) {
         const data = await res.json()
         if (!data.erro) {
-          if (data.logradouro) setLogradouro(data.logradouro.toUpperCase())
-          if (data.bairro) setBairro(data.bairro.toUpperCase())
-          if (data.localidade) setCidade(data.localidade.toUpperCase())
+          if (data.logradouro) setLogradouro(toTitleCase(data.logradouro))
+          if (data.bairro) setBairro(toTitleCase(data.bairro))
+          if (data.localidade) setCidade(toTitleCase(data.localidade))
           if (data.uf) setUf(data.uf.toUpperCase())
           toast.success('Endereco preenchido pelo CEP')
         }
@@ -259,15 +263,15 @@ export default function CadastroPage() {
           company_slug: slug,
           document_number: digits,
           person_type: personType,
-          legal_name: nome.trim().toUpperCase(),
+          legal_name: toTitleCase(nome.trim()),
           email: email.trim().toLowerCase(),
           phone: telefone.replace(/\D/g, ''),
           address_zip: cep.replace(/\D/g, ''),
-          address_street: logradouro.trim().toUpperCase(),
+          address_street: toTitleCase(logradouro.trim()),
           address_number: numero.trim(),
-          address_complement: complemento.trim().toUpperCase(),
-          address_neighborhood: bairro.trim().toUpperCase(),
-          address_city: cidade.trim().toUpperCase(),
+          address_complement: toTitleCase(complemento.trim()),
+          address_neighborhood: toTitleCase(bairro.trim()),
+          address_city: toTitleCase(cidade.trim()),
           address_state: uf.toUpperCase(),
           password: senha,
         }),
