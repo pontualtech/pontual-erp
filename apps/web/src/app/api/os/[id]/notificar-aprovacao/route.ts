@@ -68,13 +68,14 @@ export async function POST(req: NextRequest, { params }: Params) {
       } else {
         try {
           const phone = customerPhone.replace(/\D/g, '')
+          const fallback = `*Orcamento pronto — OS #${osNum}*\n\nValor: ${fmtValue}\nEquipamento: ${equipment || 'Equipamento'}\n\nAcesse o portal para aprovar ou recusar o orcamento.`
           const waResult = await sendWhatsAppTemplate(user.companyId, phone, 'pontualtech_orcamento', 'pt_BR', [
             { type: 'body', parameters: [
               { type: 'text', text: osNum },
               { type: 'text', text: fmtValue },
               { type: 'text', text: equipment || 'Equipamento' },
             ] }
-          ])
+          ], fallback)
           results.push({ channel: 'whatsapp', status: waResult.success ? 'enviado' : 'erro' })
         } catch {
           results.push({ channel: 'whatsapp', status: 'erro' })

@@ -237,13 +237,14 @@ export async function POST(req: NextRequest, { params }: Params) {
     let whatsappSent = false
     const phone = customer.mobile || customer.phone
     if (phone) {
+      const fallback = `*OS #${osNum} aberta!*\n\nEquipamento: ${equipment || 'Equipamento'}\nProblema: ${os.reported_issue || 'A diagnosticar'}\n\nAcompanhe pelo portal do cliente.`
       const result = await sendWhatsAppTemplate(companyId, phone, 'pt_os_aberta_v2', 'pt_BR', [
         { type: 'body', parameters: [
           { type: 'text', text: osNum },
           { type: 'text', text: equipment || 'Equipamento' },
           { type: 'text', text: os.reported_issue || 'A diagnosticar' },
         ] }
-      ])
+      ], fallback)
       whatsappSent = result.success
     }
 

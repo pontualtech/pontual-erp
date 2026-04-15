@@ -187,12 +187,13 @@ ${companyName}
     if (channels.includes('whatsapp') && customerPhone) {
       try {
         const phone = customerPhone.replace(/\D/g, '')
+        const fallback = `*Equipamento pronto! — OS #${osNum}*\n\nSeu ${equipment || 'equipamento'} esta pronto para retirada!\n\nAcompanhe pelo portal do cliente.`
         const waResult = await sendWhatsAppTemplate(user.companyId, phone, 'pontualtech_pronto', 'pt_BR', [
           { type: 'body', parameters: [
             { type: 'text', text: osNum },
             { type: 'text', text: equipment || 'Equipamento' },
           ] }
-        ])
+        ], fallback)
         results.push({ channel: 'whatsapp', status: waResult.success ? 'enviado' : 'erro' })
       } catch {
         results.push({ channel: 'whatsapp', status: 'erro' })

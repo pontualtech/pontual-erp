@@ -271,17 +271,23 @@ Equipe ${companyName}
       results.push({ channel: 'email', status: 'sem_email' })
     }
 
-    // Enviar WhatsApp via Meta Cloud API template
+    // Enviar WhatsApp via Meta Cloud API template (fallback to Evolution for companies without Cloud API)
     if (channels.includes('whatsapp') && customerPhone) {
       try {
         const phone = customerPhone.replace(/\D/g, '')
-        const waResult = await sendWhatsAppTemplate(user.companyId, phone, 'pt_coleta_v2', 'pt_BR', [
-          { type: 'body', parameters: [
-            { type: 'text', text: osNum },
-          ] }
-        ])
-        results.push({ channel: 'whatsapp', status: waResult.success ? 'enviado' : 'erro' })
-      } catch {
+        const waResult = await sendWhatsAppTemplate(
+          user.companyId, phone, 'pt_coleta_v2', 'pt_BR',
+          [{ type: 'body', parameters: [{ type: 'text', text: osNum }] }],
+          whatsappMsg // fallback text for Evolution API
+        )
+        if (waResult.success) {
+          results.push({ channel: 'whatsapp', status: 'enviado' })
+        } else {
+          console.error('[Coleta] WhatsApp send failed:', waResult.error)
+          results.push({ channel: 'whatsapp', status: 'erro', error: waResult.error } as any)
+        }
+      } catch (err) {
+        console.error('[Coleta] WhatsApp exception:', err)
         results.push({ channel: 'whatsapp', status: 'erro' })
       }
     } else if (channels.includes('whatsapp') && !customerPhone) {
