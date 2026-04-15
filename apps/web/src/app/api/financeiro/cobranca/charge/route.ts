@@ -183,7 +183,7 @@ export async function POST(request: NextRequest) {
         if (so) osNum = String(so.os_number).padStart(4, '0')
       }
 
-      sendWhatsAppTemplate(user.companyId, customer.mobile, 'pontualtech_cobranca', 'pt_BR', [
+      sendWhatsAppTemplate(user.companyId, customer.mobile, 'pt_cobranca_v2', 'pt_BR', [
         { type: 'body', parameters: [
           { type: 'text', text: valueStr },
           { type: 'text', text: osNum },

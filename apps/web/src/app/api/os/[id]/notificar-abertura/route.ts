@@ -237,7 +237,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     let whatsappSent = false
     const phone = customer.mobile || customer.phone
     if (phone) {
-      const result = await sendWhatsAppTemplate(companyId, phone, 'pontualtech_os_aberta', 'pt_BR', [
+      const result = await sendWhatsAppTemplate(companyId, phone, 'pt_os_aberta_v2', 'pt_BR', [
         { type: 'body', parameters: [
           { type: 'text', text: osNum },
           { type: 'text', text: equipment || 'Equipamento' },

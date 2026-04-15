@@ -275,7 +275,7 @@ Equipe ${companyName}
     if (channels.includes('whatsapp') && customerPhone) {
       try {
         const phone = customerPhone.replace(/\D/g, '')
-        const waResult = await sendWhatsAppTemplate(user.companyId, phone, 'pontualtech_coleta', 'pt_BR', [
+        const waResult = await sendWhatsAppTemplate(user.companyId, phone, 'pt_coleta_v2', 'pt_BR', [
           { type: 'body', parameters: [
             { type: 'text', text: osNum },
           ] }
