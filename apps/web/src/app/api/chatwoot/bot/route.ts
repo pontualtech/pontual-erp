@@ -998,6 +998,11 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       updateData.human_takeover = true
       updateData.step = 'HUMAN'
       await cwSendMessage(cfg, conversationId, '[BOT] Cliente solicitou atendente humano.', true)
+      // Send professional template with portal button via Cloud API
+      try {
+        const { sendWhatsAppTemplate } = await import('@/lib/whatsapp/cloud-api')
+        await sendWhatsAppTemplate(cfg.companyId, phone, 'pt_suporte_v1', 'pt_BR', [])
+      } catch {} // fire and forget
     } else if (parsed.action === 'ENCERRAR_CONVERSA') {
       updateData.step = 'IDLE'
       updateData.data = {}
