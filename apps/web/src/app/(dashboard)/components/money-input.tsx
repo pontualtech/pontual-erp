@@ -9,6 +9,10 @@ interface MoneyInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'v
   onChange: (value: number) => void
   /** Show R$ prefix (default true) */
   showPrefix?: boolean
+  /** Step for up/down arrows in REAIS (default 10) */
+  step?: number
+  /** Show up/down spinner arrows (default true) */
+  showStepper?: boolean
 }
 
 /**
@@ -16,7 +20,7 @@ interface MoneyInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'v
  * User types digits and the mask formats as R$ 1.234,56 in real time.
  * Internally works with reais (float), displays formatted.
  */
-export function MoneyInput({ value, onChange, showPrefix = true, className = '', ...props }: MoneyInputProps) {
+export function MoneyInput({ value, onChange, showPrefix = true, step = 10, showStepper = true, className = '', ...props }: MoneyInputProps) {
   const [display, setDisplay] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const isTyping = useRef(false)
@@ -65,10 +69,26 @@ export function MoneyInput({ value, onChange, showPrefix = true, className = '',
     setDisplay(formatCents(cents))
   }
 
+  function increment() {
+    const current = typeof value === 'string' ? parseFloat(value) || 0 : value
+    onChange(Math.round((current + step) * 100) / 100)
+  }
+
+  function decrement() {
+    const current = typeof value === 'string' ? parseFloat(value) || 0 : value
+    const next = current - step
+    onChange(Math.round(Math.max(0, next) * 100) / 100)
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'ArrowUp') { e.preventDefault(); increment() }
+    if (e.key === 'ArrowDown') { e.preventDefault(); decrement() }
+  }
+
   return (
     <div className={`relative flex items-center ${className}`}>
       {showPrefix && (
-        <span className="absolute left-2.5 text-sm text-gray-400 dark:text-gray-500 pointer-events-none select-none font-medium">
+        <span className="absolute left-2.5 text-sm text-gray-400 dark:text-gray-500 pointer-events-none select-none font-medium z-10">
           R$
         </span>
       )}
@@ -80,9 +100,22 @@ export function MoneyInput({ value, onChange, showPrefix = true, className = '',
         onChange={handleChange}
         onFocus={handleFocus}
         onBlur={handleBlur}
-        className={`w-full rounded-lg border border-gray-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-right text-sm font-medium text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 ${showPrefix ? 'pl-9 pr-3' : 'px-3'} py-2`}
+        onKeyDown={handleKeyDown}
+        className={`w-full rounded-lg border border-gray-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-right text-sm font-medium text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 ${showPrefix ? 'pl-9' : 'pl-3'} ${showStepper ? 'pr-7' : 'pr-3'} py-2`}
         {...props}
       />
+      {showStepper && (
+        <div className="absolute right-0.5 inset-y-0.5 flex flex-col w-5">
+          <button type="button" tabIndex={-1} onClick={increment} title="Aumentar"
+            className="flex-1 flex items-center justify-center rounded-tr-md hover:bg-gray-100 dark:hover:bg-zinc-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+            <svg className="h-3 w-3" viewBox="0 0 12 12" fill="currentColor"><path d="M6 3L10 8H2z"/></svg>
+          </button>
+          <button type="button" tabIndex={-1} onClick={decrement} title="Diminuir"
+            className="flex-1 flex items-center justify-center rounded-br-md hover:bg-gray-100 dark:hover:bg-zinc-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+            <svg className="h-3 w-3" viewBox="0 0 12 12" fill="currentColor"><path d="M6 9L2 4h8z"/></svg>
+          </button>
+        </div>
+      )}
     </div>
   )
 }
