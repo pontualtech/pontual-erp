@@ -4,7 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { logAudit } from '@/lib/audit'
 import { getPaymentProvider } from '@/lib/payments/factory'
 import type { BillingType } from '@/lib/payments/types'
-import { sendWhatsApp } from '@/lib/whatsapp/evolution'
+import { sendWhatsAppCloud } from '@/lib/whatsapp/cloud-api'
 import { sendCompanyEmail } from '@/lib/send-email'
 import { z } from 'zod'
 import { escapeHtml } from '@/lib/escape-html'
@@ -182,7 +182,7 @@ export async function POST(request: NextRequest) {
         `Qualquer duvida, entre em contato conosco!\n\n` +
         `⚙️ Esta e uma mensagem automatica.`
 
-      sendWhatsApp(customer.mobile, whatsMsg).then(r => {
+      sendWhatsAppCloud(user.companyId, customer.mobile, whatsMsg).then(r => {
         if (r.success) sentVia.push('whatsapp')
       }).catch(() => {})
     }

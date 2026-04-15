@@ -3,7 +3,7 @@ import { timingSafeEqual } from 'crypto'
 import { prisma } from '@pontual/db'
 import { success, error, handleError } from '@/lib/api-response'
 import { sendCompanyEmail } from '@/lib/send-email'
-import { sendWhatsApp } from '@/lib/whatsapp/evolution'
+import { sendWhatsAppCloud } from '@/lib/whatsapp/cloud-api'
 import { rateLimit } from '@/lib/rate-limit'
 import { escapeHtml } from '@/lib/escape-html'
 
@@ -238,7 +238,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const phone = customer.mobile || customer.phone
     if (phone) {
       const whatsMsg = `✅ *${companyName}* — OS Registrada!\n\nOlá *${customerName}*! Sua ordem de serviço foi aberta com sucesso.\n\n🔧 *OS-${osNum}*\n📦 ${equipment || 'Equipamento'}\n⚠️ ${os.reported_issue || 'A diagnosticar'}\n📅 ${createdDate}\n\n🚚 *Coleta agendada para o próximo dia útil!*\nNossa equipe de logística entrará em contato para confirmar endereço e horário.\n\n📦 *Orientações:*\n• Cabos e fonte _não precisam_ ser enviados\n• Mantenha cartuchos/toner na máquina\n\n📋 *Próximos passos:*\n1️⃣ Coleta no próximo dia útil\n2️⃣ Diagnóstico e orçamento\n3️⃣ Aprovação pelo Portal\n4️⃣ Reparo e entrega com garantia\n\n🖥️ Acompanhe pelo Portal:\n${osDetailUrl}\n\nDúvidas? Responda esta mensagem!\n\n⚙️ Esta e uma mensagem automatica.`
-      const result = await sendWhatsApp(phone, whatsMsg)
+      const result = await sendWhatsAppCloud(companyId, phone, whatsMsg)
       whatsappSent = result.success
     }
 

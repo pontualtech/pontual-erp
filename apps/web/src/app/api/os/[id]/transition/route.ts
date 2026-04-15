@@ -4,7 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { sendCompanyEmail } from '@/lib/send-email'
-import { sendWhatsApp } from '@/lib/whatsapp/evolution'
+import { sendWhatsAppCloud } from '@/lib/whatsapp/cloud-api'
 import { whatsappTemplates, getTemplateForStatus } from '@/lib/whatsapp/templates'
 import { createAccessToken } from '@/lib/portal-auth'
 
@@ -78,7 +78,7 @@ export async function POST(req: NextRequest, { params }: Params) {
             value: os.total_cost || undefined,
             accessToken: accessTk,
           })
-          void sendWhatsApp(customerPhone, msg).catch(() => {})
+          void sendWhatsAppCloud(user.companyId,customerPhone, msg).catch(() => {})
         }
       }
 
@@ -582,7 +582,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           .replace(/\{\{os_numero\}\}/g, osNum)
           .replace(/\{\{equipamento\}\}/g, equipment)
           .replace(/\{\{status\}\}/g, toStatus.name)
-        void sendWhatsApp(customerPhone, customMsg).catch(e =>
+        void sendWhatsAppCloud(user.companyId,customerPhone, customMsg).catch(e =>
           console.log('[Transition] WhatsApp custom notification failed (ignored):', e)
         )
       } else {
@@ -602,7 +602,7 @@ export async function POST(req: NextRequest, { params }: Params) {
             estimatedDelivery: (updated as any).estimated_delivery ? String((updated as any).estimated_delivery) : undefined,
             accessToken: accessTk,
           })
-          void sendWhatsApp(customerPhone, msg).catch(e =>
+          void sendWhatsAppCloud(user.companyId,customerPhone, msg).catch(e =>
             console.log('[Transition] WhatsApp notification failed (ignored):', e)
           )
         }
