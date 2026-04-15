@@ -70,14 +70,19 @@ export function MoneyInput({ value, onChange, showPrefix = true, step = 10, show
   }
 
   function increment() {
+    isTyping.current = false
     const current = typeof value === 'string' ? parseFloat(value) || 0 : value
-    onChange(Math.round((current + step) * 100) / 100)
+    const next = Math.round((current + step) * 100) / 100
+    setDisplay(formatCents(Math.round(next * 100)))
+    onChange(next)
   }
 
   function decrement() {
+    isTyping.current = false
     const current = typeof value === 'string' ? parseFloat(value) || 0 : value
-    const next = current - step
-    onChange(Math.round(Math.max(0, next) * 100) / 100)
+    const next = Math.round(Math.max(0, current - step) * 100) / 100
+    setDisplay(formatCents(Math.round(next * 100)))
+    onChange(next)
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
