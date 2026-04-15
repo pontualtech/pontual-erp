@@ -318,6 +318,15 @@ async function callDify(
     }
   }
 
+  // If Dify says conversation doesn't exist in blocking mode, retry as new conversation
+  if (res.status === 404 && conversationId) {
+    const errBody = await res.text()
+    if (errBody.includes('Conversation Not Exists')) {
+      console.warn(`[Bot] Dify conversation ${conversationId} expired (blocking) — retrying as new conversation`)
+      return callDify(cfg, query, user, undefined, imageUrls)
+    }
+  }
+
   console.warn(`[Bot] Dify blocking failed (${res.status}), trying streaming...`)
 
   const streamPayload = { ...payload, response_mode: 'streaming' }
@@ -333,6 +342,11 @@ async function callDify(
 
   if (!streamRes.ok) {
     const errBody = await streamRes.text()
+    // If Dify says conversation doesn't exist, retry without conversation_id (start fresh)
+    if (streamRes.status === 404 && conversationId && errBody.includes('Conversation Not Exists')) {
+      console.warn(`[Bot] Dify conversation ${conversationId} expired — retrying as new conversation`)
+      return callDify(cfg, query, user, undefined, imageUrls)
+    }
     throw new Error(`Dify API ${streamRes.status}: ${errBody}`)
   }
 
