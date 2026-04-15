@@ -46,6 +46,18 @@ function OrcamentoContent() {
   const [showRejectForm, setShowRejectForm] = useState(false)
   const [showCounterOffer, setShowCounterOffer] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
+  const [rejectReasonOption, setRejectReasonOption] = useState('')
+  const [rejectConfirmed, setRejectConfirmed] = useState(false)
+  const [rejectReasons, setRejectReasons] = useState<string[]>([
+    'O valor nao compensa o conserto',
+    'Estou sem recursos no momento',
+    'Vou comprar um equipamento novo',
+    'Encontrei um servico mais barato',
+    'Desisti do reparo',
+    'O equipamento nao e mais necessario',
+    'Vou tentar resolver por conta propria',
+    'Outros motivos',
+  ])
   const [paymentMethod, setPaymentMethod] = useState('')
   const [showApproveForm, setShowApproveForm] = useState(false)
   const [applyDiscount, setApplyDiscount] = useState(false)
@@ -61,6 +73,15 @@ function OrcamentoContent() {
       .catch(err => setError(err.message))
       .finally(() => setLoading(false))
   }, [id, token, slug])
+
+  // Load customizable reject reasons from DB (if configured)
+  useEffect(() => {
+    if (!token || !slug) return
+    fetch(`/api/portal/orcamento/reject-reasons?slug=${slug}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.data?.length > 0) setRejectReasons(d.data) })
+      .catch(() => {})
+  }, [token, slug])
 
   useEffect(() => {
     fetch('https://api.ipify.org?format=json')
@@ -235,54 +256,44 @@ function OrcamentoContent() {
       )
     }
 
-    // Rejected result
+    // Rejected result — friendly message with support link
     return (
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-gray-50 to-gray-100 dark:from-zinc-950 dark:to-zinc-900 p-4">
         <div className="w-full max-w-md rounded-2xl border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg dark:shadow-zinc-900/50 overflow-hidden">
-          <div className="p-8 text-center bg-gradient-to-b from-red-50 to-white dark:from-red-950 dark:to-zinc-900">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-100 dark:bg-red-950">
+          <div className="p-8 text-center">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-950">
               <span className="text-3xl">📋</span>
             </div>
-            <h2 className="text-xl font-bold text-red-800 dark:text-red-400">Orcamento Recusado</h2>
-            <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{result.message}</p>
+            <h2 className="text-xl font-bold text-gray-800 dark:text-gray-200">Decisao registrada</h2>
+            <p className="mt-3 text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
+              Registramos sua decisao sobre a OS <strong>#{data.os_number}</strong>.
+              Seu equipamento ficara disponivel para retirada na nossa loja.
+            </p>
           </div>
 
-          <div className="p-6 space-y-4">
-            <div className="rounded-lg bg-gray-50 dark:bg-zinc-800 p-4 text-sm space-y-2">
-              <div className="flex justify-between">
-                <span className="text-gray-500 dark:text-gray-400">OS</span>
-                <span className="font-bold text-gray-900 dark:text-gray-100">#{data.os_number}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500 dark:text-gray-400">Equipamento</span>
-                <span className="font-medium text-gray-900 dark:text-gray-100">{[data.equipment_type, data.equipment_brand, data.equipment_model].filter(Boolean).join(' ')}</span>
-              </div>
-            </div>
-
-            <div className="rounded-lg bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-900 p-4 text-sm text-amber-800 dark:text-amber-300">
-              <p className="font-semibold mb-1">Quer negociar?</p>
-              <p>Entre em contato pelo WhatsApp que revisamos o orcamento.</p>
-            </div>
-
-            <div className="flex gap-3">
+          <div className="px-6 pb-6 space-y-4">
+            <div className="rounded-xl bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950 dark:to-emerald-950 border border-green-200 dark:border-green-900 p-5 text-center">
+              <p className="text-sm font-semibold text-green-800 dark:text-green-300 mb-2">Mudou de ideia? Quer negociar?</p>
+              <p className="text-xs text-green-700 dark:text-green-400 mb-4">Fale com nossa equipe — podemos encontrar a melhor solucao juntos!</p>
               <a href={whatsappUrl} target="_blank" rel="noopener noreferrer"
-                className="flex-1 rounded-lg bg-green-600 dark:bg-green-500 py-3 text-center text-sm font-semibold text-white hover:bg-green-700">
-                WhatsApp Suporte
+                className="inline-flex items-center gap-2 rounded-xl bg-green-600 dark:bg-green-500 px-8 py-3.5 text-sm font-bold text-white shadow-lg hover:bg-green-700 transition-all hover:scale-105">
+                <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
+                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+                  <path d="M12 0C5.373 0 0 5.373 0 12c0 2.625.846 5.059 2.284 7.034L.789 23.492a.5.5 0 00.611.611l4.458-1.495A11.952 11.952 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-2.387 0-4.594-.838-6.32-2.234l-.144-.113-3.147 1.055 1.055-3.147-.113-.144A9.935 9.935 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/>
+                </svg>
+                Falar com Suporte
               </a>
-              <button type="button" onClick={() => window.close()}
-                className="flex-1 rounded-lg border border-gray-300 dark:border-zinc-600 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-800">
-                Fechar
-              </button>
             </div>
+
+            {data.company.phone && (
+              <p className="text-center text-xs text-gray-400 dark:text-gray-500">
+                Ou ligue: <strong>{data.company.phone}</strong>
+              </p>
+            )}
           </div>
 
-          <div className="border-t border-gray-200 dark:border-zinc-700 px-6 py-4 text-center space-y-1">
-            <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{data.company.name}</p>
-            {data.company.phone && <p className="text-xs text-gray-400 dark:text-gray-500">Tel: {data.company.phone}</p>}
-            <a href={whatsappUrl} target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-green-600 dark:text-green-400 font-medium hover:text-green-700">
-              Fale com nosso suporte
-            </a>
+          <div className="border-t border-gray-200 dark:border-zinc-700 px-6 py-4 text-center">
+            <p className="text-xs text-gray-400 dark:text-gray-500">{data.company.name}</p>
           </div>
         </div>
       </div>
@@ -452,9 +463,11 @@ function OrcamentoContent() {
                   onClick={() => {
                     setShowCounterOffer(false)
                     setShowRejectForm(true)
+                    setRejectReasonOption('')
+                    setRejectReason('')
                   }}
-                  className="w-full rounded-xl border-2 border-red-300 dark:border-red-700 bg-white dark:bg-zinc-900 py-3 text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 transition-colors">
-                  Recusar mesmo assim
+                  className="w-full text-center text-xs text-gray-400 dark:text-gray-500 underline decoration-dotted underline-offset-4 py-2 hover:text-gray-600 dark:hover:text-gray-400 transition-colors">
+                  Nao desejo prosseguir com o reparo
                 </button>
                 <button type="button"
                   onClick={() => setShowCounterOffer(false)}
@@ -466,22 +479,56 @@ function OrcamentoContent() {
           )
         })()}
 
-        {/* Reject Form */}
-        {showRejectForm && (
-          <div className="mb-4 rounded-2xl border-2 border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950 p-6 shadow-sm dark:shadow-zinc-900/50">
-            <h3 className="mb-3 font-bold text-red-800 dark:text-red-300">Motivo da recusa (opcional)</h3>
-            <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)}
-              placeholder="Informe o motivo, se desejar..."
-              className="mb-4 w-full rounded-lg border border-red-200 dark:border-red-800 bg-white dark:bg-zinc-800 dark:text-gray-100 p-3 text-sm placeholder-gray-400 dark:placeholder-gray-600 focus:border-red-400 focus:outline-none focus:ring-1 focus:ring-red-400"
-              rows={3} />
+        {/* Reject Form — Step 1: Motivo */}
+        {showRejectForm && !rejectConfirmed && (
+          <div className="mb-4 rounded-2xl border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-6 shadow-sm dark:shadow-zinc-900/50">
+            <div className="text-center mb-5">
+              <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">Sentimos muito!</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Pode nos contar o motivo? Isso nos ajuda a melhorar.</p>
+            </div>
+
+            <div className="space-y-2 mb-4">
+              {rejectReasons.map((reason, i) => (
+                <button key={i} type="button"
+                  onClick={() => setRejectReasonOption(reason)}
+                  className={`w-full rounded-lg border p-3 text-left text-sm transition-all ${
+                    rejectReasonOption === reason
+                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-medium'
+                      : 'border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-gray-400 hover:border-gray-300 dark:hover:border-zinc-600 hover:bg-gray-50 dark:hover:bg-zinc-800'
+                  }`}>
+                  <span className="flex items-center gap-2">
+                    <span className={`h-4 w-4 rounded-full border-2 flex items-center justify-center ${
+                      rejectReasonOption === reason ? 'border-blue-500' : 'border-gray-300 dark:border-zinc-600'
+                    }`}>
+                      {rejectReasonOption === reason && <span className="h-2 w-2 rounded-full bg-blue-500" />}
+                    </span>
+                    {reason}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {rejectReasonOption === 'Outros motivos' && (
+              <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)}
+                placeholder="Conte-nos o motivo..."
+                className="mb-4 w-full rounded-lg border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800 dark:text-gray-100 p-3 text-sm placeholder-gray-400 dark:placeholder-gray-600 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                rows={3} />
+            )}
+
             <div className="flex gap-3">
-              <button type="button" onClick={() => handleAction('reject')} disabled={submitting}
-                className="flex-1 rounded-lg bg-red-600 dark:bg-red-500 py-3 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50">
-                {submitting ? 'Enviando...' : 'Confirmar Recusa'}
+              <button type="button"
+                onClick={() => {
+                  const finalReason = rejectReasonOption === 'Outros motivos' ? (rejectReason || 'Outros motivos') : rejectReasonOption
+                  setRejectReason(finalReason)
+                  handleAction('reject')
+                }}
+                disabled={submitting || !rejectReasonOption}
+                className="flex-1 rounded-lg border border-gray-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 py-3 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-700 disabled:opacity-40 transition-colors">
+                {submitting ? 'Enviando...' : 'Confirmar recusa'}
               </button>
-              <button type="button" onClick={() => setShowRejectForm(false)}
-                className="rounded-lg border border-gray-300 dark:border-zinc-600 px-6 py-3 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-800">
-                Voltar
+              <button type="button" onClick={() => { setShowRejectForm(false); setRejectReasonOption('') }}
+                className="rounded-lg bg-green-600 dark:bg-green-500 px-6 py-3 text-sm font-semibold text-white hover:bg-green-700 transition-colors">
+                Voltar ao orcamento
               </button>
             </div>
           </div>
@@ -612,15 +659,24 @@ function OrcamentoContent() {
           }
 
           return (
-            <div className="space-y-3 mb-6">
+            <div className="mb-6">
+              {/* Aprovar — Grande, chamativo, convidativo */}
               <button type="button" onClick={() => setShowApproveForm(true)} disabled={submitting}
-                className="w-full rounded-2xl bg-green-600 dark:bg-green-500 py-4 text-lg font-bold text-white shadow-lg dark:shadow-zinc-900/50 hover:bg-green-700 disabled:opacity-50 transition-colors">
-                ✅ Aprovar Orcamento
+                className="w-full rounded-2xl bg-gradient-to-r from-green-500 to-green-600 dark:from-green-500 dark:to-green-600 py-5 text-lg font-bold text-white shadow-xl dark:shadow-green-900/30 hover:from-green-600 hover:to-green-700 disabled:opacity-50 transition-all hover:scale-[1.01] hover:shadow-2xl mb-3">
+                <span className="flex items-center justify-center gap-2">
+                  <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  Aprovar Orcamento
+                </span>
+                <span className="block text-sm font-normal text-green-100 mt-1">Autorizar o reparo e escolher forma de pagamento</span>
               </button>
-              <button type="button" onClick={() => setShowCounterOffer(true)} disabled={submitting}
-                className="w-full rounded-2xl border-2 border-red-300 dark:border-red-700 bg-white dark:bg-zinc-900 py-3 text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 disabled:opacity-50 transition-colors">
-                Recusar Orcamento
-              </button>
+
+              {/* Recusar — Discreto, link-style */}
+              <div className="text-center mt-4">
+                <button type="button" onClick={() => { setShowRejectForm(true); setRejectReasonOption(''); setRejectReason(''); setRejectConfirmed(false) }} disabled={submitting}
+                  className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400 underline decoration-dotted underline-offset-4 disabled:opacity-50 transition-colors">
+                  Nao desejo prosseguir com o reparo
+                </button>
+              </div>
             </div>
           )
         })()}
