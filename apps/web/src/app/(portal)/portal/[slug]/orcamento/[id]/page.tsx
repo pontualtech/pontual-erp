@@ -660,6 +660,40 @@ function OrcamentoContent() {
 
           return (
             <div className="mb-6">
+              {/* Condicoes do Orcamento */}
+              <div className="mb-5 rounded-2xl border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-sm dark:shadow-zinc-900/50 overflow-hidden">
+                <div className="divide-y divide-gray-100 dark:divide-zinc-800 text-sm">
+                  <div className="flex items-start gap-3 px-5 py-3.5">
+                    <span className="text-blue-500 mt-0.5">📅</span>
+                    <div>
+                      <p className="font-semibold text-gray-800 dark:text-gray-200">Prazo de entrega</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Ate 10 dias uteis apos a aprovacao. Sempre tentamos entregar o quanto antes!</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3 px-5 py-3.5">
+                    <span className="text-green-500 mt-0.5">💳</span>
+                    <div>
+                      <p className="font-semibold text-gray-800 dark:text-gray-200">Formas de pagamento</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">PIX, dinheiro, cartao de credito (ate 3x sem juros) ou debito. Pagamento na entrega/retirada do equipamento.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3 px-5 py-3.5">
+                    <span className="text-amber-500 mt-0.5">🛡️</span>
+                    <div>
+                      <p className="font-semibold text-gray-800 dark:text-gray-200">Garantia</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">3 meses de garantia em todos os servicos e pecas, conforme Art. 26 do CDC.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3 px-5 py-3.5">
+                    <span className="text-purple-500 mt-0.5">ℹ️</span>
+                    <div>
+                      <p className="font-semibold text-gray-800 dark:text-gray-200">Importante</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Este orcamento tem validade de 15 dias. Os valores podem ser alterados apos esse prazo. Em caso de duvida, fale com nosso suporte.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Aprovar — Grande, chamativo, convidativo */}
               <button type="button" onClick={() => setShowApproveForm(true)} disabled={submitting}
                 className="w-full rounded-2xl bg-gradient-to-r from-green-500 to-green-600 dark:from-green-500 dark:to-green-600 py-5 text-lg font-bold text-white shadow-xl dark:shadow-green-900/30 hover:from-green-600 hover:to-green-700 disabled:opacity-50 transition-all hover:scale-[1.01] hover:shadow-2xl mb-3">
