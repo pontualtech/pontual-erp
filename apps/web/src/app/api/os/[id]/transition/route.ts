@@ -60,26 +60,18 @@ export async function POST(req: NextRequest, { params }: Params) {
         ).catch(() => {})
       }
 
-      // WhatsApp
+      // WhatsApp via Meta Cloud API template
       const customerPhone = os.customers?.mobile || os.customers?.phone
       if (shouldNotifyWhatsApp && customerPhone) {
-        const templateKey = getTemplateForStatus(toStatus.name)
-        if (templateKey) {
-          const waCompany = await prisma.company.findUnique({ where: { id: user.companyId }, select: { name: true, slug: true } }).catch(() => null)
-          const templateFn = whatsappTemplates[templateKey]
-          const accessTk = createAccessToken(os.customer_id, os.company_id)
-          const msg = templateFn({
-            customerName: os.customers?.legal_name?.split(' ')[0] || 'Cliente',
-            osNumber: os.os_number,
-            customerDoc: os.customers?.document_number || undefined,
-            companyName: waCompany?.name || 'Empresa',
-            companySlug: waCompany?.slug || 'pontualtech',
-            osId: os.id,
-            value: os.total_cost || undefined,
-            accessToken: accessTk,
-          })
-          void sendWhatsAppCloud(user.companyId,customerPhone, msg).catch(() => {})
-        }
+        const resendOsNum = String(os.os_number).padStart(4, '0')
+        const resendEquipment = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ') || 'Equipamento'
+        void sendWhatsAppTemplate(user.companyId, customerPhone as string, 'pontualtech_status_os', 'pt_BR', [
+          { type: 'body', parameters: [
+            { type: 'text', text: resendOsNum },
+            { type: 'text', text: toStatus.name },
+            { type: 'text', text: resendEquipment },
+          ] }
+        ]).catch(() => {})
       }
 
       return success({ id: os.id, resent: true })
@@ -577,38 +569,16 @@ export async function POST(req: NextRequest, { params }: Params) {
       const osNum = String(os.os_number).padStart(4, '0')
       const equipment = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ') || 'Equipamento'
 
-      // Use custom message from admin if configured, otherwise use template system
-      if (notifRule.whatsapp_message) {
-        const customMsg = notifRule.whatsapp_message
-          .replace(/\{\{cliente_nome\}\}/g, customerFirstName)
-          .replace(/\{\{os_numero\}\}/g, osNum)
-          .replace(/\{\{equipamento\}\}/g, equipment)
-          .replace(/\{\{status\}\}/g, toStatus.name)
-        void sendWhatsAppCloud(user.companyId,customerPhone, customMsg).catch(e =>
-          console.log('[Transition] WhatsApp custom notification failed (ignored):', e)
-        )
-      } else {
-        const templateKey = getTemplateForStatus(toStatus.name)
-        if (templateKey) {
-          const waCompany = await prisma.company.findUnique({ where: { id: user.companyId }, select: { name: true, slug: true } }).catch(() => null)
-          const templateFn = whatsappTemplates[templateKey]
-          const accessTk = createAccessToken(os.customer_id, os.company_id)
-          const msg = templateFn({
-            customerName: customerFirstName,
-            osNumber: os.os_number,
-            customerDoc: os.customers?.document_number || undefined,
-            companyName: waCompany?.name || 'Empresa',
-            companySlug: waCompany?.slug || 'pontualtech',
-            osId: os.id,
-            value: os.total_cost || undefined,
-            estimatedDelivery: (updated as any).estimated_delivery ? String((updated as any).estimated_delivery) : undefined,
-            accessToken: accessTk,
-          })
-          void sendWhatsAppCloud(user.companyId,customerPhone, msg).catch(e =>
-            console.log('[Transition] WhatsApp notification failed (ignored):', e)
-          )
-        }
-      }
+      // Always use Meta Cloud API template for WhatsApp (works outside 24h window)
+      void sendWhatsAppTemplate(user.companyId, customerPhone, 'pontualtech_status_os', 'pt_BR', [
+        { type: 'body', parameters: [
+          { type: 'text', text: osNum },
+          { type: 'text', text: toStatus.name },
+          { type: 'text', text: equipment },
+        ] }
+      ]).catch(e =>
+        console.log('[Transition] WhatsApp template notification failed (ignored):', e)
+      )
     }
 
     return success({ ...updated, receivable_created: receivableCreated })

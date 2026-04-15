@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { sendCompanyEmail } from '@/lib/send-email'
+import { sendWhatsAppTemplate } from '@/lib/whatsapp/cloud-api'
 import { escapeHtml } from '@/lib/escape-html'
 
 type Params = { params: { id: string } }
@@ -65,54 +66,16 @@ export async function POST(req: NextRequest, { params }: Params) {
       if (!customerPhone) {
         results.push({ channel: 'whatsapp', status: 'sem_telefone' })
       } else {
-        const msg = `Ola ${customerFirstName}! Tudo bem?
-
-Aprovacao Confirmada — Orcamento ${companyName}
-
-Recebemos a aprovacao do orcamento da OS #${osNum} e agradecemos pela confianca!
-
-Equipamento: ${equipment}
-Valor aprovado: ${fmtValue}
-Previsao de entrega: ${previsao}
-
-Nossa equipe tecnica ja esta ciente e o reparo sera iniciado imediatamente.
-
-Sobre prazos:
-- O prazo comeca a contar a partir de agora
-- Nosso compromisso e finalizar o mais rapido possivel
-- Voce sera notificado quando estiver pronto
-
-Formas de pagamento (na entrega):
-- Cartao de credito: ate 3x sem juros
-- PIX (CNPJ): ${pixKey}
-- Favorecido: ${companyName}
-
-Horarios: ${horario}
-
-Qualquer duvida:
-${companyPhone}${whatsappUrl ? '\n' + whatsappUrl : ''}
-
-Atenciosamente,
-Equipe ${companyName}
-
-⚙️ Esta e uma mensagem automatica.`
-
         try {
-          const appUrl = process.env.NEXT_PUBLIC_APP_URL || ''
-          if (appUrl) {
-            const cwRes = await fetch(`${appUrl}/api/integracoes/chatwoot/enviar`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', Cookie: req.headers.get('cookie') || '' },
-              body: JSON.stringify({ phone: customerPhone, message: msg }),
-            })
-            if (cwRes.ok) {
-              results.push({ channel: 'whatsapp', status: 'enviado' })
-            } else {
-              results.push({ channel: 'whatsapp', status: 'erro' })
-            }
-          } else {
-            results.push({ channel: 'whatsapp', status: 'erro' })
-          }
+          const phone = customerPhone.replace(/\D/g, '')
+          const waResult = await sendWhatsAppTemplate(user.companyId, phone, 'pontualtech_orcamento', 'pt_BR', [
+            { type: 'body', parameters: [
+              { type: 'text', text: osNum },
+              { type: 'text', text: fmtValue },
+              { type: 'text', text: equipment || 'Equipamento' },
+            ] }
+          ])
+          results.push({ channel: 'whatsapp', status: waResult.success ? 'enviado' : 'erro' })
         } catch {
           results.push({ channel: 'whatsapp', status: 'erro' })
         }

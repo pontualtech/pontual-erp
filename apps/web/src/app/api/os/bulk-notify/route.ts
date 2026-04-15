@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { sendCompanyEmail } from '@/lib/send-email'
+import { sendWhatsAppTemplate } from '@/lib/whatsapp/cloud-api'
 
 /**
  * POST /api/os/bulk-notify
@@ -109,18 +110,20 @@ export async function POST(req: NextRequest) {
         .replace(/\{\{portal_url\}\}/g, `${portalUrl}/portal/${company?.slug || 'pontualtech'}/login`)
         || defaultEmailBody
 
-      // Send WhatsApp
+      // Send WhatsApp via Meta Cloud API template
       if (channels.whatsapp) {
-        const phone = os.customers.mobile || os.customers.phone
+        const phone = (os.customers.mobile || os.customers.phone || '').replace(/\D/g, '')
         if (phone) {
           try {
-            const res = await fetch(`${appUrl}/api/integracoes/chatwoot/enviar`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ phone, message: whatsappMsg }),
-              signal: AbortSignal.timeout(10000),
-            })
-            entry.whatsapp_sent = res.ok
+            const equipment = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ') || 'Equipamento'
+            const waResult = await sendWhatsAppTemplate(user.companyId, phone, 'pontualtech_status_os', 'pt_BR', [
+              { type: 'body', parameters: [
+                { type: 'text', text: osNum },
+                { type: 'text', text: statusName },
+                { type: 'text', text: equipment },
+              ] }
+            ])
+            entry.whatsapp_sent = waResult.success
           } catch {
             entry.whatsapp_sent = false
           }

@@ -4,7 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { logAudit } from '@/lib/audit'
 import { getPaymentProvider } from '@/lib/payments/factory'
 import type { BillingType } from '@/lib/payments/types'
-import { sendWhatsAppCloud } from '@/lib/whatsapp/cloud-api'
+import { sendWhatsAppCloud, sendWhatsAppTemplate } from '@/lib/whatsapp/cloud-api'
 import { sendCompanyEmail } from '@/lib/send-email'
 import { z } from 'zod'
 import { escapeHtml } from '@/lib/escape-html'
@@ -171,18 +171,24 @@ export async function POST(request: NextRequest) {
     }
     const sentVia: string[] = []
 
-    // Send via WhatsApp (fire-and-forget)
+    // Send via WhatsApp template (fire-and-forget)
     if (data.send_whatsapp && customer.mobile) {
-      const whatsMsg =
-        `Ola, *${customer.legal_name}*! 💰\n\n` +
-        `Voce tem uma cobranca de *${valueStr}* da *${companyName}*.\n` +
-        `Forma de pagamento: *${billingLabel[data.billing_type]}*\n\n` +
-        `📱 Pague agora pelo link:\n${charge.invoiceUrl}\n\n` +
-        (receivable.description ? `Ref: ${receivable.description}\n` : '') +
-        `Qualquer duvida, entre em contato conosco!\n\n` +
-        `⚙️ Esta e uma mensagem automatica.`
+      // Load OS number for template
+      let osNum = '0000'
+      if (receivable.service_order_id) {
+        const so = await prisma.serviceOrder.findUnique({
+          where: { id: receivable.service_order_id },
+          select: { os_number: true },
+        }).catch(() => null)
+        if (so) osNum = String(so.os_number).padStart(4, '0')
+      }
 
-      sendWhatsAppCloud(user.companyId, customer.mobile, whatsMsg).then(r => {
+      sendWhatsAppTemplate(user.companyId, customer.mobile, 'pontualtech_cobranca', 'pt_BR', [
+        { type: 'body', parameters: [
+          { type: 'text', text: valueStr },
+          { type: 'text', text: osNum },
+        ] }
+      ]).then(r => {
         if (r.success) sentVia.push('whatsapp')
       }).catch(() => {})
     }

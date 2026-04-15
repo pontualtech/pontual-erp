@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { sendCompanyEmail } from '@/lib/send-email'
+import { sendWhatsAppTemplate } from '@/lib/whatsapp/cloud-api'
 import { escapeHtml } from '@/lib/escape-html'
 
 type Params = { params: { id: string } }
@@ -186,12 +187,13 @@ ${companyName}
     if (channels.includes('whatsapp') && customerPhone) {
       try {
         const phone = customerPhone.replace(/\D/g, '')
-        await fetch(`${process.env.NEXT_PUBLIC_APP_URL || ''}/api/integracoes/chatwoot/enviar`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone, message: whatsappMsg }),
-        })
-        results.push({ channel: 'whatsapp', status: 'enviado' })
+        const waResult = await sendWhatsAppTemplate(user.companyId, phone, 'pontualtech_pronto', 'pt_BR', [
+          { type: 'body', parameters: [
+            { type: 'text', text: osNum },
+            { type: 'text', text: equipment || 'Equipamento' },
+          ] }
+        ])
+        results.push({ channel: 'whatsapp', status: waResult.success ? 'enviado' : 'erro' })
       } catch {
         results.push({ channel: 'whatsapp', status: 'erro' })
       }
