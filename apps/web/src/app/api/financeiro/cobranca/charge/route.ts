@@ -199,6 +199,14 @@ export async function POST(request: NextRequest) {
         ? new Date(receivable.due_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })
         : ''
 
+      // Load company settings for dynamic links
+      const settings = await prisma.setting.findMany({ where: { company_id: user.companyId } })
+      const settingsMap: Record<string, string> = {}
+      for (const s of settings) settingsMap[s.key] = s.value
+
+      const companyWhatsappRaw = settingsMap['company.whatsapp'] || settingsMap['whatsapp'] || settingsMap['company.phone'] || settingsMap['telefone'] || ''
+      const companyWhatsapp = companyWhatsappRaw.replace(/\D/g, '')
+
       const emailHtml = buildChargeEmailHtml({
         customerName: customer.legal_name,
         companyName,
@@ -207,6 +215,9 @@ export async function POST(request: NextRequest) {
         description: receivable.description,
         dueDate: dueStr,
         invoiceUrl: charge.invoiceUrl,
+        portalUrl: settingsMap['company.portal'] || settingsMap['portal'] || '',
+        websiteUrl: settingsMap['company.website'] || settingsMap['website'] || '',
+        whatsappUrl: companyWhatsapp ? `https://wa.me/${companyWhatsapp}` : '',
       })
 
       sendCompanyEmail(
@@ -286,6 +297,9 @@ function buildChargeEmailHtml(params: {
   description: string
   dueDate: string
   invoiceUrl: string
+  portalUrl?: string
+  websiteUrl?: string
+  whatsappUrl?: string
 }): string {
   return `<!DOCTYPE html>
 <html>
@@ -338,12 +352,12 @@ function buildChargeEmailHtml(params: {
         <p style="margin:0 0 8px;font-size:14px;font-weight:700;color:#0369a1;">📱 Acompanhe sua OS</p>
         <p style="margin:0 0 12px;font-size:13px;color:#0c4a6e;">Acesse o Portal do Cliente ou consulte pelo nosso site:</p>
         <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr>
-          <td style="padding:0 6px;"><a href="https://portal.pontualtech.com.br" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Portal do Cliente</a></td>
-          <td style="padding:0 6px;"><a href="https://pontualtech.com.br/#consulta-os" style="display:inline-block;padding:10px 20px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Consultar no Site</a></td>
+          <td style="padding:0 6px;"><a href="${params.portalUrl || ''}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Portal do Cliente</a></td>
+          <td style="padding:0 6px;"><a href="${params.websiteUrl || ''}" style="display:inline-block;padding:10px 20px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Consultar no Site</a></td>
         </tr></table>
         <p style="margin:12px 0 0;font-size:13px;color:#0c4a6e;">Duvidas? Fale com nosso suporte:</p>
         <table cellpadding="0" cellspacing="0" style="margin:8px auto 0;"><tr>
-          <td><a href="https://wa.me/551126263841" style="display:inline-block;padding:10px 24px;background:#25d366;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">💬 WhatsApp Suporte</a></td>
+          <td><a href="${params.whatsappUrl || ''}" style="display:inline-block;padding:10px 24px;background:#25d366;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">💬 WhatsApp Suporte</a></td>
         </tr></table>
       </div>
     </td>

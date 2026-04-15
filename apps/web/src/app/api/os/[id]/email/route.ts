@@ -54,7 +54,7 @@ const DEFAULT_EMAIL_TEMPLATE = `<!DOCTYPE html>
 
               <div style="text-align:center;margin-bottom:24px;">
                 <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr><td style="background:#25d366;border-radius:8px;">
-                  <a href="https://wa.me/551126263841" style="display:inline-block;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 28px;">
+                  <a href="https://wa.me/{{company_whatsapp}}" style="display:inline-block;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 28px;">
                     Fale com nosso suporte
                   </a>
                 </td></tr></table>
@@ -67,12 +67,12 @@ const DEFAULT_EMAIL_TEMPLATE = `<!DOCTYPE html>
               <p style="margin:0 0 8px;font-size:14px;font-weight:700;color:#0369a1;">📱 Acompanhe sua OS</p>
               <p style="margin:0 0 12px;font-size:13px;color:#0c4a6e;">Acesse o Portal do Cliente ou consulte pelo nosso site:</p>
               <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr>
-                <td style="padding:0 6px;"><a href="https://portal.pontualtech.com.br" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Portal do Cliente</a></td>
-                <td style="padding:0 6px;"><a href="https://pontualtech.com.br/#consulta-os" style="display:inline-block;padding:10px 20px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Consultar no Site</a></td>
+                <td style="padding:0 6px;"><a href="{{company_portal}}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Portal do Cliente</a></td>
+                <td style="padding:0 6px;"><a href="{{company_website}}" style="display:inline-block;padding:10px 20px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Consultar no Site</a></td>
               </tr></table>
               <p style="margin:12px 0 0;font-size:13px;color:#0c4a6e;">Duvidas? Fale com nosso suporte:</p>
               <table cellpadding="0" cellspacing="0" style="margin:8px auto 0;"><tr>
-                <td><a href="https://wa.me/551126263841" style="display:inline-block;padding:10px 24px;background:#25d366;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">💬 WhatsApp Suporte</a></td>
+                <td><a href="https://wa.me/{{company_whatsapp}}" style="display:inline-block;padding:10px 24px;background:#25d366;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">💬 WhatsApp Suporte</a></td>
               </tr></table>
             </div>
           </td></tr>
@@ -226,6 +226,9 @@ export async function POST(req: NextRequest, { params }: Params) {
       company_email: settingsMap['company.email'] || settingsMap['email'] || '—',
       company_address: companyAddress,
       company_cnpj: settingsMap['company.cnpj'] || settingsMap['cnpj'] || '—',
+      company_portal: settingsMap['company.portal'] || settingsMap['portal'] || '',
+      company_website: settingsMap['company.website'] || settingsMap['website'] || '',
+      company_whatsapp: (settingsMap['company.whatsapp'] || settingsMap['whatsapp'] || settingsMap['company.phone'] || settingsMap['telefone'] || '').replace(/\D/g, ''),
     }
 
     const htmlBody = replaceTemplateVars(htmlTemplate, vars)
@@ -240,7 +243,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: process.env.EMAIL_FROM || smtpFrom || 'PontualTech <contato@pontualtech.com.br>',
+          from: process.env.EMAIL_FROM || smtpFrom || `${companyName} <${settingsMap['company.email'] || settingsMap['email'] || 'contato@empresa.com.br'}>`,
           to: [recipientEmail],
           subject: emailSubject,
           html: htmlBody,

@@ -109,13 +109,18 @@ export async function PUT(req: NextRequest) {
       select: { name: true },
     })
 
+    const companySettings = await prisma.setting.findMany({ where: { company_id: portalUser.company_id } })
+    const companyCfg: Record<string, string> = {}
+    for (const s of companySettings) companyCfg[s.key] = s.value
+    const adminEmail = companyCfg['company.email'] || companyCfg['email'] || companyCfg['email.from_address'] || 'contato@pontualtech.com.br'
+
     const changedFields = Object.entries(changes)
       .map(([k, v]) => `<li><strong>${k}:</strong> ${v}</li>`)
       .join('')
 
     void sendCompanyEmail(
       portalUser.company_id,
-      'contato@pontualtech.com.br',
+      adminEmail,
       `[Portal] Cliente atualizou cadastro - ${current.legal_name}`,
       `<h3>Cliente atualizou dados pelo portal</h3>
        <p><strong>Cliente:</strong> ${current.legal_name}</p>

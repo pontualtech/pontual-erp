@@ -55,12 +55,19 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     const company = os.companies
     const companySettings = (company?.settings || {}) as Record<string, string>
-    const companyName = company?.name || 'PontualTech'
-    const companyPhone = companySettings['phone'] || companySettings['telefone'] || '(11) 2626-3841'
-    const companyWhatsApp = '551126263841'
-    const companyEmail = companySettings['email'] || 'contato@pontualtech.com.br'
+    // Load company settings from DB for dynamic data
+    const dbSettings = await prisma.setting.findMany({ where: { company_id: companyId } }).catch(() => [])
+    const cfg: Record<string, string> = {}
+    for (const s of dbSettings) cfg[s.key] = s.value
+
+    const companyName = company?.name || cfg['company.name'] || 'Empresa'
+    const companyPhone = cfg['company.phone'] || companySettings['phone'] || ''
+    const companyWhatsApp = (cfg['company.whatsapp'] || '').replace(/\D/g, '')
+    const companyEmail = cfg['company.email'] || companySettings['email'] || ''
+    const companyWebsite = cfg['company.website'] || ''
     const slug = company?.slug || 'pontualtech'
-    const portalUrl = process.env.PORTAL_URL || `https://portal.pontualtech.com.br/portal/${slug}`
+    const portalBase = process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'
+    const portalUrl = `${portalBase}/portal/${slug}`
     const osDetailUrl = `${portalUrl}/os/${os.id}`
     const osNum = String(os.os_number).padStart(4, '0')
     const customerName = customer.legal_name?.split(' ')[0] || 'Cliente'
@@ -169,7 +176,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     <div style="background:#fefce8;border:1px solid #fde68a;border-radius:10px;padding:16px;margin:0 0 24px">
       <p style="font-size:13px;font-weight:600;color:#854d0e;margin:0 0 8px">💡 Como acessar o Portal do Cliente:</p>
       <ol style="font-size:12px;color:#713f12;margin:0;padding-left:18px;line-height:1.8">
-        <li>Acesse <a href="${portalUrl}" style="color:#1e40af;font-weight:600">portal.pontualtech.com.br</a></li>
+        <li>Acesse <a href="${portalUrl}" style="color:#1e40af;font-weight:600">${slug === 'pontualtech' ? 'portal.pontualtech.com.br' : `portal.${slug}.com.br`}</a></li>
         <li>Login: seu <strong>CPF ou CNPJ</strong></li>
         <li>Senha: <strong>os 5 primeiros digitos</strong> do seu CPF/CNPJ</li>
         <li>Pronto! Acompanhe suas OS, aprove orcamentos e mais</li>
@@ -197,7 +204,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       <p style="margin:0 0 12px;font-size:13px;color:#0c4a6e;">Acesse o Portal do Cliente ou consulte pelo nosso site:</p>
       <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr>
         <td style="padding:0 6px;"><a href="${portalUrl}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Portal do Cliente</a></td>
-        <td style="padding:0 6px;"><a href="https://pontualtech.com.br/#consulta-os" style="display:inline-block;padding:10px 20px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Consultar no Site</a></td>
+        ${companyWebsite ? `<td style="padding:0 6px;"><a href="${companyWebsite}/#consulta-os" style="display:inline-block;padding:10px 20px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Consultar no Site</a></td>` : ''}
       </tr></table>
       <p style="margin:12px 0 0;font-size:13px;color:#0c4a6e;">Duvidas? Fale com nosso suporte:</p>
       <table cellpadding="0" cellspacing="0" style="margin:8px auto 0;"><tr>

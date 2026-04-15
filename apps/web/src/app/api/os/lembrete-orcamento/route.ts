@@ -107,7 +107,7 @@ const DEFAULT_QUOTE_REMINDER_TEMPLATE = `<!DOCTYPE html>
               <p style="margin:0 0 12px;font-size:13px;color:#0c4a6e;">Acesse o Portal do Cliente ou consulte pelo nosso site:</p>
               <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr>
                 <td style="padding:0 6px;"><a href="{{portal_os_link}}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Portal do Cliente</a></td>
-                <td style="padding:0 6px;"><a href="https://pontualtech.com.br/#consulta-os" style="display:inline-block;padding:10px 20px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Consultar no Site</a></td>
+                <td style="padding:0 6px;"><a href="{{company_website}}/#consulta-os" style="display:inline-block;padding:10px 20px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Consultar no Site</a></td>
               </tr></table>
               <p style="margin:12px 0 0;font-size:13px;color:#0c4a6e;">Duvidas? Fale com nosso suporte:</p>
               <table cellpadding="0" cellspacing="0" style="margin:8px auto 0;"><tr>
@@ -319,6 +319,7 @@ export async function sendQuoteReminders(companyId: string, userId: string, spec
         company_name: escapeHtml(company.name || 'Empresa'),
         company_phone: escapeHtml(settingsMap['company.phone'] || settingsMap['telefone'] || '—'),
         company_whatsapp: whatsapp,
+        company_website: settingsMap['company.website'] || 'https://pontualtech.com.br',
         items_table: itemsTableHtml,
       }
 

@@ -25,11 +25,13 @@ export async function POST(req: NextRequest, { params }: Params) {
     const cfg: Record<string, string> = {}
     for (const s of settings) cfg[s.key] = s.value
 
-    const companyName = cfg['company_name'] || 'PontualTech'
-    const companyPhone = cfg['phone'] || cfg['company.whatsapp'] || '(11) 2626-3841'
-    const companyEmail = cfg['email'] || cfg['email.from_address'] || 'contato@pontualtech.com.br'
-    const fromName = cfg['email.from_name'] || 'PontualTech'
-    const fromAddress = cfg['email.from_address'] || 'contato@pontualtech.com.br'
+    const companyName = cfg['company_name'] || cfg['company.name'] || 'PontualTech'
+    const companyPhone = cfg['phone'] || cfg['company.phone'] || '(11) 2626-3841'
+    const companyEmail = cfg['email'] || cfg['company.email'] || cfg['email.from_address'] || 'contato@pontualtech.com.br'
+    const fromName = cfg['email.from_name'] || companyName
+    const fromAddress = cfg['email.from_address'] || companyEmail
+    const whatsappNum = (cfg['company.whatsapp'] || cfg['whatsapp'] || '551126263841').replace(/\D/g, '')
+    const whatsappUrl = `https://wa.me/${whatsappNum}`
 
     const chave = invoice.access_key || ''
     const chaveFormatada = chave.replace(/(\d{4})/g, '$1 ').trim()
@@ -84,7 +86,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       <a href="https://www.nfe.fazenda.gov.br/portal/consultaRecibo.aspx" target="_blank" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 32px;border-radius:8px">Consultar NF-e na SEFAZ</a>
     </div>
     <div style="text-align:center;margin-bottom:28px">
-      <a href="https://wa.me/551126263841" target="_blank" style="display:inline-block;background:#25d366;color:#fff;text-decoration:none;font-size:13px;font-weight:600;padding:10px 24px;border-radius:6px">WhatsApp Suporte: ${companyPhone}</a>
+      <a href="${whatsappUrl}" target="_blank" style="display:inline-block;background:#25d366;color:#fff;text-decoration:none;font-size:13px;font-weight:600;padding:10px 24px;border-radius:6px">WhatsApp Suporte: ${companyPhone}</a>
     </div>
   </td></tr>
   <tr><td style="background:#1e293b;padding:24px 32px;text-align:center">

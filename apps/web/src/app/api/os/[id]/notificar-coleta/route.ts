@@ -46,6 +46,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const portalUrl = `${portalBase}/portal/${portalSlug}/os/${os.id}`
     const companyName = os.companies?.name || cfg['company.name'] || 'Pontual Tech'
     const companyPhone = cfg['company.phone'] || '(11) 2626-3841'
+    const companyWebsite = cfg['company.website'] || 'https://pontualtech.com.br'
     const whatsappNum = (cfg['company.whatsapp'] || '551126263841').replace(/\D/g, '')
     const whatsappUrl = `https://wa.me/${whatsappNum}`
 
@@ -228,7 +229,7 @@ Equipe ${companyName}
               <p style="margin:0 0 12px;font-size:13px;color:#0c4a6e;">Acesse o Portal do Cliente ou consulte pelo nosso site:</p>
               <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr>
                 <td style="padding:0 6px;"><a href="${`${portalBase}/portal/${portalSlug}`}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Portal do Cliente</a></td>
-                <td style="padding:0 6px;"><a href="https://pontualtech.com.br/#consulta-os" style="display:inline-block;padding:10px 20px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Consultar no Site</a></td>
+                <td style="padding:0 6px;"><a href="${companyWebsite}/#consulta-os" style="display:inline-block;padding:10px 20px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Consultar no Site</a></td>
               </tr></table>
               <p style="margin:12px 0 0;font-size:13px;color:#0c4a6e;">Duvidas? Fale com nosso suporte:</p>
               <table cellpadding="0" cellspacing="0" style="margin:8px auto 0;"><tr>

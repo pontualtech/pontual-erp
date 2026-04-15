@@ -320,6 +320,8 @@ export async function POST(request: NextRequest, { params }: Params) {
             customerFirstName, osNum: String(osNum), equipment, fmtValue, previsaoStr,
             companyName, companyAddress, companyCep, companyCnpj, companyPhone,
             companyEmailAddr, whatsappUrl, pixKey, pixBanco, horario,
+            companyWebsite: cfg['company.website'] || 'https://pontualtech.com.br',
+            portalUrl: (process.env.PORTAL_URL || 'https://portal.pontualtech.com.br') + '/portal/' + os.companies.slug,
           })
         }
 
@@ -533,6 +535,7 @@ interface ApprovalEmailData {
   previsaoStr: string; companyName: string; companyAddress: string; companyCep: string
   companyCnpj: string; companyPhone: string; companyEmailAddr: string; whatsappUrl: string
   pixKey: string; pixBanco: string; horario: string
+  companyWebsite: string; portalUrl: string
 }
 
 function buildApprovalEmailHtml(d: ApprovalEmailData): string {
@@ -610,8 +613,8 @@ function buildApprovalEmailHtml(d: ApprovalEmailData): string {
     <p style="margin:0 0 8px;font-size:14px;font-weight:700;color:#0369a1;">📱 Acompanhe sua OS</p>
     <p style="margin:0 0 12px;font-size:13px;color:#0c4a6e;">Acesse o Portal do Cliente ou consulte pelo nosso site:</p>
     <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr>
-      <td style="padding:0 6px;"><a href="${(() => { const pb = process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'; return pb; })()}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Portal do Cliente</a></td>
-      <td style="padding:0 6px;"><a href="https://pontualtech.com.br/#consulta-os" style="display:inline-block;padding:10px 20px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Consultar no Site</a></td>
+      <td style="padding:0 6px;"><a href="${d.portalUrl}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Portal do Cliente</a></td>
+      <td style="padding:0 6px;"><a href="${d.companyWebsite + '/#consulta-os'}" style="display:inline-block;padding:10px 20px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Consultar no Site</a></td>
     </tr></table>
     <p style="margin:12px 0 0;font-size:13px;color:#0c4a6e;">Duvidas? Fale com nosso suporte:</p>
     <table cellpadding="0" cellspacing="0" style="margin:8px auto 0;"><tr>
