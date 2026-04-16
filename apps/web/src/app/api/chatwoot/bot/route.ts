@@ -40,12 +40,19 @@ interface BotCompanyConfig {
 }
 
 // ENV-based fallbacks (API keys MUST stay in env vars for security)
-const ENV_CONFIGS: Record<string, Partial<BotCompanyConfig>> = {
+const ENV_CONFIGS: Record<string, Partial<BotCompanyConfig> & { settingsPrefix?: string }> = {
   pontualtech: {
     companyId: process.env.BOT_ANA_COMPANY_ID || 'pontualtech-001',
     difyApiKey: process.env.DIFY_API_KEY || '',
     botApiKey: process.env.BOT_ANA_API_KEY || '',
     cwToken: process.env.CHATWOOT_API_TOKEN || process.env.CW_ADMIN_TOKEN || '',
+  },
+  'pontualtech-suporte': {
+    companyId: process.env.BOT_ANA_COMPANY_ID || 'pontualtech-001',
+    difyApiKey: process.env.DIFY_SUPORTE_API_KEY || '',
+    botApiKey: process.env.BOT_ANA_API_KEY || '',
+    cwToken: process.env.CHATWOOT_API_TOKEN || process.env.CW_ADMIN_TOKEN || '',
+    settingsPrefix: 'bot.marta.config.',
   },
   imprimitech: {
     companyId: process.env.BOT_IMPRI_COMPANY_ID || '86c829cf-32ed-4e40-80cd-59ce4178aa1a',
@@ -69,21 +76,26 @@ async function getCompanyConfig(companySlug?: string | null): Promise<BotCompany
   if (cached && Date.now() - cached.ts < BOT_CFG_TTL) return cached.cfg
   if (botConfigCache.size >= CACHE_MAX) botConfigCache.clear()
 
-  // Load from DB settings
+  // Load from DB settings (custom prefix for multi-bot per company)
+  const prefix = (envCfg as any).settingsPrefix || 'bot.config.'
   const settings = await prisma.setting.findMany({
-    where: { company_id: envCfg.companyId, key: { startsWith: 'bot.config.' } },
+    where: { company_id: envCfg.companyId, key: { startsWith: prefix } },
   })
   const dbCfg: Record<string, string> = {}
-  for (const s of settings) dbCfg[s.key] = s.value
+  for (const s of settings) {
+    // Normalize key: remove prefix, then re-add as 'bot.config.' for uniform access
+    const normalizedKey = 'bot.config.' + s.key.slice(prefix.length)
+    dbCfg[normalizedKey] = s.value
+  }
 
   const cfg: BotCompanyConfig = {
     companyId: envCfg.companyId!,
     slug: dbCfg['bot.config.slug'] || slug,
     allowedInboxes: (dbCfg['bot.config.allowed_inboxes'] || '2,4,9').split(',').map(Number),
-    difyBaseUrl: dbCfg['bot.config.dify_base_url'] || `https://dify.${slug === 'pontualtech' ? 'pontualtech.work' : 'imprimitech.com.br'}`,
+    difyBaseUrl: dbCfg['bot.config.dify_base_url'] || `https://dify.${slug.startsWith('pontualtech') ? 'pontualtech.work' : 'imprimitech.com.br'}`,
     difyApiKey: envCfg.difyApiKey || '',
     botApiKey: envCfg.botApiKey || '',
-    cwUrl: dbCfg['bot.config.cw_url'] || `https://chat.${slug === 'pontualtech' ? 'pontualtech.work' : 'imp.pontualtech.work'}`,
+    cwUrl: dbCfg['bot.config.cw_url'] || `https://chat.${slug.startsWith('pontualtech') ? 'pontualtech.work' : 'imp.pontualtech.work'}`,
     cwAccountId: dbCfg['bot.config.cw_account_id'] || '1',
     cwToken: envCfg.cwToken || '',
     portalUrl: dbCfg['bot.config.portal_url'] || '',
@@ -447,7 +459,7 @@ async function transcribeAudio(audioUrl: string): Promise<string> {
 interface ParsedResponse {
   cleanText: string
   vhsysData: Record<string, unknown> | null
-  action: 'ABRIR_OS' | 'ENCERRAR_CONVERSA' | 'TRANSFERIR_HUMANO' | 'NENHUMA_ACAO' | null
+  action: 'ABRIR_OS' | 'ENCERRAR_CONVERSA' | 'TRANSFERIR_HUMANO' | 'TRANSFERIR_RAFAEL' | 'NENHUMA_ACAO' | null
 }
 
 function parseDifyResponse(text: string): ParsedResponse {
@@ -473,6 +485,9 @@ function parseDifyResponse(text: string): ParsedResponse {
   } else if (text.includes('[ENCERRAR_CONVERSA]')) {
     action = 'ENCERRAR_CONVERSA'
     cleanText = cleanText.replace(/\[ENCERRAR_CONVERSA\]/g, '').trim()
+  } else if (text.includes('[TRANSFERIR_RAFAEL]')) {
+    action = 'TRANSFERIR_RAFAEL'
+    cleanText = cleanText.replace(/\[TRANSFERIR_RAFAEL\]/g, '').trim()
   } else if (text.includes('[TRANSFERIR_HUMANO]')) {
     action = 'TRANSFERIR_HUMANO'
     cleanText = cleanText.replace(/\[TRANSFERIR_HUMANO\]/g, '').trim()
@@ -836,6 +851,35 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       }
     }
 
+    // ── AUTO-ENRICH: inject OS data when message mentions an OS number (Marta suporte) ──
+    if (cfg.slug === 'pontualtech-suporte' || cfg.botOrigin?.includes('marta')) {
+      const osMatch = query.match(/(?:os|OS|O\.S\.?|ordem)\s*#?\s*(\d{4,6})/i) || query.match(/\b(6\d{4})\b/)
+      if (osMatch) {
+        const osNum = parseInt(osMatch[1], 10)
+        try {
+          const osData = await prisma.serviceOrder.findFirst({
+            where: { os_number: osNum, company_id: cfg.companyId, deleted_at: null },
+            include: {
+              customers: { select: { legal_name: true, email: true, mobile: true } },
+              module_statuses: { select: { name: true, is_final: true } },
+              user_profiles: { select: { name: true } },
+            },
+          })
+          if (osData) {
+            const status = osData.module_statuses?.name || 'Desconhecido'
+            const equip = [osData.equipment_type, osData.equipment_brand, osData.equipment_model].filter(Boolean).join(' ')
+            const previsao = osData.estimated_delivery ? new Date(osData.estimated_delivery).toLocaleDateString('pt-BR') : 'sem previsao'
+            const isLegado = osData.created_at && osData.created_at < new Date('2026-04-10')
+            const portalUrl = `${process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'}/portal/pontualtech/os/${osData.id}`
+            query += `\n[DADOS DA OS #${osNum}: Status: ${status}, Equipamento: ${equip}, Defeito: ${osData.reported_issue || 'N/A'}, Diagnostico: ${osData.diagnosis || 'N/A'}, Tecnico: ${osData.user_profiles?.name || 'N/A'}, Previsao: ${previsao}, Custo: ${osData.total_cost ? 'R$ ' + (osData.total_cost / 100).toFixed(2) : 'N/A'}, Cliente: ${osData.customers?.legal_name || 'N/A'}, Email: ${osData.customers?.email || 'N/A'}, Portal: ${portalUrl}${isLegado ? ', SISTEMA_LEGADO: true' : ''}]`
+            console.log(`[Bot] OS enriched: #${osNum} → ${status} (${equip})`)
+          } else if (osNum < 60000) {
+            query += `\n[OS #${osNum}: NAO ENCONTRADA NO ERP. SISTEMA_LEGADO: true — transferir para Rafael]`
+          }
+        } catch (e) { console.error('[Bot] OS enrich error:', e) }
+      }
+    }
+
     // Handle OS confirmation flow
     if (botConv.step === 'AWAITING_CONFIRMATION') {
       await handleOSConfirmation(cfg, botConv, query, conversationId)
@@ -1008,6 +1052,20 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       }
       updateData.step = 'IDLE'
       updateData.data = {}
+    } else if (parsed.action === 'TRANSFERIR_RAFAEL') {
+      // Transfer to Rafael specifically (legacy OS handling)
+      updateData.human_takeover = true
+      updateData.step = 'HUMAN'
+      await cwSendMessage(cfg, conversationId, '[BOT] OS do sistema legado — transferindo para Rafael.', true)
+      // Assign conversation to Rafael (agent ID from Chatwoot)
+      const RAFAEL_AGENT_ID = 4 // Rafael S in Chatwoot
+      try {
+        await fetch(`${cfg.cwUrl}/api/v1/accounts/${cfg.cwAccountId}/conversations/${conversationId}/assignments`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', api_access_token: cfg.cwToken },
+          body: JSON.stringify({ assignee_id: RAFAEL_AGENT_ID }),
+        })
+      } catch {} // fire and forget
     } else if (parsed.action === 'TRANSFERIR_HUMANO') {
       updateData.human_takeover = true
       updateData.step = 'HUMAN'
