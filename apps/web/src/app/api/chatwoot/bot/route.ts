@@ -122,8 +122,8 @@ async function getCompanyConfig(companySlug?: string | null): Promise<BotCompany
     portalUrl: dbCfg['bot.config.portal_url'] || '',
     supportWhatsApp: dbCfg['bot.config.support_whatsapp'] || '',
     botOrigin: dbCfg['bot.config.bot_origin'] || `whatsapp_bot_${slug}`,
-    botAgentId: parseInt(dbCfg['bot.config.bot_agent_id'] || '0'),
-    humanAgentId: parseInt(dbCfg['bot.config.human_agent_id'] || '4'),
+    botAgentId: parseInt(dbCfg['bot.config.bot_agent_id'] || (slug.includes('imprimitech') ? '10' : '0')),
+    humanAgentId: parseInt(dbCfg['bot.config.human_agent_id'] || (slug.includes('imprimitech') ? '7' : '4')),
     botName: dbCfg['bot.config.bot_name'] || (slug.includes('imprimitech') ? 'Aline' : 'Marta'),
     companyDisplayName: dbCfg['bot.config.company_name'] || (slug.includes('imprimitech') ? 'Imprimitech' : 'PontualTech'),
     // Legacy OS detection per company
@@ -154,6 +154,16 @@ const MAX_HISTORY = 20        // keep last 20 messages
 // All Chatwoot helpers now receive cfg to avoid module-level mutable state (race-condition safe)
 function cwBase(cfg: BotCompanyConfig) {
   return `${cfg.cwUrl}/api/v1/accounts/${cfg.cwAccountId}`
+}
+
+// Portal URL helper — uses cfg.portalUrl if set, otherwise builds from slug
+// Returns base portal URL (no trailing slash), e.g. "https://portal.pontualtech.com.br/portal/pontualtech"
+function portalBase(cfg: BotCompanyConfig): string {
+  if (cfg.portalUrl) return cfg.portalUrl.replace(/\/+$/, '')
+  const isImpri = cfg.slug.includes('imprimitech')
+  const domain = isImpri ? 'portal.imprimitech.com.br' : 'portal.pontualtech.com.br'
+  const tenant = isImpri ? 'imprimitech' : 'pontualtech'
+  return `https://${domain}/portal/${tenant}`
 }
 
 function cwHeaders(cfg: BotCompanyConfig) {
@@ -896,7 +906,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
 
     // ── AUTO-ENRICH: inject OS data when message mentions an OS number (suporte bots) ──
     if (cfg.slug.includes('suporte') || cfg.botOrigin?.includes('marta') || cfg.botOrigin?.includes('aline')) {
-      const osMatch = query.match(/(?:os|OS|O\.S\.?|ordem)\s*#?\s*(\d{4,6})/i) || query.match(/\b([56]\d{4})\b/)
+      const osMatch = query.match(/(?:os|OS|O\.S\.?|ordem)\s*#?\s*(\d{4,6})/i) || query.match(/\b([4-6]\d{3,4})\b/)
       if (osMatch) {
         const osNum = parseInt(osMatch[1], 10)
         try {
@@ -939,12 +949,12 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
               return
             }
 
-            const portalUrl = `${process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'}/portal/pontualtech/os/${osData.id}`
-            query += `\n[DADOS DA OS #${osNum}: Status: ${status}, Equipamento: ${equip}, Defeito: ${osData.reported_issue || 'N/A'}, Diagnostico: ${osData.diagnosis || 'N/A'}, Tecnico: ${osData.user_profiles?.name || 'N/A'}, Previsao: ${previsao}, Custo: ${osData.total_cost ? 'R$ ' + (osData.total_cost / 100).toFixed(2) : 'N/A'}, Cliente: ${osData.customers?.legal_name || 'N/A'}, Email: ${osData.customers?.email || 'N/A'}, Portal: ${portalUrl}]`
+            const osPortalUrl = `${portalBase(cfg)}/os/${osData.id}`
+            query += `\n[DADOS DA OS #${osNum}: Status: ${status}, Equipamento: ${equip}, Defeito: ${osData.reported_issue || 'N/A'}, Diagnostico: ${osData.diagnosis || 'N/A'}, Tecnico: ${osData.user_profiles?.name || 'N/A'}, Previsao: ${previsao}, Custo: ${osData.total_cost ? 'R$ ' + (osData.total_cost / 100).toFixed(2) : 'N/A'}, Cliente: ${osData.customers?.legal_name || 'N/A'}, Email: ${osData.customers?.email || 'N/A'}, Portal: ${osPortalUrl}]`
             console.log(`[Bot] OS enriched: #${osNum} → ${status} (${equip})`)
-          } else if (osNum < 60000) {
-            // OS LEGADA — transferir direto pro Rafael, sem passar pelo Dify
-            console.log(`[Bot] OS #${osNum} é legado (VHSys) — transferência direta para Rafael`)
+          } else if (cfg.legacyOsMin > 0 && osNum >= cfg.legacyOsMin && osNum <= cfg.legacyOsMax) {
+            // OS LEGADA — transferir direto pro humano, sem passar pelo Dify
+            console.log(`[Bot] OS #${osNum} é legado (range ${cfg.legacyOsMin}-${cfg.legacyOsMax}) — transferência direta para humano`)
             const osNumFmt = String(osNum).padStart(5, '0')
             await cwSendMessage(cfg, conversationId,
               `Sua OS #${osNumFmt} é do nosso sistema anterior. Vou transferir para nossa equipe que cuida pessoalmente desses casos. Retornaremos em breve!`)
@@ -1022,16 +1032,17 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
 
           if (customer) {
             if (activeOS.length > 0) {
-              // Check for legacy OS (all OS before 10/04/2026 would have been caught above,
-              // but check by os_number < 60000 as safety net)
-              const legacyOS = activeOS.filter(o => o.os_number < 60000)
+              // Check for legacy OS using per-company config range
+              const legacyOS = cfg.legacyOsMin > 0
+                ? activeOS.filter(o => o.os_number >= cfg.legacyOsMin && o.os_number <= cfg.legacyOsMax)
+                : []
               if (legacyOS.length > 0 && activeOS.length === legacyOS.length) {
                 // ALL OS are legacy — transfer to Rafael
-                console.log(`[Bot] Cliente ${customer.legal_name} tem ${legacyOS.length} OS legadas — transferência direta para Rafael`)
+                console.log(`[Bot] Cliente ${customer.legal_name} tem ${legacyOS.length} OS legadas — transferência direta para humano`)
                 await cwSendMessage(cfg, conversationId,
                   `Olá, ${customer.legal_name?.split(' ')[0] || 'tudo bem'}! Identifiquei seu cadastro. Suas ordens de serviço são do nosso sistema anterior. Vou transferir para nossa equipe que cuida pessoalmente desses casos!`)
                 await cwSendMessage(cfg, conversationId,
-                  `[BOT] Cliente ${customer.legal_name} (${phone}) — todas as ${legacyOS.length} OS são legadas. Transferido para Rafael.`, true)
+                  `[BOT] Cliente ${customer.legal_name} (${phone}) — todas as ${legacyOS.length} OS são legadas. Transferido para equipe.`, true)
                 const HUMAN_AGENT_ID = cfg.humanAgentId
                 try {
                   await fetch(`${cwBase(cfg)}/conversations/${conversationId}/assignments`, {
@@ -1051,7 +1062,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
               // Has active OS in new system — inject context with portal deep links
               const osList = activeOS.map(o => {
                 const osNum = String(o.os_number).padStart(4, '0')
-                const portalLink = o.os_id ? `https://portal.pontualtech.com.br/portal/pontualtech/os/${o.os_id}` : ''
+                const portalLink = o.os_id ? `${portalBase(cfg)}/os/${o.os_id}` : ''
                 return `OS #${osNum} (${o.equipment}, Status: ${o.status_name}${portalLink ? `, Portal: ${portalLink}` : ''})`
               }).join('; ')
               query += `\n[CONTEXTO DO CLIENTE: Nome: ${customer.legal_name || 'N/A'}, Telefone: ${phone}, OS ativas: ${osList}. O cliente JA FOI IDENTIFICADO — NAO pergunte numero da OS, ja informe o status diretamente. SEMPRE inclua o link do portal na resposta.]`
@@ -1309,8 +1320,8 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
           const lowerResp = responseText.toLowerCase()
           if (lowerResp.includes('portal')) {
             // Extract specific portal URL from response, or use default
-            const portalUrlMatch = responseText.match(/https?:\/\/portal\.pontualtech[^\s)>\]]+/)
-            const portalUrl = portalUrlMatch?.[0] || cfg.portalUrl || 'https://portal.pontualtech.com.br/portal/pontualtech/login'
+            const portalUrlMatch = responseText.match(/https?:\/\/portal\.[^\s)>\]]+/)
+            const portalUrl = portalUrlMatch?.[0] || `${portalBase(cfg)}/login`
             await sendWhatsAppCtaUrl(cfg.companyId, phone, 'Acesse o portal para aprovar, recusar ou acompanhar sua OS:', '📱 Abrir Portal', portalUrl)
           }
         } catch (btnErr) {
@@ -1589,10 +1600,10 @@ async function handleButtonClick(
 
   // ── Portal link ──
   if (buttonPayload === 'btn_portal') {
-    const portalUrl = cfg.portalUrl || `${ERP_BASE_URL}/portal/pontualtech/login`
+    const btnPortalUrl = `${portalBase(cfg)}/login`
     await sendWhatsAppCtaUrl(cfg.companyId, phone,
       'Acesse o portal para ver todos os detalhes da sua OS, aprovar orçamentos e acompanhar o status:',
-      '🔗 Abrir Portal', portalUrl, 'Portal PontualTech')
+      '🔗 Abrir Portal', btnPortalUrl, `Portal ${cfg.companyDisplayName}`)
     await logBotMessage(cfg, conversationId, '[BUTTON] btn_portal', 'Portal link sent', 'BUTTON_PORTAL', phone)
     return true
   }
@@ -1686,13 +1697,13 @@ async function sendOrcamentoButtons(cfg: BotCompanyConfig, conversationId: numbe
       { id: `approve_${os.os_number}`, title: '✅ Aprovar' },
       { id: `reject_${os.os_number}`, title: '❌ Recusar' },
     ],
-    'Orçamento PontualTech')
+    `Orçamento ${cfg.companyDisplayName}`)
 
   // Portal CTA button
-  const portalUrl = cfg.portalUrl || `${ERP_BASE_URL}/portal/pontualtech/login`
+  const orcPortalUrl = `${portalBase(cfg)}/login`
   await sendWhatsAppCtaUrl(cfg.companyId, phone,
     'Veja o detalhamento completo e aprove pelo portal:',
-    '📄 Ver orçamento', portalUrl)
+    '📄 Ver orçamento', orcPortalUrl)
 }
 
 /** Handle orçamento approval/rejection via button */
