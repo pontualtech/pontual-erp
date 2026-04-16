@@ -16,6 +16,13 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
+import {
+  sendWhatsAppButtons,
+  sendWhatsAppList,
+  sendWhatsAppCtaUrl,
+  type ReplyButton,
+  type ListRow,
+} from '@/lib/whatsapp/cloud-api'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -681,14 +688,18 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
     }
   }
 
-  if (!content && thisMessageImageUrls.length === 0) return
+  // Extract interactive button payload (when user clicks a reply button or list item)
+  const interactiveReply = body.content_attributes?.interactive_reply
+  const buttonPayload = interactiveReply?.id || interactiveReply?.button_id || ''
+
+  if (!content && thisMessageImageUrls.length === 0 && !buttonPayload) return
 
   // Extract sender info
   const sender = body.sender || body.conversation?.meta?.sender || {}
   const phone = sender.phone_number || sender.phone || ''
   const contactId = sender.id || body.conversation?.contact_inbox?.contact?.id
 
-  console.log(`[Bot] Message from ${phone || 'unknown'} in conv ${conversationId}: ${content.substring(0, 80)}`)
+  console.log(`[Bot] Message from ${phone || 'unknown'} in conv ${conversationId}: "${content.substring(0, 80)}"${buttonPayload ? ` [button: ${buttonPayload}]` : ''}`)
 
   // Find or create BotConversation (atomic upsert to prevent race conditions)
   const isNew = !(await prisma.botConversation.findUnique({ where: { chatwoot_conv_id: conversationId }, select: { id: true } }))
@@ -727,6 +738,14 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
   if (botConv.human_takeover) {
     console.log(`[Bot] Conv ${conversationId} in human takeover mode, skipping`)
     return
+  }
+
+  // -----------------------------------------------------------------------
+  // INTERACTIVE BUTTONS: handle button clicks before debounce/Dify
+  // -----------------------------------------------------------------------
+  if (buttonPayload) {
+    const handled = await handleButtonClick(cfg, botConv, conversationId, buttonPayload, phone, messageId)
+    if (handled) return // Button was handled — skip Dify
   }
 
   // -----------------------------------------------------------------------
@@ -1091,6 +1110,40 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       let responseText = parsed.cleanText
         .replace(/https?:\/\/wa\.me\/\d+/gi, `https://wa.me/${supportNum}`)
       await cwSendWithTyping(cfg, conversationId, responseText)
+
+      // ── POST-RESPONSE INTERACTIVE BUTTONS ──
+      // After Dify responds, send relevant action buttons based on context
+      if (phone && !parsed.action) {
+        try {
+          const lowerResp = responseText.toLowerCase()
+          // If response mentions portal/acompanhe — send portal CTA
+          if (lowerResp.includes('portal') || lowerResp.includes('acompanhe')) {
+            const portalUrl = cfg.portalUrl || `${ERP_BASE_URL}/portal/pontualtech/login`
+            await sendWhatsAppCtaUrl(cfg.companyId, phone, 'Acesse seu painel:', '📱 Abrir Portal', portalUrl)
+          }
+          // If response mentions orçamento/valor — send action buttons
+          else if (lowerResp.includes('orcamento') || lowerResp.includes('orçamento') || lowerResp.includes('valor')) {
+            await sendWhatsAppButtons(cfg.companyId, phone, 'Posso te ajudar com mais alguma coisa?',
+              [
+                { id: 'btn_orcamento', title: '💰 Ver orçamento' },
+                { id: 'btn_humano', title: '👤 Falar c/ atendente' },
+              ])
+          }
+          // If Marta is the suporte bot — always offer quick actions after generic responses
+          else if (cfg.slug === 'pontualtech-suporte') {
+            await sendWhatsAppButtons(cfg.companyId, phone, 'Posso ajudar com mais alguma coisa?',
+              [
+                { id: 'btn_status', title: '📋 Status da OS' },
+                { id: 'btn_orcamento', title: '💰 Orçamento' },
+                { id: 'btn_humano', title: '👤 Atendente' },
+              ],
+              undefined, 'PontualTech Suporte')
+          }
+        } catch (btnErr) {
+          console.error('[Bot] Post-response buttons error:', btnErr)
+          // Non-critical — don't fail the response
+        }
+      }
     }
 
     // Post-send actions
@@ -1211,6 +1264,362 @@ async function handleOSConfirmation(
       'Por favor, confirme: deseja abrir a OS? Responda *sim* para confirmar ou *nao* para cancelar.'
     )
   }
+}
+
+// ---------------------------------------------------------------------------
+// Interactive Button Handlers
+// ---------------------------------------------------------------------------
+
+/**
+ * Handle interactive button clicks (reply buttons and list selections).
+ * Returns true if the button was handled — caller should skip Dify.
+ */
+async function handleButtonClick(
+  cfg: BotCompanyConfig,
+  botConv: any,
+  conversationId: number,
+  buttonPayload: string,
+  phone: string,
+  messageId: string
+): Promise<boolean> {
+  // Update last_message_id to prevent reprocessing
+  await prisma.botConversation.update({
+    where: { id: botConv.id },
+    data: {
+      last_message_id: messageId,
+      last_user_msg_at: new Date(),
+      follow_up_count: 0,
+      follow_up_next_at: null,
+      follow_up_paused_at: null,
+    },
+  })
+
+  // ── Status: check specific OS ──
+  if (buttonPayload === 'btn_status') {
+    // Find customer's active OS
+    const customer = phone ? await findCustomerByPhone(phone, cfg.companyId) : null
+    if (!customer) {
+      await cwSendMessage(cfg, conversationId, 'Para consultar o status, me informe o número da sua OS.')
+      return true
+    }
+    const activeOS = await getActiveOrders(customer.id, cfg.companyId)
+    if (activeOS.length === 0) {
+      await cwSendMessage(cfg, conversationId, 'Não encontrei nenhuma OS ativa no seu nome. Poderia informar o número?')
+    } else if (activeOS.length === 1) {
+      await sendOsStatusButtons(cfg, conversationId, phone, activeOS[0])
+    } else {
+      await sendOsListSelector(cfg, conversationId, phone, activeOS)
+    }
+    await logBotMessage(cfg, conversationId, '[BUTTON] btn_status', 'Interactive OS status', 'BUTTON_STATUS', phone)
+    return true
+  }
+
+  // ── Orçamento ──
+  if (buttonPayload === 'btn_orcamento') {
+    const customer = phone ? await findCustomerByPhone(phone, cfg.companyId) : null
+    if (!customer) {
+      await cwSendMessage(cfg, conversationId, 'Para ver o orçamento, me informe o número da sua OS.')
+      return true
+    }
+    const activeOS = await getActiveOrders(customer.id, cfg.companyId)
+    if (activeOS.length === 0) {
+      await cwSendMessage(cfg, conversationId, 'Não encontrei OS ativa no seu nome.')
+    } else if (activeOS.length === 1) {
+      await sendOrcamentoButtons(cfg, conversationId, phone, activeOS[0])
+    } else {
+      await sendOsListSelector(cfg, conversationId, phone, activeOS)
+    }
+    await logBotMessage(cfg, conversationId, '[BUTTON] btn_orcamento', 'Interactive orcamento', 'BUTTON_ORCAMENTO', phone)
+    return true
+  }
+
+  // ── Falar com humano ──
+  if (buttonPayload === 'btn_humano') {
+    await cwSendMessage(cfg, conversationId, 'Entendi! Vou transferir para um atendente. Um momento... 🙏')
+    await cwSendMessage(cfg, conversationId, '[BOT] Cliente solicitou atendente via botão interativo.', true)
+    await prisma.botConversation.update({
+      where: { id: botConv.id },
+      data: { human_takeover: true, step: 'HUMAN' },
+    })
+    await logBotMessage(cfg, conversationId, '[BUTTON] btn_humano', 'Transferir humano', 'BUTTON_HUMANO', phone)
+    return true
+  }
+
+  // ── OS Selection from list ──
+  if (buttonPayload.startsWith('os_')) {
+    const osNum = parseInt(buttonPayload.replace('os_', ''), 10)
+    if (!isNaN(osNum)) {
+      const os = await prisma.serviceOrder.findFirst({
+        where: { os_number: osNum, company_id: cfg.companyId, deleted_at: null },
+        include: {
+          module_statuses: true,
+          customers: { select: { legal_name: true, email: true } },
+          user_profiles: { select: { name: true } },
+          service_order_items: { where: { deleted_at: null }, select: { id: true } },
+        },
+      })
+      if (os) {
+        await sendOsStatusButtons(cfg, conversationId, phone, {
+          os_number: os.os_number,
+          status_name: os.module_statuses?.name || 'Desconhecido',
+          equipment: [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' '),
+          estimated_delivery: os.estimated_delivery,
+          total_cost: os.total_cost,
+          os_id: os.id,
+          has_items: (os.service_order_items?.length || 0) > 0,
+        })
+      } else {
+        await cwSendMessage(cfg, conversationId, `Não encontrei a OS-${String(osNum).padStart(4, '0')}. Verifique o número.`)
+      }
+      await logBotMessage(cfg, conversationId, `[BUTTON] os_${osNum}`, 'OS selected from list', 'BUTTON_OS_SELECT', phone)
+      return true
+    }
+  }
+
+  // ── Aprovar orçamento ──
+  if (buttonPayload.startsWith('approve_')) {
+    const osNum = parseInt(buttonPayload.replace('approve_', ''), 10)
+    if (!isNaN(osNum)) {
+      await handleBotApproval(cfg, conversationId, phone, osNum, true)
+      await logBotMessage(cfg, conversationId, `[BUTTON] approve_${osNum}`, 'Orcamento aprovado via botao', 'BUTTON_APPROVE', phone)
+      return true
+    }
+  }
+
+  // ── Recusar orçamento ──
+  if (buttonPayload.startsWith('reject_')) {
+    const osNum = parseInt(buttonPayload.replace('reject_', ''), 10)
+    if (!isNaN(osNum)) {
+      await handleBotApproval(cfg, conversationId, phone, osNum, false)
+      await logBotMessage(cfg, conversationId, `[BUTTON] reject_${osNum}`, 'Orcamento recusado via botao', 'BUTTON_REJECT', phone)
+      return true
+    }
+  }
+
+  // ── Portal link ──
+  if (buttonPayload === 'btn_portal') {
+    const portalUrl = cfg.portalUrl || `${ERP_BASE_URL}/portal/pontualtech/login`
+    await sendWhatsAppCtaUrl(cfg.companyId, phone,
+      'Acesse o portal para ver todos os detalhes da sua OS, aprovar orçamentos e acompanhar o status:',
+      '🔗 Abrir Portal', portalUrl, 'Portal PontualTech')
+    await logBotMessage(cfg, conversationId, '[BUTTON] btn_portal', 'Portal link sent', 'BUTTON_PORTAL', phone)
+    return true
+  }
+
+  return false // Unknown button — let Dify handle it
+}
+
+// ---------------------------------------------------------------------------
+// Interactive Message Senders (via Meta Cloud API)
+// ---------------------------------------------------------------------------
+
+interface OsInfo {
+  os_number: number
+  status_name: string
+  equipment: string
+  estimated_delivery?: Date | null
+  total_cost?: number | null
+  os_id?: string
+  has_items?: boolean
+}
+
+/** Send OS status with action buttons */
+async function sendOsStatusButtons(cfg: BotCompanyConfig, conversationId: number, phone: string, os: OsInfo) {
+  const osNum = String(os.os_number).padStart(4, '0')
+  const previsao = os.estimated_delivery
+    ? `\n📅 Previsão: ${new Date(os.estimated_delivery).toLocaleDateString('pt-BR')}`
+    : ''
+  const body = `*OS-${osNum}*\n🖨️ ${os.equipment}\n📊 Status: *${os.status_name}*${previsao}`
+
+  // Also send as Chatwoot message so agents can see it
+  await cwSendMessage(cfg, conversationId, body)
+
+  // Send interactive buttons via Meta API
+  const buttons: ReplyButton[] = []
+  if (os.has_items) {
+    buttons.push({ id: `btn_orcamento`, title: '💰 Ver orçamento' })
+  }
+  buttons.push({ id: 'btn_portal', title: '📱 Abrir portal' })
+  buttons.push({ id: 'btn_humano', title: '👤 Falar c/ atendente' })
+
+  await sendWhatsAppButtons(cfg.companyId, phone, 'O que deseja fazer?', buttons.slice(0, 3),
+    `Status OS-${osNum}`, 'PontualTech Suporte')
+
+  // Check for severe delays
+  if (os.estimated_delivery) {
+    const daysOverdue = Math.floor((Date.now() - new Date(os.estimated_delivery).getTime()) / (1000 * 60 * 60 * 24))
+    if (daysOverdue > 3) {
+      await cwSendMessage(cfg, conversationId, `⚠️ Peço desculpas pelo atraso na OS-${osNum}. Vou escalar para nosso supervisor.`)
+    }
+  }
+}
+
+/** Send OS list when customer has multiple active orders */
+async function sendOsListSelector(cfg: BotCompanyConfig, conversationId: number, phone: string, orders: OsInfo[]) {
+  const rows: ListRow[] = orders.slice(0, 10).map(os => ({
+    id: `os_${os.os_number}`,
+    title: `OS-${String(os.os_number).padStart(4, '0')}`,
+    description: `${os.equipment} — ${os.status_name}`.slice(0, 72),
+  }))
+
+  await sendWhatsAppList(cfg.companyId, phone,
+    `Encontrei ${orders.length} OS no seu nome. Qual deseja consultar?`,
+    'Ver minhas OS',
+    [{ title: 'Ordens de Serviço', rows }],
+    'PontualTech Suporte')
+
+  // Also log in Chatwoot
+  const list = orders.map(os => `• OS-${String(os.os_number).padStart(4, '0')} — ${os.equipment} (${os.status_name})`).join('\n')
+  await cwSendMessage(cfg, conversationId, `[BOT] Cliente tem ${orders.length} OS ativas. Enviada lista interativa:\n${list}`, true)
+}
+
+/** Send orçamento with approve/reject buttons */
+async function sendOrcamentoButtons(cfg: BotCompanyConfig, conversationId: number, phone: string, os: OsInfo) {
+  const osNum = String(os.os_number).padStart(4, '0')
+
+  if (!os.has_items) {
+    await cwSendMessage(cfg, conversationId, `A OS-${osNum} ainda está em análise técnica. Assim que o diagnóstico for concluído, enviaremos o orçamento.`)
+    return
+  }
+
+  const totalFormatted = os.total_cost
+    ? (os.total_cost / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+    : 'A consultar'
+
+  // Chatwoot message (agents see)
+  await cwSendMessage(cfg, conversationId, `*Orçamento OS-${osNum}*\n💰 Valor: *${totalFormatted}*`)
+
+  // Interactive approve/reject buttons via Meta API
+  await sendWhatsAppButtons(cfg.companyId, phone,
+    `*Orçamento OS-${osNum}*\n\n💰 Valor total: *${totalFormatted}*\n\nO detalhamento está no portal. Deseja aprovar?`,
+    [
+      { id: `approve_${os.os_number}`, title: '✅ Aprovar' },
+      { id: `reject_${os.os_number}`, title: '❌ Recusar' },
+      { id: 'btn_humano', title: '❓ Tirar dúvidas' },
+    ],
+    'Orçamento PontualTech')
+
+  // Portal CTA button
+  const portalUrl = cfg.portalUrl || `${ERP_BASE_URL}/portal/pontualtech/login`
+  await sendWhatsAppCtaUrl(cfg.companyId, phone,
+    'Veja o detalhamento completo e aprove pelo portal:',
+    '📄 Ver orçamento', portalUrl)
+}
+
+/** Handle orçamento approval/rejection via button */
+async function handleBotApproval(cfg: BotCompanyConfig, conversationId: number, phone: string, osNumber: number, approved: boolean) {
+  const osNum = String(osNumber).padStart(4, '0')
+
+  const os = await prisma.serviceOrder.findFirst({
+    where: { os_number: osNumber, company_id: cfg.companyId, deleted_at: null },
+    include: { module_statuses: true },
+  })
+
+  if (!os) {
+    await cwSendMessage(cfg, conversationId, `Não encontrei a OS-${osNum}. Verifique o número.`)
+    return
+  }
+
+  if (!os.module_statuses?.name?.toLowerCase().includes('aguardando')) {
+    await cwSendMessage(cfg, conversationId, `A OS-${osNum} não está aguardando aprovação. Status atual: ${os.module_statuses?.name}`)
+    return
+  }
+
+  if (approved) {
+    const approvedStatus = await prisma.moduleStatus.findFirst({
+      where: {
+        company_id: cfg.companyId,
+        module: 'os',
+        name: { in: ['Aprovada', 'Aprovado', 'Em Execução', 'Em Andamento'] },
+      },
+      orderBy: { order: 'asc' },
+    })
+
+    if (approvedStatus) {
+      await prisma.$transaction([
+        prisma.serviceOrder.update({
+          where: { id: os.id },
+          data: { status_id: approvedStatus.id },
+        }),
+        prisma.serviceOrderHistory.create({
+          data: {
+            company_id: cfg.companyId,
+            service_order_id: os.id,
+            from_status_id: os.status_id,
+            to_status_id: approvedStatus.id,
+            changed_by: 'bot-marta-button',
+            notes: 'Orçamento aprovado pelo cliente via botão WhatsApp',
+          },
+        }),
+      ])
+
+      await cwSendMessage(cfg, conversationId, `✅ Orçamento da OS-${osNum} aprovado com sucesso!`)
+      await sendWhatsAppButtons(cfg.companyId, phone,
+        `✅ *Orçamento aprovado!*\n\nNossa equipe já vai iniciar o serviço na OS-${osNum}. Você receberá uma notificação quando estiver pronto.`,
+        [
+          { id: 'btn_status', title: '📋 Ver status' },
+          { id: 'btn_humano', title: '👤 Falar c/ atendente' },
+        ],
+        'Aprovado!')
+      await cwSendMessage(cfg, conversationId, `[BOT] ✅ OS-${osNum} aprovada via botão WhatsApp`, true)
+      await cwSetLabels(cfg, conversationId, ['orcamento_aprovado'])
+    }
+  } else {
+    await cwSendMessage(cfg, conversationId, `Entendi. Registrei que você não deseja prosseguir com a OS-${osNum}. Deseja retirar o equipamento?`)
+    await sendWhatsAppButtons(cfg.companyId, phone,
+      `Orçamento da OS-${osNum} recusado. Deseja retirar seu equipamento?`,
+      [
+        { id: 'btn_humano', title: '📞 Agendar retirada' },
+      ],
+      'Orçamento recusado')
+    await cwSendMessage(cfg, conversationId, `[BOT] ❌ OS-${osNum} recusada via botão WhatsApp — aguardando instrução do cliente`, true)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Database Helpers for Interactive Buttons
+// ---------------------------------------------------------------------------
+
+async function findCustomerByPhone(phone: string, companyId: string) {
+  const cleanPhone = phone.replace(/\D/g, '').slice(-10)
+  if (cleanPhone.length < 10) return null
+  return prisma.customer.findFirst({
+    where: {
+      company_id: companyId,
+      deleted_at: null,
+      OR: [
+        { mobile: { contains: cleanPhone } },
+        { phone: { contains: cleanPhone } },
+      ],
+    },
+  })
+}
+
+async function getActiveOrders(customerId: string, companyId: string): Promise<OsInfo[]> {
+  const orders = await prisma.serviceOrder.findMany({
+    where: {
+      customer_id: customerId,
+      company_id: companyId,
+      deleted_at: null,
+      module_statuses: { is_final: false },
+    },
+    include: {
+      module_statuses: true,
+      service_order_items: { where: { deleted_at: null }, select: { id: true } },
+    },
+    orderBy: { created_at: 'desc' },
+    take: 10,
+  })
+
+  return orders.map(os => ({
+    os_number: os.os_number,
+    status_name: os.module_statuses?.name || 'Desconhecido',
+    equipment: [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' '),
+    estimated_delivery: os.estimated_delivery,
+    total_cost: os.total_cost,
+    os_id: os.id,
+    has_items: (os.service_order_items?.length || 0) > 0,
+  }))
 }
 
 // ---------------------------------------------------------------------------

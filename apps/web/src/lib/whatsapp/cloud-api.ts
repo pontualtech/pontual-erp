@@ -1,5 +1,4 @@
 import { prisma } from '@pontual/db'
-import { sendWhatsAppEvolution } from './evolution'
 
 /**
  * Send WhatsApp message via Meta Cloud API (official).
@@ -8,7 +7,6 @@ import { sendWhatsAppEvolution } from './evolution'
  *   - whatsapp.cloud.access_token
  *
  * Falls back to env vars: META_WHATSAPP_PHONE_ID, META_WHATSAPP_TOKEN
- * If Cloud API is not configured, falls back to Evolution API automatically.
  */
 
 interface CloudSendResult {
@@ -52,10 +50,8 @@ export async function sendWhatsAppCloud(
 ): Promise<CloudSendResult> {
   const config = await getCloudConfig(companyId)
   if (!config) {
-    // Fallback to Evolution API
-    console.log('[WhatsApp Cloud] Not configured, falling back to Evolution for company', companyId)
-    const evoResult = await sendWhatsAppEvolution(companyId, phone, text)
-    return { success: evoResult.success, error: evoResult.error }
+    console.warn('[WhatsApp Cloud] Not configured for company', companyId)
+    return { success: false, error: 'not_configured' }
   }
 
   // Format phone: ensure country code, remove non-digits
@@ -110,19 +106,7 @@ export async function sendWhatsAppTemplate(
 ): Promise<CloudSendResult> {
   const config = await getCloudConfig(companyId)
   if (!config) {
-    // Fallback to Evolution API with plain text (no buttons, but message gets through)
-    if (fallbackText) {
-      console.log(`[WhatsApp Cloud] Template ${templateName} — falling back to Evolution for company`, companyId)
-      const evoResult = await sendWhatsAppEvolution(companyId, phone, fallbackText)
-      return { success: evoResult.success, error: evoResult.error }
-    }
-    // Auto-generate fallback from template params if possible
-    const autoFallback = buildFallbackText(templateName, components)
-    if (autoFallback) {
-      console.log(`[WhatsApp Cloud] Template ${templateName} — auto-fallback to Evolution for company`, companyId)
-      const evoResult = await sendWhatsAppEvolution(companyId, phone, autoFallback)
-      return { success: evoResult.success, error: evoResult.error }
-    }
+    console.warn(`[WhatsApp Cloud] Template ${templateName} — not configured for company`, companyId)
     return { success: false, error: 'not_configured' }
   }
 
@@ -167,6 +151,187 @@ export async function sendWhatsAppTemplate(
     return { success: true, messageId: data.messages?.[0]?.id }
   } catch (err) {
     console.error('[WhatsApp Cloud Template] Failed:', err)
+    return { success: false, error: String(err) }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Interactive Messages — Reply Buttons, List Messages, CTA URL
+// ---------------------------------------------------------------------------
+
+export interface ReplyButton {
+  id: string    // max 256 chars — payload when clicked
+  title: string // max 20 chars — visible text
+}
+
+export interface ListRow {
+  id: string          // payload when selected
+  title: string       // max 24 chars
+  description?: string // max 72 chars
+}
+
+export interface ListSection {
+  title: string   // max 24 chars
+  rows: ListRow[]
+}
+
+/**
+ * Send interactive reply buttons (max 3 buttons).
+ * Works within the 24h window only.
+ */
+export async function sendWhatsAppButtons(
+  companyId: string,
+  phone: string,
+  body: string,
+  buttons: ReplyButton[],
+  header?: string,
+  footer?: string
+): Promise<CloudSendResult> {
+  const config = await getCloudConfig(companyId)
+  if (!config) {
+    // Fallback: send as text with numbered options
+    const btnText = buttons.map((b, i) => `${i + 1}. ${b.title}`).join('\n')
+    return sendWhatsAppCloud(companyId, phone, `${header ? `*${header}*\n\n` : ''}${body}\n\n${btnText}${footer ? `\n\n_${footer}_` : ''}`)
+  }
+
+  const cleanPhone = phone.replace(/\D/g, '')
+  const formattedPhone = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`
+
+  const interactive: Record<string, unknown> = {
+    type: 'button',
+    body: { text: body },
+    action: {
+      buttons: buttons.slice(0, 3).map(btn => ({
+        type: 'reply',
+        reply: { id: btn.id, title: btn.title.slice(0, 20) },
+      })),
+    },
+  }
+  if (header) interactive.header = { type: 'text', text: header }
+  if (footer) interactive.footer = { text: footer }
+
+  return sendInteractive(config, formattedPhone, interactive)
+}
+
+/**
+ * Send interactive list message (menu with up to 10 rows).
+ * Works within the 24h window only.
+ */
+export async function sendWhatsAppList(
+  companyId: string,
+  phone: string,
+  body: string,
+  buttonText: string,
+  sections: ListSection[],
+  header?: string,
+  footer?: string
+): Promise<CloudSendResult> {
+  const config = await getCloudConfig(companyId)
+  if (!config) {
+    // Fallback: send as numbered text list
+    const items = sections.flatMap(s => s.rows)
+    const listText = items.map((r, i) => `${i + 1}. ${r.title}${r.description ? ` — ${r.description}` : ''}`).join('\n')
+    return sendWhatsAppCloud(companyId, phone, `${body}\n\n${listText}`)
+  }
+
+  const cleanPhone = phone.replace(/\D/g, '')
+  const formattedPhone = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`
+
+  const interactive: Record<string, unknown> = {
+    type: 'list',
+    body: { text: body },
+    action: {
+      button: buttonText.slice(0, 20),
+      sections: sections.map(s => ({
+        title: s.title.slice(0, 24),
+        rows: s.rows.map(r => ({
+          id: r.id,
+          title: r.title.slice(0, 24),
+          ...(r.description ? { description: r.description.slice(0, 72) } : {}),
+        })),
+      })),
+    },
+  }
+  if (header) interactive.header = { type: 'text', text: header }
+  if (footer) interactive.footer = { text: footer }
+
+  return sendInteractive(config, formattedPhone, interactive)
+}
+
+/**
+ * Send CTA URL button (opens a link when clicked).
+ * Works within the 24h window only.
+ */
+export async function sendWhatsAppCtaUrl(
+  companyId: string,
+  phone: string,
+  body: string,
+  buttonText: string,
+  url: string,
+  header?: string,
+  footer?: string
+): Promise<CloudSendResult> {
+  const config = await getCloudConfig(companyId)
+  if (!config) {
+    // Fallback: send URL in text
+    return sendWhatsAppCloud(companyId, phone, `${body}\n\n${url}`)
+  }
+
+  const cleanPhone = phone.replace(/\D/g, '')
+  const formattedPhone = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`
+
+  const interactive: Record<string, unknown> = {
+    type: 'cta_url',
+    body: { text: body },
+    action: {
+      name: 'cta_url',
+      parameters: {
+        display_text: buttonText.slice(0, 20),
+        url,
+      },
+    },
+  }
+  if (header) interactive.header = { type: 'text', text: header }
+  if (footer) interactive.footer = { text: footer }
+
+  return sendInteractive(config, formattedPhone, interactive)
+}
+
+/** Low-level: send any interactive message type */
+async function sendInteractive(
+  config: { phoneNumberId: string; token: string },
+  formattedPhone: string,
+  interactive: Record<string, unknown>
+): Promise<CloudSendResult> {
+  try {
+    const res = await fetch(
+      `https://graph.facebook.com/v21.0/${config.phoneNumberId}/messages`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${config.token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          to: formattedPhone,
+          type: 'interactive',
+          interactive,
+        }),
+        signal: AbortSignal.timeout(10000),
+      }
+    )
+
+    const data = await res.json()
+
+    if (!res.ok) {
+      console.error('[WhatsApp Interactive] Error:', data.error)
+      return { success: false, error: data.error?.message || `HTTP ${res.status}` }
+    }
+
+    return { success: true, messageId: data.messages?.[0]?.id }
+  } catch (err) {
+    console.error('[WhatsApp Interactive] Failed:', err)
     return { success: false, error: String(err) }
   }
 }
