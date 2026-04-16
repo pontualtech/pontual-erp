@@ -1229,36 +1229,16 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
         .replace(/https?:\/\/wa\.me\/\d+/gi, `https://wa.me/${supportNum}`)
       await cwSendWithTyping(cfg, conversationId, responseText)
 
-      // ── POST-RESPONSE INTERACTIVE BUTTONS ──
-      // After Dify responds, send relevant action buttons based on context
+      // ── POST-RESPONSE: send portal CTA only when Dify response contains a portal link ──
       if (phone && !parsed.action) {
         try {
-          const lowerResp = responseText.toLowerCase()
-          // If response mentions portal/acompanhe — send portal CTA
-          if (lowerResp.includes('portal') || lowerResp.includes('acompanhe')) {
-            const portalUrl = cfg.portalUrl || `${ERP_BASE_URL}/portal/pontualtech/login`
-            await sendWhatsAppCtaUrl(cfg.companyId, phone, 'Acesse seu painel:', '📱 Abrir Portal', portalUrl)
-          }
-          // If response mentions orçamento/valor — send action buttons
-          else if (lowerResp.includes('orcamento') || lowerResp.includes('orçamento') || lowerResp.includes('valor')) {
-            await sendWhatsAppButtons(cfg.companyId, phone, 'Posso te ajudar com mais alguma coisa?',
-              [
-                { id: 'btn_orcamento', title: '💰 Ver orçamento' },
-                { id: 'btn_portal', title: '📱 Abrir portal' },
-              ])
-          }
-          // If Marta is the suporte bot — always offer quick actions after generic responses
-          else if (cfg.slug === 'pontualtech-suporte') {
-            await sendWhatsAppButtons(cfg.companyId, phone, 'Posso ajudar com mais alguma coisa?',
-              [
-                { id: 'btn_status', title: '📋 Status da OS' },
-                { id: 'btn_orcamento', title: '💰 Orçamento' },
-              ],
-              undefined, 'PontualTech Suporte')
+          // Only send CTA button when the Dify response actually contains a portal URL
+          const portalUrlMatch = responseText.match(/https?:\/\/portal\.pontualtech[^\s)>\]]+/)
+          if (portalUrlMatch) {
+            await sendWhatsAppCtaUrl(cfg.companyId, phone, 'Acesse seu painel:', '📱 Abrir Portal', portalUrlMatch[0])
           }
         } catch (btnErr) {
-          console.error('[Bot] Post-response buttons error:', btnErr)
-          // Non-critical — don't fail the response
+          console.error('[Bot] Post-response CTA error:', btnErr)
         }
       }
     }
