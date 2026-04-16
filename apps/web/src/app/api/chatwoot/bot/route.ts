@@ -1041,6 +1041,17 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       }
     }
 
+    // ── MARTA RULES: inject behavioral constraints for suporte bot ──
+    if (cfg.slug === 'pontualtech-suporte' || cfg.botOrigin?.includes('marta')) {
+      query += `\n[REGRAS DA MARTA — OBRIGATORIO:
+1. NUNCA prometa acoes (devolucao, agendamento, coleta, entrega, desconto, prazo). Voce APENAS INFORMA status e dados.
+2. Para QUALQUER pedido que exija acao humana (devolver, agendar, reclamar, cancelar, recusar orcamento): responda que vai transferir para a equipe e use [TRANSFERIR_HUMANO].
+3. NUNCA diga "vou providenciar", "vou agendar", "vou devolver". Diga "vou transferir para nossa equipe cuidar disso".
+4. Se o cliente quer RECUSAR orcamento: informe que ele pode recusar pelo portal do cliente e use [TRANSFERIR_HUMANO].
+5. NUNCA invente valores, prazos ou informacoes. Use APENAS os dados fornecidos no contexto.
+6. Respostas CURTAS (max 3 paragrafos). Sem excesso de emojis.]`
+    }
+
     // Handle OS confirmation flow
     if (botConv.step === 'AWAITING_CONFIRMATION') {
       await handleOSConfirmation(cfg, botConv, query, conversationId)
