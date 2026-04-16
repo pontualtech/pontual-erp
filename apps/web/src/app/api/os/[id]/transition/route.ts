@@ -147,9 +147,24 @@ export async function POST(req: NextRequest, { params }: Params) {
       return error('É obrigatório atribuir um técnico para esta transição', 400)
     }
 
+    // Save original_cost when transitioning TO negotiation statuses
+    // (Orçar Negociar, Negociar, Recusado) — this preserves the original value
+    // before the attendant modifies items for recalculation
+    const isToNegociar = /negociar|recusad/i.test(toStatus.name) && !/renegociar/i.test(toStatus.name)
+    const isToRecalculado = /recalculad/i.test(toStatus.name)
+    const shouldSaveOriginal = isToNegociar || isToRecalculado
+    if (shouldSaveOriginal) {
+      const customData = (os.custom_data || {}) as Record<string, any>
+      if (!customData.original_cost && os.total_cost && os.total_cost > 0) {
+        customData.original_cost = os.total_cost
+        os.custom_data = customData
+      }
+    }
+
     // Execute transition
     const updateData: any = {
       status_id: toStatusId,
+      ...(shouldSaveOriginal ? { custom_data: os.custom_data } : {}),
     }
 
     // Data de execução + técnico: ao marcar como reparado ou entrega final
