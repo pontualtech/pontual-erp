@@ -1045,11 +1045,13 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
     if (cfg.slug === 'pontualtech-suporte' || cfg.botOrigin?.includes('marta')) {
       query += `\n[REGRAS DA MARTA — OBRIGATORIO:
 1. NUNCA prometa acoes (devolucao, agendamento, coleta, entrega, desconto, prazo). Voce APENAS INFORMA status e dados.
-2. Para QUALQUER pedido que exija acao humana (devolver, agendar, reclamar, cancelar, recusar orcamento): responda que vai transferir para a equipe e use [TRANSFERIR_HUMANO].
-3. NUNCA diga "vou providenciar", "vou agendar", "vou devolver". Diga "vou transferir para nossa equipe cuidar disso".
-4. Se o cliente quer RECUSAR orcamento: informe que ele pode recusar pelo portal do cliente e use [TRANSFERIR_HUMANO].
-5. NUNCA invente valores, prazos ou informacoes. Use APENAS os dados fornecidos no contexto.
-6. Respostas CURTAS (max 3 paragrafos). Sem excesso de emojis.]`
+2. NUNCA diga "vou providenciar", "vou agendar", "vou devolver", "vou verificar com a equipe".
+3. NUNCA invente valores, prazos ou informacoes. Use APENAS os dados fornecidos no contexto.
+4. Respostas CURTAS (max 3 paragrafos). Sem excesso de emojis.
+5. PORTAL DO CLIENTE: SEMPRE direcione o cliente para o portal. O portal permite aprovar orcamento, recusar orcamento, ver status, ver detalhes. O link do portal esta nos dados da OS.
+6. APROVAR ou RECUSAR orcamento: informe que basta acessar o portal do cliente, clicar em aprovar ou recusar, e a notificacao eh enviada automaticamente para a equipe. NAO precisa de atendente para isso.
+7. EVITAR TRANSFERENCIA: so use [TRANSFERIR_HUMANO] em ULTIMO CASO — quando o cliente ja tentou o portal e nao conseguiu, ou quando o problema nao pode ser resolvido pelo portal (ex: reclamacao grave, problema tecnico no site). Para tudo que o portal resolve (status, orcamento, aprovar, recusar), direcione ao portal.
+8. Se o cliente insiste em falar com humano apos voce sugerir o portal, ai sim use [TRANSFERIR_HUMANO].]`
     }
 
     // Handle OS confirmation flow
@@ -1268,13 +1270,15 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
         .replace(/https?:\/\/wa\.me\/\d+/gi, `https://wa.me/${supportNum}`)
       await cwSendWithTyping(cfg, conversationId, responseText)
 
-      // ── POST-RESPONSE: send portal CTA only when Dify response contains a portal link ──
-      if (phone && !parsed.action) {
+      // ── POST-RESPONSE: send portal CTA when Dify mentions portal ──
+      if (phone && !parsed.action && (cfg.slug === 'pontualtech-suporte' || cfg.botOrigin?.includes('marta'))) {
         try {
-          // Only send CTA button when the Dify response actually contains a portal URL
-          const portalUrlMatch = responseText.match(/https?:\/\/portal\.pontualtech[^\s)>\]]+/)
-          if (portalUrlMatch) {
-            await sendWhatsAppCtaUrl(cfg.companyId, phone, 'Acesse seu painel:', '📱 Abrir Portal', portalUrlMatch[0])
+          const lowerResp = responseText.toLowerCase()
+          if (lowerResp.includes('portal')) {
+            // Extract specific portal URL from response, or use default
+            const portalUrlMatch = responseText.match(/https?:\/\/portal\.pontualtech[^\s)>\]]+/)
+            const portalUrl = portalUrlMatch?.[0] || cfg.portalUrl || 'https://portal.pontualtech.com.br/portal/pontualtech/login'
+            await sendWhatsAppCtaUrl(cfg.companyId, phone, 'Acesse o portal para aprovar, recusar ou acompanhar sua OS:', '📱 Abrir Portal', portalUrl)
           }
         } catch (btnErr) {
           console.error('[Bot] Post-response CTA error:', btnErr)
