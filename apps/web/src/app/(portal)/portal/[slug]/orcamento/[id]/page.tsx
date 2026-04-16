@@ -16,6 +16,10 @@ interface OrcamentoData {
   status: string; items: OsItem[]; customer_name: string
   customer_person_type: string
   quote_version: number | null
+  is_recalculado?: boolean
+  original_cost?: number | null
+  discount_percent?: number | null
+  max_installments?: number
   company: { name: string; phone: string | null; email: string | null; whatsapp: string | null }
 }
 
@@ -303,7 +307,10 @@ function OrcamentoContent() {
   const equipment = [data.equipment_type, data.equipment_brand, data.equipment_model].filter(Boolean).join(' ')
   const services = data.items.filter(i => i.item_type === 'SERVICO')
   const parts = data.items.filter(i => i.item_type !== 'SERVICO')
-  const maxInstallments = 3
+  const isRecalculado = data.is_recalculado || false
+  const originalCost = data.original_cost || 0
+  const discountPct = data.discount_percent || 0
+  const maxInstallments = data.max_installments || 3
   const installmentValue = fmt(Math.ceil(data.total_cost / maxInstallments))
 
   return (
@@ -312,9 +319,15 @@ function OrcamentoContent() {
 
         {/* Header */}
         <div className="mb-6 rounded-2xl bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 shadow-lg dark:shadow-zinc-900/50 overflow-hidden">
-          <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-6 text-center text-white">
+          <div className={`p-6 text-center text-white ${isRecalculado ? 'bg-gradient-to-r from-amber-500 to-orange-600' : 'bg-gradient-to-r from-blue-600 to-blue-700'}`}>
+            {isRecalculado && (
+              <div className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-white/20 backdrop-blur-sm px-4 py-1.5 text-xs font-bold uppercase tracking-wider">
+                <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                Nova Proposta Especial
+              </div>
+            )}
             <h1 className="text-xl font-bold">{data.company.name}</h1>
-            <p className="mt-1 text-blue-200 text-sm">Orcamento Tecnico</p>
+            <p className="mt-1 text-sm opacity-80">{isRecalculado ? 'Preparamos uma condicao diferenciada para voce' : 'Orcamento Tecnico'}</p>
           </div>
           <div className="p-6">
             <div className="flex items-center justify-between mb-4">
@@ -416,12 +429,28 @@ function OrcamentoContent() {
           </div>
         )}
 
+        {/* Discount comparison card (recalculated only) */}
+        {isRecalculado && originalCost > 0 && (
+          <div className="mb-4 rounded-2xl bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 border-2 border-green-300 dark:border-green-800 p-6 text-center shadow-lg">
+            <p className="text-xs font-bold uppercase tracking-wider text-green-700 dark:text-green-400 mb-3">Desconto Especial para Voce</p>
+            <div className="flex items-center justify-center gap-3 mb-3">
+              <span className="text-xl text-gray-400 line-through">{fmt(originalCost)}</span>
+              <svg className="h-5 w-5 text-green-500" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"/></svg>
+              <span className="text-3xl font-extrabold text-green-700 dark:text-green-300">{fmt(data.total_cost)}</span>
+            </div>
+            <span className="inline-flex items-center gap-1 rounded-full bg-green-600 px-4 py-1.5 text-sm font-bold text-white">
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+              {discountPct}% OFF — Voce economiza {fmt(originalCost - data.total_cost)}
+            </span>
+          </div>
+        )}
+
         {/* Total + Parcelas + Garantia */}
         <div className="mb-4 rounded-2xl overflow-hidden shadow-lg dark:shadow-zinc-900/50">
-          <div className="bg-gradient-to-r from-blue-600 to-blue-700 dark:from-blue-700 dark:to-blue-800 p-6 text-center text-white">
+          <div className={`p-6 text-center text-white ${isRecalculado ? 'bg-gradient-to-r from-amber-500 to-orange-600' : 'bg-gradient-to-r from-blue-600 to-blue-700 dark:from-blue-700 dark:to-blue-800'}`}>
             <p className="text-3xl font-extrabold">{maxInstallments}x de {installmentValue}</p>
-            <p className="mt-1 text-blue-200 text-sm">sem juros no cartao de credito</p>
-            <p className="mt-2 text-blue-300 text-xs">Valor total: {fmt(data.total_cost)}</p>
+            <p className="mt-1 text-sm opacity-80">sem juros no cartao de credito</p>
+            <p className="mt-2 text-xs opacity-60">Valor total: {fmt(data.total_cost)}</p>
           </div>
           <div className="bg-gradient-to-r from-green-600 to-emerald-600 dark:from-green-700 dark:to-emerald-700 px-6 py-3 flex items-center justify-center gap-3 text-white">
             <svg className="h-5 w-5 text-green-200" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>

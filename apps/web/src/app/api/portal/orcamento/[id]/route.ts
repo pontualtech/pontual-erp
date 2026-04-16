@@ -87,6 +87,15 @@ export async function GET(request: NextRequest, { params }: Params) {
 
     const totalFromQuote = latestQuote ? (latestQuote.total_amount || 0) : null
 
+    // Detect recalculated quote
+    const statusName = os.module_statuses?.name || ''
+    const isRecalculado = /recalculad/i.test(statusName)
+    const customData = (os.custom_data || {}) as Record<string, any>
+    const originalCost = customData.original_cost || 0
+    const currentCost = totalFromQuote ?? (os.total_cost || 0)
+    const hasDiscount = isRecalculado && originalCost > 0 && originalCost > currentCost
+    const maxInstallments = isRecalculado ? 5 : parseInt(settingsMap['quote.max_installments'] || '3') || 3
+
     return success({
       id: os.id,
       os_number: os.os_number,
@@ -96,14 +105,18 @@ export async function GET(request: NextRequest, { params }: Params) {
       serial_number: os.serial_number,
       reported_issue: os.reported_issue,
       diagnosis: os.diagnosis,
-      total_cost: totalFromQuote ?? (os.total_cost || 0),
+      total_cost: currentCost,
       total_parts: latestQuote ? 0 : (os.total_parts || 0),
       total_services: latestQuote ? (latestQuote.total_amount || 0) : (os.total_services || 0),
-      status: os.module_statuses?.name || '—',
+      status: statusName,
       items,
       quote_version: latestQuote?.version ?? null,
       customer_name: os.customers?.legal_name || '—',
       customer_person_type: os.customers?.person_type || 'FISICA',
+      is_recalculado: isRecalculado,
+      original_cost: hasDiscount ? originalCost : null,
+      discount_percent: hasDiscount ? Math.round(((originalCost - currentCost) / originalCost) * 100) : null,
+      max_installments: maxInstallments,
       company: {
         name: os.companies.name,
         phone: settingsMap['company.phone'] || settingsMap['telefone'] || null,
