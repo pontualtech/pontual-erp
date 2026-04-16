@@ -946,10 +946,27 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
         } catch (e) { console.error('[Bot] OS enrich error:', e) }
       }
 
-      // ── AUTO-IDENTIFY: when client doesn't mention OS, find their active OS by phone ──
-      if (!osMatch && phone) {
+      // ── AUTO-IDENTIFY: find client by phone OR by CPF/CNPJ typed in message ──
+      if (!osMatch) {
         try {
-          const customer = await findCustomerByPhone(phone, cfg.companyId)
+          // Try to find customer: first by CPF/CNPJ in message, then by phone
+          const docMatch = query.match(/\b(\d{11})\b/) || query.match(/\b(\d{14})\b/) || query.match(/\b(\d{2})\.?(\d{3})\.?(\d{3})\/?(\d{4})-?(\d{2})\b/)
+          let customer: any = null
+
+          if (docMatch) {
+            const cleanDoc = docMatch[0].replace(/\D/g, '')
+            if (cleanDoc.length === 11 || cleanDoc.length === 14) {
+              customer = await prisma.customer.findFirst({
+                where: { company_id: cfg.companyId, deleted_at: null, document_number: { contains: cleanDoc } },
+              })
+              if (customer) console.log(`[Bot] Customer found by document ${cleanDoc}: ${customer.legal_name}`)
+            }
+          }
+
+          if (!customer && phone) {
+            customer = await findCustomerByPhone(phone, cfg.companyId)
+          }
+
           if (customer) {
             const activeOS = await getActiveOrders(customer.id, cfg.companyId)
             if (activeOS.length > 0) {
@@ -984,8 +1001,12 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
                 const osNum = String(o.os_number).padStart(4, '0')
                 return `OS #${osNum} (${o.equipment}, Status: ${o.status_name})`
               }).join('; ')
-              query += `\n[CONTEXTO DO CLIENTE: Nome: ${customer.legal_name || 'N/A'}, Telefone: ${phone}, OS ativas: ${osList}. O cliente JA FOI IDENTIFICADO pelo telefone — NAO pergunte numero da OS, ja informe o status diretamente.]`
+              query += `\n[CONTEXTO DO CLIENTE: Nome: ${customer.legal_name || 'N/A'}, Telefone: ${phone}, OS ativas: ${osList}. O cliente JA FOI IDENTIFICADO — NAO pergunte numero da OS, ja informe o status diretamente.]`
               console.log(`[Bot] Auto-identified: ${customer.legal_name} — ${activeOS.length} active OS`)
+            } else {
+              // Customer found but no active OS — still inject name context
+              query += `\n[CONTEXTO DO CLIENTE: Nome: ${customer.legal_name || 'N/A'}. NAO tem OS ativa no momento. Se o cliente informou CPF/CNPJ, confirme o nome e pergunte como pode ajudar.]`
+              console.log(`[Bot] Customer found but no active OS: ${customer.legal_name}`)
             }
           }
         } catch (e) { console.error('[Bot] Auto-identify error:', e) }
