@@ -1293,7 +1293,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       await cwSendWithTyping(cfg, conversationId, responseText)
 
       // ── POST-RESPONSE: send portal CTA when Dify mentions portal ──
-      if (phone && !parsed.action && (cfg.slug === 'pontualtech-suporte' || cfg.botOrigin?.includes('marta'))) {
+      if (phone && !parsed.action && (cfg.slug.includes('suporte') || cfg.botOrigin?.includes('marta') || cfg.botOrigin?.includes('aline'))) {
         try {
           const lowerResp = responseText.toLowerCase()
           if (lowerResp.includes('portal')) {
