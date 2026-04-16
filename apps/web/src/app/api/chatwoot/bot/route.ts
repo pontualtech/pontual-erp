@@ -945,6 +945,51 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
           }
         } catch (e) { console.error('[Bot] OS enrich error:', e) }
       }
+
+      // ── AUTO-IDENTIFY: when client doesn't mention OS, find their active OS by phone ──
+      if (!osMatch && phone) {
+        try {
+          const customer = await findCustomerByPhone(phone, cfg.companyId)
+          if (customer) {
+            const activeOS = await getActiveOrders(customer.id, cfg.companyId)
+            if (activeOS.length > 0) {
+              // Check for legacy OS (all OS before 10/04/2026 would have been caught above,
+              // but check by os_number < 60000 as safety net)
+              const legacyOS = activeOS.filter(o => o.os_number < 60000)
+              if (legacyOS.length > 0 && activeOS.length === legacyOS.length) {
+                // ALL OS are legacy — transfer to Rafael
+                console.log(`[Bot] Cliente ${customer.legal_name} tem ${legacyOS.length} OS legadas — transferência direta para Rafael`)
+                await cwSendMessage(cfg, conversationId,
+                  `Olá, ${customer.legal_name?.split(' ')[0] || 'tudo bem'}! Identifiquei seu cadastro. Suas ordens de serviço são do nosso sistema anterior. Vou transferir para o Rafael, que cuida pessoalmente desses casos!`)
+                await cwSendMessage(cfg, conversationId,
+                  `[BOT] Cliente ${customer.legal_name} (${phone}) — todas as ${legacyOS.length} OS são legadas. Transferido para Rafael.`, true)
+                const RAFAEL_AGENT_ID = 4
+                try {
+                  await fetch(`${cwBase(cfg)}/conversations/${conversationId}/assignments`, {
+                    method: 'POST', headers: cwHeaders(cfg),
+                    body: JSON.stringify({ assignee_id: RAFAEL_AGENT_ID }),
+                  })
+                } catch {}
+                await prisma.botConversation.update({
+                  where: { id: botConv.id },
+                  data: { human_takeover: true, step: 'HUMAN', follow_up_next_at: null },
+                })
+                await logBotMessage(cfg, conversationId, query, `Cliente legado — transferido para Rafael`, 'TRANSFERIR_RAFAEL', phone)
+                await releaseLock(botConv.id)
+                return
+              }
+
+              // Has active OS in new system — inject context so Dify knows who they are
+              const osList = activeOS.map(o => {
+                const osNum = String(o.os_number).padStart(4, '0')
+                return `OS #${osNum} (${o.equipment}, Status: ${o.status_name})`
+              }).join('; ')
+              query += `\n[CONTEXTO DO CLIENTE: Nome: ${customer.legal_name || 'N/A'}, Telefone: ${phone}, OS ativas: ${osList}. O cliente JA FOI IDENTIFICADO pelo telefone — NAO pergunte numero da OS, ja informe o status diretamente.]`
+              console.log(`[Bot] Auto-identified: ${customer.legal_name} — ${activeOS.length} active OS`)
+            }
+          }
+        } catch (e) { console.error('[Bot] Auto-identify error:', e) }
+      }
     }
 
     // Handle OS confirmation flow
