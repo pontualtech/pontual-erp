@@ -1,4 +1,5 @@
 import { prisma } from '@pontual/db'
+import { sendWhatsAppEvolution } from './evolution'
 
 /**
  * Send WhatsApp message via Meta Cloud API (official).
@@ -50,8 +51,10 @@ export async function sendWhatsAppCloud(
 ): Promise<CloudSendResult> {
   const config = await getCloudConfig(companyId)
   if (!config) {
-    console.warn('[WhatsApp Cloud] Not configured for company', companyId)
-    return { success: false, error: 'not_configured' }
+    // Cloud API not configured — fallback to Evolution API
+    console.info('[WhatsApp Cloud] Not configured, falling back to Evolution for company', companyId)
+    const evoResult = await sendWhatsAppEvolution(companyId, phone, text)
+    return { success: evoResult.success, error: evoResult.error }
   }
 
   // Format phone: ensure country code, remove non-digits
@@ -106,7 +109,14 @@ export async function sendWhatsAppTemplate(
 ): Promise<CloudSendResult> {
   const config = await getCloudConfig(companyId)
   if (!config) {
-    console.warn(`[WhatsApp Cloud] Template ${templateName} — not configured for company`, companyId)
+    // Cloud API not configured — fallback to Evolution API with plain text
+    const text = fallbackText || buildFallbackText(templateName, components)
+    if (text) {
+      console.info(`[WhatsApp Cloud] Template ${templateName} — Cloud not configured, falling back to Evolution for company`, companyId)
+      const evoResult = await sendWhatsAppEvolution(companyId, phone, text)
+      return { success: evoResult.success, error: evoResult.error }
+    }
+    console.warn(`[WhatsApp Cloud] Template ${templateName} — not configured and no fallback text for company`, companyId)
     return { success: false, error: 'not_configured' }
   }
 
