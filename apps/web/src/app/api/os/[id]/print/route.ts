@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { getServerUser } from '@/lib/auth'
+import { toTitleCase } from '@/lib/format-text'
 
 type RouteParams = { params: { id: string } }
 
@@ -101,16 +102,16 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     data_impressao: new Date().toLocaleString('pt-BR'),
     tecnico: os.user_profiles?.name || '-',
     // Cliente
-    cliente_nome: os.customers?.legal_name || '-',
+    cliente_nome: toTitleCase(os.customers?.legal_name || '-'),
     cliente_documento: os.customers?.document_number || '-',
     cliente_telefone: os.customers?.phone || os.customers?.mobile || '-',
     cliente_email: os.customers?.email || '-',
-    cliente_endereco: [os.customers?.address_street, os.customers?.address_number, os.customers?.address_neighborhood].filter(Boolean).join(', ') || '-',
-    cliente_cidade: [os.customers?.address_city, os.customers?.address_state].filter(Boolean).join('/') || '-',
+    cliente_endereco: [os.customers?.address_street, os.customers?.address_number, os.customers?.address_neighborhood].filter(Boolean).map(s => toTitleCase(s!)).join(', ') || '-',
+    cliente_cidade: [os.customers?.address_city ? toTitleCase(os.customers.address_city) : null, os.customers?.address_state].filter(Boolean).join('/') || '-',
     // Equipamento
-    equipamento: os.equipment_type || '-',
-    marca: os.equipment_brand || '-',
-    modelo: os.equipment_model || '-',
+    equipamento: toTitleCase(os.equipment_type || '-'),
+    marca: toTitleCase(os.equipment_brand || '-'),
+    modelo: toTitleCase(os.equipment_model || '-'),
     serie: os.serial_number || '-',
     // Textos
     problema: os.reported_issue || '-',

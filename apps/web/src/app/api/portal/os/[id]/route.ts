@@ -112,13 +112,14 @@ export async function GET(
       ? { ...os.module_statuses, name: PORTAL_LABEL[currentKey] || currentStatusName, color: PORTAL_COLOR[currentKey] || os.module_statuses?.color }
       : { ...os.module_statuses, name: PORTAL_LABEL[fallbackKey || ''] || 'Em Reparo', color: PORTAL_COLOR[fallbackKey || ''] || '#3B82F6' }
 
+    const { toTitleCase } = await import('@/lib/format-text')
     return NextResponse.json({
       data: {
         id: os.id,
         os_number: os.os_number,
-        equipment_type: os.equipment_type,
-        equipment_brand: os.equipment_brand,
-        equipment_model: os.equipment_model,
+        equipment_type: toTitleCase(os.equipment_type || ''),
+        equipment_brand: toTitleCase(os.equipment_brand || ''),
+        equipment_model: toTitleCase(os.equipment_model || ''),
         serial_number: os.serial_number,
         reported_issue: os.reported_issue,
         diagnosis: os.diagnosis,

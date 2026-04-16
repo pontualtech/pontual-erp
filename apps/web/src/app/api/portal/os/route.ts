@@ -21,17 +21,13 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Formatar dados no padrão do ERP (MAIÚSCULO, capitalizado)
-    const capitalize = (s: string) => s.replace(/\b\w/g, c => c.toUpperCase())
-    equipment_type = capitalize(equipment_type.trim())
-    brand = brand ? brand.trim().toUpperCase() : ''
-    model = model ? model.trim().toUpperCase() : ''
-    serial_number = serial_number ? serial_number.trim().toUpperCase() : ''
-    reported_issue = reported_issue.trim()
-    // Primeira letra maiúscula no defeito
-    if (reported_issue.length > 0) {
-      reported_issue = reported_issue.charAt(0).toUpperCase() + reported_issue.slice(1)
-    }
+    // Formatar dados no padrão Title Case
+    const { formatName, formatUpperCase, formatDescription } = await import('@/lib/format-text')
+    equipment_type = formatName(equipment_type)
+    brand = brand ? formatName(brand) : ''
+    model = model ? formatName(model) : ''
+    serial_number = serial_number ? formatUpperCase(serial_number) : ''
+    reported_issue = formatDescription(reported_issue)
 
     // Buscar status "Coletar" (portal sempre abre como Coletar)
     let initialStatus = await prisma.moduleStatus.findFirst({
@@ -172,12 +168,13 @@ export async function GET(req: NextRequest) {
       if (!key) return { ...s, name: 'Em Reparo', color: '#3B82F6' }
       return { ...s, ...PORTAL_MAP[key] }
     }
+    const { toTitleCase } = await import('@/lib/format-text')
     const safeData = data.map(os => ({
       id: os.id,
       os_number: os.os_number,
-      equipment_type: os.equipment_type,
-      equipment_brand: os.equipment_brand,
-      equipment_model: os.equipment_model,
+      equipment_type: toTitleCase(os.equipment_type || ''),
+      equipment_brand: toTitleCase(os.equipment_brand || ''),
+      equipment_model: toTitleCase(os.equipment_model || ''),
       reported_issue: os.reported_issue,
       diagnosis: os.diagnosis,
       priority: os.priority,

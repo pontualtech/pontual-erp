@@ -7,6 +7,7 @@ import { Plus, Search, Pencil, Trash2, Eye, Loader2, MessageCircle, Download, Up
 import { toast } from 'sonner'
 import { useAuth } from '@/lib/use-auth'
 import { formatDocument } from '@/lib/utils'
+import { toTitleCase as tc } from '@/lib/format-text'
 import { exportToExcel, exportToCSV, exportToPDF, importFromFile } from '@/lib/export-data'
 
 interface Cliente {
@@ -355,7 +356,7 @@ export default function ClientesPage() {
                     </td>
                   )}
                   <td className="px-4 py-3">
-                    <Link href={`/clientes/${c.id}`} className="font-medium text-blue-600 hover:underline">{c.legal_name}</Link>
+                    <Link href={`/clientes/${c.id}`} className="font-medium text-blue-600 hover:underline">{tc(c.legal_name || '')}</Link>
                     {c.trade_name && <p className="text-xs text-gray-400">{c.trade_name}</p>}
                   </td>
                   <td className="px-4 py-3 text-gray-500">{personTypeLabel[c.person_type] ?? c.person_type}</td>

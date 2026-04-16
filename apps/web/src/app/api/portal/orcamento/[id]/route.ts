@@ -96,12 +96,14 @@ export async function GET(request: NextRequest, { params }: Params) {
     const hasDiscount = isRecalculado && originalCost > 0 && originalCost > currentCost
     const maxInstallments = isRecalculado ? 5 : parseInt(settingsMap['quote.max_installments'] || '3') || 3
 
+    const { toTitleCase } = await import('@/lib/format-text')
+
     return success({
       id: os.id,
       os_number: os.os_number,
-      equipment_type: os.equipment_type,
-      equipment_brand: os.equipment_brand,
-      equipment_model: os.equipment_model,
+      equipment_type: toTitleCase(os.equipment_type || ''),
+      equipment_brand: toTitleCase(os.equipment_brand || ''),
+      equipment_model: toTitleCase(os.equipment_model || ''),
       serial_number: os.serial_number,
       reported_issue: os.reported_issue,
       diagnosis: os.diagnosis,
@@ -111,7 +113,7 @@ export async function GET(request: NextRequest, { params }: Params) {
       status: statusName,
       items,
       quote_version: latestQuote?.version ?? null,
-      customer_name: os.customers?.legal_name || '—',
+      customer_name: toTitleCase(os.customers?.legal_name || '—'),
       customer_person_type: os.customers?.person_type || 'FISICA',
       is_recalculado: isRecalculado,
       original_cost: hasDiscount ? originalCost : null,

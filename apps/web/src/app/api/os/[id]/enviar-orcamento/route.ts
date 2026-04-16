@@ -340,7 +340,8 @@ async function loadSettings(companyId: string): Promise<Record<string, string>> 
   return map
 }
 
-function buildTemplateVars(os: any, settings: Record<string, string>, approvalLink: string): Record<string, string> {
+function buildTemplateVars(os: any, settings: Record<string, string>, approvalLink: string, toTitleCase?: (s: string) => string): Record<string, string> {
+  const tc = toTitleCase || ((s: string) => s)
   const c = os.customers
   const companyName = os.companies?.name || settings['company.name'] || 'Empresa'
   const osNumber = String(os.os_number).padStart(4, '0')
@@ -352,9 +353,9 @@ function buildTemplateVars(os: any, settings: Record<string, string>, approvalLi
       .filter(Boolean)
       .join(', ') || ''
 
-  const equipment = [os.equipment_type, os.equipment_brand, os.equipment_model]
+  const equipment = tc([os.equipment_type, os.equipment_brand, os.equipment_model]
     .filter(Boolean)
-    .join(' ')
+    .join(' '))
 
   // Detect recalculated quote
   const statusName = os.module_statuses?.name || ''
@@ -419,7 +420,7 @@ function buildTemplateVars(os: any, settings: Record<string, string>, approvalLi
     : ''
 
   return {
-    customer_name: escapeHtml(c?.legal_name || c?.trade_name || 'Cliente'),
+    customer_name: escapeHtml(tc(c?.legal_name || c?.trade_name || 'Cliente')),
     equipment: escapeHtml(equipment),
     equipment_serial: escapeHtml(os.serial_number || ''),
     os_number: osNumber,
@@ -504,7 +505,8 @@ export async function GET(req: NextRequest, { params }: Params) {
     const token = generateOrcamentoToken(os.id)
     const approvalLink = `${portalBase}/portal/${slug}/orcamento/${os.id}?token=${token}`
 
-    const vars = buildTemplateVars(os, settings, approvalLink)
+    const { toTitleCase } = await import('@/lib/format-text')
+    const vars = buildTemplateVars(os, settings, approvalLink, toTitleCase)
     const renderedHtml = replaceTemplateVars(htmlTemplate, vars)
 
     return new NextResponse(renderedHtml, {
@@ -561,7 +563,8 @@ export async function POST(req: NextRequest, { params }: Params) {
     const token = generateOrcamentoToken(os.id)
     const approvalLink = `${portalBase}/portal/${slug}/orcamento/${os.id}?token=${token}`
 
-    const vars = buildTemplateVars(os, settings, approvalLink)
+    const { toTitleCase } = await import('@/lib/format-text')
+    const vars = buildTemplateVars(os, settings, approvalLink, toTitleCase)
 
     // For recalculated: inject discount section and header into template
     let finalTemplate = htmlTemplate

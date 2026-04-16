@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { error, handleError } from '@/lib/api-response'
+import { toTitleCase } from '@/lib/format-text'
 
 type Params = { params: { id: string } }
 
@@ -302,20 +303,20 @@ export async function GET(req: NextRequest, { params }: Params) {
     const whatsappNum = settingsMap['bot.config.support_whatsapp'] || settingsMap['company.whatsapp'] || companyPhone
     const whatsappDigits = whatsappNum.replace(/\D/g, '')
     const osNum = String(os.os_number)
-    const equipment = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ')
+    const equipment = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).map(s => toTitleCase(s!)).join(' ')
     const warrantyPeriod = settingsMap['quote.warranty'] || '90 dias'
     const today = new Date().toLocaleDateString('pt-BR')
 
     const vars: Record<string, string> = {
       os_number: osNum,
-      customer_name: c?.legal_name || '—',
+      customer_name: toTitleCase(c?.legal_name || '—'),
       customer_document: c?.document_number || '—',
       customer_phone: c?.mobile || c?.phone || '—',
       customer_email: c?.email || '—',
       customer_address: customerAddress,
-      equipment_type: os.equipment_type || '—',
-      equipment_brand: os.equipment_brand || '—',
-      equipment_model: os.equipment_model || '—',
+      equipment_type: toTitleCase(os.equipment_type || '—'),
+      equipment_brand: toTitleCase(os.equipment_brand || '—'),
+      equipment_model: toTitleCase(os.equipment_model || '—'),
       serial_number: os.serial_number || '—',
       reported_issue: os.reported_issue || '—',
       diagnosis: os.diagnosis || '—',

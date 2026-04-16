@@ -202,16 +202,18 @@ export async function POST(req: NextRequest, { params }: Params) {
     const companyName = company?.name || settingsMap['company.name'] || 'PontualTech'
     const osNumber = String(os.os_number).padStart(4, '0')
 
+    const { toTitleCase } = await import('@/lib/format-text')
+
     const vars: Record<string, string> = {
       os_number: osNumber,
-      customer_name: c?.legal_name || '—',
+      customer_name: toTitleCase(c?.legal_name || ''),
       customer_document: c?.document_number || '—',
       customer_phone: c?.mobile || c?.phone || '—',
       customer_email: c?.email || '—',
       customer_address: customerAddress,
-      equipment_type: os.equipment_type || '—',
-      equipment_brand: os.equipment_brand || '',
-      equipment_model: os.equipment_model || '',
+      equipment_type: toTitleCase(os.equipment_type || ''),
+      equipment_brand: toTitleCase(os.equipment_brand || ''),
+      equipment_model: toTitleCase(os.equipment_model || ''),
       serial_number: os.serial_number || '—',
       reported_issue: os.reported_issue || '—',
       diagnosis: os.diagnosis || '—',

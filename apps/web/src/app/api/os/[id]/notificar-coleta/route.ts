@@ -29,12 +29,13 @@ export async function POST(req: NextRequest, { params }: Params) {
     const body = await req.json().catch(() => ({}))
     const channels: string[] = body.channels || ['email']
 
-    const customerName = os.customers?.legal_name?.split(' ')[0] || 'Cliente'
-    const customerFullName = os.customers?.legal_name || 'Cliente'
+    const { toTitleCase } = await import('@/lib/format-text')
+    const customerName = toTitleCase(os.customers?.legal_name?.split(' ')[0] || 'Cliente')
+    const customerFullName = toTitleCase(os.customers?.legal_name || 'Cliente')
     const customerEmail = os.customers?.email || ''
     const customerPhone = os.customers?.mobile || os.customers?.phone || ''
     const osNum = String(os.os_number).padStart(4, '0')
-    const equipDesc = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ')
+    const equipDesc = toTitleCase([os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' '))
 
     // Carregar settings da empresa
     const settings = await prisma.setting.findMany({ where: { company_id: user.companyId } })
@@ -74,7 +75,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       { num: os.os_number, desc: equipDesc },
       ...otherOS.map(o => ({
         num: o.os_number,
-        desc: [o.equipment_type, o.equipment_brand, o.equipment_model].filter(Boolean).join(' '),
+        desc: toTitleCase([o.equipment_type, o.equipment_brand, o.equipment_model].filter(Boolean).join(' ')),
       })),
     ]
 

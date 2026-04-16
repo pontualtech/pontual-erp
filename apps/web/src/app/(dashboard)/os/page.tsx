@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { cn, formatDocument } from '@/lib/utils'
+import { toTitleCase as tc } from '@/lib/format-text'
 import { Plus, Search, List, LayoutGrid, Settings2, Eye, EyeOff, Trash2, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Clock, AlertTriangle, Printer, FileSpreadsheet, Mail, Columns3, MoreVertical, Copy, Receipt, ChevronDown, RefreshCw, SearchX, Send, UserPlus, Download, Bell, Truck, MessageSquare } from 'lucide-react'
 import { toast } from 'sonner'
 import { exportToExcel, exportToCSV, exportToPDF } from '@/lib/export-data'
@@ -540,13 +541,13 @@ export default function OSListPage() {
     } catch {}
 
     const desc = template
-      .replace(/\{\{equipamento\}\}/g, os.equipment_type || 'Impressora')
-      .replace(/\{\{marca\}\}/g, os.equipment_brand || '')
+      .replace(/\{\{equipamento\}\}/g, tc(os.equipment_type || 'Impressora'))
+      .replace(/\{\{marca\}\}/g, tc(os.equipment_brand || ''))
       .replace(/\{\{modelo\}\}/g, os.equipment_model || '')
       .replace(/\{\{serie\}\}/g, os.serial_number || 'N/A')
       .replace(/\{\{os_number\}\}/g, String(os.os_number))
       .replace(/\{\{garantia\}\}/g, garantiaDias)
-      .replace(/\{\{cliente\}\}/g, os.customers?.legal_name || '')
+      .replace(/\{\{cliente\}\}/g, tc(os.customers?.legal_name || ''))
       .replace(/\{\{itens\}\}/g, '')
       .replace(/\{\{valor\}\}/g, `R$ ${((os.total_cost || 0) / 100).toFixed(2)}`)
       .replace(/\s+/g, ' ').trim()
@@ -722,10 +723,10 @@ export default function OSListPage() {
       switch (col) {
         case 'os_number': return `OS-${String(os.os_number).padStart(4, '0')}`
         case 'created_at': return new Date(os.created_at).toLocaleDateString('pt-BR')
-        case 'customer': return os.customers?.legal_name || ''
-        case 'equipment_type': return os.equipment_type || ''
-        case 'equipment_brand': return os.equipment_brand || ''
-        case 'equipment_model': return os.equipment_model || ''
+        case 'customer': return tc(os.customers?.legal_name || '')
+        case 'equipment_type': return tc(os.equipment_type || '')
+        case 'equipment_brand': return tc(os.equipment_brand || '')
+        case 'equipment_model': return tc(os.equipment_model || '')
         case 'os_type': return osTypeLabel[os.os_type] || os.os_type
         case 'os_location': return os.os_location || ''
         case 'status': return st?.name || ''
@@ -770,9 +771,9 @@ export default function OSListPage() {
     const mappedData = dataToExport.map(os => ({
       os_number: `OS-${String(os.os_number).padStart(4, '0')}`,
       created_at: os.created_at,
-      customer_name: os.customers?.legal_name || '',
-      equipment_type: os.equipment_type || '',
-      equipment_brand: os.equipment_brand || '',
+      customer_name: tc(os.customers?.legal_name || ''),
+      equipment_type: tc(os.equipment_type || ''),
+      equipment_brand: tc(os.equipment_brand || ''),
       equipment_model: os.equipment_model || '',
       os_type: osTypeLabel[os.os_type] || os.os_type,
       os_location: os.os_location || '',
@@ -804,8 +805,8 @@ export default function OSListPage() {
         switch (col) {
           case 'os_number': return `OS-${String(os.os_number).padStart(4, '0')}`
           case 'created_at': return new Date(os.created_at).toLocaleDateString('pt-BR')
-          case 'customer': return os.customers?.legal_name || ''
-          case 'equipment_type': return os.equipment_type || ''
+          case 'customer': return tc(os.customers?.legal_name || '')
+          case 'equipment_type': return tc(os.equipment_type || '')
           case 'os_type': return osTypeLabel[os.os_type] || os.os_type
           case 'status': return st?.name || ''
           case 'total_cost': return fmt(os.total_cost || 0)
@@ -841,7 +842,7 @@ export default function OSListPage() {
 
     const lines = selectedOS.map(os => {
       const st = statusMap[os.status_id]
-      return `OS-${String(os.os_number).padStart(4, '0')} | ${os.customers?.legal_name || 'Sem cliente'} | ${st?.name || ''} | ${(os.total_cost || 0) > 0 ? fmt(os.total_cost || 0) : 'S/ valor'}`
+      return `OS-${String(os.os_number).padStart(4, '0')} | ${tc(os.customers?.legal_name || '') || 'Sem cliente'} | ${st?.name || ''} | ${(os.total_cost || 0) > 0 ? fmt(os.total_cost || 0) : 'S/ valor'}`
     })
 
     const subject = encodeURIComponent(`PontualTech — ${selectedOS.length} OS Selecionadas`)
@@ -1173,13 +1174,13 @@ export default function OSListPage() {
                           </td>
                         )}
                         {effectiveColumns.includes('customer') && (
-                          <td className="px-3 py-2.5 text-gray-700 text-xs max-w-[200px] truncate">{os.customers?.legal_name ?? '\u2014'}</td>
+                          <td className="px-3 py-2.5 text-gray-700 text-xs max-w-[200px] truncate">{tc(os.customers?.legal_name || '') ?? '\u2014'}</td>
                         )}
                         {effectiveColumns.includes('equipment_type') && (
-                          <td className="px-3 py-2.5 text-gray-700 text-xs">{os.equipment_type ?? '\u2014'}</td>
+                          <td className="px-3 py-2.5 text-gray-700 text-xs">{tc(os.equipment_type || '') ?? '\u2014'}</td>
                         )}
                         {effectiveColumns.includes('equipment_brand') && (
-                          <td className="px-3 py-2.5 text-gray-700 text-xs">{os.equipment_brand ?? '\u2014'}</td>
+                          <td className="px-3 py-2.5 text-gray-700 text-xs">{tc(os.equipment_brand || '') ?? '\u2014'}</td>
                         )}
                         {effectiveColumns.includes('equipment_model') && (
                           <td className="px-3 py-2.5 text-gray-700 text-xs">{os.equipment_model ?? '\u2014'}</td>
@@ -1307,7 +1308,7 @@ export default function OSListPage() {
                                 </button>
                                 <div className="border-t my-1" />
                                 <button type="button" onClick={() => {
-                                  const line = `OS-${String(os.os_number).padStart(4, '0')} | ${os.customers?.legal_name || ''} | ${st?.name || ''} | ${fmt(os.total_cost || 0)}`
+                                  const line = `OS-${String(os.os_number).padStart(4, '0')} | ${tc(os.customers?.legal_name || '') || ''} | ${st?.name || ''} | ${fmt(os.total_cost || 0)}`
                                   window.open(`mailto:?subject=${encodeURIComponent(`OS-${String(os.os_number).padStart(4, '0')}`)}&body=${encodeURIComponent(line)}`)
                                   setActionMenuId(null)
                                 }}
@@ -1581,8 +1582,8 @@ export default function OSListPage() {
                         {priorityLabel[os.priority] ?? os.priority}
                       </span>
                     </div>
-                    <p className="mt-1 text-xs text-gray-500">{os.customers?.legal_name ?? 'Sem cliente'}</p>
-                    {os.equipment_type && <p className="mt-0.5 text-xs text-gray-400">{os.equipment_type}</p>}
+                    <p className="mt-1 text-xs text-gray-500">{tc(os.customers?.legal_name || '') ?? 'Sem cliente'}</p>
+                    {tc(os.equipment_type || '') && <p className="mt-0.5 text-xs text-gray-400">{tc(os.equipment_type || '')}</p>}
                     <div className="mt-1.5 flex items-center justify-between">
                       {(os.total_cost || 0) > 0 && (
                         <span className="text-xs font-medium text-gray-700">{fmt(os.total_cost || 0)}</span>
@@ -1651,7 +1652,7 @@ export default function OSListPage() {
                   const st = statusMap[os.status_id]
                   return (
                     <div key={os.id} className="flex items-center justify-between py-0.5">
-                      <span className="text-gray-700">OS-{String(os.os_number).padStart(4, '0')} — {os.customers?.legal_name || 'Sem cliente'}</span>
+                      <span className="text-gray-700">OS-{String(os.os_number).padStart(4, '0')} — {tc(os.customers?.legal_name || '') || 'Sem cliente'}</span>
                       <span className="text-xs rounded-full px-2 py-0.5" style={st ? { backgroundColor: st.color + '20', color: st.color } : {}}>
                         {st?.name || ''}
                       </span>

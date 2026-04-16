@@ -57,9 +57,20 @@ export function formatName(input: string): string {
 }
 
 /**
- * Formata para UPPERCASE padrão ERP (nomes no banco ficam maiúsculos):
- * "joao da silva" → "JOAO DA SILVA"
- * Limpa espaços extras.
+ * Converte texto (inclusive ALL CAPS do banco) para Title Case elegante:
+ * "MARIA DE SOUZA" → "Maria de Souza"
+ * "IMPRESSORA HP LASERJET" → "Impressora HP Laserjet"
+ * "impressora epson l355" → "Impressora Epson L355"
+ *
+ * Use esta função na camada de display para dados já existentes no banco.
+ * Alias para formatName() — exportado separadamente para clareza semântica.
+ */
+export function toTitleCase(input: string): string {
+  return formatName(input)
+}
+
+/**
+ * Formata para UPPERCASE (usado apenas para serial numbers e códigos técnicos):
  */
 export function formatUpperCase(input: string): string {
   if (!input) return input
@@ -124,14 +135,14 @@ export function formatField(fieldName: string, value: string): string {
 
   const name = fieldName.toLowerCase()
 
-  // Nomes → UPPERCASE para banco do ERP
+  // Nomes → Title Case (João da Silva)
   if (name.includes('legal_name') || name.includes('trade_name') || name.includes('name') && !name.includes('file')) {
-    return formatUpperCase(value)
+    return formatName(value)
   }
 
-  // Endereços → UPPERCASE para banco do ERP
+  // Endereços → Title Case (Rua Ouvidor Peleja)
   if (name.includes('address_') || name.includes('street') || name.includes('neighborhood') || name.includes('city')) {
-    return formatUpperCase(value)
+    return formatAddress(value)
   }
 
   // Estado → UPPERCASE (2 letras)
@@ -164,8 +175,13 @@ export function formatField(fieldName: string, value: string): string {
     return formatDescription(value)
   }
 
-  // Equipamento tipo/marca/modelo → UPPERCASE
-  if (name.includes('equipment') || name.includes('brand') || name.includes('model') || name.includes('serial')) {
+  // Equipamento tipo/marca/modelo → Title Case (Impressora Epson L355)
+  if (name.includes('equipment') || name.includes('brand') || name.includes('model')) {
+    return formatName(value)
+  }
+
+  // Serial number → UPPERCASE (é um código técnico)
+  if (name.includes('serial')) {
     return formatUpperCase(value)
   }
 

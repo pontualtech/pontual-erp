@@ -45,17 +45,18 @@ export async function POST(req: NextRequest) {
 
     if (!defeito && !equipamento) return botError('Campos "equipamento" e "defeito" sao obrigatorios')
 
-    // Formatar no padrão do ERP — NÃO fazer toUpperCase no defeito (preserva acentos no Alpine/Docker)
-    if (nome) nome = nome.trim().normalize('NFC').toUpperCase()
-    if (marca) marca = marca.trim().normalize('NFC').toUpperCase()
-    if (modelo) modelo = modelo.trim().normalize('NFC').toUpperCase()
-    if (defeito) defeito = defeito.trim().normalize('NFC')
+    // Formatar no padrão Title Case
+    const { formatName, formatDescription } = await import('@/lib/format-text')
+    if (nome) nome = formatName(nome.normalize('NFC'))
+    if (marca) marca = formatName(marca.normalize('NFC'))
+    if (modelo) modelo = formatName(modelo.normalize('NFC'))
+    if (defeito) defeito = formatDescription(defeito.normalize('NFC'))
 
     // Se equipamento é apenas marca+modelo combinados, usar tipo genérico
     if (equipamento && marca && modelo) {
-      const equipNorm = (equipamento || '').trim().toUpperCase()
-      const marcaNorm = marca.trim().toUpperCase()
-      const modeloNorm = modelo.trim().toUpperCase()
+      const equipNorm = (equipamento || '').trim().toLowerCase()
+      const marcaNorm = marca.trim().toLowerCase()
+      const modeloNorm = modelo.trim().toLowerCase()
       const combo = `${marcaNorm} ${modeloNorm}`
       if (equipNorm === combo || equipNorm === `${modeloNorm} ${marcaNorm}` || equipNorm === marcaNorm || equipNorm === modeloNorm) {
         equipamento = null
@@ -139,15 +140,16 @@ export async function POST(req: NextRequest) {
     })
 
     if (existingOS) {
+      const { toTitleCase: tc } = await import('@/lib/format-text')
       return botSuccess({
         os_numero: existingOS.os_number,
         os_id: existingOS.id,
         cliente_id: customer.id,
-        cliente_nome: customer.legal_name,
+        cliente_nome: tc(customer.legal_name || ''),
         cliente_novo: false,
         status: existingOS.module_statuses?.name ?? 'Desconhecido',
         duplicada: true,
-        mensagem: `OS ${existingOS.os_number} ja existe (criada ha menos de 10 min) para ${customer.legal_name}`,
+        mensagem: `OS ${existingOS.os_number} ja existe (criada ha menos de 10 min) para ${tc(customer.legal_name || '')}`,
       })
     }
 
@@ -214,14 +216,15 @@ export async function POST(req: NextRequest) {
       }).catch(e => console.log('[Bot] Notificacao abertura falhou (ignorado):', e.message))
     }
 
+    const { toTitleCase: tc2 } = await import('@/lib/format-text')
     return botSuccess({
       os_numero: os.os_number,
       os_id: os.id,
       cliente_id: customer.id,
-      cliente_nome: customer.legal_name,
+      cliente_nome: tc2(customer.legal_name || ''),
       cliente_novo: isNewCustomer,
       status: initialStatus.name,
-      mensagem: `OS ${os.os_number} criada com sucesso para ${customer.legal_name}`,
+      mensagem: `OS ${os.os_number} criada com sucesso para ${tc2(customer.legal_name || '')}`,
     })
   } catch (err: any) {
     console.error('[Bot abrir-os]', err.message)

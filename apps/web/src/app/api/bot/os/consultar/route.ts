@@ -125,6 +125,7 @@ export async function GET(req: NextRequest) {
       os.os_number,
     )
 
+    const { toTitleCase } = await import('@/lib/format-text')
     return botSuccess({
       sucesso: true,
       dados: {
@@ -143,7 +144,7 @@ export async function GET(req: NextRequest) {
         data_entrega: os.actual_delivery
           ? new Date(os.actual_delivery).toLocaleDateString('pt-BR')
           : null,
-        equipamento: [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ') || 'Equipamento',
+        equipamento: [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).map(s => toTitleCase(s!)).join(' ') || 'Equipamento',
         defeito: os.reported_issue,
         diagnostico: os.diagnosis,
         tecnico: os.user_profiles?.name ?? null,
@@ -152,7 +153,7 @@ export async function GET(req: NextRequest) {
         total_pecas: os.total_parts,
         total_servicos: os.total_services,
         garantia: os.is_warranty ?? false,
-        cliente_nome: os.customers?.legal_name ?? null,
+        cliente_nome: toTitleCase(os.customers?.legal_name || '') || null,
         cliente_email: os.customers?.email ?? null,
         cliente_telefone: os.customers?.mobile || os.customers?.phone || null,
         portal_url: portalUrl,

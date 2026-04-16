@@ -37,12 +37,13 @@ export async function POST(req: NextRequest, { params }: Params) {
     const cfg: Record<string, string> = {}
     for (const s of settings) cfg[s.key] = s.value
 
-    const customerName = os.customers?.legal_name || 'Cliente'
+    const { toTitleCase } = await import('@/lib/format-text')
+    const customerName = toTitleCase(os.customers?.legal_name || 'Cliente')
     const customerFirstName = customerName.split(' ')[0]
     const customerEmail = os.customers?.email || ''
     const customerPhone = os.customers?.mobile || os.customers?.phone || ''
     const osNum = String(os.os_number)
-    const equipment = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ')
+    const equipment = toTitleCase([os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' '))
     const fmtValue = fmtCents(os.total_cost || 0)
     const companyName = os.companies?.name || cfg['company.name'] || 'Empresa'
     const companyPhone = cfg['company.phone'] || ''

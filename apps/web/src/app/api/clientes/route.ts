@@ -225,11 +225,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const { formatName, formatAddress, formatEmail: fmtEmail, formatPhone: fmtPhone } = await import('@/lib/format-text')
     const customer = await prisma.customer.create({
       data: {
         company_id: user.companyId,
-        legal_name: body.legal_name,
-        trade_name: body.trade_name,
+        legal_name: body.legal_name ? formatName(body.legal_name) : body.legal_name,
+        trade_name: body.trade_name ? formatName(body.trade_name) : body.trade_name,
         person_type: body.person_type || 'FISICA',
         customer_type: body.customer_type || 'CLIENTE',
         document_number: docDigits || body.document_number,

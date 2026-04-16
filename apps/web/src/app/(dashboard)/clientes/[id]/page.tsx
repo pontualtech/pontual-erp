@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Pencil, Trash2, DollarSign, Download, Printer, Loader2, RefreshCw, FileText, MessageCircle } from 'lucide-react'
 import { formatDocument } from '@/lib/utils'
+import { toTitleCase as tc } from '@/lib/format-text'
 import { toast } from 'sonner'
 
 interface Cliente {
@@ -148,7 +149,7 @@ export default function ClienteDetalhePage() {
             <ArrowLeft className="h-4 w-4" />
           </Link>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">{cliente.legal_name}</h1>
+            <h1 className="text-2xl font-bold text-gray-900">{tc(cliente.legal_name || '')}</h1>
             {cliente.trade_name && <p className="text-sm text-gray-500">{cliente.trade_name}</p>}
           </div>
         </div>
@@ -393,7 +394,7 @@ export default function ClienteDetalhePage() {
           <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
             <h2 className="text-lg font-semibold text-gray-900 mb-2">Excluir cliente?</h2>
             <p className="text-sm text-gray-600 mb-4">
-              Tem certeza que deseja excluir <strong>{cliente.legal_name}</strong>? Esta ação não pode ser desfeita.
+              Tem certeza que deseja excluir <strong>{tc(cliente.legal_name || '')}</strong>? Esta ação não pode ser desfeita.
             </p>
             <div className="flex gap-3 justify-end">
               <button type="button" onClick={() => setShowDeleteModal(false)}

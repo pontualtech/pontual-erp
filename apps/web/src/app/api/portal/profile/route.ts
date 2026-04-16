@@ -34,7 +34,15 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Cliente nao encontrado' }, { status: 404 })
     }
 
-    return NextResponse.json({ data: customer })
+    const { toTitleCase } = await import('@/lib/format-text')
+    return NextResponse.json({ data: {
+      ...customer,
+      legal_name: toTitleCase(customer.legal_name || ''),
+      address_street: customer.address_street ? toTitleCase(customer.address_street) : customer.address_street,
+      address_complement: customer.address_complement ? toTitleCase(customer.address_complement) : customer.address_complement,
+      address_neighborhood: customer.address_neighborhood ? toTitleCase(customer.address_neighborhood) : customer.address_neighborhood,
+      address_city: customer.address_city ? toTitleCase(customer.address_city) : customer.address_city,
+    } })
   } catch (err) {
     console.error('[Portal Profile GET Error]', err)
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 })

@@ -91,33 +91,34 @@ export async function GET(req: NextRequest) {
       })
     }
 
+    const { toTitleCase } = await import('@/lib/format-text')
     return botSuccess({
       total: ordens.length,
       busca,
       // Include full customer data on first result (for form auto-fill)
       cliente: ordens.length > 0 && ordens[0].customers ? {
         id: ordens[0].customers.id,
-        nome: ordens[0].customers.legal_name,
-        nome_fantasia: ordens[0].customers.trade_name,
+        nome: toTitleCase(ordens[0].customers.legal_name || ''),
+        nome_fantasia: ordens[0].customers.trade_name ? toTitleCase(ordens[0].customers.trade_name) : null,
         documento: ordens[0].customers.document_number,
         telefone: ordens[0].customers.mobile || ordens[0].customers.phone || null,
         email: ordens[0].customers.email,
-        endereco: ordens[0].customers.address_street,
+        endereco: ordens[0].customers.address_street ? toTitleCase(ordens[0].customers.address_street) : null,
         numero: ordens[0].customers.address_number,
-        complemento: ordens[0].customers.address_complement,
-        bairro: ordens[0].customers.address_neighborhood,
-        cidade: ordens[0].customers.address_city,
+        complemento: ordens[0].customers.address_complement ? toTitleCase(ordens[0].customers.address_complement) : null,
+        bairro: ordens[0].customers.address_neighborhood ? toTitleCase(ordens[0].customers.address_neighborhood) : null,
+        cidade: ordens[0].customers.address_city ? toTitleCase(ordens[0].customers.address_city) : null,
         uf: ordens[0].customers.address_state,
         cep: ordens[0].customers.address_zip,
       } : null,
       ordens: ordens.map(os => ({
         os_numero: os.os_number,
         os_id: os.id,
-        cliente_nome: os.customers?.legal_name ?? null,
+        cliente_nome: os.customers?.legal_name ? toTitleCase(os.customers.legal_name) : null,
         cliente_documento: os.customers?.document_number ?? null,
         cliente_telefone: os.customers?.mobile || os.customers?.phone || null,
         cliente_email: os.customers?.email ?? null,
-        equipamento: [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' '),
+        equipamento: [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).map(s => toTitleCase(s!)).join(' '),
         defeito: os.reported_issue,
         diagnostico: os.diagnosis,
         status: os.module_statuses?.name ?? 'Desconhecido',

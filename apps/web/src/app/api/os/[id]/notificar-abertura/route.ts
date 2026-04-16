@@ -70,9 +70,10 @@ export async function POST(req: NextRequest, { params }: Params) {
     const portalUrl = `${portalBase}/portal/${slug}`
     const osDetailUrl = `${portalUrl}/os/${os.id}`
     const osNum = String(os.os_number).padStart(4, '0')
-    const customerName = customer.legal_name?.split(' ')[0] || 'Cliente'
-    const fullName = customer.legal_name || 'Cliente'
-    const equipment = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ')
+    const { toTitleCase } = await import('@/lib/format-text')
+    const customerName = toTitleCase(customer.legal_name?.split(' ')[0] || 'Cliente')
+    const fullName = toTitleCase(customer.legal_name || 'Cliente')
+    const equipment = toTitleCase([os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' '))
     const dt = os.created_at ? new Date(os.created_at) : new Date()
     const createdDate = dt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })
     const createdTime = dt.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })
@@ -129,7 +130,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           <td style="padding:6px 0;color:#64748b">Data</td>
           <td style="padding:6px 0;font-weight:500">${createdDate} as ${createdTime}</td>
         </tr>
-        ${os.equipment_brand ? `<tr><td style="padding:6px 0;color:#64748b">Marca/Modelo</td><td style="padding:6px 0;font-weight:500">${escapeHtml(os.equipment_brand)} ${escapeHtml(os.equipment_model || '')}</td></tr>` : ''}
+        ${os.equipment_brand ? `<tr><td style="padding:6px 0;color:#64748b">Marca/Modelo</td><td style="padding:6px 0;font-weight:500">${escapeHtml(toTitleCase(os.equipment_brand))} ${escapeHtml(toTitleCase(os.equipment_model || ''))}</td></tr>` : ''}
       </table>
     </div>
 

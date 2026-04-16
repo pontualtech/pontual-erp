@@ -52,8 +52,9 @@ export async function POST(req: NextRequest, { params }: Params) {
         const friendlyFrom = currentStatus ? (statusMap[currentStatus.name] || currentStatus.name) : '—'
         const friendlyTo = statusMap[toStatus.name] || toStatus.name
         const osNum = String(os.os_number).padStart(4, '0')
-        const equipment = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ') || 'Equipamento'
-        const customerFirstName = (os.customers.legal_name || 'Cliente').split(' ')[0]
+        const { toTitleCase: toTitleCaseResend } = await import('@/lib/format-text')
+        const equipment = toTitleCaseResend([os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ') || 'Equipamento')
+        const customerFirstName = toTitleCaseResend((os.customers.legal_name || 'Cliente').split(' ')[0])
 
         // Load company data for footer
         const emailSettings = await prisma.setting.findMany({ where: { company_id: user.companyId } }).catch(() => [])
@@ -82,8 +83,9 @@ export async function POST(req: NextRequest, { params }: Params) {
       // WhatsApp via Meta Cloud API template
       const customerPhone = os.customers?.mobile || os.customers?.phone
       if (shouldNotifyWhatsApp && customerPhone) {
+        const { toTitleCase: toTitleCaseWaResend } = await import('@/lib/format-text')
         const resendOsNum = String(os.os_number).padStart(4, '0')
-        const resendEquipment = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ') || 'Equipamento'
+        const resendEquipment = toTitleCaseWaResend([os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ') || 'Equipamento')
         void sendWhatsAppTemplate(user.companyId, customerPhone as string, 'pontualtech_status_os', 'pt_BR', [
           { type: 'body', parameters: [
             { type: 'text', text: resendOsNum },
@@ -432,12 +434,13 @@ export async function POST(req: NextRequest, { params }: Params) {
     // Fora da transação: notificações (fire and forget, não precisa ser atômica)
     if (isReparado) {
       const osNum = String(os.os_number).padStart(4, '0')
-      const customerName = os.customers?.legal_name || 'Cliente'
+      const { toTitleCase: toTitleCaseReparado } = await import('@/lib/format-text')
+      const customerName = toTitleCaseReparado(os.customers?.legal_name || 'Cliente')
       const techProfile = os.technician_id
         ? await prisma.userProfile.findFirst({ where: { id: os.technician_id }, select: { name: true } })
         : null
       const techName = techProfile?.name || 'Não atribuído'
-      const equipDesc = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ')
+      const equipDesc = toTitleCaseReparado([os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' '))
 
       prisma.announcement.create({
         data: {
@@ -467,7 +470,8 @@ export async function POST(req: NextRequest, { params }: Params) {
       const phone = (os.customers.mobile || os.customers.phone) as string
       const statusName = toStatus.name
       const osNum = String(os.os_number).padStart(4, '0')
-      const equipment = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ') || 'Equipamento'
+      const { toTitleCase: toTitleCaseWa1 } = await import('@/lib/format-text')
+      const equipment = toTitleCaseWa1([os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ') || 'Equipamento')
 
       // Send via template with buttons (works outside 24h window)
       sendWhatsAppTemplate(user.companyId, phone, 'pontualtech_status_os', 'pt_BR', [
@@ -497,9 +501,10 @@ export async function POST(req: NextRequest, { params }: Params) {
       const friendlyFrom = statusMap[currentStatus.name] || currentStatus.name
       const friendlyTo = statusMap[toStatus.name] || toStatus.name
 
-      const customerFirstName = (os.customers.legal_name || 'Cliente').split(' ')[0]
+      const { toTitleCase: toTitleCaseEmail } = await import('@/lib/format-text')
+      const customerFirstName = toTitleCaseEmail((os.customers.legal_name || 'Cliente').split(' ')[0])
       const osNum = String(os.os_number).padStart(4, '0')
-      const equipment = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ') || 'Equipamento'
+      const equipment = toTitleCaseEmail([os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ') || 'Equipamento')
 
       // Load company settings for footer
       const emailSettings = await prisma.setting.findMany({ where: { company_id: user.companyId } }).catch(() => [])
@@ -529,9 +534,10 @@ export async function POST(req: NextRequest, { params }: Params) {
     // WhatsApp notification via Evolution API (fire-and-forget) — respects notification rules
     const customerPhone = os.customers?.mobile || os.customers?.phone
     if (shouldSendWhatsApp && customerPhone) {
-      const customerFirstName = (os.customers?.legal_name || 'Cliente').split(' ')[0]
+      const { toTitleCase: toTitleCaseWa } = await import('@/lib/format-text')
+      const customerFirstName = toTitleCaseWa((os.customers?.legal_name || 'Cliente').split(' ')[0])
       const osNum = String(os.os_number).padStart(4, '0')
-      const equipment = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ') || 'Equipamento'
+      const equipment = toTitleCaseWa([os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ') || 'Equipamento')
 
       // Always use Meta Cloud API template for WhatsApp (works outside 24h window)
       void sendWhatsAppTemplate(user.companyId, customerPhone, 'pontualtech_status_os', 'pt_BR', [

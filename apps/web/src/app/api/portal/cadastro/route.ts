@@ -156,9 +156,10 @@ export async function POST(req: NextRequest) {
     }
 
     // Format data
-    const formattedName = legal_name.trim().toUpperCase()
-    const formattedEmail = email.trim().toLowerCase()
-    const formattedPhone = phone.replace(/\D/g, '')
+    const { formatName, formatEmail, formatPhone } = await import('@/lib/format-text')
+    const formattedName = formatName(legal_name)
+    const formattedEmail = formatEmail(email)
+    const formattedPhone = formatPhone(phone)
 
     // Hash password
     const passwordHash = await hash(password, 10)
@@ -176,11 +177,11 @@ export async function POST(req: NextRequest) {
           phone: formattedPhone,
           mobile: formattedPhone,
           address_zip: address_zip?.replace(/\D/g, '') || null,
-          address_street: address_street?.trim().toUpperCase() || null,
+          address_street: address_street ? formatName(address_street) : null,
           address_number: address_number?.trim() || null,
-          address_complement: address_complement?.trim().toUpperCase() || null,
-          address_neighborhood: address_neighborhood?.trim().toUpperCase() || null,
-          address_city: address_city?.trim().toUpperCase() || null,
+          address_complement: address_complement ? formatName(address_complement) : null,
+          address_neighborhood: address_neighborhood ? formatName(address_neighborhood) : null,
+          address_city: address_city ? formatName(address_city) : null,
           address_state: address_state?.trim().toUpperCase() || null,
         },
       })

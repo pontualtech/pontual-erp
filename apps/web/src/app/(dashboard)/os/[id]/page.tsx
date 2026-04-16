@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { cn, formatDocument } from '@/lib/utils'
+import { toTitleCase as tc } from '@/lib/format-text'
 import { toast } from 'sonner'
 import { useAuth } from '@/lib/use-auth'
 import { ArrowLeft, Edit, Camera, History, Info, Package, Plus, Trash2, Loader2, Search, Wrench, CreditCard, X, Printer, Mail, Send, Copy, FilePlus, User, Monitor, FileText, Clock, ChevronDown, ChevronUp, AlertTriangle, Save, Check, Layers, DollarSign, ExternalLink, Receipt, Truck, MessageCircle } from 'lucide-react'
@@ -814,7 +815,7 @@ export default function OSDetailPage() {
         setNotifyModal({
           statusName: targetStatus?.name || '',
           osNumber: os.os_number,
-          customerName: os.customers?.legal_name?.split(' ')[0] || 'Cliente',
+          customerName: tc(os.customers?.legal_name || '').split(' ')[0] || 'Cliente',
           customerPhone: os.customers?.mobile || os.customers?.phone || null,
           customerEmail: os.customers?.email || null,
           body,
@@ -1249,7 +1250,7 @@ export default function OSDetailPage() {
           <div className="space-y-2">
             <div className="flex items-baseline justify-between">
               <span className="text-xs text-gray-400 uppercase w-16 shrink-0">Nome</span>
-              <span className="text-sm font-medium text-gray-900 text-right">{os.customers?.legal_name ?? '--'}</span>
+              <span className="text-sm font-medium text-gray-900 text-right">{tc(os.customers?.legal_name || '') ?? '--'}</span>
             </div>
             <div className="flex items-baseline justify-between">
               <span className="text-xs text-gray-400 uppercase w-16 shrink-0">Tel</span>
@@ -1293,15 +1294,15 @@ export default function OSDetailPage() {
           <div className="space-y-2">
             <div className="flex items-baseline justify-between">
               <span className="text-xs text-gray-400 uppercase w-16 shrink-0">Tipo</span>
-              <span className="text-sm font-medium text-gray-900 text-right">{os.equipment_type || '--'}</span>
+              <span className="text-sm font-medium text-gray-900 text-right">{tc(os.equipment_type || '') || '--'}</span>
             </div>
             <div className="flex items-baseline justify-between">
               <span className="text-xs text-gray-400 uppercase w-16 shrink-0">Marca</span>
-              <span className="text-sm text-gray-700 text-right">{os.equipment_brand || '--'}</span>
+              <span className="text-sm text-gray-700 text-right">{tc(os.equipment_brand || '') || '--'}</span>
             </div>
             <div className="flex items-baseline justify-between">
               <span className="text-xs text-gray-400 uppercase w-16 shrink-0">Modelo</span>
-              <span className="text-sm text-gray-700 text-right">{os.equipment_model || '--'}</span>
+              <span className="text-sm text-gray-700 text-right">{tc(os.equipment_model || '') || '--'}</span>
             </div>
             <div className="flex items-baseline justify-between">
               <span className="text-xs text-gray-400 uppercase w-16 shrink-0">S/N</span>
@@ -2330,7 +2331,7 @@ export default function OSDetailPage() {
                 <p className="text-sm font-medium text-green-900">
                   OS {os.os_number} — {[os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ')}
                 </p>
-                <p className="text-sm text-green-700 mt-1">{os.customers?.legal_name}</p>
+                <p className="text-sm text-green-700 mt-1">{tc(os.customers?.legal_name || '')}</p>
               </div>
 
               <div>
@@ -2418,7 +2419,7 @@ export default function OSDetailPage() {
                 <p className="text-sm font-medium text-emerald-900">
                   OS {os.os_number} — {[os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ')}
                 </p>
-                <p className="text-sm text-emerald-700 mt-1">{os.customers?.legal_name}</p>
+                <p className="text-sm text-emerald-700 mt-1">{tc(os.customers?.legal_name || '')}</p>
                 {os.total_cost > 0 && <p className="text-sm font-bold text-emerald-800 mt-1">Valor: {fmt(os.total_cost)}</p>}
               </div>
 
@@ -2505,7 +2506,7 @@ export default function OSDetailPage() {
                 <p className="text-sm font-medium text-red-900">
                   OS {os.os_number} — {[os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ')}
                 </p>
-                <p className="text-sm text-red-700 mt-1">{os.customers?.legal_name}</p>
+                <p className="text-sm text-red-700 mt-1">{tc(os.customers?.legal_name || '')}</p>
               </div>
 
               <div>
@@ -2567,7 +2568,7 @@ export default function OSDetailPage() {
                 <p className="text-sm font-medium text-sky-900">
                   OS-{String(os.os_number).padStart(4, '0')} — {[os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ')}
                 </p>
-                <p className="text-sm text-sky-700 mt-1">{os.customers?.legal_name}</p>
+                <p className="text-sm text-sky-700 mt-1">{tc(os.customers?.legal_name || '')}</p>
               </div>
 
               {/* Canais de envio */}
@@ -2604,7 +2605,7 @@ export default function OSDetailPage() {
               {/* Preview */}
               <div className="rounded-lg border bg-gray-50 p-3 text-xs text-gray-600 max-h-40 overflow-y-auto">
                 <p className="font-medium text-gray-700 mb-1">Preview da mensagem:</p>
-                <p>Tudo certo, {os.customers?.legal_name?.split(' ')[0]}!</p>
+                <p>Tudo certo, {tc(os.customers?.legal_name || '')?.split(' ')[0]}!</p>
                 <p>OS #{os.os_number} aberta com sucesso!</p>
                 <p>Equipamento: {[os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ')}</p>
                 <p className="mt-1">Coleta no horario comercial (09:00-17:00)</p>
@@ -2993,7 +2994,7 @@ export default function OSDetailPage() {
 
             <div className="space-y-4">
               <div className="rounded-lg bg-gray-50 p-3 text-sm space-y-1">
-                <div className="flex justify-between"><span className="text-gray-500">Cliente:</span><span className="font-medium">{os.customers?.legal_name}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Cliente:</span><span className="font-medium">{tc(os.customers?.legal_name || '')}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">CPF/CNPJ:</span><span className="font-medium">{os.customers?.document_number ? formatDocument(os.customers.document_number) : 'Nao informado'}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Valor:</span><span className="font-bold text-green-700">R$ {(os.total_cost / 100).toFixed(2)}</span></div>
               </div>
