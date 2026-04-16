@@ -356,10 +356,16 @@ export async function POST(request: NextRequest, { params }: Params) {
         return error('Este orçamento não pode ser recusado no status atual (' + (os.module_statuses?.name || '—') + '). Entre em contato com nosso suporte pelo WhatsApp: https://wa.me/551126263841', 410)
       }
 
-      // Buscar status "Recusado" — NUNCA usar Cancelada (são coisas diferentes)
-      const targetStatus = await prisma.moduleStatus.findFirst({
-        where: { company_id: os.company_id, module: 'os', name: { contains: 'Recusad', mode: 'insensitive' } },
+      // Buscar status "Orçar Negociar" — cliente recusou, mas vamos tentar renegociar
+      // Fallback para "Recusado" se Orçar Negociar não existir
+      let targetStatus = await prisma.moduleStatus.findFirst({
+        where: { company_id: os.company_id, module: 'os', name: { contains: 'Negociar', mode: 'insensitive' } },
       })
+      if (!targetStatus) {
+        targetStatus = await prisma.moduleStatus.findFirst({
+          where: { company_id: os.company_id, module: 'os', name: { contains: 'Recusad', mode: 'insensitive' } },
+        })
+      }
 
       const now2 = new Date()
       const dataHora2 = now2.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
@@ -517,7 +523,31 @@ export async function POST(request: NextRequest, { params }: Params) {
         sendCompanyEmail(os.company_id, customerEmail2, `Orcamento OS #${osNum2} — ${companyName2}`, emailHtml2).catch(() => {})
       }
 
-      return success({ action: 'rejected', message: 'Orçamento recusado. A empresa foi notificada.' })
+      // 3. RETENCAO: 5 minutos depois, enviar email + WhatsApp de negociacao
+      const retentionData = {
+        companyId: os.company_id,
+        osId: os.id,
+        osNum: osNum2,
+        customerName: customerName2,
+        customerEmail: customerEmail2,
+        customerPhone: os.customers?.mobile || os.customers?.phone,
+        equipment: equipment2,
+        value: fmtValue2,
+        companyName: companyName2,
+        companyPhone: companyPhone2,
+        companyAddress: companyAddress2,
+        companyCnpj: companyCnpj2,
+        companyEmail: companyEmailAddr2,
+        companyWebsite: cfg2['company.website'] || '',
+        whatsappUrl: whatsappUrl2,
+        portalUrl: `${process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'}/portal/${os.companies.slug}/login`,
+        reason: reason || '',
+        slug: os.companies.slug,
+      }
+      // Fire-and-forget: send retention message after 5 minutes
+      setTimeout(() => sendRetentionMessage(retentionData).catch(e => console.error('[Retention] Error:', e)), 5 * 60 * 1000)
+
+      return success({ action: 'rejected', message: 'Orçamento recusado. Estamos preparando uma nova proposta.' })
     }
 
     return error('Ação inválida', 400)
@@ -634,4 +664,133 @@ function buildApprovalEmailHtml(d: ApprovalEmailData): string {
 </td></tr>
 
 </table></td></tr></table></body></html>`
+}
+
+// ---------------------------------------------------------------------------
+// Retention message — sent 5 minutes after quote rejection
+// ---------------------------------------------------------------------------
+
+interface RetentionData {
+  companyId: string
+  osId: string
+  osNum: string
+  customerName: string
+  customerEmail: string | null
+  customerPhone: string | null
+  equipment: string
+  value: string
+  companyName: string
+  companyPhone: string
+  companyAddress: string
+  companyCnpj: string
+  companyEmail: string
+  companyWebsite: string
+  whatsappUrl: string
+  portalUrl: string
+  reason: string
+  slug: string
+}
+
+async function sendRetentionMessage(d: RetentionData) {
+  const firstName = d.customerName.split(' ')[0]
+  const e = escapeHtml
+
+  // 1. Retention EMAIL
+  if (d.customerEmail) {
+    const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:Arial,Helvetica,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f1f5f9;padding:32px 0;">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+  <tr><td style="background:linear-gradient(135deg,#f59e0b 0%,#d97706 50%,#b45309 100%);padding:36px 32px;text-align:center;">
+    <div style="width:56px;height:56px;background:rgba(255,255,255,0.15);border-radius:14px;margin:0 auto 12px;line-height:56px;font-size:28px;">&#9203;</div>
+    <h1 style="margin:0 0 4px;color:#fff;font-size:22px;font-weight:800;">Nao desista ainda!</h1>
+    <p style="margin:0;color:rgba(255,255,255,0.8);font-size:13px;">Estamos trabalhando em uma nova proposta</p>
+  </td></tr>
+  <tr><td style="padding:32px;">
+    <p style="font-size:16px;margin:0 0 16px;color:#1e293b;">Ola <strong>${e(firstName)}</strong>,</p>
+    <p style="font-size:14px;color:#475569;margin:0 0 20px;line-height:1.7;">
+      Recebemos o seu retorno sobre o orcamento da OS <strong>#${d.osNum}</strong> (${e(d.equipment)}).
+      Entendemos perfeitamente — sabemos que custos imprevistos pesam.
+    </p>
+    <p style="font-size:14px;color:#475569;margin:0 0 24px;line-height:1.7;">
+      Mas tambem sabemos a importancia de ter seu equipamento rodando 100%, com a garantia e qualidade da ${e(d.companyName)}.
+      Por isso, <strong>nao encerramos o seu chamado ainda!</strong>
+    </p>
+
+    <div style="background:linear-gradient(135deg,#fef3c7 0%,#fde68a 100%);border:2px solid #f59e0b;border-radius:12px;padding:24px;margin:0 0 24px;">
+      <p style="margin:0 0 16px;font-size:15px;font-weight:700;color:#92400e;">Vamos fazer um esforco extra para viabilizar esse reparo:</p>
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td style="padding:8px 0;vertical-align:top;width:30px;font-size:18px;">&#128200;</td>
+          <td style="padding:8px 0 8px 8px;">
+            <p style="margin:0 0 2px;font-size:13px;font-weight:700;color:#78350f;">Negociar com Fornecedores</p>
+            <p style="margin:0;font-size:12px;color:#92400e;">Vamos buscar condicao diferenciada nas pecas necessarias.</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:8px 0;vertical-align:top;width:30px;font-size:18px;">&#129309;</td>
+          <td style="padding:8px 0 8px 8px;">
+            <p style="margin:0 0 2px;font-size:13px;font-weight:700;color:#78350f;">Revisar a Mao de Obra</p>
+            <p style="margin:0;font-size:12px;color:#92400e;">Vamos reavaliar nossa margem mantendo a mesma garantia.</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:8px 0;vertical-align:top;width:30px;font-size:18px;">&#128179;</td>
+          <td style="padding:8px 0 8px 8px;">
+            <p style="margin:0 0 2px;font-size:13px;font-weight:700;color:#78350f;">Facilitar o Pagamento</p>
+            <p style="margin:0;font-size:12px;color:#92400e;">Vamos buscar formas de parcelamento para nao apertar seu orcamento.</p>
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <div style="background:#eff6ff;border:2px solid #93c5fd;border-radius:12px;padding:20px;margin:0 0 24px;text-align:center;">
+      <p style="margin:0 0 4px;font-size:16px;font-weight:800;color:#1e40af;">Aguarde so mais 24 horas &#128591;</p>
+      <p style="margin:0;font-size:13px;color:#3b82f6;">Voltaremos com uma nova proposta que faca sentido para voce.</p>
+    </div>
+
+    <p style="font-size:13px;color:#64748b;margin:0 0 24px;line-height:1.6;">
+      Qualquer duvida urgente, e so mandar mensagem! Ou acesse o Portal do Cliente:
+    </p>
+
+    <div style="text-align:center;margin:0 0 12px;">
+      <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr>
+        <td style="padding:0 6px;"><a href="${d.portalUrl}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:14px 28px;border-radius:8px;">Acessar Portal</a></td>
+        <td style="padding:0 6px;"><a href="${d.whatsappUrl}" style="display:inline-block;background:#25d366;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:14px 28px;border-radius:8px;">WhatsApp Suporte</a></td>
+      </tr></table>
+    </div>
+  </td></tr>
+  <tr><td style="background:#1e293b;padding:24px 32px;text-align:center;">
+    <p style="margin:0 0 4px;font-size:13px;color:#f8fafc;">Um abraco,</p>
+    <p style="margin:0 0 8px;font-size:15px;font-weight:700;color:#fff;">Equipe ${e(d.companyName)}</p>
+    ${d.companyAddress ? `<p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">${e(d.companyAddress)}</p>` : ''}
+    <p style="margin:0;font-size:11px;color:#94a3b8;">${[d.companyCnpj ? 'CNPJ: ' + d.companyCnpj : '', d.companyPhone ? 'Tel: ' + d.companyPhone : '', d.companyEmail].filter(Boolean).join(' | ')}</p>
+  </td></tr>
+</table>
+</td></tr></table></body></html>`
+
+    await sendCompanyEmail(
+      d.companyId,
+      d.customerEmail,
+      `OS #${d.osNum} — Nao desista! Estamos preparando uma nova proposta — ${d.companyName}`,
+      html
+    ).catch(err => console.error('[Retention] Email failed:', err))
+  }
+
+  // 2. Retention WhatsApp
+  if (d.customerPhone) {
+    const waText = `Ola ${firstName}! 😊\n\nRecebemos seu retorno sobre o orcamento da OS #${d.osNum} (${d.equipment}).\n\nEntendemos perfeitamente. Mas *nao encerramos seu chamado ainda!* Vamos fazer um esforco extra:\n\n📉 *Negociar com fornecedores* — buscar condicao diferenciada\n🤝 *Revisar mao de obra* — reavaliar mantendo a garantia\n💳 *Facilitar pagamento* — buscar parcelamento\n\n*Aguarde so mais 24h* — voltaremos com uma nova proposta! 🙏\n\nAcompanhe pelo portal: ${d.portalUrl}\n\nEquipe ${d.companyName}`
+    try {
+      const { sendWhatsAppCloud } = await import('@/lib/whatsapp/cloud-api')
+      await sendWhatsAppCloud(d.companyId, d.customerPhone, waText)
+      console.log(`[Retention] WhatsApp sent for OS #${d.osNum}`)
+    } catch (err) {
+      console.error('[Retention] WhatsApp failed:', err)
+    }
+  }
+
+  console.log(`[Retention] Messages sent for OS #${d.osNum} to ${d.customerEmail || d.customerPhone}`)
 }
