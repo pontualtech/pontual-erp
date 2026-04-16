@@ -872,7 +872,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
 
     // ── AUTO-ENRICH: inject OS data when message mentions an OS number (Marta suporte) ──
     if (cfg.slug === 'pontualtech-suporte' || cfg.botOrigin?.includes('marta')) {
-      const osMatch = query.match(/(?:os|OS|O\.S\.?|ordem)\s*#?\s*(\d{4,6})/i) || query.match(/\b(6\d{4})\b/)
+      const osMatch = query.match(/(?:os|OS|O\.S\.?|ordem)\s*#?\s*(\d{4,6})/i) || query.match(/\b([56]\d{4})\b/)
       if (osMatch) {
         const osNum = parseInt(osMatch[1], 10)
         try {
@@ -893,7 +893,29 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
             query += `\n[DADOS DA OS #${osNum}: Status: ${status}, Equipamento: ${equip}, Defeito: ${osData.reported_issue || 'N/A'}, Diagnostico: ${osData.diagnosis || 'N/A'}, Tecnico: ${osData.user_profiles?.name || 'N/A'}, Previsao: ${previsao}, Custo: ${osData.total_cost ? 'R$ ' + (osData.total_cost / 100).toFixed(2) : 'N/A'}, Cliente: ${osData.customers?.legal_name || 'N/A'}, Email: ${osData.customers?.email || 'N/A'}, Portal: ${portalUrl}${isLegado ? ', SISTEMA_LEGADO: true' : ''}]`
             console.log(`[Bot] OS enriched: #${osNum} → ${status} (${equip})`)
           } else if (osNum < 60000) {
-            query += `\n[OS #${osNum}: NAO ENCONTRADA NO ERP. SISTEMA_LEGADO: true — transferir para Rafael]`
+            // OS LEGADA — transferir direto pro Rafael, sem passar pelo Dify
+            console.log(`[Bot] OS #${osNum} é legado (VHSys) — transferência direta para Rafael`)
+            const osNumFmt = String(osNum).padStart(5, '0')
+            await cwSendMessage(cfg, conversationId,
+              `Sua OS #${osNumFmt} é do nosso sistema anterior. Vou transferir agora para o Rafael, que cuida pessoalmente desses casos. Ele vai te retornar em breve!`)
+            await cwSendMessage(cfg, conversationId,
+              `[BOT] OS legada #${osNumFmt} (VHSys). Cliente: ${sender.name || phone || 'N/I'}. Transferido automaticamente.`, true)
+            // Assign to Rafael (agent ID 4)
+            const RAFAEL_AGENT_ID = 4
+            try {
+              await fetch(`${cwBase(cfg)}/conversations/${conversationId}/assignments`, {
+                method: 'POST',
+                headers: cwHeaders(cfg),
+                body: JSON.stringify({ assignee_id: RAFAEL_AGENT_ID }),
+              })
+            } catch {} // fire and forget
+            await prisma.botConversation.update({
+              where: { id: botConv.id },
+              data: { human_takeover: true, step: 'HUMAN', follow_up_next_at: null },
+            })
+            await logBotMessage(cfg, conversationId, query, `OS legada #${osNumFmt} — transferido para Rafael`, 'TRANSFERIR_RAFAEL', phone)
+            await releaseLock(botConv.id)
+            return // SAIR — não chamar Dify
           }
         } catch (e) { console.error('[Bot] OS enrich error:', e) }
       }
