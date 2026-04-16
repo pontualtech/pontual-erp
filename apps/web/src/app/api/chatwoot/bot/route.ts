@@ -1337,7 +1337,9 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
     }
 
     // Schedule follow-up if conversation is still active (not ended, not transferred)
-    if (!parsed.action || parsed.action === 'NENHUMA_ACAO') {
+    // Skip follow-up for suporte bots (Marta/Aline) — only vendas bots use follow-up
+    const isSuporteBot = cfg.slug.includes('suporte') || cfg.botOrigin?.includes('marta') || cfg.botOrigin?.includes('aline')
+    if (!isSuporteBot && (!parsed.action || parsed.action === 'NENHUMA_ACAO')) {
       await scheduleFollowUp(cfg.companyId, botConv.id)
     } else {
       // Conversation ended or transferred — clear any follow-up
