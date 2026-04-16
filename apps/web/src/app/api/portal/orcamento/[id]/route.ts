@@ -375,11 +375,38 @@ export async function POST(request: NextRequest, { params }: Params) {
       const equipment2 = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ')
       const fmtValue2 = fmtCents(os.total_cost || 0)
 
+      // Count previous rejections to determine 1st vs 2nd rejection
+      const rejectionCount = await prisma.serviceOrderHistory.count({
+        where: {
+          service_order_id: os.id,
+          notes: { contains: 'RECUSADO pelo cliente' },
+        },
+      })
+      const isSecondRejection = rejectionCount >= 1 // This is the 2nd+ rejection
+
+      // For 2nd rejection: use "Renegociar" status instead
+      if (isSecondRejection) {
+        const renegociarStatus = await prisma.moduleStatus.findFirst({
+          where: { company_id: os.company_id, module: 'os', name: { contains: 'Renegociar', mode: 'insensitive' } },
+        })
+        if (renegociarStatus) targetStatus = renegociarStatus
+      }
+
+      // Save original_cost in custom_data (for recalculated comparison)
+      const customData = (os.custom_data || {}) as Record<string, any>
+      if (!customData.original_cost && os.total_cost) {
+        customData.original_cost = os.total_cost
+      }
+      customData.rejection_count = rejectionCount + 1
+      customData.last_rejection_reason = reason || null
+      customData.last_rejection_at = new Date().toISOString()
+
       // Transação atômica
       await prisma.$transaction(async (tx) => {
         const updateData: any = {
           internal_notes: os.internal_notes ? `${os.internal_notes}\n${rejectionNote}` : rejectionNote,
           updated_at: new Date(),
+          custom_data: customData,
         }
         if (targetStatus) updateData.status_id = targetStatus.id
 
@@ -416,18 +443,34 @@ export async function POST(request: NextRequest, { params }: Params) {
       const companyPhone2 = cfg2['company.phone'] || '(11) 2626-3841'
       const companyName2 = os.companies.name || 'Empresa'
 
-      // 1. Aviso interno URGENTE para atendimento + financeiro
-      await prisma.announcement.create({
-        data: {
-          company_id: os.company_id,
-          title: `❌ OS ${osNum2} RECUSADA — ${customerName2}`,
-          message: `O cliente ${customerName2} recusou o orçamento da OS ${osNum2} (${equipment2}) no valor de ${fmtValue2}.${reason ? `\n\nMotivo: "${reason}"` : ''}\n\nAÇÕES NECESSÁRIAS:\n• Atendimento: entrar em contato para negociar\n• Financeiro: verificar se há custos a recuperar\n• Logística: agendar devolução do equipamento`,
-          priority: 'URGENTE',
-          require_read: true,
-          author_name: 'Sistema',
-          created_by: 'portal',
-        },
-      })
+      // 1. Aviso interno URGENTE
+      if (isSecondRejection) {
+        // 2ª recusa: aviso especial para ADMIN
+        await prisma.announcement.create({
+          data: {
+            company_id: os.company_id,
+            title: `🔴 OS ${osNum2} RECUSADA 2x — ADMIN DEVE INTERVIR — ${customerName2}`,
+            message: `O cliente ${customerName2} recusou o orçamento da OS ${osNum2} (${equipment2}) pela SEGUNDA VEZ.\nValor: ${fmtValue2}${reason ? `\nMotivo: "${reason}"` : ''}\n\n⚠️ STATUS: RENEGOCIAR — requer análise do administrador.\n\nAÇÕES:\n• Administrador: analisar caso e decidir desconto máximo\n• Verificar se vale manter a negociação\n• Se inviável: agendar devolução do equipamento`,
+            priority: 'URGENTE',
+            require_read: true,
+            author_name: 'Sistema',
+            created_by: 'portal',
+          },
+        })
+      } else {
+        // 1ª recusa: aviso para atendimento
+        await prisma.announcement.create({
+          data: {
+            company_id: os.company_id,
+            title: `❌ OS ${osNum2} RECUSADA — ${customerName2}`,
+            message: `O cliente ${customerName2} recusou o orçamento da OS ${osNum2} (${equipment2}) no valor de ${fmtValue2}.${reason ? `\n\nMotivo: "${reason}"` : ''}\n\nAÇÕES NECESSÁRIAS:\n• Atendimento: entrar em contato para negociar\n• Financeiro: verificar se há custos a recuperar`,
+            priority: 'URGENTE',
+            require_read: true,
+            author_name: 'Sistema',
+            created_by: 'portal',
+          },
+        })
+      }
 
       // 2. Email ao cliente confirmando a recusa
       const customerEmail2 = os.customers?.email
@@ -523,31 +566,43 @@ export async function POST(request: NextRequest, { params }: Params) {
         sendCompanyEmail(os.company_id, customerEmail2, `Orcamento OS #${osNum2} — ${companyName2}`, emailHtml2).catch(() => {})
       }
 
-      // 3. RETENCAO: 5 minutos depois, enviar email + WhatsApp de negociacao
-      const retentionData = {
-        companyId: os.company_id,
-        osId: os.id,
-        osNum: osNum2,
-        customerName: customerName2,
-        customerEmail: customerEmail2,
-        customerPhone: os.customers?.mobile || os.customers?.phone,
-        equipment: equipment2,
-        value: fmtValue2,
-        companyName: companyName2,
-        companyPhone: companyPhone2,
-        companyAddress: companyAddress2,
-        companyCnpj: companyCnpj2,
-        companyEmail: companyEmailAddr2,
-        companyWebsite: cfg2['company.website'] || '',
-        whatsappUrl: whatsappUrl2,
-        portalUrl: `${process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'}/portal/${os.companies.slug}/login`,
-        reason: reason || '',
-        slug: os.companies.slug,
+      // 3. Post-rejection actions (differs by rejection count)
+      if (isSecondRejection) {
+        // 2ª recusa: enviar mensagem "setor responsável informado", SEM retenção
+        const customerPhone2 = os.customers?.mobile || os.customers?.phone
+        if (customerPhone2) {
+          const waText = `Ola ${customerName2.split(' ')[0]}, recebemos seu retorno sobre a OS #${osNum2}.\n\nSeu caso ja foi encaminhado ao setor responsavel para analise. Entraremos em contato em breve com uma posicao definitiva.\n\nEquipe ${companyName2}`
+          try {
+            const { sendWhatsAppCloud } = await import('@/lib/whatsapp/cloud-api')
+            await sendWhatsAppCloud(os.company_id, customerPhone2, waText)
+          } catch {} // fire and forget
+        }
+        return success({ action: 'rejected', message: 'Orçamento recusado pela segunda vez. Setor responsável será notificado.' })
+      } else {
+        // 1ª recusa: RETENCAO — 5 minutos depois, enviar email + WhatsApp de negociacao
+        const retentionData = {
+          companyId: os.company_id,
+          osId: os.id,
+          osNum: osNum2,
+          customerName: customerName2,
+          customerEmail: customerEmail2,
+          customerPhone: os.customers?.mobile || os.customers?.phone,
+          equipment: equipment2,
+          value: fmtValue2,
+          companyName: companyName2,
+          companyPhone: companyPhone2,
+          companyAddress: companyAddress2,
+          companyCnpj: companyCnpj2,
+          companyEmail: companyEmailAddr2,
+          companyWebsite: cfg2['company.website'] || '',
+          whatsappUrl: whatsappUrl2,
+          portalUrl: `${process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'}/portal/${os.companies.slug}/login`,
+          reason: reason || '',
+          slug: os.companies.slug,
+        }
+        setTimeout(() => sendRetentionMessage(retentionData).catch(e => console.error('[Retention] Error:', e)), 5 * 60 * 1000)
+        return success({ action: 'rejected', message: 'Orçamento recusado. Estamos preparando uma nova proposta.' })
       }
-      // Fire-and-forget: send retention message after 5 minutes
-      setTimeout(() => sendRetentionMessage(retentionData).catch(e => console.error('[Retention] Error:', e)), 5 * 60 * 1000)
-
-      return success({ action: 'rejected', message: 'Orçamento recusado. Estamos preparando uma nova proposta.' })
     }
 
     return error('Ação inválida', 400)

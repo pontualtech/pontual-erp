@@ -356,8 +356,17 @@ function buildTemplateVars(os: any, settings: Record<string, string>, approvalLi
     .filter(Boolean)
     .join(' ')
 
-  // Installment info
-  const maxInstallments = parseInt(settings['quote.max_installments'] || '3') || 3
+  // Detect recalculated quote
+  const statusName = os.module_statuses?.name || ''
+  const isRecalculado = /recalculad/i.test(statusName)
+  const customData = (os.custom_data || {}) as Record<string, any>
+  const originalCost = customData.original_cost || 0
+  const hasDiscount = isRecalculado && originalCost > 0 && originalCost > totalCost
+  const discountAmount = hasDiscount ? originalCost - totalCost : 0
+  const discountPercent = hasDiscount ? Math.round((discountAmount / originalCost) * 100) : 0
+
+  // Installment info — 5x for recalculated, configurable for normal
+  const maxInstallments = isRecalculado ? 5 : (parseInt(settings['quote.max_installments'] || '3') || 3)
   let installmentInfo = ''
   if (totalCost > 0 && maxInstallments > 1) {
     const installmentValue = fmtCents(Math.ceil(totalCost / maxInstallments))
@@ -440,6 +449,32 @@ function buildTemplateVars(os: any, settings: Record<string, string>, approvalLi
       const accessTk = createAccessToken(os.customer_id, os.company_id)
       return `${portalUrl}/portal/${slug}/os/${os.id}?access=${accessTk}`
     })(),
+    // Recalculated quote vars
+    is_recalculado: isRecalculado ? 'true' : '',
+    original_cost: hasDiscount ? fmtCents(originalCost) : '',
+    discount_amount: hasDiscount ? fmtCents(discountAmount) : '',
+    discount_percent: hasDiscount ? `${discountPercent}%` : '',
+    discount_section: hasDiscount ? `
+      <div style="background:linear-gradient(135deg,#dcfce7,#bbf7d0);border:2px solid #22c55e;border-radius:14px;padding:20px;margin:0 0 20px;text-align:center;">
+        <p style="margin:0 0 4px;font-size:12px;font-weight:700;color:#166534;text-transform:uppercase;letter-spacing:1px;">Desconto Especial</p>
+        <p style="margin:0 0 8px;font-size:14px;color:#15803d;"><span style="text-decoration:line-through;color:#94a3b8;">${fmtCents(originalCost)}</span> &rarr; <strong style="font-size:20px;color:#16a34a;">${fmtCents(totalCost)}</strong></p>
+        <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr><td style="background:#16a34a;border-radius:20px;padding:6px 16px;">
+          <p style="margin:0;font-size:14px;font-weight:800;color:#fff;">&#10003; ${discountPercent}% OFF</p>
+        </td></tr></table>
+      </div>` : '',
+    recalculated_header: isRecalculado ? `
+      <tr>
+        <td style="padding:24px 28px 0;text-align:center;">
+          <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
+            <tr>
+              <td style="background:#fef3c7;border:2px solid #f59e0b;border-radius:24px;padding:10px 24px;">
+                <p style="margin:0;font-size:13px;font-weight:800;color:#92400e;text-transform:uppercase;letter-spacing:1px;">&#9733; Nova Proposta Especial</p>
+              </td>
+            </tr>
+          </table>
+          <p style="margin:12px 0 0;font-size:14px;color:#64748b;line-height:1.6;">Analisamos seu caso e preparamos uma condicao diferenciada!</p>
+        </td>
+      </tr>` : '',
   }
 }
 
@@ -503,10 +538,22 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     const settings = await loadSettings(user.companyId)
 
-    // Load custom template or use default
-    const msgTemplate = await prisma.messageTemplate.findFirst({
-      where: { company_id: user.companyId, trigger: 'quote_email', channel: 'email', is_active: true },
-    })
+    // Detect if this is a recalculated quote
+    const statusName = os.module_statuses?.name || ''
+    const isRecalculado = /recalculad/i.test(statusName)
+
+    // Load custom template — check for recalculated template first
+    let msgTemplate = null
+    if (isRecalculado) {
+      msgTemplate = await prisma.messageTemplate.findFirst({
+        where: { company_id: user.companyId, trigger: 'quote_recalculated_email', channel: 'email', is_active: true },
+      })
+    }
+    if (!msgTemplate) {
+      msgTemplate = await prisma.messageTemplate.findFirst({
+        where: { company_id: user.companyId, trigger: 'quote_email', channel: 'email', is_active: true },
+      })
+    }
     const htmlTemplate = msgTemplate?.template || DEFAULT_QUOTE_TEMPLATE
 
     const portalBase = process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'
@@ -515,11 +562,22 @@ export async function POST(req: NextRequest, { params }: Params) {
     const approvalLink = `${portalBase}/portal/${slug}/orcamento/${os.id}?token=${token}`
 
     const vars = buildTemplateVars(os, settings, approvalLink)
-    const renderedHtml = replaceTemplateVars(htmlTemplate, vars)
+
+    // For recalculated: inject discount section and header into template
+    let finalTemplate = htmlTemplate
+    if (isRecalculado && vars.recalculated_header) {
+      // Insert recalculated header after status badge, and discount section before total
+      finalTemplate = finalTemplate
+        .replace('{{discount_section}}', vars.discount_section || '')
+        .replace('{{recalculated_header}}', vars.recalculated_header || '')
+    }
+    const renderedHtml = replaceTemplateVars(finalTemplate, vars)
 
     const companyName = os.companies?.name || settings['company.name'] || 'Empresa'
     const osNumber = String(os.os_number).padStart(4, '0')
-    const subject = `Orcamento OS-${osNumber} - ${companyName}`
+    const subject = isRecalculado
+      ? `Nova Proposta Especial — OS-${osNumber} — ${companyName}`
+      : `Orcamento OS-${osNumber} - ${companyName}`
 
     const sent = await sendCompanyEmail(user.companyId, recipientEmail, subject, renderedHtml)
     if (!sent) {
