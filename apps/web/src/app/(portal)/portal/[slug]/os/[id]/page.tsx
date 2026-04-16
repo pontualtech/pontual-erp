@@ -22,6 +22,7 @@ interface OSDetail {
   approved_cost?: number
   total_parts?: number
   total_services?: number
+  discount_amount?: number
   total_cost?: number
   estimated_delivery?: string
   actual_delivery?: string
@@ -693,9 +694,15 @@ export default function PortalOSDetailPage() {
           return (
             <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-900 rounded-xl p-6 mb-6" data-print-hide>
               <h3 className="font-semibold text-amber-900 dark:text-amber-300 text-lg mb-2">Orcamento aguardando aprovacao</h3>
-              <p className="text-amber-700 dark:text-amber-400 mb-4">
-                Valor total: <strong className="text-2xl">{fmt(os.total_cost || 0)}</strong>
-              </p>
+              <div className="text-amber-700 dark:text-amber-400 mb-4">
+                {(os.discount_amount ?? 0) > 0 && (
+                  <p className="text-sm mb-1">
+                    <span className="line-through text-gray-400">{fmt((os.total_services || 0) + (os.total_parts || 0))}</span>
+                    <span className="ml-2 text-green-600 dark:text-green-400 font-semibold">-{fmt(os.discount_amount || 0)} desconto</span>
+                  </p>
+                )}
+                <p>Valor total: <strong className="text-2xl">{fmt(os.total_cost || 0)}</strong></p>
+              </div>
 
               {!approvePayment ? (
                 <div className="flex flex-col sm:flex-row gap-3">
@@ -810,6 +817,26 @@ export default function PortalOSDetailPage() {
                   ))}
                 </tbody>
                 <tfoot>
+                  {(os.discount_amount ?? 0) > 0 && (
+                    <>
+                      <tr className="border-t border-gray-200 dark:border-zinc-700">
+                        <td colSpan={4} className="px-5 py-2 text-right text-sm text-gray-500 dark:text-gray-400">
+                          Subtotal
+                        </td>
+                        <td className="px-5 py-2 text-right text-sm text-gray-500 dark:text-gray-400">
+                          R$ {(((os.total_services || 0) + (os.total_parts || 0)) / 100).toFixed(2)}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td colSpan={4} className="px-5 py-2 text-right text-sm font-semibold text-green-600 dark:text-green-400">
+                          Desconto
+                        </td>
+                        <td className="px-5 py-2 text-right text-sm font-semibold text-green-600 dark:text-green-400">
+                          - R$ {((os.discount_amount || 0) / 100).toFixed(2)}
+                        </td>
+                      </tr>
+                    </>
+                  )}
                   <tr className="border-t-2 border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800/50">
                     <td colSpan={4} className="px-5 py-3 text-right font-semibold text-gray-700 dark:text-gray-300">
                       Total

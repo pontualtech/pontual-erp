@@ -129,6 +129,7 @@ export async function GET(
         approved_cost: os.approved_cost,
         total_parts: os.total_parts,
         total_services: os.total_services,
+        discount_amount: os.discount_amount ?? 0,
         total_cost: os.total_cost,
         estimated_delivery: os.estimated_delivery,
         actual_delivery: os.actual_delivery,

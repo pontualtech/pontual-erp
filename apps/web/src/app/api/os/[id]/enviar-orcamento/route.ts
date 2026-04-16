@@ -133,6 +133,7 @@ const DEFAULT_QUOTE_TEMPLATE = `<!DOCTYPE html>
                   </td>
                 </tr>
 
+                {{recalculated_header}}
                 <!-- Greeting -->
                 <tr>
                   <td style="padding:24px 28px 0;text-align:center;">
@@ -224,6 +225,7 @@ const DEFAULT_QUOTE_TEMPLATE = `<!DOCTYPE html>
                   </td>
                 </tr>
 
+                {{discount_section}}
                 <!-- CTA -->
                 <tr>
                   <td style="padding:28px 28px 8px;text-align:center;">
@@ -578,15 +580,8 @@ export async function POST(req: NextRequest, { params }: Params) {
     const { toTitleCase } = await import('@/lib/format-text')
     const vars = buildTemplateVars(os, settings, approvalLink, toTitleCase)
 
-    // For recalculated: inject discount section and header into template
-    let finalTemplate = htmlTemplate
-    if (isRecalculado && vars.recalculated_header) {
-      // Insert recalculated header after status badge, and discount section before total
-      finalTemplate = finalTemplate
-        .replace('{{discount_section}}', vars.discount_section || '')
-        .replace('{{recalculated_header}}', vars.recalculated_header || '')
-    }
-    const renderedHtml = replaceTemplateVars(finalTemplate, vars)
+    // replaceTemplateVars handles all {{var}} substitutions including discount_section and recalculated_header
+    const renderedHtml = replaceTemplateVars(htmlTemplate, vars)
 
     const companyName = os.companies?.name || settings['company.name'] || 'Empresa'
     const osNumber = String(os.os_number).padStart(4, '0')
