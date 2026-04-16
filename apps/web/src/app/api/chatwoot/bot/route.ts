@@ -1181,12 +1181,16 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
     } else if (parsed.action === 'TRANSFERIR_HUMANO') {
       updateData.human_takeover = true
       updateData.step = 'HUMAN'
-      await cwSendMessage(cfg, conversationId, '[BOT] Cliente solicitou atendente humano.', true)
-      // Send professional template with portal button via Cloud API
-      try {
-        const { sendWhatsAppTemplate } = await import('@/lib/whatsapp/cloud-api')
-        await sendWhatsAppTemplate(cfg.companyId, phone, 'pt_suporte_v1', 'pt_BR', [])
-      } catch {} // fire and forget
+      // Inform about business hours
+      const now = new Date()
+      const brHour = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })).getHours()
+      const brDay = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })).getDay()
+      const isBusinessHours = brDay >= 1 && brDay <= 5 && brHour >= 8 && (brDay <= 4 ? brHour < 18 : brHour < 17)
+      if (!isBusinessHours) {
+        await cwSendMessage(cfg, conversationId, '[BOT] Fora do horário comercial. Cliente será atendido no próximo dia útil.', true)
+      } else {
+        await cwSendMessage(cfg, conversationId, '[BOT] Cliente solicitou atendente humano.', true)
+      }
     } else if (parsed.action === 'ENCERRAR_CONVERSA') {
       updateData.step = 'IDLE'
       updateData.data = {}
@@ -1219,7 +1223,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
             await sendWhatsAppButtons(cfg.companyId, phone, 'Posso te ajudar com mais alguma coisa?',
               [
                 { id: 'btn_orcamento', title: '💰 Ver orçamento' },
-                { id: 'btn_humano', title: '👤 Falar c/ atendente' },
+                { id: 'btn_portal', title: '📱 Abrir portal' },
               ])
           }
           // If Marta is the suporte bot — always offer quick actions after generic responses
@@ -1228,7 +1232,6 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
               [
                 { id: 'btn_status', title: '📋 Status da OS' },
                 { id: 'btn_orcamento', title: '💰 Orçamento' },
-                { id: 'btn_humano', title: '👤 Atendente' },
               ],
               undefined, 'PontualTech Suporte')
           }
@@ -1426,10 +1429,19 @@ async function handleButtonClick(
     return true
   }
 
-  // ── Falar com humano ──
+  // ── Falar com humano (mantido como fallback caso botão antigo ainda circule) ──
   if (buttonPayload === 'btn_humano') {
-    await cwSendMessage(cfg, conversationId, 'Entendi! Vou transferir para um atendente. Um momento... 🙏')
-    await cwSendMessage(cfg, conversationId, '[BOT] Cliente solicitou atendente via botão interativo.', true)
+    const now = new Date()
+    const brHour = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })).getHours()
+    const brDay = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })).getDay()
+    const isBusinessHours = brDay >= 1 && brDay <= 5 && brHour >= 8 && (brDay <= 4 ? brHour < 18 : brHour < 17)
+
+    if (isBusinessHours) {
+      await cwSendMessage(cfg, conversationId, 'Entendi! Vou transferir para um atendente. Um momento...')
+    } else {
+      await cwSendMessage(cfg, conversationId, 'Nosso atendimento humano funciona de seg a qui das 8h às 18h e sexta das 8h às 17h. Registrei sua solicitação e um atendente vai te retornar no próximo horário comercial!')
+    }
+    await cwSendMessage(cfg, conversationId, '[BOT] Cliente solicitou atendente humano.', true)
     await prisma.botConversation.update({
       where: { id: botConv.id },
       data: { human_takeover: true, step: 'HUMAN' },
@@ -1533,7 +1545,6 @@ async function sendOsStatusButtons(cfg: BotCompanyConfig, conversationId: number
     buttons.push({ id: `btn_orcamento`, title: '💰 Ver orçamento' })
   }
   buttons.push({ id: 'btn_portal', title: '📱 Abrir portal' })
-  buttons.push({ id: 'btn_humano', title: '👤 Falar c/ atendente' })
 
   await sendWhatsAppButtons(cfg.companyId, phone, 'O que deseja fazer?', buttons.slice(0, 3),
     `Status OS-${osNum}`, 'PontualTech Suporte')
@@ -1588,7 +1599,6 @@ async function sendOrcamentoButtons(cfg: BotCompanyConfig, conversationId: numbe
     [
       { id: `approve_${os.os_number}`, title: '✅ Aprovar' },
       { id: `reject_${os.os_number}`, title: '❌ Recusar' },
-      { id: 'btn_humano', title: '❓ Tirar dúvidas' },
     ],
     'Orçamento PontualTech')
 
@@ -1651,21 +1661,15 @@ async function handleBotApproval(cfg: BotCompanyConfig, conversationId: number, 
         `✅ *Orçamento aprovado!*\n\nNossa equipe já vai iniciar o serviço na OS-${osNum}. Você receberá uma notificação quando estiver pronto.`,
         [
           { id: 'btn_status', title: '📋 Ver status' },
-          { id: 'btn_humano', title: '👤 Falar c/ atendente' },
+          { id: 'btn_portal', title: '📱 Abrir portal' },
         ],
         'Aprovado!')
       await cwSendMessage(cfg, conversationId, `[BOT] ✅ OS-${osNum} aprovada via botão WhatsApp`, true)
       await cwSetLabels(cfg, conversationId, ['orcamento_aprovado'])
     }
   } else {
-    await cwSendMessage(cfg, conversationId, `Entendi. Registrei que você não deseja prosseguir com a OS-${osNum}. Deseja retirar o equipamento?`)
-    await sendWhatsAppButtons(cfg.companyId, phone,
-      `Orçamento da OS-${osNum} recusado. Deseja retirar seu equipamento?`,
-      [
-        { id: 'btn_humano', title: '📞 Agendar retirada' },
-      ],
-      'Orçamento recusado')
-    await cwSendMessage(cfg, conversationId, `[BOT] ❌ OS-${osNum} recusada via botão WhatsApp — aguardando instrução do cliente`, true)
+    await cwSendMessage(cfg, conversationId, `Entendi. Registrei que você não deseja prosseguir com a OS-${osNum}. Um atendente entrará em contato no próximo horário comercial (seg-qui 8h-18h, sex 8h-17h) para combinar a retirada do equipamento.`)
+    await cwSendMessage(cfg, conversationId, `[BOT] ❌ OS-${osNum} recusada via botão WhatsApp — cliente precisa agendar retirada`, true)
   }
 }
 
