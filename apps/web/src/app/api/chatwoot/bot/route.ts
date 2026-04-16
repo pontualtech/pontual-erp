@@ -44,9 +44,13 @@ interface BotCompanyConfig {
   supportWhatsApp: string
   botOrigin: string
   botAgentId: number // Chatwoot agent ID used by the bot (skip human_takeover for this ID)
-  humanAgentId: number // Chatwoot agent ID for human handoff (Rafael @ PT, atendente @ Impri)
+  humanAgentId: number // Chatwoot agent ID for human handoff (Rafael @ PT, Vitória @ Impri)
   botName: string // Display name: "Marta" or "Aline"
   companyDisplayName: string // "PontualTech" or "Imprimitech"
+  legacyOsMin: number // OS number range for legacy system (min). 0 = no legacy detection
+  legacyOsMax: number // OS number range for legacy system (max)
+  newOsMin: number // OS numbers >= this are new system
+  legacyCutoffDate: string // ISO date: OS created before this = legacy (even if in new range)
 }
 
 // ENV-based fallbacks (API keys MUST stay in env vars for security)
@@ -119,9 +123,16 @@ async function getCompanyConfig(companySlug?: string | null): Promise<BotCompany
     supportWhatsApp: dbCfg['bot.config.support_whatsapp'] || '',
     botOrigin: dbCfg['bot.config.bot_origin'] || `whatsapp_bot_${slug}`,
     botAgentId: parseInt(dbCfg['bot.config.bot_agent_id'] || '0'),
-    humanAgentId: parseInt(dbCfg['bot.config.human_agent_id'] || '4'), // default: Rafael (4)
+    humanAgentId: parseInt(dbCfg['bot.config.human_agent_id'] || '4'),
     botName: dbCfg['bot.config.bot_name'] || (slug.includes('imprimitech') ? 'Aline' : 'Marta'),
     companyDisplayName: dbCfg['bot.config.company_name'] || (slug.includes('imprimitech') ? 'Imprimitech' : 'PontualTech'),
+    // Legacy OS detection per company
+    // PontualTech: legado < 60000, novo >= 60000, cutoff 2026-04-10
+    // Imprimitech: legado 4000-5200, novo >= 6000, cutoff 2026-04-10
+    legacyOsMin: parseInt(dbCfg['bot.config.legacy_os_min'] || (slug.includes('imprimitech') ? '4000' : '1')),
+    legacyOsMax: parseInt(dbCfg['bot.config.legacy_os_max'] || (slug.includes('imprimitech') ? '5200' : '59999')),
+    newOsMin: parseInt(dbCfg['bot.config.new_os_min'] || (slug.includes('imprimitech') ? '6000' : '60000')),
+    legacyCutoffDate: dbCfg['bot.config.legacy_cutoff_date'] || '2026-04-10',
   }
 
   botConfigCache.set(slug, { cfg, ts: Date.now() })
