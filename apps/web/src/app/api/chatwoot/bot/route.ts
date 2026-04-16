@@ -1024,12 +1024,13 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
                 return
               }
 
-              // Has active OS in new system — inject context so Dify knows who they are
+              // Has active OS in new system — inject context with portal deep links
               const osList = activeOS.map(o => {
                 const osNum = String(o.os_number).padStart(4, '0')
-                return `OS #${osNum} (${o.equipment}, Status: ${o.status_name})`
+                const portalLink = o.os_id ? `https://portal.pontualtech.com.br/portal/pontualtech/os/${o.os_id}` : ''
+                return `OS #${osNum} (${o.equipment}, Status: ${o.status_name}${portalLink ? `, Portal: ${portalLink}` : ''})`
               }).join('; ')
-              query += `\n[CONTEXTO DO CLIENTE: Nome: ${customer.legal_name || 'N/A'}, Telefone: ${phone}, OS ativas: ${osList}. O cliente JA FOI IDENTIFICADO — NAO pergunte numero da OS, ja informe o status diretamente.]`
+              query += `\n[CONTEXTO DO CLIENTE: Nome: ${customer.legal_name || 'N/A'}, Telefone: ${phone}, OS ativas: ${osList}. O cliente JA FOI IDENTIFICADO — NAO pergunte numero da OS, ja informe o status diretamente. SEMPRE inclua o link do portal na resposta.]`
               console.log(`[Bot] Auto-identified: ${customer.legal_name} — ${activeOS.length} active OS`)
             } else {
               // Customer found but no active OS — still inject name context
@@ -1243,16 +1244,24 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
     } else if (parsed.action === 'TRANSFERIR_HUMANO') {
       updateData.human_takeover = true
       updateData.step = 'HUMAN'
-      // Inform about business hours
+      // Assign to Rafael (agent 4) — NOT to Marta
+      const RAFAEL_AGENT_ID = 4
       const now = new Date()
       const brHour = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })).getHours()
       const brDay = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })).getDay()
       const isBusinessHours = brDay >= 1 && brDay <= 5 && brHour >= 8 && (brDay <= 4 ? brHour < 18 : brHour < 17)
       if (!isBusinessHours) {
-        await cwSendMessage(cfg, conversationId, '[BOT] Fora do horário comercial. Cliente será atendido no próximo dia útil.', true)
+        await cwSendMessage(cfg, conversationId, '[BOT] Fora do horário comercial. Atribuído ao Rafael para atender no próximo dia útil.', true)
       } else {
-        await cwSendMessage(cfg, conversationId, '[BOT] Cliente solicitou atendente humano.', true)
+        await cwSendMessage(cfg, conversationId, '[BOT] Cliente solicitou atendente humano. Atribuído ao Rafael.', true)
       }
+      try {
+        await fetch(`${cwBase(cfg)}/conversations/${conversationId}/assignments`, {
+          method: 'POST',
+          headers: cwHeaders(cfg),
+          body: JSON.stringify({ assignee_id: RAFAEL_AGENT_ID }),
+        })
+      } catch {}
     } else if (parsed.action === 'ENCERRAR_CONVERSA') {
       updateData.step = 'IDLE'
       updateData.data = {}
@@ -1485,12 +1494,21 @@ async function handleButtonClick(
     } else {
       await cwSendMessage(cfg, conversationId, 'Nosso atendimento humano funciona de seg a qui das 8h às 18h e sexta das 8h às 17h. Registrei sua solicitação e um atendente vai te retornar no próximo horário comercial!')
     }
-    await cwSendMessage(cfg, conversationId, '[BOT] Cliente solicitou atendente humano.', true)
+    await cwSendMessage(cfg, conversationId, '[BOT] Cliente solicitou atendente humano. Atribuído ao Rafael.', true)
+    // Assign to Rafael (agent 4)
+    const RAFAEL_AGENT_ID_BTN = 4
+    try {
+      await fetch(`${cwBase(cfg)}/conversations/${conversationId}/assignments`, {
+        method: 'POST',
+        headers: cwHeaders(cfg),
+        body: JSON.stringify({ assignee_id: RAFAEL_AGENT_ID_BTN }),
+      })
+    } catch {}
     await prisma.botConversation.update({
       where: { id: botConv.id },
       data: { human_takeover: true, step: 'HUMAN' },
     })
-    await logBotMessage(cfg, conversationId, '[BUTTON] btn_humano', 'Transferir humano', 'BUTTON_HUMANO', phone)
+    await logBotMessage(cfg, conversationId, '[BUTTON] btn_humano', 'Transferir humano → Rafael', 'BUTTON_HUMANO', phone)
     return true
   }
 
