@@ -186,6 +186,7 @@ export async function POST(
       },
       include: {
         module_statuses: true,
+        customers: { select: { legal_name: true } },
       },
     })
 
@@ -259,50 +260,104 @@ export async function POST(
     }
 
     if (action === 'reject') {
-      // Encontrar status para negociacao
-      const negotiateStatus = await prisma.moduleStatus.findFirst({
+      // Count previous rejections to determine 1st vs 2nd rejection
+      const rejectionCount = await prisma.serviceOrderHistory.count({
         where: {
-          company_id: portalUser.company_id,
-          module: 'os',
-          name: { contains: 'Negociar', mode: 'insensitive' },
+          service_order_id: os.id,
+          OR: [
+            { notes: { contains: 'RECUSADO pelo cliente' } },
+            { notes: { contains: 'solicitou negociacao' } },
+            { notes: { contains: 'recusar' } },
+          ],
         },
       })
+      const isSecondRejection = rejectionCount >= 1
 
-      if (!negotiateStatus) {
-        return NextResponse.json(
-          { error: 'Status de negociacao nao configurado' },
-          { status: 500 }
-        )
+      // Find target status based on rejection count
+      let targetStatus
+      if (isSecondRejection) {
+        // 2nd+ rejection → "Renegociar" (requires admin intervention)
+        targetStatus = await prisma.moduleStatus.findFirst({
+          where: { company_id: portalUser.company_id, module: 'os', name: { contains: 'Renegociar', mode: 'insensitive' } },
+        })
+      }
+      if (!targetStatus) {
+        // 1st rejection → "Orçar Negociar"
+        targetStatus = await prisma.moduleStatus.findFirst({
+          where: { company_id: portalUser.company_id, module: 'os', name: { contains: 'Negociar', mode: 'insensitive' } },
+        })
+      }
+      if (!targetStatus) {
+        return NextResponse.json({ error: 'Status de negociacao nao configurado' }, { status: 500 })
       }
 
-      // Save original_cost in custom_data for recalculated comparison
+      // Save original_cost + rejection info in custom_data
       const customData = (os.custom_data || {}) as Record<string, any>
       if (!customData.original_cost && os.total_cost) {
         customData.original_cost = os.total_cost
       }
+      customData.rejection_count = rejectionCount + 1
+      customData.last_rejection_reason = message || null
+      customData.last_rejection_at = new Date().toISOString()
 
-      await prisma.$transaction([
-        prisma.serviceOrder.update({
+      const osNum = String(os.os_number).padStart(4, '0')
+      const customerName = os.customers?.legal_name || 'Cliente'
+
+      await prisma.$transaction(async (tx) => {
+        await tx.serviceOrder.update({
           where: { id: os.id },
           data: {
-            status_id: negotiateStatus.id,
+            status_id: targetStatus!.id,
             custom_data: customData,
             updated_at: new Date(),
           },
-        }),
-        prisma.serviceOrderHistory.create({
+        })
+        await tx.serviceOrderHistory.create({
           data: {
             company_id: portalUser.company_id,
             service_order_id: os.id,
             from_status_id: os.status_id,
-            to_status_id: negotiateStatus.id,
+            to_status_id: targetStatus!.id,
             changed_by: 'CLIENTE',
-            notes: message || 'Cliente solicitou negociacao via portal',
+            notes: `Orcamento RECUSADO pelo cliente via portal${message ? ' — Motivo: ' + message : ''}`,
           },
-        }),
-      ])
+        })
+      })
 
-      return NextResponse.json({ data: { success: true, message: 'Solicitacao de negociacao enviada!' } })
+      // Create internal announcement
+      if (isSecondRejection) {
+        // 2nd rejection: URGENT announcement for admin
+        await prisma.announcement.create({
+          data: {
+            company_id: portalUser.company_id,
+            title: `🔴 OS ${osNum} RECUSADA 2x — ADMIN DEVE INTERVIR — ${customerName}`,
+            message: `O cliente ${customerName} recusou o orcamento da OS ${osNum} pela SEGUNDA VEZ.\n${message ? `Motivo: "${message}"\n` : ''}\n⚠️ STATUS: RENEGOCIAR — requer analise do administrador.\n\nACOES:\n• Administrador: analisar caso e decidir desconto maximo\n• Verificar se vale manter a negociacao\n• Se inviavel: agendar devolucao do equipamento`,
+            priority: 'URGENTE',
+            require_read: true,
+            author_name: 'Sistema',
+            created_by: 'portal',
+          },
+        })
+      } else {
+        // 1st rejection: notice for attendant
+        await prisma.announcement.create({
+          data: {
+            company_id: portalUser.company_id,
+            title: `❌ OS ${osNum} RECUSADA — ${customerName}`,
+            message: `O cliente ${customerName} recusou/solicitou negociacao da OS ${osNum}.\n${message ? `Motivo: "${message}"\n` : ''}\nACOES NECESSARIAS:\n• Atendimento: entrar em contato para negociar\n• Verificar se ha custos a recuperar`,
+            priority: 'URGENTE',
+            require_read: true,
+            author_name: 'Sistema',
+            created_by: 'portal',
+          },
+        })
+      }
+
+      const responseMsg = isSecondRejection
+        ? 'Recebemos sua decisao. O setor responsavel ja foi notificado e tomara as providencias necessarias.'
+        : 'Solicitacao de negociacao enviada! Nossa equipe entrara em contato.'
+
+      return NextResponse.json({ data: { success: true, message: responseMsg } })
     }
 
     if (action === 'comment') {
