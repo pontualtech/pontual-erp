@@ -93,7 +93,12 @@ export async function GET(request: NextRequest, { params }: Params) {
     const customData = (os.custom_data || {}) as Record<string, any>
     const originalCost = customData.original_cost || 0
     const currentCost = totalFromQuote ?? (os.total_cost || 0)
-    const hasDiscount = isRecalculado && originalCost > 0 && originalCost > currentCost
+    const hasRecalcDiscount = isRecalculado && originalCost > 0 && originalCost > currentCost
+    // Normal discount from DB
+    const dbDiscount = os.discount_amount ?? 0
+    const subtotal = (os.total_parts ?? 0) + (os.total_services ?? 0)
+    const hasNormalDiscount = !hasRecalcDiscount && dbDiscount > 0 && subtotal > 0
+    const hasDiscount = hasRecalcDiscount || hasNormalDiscount
     const maxInstallments = isRecalculado ? 5 : parseInt(settingsMap['quote.max_installments'] || '3') || 3
 
     const { toTitleCase } = await import('@/lib/format-text')
@@ -115,9 +120,14 @@ export async function GET(request: NextRequest, { params }: Params) {
       quote_version: latestQuote?.version ?? null,
       customer_name: toTitleCase(os.customers?.legal_name || '—'),
       customer_person_type: os.customers?.person_type || 'FISICA',
+      discount_amount: hasDiscount ? (hasRecalcDiscount ? originalCost - currentCost : dbDiscount) : null,
       is_recalculado: isRecalculado,
-      original_cost: hasDiscount ? originalCost : null,
-      discount_percent: hasDiscount ? Math.round(((originalCost - currentCost) / originalCost) * 100) : null,
+      original_cost: hasRecalcDiscount ? originalCost : (hasNormalDiscount ? subtotal : null),
+      discount_percent: hasDiscount
+        ? (hasRecalcDiscount
+            ? Math.round(((originalCost - currentCost) / originalCost) * 100)
+            : Math.round((dbDiscount / subtotal) * 100))
+        : null,
       max_installments: maxInstallments,
       company: {
         name: os.companies.name,

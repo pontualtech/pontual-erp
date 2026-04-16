@@ -44,6 +44,9 @@ interface BotCompanyConfig {
   supportWhatsApp: string
   botOrigin: string
   botAgentId: number // Chatwoot agent ID used by the bot (skip human_takeover for this ID)
+  humanAgentId: number // Chatwoot agent ID for human handoff (Rafael @ PT, atendente @ Impri)
+  botName: string // Display name: "Marta" or "Aline"
+  companyDisplayName: string // "PontualTech" or "Imprimitech"
 }
 
 // ENV-based fallbacks (API keys MUST stay in env vars for security)
@@ -66,6 +69,13 @@ const ENV_CONFIGS: Record<string, Partial<BotCompanyConfig> & { settingsPrefix?:
     difyApiKey: process.env.DIFY_IMPRI_API_KEY || '',
     botApiKey: process.env.BOT_IMPRI_API_KEY || '',
     cwToken: process.env.CW_IMPRI_TOKEN || '',
+  },
+  'imprimitech-suporte': {
+    companyId: process.env.BOT_IMPRI_COMPANY_ID || '86c829cf-32ed-4e40-80cd-59ce4178aa1a',
+    difyApiKey: process.env.DIFY_IMPRI_SUPORTE_API_KEY || process.env.DIFY_IMPRI_API_KEY || '',
+    botApiKey: process.env.BOT_IMPRI_API_KEY || '',
+    cwToken: process.env.CW_IMPRI_TOKEN || '',
+    settingsPrefix: 'bot.aline.config.',
   },
 }
 
@@ -109,6 +119,9 @@ async function getCompanyConfig(companySlug?: string | null): Promise<BotCompany
     supportWhatsApp: dbCfg['bot.config.support_whatsapp'] || '',
     botOrigin: dbCfg['bot.config.bot_origin'] || `whatsapp_bot_${slug}`,
     botAgentId: parseInt(dbCfg['bot.config.bot_agent_id'] || '0'),
+    humanAgentId: parseInt(dbCfg['bot.config.human_agent_id'] || '4'), // default: Rafael (4)
+    botName: dbCfg['bot.config.bot_name'] || (slug.includes('imprimitech') ? 'Aline' : 'Marta'),
+    companyDisplayName: dbCfg['bot.config.company_name'] || (slug.includes('imprimitech') ? 'Imprimitech' : 'PontualTech'),
   }
 
   botConfigCache.set(slug, { cfg, ts: Date.now() })
@@ -870,8 +883,8 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       }
     }
 
-    // ── AUTO-ENRICH: inject OS data when message mentions an OS number (Marta suporte) ──
-    if (cfg.slug === 'pontualtech-suporte' || cfg.botOrigin?.includes('marta')) {
+    // ── AUTO-ENRICH: inject OS data when message mentions an OS number (suporte bots) ──
+    if (cfg.slug.includes('suporte') || cfg.botOrigin?.includes('marta') || cfg.botOrigin?.includes('aline')) {
       const osMatch = query.match(/(?:os|OS|O\.S\.?|ordem)\s*#?\s*(\d{4,6})/i) || query.match(/\b([56]\d{4})\b/)
       if (osMatch) {
         const osNum = parseInt(osMatch[1], 10)
@@ -895,15 +908,15 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
               console.log(`[Bot] OS #${osNum} existe no ERP mas é legada (criada ${osData.created_at}) — transferência direta para Rafael`)
               const osNumFmt = String(osNum).padStart(5, '0')
               await cwSendMessage(cfg, conversationId,
-                `Sua OS #${osNumFmt} é do nosso sistema anterior. Vou transferir agora para o Rafael, que cuida pessoalmente desses casos. Ele vai te retornar em breve!`)
+                `Sua OS #${osNumFmt} é do nosso sistema anterior. Vou transferir para nossa equipe que cuida pessoalmente desses casos. Retornaremos em breve!`)
               await cwSendMessage(cfg, conversationId,
                 `[BOT] OS legada #${osNumFmt} (migrada, anterior a 10/04). Equip: ${equip}. Status: ${status}. Cliente: ${osData.customers?.legal_name || sender.name || 'N/I'}. Transferido automaticamente.`, true)
-              const RAFAEL_AGENT_ID = 4
+              const HUMAN_AGENT_ID = cfg.humanAgentId
               try {
                 await fetch(`${cwBase(cfg)}/conversations/${conversationId}/assignments`, {
                   method: 'POST',
                   headers: cwHeaders(cfg),
-                  body: JSON.stringify({ assignee_id: RAFAEL_AGENT_ID }),
+                      body: JSON.stringify({ assignee_id: HUMAN_AGENT_ID }),
                 })
               } catch {}
               await prisma.botConversation.update({
@@ -923,16 +936,16 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
             console.log(`[Bot] OS #${osNum} é legado (VHSys) — transferência direta para Rafael`)
             const osNumFmt = String(osNum).padStart(5, '0')
             await cwSendMessage(cfg, conversationId,
-              `Sua OS #${osNumFmt} é do nosso sistema anterior. Vou transferir agora para o Rafael, que cuida pessoalmente desses casos. Ele vai te retornar em breve!`)
+              `Sua OS #${osNumFmt} é do nosso sistema anterior. Vou transferir para nossa equipe que cuida pessoalmente desses casos. Retornaremos em breve!`)
             await cwSendMessage(cfg, conversationId,
               `[BOT] OS legada #${osNumFmt} (VHSys). Cliente: ${sender.name || phone || 'N/I'}. Transferido automaticamente.`, true)
             // Assign to Rafael (agent ID 4)
-            const RAFAEL_AGENT_ID = 4
+            const HUMAN_AGENT_ID = cfg.humanAgentId
             try {
               await fetch(`${cwBase(cfg)}/conversations/${conversationId}/assignments`, {
                 method: 'POST',
                 headers: cwHeaders(cfg),
-                body: JSON.stringify({ assignee_id: RAFAEL_AGENT_ID }),
+                    body: JSON.stringify({ assignee_id: HUMAN_AGENT_ID }),
               })
             } catch {} // fire and forget
             await prisma.botConversation.update({
@@ -1005,14 +1018,14 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
                 // ALL OS are legacy — transfer to Rafael
                 console.log(`[Bot] Cliente ${customer.legal_name} tem ${legacyOS.length} OS legadas — transferência direta para Rafael`)
                 await cwSendMessage(cfg, conversationId,
-                  `Olá, ${customer.legal_name?.split(' ')[0] || 'tudo bem'}! Identifiquei seu cadastro. Suas ordens de serviço são do nosso sistema anterior. Vou transferir para o Rafael, que cuida pessoalmente desses casos!`)
+                  `Olá, ${customer.legal_name?.split(' ')[0] || 'tudo bem'}! Identifiquei seu cadastro. Suas ordens de serviço são do nosso sistema anterior. Vou transferir para nossa equipe que cuida pessoalmente desses casos!`)
                 await cwSendMessage(cfg, conversationId,
                   `[BOT] Cliente ${customer.legal_name} (${phone}) — todas as ${legacyOS.length} OS são legadas. Transferido para Rafael.`, true)
-                const RAFAEL_AGENT_ID = 4
+                const HUMAN_AGENT_ID = cfg.humanAgentId
                 try {
                   await fetch(`${cwBase(cfg)}/conversations/${conversationId}/assignments`, {
                     method: 'POST', headers: cwHeaders(cfg),
-                    body: JSON.stringify({ assignee_id: RAFAEL_AGENT_ID }),
+                        body: JSON.stringify({ assignee_id: HUMAN_AGENT_ID }),
                   })
                 } catch {}
                 await prisma.botConversation.update({
@@ -1042,9 +1055,9 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       }
     }
 
-    // ── MARTA RULES: inject behavioral constraints for suporte bot ──
-    if (cfg.slug === 'pontualtech-suporte' || cfg.botOrigin?.includes('marta')) {
-      query += `\n[REGRAS DA MARTA — OBRIGATORIO:
+    // ── BOT SUPORTE RULES: inject behavioral constraints for suporte bots (Marta/Aline) ──
+    if (cfg.slug.includes('suporte') || cfg.botOrigin?.includes('marta') || cfg.botOrigin?.includes('aline')) {
+      query += `\n[REGRAS DA ${cfg.botName.toUpperCase()} (${cfg.companyDisplayName}) — OBRIGATORIO:
 1. NUNCA prometa acoes (devolucao, agendamento, coleta, entrega, desconto, prazo). Voce APENAS INFORMA status e dados.
 2. NUNCA diga "vou providenciar", "vou agendar", "vou devolver", "vou verificar com a equipe".
 3. NUNCA invente valores, prazos ou informacoes. Use APENAS os dados fornecidos no contexto.
@@ -1233,19 +1246,19 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       updateData.step = 'HUMAN'
       await cwSendMessage(cfg, conversationId, '[BOT] OS do sistema legado — transferindo para Rafael.', true)
       // Assign conversation to Rafael (agent ID from Chatwoot)
-      const RAFAEL_AGENT_ID = 4 // Rafael S in Chatwoot
+      const HUMAN_AGENT_ID = cfg.humanAgentId
       try {
         await fetch(`${cfg.cwUrl}/api/v1/accounts/${cfg.cwAccountId}/conversations/${conversationId}/assignments`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', api_access_token: cfg.cwToken },
-          body: JSON.stringify({ assignee_id: RAFAEL_AGENT_ID }),
+          body: JSON.stringify({ assignee_id: HUMAN_AGENT_ID }),
         })
       } catch {} // fire and forget
     } else if (parsed.action === 'TRANSFERIR_HUMANO') {
       updateData.human_takeover = true
       updateData.step = 'HUMAN'
       // Assign to Rafael (agent 4) — NOT to Marta
-      const RAFAEL_AGENT_ID = 4
+      const HUMAN_AGENT_ID = cfg.humanAgentId
       const now = new Date()
       const brHour = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })).getHours()
       const brDay = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })).getDay()
@@ -1259,7 +1272,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
         await fetch(`${cwBase(cfg)}/conversations/${conversationId}/assignments`, {
           method: 'POST',
           headers: cwHeaders(cfg),
-          body: JSON.stringify({ assignee_id: RAFAEL_AGENT_ID }),
+          body: JSON.stringify({ assignee_id: HUMAN_AGENT_ID }),
         })
       } catch {}
     } else if (parsed.action === 'ENCERRAR_CONVERSA') {
@@ -1496,12 +1509,12 @@ async function handleButtonClick(
     }
     await cwSendMessage(cfg, conversationId, '[BOT] Cliente solicitou atendente humano. Atribuído ao Rafael.', true)
     // Assign to Rafael (agent 4)
-    const RAFAEL_AGENT_ID_BTN = 4
+    const HUMAN_AGENT_ID = cfg.humanAgentId
     try {
       await fetch(`${cwBase(cfg)}/conversations/${conversationId}/assignments`, {
         method: 'POST',
         headers: cwHeaders(cfg),
-        body: JSON.stringify({ assignee_id: RAFAEL_AGENT_ID_BTN }),
+        body: JSON.stringify({ assignee_id: HUMAN_AGENT_ID }),
       })
     } catch {}
     await prisma.botConversation.update({

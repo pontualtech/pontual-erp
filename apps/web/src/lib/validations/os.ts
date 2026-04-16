@@ -45,6 +45,7 @@ export const updateOSSchema = z.object({
   technician_id: z.string().uuid().nullable().optional(),
   estimated_value: z.number().int().nonnegative().nullable().optional(),
   estimated_cost: z.number().int().nonnegative().nullable().optional(),
+  discount_amount: z.number().int().nonnegative().nullable().optional(),
   total_cost: z.number().int().nonnegative().nullable().optional(),
   approved_cost: z.number().int().nonnegative().nullable().optional(),
   total_parts: z.number().int().nonnegative().nullable().optional(),

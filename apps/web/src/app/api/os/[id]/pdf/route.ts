@@ -109,6 +109,7 @@ table td.right, table th.right { text-align: right; }
   <div class="totals">
     <div class="line"><span>Pecas:</span><span>{{total_parts}}</span></div>
     <div class="line"><span>Servicos:</span><span>{{total_services}}</span></div>
+    {{discount_line}}
     <div class="line total"><span>TOTAL:</span><span>{{total_cost}}</span></div>
   </div>
   <div class="payment"><strong>Forma de pagamento:</strong> {{payment_method}}</div>
@@ -323,6 +324,10 @@ export async function GET(req: NextRequest, { params }: Params) {
       items_table: buildItemsTable(os.service_order_items),
       total_parts: fmtCents(os.total_parts ?? 0),
       total_services: fmtCents(os.total_services ?? 0),
+      discount_amount: fmtCents(os.discount_amount ?? 0),
+      discount_line: (os.discount_amount ?? 0) > 0
+        ? `<div class="line" style="color:#dc2626"><span>Desconto:</span><span>- ${fmtCents(os.discount_amount!)}</span></div>`
+        : '',
       total_cost: fmtCents(os.total_cost ?? 0),
       status: os.module_statuses?.name || '—',
       created_at: fmtDate(os.created_at),

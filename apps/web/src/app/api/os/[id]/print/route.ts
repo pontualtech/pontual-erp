@@ -123,6 +123,8 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     valor_total: fmt(os.total_cost || 0),
     valor_servicos: fmt(os.total_services || 0),
     valor_pecas: fmt(os.total_parts || 0),
+    valor_desconto: fmt(os.discount_amount || 0),
+    tem_desconto: (os.discount_amount ?? 0) > 0 ? 'true' : '',
     // Tabelas
     itens_tabela: itensTabela,
     itens_tabela_simples: itensSimples,

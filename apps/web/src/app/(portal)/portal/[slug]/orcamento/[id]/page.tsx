@@ -16,6 +16,7 @@ interface OrcamentoData {
   status: string; items: OsItem[]; customer_name: string
   customer_person_type: string
   quote_version: number | null
+  discount_amount?: number | null
   is_recalculado?: boolean
   original_cost?: number | null
   discount_percent?: number | null
@@ -429,10 +430,10 @@ function OrcamentoContent() {
           </div>
         )}
 
-        {/* Discount comparison card (recalculated only) */}
-        {isRecalculado && originalCost > 0 && (
+        {/* Discount comparison card (recalculated OR normal discount) */}
+        {originalCost > 0 && discountPct > 0 && (
           <div className="mb-4 rounded-2xl bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 border-2 border-green-300 dark:border-green-800 p-6 text-center shadow-lg">
-            <p className="text-xs font-bold uppercase tracking-wider text-green-700 dark:text-green-400 mb-3">Desconto Especial para Voce</p>
+            <p className="text-xs font-bold uppercase tracking-wider text-green-700 dark:text-green-400 mb-3">{isRecalculado ? 'Desconto Especial para Voce' : 'Desconto Aplicado'}</p>
             <div className="flex items-center justify-center gap-3 mb-3">
               <span className="text-xl text-gray-400 line-through">{fmt(originalCost)}</span>
               <svg className="h-5 w-5 text-green-500" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"/></svg>

@@ -31,7 +31,7 @@ interface OSDetail {
   serial_number: string | null; reported_issue: string | null; diagnosis: string | null
   reception_notes: string | null; internal_notes: string | null
   estimated_cost: number; approved_cost: number; total_parts: number
-  total_services: number; total_cost: number; warranty_until: string | null
+  total_services: number; discount_amount: number | null; total_cost: number; warranty_until: string | null
   is_warranty: boolean | null; warranty_os_id: string | null
   warranty_original?: { id: string; os_number: number } | null
   estimated_delivery: string | null; actual_delivery: string | null
@@ -296,11 +296,17 @@ export default function OSDetailPage() {
           setEditEstimatedDelivery(data.estimated_delivery ? new Date(data.estimated_delivery).toISOString().split('T')[0] : '')
           setEditActualDelivery(data.actual_delivery ? new Date(data.actual_delivery).toISOString().split('T')[0] : '')
           setEditCanal(data.custom_data?.canal_entrada || '')
-          // Inicializar desconto a partir do total_cost salvo
-          const subtotal = (data.total_services ?? 0) + (data.total_parts ?? 0)
-          if (subtotal > 0 && data.total_cost != null && data.total_cost < subtotal) {
-            setDiscountValue(((subtotal - data.total_cost) / 100).toFixed(2))
+          // Inicializar desconto do campo dedicado no DB
+          if (data.discount_amount && data.discount_amount > 0) {
+            setDiscountValue((data.discount_amount / 100).toFixed(2))
             setDiscountType('reais')
+          } else {
+            // Fallback: calcular a partir da diferença subtotal - total_cost (dados antigos)
+            const subtotal = (data.total_services ?? 0) + (data.total_parts ?? 0)
+            if (subtotal > 0 && data.total_cost != null && data.total_cost < subtotal) {
+              setDiscountValue(((subtotal - data.total_cost) / 100).toFixed(2))
+              setDiscountType('reais')
+            }
           }
         }
       })
@@ -891,6 +897,7 @@ export default function OSDetailPage() {
         payment_method: editPaymentMethod || null,
         estimated_delivery: editEstimatedDelivery ? new Date(editEstimatedDelivery).toISOString() : null,
         actual_delivery: editActualDelivery ? new Date(editActualDelivery).toISOString() : null,
+        discount_amount: discountAmt,
         total_cost: totalFinal,
         custom_data: { ...existingCustom, canal_entrada: editCanal || null },
       }
@@ -981,7 +988,7 @@ export default function OSDetailPage() {
   const items = os.service_order_items ?? []
   const pecas = items.filter(i => i.item_type === 'PECA')
   const servicos = items.filter(i => i.item_type !== 'PECA')
-  const discount = 0 // placeholder for future discount field
+  const discount = os.discount_amount ?? 0
 
   return (
     <div className="space-y-5 pb-8">

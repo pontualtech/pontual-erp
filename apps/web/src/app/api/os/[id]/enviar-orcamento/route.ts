@@ -362,9 +362,19 @@ function buildTemplateVars(os: any, settings: Record<string, string>, approvalLi
   const isRecalculado = /recalculad/i.test(statusName)
   const customData = (os.custom_data || {}) as Record<string, any>
   const originalCost = customData.original_cost || 0
-  const hasDiscount = isRecalculado && originalCost > 0 && originalCost > totalCost
-  const discountAmount = hasDiscount ? originalCost - totalCost : 0
-  const discountPercent = hasDiscount ? Math.round((discountAmount / originalCost) * 100) : 0
+  const hasRecalcDiscount = isRecalculado && originalCost > 0 && originalCost > totalCost
+  const recalcDiscountAmount = hasRecalcDiscount ? originalCost - totalCost : 0
+  const recalcDiscountPercent = hasRecalcDiscount ? Math.round((recalcDiscountAmount / originalCost) * 100) : 0
+
+  // Normal discount (applied by attendant via discount_amount field)
+  const dbDiscount = os.discount_amount ?? 0
+  const subtotal = (os.total_services ?? 0) + (os.total_parts ?? 0)
+  const hasNormalDiscount = !hasRecalcDiscount && dbDiscount > 0 && subtotal > 0
+  const hasDiscount = hasRecalcDiscount || hasNormalDiscount
+  const discountAmount = hasRecalcDiscount ? recalcDiscountAmount : dbDiscount
+  const discountPercent = hasRecalcDiscount
+    ? recalcDiscountPercent
+    : (hasNormalDiscount ? Math.round((dbDiscount / subtotal) * 100) : 0)
 
   // Installment info — 5x for recalculated, configurable for normal
   const maxInstallments = isRecalculado ? 5 : (parseInt(settings['quote.max_installments'] || '3') || 3)
@@ -450,15 +460,17 @@ function buildTemplateVars(os: any, settings: Record<string, string>, approvalLi
       const accessTk = createAccessToken(os.customer_id, os.company_id)
       return `${portalUrl}/portal/${slug}/os/${os.id}?access=${accessTk}`
     })(),
-    // Recalculated quote vars
+    // Discount vars (both recalculated and normal)
+    subtotal: subtotal > 0 ? fmtCents(subtotal) : '',
     is_recalculado: isRecalculado ? 'true' : '',
-    original_cost: hasDiscount ? fmtCents(originalCost) : '',
+    has_discount: hasDiscount ? 'true' : '',
+    original_cost: hasRecalcDiscount ? fmtCents(originalCost) : (hasNormalDiscount ? fmtCents(subtotal) : ''),
     discount_amount: hasDiscount ? fmtCents(discountAmount) : '',
     discount_percent: hasDiscount ? `${discountPercent}%` : '',
     discount_section: hasDiscount ? `
       <div style="background:linear-gradient(135deg,#dcfce7,#bbf7d0);border:2px solid #22c55e;border-radius:14px;padding:20px;margin:0 0 20px;text-align:center;">
-        <p style="margin:0 0 4px;font-size:12px;font-weight:700;color:#166534;text-transform:uppercase;letter-spacing:1px;">Desconto Especial</p>
-        <p style="margin:0 0 8px;font-size:14px;color:#15803d;"><span style="text-decoration:line-through;color:#94a3b8;">${fmtCents(originalCost)}</span> &rarr; <strong style="font-size:20px;color:#16a34a;">${fmtCents(totalCost)}</strong></p>
+        <p style="margin:0 0 4px;font-size:12px;font-weight:700;color:#166534;text-transform:uppercase;letter-spacing:1px;">${isRecalculado ? 'Desconto Especial' : 'Desconto Aplicado'}</p>
+        <p style="margin:0 0 8px;font-size:14px;color:#15803d;"><span style="text-decoration:line-through;color:#94a3b8;">${fmtCents(hasRecalcDiscount ? originalCost : subtotal)}</span> &rarr; <strong style="font-size:20px;color:#16a34a;">${fmtCents(totalCost)}</strong></p>
         <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr><td style="background:#16a34a;border-radius:20px;padding:6px 16px;">
           <p style="margin:0;font-size:14px;font-weight:800;color:#fff;">&#10003; ${discountPercent}% OFF</p>
         </td></tr></table>
