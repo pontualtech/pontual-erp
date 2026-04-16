@@ -946,29 +946,57 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
         } catch (e) { console.error('[Bot] OS enrich error:', e) }
       }
 
-      // ── AUTO-IDENTIFY: find client by phone OR by CPF/CNPJ typed in message ──
+      // ── AUTO-IDENTIFY: find client by CPF/CNPJ in message, or by phone (with active OS priority) ──
       if (!osMatch) {
         try {
-          // Try to find customer: first by CPF/CNPJ in message, then by phone
           const docMatch = query.match(/\b(\d{11})\b/) || query.match(/\b(\d{14})\b/) || query.match(/\b(\d{2})\.?(\d{3})\.?(\d{3})\/?(\d{4})-?(\d{2})\b/)
           let customer: any = null
+          let activeOS: OsInfo[] = []
 
+          // 1. Try CPF/CNPJ first (most specific)
           if (docMatch) {
             const cleanDoc = docMatch[0].replace(/\D/g, '')
             if (cleanDoc.length === 11 || cleanDoc.length === 14) {
               customer = await prisma.customer.findFirst({
                 where: { company_id: cfg.companyId, deleted_at: null, document_number: { contains: cleanDoc } },
               })
-              if (customer) console.log(`[Bot] Customer found by document ${cleanDoc}: ${customer.legal_name}`)
+              if (customer) {
+                activeOS = await getActiveOrders(customer.id, cfg.companyId)
+                console.log(`[Bot] Customer by doc ${cleanDoc}: ${customer.legal_name} (${activeOS.length} OS)`)
+              }
             }
           }
 
+          // 2. If no doc match or no OS found, try phone — but pick the customer WITH active OS
           if (!customer && phone) {
-            customer = await findCustomerByPhone(phone, cfg.companyId)
+            const cleanPhone = phone.replace(/\D/g, '').slice(-10)
+            if (cleanPhone.length >= 10) {
+              const allMatches = await prisma.customer.findMany({
+                where: {
+                  company_id: cfg.companyId, deleted_at: null,
+                  OR: [{ mobile: { contains: cleanPhone } }, { phone: { contains: cleanPhone } }],
+                },
+                take: 10,
+              })
+              // Pick the customer that has active OS (most relevant)
+              for (const c of allMatches) {
+                const os = await getActiveOrders(c.id, cfg.companyId)
+                if (os.length > 0) {
+                  customer = c
+                  activeOS = os
+                  console.log(`[Bot] Customer by phone (with OS): ${c.legal_name} (${os.length} OS)`)
+                  break
+                }
+              }
+              // If none has active OS, use first match
+              if (!customer && allMatches.length > 0) {
+                customer = allMatches[0]
+                console.log(`[Bot] Customer by phone (no OS): ${customer.legal_name}`)
+              }
+            }
           }
 
           if (customer) {
-            const activeOS = await getActiveOrders(customer.id, cfg.companyId)
             if (activeOS.length > 0) {
               // Check for legacy OS (all OS before 10/04/2026 would have been caught above,
               // but check by os_number < 60000 as safety net)
