@@ -5,6 +5,7 @@ import { success, error, handleError } from '@/lib/api-response'
 import { sendCompanyEmail } from '@/lib/send-email'
 import { sendWhatsAppTemplate } from '@/lib/whatsapp/cloud-api'
 import { escapeHtml } from '@/lib/escape-html'
+import { getCompanyContact } from '@/lib/company-contact'
 
 type Params = { params: { id: string } }
 
@@ -36,6 +37,8 @@ export async function POST(req: NextRequest, { params }: Params) {
     const settings = await prisma.setting.findMany({ where: { company_id: user.companyId } })
     const cfg: Record<string, string> = {}
     for (const s of settings) cfg[s.key] = s.value
+
+    const cc = await getCompanyContact(user.companyId)
 
     const { toTitleCase } = await import('@/lib/format-text')
     const customerName = toTitleCase(os.customers?.legal_name || 'Cliente')
@@ -177,12 +180,12 @@ export async function POST(req: NextRequest, { params }: Params) {
     <p style="margin:0 0 8px;font-size:14px;font-weight:700;color:#0369a1;">📱 Acompanhe sua OS</p>
     <p style="margin:0 0 12px;font-size:13px;color:#0c4a6e;">Acesse o Portal do Cliente ou consulte pelo nosso site:</p>
     <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr>
-      <td style="padding:0 6px;"><a href="${(() => { const pb = process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'; const sl = os.companies?.slug || 'pontualtech'; return pb + '/portal/' + sl; })()}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Portal do Cliente</a></td>
-      <td style="padding:0 6px;"><a href="${(cfg['company.website'] || 'https://pontualtech.com.br') + '/#consulta-os'}" style="display:inline-block;padding:10px 20px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Consultar no Site</a></td>
+      <td style="padding:0 6px;"><a href="${(() => { const pb = process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'; const sl = os.companies?.slug || 'default'; return pb + '/portal/' + sl; })()}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Portal do Cliente</a></td>
+      <td style="padding:0 6px;"><a href="${cc.website + '/#consulta-os'}" style="display:inline-block;padding:10px 20px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Consultar no Site</a></td>
     </tr></table>
     <p style="margin:12px 0 0;font-size:13px;color:#0c4a6e;">Duvidas? Fale com nosso suporte:</p>
     <table cellpadding="0" cellspacing="0" style="margin:8px auto 0;"><tr>
-      <td><a href="${whatsappUrl || 'https://wa.me/551126263841'}" style="display:inline-block;padding:10px 24px;background:#25d366;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">💬 WhatsApp Suporte</a></td>
+      <td><a href="${whatsappUrl || cc.whatsappUrl}" style="display:inline-block;padding:10px 24px;background:#25d366;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">💬 WhatsApp Suporte</a></td>
     </tr></table>
   </div>
 </td></tr>

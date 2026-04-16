@@ -5,6 +5,7 @@ import { success, error, handleError } from '@/lib/api-response'
 import { sendCompanyEmail } from '@/lib/send-email'
 import { sendWhatsAppTemplate } from '@/lib/whatsapp/cloud-api'
 import { escapeHtml } from '@/lib/escape-html'
+import { getCompanyContact } from '@/lib/company-contact'
 
 type Params = { params: { id: string } }
 
@@ -33,6 +34,8 @@ export async function POST(req: NextRequest, { params }: Params) {
     const cfg: Record<string, string> = {}
     for (const s of settings) cfg[s.key] = s.value
 
+    const cc = await getCompanyContact(user.companyId)
+
     const { toTitleCase } = await import('@/lib/format-text')
     const customerName = toTitleCase(os.customers?.legal_name || 'Cliente')
     const customerFirstName = customerName.split(' ')[0]
@@ -40,12 +43,11 @@ export async function POST(req: NextRequest, { params }: Params) {
     const customerPhone = os.customers?.mobile || os.customers?.phone || ''
     const osNum = String(os.os_number)
     const equipment = toTitleCase([os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' '))
-    const companyName = os.companies?.name || cfg['company.name'] || 'Empresa'
-    const companyPhone = cfg['company.phone'] || '(11) 2626-3841'
-    const whatsappNum = (cfg['company.whatsapp'] || '551126263841').replace(/\D/g, '')
-    const whatsappUrl = `https://wa.me/${whatsappNum}`
+    const companyName = os.companies?.name || cc.name
+    const companyPhone = cc.phone
+    const whatsappUrl = cc.whatsappUrl
     const portalBase = process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'
-    const portalSlug = os.companies?.slug || 'pontualtech'
+    const portalSlug = os.companies?.slug || 'default'
     const portalUrl = `${portalBase}/portal/${portalSlug}/os/${os.id}`
     const osLocation = ((os as any).os_location || '').toUpperCase()
     const isLoja = osLocation === 'LOJA' || osLocation === 'BALCAO'
@@ -74,10 +76,10 @@ ${companyName}
 
     // ===== EMAIL =====
     // Load additional company data for footer
-    const companyCnpj = cfg['company.cnpj'] || cfg['cnpj'] || '32.772.178/0001-47'
-    const companyEmail = cfg['company.email'] || cfg['email'] || 'contato@pontualtech.com.br'
-    const companyAddress = cfg['company.address'] || cfg['endereco'] || 'Rua Ouvidor Peleja, 660 — Vila Mariana — CEP 04128-001 — Sao Paulo/SP'
-    const companyWebsite = cfg['company.website'] || cfg['website'] || 'https://pontualtech.com.br'
+    const companyCnpj = cc.cnpj
+    const companyEmail = cc.email
+    const companyAddress = cc.address
+    const companyWebsite = cc.website
 
     const emailHtml = `<!DOCTYPE html>
 <html lang="pt-BR">

@@ -5,6 +5,7 @@ import { success, error, handleError } from '@/lib/api-response'
 import { sendCompanyEmail } from '@/lib/send-email'
 import { sendWhatsAppTemplate } from '@/lib/whatsapp/cloud-api'
 import { escapeHtml } from '@/lib/escape-html'
+import { getCompanyContact } from '@/lib/company-contact'
 
 type Params = { params: { id: string } }
 
@@ -29,6 +30,8 @@ export async function POST(req: NextRequest, { params }: Params) {
     const body = await req.json().catch(() => ({}))
     const channels: string[] = body.channels || ['email']
 
+    const cc = await getCompanyContact(user.companyId)
+
     const { toTitleCase } = await import('@/lib/format-text')
     const customerName = toTitleCase(os.customers?.legal_name?.split(' ')[0] || 'Cliente')
     const customerFullName = toTitleCase(os.customers?.legal_name || 'Cliente')
@@ -42,16 +45,15 @@ export async function POST(req: NextRequest, { params }: Params) {
     const cfg: Record<string, string> = {}
     for (const s of settings) cfg[s.key] = s.value
 
-    const portalSlug = os.companies?.slug || 'pontualtech'
+    const portalSlug = os.companies?.slug || 'default'
     const isImpri = portalSlug.includes('imprimitech')
     const portalDomain = cfg['portal.domain'] || (isImpri ? 'portal.imprimitech.com.br' : 'portal.pontualtech.com.br')
     const portalBase = `https://${portalDomain}/portal/${portalSlug}`
     const portalUrl = `${portalBase}/os/${os.id}`
-    const companyName = os.companies?.name || cfg['company.name'] || (isImpri ? 'Imprimitech' : 'Pontual Tech')
-    const companyPhone = cfg['company.phone'] || '(11) 2626-3841'
-    const companyWebsite = cfg['company.website'] || 'https://pontualtech.com.br'
-    const whatsappNum = (cfg['company.whatsapp'] || '551126263841').replace(/\D/g, '')
-    const whatsappUrl = `https://wa.me/${whatsappNum}`
+    const companyName = os.companies?.name || cc.name
+    const companyPhone = cc.phone
+    const companyWebsite = cc.website
+    const whatsappUrl = cc.whatsappUrl
 
     // Buscar outras OS do mesmo cliente com status "Coletar"
     const coletarStatus = await prisma.moduleStatus.findFirst({
@@ -125,9 +127,9 @@ Equipe ${companyName}
 ⚙️ Esta e uma mensagem automatica.`
 
     // ===== EMAIL HTML =====
-    const companyCnpj = cfg['company.cnpj'] || cfg['cnpj'] || '32.772.178/0001-47'
-    const companyEmail2 = cfg['company.email'] || cfg['email'] || 'contato@pontualtech.com.br'
-    const companyAddress = cfg['company.address'] || cfg['endereco'] || 'Rua Ouvidor Peleja, 660 — Vila Mariana — CEP 04128-001 — Sao Paulo/SP'
+    const companyCnpj = cc.cnpj
+    const companyEmail2 = cc.email
+    const companyAddress = cc.address
 
     const emailHtml = `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -314,8 +316,8 @@ Equipe ${companyName}
           const searchData = await searchRes.json()
           const contact = searchData.payload?.[0]
           if (contact) {
-            const customerAddr = os.customers?.address || ''
-            const customerCity = os.customers?.city || ''
+            const customerAddr = os.customers?.address_street || ''
+            const customerCity = os.customers?.address_city || ''
             await fetch(`${cwUrl}/api/v1/accounts/${cwAccount}/contacts/${contact.id}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json', api_access_token: cwToken },
@@ -327,7 +329,7 @@ Equipe ${companyName}
                   os_numeros: allEquipments.map(e => `#${e.num}`).join(', '),
                   equipamentos: allEquipments.map(e => e.desc).join(', '),
                   endereco: customerAddr ? `${customerAddr}${customerCity ? ` — ${customerCity}` : ''}` : undefined,
-                  cpf_cnpj: os.customers?.document || undefined,
+                  cpf_cnpj: os.customers?.document_number || undefined,
                   coleta_agendada: new Date().toISOString().split('T')[0],
                 },
               }),

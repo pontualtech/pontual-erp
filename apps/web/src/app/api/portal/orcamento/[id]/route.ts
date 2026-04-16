@@ -6,6 +6,7 @@ import { sendCompanyEmail } from '@/lib/send-email'
 import { createHmac } from 'crypto'
 import { rateLimit, getClientIp } from '@/lib/rate-limit'
 import { escapeHtml } from '@/lib/escape-html'
+import { getCompanyContact } from '@/lib/company-contact'
 
 type Params = { params: { id: string } }
 
@@ -276,8 +277,9 @@ export async function POST(request: NextRequest, { params }: Params) {
       const settings = await prisma.setting.findMany({ where: { company_id: os.company_id } })
       const cfg: Record<string, string> = {}
       for (const s of settings) cfg[s.key] = s.value
-      const whatsappUrl = `https://wa.me/${(cfg['company.whatsapp'] || '551126263841').replace(/\D/g, '')}`
-      const companyPhone = cfg['company.phone'] || '(11) 2626-3841'
+      const cc = await getCompanyContact(os.company_id)
+      const whatsappUrl = cc.whatsappUrl
+      const companyPhone = cc.phone
       const companyName = os.companies.name || 'Empresa'
       const equipment = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ')
 
@@ -345,7 +347,7 @@ export async function POST(request: NextRequest, { params }: Params) {
             customerFirstName, osNum: String(osNum), equipment, fmtValue, previsaoStr,
             companyName, companyAddress, companyCep, companyCnpj, companyPhone,
             companyEmailAddr, whatsappUrl, pixKey, pixBanco, horario,
-            companyWebsite: cfg['company.website'] || 'https://pontualtech.com.br',
+            companyWebsite: cc.website,
             portalUrl: (process.env.PORTAL_URL || 'https://portal.pontualtech.com.br') + '/portal/' + os.companies.slug,
           })
         }
@@ -360,7 +362,7 @@ export async function POST(request: NextRequest, { params }: Params) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            phone: cfg['company.whatsapp'] || '551126263841',
+            phone: cc.whatsapp,
             message: `✅ OS ${osNum} APROVADA!\nCliente: ${customerName}\nEquipamento: ${equipment}\nValor: ${fmtValue}\nPrevisao: ${previsaoStr}\n\nIniciar reparo!`,
           }),
         }).catch(() => {})
@@ -378,7 +380,8 @@ export async function POST(request: NextRequest, { params }: Params) {
         if (currentStatusName2.includes('recusad')) {
           return error('Este orçamento já foi recusado anteriormente.', 410)
         }
-        return error('Este orçamento não pode ser recusado no status atual (' + (os.module_statuses?.name || '—') + '). Entre em contato com nosso suporte pelo WhatsApp: https://wa.me/551126263841', 410)
+        const ccReject = await getCompanyContact(os.company_id)
+        return error('Este orçamento não pode ser recusado no status atual (' + (os.module_statuses?.name || '—') + '). Entre em contato com nosso suporte pelo WhatsApp: ' + ccReject.whatsappUrl, 410)
       }
 
       // Buscar status "Orçar Negociar" — cliente recusou, mas vamos tentar renegociar
@@ -464,8 +467,9 @@ export async function POST(request: NextRequest, { params }: Params) {
       const settings2 = await prisma.setting.findMany({ where: { company_id: os.company_id } })
       const cfg2: Record<string, string> = {}
       for (const s of settings2) cfg2[s.key] = s.value
-      const whatsappUrl2 = `https://wa.me/${(cfg2['company.whatsapp'] || '551126263841').replace(/\D/g, '')}`
-      const companyPhone2 = cfg2['company.phone'] || '(11) 2626-3841'
+      const cc2 = await getCompanyContact(os.company_id)
+      const whatsappUrl2 = cc2.whatsappUrl
+      const companyPhone2 = cc2.phone
       const companyName2 = os.companies.name || 'Empresa'
 
       // 1. Aviso interno URGENTE
@@ -499,9 +503,9 @@ export async function POST(request: NextRequest, { params }: Params) {
 
       // 2. Email ao cliente confirmando a recusa
       const customerEmail2 = os.customers?.email
-      const companyEmailAddr2 = cfg2['company.email'] || cfg2['email'] || 'contato@pontualtech.com.br'
-      const companyCnpj2 = cfg2['company.cnpj'] || cfg2['cnpj'] || '32.772.178/0001-47'
-      const companyAddress2 = cfg2['company.address'] || cfg2['endereco'] || 'Rua Ouvidor Peleja, 660 — Vila Mariana — CEP 04128-001 — Sao Paulo/SP'
+      const companyEmailAddr2 = cc2.email
+      const companyCnpj2 = cc2.cnpj
+      const companyAddress2 = cc2.address
       if (customerEmail2) {
         const emailHtml2 = `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -562,8 +566,8 @@ export async function POST(request: NextRequest, { params }: Params) {
               <p style="margin:0 0 8px;font-size:14px;font-weight:700;color:#0369a1;">📱 Acompanhe sua OS</p>
               <p style="margin:0 0 12px;font-size:13px;color:#0c4a6e;">Acesse o Portal do Cliente ou consulte pelo nosso site:</p>
               <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr>
-                <td style="padding:0 6px;"><a href="${(() => { const pb = process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'; return pb + '/portal/' + os.companies.slug; })()}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Portal do Cliente</a></td>
-                <td style="padding:0 6px;"><a href="${(cfg2['company.website'] || 'https://pontualtech.com.br') + '/#consulta-os'}" style="display:inline-block;padding:10px 20px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Consultar no Site</a></td>
+                <td style="padding:0 6px;"><a href="${(() => { const pb = process.env.PORTAL_URL || cc2.portalBaseUrl; return pb + '/portal/' + os.companies.slug; })()}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Portal do Cliente</a></td>
+                <td style="padding:0 6px;"><a href="${cc2.website + '/#consulta-os'}" style="display:inline-block;padding:10px 20px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Consultar no Site</a></td>
               </tr></table>
               <p style="margin:12px 0 0;font-size:13px;color:#0c4a6e;">Duvidas? Fale com nosso suporte:</p>
               <table cellpadding="0" cellspacing="0" style="margin:8px auto 0;"><tr>
@@ -619,7 +623,7 @@ export async function POST(request: NextRequest, { params }: Params) {
           companyAddress: companyAddress2,
           companyCnpj: companyCnpj2,
           companyEmail: companyEmailAddr2,
-          companyWebsite: cfg2['company.website'] || '',
+          companyWebsite: cc2.website,
           whatsappUrl: whatsappUrl2,
           portalUrl: `${process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'}/portal/${os.companies.slug}/login`,
           reason: reason || '',
@@ -728,7 +732,7 @@ function buildApprovalEmailHtml(d: ApprovalEmailData): string {
     </tr></table>
     <p style="margin:12px 0 0;font-size:13px;color:#0c4a6e;">Duvidas? Fale com nosso suporte:</p>
     <table cellpadding="0" cellspacing="0" style="margin:8px auto 0;"><tr>
-      <td><a href="${d.whatsappUrl || 'https://wa.me/551126263841'}" style="display:inline-block;padding:10px 24px;background:#25d366;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">💬 WhatsApp Suporte</a></td>
+      <td><a href="${d.whatsappUrl}" style="display:inline-block;padding:10px 24px;background:#25d366;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">💬 WhatsApp Suporte</a></td>
     </tr></table>
   </div>
 </td></tr>

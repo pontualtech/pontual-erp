@@ -76,13 +76,13 @@ export async function POST(req: NextRequest) {
       }
 
       // Build messages
-      const defaultWhatsApp = `Olá ${customerName}! Sua OS-${osNum} está no status: *${statusName}*.\n\nAcompanhe pelo portal: ${portalUrl}/portal/${company?.slug || 'pontualtech'}/login`
+      const defaultWhatsApp = `Olá ${customerName}! Sua OS-${osNum} está no status: *${statusName}*.\n\nAcompanhe pelo portal: ${portalUrl}/portal/${company?.slug || 'default'}/login`
       const whatsappMsg = customMessage || notifRule.whatsapp_message
         ?.replace(/\{\{cliente_nome\}\}/g, customerName)
         .replace(/\{\{os_numero\}\}/g, osNum)
         .replace(/\{\{status\}\}/g, statusName)
         .replace(/\{\{empresa\}\}/g, company?.name || '')
-        .replace(/\{\{portal_url\}\}/g, `${portalUrl}/portal/${company?.slug || 'pontualtech'}/login`)
+        .replace(/\{\{portal_url\}\}/g, `${portalUrl}/portal/${company?.slug || 'default'}/login`)
         || defaultWhatsApp
 
       const defaultSubject = `${company?.name || 'ERP'} — OS-${osNum} — ${statusName}`
@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
           <p>Olá <strong>${customerName}</strong>,</p>
           <p>Sua Ordem de Serviço <strong>OS-${osNum}</strong> está no status: <strong>${statusName}</strong>.</p>
           <p>Acompanhe pelo portal:</p>
-          <p><a href="${portalUrl}/portal/${company?.slug || 'pontualtech'}/login" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px">Acessar Portal</a></p>
+          <p><a href="${portalUrl}/portal/${company?.slug || 'default'}/login" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px">Acessar Portal</a></p>
           <p style="color:#6b7280;font-size:12px;margin-top:20px">— ${company?.name || 'ERP'}</p>
         </div>`
 
@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
         .replace(/\{\{os_numero\}\}/g, osNum)
         .replace(/\{\{status\}\}/g, statusName)
         .replace(/\{\{empresa\}\}/g, company?.name || '')
-        .replace(/\{\{portal_url\}\}/g, `${portalUrl}/portal/${company?.slug || 'pontualtech'}/login`)
+        .replace(/\{\{portal_url\}\}/g, `${portalUrl}/portal/${company?.slug || 'default'}/login`)
         || defaultEmailBody
 
       // Send WhatsApp via Meta Cloud API template

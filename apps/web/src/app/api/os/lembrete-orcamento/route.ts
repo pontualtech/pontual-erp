@@ -319,7 +319,7 @@ export async function sendQuoteReminders(companyId: string, userId: string, spec
         company_name: escapeHtml(company.name || 'Empresa'),
         company_phone: escapeHtml(settingsMap['company.phone'] || settingsMap['telefone'] || '—'),
         company_whatsapp: whatsapp,
-        company_website: settingsMap['company.website'] || 'https://pontualtech.com.br',
+        company_website: settingsMap['company.website'] || '',
         items_table: itemsTableHtml,
       }
 

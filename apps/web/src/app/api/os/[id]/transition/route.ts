@@ -65,7 +65,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         const companyPhone = cfg['company.phone'] || ''
         const companyEmail = cfg['company.email'] || ''
         const portalBase = process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'
-        const portalSlug = companyData?.slug || 'pontualtech'
+        const portalSlug = companyData?.slug || 'default'
         const portalUrl = `${portalBase}/portal/${portalSlug}/os/${os.id}`
 
         const emailHtml = buildOsStatusEmailHtml({
@@ -543,7 +543,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       const companyEmail = cfg['company.email'] || ''
       const portalBase = process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'
       const company = await prisma.company.findFirst({ where: { id: user.companyId }, select: { slug: true } })
-      const portalSlug = company?.slug || 'pontualtech'
+      const portalSlug = company?.slug || 'default'
       const portalUrl = `${portalBase}/portal/${portalSlug}/os/${os.id}`
 
       const emailHtml = buildOsStatusEmailHtml({
