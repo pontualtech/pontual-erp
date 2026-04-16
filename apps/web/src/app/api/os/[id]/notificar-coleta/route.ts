@@ -42,10 +42,12 @@ export async function POST(req: NextRequest, { params }: Params) {
     const cfg: Record<string, string> = {}
     for (const s of settings) cfg[s.key] = s.value
 
-    const portalBase = process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'
     const portalSlug = os.companies?.slug || 'pontualtech'
-    const portalUrl = `${portalBase}/portal/${portalSlug}/os/${os.id}`
-    const companyName = os.companies?.name || cfg['company.name'] || 'Pontual Tech'
+    const isImpri = portalSlug.includes('imprimitech')
+    const portalDomain = cfg['portal.domain'] || (isImpri ? 'portal.imprimitech.com.br' : 'portal.pontualtech.com.br')
+    const portalBase = `https://${portalDomain}/portal/${portalSlug}`
+    const portalUrl = `${portalBase}/os/${os.id}`
+    const companyName = os.companies?.name || cfg['company.name'] || (isImpri ? 'Imprimitech' : 'Pontual Tech')
     const companyPhone = cfg['company.phone'] || '(11) 2626-3841'
     const companyWebsite = cfg['company.website'] || 'https://pontualtech.com.br'
     const whatsappNum = (cfg['company.whatsapp'] || '551126263841').replace(/\D/g, '')
@@ -229,7 +231,7 @@ Equipe ${companyName}
               <p style="margin:0 0 8px;font-size:14px;font-weight:700;color:#0369a1;">📱 Acompanhe sua OS</p>
               <p style="margin:0 0 12px;font-size:13px;color:#0c4a6e;">Acesse o Portal do Cliente ou consulte pelo nosso site:</p>
               <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr>
-                <td style="padding:0 6px;"><a href="${`${portalBase}/portal/${portalSlug}`}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Portal do Cliente</a></td>
+                <td style="padding:0 6px;"><a href="${portalBase}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Portal do Cliente</a></td>
                 <td style="padding:0 6px;"><a href="${companyWebsite}/#consulta-os" style="display:inline-block;padding:10px 20px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Consultar no Site</a></td>
               </tr></table>
               <p style="margin:12px 0 0;font-size:13px;color:#0c4a6e;">Duvidas? Fale com nosso suporte:</p>
@@ -265,7 +267,7 @@ Equipe ${companyName}
       const sent = await sendCompanyEmail(
         user.companyId,
         customerEmail,
-        `Confirmacao de Coleta — OS ${osNumbers} — Pontual Tech`,
+        `Confirmacao de Coleta — OS ${osNumbers} — ${companyName}`,
         emailHtml
       )
       results.push({ channel: 'email', status: sent ? 'enviado' : 'erro' })
@@ -294,6 +296,51 @@ Equipe ${companyName}
       }
     } else if (channels.includes('whatsapp') && !customerPhone) {
       results.push({ channel: 'whatsapp', status: 'sem_telefone' })
+    }
+
+    // ── Sync contact to Chatwoot (update name, email, custom attributes) ──
+    try {
+      const cwUrl = cfg['chatwoot.url'] || (isImpri ? 'https://chat.imp.pontualtech.work' : 'https://chat.pontualtech.work')
+      const cwToken = cfg['chatwoot.api_token'] || cfg['chatwoot.admin_token'] || ''
+      const cwAccount = cfg['chatwoot.account_id'] || '1'
+      if (cwToken && customerPhone) {
+        const phone = customerPhone.replace(/\D/g, '')
+        const searchPhone = phone.startsWith('55') ? `+${phone}` : `+55${phone}`
+        const searchRes = await fetch(`${cwUrl}/api/v1/accounts/${cwAccount}/contacts/search?q=${encodeURIComponent(searchPhone)}`, {
+          headers: { api_access_token: cwToken },
+          signal: AbortSignal.timeout(5000),
+        })
+        if (searchRes.ok) {
+          const searchData = await searchRes.json()
+          const contact = searchData.payload?.[0]
+          if (contact) {
+            const customerAddr = os.customers?.address || ''
+            const customerCity = os.customers?.city || ''
+            await fetch(`${cwUrl}/api/v1/accounts/${cwAccount}/contacts/${contact.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json', api_access_token: cwToken },
+              body: JSON.stringify({
+                name: customerFullName || contact.name,
+                email: customerEmail || contact.email || undefined,
+                custom_attributes: {
+                  ...contact.custom_attributes,
+                  os_numeros: allEquipments.map(e => `#${e.num}`).join(', '),
+                  equipamentos: allEquipments.map(e => e.desc).join(', '),
+                  endereco: customerAddr ? `${customerAddr}${customerCity ? ` — ${customerCity}` : ''}` : undefined,
+                  cpf_cnpj: os.customers?.document || undefined,
+                  coleta_agendada: new Date().toISOString().split('T')[0],
+                },
+              }),
+              signal: AbortSignal.timeout(5000),
+            })
+            results.push({ channel: 'chatwoot_sync', status: 'atualizado' })
+            console.log(`[Coleta] Chatwoot contact ${contact.id} updated for ${customerFullName}`)
+          }
+        }
+      }
+    } catch (cwErr) {
+      console.error('[Coleta] Chatwoot sync error:', cwErr)
+      results.push({ channel: 'chatwoot_sync', status: 'erro' })
     }
 
     return success({ results, osNumbers, customerName: customerFullName })

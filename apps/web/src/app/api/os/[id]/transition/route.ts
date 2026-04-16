@@ -424,6 +424,19 @@ export async function POST(req: NextRequest, { params }: Params) {
             notes: '🚚 Coleta agendada — logística será notificada',
           },
         })
+        // Fire-and-forget: send full coleta notification (WhatsApp + Email + Chatwoot sync)
+        const internalKey = process.env.INTERNAL_API_KEY || process.env.BOT_WEBHOOK_SECRET || ''
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'
+        fetch(`${appUrl}/api/os/${os.id}/notificar-coleta`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Internal-Key': internalKey,
+            cookie: req.headers.get('cookie') || '',
+          },
+          body: JSON.stringify({ channels: ['whatsapp', 'email'] }),
+          signal: AbortSignal.timeout(15000),
+        }).catch(e => console.log('[Transition] Auto coleta notification failed (ignored):', e.message))
       }
     } catch (autoNotifErr) {
       // Silenciar erro — notificação automática não deve bloquear a transição
