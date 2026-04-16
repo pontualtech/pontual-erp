@@ -69,12 +69,15 @@ export async function POST(req: NextRequest, { params }: Params) {
         try {
           const phone = customerPhone.replace(/\D/g, '')
           const fallback = `*Orcamento pronto — OS #${osNum}*\n\nValor: ${fmtValue}\nEquipamento: ${equipment || 'Equipamento'}\n\nAcesse o portal para aprovar ou recusar o orcamento.`
-          const waResult = await sendWhatsAppTemplate(user.companyId, phone, 'pontualtech_orcamento', 'pt_BR', [
-            { type: 'body', parameters: [
+          // Try new template with "Aprovar" button first, fall back to old text-only template
+          const waResult = await sendWhatsAppTemplate(user.companyId, phone, 'marta_orcamento_v3', 'pt_BR', [
+            { type: 'header', parameters: [
               { type: 'text', text: osNum },
-              { type: 'text', text: fmtValue },
+            ] },
+            { type: 'body', parameters: [
               { type: 'text', text: equipment || 'Equipamento' },
-            ] }
+              { type: 'text', text: fmtValue },
+            ] },
           ], fallback)
           results.push({ channel: 'whatsapp', status: waResult.success ? 'enviado' : 'erro' })
         } catch {
