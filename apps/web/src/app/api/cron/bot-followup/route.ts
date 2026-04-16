@@ -2,7 +2,6 @@ import { NextRequest } from 'next/server'
 import { timingSafeEqual } from 'crypto'
 import { prisma } from '@pontual/db'
 import { success, error, handleError } from '@/lib/api-response'
-import { sendWhatsAppTemplate } from '@/lib/whatsapp/cloud-api'
 
 /**
  * GET /api/cron/bot-followup
@@ -205,66 +204,38 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        // ── Send via WhatsApp Cloud API template (with button) ──
-        // Look up latest OS for this customer to fill template params
-        let osNum = '0000'
-        let equipment = 'Equipamento'
+        // ── Send follow-up via Chatwoot (reliable text message) ──
+        // Get the message for this follow-up number
+        const msgKey = `bot.followup.msg_${nextCount}`
+        let message = cfg[msgKey] || cfg['bot.followup.msg_1'] || 'Oi! Ainda precisa de ajuda?'
 
-        // Try by customer_id first, then fall back to phone number lookup
-        let latestOs = null
-        if (conv.customer_id) {
-          latestOs = await prisma.serviceOrder.findFirst({
-            where: { customer_id: conv.customer_id, company_id: conv.company_id, deleted_at: null },
-            orderBy: { created_at: 'desc' },
-            select: { os_number: true, equipment_type: true, equipment_brand: true, equipment_model: true },
-          }).catch(() => null)
-        }
-        if (!latestOs && conv.customer_phone) {
-          // Search by phone number — strip +55 and non-digits for flexible matching
-          const cleanPhone = conv.customer_phone.replace(/\D/g, '').replace(/^55/, '')
-          const customerByPhone = await prisma.customer.findFirst({
-            where: {
-              company_id: conv.company_id,
-              OR: [
-                { mobile: { contains: cleanPhone } },
-                { phone: { contains: cleanPhone } },
-              ],
+        // Replace placeholders
+        message = message
+          .replace(/\{\{suporte\}\}/g, cwCfg.supportWhatsApp)
+          .replace(/\{\{empresa\}\}/g, cwCfg.slug === 'pontualtech' ? 'PontualTech' : 'Imprimitech')
+
+        // Send via Chatwoot (outgoing message visible to client)
+        const sendRes = await fetch(
+          `${cwCfg.cwUrl}/api/v1/accounts/${cwCfg.cwAccountId}/conversations/${conv.chatwoot_conv_id}/messages`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              api_access_token: cwCfg.cwToken,
             },
-            select: { id: true },
-          }).catch(() => null)
-          if (customerByPhone) {
-            latestOs = await prisma.serviceOrder.findFirst({
-              where: { customer_id: customerByPhone.id, company_id: conv.company_id, deleted_at: null },
-              orderBy: { created_at: 'desc' },
-              select: { os_number: true, equipment_type: true, equipment_brand: true, equipment_model: true },
-            }).catch(() => null)
+            body: JSON.stringify({
+              content: message,
+              message_type: 'outgoing',
+              private: false,
+              content_attributes: { bot_sent: true, follow_up: nextCount },
+            }),
           }
-        }
-        if (latestOs) {
-          osNum = String(latestOs.os_number).padStart(4, '0')
-          equipment = [latestOs.equipment_type, latestOs.equipment_brand, latestOs.equipment_model].filter(Boolean).join(' ') || 'Equipamento'
-        }
+        )
 
-        const phone = conv.customer_phone
-        if (!phone) {
-          console.warn(`[Cron/BotFollowUp] No phone for conv ${conv.chatwoot_conv_id}, skipping`)
-          await clearFollowUp(conv.id)
-          skipped++
-          continue
-        }
-
-        const templateResult = await sendWhatsAppTemplate(conv.company_id, phone, 'pt_followup_v2', 'pt_BR', [
-          { type: 'body', parameters: [
-            { type: 'text', text: osNum },
-            { type: 'text', text: equipment },
-          ] }
-        ]).catch(err => {
-          console.error(`[Cron/BotFollowUp] Template send failed conv ${conv.chatwoot_conv_id}:`, err)
-          return { success: false }
-        })
-
-        if (!templateResult.success) {
-          errors.push(`Conv ${conv.chatwoot_conv_id}: template send failed`)
+        if (!sendRes.ok) {
+          const errBody = await sendRes.text()
+          console.error(`[Cron/BotFollowUp] Send failed conv ${conv.chatwoot_conv_id}: ${sendRes.status} ${errBody}`)
+          errors.push(`Conv ${conv.chatwoot_conv_id}: send failed ${sendRes.status}`)
           continue
         }
 
@@ -281,24 +252,22 @@ export async function GET(request: NextRequest) {
           },
         })
 
-        // Internal note for agents (so they see the follow-up in Chatwoot)
-        if (cwCfg) {
-          await fetch(
-            `${cwCfg.cwUrl}/api/v1/accounts/${cwCfg.cwAccountId}/conversations/${conv.chatwoot_conv_id}/messages`,
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                api_access_token: cwCfg.cwToken,
-              },
-              body: JSON.stringify({
-                content: `[BOT] 📬 Follow-up #${nextCount}/${maxAttempts} enviado via WhatsApp template (pt_followup_v2) — OS #${osNum}.${nextFollowUpAt ? ` Proximo: ${nextFollowUpAt.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}` : ' (ultimo)'}`,
-                message_type: 'outgoing',
-                private: true,
-              }),
-            }
-          ).catch(() => {})
-        }
+        // Internal note for agents
+        await fetch(
+          `${cwCfg.cwUrl}/api/v1/accounts/${cwCfg.cwAccountId}/conversations/${conv.chatwoot_conv_id}/messages`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              api_access_token: cwCfg.cwToken,
+            },
+            body: JSON.stringify({
+              content: `[BOT] 📬 Follow-up #${nextCount}/${maxAttempts} enviado.${nextFollowUpAt ? ` Proximo: ${nextFollowUpAt.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}` : ' (ultimo)'}`,
+              message_type: 'outgoing',
+              private: true,
+            }),
+          }
+        ).catch(() => {})
 
         console.log(`[Cron/BotFollowUp] Sent follow-up #${nextCount} to conv ${conv.chatwoot_conv_id} (${cwCfg.slug})`)
         sent++
