@@ -131,6 +131,8 @@ export async function GET(
         total_services: os.total_services,
         discount_amount: os.discount_amount ?? 0,
         total_cost: os.total_cost,
+        custom_data: os.custom_data || {},
+        is_recalculado: /recalculad/i.test(os.module_statuses?.name || ''),
         estimated_delivery: os.estimated_delivery,
         actual_delivery: os.actual_delivery,
         warranty_until: os.warranty_until,
@@ -273,11 +275,18 @@ export async function POST(
         )
       }
 
+      // Save original_cost in custom_data for recalculated comparison
+      const customData = (os.custom_data || {}) as Record<string, any>
+      if (!customData.original_cost && os.total_cost) {
+        customData.original_cost = os.total_cost
+      }
+
       await prisma.$transaction([
         prisma.serviceOrder.update({
           where: { id: os.id },
           data: {
             status_id: negotiateStatus.id,
+            custom_data: customData,
             updated_at: new Date(),
           },
         }),

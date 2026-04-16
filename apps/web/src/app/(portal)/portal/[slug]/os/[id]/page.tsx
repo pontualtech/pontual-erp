@@ -24,6 +24,8 @@ interface OSDetail {
   total_services?: number
   discount_amount?: number
   total_cost?: number
+  custom_data?: Record<string, any>
+  is_recalculado?: boolean
   estimated_delivery?: string
   actual_delivery?: string
   warranty_until?: string
@@ -248,6 +250,8 @@ export default function PortalOSDetailPage() {
 
   const isAguardandoAprovacao = os?.status.name.toLowerCase().includes('aguardando') &&
     os?.status.name.toLowerCase().includes('aprov')
+
+  const isRecalculado = os?.is_recalculado || os?.status.name.toLowerCase().includes('recalculad') || false
 
   const isAprovado = os?.status.name.toLowerCase().includes('aprovado') ||
     os?.status.name.toLowerCase().includes('aprovad')
@@ -691,17 +695,39 @@ export default function PortalOSDetailPage() {
             { value: 'Cartao Debito', label: 'Cartao de Debito', icon: '💳', desc: 'A vista na entrega' },
             { value: 'Boleto', label: 'Boleto Bancario', icon: '📄', desc: 'Somente PJ (7 dias)' },
           ]
+          const maxParcelas = isRecalculado ? 5 : 3
+          const parcelaValor = fmt(Math.ceil((os.total_cost || 0) / maxParcelas))
+          const hasDesconto = (os.discount_amount ?? 0) > 0 || (isRecalculado && (os.custom_data as any)?.original_cost > 0)
+          const originalVal = (os.custom_data as any)?.original_cost || ((os.total_services || 0) + (os.total_parts || 0))
           return (
-            <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-900 rounded-xl p-6 mb-6" data-print-hide>
-              <h3 className="font-semibold text-amber-900 dark:text-amber-300 text-lg mb-2">Orcamento aguardando aprovacao</h3>
+            <div className={`rounded-xl p-6 mb-6 border ${isRecalculado ? 'bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950 dark:to-orange-950 border-amber-300 dark:border-amber-800' : 'bg-amber-50 dark:bg-amber-950 border-amber-200 dark:border-amber-900'}`} data-print-hide>
+              {isRecalculado && (
+                <div className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-amber-500 text-white px-4 py-1.5 text-xs font-bold uppercase tracking-wider">
+                  <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                  Nova Proposta Especial
+                </div>
+              )}
+              <h3 className="font-semibold text-amber-900 dark:text-amber-300 text-lg mb-2">{isRecalculado ? 'Preparamos uma condicao diferenciada para voce' : 'Orcamento aguardando aprovacao'}</h3>
+
+              {/* Discount comparison */}
+              {hasDesconto && originalVal > (os.total_cost || 0) && (
+                <div className="mb-3 rounded-lg bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 p-4 text-center">
+                  <p className="text-xs font-bold uppercase tracking-wider text-green-700 dark:text-green-400 mb-2">Desconto Aplicado</p>
+                  <div className="flex items-center justify-center gap-3">
+                    <span className="text-lg text-gray-400 line-through">{fmt(originalVal)}</span>
+                    <span className="text-2xl font-extrabold text-green-700 dark:text-green-300">{fmt(os.total_cost || 0)}</span>
+                  </div>
+                  <span className="inline-block mt-2 rounded-full bg-green-600 px-3 py-1 text-xs font-bold text-white">
+                    {Math.round(((originalVal - (os.total_cost || 0)) / originalVal) * 100)}% OFF
+                  </span>
+                </div>
+              )}
+
+              {/* Value + installments */}
               <div className="text-amber-700 dark:text-amber-400 mb-4">
-                {(os.discount_amount ?? 0) > 0 && (
-                  <p className="text-sm mb-1">
-                    <span className="line-through text-gray-400">{fmt((os.total_services || 0) + (os.total_parts || 0))}</span>
-                    <span className="ml-2 text-green-600 dark:text-green-400 font-semibold">-{fmt(os.discount_amount || 0)} desconto</span>
-                  </p>
-                )}
-                <p>Valor total: <strong className="text-2xl">{fmt(os.total_cost || 0)}</strong></p>
+                <p className="text-2xl font-extrabold">{maxParcelas}x de {parcelaValor}</p>
+                <p className="text-sm opacity-80">sem juros no cartao de credito</p>
+                <p className="text-xs mt-1 opacity-60">Valor total: {fmt(os.total_cost || 0)}</p>
               </div>
 
               {!approvePayment ? (
