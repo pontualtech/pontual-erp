@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
+import { sendCompanyEmail } from '@/lib/send-email'
 
 type Params = { params: { id: string } }
 
@@ -137,34 +138,6 @@ export async function POST(req: NextRequest, { params }: Params) {
       return error('Email do cliente nao informado. Informe o email no campo "to".', 400)
     }
 
-    // Check SMTP configuration
-    const smtpHost = process.env.SMTP_HOST
-    const smtpUser = process.env.SMTP_USER
-    const smtpPass = process.env.SMTP_PASS
-    const smtpFrom = process.env.SMTP_FROM || smtpUser
-    const resendKey = process.env.RESEND_API_KEY
-
-    if (!resendKey && (!smtpHost || !smtpUser || !smtpPass)) {
-      // Log that email would be sent (for MVP)
-      logAudit({
-        companyId: user.companyId,
-        userId: user.id,
-        module: 'os',
-        action: 'email_pending',
-        entityId: os.id,
-        newValue: {
-          to: recipientEmail,
-          os_number: os.os_number,
-          message: 'Email nao enviado: SMTP/Resend nao configurado. Configure SMTP_HOST, SMTP_USER, SMTP_PASS ou RESEND_API_KEY nas variaveis de ambiente.',
-        },
-      })
-
-      return error(
-        'Email nao configurado. Configure as variaveis de ambiente SMTP_HOST, SMTP_USER, SMTP_PASS (ou RESEND_API_KEY) no servidor.',
-        503
-      )
-    }
-
     // Load company
     const company = await prisma.company.findFirst({
       where: { id: user.companyId },
@@ -236,42 +209,24 @@ export async function POST(req: NextRequest, { params }: Params) {
     const htmlBody = replaceTemplateVars(htmlTemplate, vars)
     const emailSubject = subject || `OS-${osNumber} - ${companyName}`
 
-    // Send via Resend API (HTTP POST, no npm package needed)
-    if (resendKey) {
-      const res = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${resendKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          from: process.env.EMAIL_FROM || smtpFrom || `${companyName} <${settingsMap['company.email'] || settingsMap['email'] || 'contato@empresa.com.br'}>`,
-          to: [recipientEmail],
-          subject: emailSubject,
-          html: htmlBody,
-        }),
-      })
+    // sendCompanyEmail handles multi-tenant: loads each company's own
+    // Resend API key and from_address from DB settings.
+    const sent = await sendCompanyEmail(user.companyId, recipientEmail, emailSubject, htmlBody)
 
-      if (!res.ok) {
-        const resErr = await res.json().catch(() => ({}))
-        console.error('[EMAIL] Resend error:', resErr)
-        return error(`Erro ao enviar email via Resend: ${(resErr as any).message || res.statusText}`, 500)
-      }
-
-      logAudit({
-        companyId: user.companyId,
-        userId: user.id,
-        module: 'os',
-        action: 'email_sent',
-        entityId: os.id,
-        newValue: { to: recipientEmail, subject: emailSubject, provider: 'resend' },
-      })
-
-      return success({ sent: true, to: recipientEmail, subject: emailSubject })
+    if (!sent) {
+      return error('Erro ao enviar email. Verifique a configuracao de email da empresa (Settings > Email).', 500)
     }
 
-    // No email provider configured
-    return error('Email nao configurado. Configure RESEND_API_KEY nas variaveis de ambiente do Coolify, ou configure SMTP_HOST + SMTP_USER + SMTP_PASS.', 503)
+    logAudit({
+      companyId: user.companyId,
+      userId: user.id,
+      module: 'os',
+      action: 'email_sent',
+      entityId: os.id,
+      newValue: { to: recipientEmail, subject: emailSubject },
+    })
+
+    return success({ sent: true, to: recipientEmail, subject: emailSubject })
   } catch (err) {
     return handleError(err)
   }
