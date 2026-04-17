@@ -1264,39 +1264,69 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       updateData.data = {}
     } else if (parsed.action === 'TRANSFERIR_RAFAEL') {
       // Transfer to Rafael specifically (legacy OS handling)
-      updateData.human_takeover = true
-      updateData.step = 'HUMAN'
+      const HUMAN_AGENT_ID_R = cfg.humanAgentId
+      const nowR = new Date()
+      const brHourR = new Date(nowR.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })).getHours()
+      const brDayR = new Date(nowR.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })).getDay()
+      const isBusinessHoursR = brDayR >= 1 && brDayR <= 5 && brHourR >= 8 && (brDayR <= 4 ? brHourR < 18 : brHourR < 17)
+
       await cwSendMessage(cfg, conversationId, '[BOT] OS do sistema legado — transferindo para Rafael.', true)
-      // Assign conversation to Rafael (agent ID from Chatwoot)
-      const HUMAN_AGENT_ID = cfg.humanAgentId
+      if (!isBusinessHoursR) {
+        await cwSendMessage(cfg, conversationId,
+          'O Rafael cuida pessoalmente desses casos. Nosso horário de atendimento é de segunda a quinta das 08:00 às 18:00 e sexta das 08:00 às 17:00.\n\n' +
+          'Sua solicitação já foi registrada e ele vai te atender no próximo dia útil.\n\n' +
+          'Posso te ajudar com mais alguma coisa enquanto isso?'
+        )
+        updateData.step = 'IDLE'
+      } else {
+        updateData.human_takeover = true
+        updateData.step = 'HUMAN'
+      }
       try {
         await fetch(`${cfg.cwUrl}/api/v1/accounts/${cfg.cwAccountId}/conversations/${conversationId}/assignments`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', api_access_token: cfg.cwToken },
-          body: JSON.stringify({ assignee_id: HUMAN_AGENT_ID }),
+          body: JSON.stringify({ assignee_id: HUMAN_AGENT_ID_R }),
         })
       } catch {} // fire and forget
     } else if (parsed.action === 'TRANSFERIR_HUMANO') {
-      updateData.human_takeover = true
-      updateData.step = 'HUMAN'
-      // Assign to Rafael (agent 4) — NOT to Marta
       const HUMAN_AGENT_ID = cfg.humanAgentId
       const now = new Date()
       const brHour = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })).getHours()
       const brDay = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })).getDay()
       const isBusinessHours = brDay >= 1 && brDay <= 5 && brHour >= 8 && (brDay <= 4 ? brHour < 18 : brHour < 17)
+
       if (!isBusinessHours) {
+        // Fora do horário: avisa o cliente e mantém bot ativo para ajudar
         await cwSendMessage(cfg, conversationId, '[BOT] Fora do horário comercial. Atribuído ao Rafael para atender no próximo dia útil.', true)
+        await cwSendMessage(cfg, conversationId,
+          'Nosso horário de atendimento humano é de segunda a quinta das 08:00 às 18:00 e sexta das 08:00 às 17:00.\n\n' +
+          'Sua solicitação já foi registrada e o Rafael vai te atender no próximo dia útil.\n\n' +
+          'Enquanto isso, posso te ajudar com mais alguma coisa? Consigo consultar status de OS, verificar orçamentos e direcionar ao portal do cliente.'
+        )
+        // Assign to Rafael but keep bot active (don't set human_takeover)
+        // Bot continues responding until Rafael takes over manually
+        updateData.step = 'IDLE'
+        try {
+          await fetch(`${cwBase(cfg)}/conversations/${conversationId}/assignments`, {
+            method: 'POST',
+            headers: cwHeaders(cfg),
+            body: JSON.stringify({ assignee_id: HUMAN_AGENT_ID }),
+          })
+        } catch {}
       } else {
+        // Dentro do horário: transfere normalmente
+        updateData.human_takeover = true
+        updateData.step = 'HUMAN'
         await cwSendMessage(cfg, conversationId, '[BOT] Cliente solicitou atendente humano. Atribuído ao Rafael.', true)
+        try {
+          await fetch(`${cwBase(cfg)}/conversations/${conversationId}/assignments`, {
+            method: 'POST',
+            headers: cwHeaders(cfg),
+            body: JSON.stringify({ assignee_id: HUMAN_AGENT_ID }),
+          })
+        } catch {}
       }
-      try {
-        await fetch(`${cwBase(cfg)}/conversations/${conversationId}/assignments`, {
-          method: 'POST',
-          headers: cwHeaders(cfg),
-          body: JSON.stringify({ assignee_id: HUMAN_AGENT_ID }),
-        })
-      } catch {}
     } else if (parsed.action === 'ENCERRAR_CONVERSA') {
       updateData.step = 'IDLE'
       updateData.data = {}
@@ -1526,14 +1556,27 @@ async function handleButtonClick(
     const brDay = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })).getDay()
     const isBusinessHours = brDay >= 1 && brDay <= 5 && brHour >= 8 && (brDay <= 4 ? brHour < 18 : brHour < 17)
 
+    const HUMAN_AGENT_ID = cfg.humanAgentId
     if (isBusinessHours) {
       await cwSendMessage(cfg, conversationId, 'Entendi! Vou transferir para um atendente. Um momento...')
+      await cwSendMessage(cfg, conversationId, '[BOT] Cliente solicitou atendente humano. Atribuído ao Rafael.', true)
+      await prisma.botConversation.update({
+        where: { id: botConv.id },
+        data: { human_takeover: true, step: 'HUMAN' },
+      })
     } else {
-      await cwSendMessage(cfg, conversationId, 'Nosso atendimento humano funciona de seg a qui das 8h às 18h e sexta das 8h às 17h. Registrei sua solicitação e um atendente vai te retornar no próximo horário comercial!')
+      await cwSendMessage(cfg, conversationId,
+        'Nosso atendimento humano funciona de segunda a quinta das 08:00 às 18:00 e sexta das 08:00 às 17:00.\n\n' +
+        'Registrei sua solicitação e um atendente vai te retornar no próximo dia útil.\n\n' +
+        'Posso te ajudar com mais alguma coisa enquanto isso? Consigo consultar status de OS, orçamentos e muito mais!'
+      )
+      await cwSendMessage(cfg, conversationId, '[BOT] Fora do horário comercial. Atribuído ao Rafael para próximo dia útil.', true)
+      // Keep bot active (don't set human_takeover) so it can still help
+      await prisma.botConversation.update({
+        where: { id: botConv.id },
+        data: { step: 'IDLE' },
+      })
     }
-    await cwSendMessage(cfg, conversationId, '[BOT] Cliente solicitou atendente humano. Atribuído ao Rafael.', true)
-    // Assign to Rafael (agent 4)
-    const HUMAN_AGENT_ID = cfg.humanAgentId
     try {
       await fetch(`${cwBase(cfg)}/conversations/${conversationId}/assignments`, {
         method: 'POST',
@@ -1541,10 +1584,6 @@ async function handleButtonClick(
         body: JSON.stringify({ assignee_id: HUMAN_AGENT_ID }),
       })
     } catch {}
-    await prisma.botConversation.update({
-      where: { id: botConv.id },
-      data: { human_takeover: true, step: 'HUMAN' },
-    })
     await logBotMessage(cfg, conversationId, '[BUTTON] btn_humano', 'Transferir humano → Rafael', 'BUTTON_HUMANO', phone)
     return true
   }
