@@ -857,6 +857,14 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
     let query = pendingMsgs.map(m => m.content).join('\n')
     const imageUrls: string[] = pendingMsgs.flatMap(m => m.imageUrls || [])
 
+    // ── INJECT CURRENT DATE: LLMs don't know today's date (training cutoff) ──
+    const nowBR = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }))
+    const weekdays = ['domingo', 'segunda-feira', 'terca-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sabado']
+    const months = ['janeiro', 'fevereiro', 'marco', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
+    const dateStr = `${nowBR.getDate()} de ${months[nowBR.getMonth()]} de ${nowBR.getFullYear()} (${weekdays[nowBR.getDay()]})`
+    const timeStr = `${String(nowBR.getHours()).padStart(2,'0')}:${String(nowBR.getMinutes()).padStart(2,'0')}`
+    query += `\n[DATA E HORA ATUAL: ${dateStr} ${timeStr} (horario de Brasilia). Use esta data como referencia para qualquer calculo relativo como "amanha", "proximo dia util", "proxima segunda", etc. NUNCA invente datas de anos anteriores.]`
+
     console.log(`[Bot] Conv ${conversationId}: loop ${loopIdx + 1} — processing ${pendingMsgs.length} consolidated message(s)`)
 
     // Clear pending messages and add to history
