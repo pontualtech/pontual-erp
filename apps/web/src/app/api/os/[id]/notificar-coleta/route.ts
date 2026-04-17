@@ -142,7 +142,6 @@ Equipe ${companyName}
           <!-- HEADER -->
           <tr>
             <td style="background:linear-gradient(135deg,#1e40af 0%,#2563eb 50%,#3b82f6 100%);padding:36px 32px;text-align:center;">
-              <div style="width:56px;height:56px;background:rgba(255,255,255,0.15);border-radius:14px;margin:0 auto 12px;line-height:56px;font-size:28px;">&#128666;</div>
               <h1 style="margin:0 0 4px;color:#ffffff;font-size:22px;font-weight:800;">Confirmacao de Coleta</h1>
               <p style="margin:0;color:rgba(255,255,255,0.7);font-size:12px;">${escapeHtml(companyName)}</p>
             </td>
@@ -217,31 +216,8 @@ Equipe ${companyName}
                 </td></tr></table>
               </div>
 
-              ${customerEmail ? `
-                <p style="font-size:12px;color:#64748b;margin:0 0 4px;">
-                  Historico enviado para: <strong>${escapeHtml(customerEmail)}</strong>
-                </p>
-                <p style="font-size:11px;color:#94a3b8;margin:0 0 16px;">
-                  Verifique tambem a pasta de Spam/Lixo Eletronico
-                </p>
-              ` : ''}
             </td>
           </tr>
-          <!-- ACOMPANHE SUA OS -->
-          <tr><td style="padding:0 32px 24px;">
-            <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:16px;text-align:center;">
-              <p style="margin:0 0 8px;font-size:14px;font-weight:700;color:#0369a1;">📱 Acompanhe sua OS</p>
-              <p style="margin:0 0 12px;font-size:13px;color:#0c4a6e;">Acesse o Portal do Cliente ou consulte pelo nosso site:</p>
-              <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr>
-                <td style="padding:0 6px;"><a href="${portalBase}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Portal do Cliente</a></td>
-                <td style="padding:0 6px;"><a href="${companyWebsite}/#consulta-os" style="display:inline-block;padding:10px 20px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Consultar no Site</a></td>
-              </tr></table>
-              <p style="margin:12px 0 0;font-size:13px;color:#0c4a6e;">Duvidas? Fale com nosso suporte:</p>
-              <table cellpadding="0" cellspacing="0" style="margin:8px auto 0;"><tr>
-                <td><a href="${whatsappUrl}" style="display:inline-block;padding:10px 24px;background:#25d366;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">💬 WhatsApp Suporte</a></td>
-              </tr></table>
-            </div>
-          </td></tr>
           <!-- FOOTER -->
           <tr>
             <td style="background:#1e293b;padding:28px 32px;text-align:center;">
@@ -251,7 +227,7 @@ Equipe ${companyName}
               <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">CNPJ: ${escapeHtml(companyCnpj)}</p>
               <p style="margin:0 0 4px;font-size:11px;color:#94a3b8;">Tel: ${escapeHtml(companyPhone)} | ${escapeHtml(companyEmail2)}</p>
               <div style="border-top:1px solid #334155;padding-top:10px;margin-top:10px;">
-                <p style="margin:0;font-size:10px;color:#64748b;">⚙️ Esta e uma mensagem automatica. Nao responda diretamente este email.</p>
+                <p style="margin:0;font-size:10px;color:#64748b;">Duvidas? Responda este e-mail ou ligue para ${escapeHtml(companyPhone)}.</p>
               </div>
             </td>
           </tr>
