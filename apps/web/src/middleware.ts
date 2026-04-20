@@ -17,10 +17,27 @@ function withCors(response: NextResponse, origin: string): NextResponse {
   return response
 }
 
+// Host-based portal routing: portal.<tenant>.com.br should land the customer
+// on /portal/<slug>/login, not on the generic ERP login. Map once here.
+const PORTAL_HOST_SLUG: Record<string, string> = {
+  'portal.pontualtech.com.br': 'pontualtech',
+  'portal.imprimitech.com.br': 'imprimitech',
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
+  const host = request.headers.get('host') || ''
   const origin = request.headers.get('origin') || ''
   const isAllowedOrigin = CORS_ORIGINS.includes(origin)
+
+  // Redirect root/login paths on customer-portal hosts to the tenant portal login.
+  // Only applies to page routes — never to /portal/*, /api/*, or static assets.
+  const portalSlug = PORTAL_HOST_SLUG[host.toLowerCase()]
+  if (portalSlug && !pathname.startsWith('/portal/') && !pathname.startsWith('/api/') && !pathname.startsWith('/_next/')) {
+    const url = request.nextUrl.clone()
+    url.pathname = `/portal/${portalSlug}/login`
+    return NextResponse.redirect(url)
+  }
 
   // Bot API routes: skip auth, add CORS for pontualtech.com.br
   if (pathname.startsWith('/api/bot/')) {
