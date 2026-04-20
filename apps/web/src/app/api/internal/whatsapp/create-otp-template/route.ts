@@ -39,19 +39,39 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing whatsapp.cloud.access_token' }, { status: 400 })
   }
 
-  // Auto-discover WABA ID from phone_number_id if not stored in settings
-  let discoveryDebug: any = null
+  // Auto-discover WABA ID. Try multiple strategies.
+  let discoveryDebug: any = { attempts: [] }
   if (!wabaId && phoneNumberId) {
+    // Strategy 1: debug_token returns granular_scopes including WABA
     try {
-      const r = await fetch(
-        `https://graph.facebook.com/v21.0/${phoneNumberId}?fields=whatsapp_business_account,id,display_phone_number`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      )
-      const d = await r.json()
-      wabaId = d?.whatsapp_business_account?.id
-      discoveryDebug = { status: r.status, response: d }
+      const dbgRes = await fetch(`https://graph.facebook.com/v21.0/debug_token?input_token=${token}&access_token=${token}`)
+      const dbg = await dbgRes.json()
+      discoveryDebug.attempts.push({ strategy: 'debug_token', response: dbg })
+      const scopes = dbg?.data?.granular_scopes
+      if (scopes) {
+        for (const s of scopes) {
+          if (s.scope === 'whatsapp_business_management' && s.target_ids?.length) {
+            wabaId = s.target_ids[0]
+            break
+          }
+        }
+      }
     } catch (e: any) {
-      discoveryDebug = { error: String(e) }
+      discoveryDebug.attempts.push({ strategy: 'debug_token', error: String(e) })
+    }
+
+    // Strategy 2: GET /me?fields=... — also can return businesses
+    if (!wabaId) {
+      try {
+        const r = await fetch(`https://graph.facebook.com/v21.0/${phoneNumberId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const d = await r.json()
+        discoveryDebug.attempts.push({ strategy: 'phone_lookup', status: r.status, response: d })
+        // Fallback — may not contain WABA
+      } catch (e: any) {
+        discoveryDebug.attempts.push({ strategy: 'phone_lookup', error: String(e) })
+      }
     }
   }
 
