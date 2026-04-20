@@ -1067,10 +1067,17 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
                 return
               }
 
-              // Has active OS in new system — inject context with portal deep links
+              // Has active OS in new system — inject context with magic link portal deep links
+              // Magic link = auto-login, customer doesn't need password to view OS
+              const { createAccessToken } = await import('@/lib/portal-auth')
               const osList = activeOS.map(o => {
                 const osNum = String(o.os_number).padStart(4, '0')
-                const portalLink = o.os_id ? `${portalBase(cfg)}/os/${o.os_id}` : ''
+                let portalLink = ''
+                if (o.os_id) {
+                  const token = createAccessToken(customer.id, cfg.companyId)
+                  const redirect = `/portal/${cfg.slug.replace('-suporte', '')}/os/${o.os_id}`
+                  portalLink = `${portalBase(cfg)}/entrar?t=${token}&r=${encodeURIComponent(redirect)}`
+                }
                 return `OS #${osNum} (${o.equipment}, Status: ${o.status_name}${portalLink ? `, Portal: ${portalLink}` : ''})`
               }).join('; ')
               query += `\n[CONTEXTO DO CLIENTE: Nome: ${customer.legal_name || 'N/A'}, Telefone: ${phone}, OS ativas: ${osList}. O cliente JA FOI IDENTIFICADO — NAO pergunte numero da OS, ja informe o status diretamente. SEMPRE inclua o link do portal na resposta.]`
@@ -1359,7 +1366,28 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
           if (lowerResp.includes('portal')) {
             // Extract specific portal URL from response, or use default
             const portalUrlMatch = responseText.match(/https?:\/\/portal\.[^\s)>\]]+/)
-            const portalUrl = portalUrlMatch?.[0] || `${portalBase(cfg)}/login`
+            let portalUrl = portalUrlMatch?.[0]
+            // Generate magic link if we have an identified customer
+            if (!portalUrl && phone) {
+              try {
+                const phoneDigits = phone.replace(/\D/g, '')
+                const phoneNoCC = phoneDigits.startsWith('55') ? phoneDigits.slice(2) : phoneDigits
+                const matched = await prisma.customer.findFirst({
+                  where: {
+                    company_id: cfg.companyId,
+                    deleted_at: null,
+                    OR: [{ mobile: { contains: phoneNoCC } }, { phone: { contains: phoneNoCC } }],
+                  },
+                  select: { id: true },
+                })
+                if (matched) {
+                  const { createAccessToken } = await import('@/lib/portal-auth')
+                  const token = createAccessToken(matched.id, cfg.companyId)
+                  portalUrl = `${portalBase(cfg)}/entrar?t=${token}`
+                }
+              } catch {}
+            }
+            portalUrl = portalUrl || `${portalBase(cfg)}/login`
             await sendWhatsAppCtaUrl(cfg.companyId, phone, 'Acesse o portal para aprovar, recusar ou acompanhar sua OS:', '📱 Abrir Portal', portalUrl)
           }
         } catch (btnErr) {
