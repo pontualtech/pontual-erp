@@ -60,17 +60,40 @@ export async function POST(req: NextRequest) {
       discoveryDebug.attempts.push({ strategy: 'debug_token', error: String(e) })
     }
 
-    // Strategy 2: GET /me?fields=... — also can return businesses
+    // Strategy 2: GET /{user_id}/businesses → list businesses → get owned WABAs
     if (!wabaId) {
       try {
-        const r = await fetch(`https://graph.facebook.com/v21.0/${phoneNumberId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        const d = await r.json()
-        discoveryDebug.attempts.push({ strategy: 'phone_lookup', status: r.status, response: d })
-        // Fallback — may not contain WABA
+        // The debug_token already returned user_id. Fetch businesses.
+        const userId = discoveryDebug.attempts[0]?.response?.data?.user_id
+        if (userId) {
+          const bizRes = await fetch(`https://graph.facebook.com/v21.0/${userId}/businesses?access_token=${token}`)
+          const biz = await bizRes.json()
+          discoveryDebug.attempts.push({ strategy: 'user_businesses', status: bizRes.status, response: biz })
+          const bizId = biz?.data?.[0]?.id
+          if (bizId) {
+            const wabaRes = await fetch(
+              `https://graph.facebook.com/v21.0/${bizId}/owned_whatsapp_business_accounts?access_token=${token}`
+            )
+            const wbs = await wabaRes.json()
+            discoveryDebug.attempts.push({ strategy: 'owned_wabas', status: wabaRes.status, response: wbs })
+            // Find the WABA that owns this phone_number_id
+            if (wbs?.data?.length) {
+              for (const w of wbs.data) {
+                const phonesRes = await fetch(
+                  `https://graph.facebook.com/v21.0/${w.id}/phone_numbers?access_token=${token}`
+                )
+                const phones = await phonesRes.json()
+                const match = phones?.data?.find((p: any) => p.id === phoneNumberId)
+                if (match) {
+                  wabaId = w.id
+                  break
+                }
+              }
+            }
+          }
+        }
       } catch (e: any) {
-        discoveryDebug.attempts.push({ strategy: 'phone_lookup', error: String(e) })
+        discoveryDebug.attempts.push({ strategy: 'user_businesses', error: String(e) })
       }
     }
   }
