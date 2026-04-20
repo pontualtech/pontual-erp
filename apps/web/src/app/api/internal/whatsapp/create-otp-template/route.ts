@@ -60,40 +60,58 @@ export async function POST(req: NextRequest) {
       discoveryDebug.attempts.push({ strategy: 'debug_token', error: String(e) })
     }
 
-    // Strategy 2: GET /{user_id}/businesses → list businesses → get owned WABAs
+    // Strategy 2: System User is associated with a Business — find via /me/businesses with app token
     if (!wabaId) {
       try {
-        // The debug_token already returned user_id. Fetch businesses.
-        const userId = discoveryDebug.attempts[0]?.response?.data?.user_id
-        if (userId) {
-          const bizRes = await fetch(`https://graph.facebook.com/v21.0/${userId}/businesses?access_token=${token}`)
-          const biz = await bizRes.json()
-          discoveryDebug.attempts.push({ strategy: 'user_businesses', status: bizRes.status, response: biz })
-          const bizId = biz?.data?.[0]?.id
-          if (bizId) {
-            const wabaRes = await fetch(
-              `https://graph.facebook.com/v21.0/${bizId}/owned_whatsapp_business_accounts?access_token=${token}`
+        const bizRes = await fetch(`https://graph.facebook.com/v21.0/me/businesses?access_token=${token}`)
+        const biz = await bizRes.json()
+        discoveryDebug.attempts.push({ strategy: 'me_businesses', status: bizRes.status, response: biz })
+        for (const b of (biz?.data || [])) {
+          const wabaRes = await fetch(
+            `https://graph.facebook.com/v21.0/${b.id}/owned_whatsapp_business_accounts?access_token=${token}`
+          )
+          const wbs = await wabaRes.json()
+          discoveryDebug.attempts.push({ strategy: `owned_wabas:${b.id}`, status: wabaRes.status, response: wbs })
+          for (const w of (wbs?.data || [])) {
+            const phonesRes = await fetch(
+              `https://graph.facebook.com/v21.0/${w.id}/phone_numbers?access_token=${token}`
             )
-            const wbs = await wabaRes.json()
-            discoveryDebug.attempts.push({ strategy: 'owned_wabas', status: wabaRes.status, response: wbs })
-            // Find the WABA that owns this phone_number_id
-            if (wbs?.data?.length) {
-              for (const w of wbs.data) {
-                const phonesRes = await fetch(
-                  `https://graph.facebook.com/v21.0/${w.id}/phone_numbers?access_token=${token}`
-                )
-                const phones = await phonesRes.json()
-                const match = phones?.data?.find((p: any) => p.id === phoneNumberId)
-                if (match) {
-                  wabaId = w.id
-                  break
-                }
-              }
+            const phones = await phonesRes.json()
+            if (phones?.data?.some((p: any) => p.id === phoneNumberId)) {
+              wabaId = w.id
+              break
+            }
+          }
+          if (wabaId) break
+        }
+      } catch (e: any) {
+        discoveryDebug.attempts.push({ strategy: 'me_businesses', error: String(e) })
+      }
+    }
+
+    // Strategy 3: list all WABAs via the app itself
+    if (!wabaId) {
+      try {
+        const appId = discoveryDebug.attempts[0]?.response?.data?.app_id
+        if (appId) {
+          const appRes = await fetch(
+            `https://graph.facebook.com/v21.0/${appId}/owned_whatsapp_business_accounts?access_token=${token}`
+          )
+          const app = await appRes.json()
+          discoveryDebug.attempts.push({ strategy: 'app_owned_wabas', status: appRes.status, response: app })
+          for (const w of (app?.data || [])) {
+            const phonesRes = await fetch(
+              `https://graph.facebook.com/v21.0/${w.id}/phone_numbers?access_token=${token}`
+            )
+            const phones = await phonesRes.json()
+            if (phones?.data?.some((p: any) => p.id === phoneNumberId)) {
+              wabaId = w.id
+              break
             }
           }
         }
       } catch (e: any) {
-        discoveryDebug.attempts.push({ strategy: 'user_businesses', error: String(e) })
+        discoveryDebug.attempts.push({ strategy: 'app_owned_wabas', error: String(e) })
       }
     }
   }
