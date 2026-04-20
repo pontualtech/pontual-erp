@@ -103,8 +103,11 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization)
      * - favicon.ico (favicon)
-     * - public files (images, etc.)
+     * - public files: images, fonts, service-worker.js, PWA manifest.
+     * Adding `js` and `webmanifest` pra liberar o Service Worker do
+     * motorista (/motorista/sw.js) e o manifest (/motorista/manifest.webmanifest)
+     * que antes caiam no redirect do Supabase updateSession.
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|webmanifest|js)$).*)',
   ],
 }
