@@ -1,0 +1,13 @@
+{
+  "name": "PontualRota — App do Motorista",
+  "short_name": "PontualRota",
+  "start_url": "/motorista/rota",
+  "scope": "/motorista/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f8fafc",
+  "theme_color": "#1e40af",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
