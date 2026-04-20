@@ -109,6 +109,7 @@ export async function GET(req: NextRequest) {
       data: {
         company_id: company.id,
         customer_id: customer.id,
+        password_hash: '', // no password — OAuth-only login
         email_verified: true, // Google verified the email for us
       },
     })

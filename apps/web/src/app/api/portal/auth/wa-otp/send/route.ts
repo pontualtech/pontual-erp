@@ -91,6 +91,7 @@ export async function POST(req: NextRequest) {
         data: {
           company_id: company.id,
           customer_id: customer.id,
+          password_hash: '', // no password — WhatsApp OTP login only
           email_verified: false,
         },
       })
