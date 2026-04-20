@@ -86,12 +86,15 @@ export async function POST(req: NextRequest, { params }: Params) {
         const { toTitleCase: toTitleCaseWaResend } = await import('@/lib/format-text')
         const resendOsNum = String(os.os_number).padStart(4, '0')
         const resendEquipment = toTitleCaseWaResend([os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ') || 'Equipamento')
-        void sendWhatsAppTemplate(user.companyId, customerPhone as string, 'pontualtech_status_os', 'pt_BR', [
+        const { createAccessToken: cat1 } = await import('@/lib/portal-auth')
+        const magicToken1 = cat1(os.customer_id, user.companyId)
+        void sendWhatsAppTemplate(user.companyId, customerPhone as string, 'pontualtech_status_os_v2', 'pt_BR', [
           { type: 'body', parameters: [
             { type: 'text', text: resendOsNum },
             { type: 'text', text: toStatus.name },
             { type: 'text', text: resendEquipment },
-          ] }
+          ] },
+          { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: magicToken1 }] },
         ]).catch(() => {})
       }
 
@@ -501,14 +504,19 @@ export async function POST(req: NextRequest, { params }: Params) {
       const { toTitleCase: toTitleCaseWa1 } = await import('@/lib/format-text')
       const equipment = toTitleCaseWa1([os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ') || 'Equipamento')
 
-      // Send via template with buttons (works outside 24h window)
-      sendWhatsAppTemplate(user.companyId, phone, 'pontualtech_status_os', 'pt_BR', [
-        { type: 'body', parameters: [
-          { type: 'text', text: osNum },
-          { type: 'text', text: statusName },
-          { type: 'text', text: equipment },
-        ] }
-      ]).catch(() => {})
+      // Send via template with magic-link button (works outside 24h window)
+      ;(async () => {
+        const { createAccessToken: cat2 } = await import('@/lib/portal-auth')
+        const magicToken2 = cat2(os.customer_id, user.companyId)
+        return sendWhatsAppTemplate(user.companyId, phone, 'pontualtech_status_os_v2', 'pt_BR', [
+          { type: 'body', parameters: [
+            { type: 'text', text: osNum },
+            { type: 'text', text: statusName },
+            { type: 'text', text: equipment },
+          ] },
+          { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: magicToken2 }] },
+        ])
+      })().catch(() => {})
     }
 
     // ====== EMAIL NOTIFICATION: notify customer of status change (fire-and-forget) ======
@@ -567,14 +575,19 @@ export async function POST(req: NextRequest, { params }: Params) {
       const osNum = String(os.os_number).padStart(4, '0')
       const equipment = toTitleCaseWa([os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ') || 'Equipamento')
 
-      // Always use Meta Cloud API template for WhatsApp (works outside 24h window)
-      void sendWhatsAppTemplate(user.companyId, customerPhone, 'pontualtech_status_os', 'pt_BR', [
-        { type: 'body', parameters: [
-          { type: 'text', text: osNum },
-          { type: 'text', text: toStatus.name },
-          { type: 'text', text: equipment },
-        ] }
-      ]).catch(e =>
+      // Always use Meta Cloud API template with magic-link for WhatsApp (works outside 24h window)
+      void (async () => {
+        const { createAccessToken: cat3 } = await import('@/lib/portal-auth')
+        const magicToken3 = cat3(os.customer_id, user.companyId)
+        return sendWhatsAppTemplate(user.companyId, customerPhone, 'pontualtech_status_os_v2', 'pt_BR', [
+          { type: 'body', parameters: [
+            { type: 'text', text: osNum },
+            { type: 'text', text: toStatus.name },
+            { type: 'text', text: equipment },
+          ] },
+          { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: magicToken3 }] },
+        ])
+      })().catch(e =>
         console.log('[Transition] WhatsApp template notification failed (ignored):', e)
       )
     }

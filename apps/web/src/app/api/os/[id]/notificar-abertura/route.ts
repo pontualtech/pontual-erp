@@ -246,12 +246,14 @@ export async function POST(req: NextRequest, { params }: Params) {
     const phone = customer.mobile || customer.phone
     if (phone) {
       const fallback = `*OS #${osNum} aberta!*\n\nEquipamento: ${equipment || 'Equipamento'}\nProblema: ${os.reported_issue || 'A diagnosticar'}\n\nAcompanhe pelo portal do cliente.`
-      const result = await sendWhatsAppTemplate(companyId, phone, 'pt_os_aberta_v2', 'pt_BR', [
+      const { createAccessToken } = await import('@/lib/portal-auth')
+      const magicToken = createAccessToken(os.customer_id, companyId)
+      const result = await sendWhatsAppTemplate(companyId, phone, 'pt_os_aberta_v3', 'pt_BR', [
         { type: 'body', parameters: [
           { type: 'text', text: osNum },
           { type: 'text', text: equipment || 'Equipamento' },
-          { type: 'text', text: os.reported_issue || 'A diagnosticar' },
-        ] }
+        ] },
+        { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: magicToken }] },
       ], fallback)
       whatsappSent = result.success
     }

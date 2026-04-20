@@ -191,11 +191,14 @@ ${companyName}
       try {
         const phone = customerPhone.replace(/\D/g, '')
         const fallback = `*Equipamento pronto! — OS #${osNum}*\n\nSeu ${equipment || 'equipamento'} esta pronto para retirada!\n\nAcompanhe pelo portal do cliente.`
-        const waResult = await sendWhatsAppTemplate(user.companyId, phone, 'pontualtech_pronto', 'pt_BR', [
+        const { createAccessToken } = await import('@/lib/portal-auth')
+        const magicToken = createAccessToken(os.customer_id, user.companyId)
+        const waResult = await sendWhatsAppTemplate(user.companyId, phone, 'pontualtech_pronto_v2', 'pt_BR', [
           { type: 'body', parameters: [
             { type: 'text', text: osNum },
             { type: 'text', text: equipment || 'Equipamento' },
-          ] }
+          ] },
+          { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: magicToken }] },
         ], fallback)
         results.push({ channel: 'whatsapp', status: waResult.success ? 'enviado' : 'erro' })
       } catch {

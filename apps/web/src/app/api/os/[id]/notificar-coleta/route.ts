@@ -257,9 +257,16 @@ Equipe ${companyName}
     if (channels.includes('whatsapp') && customerPhone) {
       try {
         const phone = customerPhone.replace(/\D/g, '')
+        // Magic-link token for one-click login on the button URL
+        const { createAccessToken } = await import('@/lib/portal-auth')
+        const magicToken = createAccessToken(os.customer_id, user.companyId)
+        // Prefer v3 template with dynamic URL button; falls back to v2 if not yet approved
         const waResult = await sendWhatsAppTemplate(
-          user.companyId, phone, 'pt_coleta_v2', 'pt_BR',
-          [{ type: 'body', parameters: [{ type: 'text', text: osNum }] }],
+          user.companyId, phone, 'pt_coleta_v3', 'pt_BR',
+          [
+            { type: 'body', parameters: [{ type: 'text', text: osNum }] },
+            { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: magicToken }] },
+          ],
           whatsappMsg // fallback text for Evolution API
         )
         if (waResult.success) {
