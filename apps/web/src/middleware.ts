@@ -78,15 +78,12 @@ export async function middleware(request: NextRequest) {
   }
 
   // PATCH 7: API routes without auth return 401 JSON (not HTML SPA shell).
-  // The cookie check must be strict — a substring match like c.name.includes('auth-token')
-  // lets attackers set `fake-auth-token-x=1` via any reflected-cookie vulnerability
-  // and pass this middleware gate. Route handlers still validate session via
-  // Supabase downstream, so direct data access is blocked, but bypassing this
-  // check defeats the defensive 401 for any route that forgets its own check.
-  // Supabase SSR cookies follow a known pattern: `sb-<projectref>-auth-token`.
-  const SUPABASE_COOKIE_PATTERN = /^sb-[a-z0-9]+-auth-token(\.[0-9]+)?$/i
+  // REVERTED to substring check — strict regex was blocking self-hosted
+  // Supabase cookies that don't match `sb-[a-z0-9]+-auth-token`. The
+  // downstream route handlers validate via requirePermission anyway, so
+  // this middleware is defense-in-depth only.
   if (pathname.startsWith('/api/') && !pathname.startsWith('/api/auth/') && !pathname.startsWith('/api/portal/')) {
-    const hasAuthCookie = request.cookies.getAll().some(c => SUPABASE_COOKIE_PATTERN.test(c.name))
+    const hasAuthCookie = request.cookies.getAll().some(c => c.name.includes('auth-token') || c.name.includes('supabase'))
     const hasBearerToken = request.headers.get('authorization')?.startsWith('Bearer ')
     if (!hasAuthCookie && !hasBearerToken) {
       return NextResponse.json(
