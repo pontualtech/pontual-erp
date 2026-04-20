@@ -116,23 +116,45 @@ export async function POST(req: NextRequest) {
     //   3. Fall back to Evolution API text (unofficial, works anytime)
     const otpText = `*${otpCode}* é seu código de acesso ao Portal ${company.name}.\n\nVálido por 10 minutos. Não compartilhe com ninguém.`
 
-    void (async () => {
-      const tmpl = await sendWhatsAppTemplate(
-        company.id,
-        normalizedPhone,
-        'pt_portal_otp',
-        'pt_BR',
-        [{ type: 'body', parameters: [{ type: 'text', text: otpCode }] }],
-        otpText // used by Evolution fallback if Meta Cloud isn't configured
-      )
-      if (tmpl.success) return
-      console.warn('[Portal WA OTP] template failed, retrying as plain text:', tmpl.error)
-      // Template may not exist yet — try plain text (Cloud 24h window or Evolution)
+    // Await the send so we can surface a real failure to the caller instead of
+    // lying with "código enviado" when WhatsApp actually failed.
+    const tmpl = await sendWhatsAppTemplate(
+      company.id,
+      normalizedPhone,
+      'pt_portal_otp',
+      'pt_BR',
+      [{ type: 'body', parameters: [{ type: 'text', text: otpCode }] }],
+      otpText // used by Evolution fallback if Meta Cloud isn't configured
+    )
+
+    let delivered = tmpl.success
+    let lastError = tmpl.error
+
+    if (!tmpl.success) {
+      console.warn('[Portal WA OTP] template failed, retrying as plain text:', {
+        companyId: company.id,
+        customerId: customer.id,
+        error: tmpl.error,
+      })
       const plain = await sendWhatsAppCloud(company.id, normalizedPhone, otpText)
+      delivered = plain.success
+      lastError = plain.error || tmpl.error
       if (!plain.success) {
-        console.error('[Portal WA OTP] all send methods failed:', { tmpl: tmpl.error, plain: plain.error })
+        console.error('[Portal WA OTP] all send methods failed:', {
+          companyId: company.id,
+          customerId: customer.id,
+          tmpl: tmpl.error,
+          plain: plain.error,
+        })
       }
-    })()
+    }
+
+    if (!delivered) {
+      return NextResponse.json(
+        { error: 'Nao conseguimos enviar o codigo pelo WhatsApp. Tente o login por CPF ou Google.' },
+        { status: 502 }
+      )
+    }
 
     return NextResponse.json({
       data: {

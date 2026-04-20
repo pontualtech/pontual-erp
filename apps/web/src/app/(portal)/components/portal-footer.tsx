@@ -2,8 +2,17 @@
 
 import { useEffect, useState } from 'react'
 
+function normalizeWhatsApp(raw: string | undefined | null): string {
+  if (!raw) return ''
+  const digits = raw.replace(/\D/g, '')
+  if (!digits) return ''
+  // Ensure 55 country code for wa.me links
+  return digits.startsWith('55') ? digits : `55${digits}`
+}
+
 export function PortalFooter() {
   const [companyName, setCompanyName] = useState('')
+  const [supportWhatsApp, setSupportWhatsApp] = useState('')
   const currentYear = new Date().getFullYear()
 
   useEffect(() => {
@@ -12,6 +21,7 @@ export function PortalFooter() {
       try {
         const parsed = JSON.parse(stored)
         setCompanyName(parsed.name || parsed.company_name || '')
+        setSupportWhatsApp(normalizeWhatsApp(parsed.whatsapp || parsed.support_whatsapp || parsed.phone))
       } catch {
         setCompanyName(stored)
       }
@@ -41,15 +51,19 @@ export function PortalFooter() {
             >
               Pol&iacute;tica de Privacidade
             </a>
-            <span className="text-gray-300 dark:text-zinc-700">|</span>
-            <a
-              href="https://wa.me/551126263841"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="transition-colors hover:text-green-600 dark:hover:text-green-400"
-            >
-              Suporte via WhatsApp
-            </a>
+            {supportWhatsApp && (
+              <>
+                <span className="text-gray-300 dark:text-zinc-700">|</span>
+                <a
+                  href={`https://wa.me/${supportWhatsApp}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="transition-colors hover:text-green-600 dark:hover:text-green-400"
+                >
+                  Suporte via WhatsApp
+                </a>
+              </>
+            )}
             <span className="text-gray-300 dark:text-zinc-700">|</span>
             <span>&copy; {currentYear}</span>
           </div>

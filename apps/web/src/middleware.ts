@@ -39,6 +39,19 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
+  // Cross-tenant guard: if portal host is serving a path for a DIFFERENT tenant's
+  // slug (e.g. portal.pontualtech.com.br/portal/imprimitech/...), redirect to the
+  // correct tenant host so each brand stays isolated to its own domain.
+  if (portalSlug && pathname.startsWith('/portal/')) {
+    const urlSlug = pathname.split('/')[2]
+    if (urlSlug && urlSlug !== portalSlug) {
+      const targetHost = Object.entries(PORTAL_HOST_SLUG).find(([, s]) => s === urlSlug)?.[0]
+      if (targetHost) {
+        return NextResponse.redirect(`https://${targetHost}${pathname}${request.nextUrl.search}`)
+      }
+    }
+  }
+
   // Bot API routes: skip auth, add CORS for pontualtech.com.br
   if (pathname.startsWith('/api/bot/')) {
     if (request.method === 'OPTIONS' && isAllowedOrigin) {

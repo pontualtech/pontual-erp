@@ -93,7 +93,12 @@ export default function PortalLoginPage() {
   }
 
   async function handleResendOtp() {
-    if (otpTimer > 240) { // can resend after 60s
+    // Timer counts down from 300 (email) or 600 (whatsapp). Allow resend only
+    // after 60s have elapsed — i.e. when the remaining timer has dropped past
+    // that threshold. Comparing directly against initialTime - 60 keeps the
+    // logic obvious when the channel changes.
+    const initialOtp = otpChannel === 'whatsapp' ? 600 : 300
+    if (otpTimer > initialOtp - 60) {
       toast.error('Aguarde antes de solicitar um novo codigo')
       return
     }
@@ -409,7 +414,7 @@ export default function PortalLoginPage() {
                   <button
                     type="button"
                     onClick={handleResendOtp}
-                    disabled={otpTimer > 240}
+                    disabled={otpTimer > (otpChannel === 'whatsapp' ? 540 : 240)}
                     className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium disabled:text-gray-400 dark:disabled:text-gray-600 disabled:cursor-not-allowed"
                   >
                     Reenviar codigo

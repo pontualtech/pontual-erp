@@ -5,6 +5,17 @@ import { createHmac, timingSafeEqual } from 'crypto'
 
 const STATE_MAX_AGE_MS = 10 * 60 * 1000 // 10 min
 
+// Maps tenant slug -> customer-facing portal domain. Keep in sync with
+// middleware.ts PORTAL_HOST_SLUG.
+const PORTAL_DOMAIN_BY_SLUG: Record<string, string> = {
+  pontualtech: 'https://portal.pontualtech.com.br',
+  imprimitech: 'https://portal.imprimitech.com.br',
+}
+
+function portalDomainForSlug(slug: string): string {
+  return PORTAL_DOMAIN_BY_SLUG[slug] || `https://portal.${slug}.com.br`
+}
+
 function verifyState(state: string): { slug: string; redirect: string; nonce: string; iat: number } | null {
   try {
     const [payloadB64, sig] = state.split('.')
@@ -22,6 +33,32 @@ function verifyState(state: string): { slug: string; redirect: string; nonce: st
   }
 }
 
+// When state verification fails we still want to send the user back to their
+// own tenant portal — never silently drop them on PontualTech. Try to extract
+// the slug from the (unverified) state payload; if that fails, fall back to
+// inferring the tenant from the Referer (the OAuth init always originates from
+// the tenant's portal domain).
+function inferSlugFallback(stateParam: string | null, req: NextRequest): string {
+  if (stateParam) {
+    try {
+      const [payloadB64] = stateParam.split('.')
+      if (payloadB64) {
+        const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'))
+        if (payload && typeof payload.slug === 'string' && PORTAL_DOMAIN_BY_SLUG[payload.slug]) {
+          return payload.slug
+        }
+      }
+    } catch {
+      // ignore — fall through to host-based inference
+    }
+  }
+  const referer = req.headers.get('referer') || ''
+  for (const [slug, domain] of Object.entries(PORTAL_DOMAIN_BY_SLUG)) {
+    if (referer.startsWith(domain)) return slug
+  }
+  return 'pontualtech' // last-resort default
+}
+
 // GET /api/portal/auth/google/callback?code=...&state=...
 // Handles Google OAuth callback: exchanges code for token, finds customer, creates session
 export async function GET(req: NextRequest) {
@@ -32,19 +69,18 @@ export async function GET(req: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'
 
   function redirectToLogin(slug: string, errMsg: string) {
-    const isImpri = slug.includes('imprimitech')
-    const portalDomain = isImpri ? 'https://portal.imprimitech.com.br' : 'https://portal.pontualtech.com.br'
+    const portalDomain = portalDomainForSlug(slug)
     const loginUrl = new URL(`${portalDomain}/portal/${slug}/login`)
     loginUrl.searchParams.set('error', errMsg)
     return NextResponse.redirect(loginUrl.toString())
   }
 
-  if (error) return redirectToLogin('pontualtech', `google_${error}`)
-  if (!code || !stateParam) return redirectToLogin('pontualtech', 'google_no_code')
+  if (error) return redirectToLogin(inferSlugFallback(stateParam, req), `google_${error}`)
+  if (!code || !stateParam) return redirectToLogin(inferSlugFallback(stateParam, req), 'google_no_code')
 
   // CSRF + integrity check: HMAC-signed state (stateless, works across domains)
   const state = verifyState(stateParam)
-  if (!state) return redirectToLogin('pontualtech', 'google_bad_state')
+  if (!state) return redirectToLogin(inferSlugFallback(stateParam, req), 'google_bad_state')
 
   // Per-tenant client credentials
   const slugUpper = state.slug.toUpperCase().replace(/-/g, '_')
@@ -141,8 +177,7 @@ export async function GET(req: NextRequest) {
   // which is required because cookies don't cross different eTLD+1 domains.
   const accessToken = createAccessToken(customer.id, company.id)
 
-  const isImpri = state.slug.includes('imprimitech')
-  const portalDomain = isImpri ? 'https://portal.imprimitech.com.br' : 'https://portal.pontualtech.com.br'
+  const portalDomain = portalDomainForSlug(state.slug)
 
   const entryUrl = new URL(`${portalDomain}/portal/${state.slug}/entrar`)
   entryUrl.searchParams.set('t', accessToken)

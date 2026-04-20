@@ -22,6 +22,63 @@ function formatBRL(cents: number | null | undefined): string {
   return `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`
 }
 
+// Portal domain per tenant slug — keep aligned with middleware.ts PORTAL_HOST_SLUG
+// and the Google OAuth callback helper.
+const PORTAL_DOMAIN_BY_SLUG: Record<string, string> = {
+  pontualtech: 'portal.pontualtech.com.br',
+  imprimitech: 'portal.imprimitech.com.br',
+}
+
+type CompanyContact = {
+  portalUrl: string
+  addressLine: string | null
+  supportWhatsApp: string | null
+  companyName: string
+}
+
+/**
+ * Load tenant contact data used in customer-facing messages. Reads
+ * `bot.config.*` settings first (operator-editable) and falls back to
+ * slug-based defaults so a brand-new tenant never leaks PontualTech details.
+ */
+async function getCompanyContact(companyId: string): Promise<CompanyContact> {
+  const company = await prisma.company.findUnique({
+    where: { id: companyId },
+    select: { name: true, slug: true },
+  })
+  const slug = company?.slug || ''
+  const domain = PORTAL_DOMAIN_BY_SLUG[slug] || (slug ? `portal.${slug}.com.br` : '')
+
+  const settings = await prisma.setting.findMany({
+    where: {
+      company_id: companyId,
+      key: { in: ['bot.config.portal_url', 'bot.config.support_whatsapp', 'bot.config.address'] },
+    },
+  })
+  const map: Record<string, string> = {}
+  for (const s of settings) map[s.key] = s.value
+
+  const portalUrl = (map['bot.config.portal_url']?.replace(/\/+$/, ''))
+    || (slug ? `https://${domain}/portal/${slug}` : '')
+
+  return {
+    portalUrl,
+    addressLine: map['bot.config.address']?.trim() || null,
+    supportWhatsApp: map['bot.config.support_whatsapp']?.replace(/\D/g, '') || null,
+    companyName: company?.name || slug || 'nossa loja',
+  }
+}
+
+/** Format a WhatsApp number for display. Handles "5511..." or local 10/11 digit input. */
+function formatWhatsAppDisplay(raw: string | null): string | null {
+  if (!raw) return null
+  const d = raw.replace(/\D/g, '')
+  const noCC = d.startsWith('55') && d.length >= 12 ? d.slice(2) : d
+  if (noCC.length === 11) return `(${noCC.slice(0, 2)}) ${noCC.slice(2, 7)}-${noCC.slice(7)}`
+  if (noCC.length === 10) return `(${noCC.slice(0, 2)}) ${noCC.slice(2, 6)}-${noCC.slice(6)}`
+  return raw
+}
+
 /** Format date to DD/MM/YYYY */
 function formatDate(d: Date | string | null): string {
   if (!d) return '-'
@@ -324,29 +381,36 @@ async function continueOrcamentoFlow(
 
         clearState(conversationId)
 
-        // 5. Send confirmation with OS number to client
+        // 5. Send confirmation with OS number to client — all contact data loaded
+        // per-tenant so every brand shows its own address/phone/portal link.
+        const contact = await getCompanyContact(companyId)
+        const addressBlock = contact.addressLine ? `${contact.addressLine}\n` : ''
+        const supportLine = contact.supportWhatsApp
+          ? `WhatsApp Suporte: ${formatWhatsAppDisplay(contact.supportWhatsApp)}`
+          : ''
+        const portalLine = contact.portalUrl ? `Acompanhe online: ${contact.portalUrl}` : ''
+
         let msg: string
         if (osNumber > 0) {
           msg = `Pronto! Sua OS *#${osNumber}* foi aberta com sucesso!\n\n`
             + `Equipamento: ${equipType}\n`
             + `Defeito: ${issue}\n\n`
-            + `Voce pode trazer o equipamento em nossa loja:\n`
-            + `Rua Ouvidor Peleja, 660 - Vila Mariana - Sao Paulo/SP\n`
-            + `Seg a Sex, 9h as 18h\n\n`
-            + `Acompanhe online: https://portal.pontualtech.com.br/portal/pontualtech\n`
-            + `WhatsApp Suporte: (11) 2626-3841`
+            + (addressBlock ? `Voce pode trazer o equipamento em nossa loja:\n${addressBlock}\n` : '')
+            + [portalLine, supportLine].filter(Boolean).join('\n')
         } else {
-          msg = 'Orcamento registrado! Voce pode trazer o equipamento em nossa loja de segunda a sexta, das 9h as 18h.\n\nRua Ouvidor Peleja, 660 - Vila Mariana - Sao Paulo/SP\nWhatsApp Suporte: (11) 2626-3841'
+          msg = 'Orcamento registrado! Nossa equipe retornara em breve.\n\n'
+            + [addressBlock.trim(), supportLine].filter(Boolean).join('\n')
         }
         await sendChatwootMessage(conversationId, msg)
 
         // 6. Notify team via private note
         if (osNumber > 0) {
+          const erpBase = (process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work').replace(/\/+$/, '')
           const noteMsg = `[BOT ANA] Nova OS #${osNumber} criada via WhatsApp\n`
             + `Cliente: ${customerName}${isNewCustomer ? ' (NOVO CADASTRO)' : ''}\n`
             + `Equipamento: ${equipType}\n`
             + `Defeito: ${issue}\n`
-            + `Link: https://erp.pontualtech.work/os/${osNumber}`
+            + `Link: ${erpBase}/os/${osNumber}`
           await sendChatwootMessage(conversationId, noteMsg, true).catch(() => {})
         }
 
