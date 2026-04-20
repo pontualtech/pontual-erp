@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { randomBytes } from 'crypto'
+import { randomBytes, createHmac } from 'crypto'
+
+function signState(payload: string): string {
+  const secret = process.env.PORTAL_AUTH_SECRET || process.env.NEXTAUTH_SECRET || 'dev-secret'
+  return createHmac('sha256', secret + ':google-state').update(payload).digest('base64url')
+}
 
 // GET /api/portal/auth/google?slug={company_slug}&redirect={path}
 // Redirects user to Google OAuth consent screen
@@ -28,10 +33,13 @@ export async function GET(req: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'
   const redirectUri = `${appUrl}/api/portal/auth/google/callback`
 
-  // CSRF protection: signed state with slug + nonce + optional redirect
+  // CSRF protection via HMAC-signed state (stateless, works across domains).
+  // Payload includes issued-at (10 min window) instead of cookie-based nonce.
   const nonce = randomBytes(16).toString('hex')
-  const statePayload = JSON.stringify({ slug, redirect, nonce })
-  const state = Buffer.from(statePayload).toString('base64url')
+  const payload = JSON.stringify({ slug, redirect, nonce, iat: Date.now() })
+  const payloadB64 = Buffer.from(payload).toString('base64url')
+  const sig = signState(payloadB64)
+  const state = `${payloadB64}.${sig}`
 
   const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth')
   authUrl.searchParams.set('client_id', clientId)
@@ -42,15 +50,5 @@ export async function GET(req: NextRequest) {
   authUrl.searchParams.set('prompt', 'select_account')
   authUrl.searchParams.set('access_type', 'online')
 
-  // Store nonce in short-lived cookie for CSRF validation on callback
-  const response = NextResponse.redirect(authUrl.toString())
-  response.cookies.set('g_oauth_nonce', nonce, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 10 * 60, // 10 minutes
-    path: '/',
-  })
-
-  return response
+  return NextResponse.redirect(authUrl.toString())
 }

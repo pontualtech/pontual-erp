@@ -1,6 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
-import { createPortalToken } from '@/lib/portal-auth'
+import { createAccessToken } from '@/lib/portal-auth'
+import { createHmac, timingSafeEqual } from 'crypto'
+
+const STATE_MAX_AGE_MS = 10 * 60 * 1000 // 10 min
+
+function verifyState(state: string): { slug: string; redirect: string; nonce: string; iat: number } | null {
+  try {
+    const [payloadB64, sig] = state.split('.')
+    if (!payloadB64 || !sig) return null
+    const secret = process.env.PORTAL_AUTH_SECRET || process.env.NEXTAUTH_SECRET || 'dev-secret'
+    const expected = createHmac('sha256', secret + ':google-state').update(payloadB64).digest('base64url')
+    const sigBuf = Buffer.from(sig)
+    const expBuf = Buffer.from(expected)
+    if (sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf)) return null
+    const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'))
+    if (!payload.iat || Date.now() - payload.iat > STATE_MAX_AGE_MS) return null
+    return payload
+  } catch {
+    return null
+  }
+}
 
 // GET /api/portal/auth/google/callback?code=...&state=...
 // Handles Google OAuth callback: exchanges code for token, finds customer, creates session
@@ -10,10 +30,10 @@ export async function GET(req: NextRequest) {
   const stateParam = searchParams.get('state')
   const error = searchParams.get('error')
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'
-
   function redirectToLogin(slug: string, errMsg: string) {
-    const loginUrl = new URL(`${appUrl}/portal/${slug}/login`)
+    const isImpri = slug.includes('imprimitech')
+    const portalDomain = isImpri ? 'https://portal.imprimitech.com.br' : 'https://portal.pontualtech.com.br'
+    const loginUrl = new URL(`${portalDomain}/portal/${slug}/login`)
     loginUrl.searchParams.set('error', errMsg)
     return NextResponse.redirect(loginUrl.toString())
   }
@@ -21,19 +41,9 @@ export async function GET(req: NextRequest) {
   if (error) return redirectToLogin('pontualtech', `google_${error}`)
   if (!code || !stateParam) return redirectToLogin('pontualtech', 'google_no_code')
 
-  // Decode and validate state
-  let state: { slug: string; redirect: string; nonce: string }
-  try {
-    state = JSON.parse(Buffer.from(stateParam, 'base64url').toString('utf-8'))
-  } catch {
-    return redirectToLogin('pontualtech', 'google_bad_state')
-  }
-
-  // CSRF check: nonce must match cookie
-  const cookieNonce = req.cookies.get('g_oauth_nonce')?.value
-  if (!cookieNonce || cookieNonce !== state.nonce) {
-    return redirectToLogin(state.slug || 'pontualtech', 'google_csrf')
-  }
+  // CSRF + integrity check: HMAC-signed state (stateless, works across domains)
+  const state = verifyState(stateParam)
+  if (!state) return redirectToLogin('pontualtech', 'google_bad_state')
 
   // Per-tenant client credentials
   const slugUpper = state.slug.toUpperCase().replace(/-/g, '_')
@@ -125,24 +135,19 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  // Create portal session
-  const token = createPortalToken(customer.id, company.id)
+  // Generate a magic-link access token and redirect to the tenant's portal /entrar page.
+  // The /entrar page runs on the portal domain and sets the portal_token cookie there,
+  // which is required because cookies don't cross different eTLD+1 domains.
+  const accessToken = createAccessToken(customer.id, company.id)
 
-  const redirectPath = state.redirect || `/portal/${state.slug}`
-  const finalUrl = new URL(`${appUrl}${redirectPath}`)
-  finalUrl.searchParams.set('g', '1') // flag to signal Google login for analytics
+  const isImpri = state.slug.includes('imprimitech')
+  const portalDomain = isImpri ? 'https://portal.imprimitech.com.br' : 'https://portal.pontualtech.com.br'
 
-  const response = NextResponse.redirect(finalUrl.toString())
-  response.cookies.set('portal_token', token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 7 * 24 * 60 * 60,
-    path: '/',
-  })
-  response.cookies.delete('g_oauth_nonce')
+  const entryUrl = new URL(`${portalDomain}/portal/${state.slug}/entrar`)
+  entryUrl.searchParams.set('t', accessToken)
+  if (state.redirect) entryUrl.searchParams.set('r', state.redirect)
 
-  return response
+  return NextResponse.redirect(entryUrl.toString())
 }
 
 /**
