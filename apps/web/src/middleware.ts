@@ -36,6 +36,10 @@ export async function middleware(request: NextRequest) {
   if (pathname.startsWith('/api/chatwoot/') || pathname.startsWith('/api/webhook/') || pathname.startsWith('/api/webhooks/')) {
     return NextResponse.next()
   }
+  // Internal routes with their own auth (X-Internal-Key header)
+  if (pathname.startsWith('/api/internal/')) {
+    return NextResponse.next()
+  }
   // Internal notification routes: exact path prefix match only
   if (pathname.startsWith('/api/os/') && (
     pathname.endsWith('/notificar-abertura') || pathname.endsWith('/notificar-pronto') || pathname.endsWith('/notificar-coleta')
