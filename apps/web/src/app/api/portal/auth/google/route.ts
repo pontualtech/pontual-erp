@@ -5,9 +5,15 @@ import { rateLimit, getClientIp } from '@/lib/rate-limit'
 function getStateSecret(): string {
   // No 'dev-secret' fallback — a weak/default HMAC key lets an attacker forge
   // OAuth state and bypass CSRF. If neither env is set we fail closed.
-  const secret = process.env.PORTAL_AUTH_SECRET || process.env.NEXTAUTH_SECRET
+  // ENCRYPTION_KEY is accepted as a last resort because portal-auth.ts already
+  // uses it for portal token HMAC (so it IS configured in production and is a
+  // real secret), and the ':google-state' context string prevents key reuse
+  // between the two HMAC domains.
+  const secret = process.env.PORTAL_AUTH_SECRET
+    || process.env.NEXTAUTH_SECRET
+    || process.env.ENCRYPTION_KEY
   if (!secret || secret.length < 16) {
-    throw new Error('PORTAL_AUTH_SECRET ausente ou fraco — Google OAuth desabilitado')
+    throw new Error('PORTAL_AUTH_SECRET/NEXTAUTH_SECRET/ENCRYPTION_KEY ausente ou fraco — Google OAuth desabilitado')
   }
   return secret
 }

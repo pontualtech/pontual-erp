@@ -20,7 +20,12 @@ function verifyState(state: string): { slug: string; redirect: string; nonce: st
   try {
     const [payloadB64, sig] = state.split('.')
     if (!payloadB64 || !sig) return null
-    const secret = process.env.PORTAL_AUTH_SECRET || process.env.NEXTAUTH_SECRET
+    // Must match the secret used in /api/portal/auth/google/route.ts getStateSecret().
+    // ENCRYPTION_KEY is the production fallback since it's guaranteed configured
+    // (used by portal-auth.ts) and much stronger than any hardcoded literal.
+    const secret = process.env.PORTAL_AUTH_SECRET
+      || process.env.NEXTAUTH_SECRET
+      || process.env.ENCRYPTION_KEY
     if (!secret || secret.length < 16) return null // fail closed
     const expected = createHmac('sha256', secret + ':google-state').update(payloadB64).digest('base64url')
     const sigBuf = Buffer.from(sig)
