@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { rateLimit } from '@/lib/rate-limit'
 import { randomInt } from 'crypto'
-import { sendWhatsAppTemplate } from '@/lib/whatsapp/cloud-api'
+import { sendWhatsAppTemplate, sendWhatsAppCloud } from '@/lib/whatsapp/cloud-api'
 
 function generateOtp(): string {
   return String(randomInt(100000, 999999))
@@ -110,17 +110,29 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    // Send via WhatsApp template with Evolution fallback
-    const fallbackText = `${company.name}\n\nSeu codigo de acesso ao Portal do Cliente: *${otpCode}*\n\nValido por 10 minutos. Nao compartilhe este codigo.`
+    // Send OTP via WhatsApp with progressive fallback chain:
+    //   1. Try approved Meta template 'pt_portal_otp' (authentication category, works outside 24h)
+    //   2. Fall back to plain Cloud text (works within 24h window)
+    //   3. Fall back to Evolution API text (unofficial, works anytime)
+    const otpText = `*${otpCode}* é seu código de acesso ao Portal ${company.name}.\n\nVálido por 10 minutos. Não compartilhe com ninguém.`
 
-    void sendWhatsAppTemplate(
-      company.id,
-      normalizedPhone,
-      'portal_otp_v1', // TODO: register this template in Meta Business
-      'pt_BR',
-      [{ type: 'body', parameters: [{ type: 'text', text: otpCode }] }],
-      fallbackText
-    ).catch(err => console.error('[Portal WA OTP] send failed:', err))
+    void (async () => {
+      const tmpl = await sendWhatsAppTemplate(
+        company.id,
+        normalizedPhone,
+        'pt_portal_otp',
+        'pt_BR',
+        [{ type: 'body', parameters: [{ type: 'text', text: otpCode }] }],
+        otpText // used by Evolution fallback if Meta Cloud isn't configured
+      )
+      if (tmpl.success) return
+      console.warn('[Portal WA OTP] template failed, retrying as plain text:', tmpl.error)
+      // Template may not exist yet — try plain text (Cloud 24h window or Evolution)
+      const plain = await sendWhatsAppCloud(company.id, normalizedPhone, otpText)
+      if (!plain.success) {
+        console.error('[Portal WA OTP] all send methods failed:', { tmpl: tmpl.error, plain: plain.error })
+      }
+    })()
 
     return NextResponse.json({
       data: {
