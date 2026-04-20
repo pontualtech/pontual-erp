@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { createAccessToken } from '@/lib/portal-auth'
 import { rateLimit } from '@/lib/rate-limit'
+import { sendWhatsAppCloud } from '@/lib/whatsapp/cloud-api'
 
 /**
  * POST /api/portal/magic-link
@@ -32,11 +33,7 @@ export async function POST(req: NextRequest) {
       }
       companyId = body.company_id
 
-      // Rebuild body context for below
-      const customerId = body.customer_id
-      const redirect = body.redirect
-
-      return buildLinkResponse(companyId, customerId, redirect)
+      return buildLinkResponse(companyId, body.customer_id, body.redirect, undefined, body.send_via_wa)
     }
 
     // Operator call — validate ERP session + permission
@@ -45,14 +42,20 @@ export async function POST(req: NextRequest) {
     companyId = auth.companyId
 
     const body = await req.json()
-    return buildLinkResponse(companyId, body.customer_id, body.redirect, auth.id)
+    return buildLinkResponse(companyId, body.customer_id, body.redirect, auth.id, body.send_via_wa)
   } catch (err) {
     console.error('[MagicLink] Error:', err)
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
   }
 }
 
-async function buildLinkResponse(companyId: string, customerId: string, redirect?: string, userId?: string) {
+async function buildLinkResponse(
+  companyId: string,
+  customerId: string,
+  redirect?: string,
+  userId?: string,
+  sendViaWa?: boolean,
+) {
   if (!customerId) {
     return NextResponse.json({ error: 'customer_id obrigatorio' }, { status: 400 })
   }
@@ -67,7 +70,7 @@ async function buildLinkResponse(companyId: string, customerId: string, redirect
   // Validate customer belongs to company
   const customer = await prisma.customer.findFirst({
     where: { id: customerId, company_id: companyId, deleted_at: null },
-    select: { id: true, legal_name: true },
+    select: { id: true, legal_name: true, mobile: true, phone: true },
   })
   if (!customer) {
     return NextResponse.json({ error: 'Cliente nao encontrado nesta empresa' }, { status: 404 })
@@ -92,12 +95,33 @@ async function buildLinkResponse(companyId: string, customerId: string, redirect
   url.searchParams.set('t', token)
   if (redirect) url.searchParams.set('r', redirect)
 
+  // Optionally push the link to the customer's WhatsApp directly
+  // (Meta Cloud if configured, else Evolution fallback — transparent to caller)
+  let waResult: { attempted: boolean; success?: boolean; channel?: string; error?: string } = { attempted: false }
+  if (sendViaWa) {
+    const phone = customer.mobile || customer.phone
+    if (!phone) {
+      waResult = { attempted: true, success: false, error: 'Cliente sem telefone cadastrado' }
+    } else {
+      const firstName = (customer.legal_name || '').split(' ')[0] || 'Cliente'
+      const text = `Olá, ${firstName}!\n\nAqui está seu acesso direto ao portal do cliente da ${company.name}:\n\n${url.toString()}\n\nLink válido por 48 horas. Nenhuma senha necessária — basta clicar.`
+      const sent = await sendWhatsAppCloud(companyId, String(phone).replace(/\D/g, ''), text)
+      waResult = {
+        attempted: true,
+        success: sent.success,
+        channel: sent.success ? 'whatsapp' : undefined,
+        error: sent.success ? undefined : (sent.error || 'Falha ao enviar'),
+      }
+    }
+  }
+
   return NextResponse.json({
     data: {
       url: url.toString(),
       expires_in_hours: 48,
       customer_name: customer.legal_name,
       company_name: company.name,
+      wa: waResult,
     },
   })
 }
