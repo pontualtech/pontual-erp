@@ -22,7 +22,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { company_id } = await req.json().catch(() => ({}))
+  const body = await req.json().catch(() => ({}))
+  const { company_id, waba_id: wabaIdFromBody } = body
   if (!company_id) return NextResponse.json({ error: 'company_id obrigatorio' }, { status: 400 })
 
   const settings = await prisma.setting.findMany({
@@ -32,7 +33,7 @@ export async function POST(req: NextRequest) {
   for (const s of settings) cfg[s.key] = s.value
 
   const token = cfg['whatsapp.cloud.access_token']
-  let wabaId = cfg['whatsapp.cloud.business_account_id'] || cfg['whatsapp.cloud.waba_id']
+  let wabaId = wabaIdFromBody || cfg['whatsapp.cloud.business_account_id'] || cfg['whatsapp.cloud.waba_id']
   const phoneNumberId = cfg['whatsapp.cloud.phone_number_id']
 
   if (!token) {
@@ -163,9 +164,22 @@ export async function POST(req: NextRequest) {
     })
 
     const data = await res.json()
+
+    // Persist WABA ID if creation succeeded and it wasn't stored yet
+    if (res.ok && wabaIdFromBody && !cfg['whatsapp.cloud.business_account_id']) {
+      try {
+        await prisma.setting.upsert({
+          where: { company_id_key: { company_id, key: 'whatsapp.cloud.business_account_id' } },
+          create: { company_id, key: 'whatsapp.cloud.business_account_id', value: wabaIdFromBody },
+          update: { value: wabaIdFromBody },
+        })
+      } catch {}
+    }
+
     return NextResponse.json({
       success: res.ok,
       status: res.status,
+      waba_id_used: wabaId,
       meta_response: data,
       template_name: 'pt_portal_otp',
     }, { status: res.ok ? 200 : 400 })
