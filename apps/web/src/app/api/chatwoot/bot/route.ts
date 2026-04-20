@@ -157,9 +157,12 @@ function cwBase(cfg: BotCompanyConfig) {
 }
 
 // Portal URL helper — uses cfg.portalUrl if set, otherwise builds from slug
-// Returns base portal URL (no trailing slash), e.g. "https://portal.pontualtech.com.br/portal/pontualtech"
+// Returns base portal URL (no trailing slash, no /login suffix), e.g. "https://portal.pontualtech.com.br/portal/pontualtech"
+// Callers append their own suffix: "/login", "/entrar?t=...", "/os/{id}", etc.
 function portalBase(cfg: BotCompanyConfig): string {
-  if (cfg.portalUrl) return cfg.portalUrl.replace(/\/+$/, '')
+  // Strip trailing slash and legacy /login suffix from DB config — older bot.config.portal_url
+  // values included /login at the end, which breaks new magic-link URLs (/entrar?t=...).
+  if (cfg.portalUrl) return cfg.portalUrl.replace(/\/+$/, '').replace(/\/login$/, '')
   const isImpri = cfg.slug.includes('imprimitech')
   const domain = isImpri ? 'portal.imprimitech.com.br' : 'portal.pontualtech.com.br'
   const tenant = isImpri ? 'imprimitech' : 'pontualtech'

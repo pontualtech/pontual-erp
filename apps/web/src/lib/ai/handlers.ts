@@ -58,7 +58,7 @@ async function getCompanyContact(companyId: string): Promise<CompanyContact> {
   const map: Record<string, string> = {}
   for (const s of settings) map[s.key] = s.value
 
-  const portalUrl = (map['bot.config.portal_url']?.replace(/\/+$/, ''))
+  const portalUrl = (map['bot.config.portal_url']?.replace(/\/+$/, '').replace(/\/login$/, ''))
     || (slug ? `https://${domain}/portal/${slug}` : '')
 
   return {
