@@ -13,9 +13,13 @@ function normalizeWhatsApp(raw: string | undefined | null): string {
 export function PortalFooter() {
   const [companyName, setCompanyName] = useState('')
   const [supportWhatsApp, setSupportWhatsApp] = useState('')
-  const currentYear = new Date().getFullYear()
+  // currentYear must be set in useEffect — when a page is served from the Next
+  // build cache around year-turnover, `new Date()` at render time produces a
+  // different value than at build time and React throws hydration error #418.
+  const [currentYear, setCurrentYear] = useState<number | null>(null)
 
   useEffect(() => {
+    setCurrentYear(new Date().getFullYear())
     const stored = localStorage.getItem('portal_company')
     if (stored) {
       try {
@@ -65,7 +69,7 @@ export function PortalFooter() {
               </>
             )}
             <span className="text-gray-300 dark:text-zinc-700">|</span>
-            <span>&copy; {currentYear}</span>
+            <span suppressHydrationWarning>&copy; {currentYear ?? ''}</span>
           </div>
         </div>
       </div>

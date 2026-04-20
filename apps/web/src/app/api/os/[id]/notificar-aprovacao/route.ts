@@ -52,10 +52,20 @@ export async function POST(req: NextRequest, { params }: Params) {
     const companyPhone = cfg['company.phone'] || ''
     const whatsappNum = (cfg['company.whatsapp'] || '').replace(/\D/g, '')
     const whatsappUrl = whatsappNum ? `https://wa.me/${whatsappNum}` : ''
-    const companyCnpj = cfg['cnab.cnpj'] || cfg['company.cnpj'] || ''
+    // Address/CNPJ: read from company.* keys first (populated for all tenants)
+    // and only fall back to cnab.* (which may only exist when Banco Inter billing
+    // is enabled). Previously cnab.* was the primary source — Imprimitech didn't
+    // have those keys, so emails arrived with empty commas.
+    const companyCnpj = cfg['company.cnpj'] || cfg['cnab.cnpj'] || ''
     const companyEmailAddr = cfg['company.email'] || ''
-    const companyAddress = [cfg['cnab.endereco'], cfg['company.number'], cfg['cnab.bairro'], cfg['cnab.cidade'], cfg['cnab.uf']].filter(Boolean).join(', ')
-    const companyCep = cfg['cnab.cep'] || ''
+    const companyAddress = [
+      cfg['company.address'] || cfg['cnab.endereco'],
+      cfg['company.number'],
+      cfg['company.neighborhood'] || cfg['cnab.bairro'],
+      cfg['company.city'] || cfg['cnab.cidade'],
+      cfg['company.state'] || cfg['cnab.uf'],
+    ].filter(Boolean).join(', ')
+    const companyCep = cfg['company.cep'] || cfg['cnab.cep'] || ''
     const pixKey = cfg['pix.chave'] || companyCnpj
     const pixBanco = cfg['pix.banco'] || ''
     const horario = cfg['company.horario'] || 'Seg a Qui 08:00-18:00 | Sex 08:00-17:00'
@@ -181,8 +191,17 @@ export async function POST(req: NextRequest, { params }: Params) {
     <p style="margin:0 0 8px;font-size:14px;font-weight:700;color:#0369a1;">📱 Acompanhe sua OS</p>
     <p style="margin:0 0 12px;font-size:13px;color:#0c4a6e;">Acesse o Portal do Cliente ou consulte pelo nosso site:</p>
     <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr>
-      <td style="padding:0 6px;"><a href="${(() => { const pb = process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'; const sl = os.companies?.slug || 'default'; return pb + '/portal/' + sl; })()}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Portal do Cliente</a></td>
-      <td style="padding:0 6px;"><a href="${cc.website + '/#consulta-os'}" style="display:inline-block;padding:10px 20px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Consultar no Site</a></td>
+      <td style="padding:0 6px;"><a href="${(() => {
+        const PORTAL_DOMAIN_BY_SLUG: Record<string, string> = {
+          pontualtech: 'portal.pontualtech.com.br',
+          imprimitech: 'portal.imprimitech.com.br',
+        }
+        const sl = os.companies?.slug || ''
+        const pb = process.env.PORTAL_URL
+          || (sl ? `https://${PORTAL_DOMAIN_BY_SLUG[sl] || `portal.${sl}.com.br`}` : 'https://portal.pontualtech.com.br')
+        return sl ? `${pb}/portal/${sl}` : pb
+      })()}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Portal do Cliente</a></td>
+      ${cc.website ? `<td style="padding:0 6px;"><a href="${cc.website}/#consulta-os" style="display:inline-block;padding:10px 20px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Consultar no Site</a></td>` : ''}
     </tr></table>
     <p style="margin:12px 0 0;font-size:13px;color:#0c4a6e;">Duvidas? Fale com nosso suporte:</p>
     <table cellpadding="0" cellspacing="0" style="margin:8px auto 0;"><tr>
