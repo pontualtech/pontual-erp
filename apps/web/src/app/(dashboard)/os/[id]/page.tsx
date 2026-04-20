@@ -160,6 +160,10 @@ export default function OSDetailPage() {
   const [showAprovacaoModal, setShowAprovacaoModal] = useState(false)
   const [aprovacaoChannels, setAprovacaoChannels] = useState<Set<string>>(new Set(['email', 'whatsapp']))
   const [sendingAprovacao, setSendingAprovacao] = useState(false)
+  // Magic link modal — generate one-click access URL for the customer
+  const [showMagicLinkModal, setShowMagicLinkModal] = useState(false)
+  const [magicLinkUrl, setMagicLinkUrl] = useState<string | null>(null)
+  const [generatingMagicLink, setGeneratingMagicLink] = useState(false)
   // Cancel modal
   const [showCancelModal, setShowCancelModal] = useState(false)
   const [cancelStatusId, setCancelStatusId] = useState<string | null>(null)
@@ -1166,6 +1170,13 @@ export default function OSDetailPage() {
             <button type="button" onClick={openQuoteModal}
               className="flex items-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors">
               <Send className="h-4 w-4" /> Enviar Orcamento
+            </button>
+          )}
+          {canEditOs && (os as any).customer_id && (
+            <button type="button" onClick={() => setShowMagicLinkModal(true)}
+              className="flex items-center gap-1.5 rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-100 transition-colors"
+              title="Gera link de acesso direto ao portal (sem senha) e envia pro cliente">
+              <ExternalLink className="h-4 w-4" /> Enviar Acesso
             </button>
           )}
           {canCreateFiscal && (
@@ -2651,6 +2662,80 @@ export default function OSDetailPage() {
                 {sendingColeta ? 'Enviando...' : 'Enviar Notificacao'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========== MAGIC LINK MODAL (Enviar Acesso Direto ao Portal) ========== */}
+      {showMagicLinkModal && os && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => { if (!generatingMagicLink) { setShowMagicLinkModal(false); setMagicLinkUrl(null) } }}>
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <ExternalLink className="h-5 w-5 text-indigo-600" />
+                Enviar Acesso ao Cliente
+              </h2>
+              <button type="button" onClick={() => setShowMagicLinkModal(false)} disabled={generatingMagicLink}
+                className="p-1 hover:bg-gray-100 rounded-lg">
+                <X className="h-5 w-5 text-gray-500" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-600 mb-4">
+              Gera um link de acesso direto ao portal do cliente — sem senha, sem OTP.
+              Válido por 48 horas. O cliente clica e entra autenticado.
+            </p>
+
+            {!magicLinkUrl ? (
+              <button type="button" disabled={generatingMagicLink} onClick={async () => {
+                setGeneratingMagicLink(true)
+                try {
+                  const customerId = (os as any).customer_id
+                  const redirect = `/portal/${(os as any).companies?.slug || 'pontualtech'}/os/${id}`
+                  const res = await fetch('/api/portal/magic-link', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ customer_id: customerId, redirect }),
+                  })
+                  const data = await res.json()
+                  if (!res.ok) throw new Error(data.error || 'Erro ao gerar link')
+                  setMagicLinkUrl(data.data.url)
+                  toast.success('Link gerado! Copie ou envie pelo WhatsApp.')
+                } catch (err: any) { toast.error(err.message) }
+                finally { setGeneratingMagicLink(false) }
+              }}
+                className="w-full py-3 px-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium flex items-center justify-center gap-2">
+                {generatingMagicLink ? <Loader2 className="h-5 w-5 animate-spin" /> : <ExternalLink className="h-5 w-5" />}
+                {generatingMagicLink ? 'Gerando link...' : 'Gerar link de acesso'}
+              </button>
+            ) : (
+              <div className="space-y-3">
+                <div className="bg-slate-50 border rounded-lg p-3 text-xs font-mono break-all text-slate-700">
+                  {magicLinkUrl}
+                </div>
+                <button type="button" onClick={() => {
+                  navigator.clipboard.writeText(magicLinkUrl)
+                  toast.success('Link copiado!')
+                }}
+                  className="w-full py-2.5 px-4 border-2 border-indigo-300 bg-indigo-50 text-indigo-700 rounded-lg font-medium flex items-center justify-center gap-2 hover:bg-indigo-100">
+                  <Copy className="h-4 w-4" /> Copiar link
+                </button>
+                {(os as any).customers?.mobile || (os as any).customers?.phone ? (
+                  <a
+                    href={`https://wa.me/${String((os as any).customers?.mobile || (os as any).customers?.phone).replace(/\D/g, '')}?text=${encodeURIComponent(`Olá! Aqui está seu acesso direto à OS #${String((os as any).os_number).padStart(4, '0')} no portal do cliente:\n\n${magicLinkUrl}\n\nValido por 48h.`)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-2.5 px-4 bg-green-600 text-white rounded-lg font-medium flex items-center justify-center gap-2 hover:bg-green-700"
+                    onClick={() => setShowMagicLinkModal(false)}
+                  >
+                    <MessageCircle className="h-4 w-4" /> Enviar via WhatsApp
+                  </a>
+                ) : null}
+                <button type="button" onClick={() => { setMagicLinkUrl(null) }}
+                  className="w-full py-2 text-sm text-slate-500 hover:text-slate-700">
+                  Gerar novo link
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
