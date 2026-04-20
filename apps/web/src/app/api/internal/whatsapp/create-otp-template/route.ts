@@ -32,16 +32,32 @@ export async function POST(req: NextRequest) {
   for (const s of settings) cfg[s.key] = s.value
 
   const token = cfg['whatsapp.cloud.access_token']
-  const wabaId = cfg['whatsapp.cloud.business_account_id'] || cfg['whatsapp.cloud.waba_id']
+  let wabaId = cfg['whatsapp.cloud.business_account_id'] || cfg['whatsapp.cloud.waba_id']
+  const phoneNumberId = cfg['whatsapp.cloud.phone_number_id']
 
-  if (!token || !wabaId) {
+  if (!token) {
+    return NextResponse.json({ error: 'Missing whatsapp.cloud.access_token' }, { status: 400 })
+  }
+
+  // Auto-discover WABA ID from phone_number_id if not stored in settings
+  if (!wabaId && phoneNumberId) {
+    try {
+      const r = await fetch(
+        `https://graph.facebook.com/v21.0/${phoneNumberId}?fields=whatsapp_business_account`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      const d = await r.json()
+      wabaId = d?.whatsapp_business_account?.id
+      console.log('[create-otp-template] discovered WABA ID:', wabaId, 'from phone_number_id:', phoneNumberId)
+    } catch (e) {
+      console.error('[create-otp-template] WABA discovery failed:', e)
+    }
+  }
+
+  if (!wabaId) {
     return NextResponse.json({
-      error: 'WhatsApp Cloud não configurado',
-      detail: {
-        has_token: !!token,
-        has_waba_id: !!wabaId,
-        keys_found: Object.keys(cfg),
-      },
+      error: 'Cannot determine WABA ID',
+      detail: { has_token: true, has_phone_id: !!phoneNumberId, keys_found: Object.keys(cfg) },
     }, { status: 400 })
   }
 
