@@ -15,28 +15,32 @@ export default function PortalLoginPage() {
   const docFromUrl = searchParams.get('doc') || ''
   const redirectAfterLogin = searchParams.get('redirect') || ''
   const loginError = searchParams.get('error') || ''
+  const LOGIN_ERROR_MESSAGES: Record<string, string> = {
+    google_access_denied: 'Login com Google cancelado.',
+    google_no_code: 'Login com Google nao concluido. Tente novamente.',
+    google_bad_state: 'Sessao expirou. Tente novamente.',
+    google_token_error: 'Nao foi possivel validar seu login Google.',
+    google_userinfo_error: 'Nao foi possivel obter seus dados do Google.',
+    google_unverified_email: 'Sua conta Google nao tem email verificado.',
+    google_not_configured: 'Login com Google nao esta configurado para esta empresa.',
+    email_not_registered: 'Seu email Google nao esta cadastrado. Use outra forma de acesso ou fale com o suporte.',
+    company_not_found: 'Empresa nao encontrada.',
+  }
+  const loginErrorMessage = loginError
+    ? (LOGIN_ERROR_MESSAGES[loginError] || `Erro ao fazer login: ${loginError}`)
+    : ''
+  const [errorBannerDismissed, setErrorBannerDismissed] = useState(false)
 
-  // Surface auth errors returned from the OAuth callback so the user knows why
-  // they were sent back to this screen.
+  // Also fire a toast for users whose Toaster is mounted (belt-and-braces: the
+  // inline banner below catches the case where hydration of Sonner fails).
   useEffect(() => {
     if (!loginError) return
-    const messages: Record<string, string> = {
-      google_access_denied: 'Login com Google cancelado.',
-      google_no_code: 'Login com Google nao concluido. Tente novamente.',
-      google_bad_state: 'Sessao expirou. Tente novamente.',
-      google_token_error: 'Nao foi possivel validar seu login Google.',
-      google_userinfo_error: 'Nao foi possivel obter seus dados do Google.',
-      google_unverified_email: 'Sua conta Google nao tem email verificado.',
-      google_not_configured: 'Login com Google nao esta configurado para esta empresa.',
-      email_not_registered: 'Seu email Google nao esta cadastrado. Use outra forma de acesso ou fale com o suporte.',
-      company_not_found: 'Empresa nao encontrada.',
-    }
-    toast.error(messages[loginError] || 'Erro ao fazer login: ' + loginError)
-    // Clean the URL so a refresh doesn't re-fire the toast
+    toast.error(loginErrorMessage)
+    // Clean the URL so a refresh doesn't re-fire the message
     const url = new URL(window.location.href)
     url.searchParams.delete('error')
     window.history.replaceState({}, '', url.toString())
-  }, [loginError])
+  }, [loginError, loginErrorMessage])
 
   const [company, setCompany] = useState<{ name: string; logo?: string } | null>(null)
   const [document, setDocument] = useState('')
@@ -454,6 +458,26 @@ export default function PortalLoginPage() {
             </>
           ) : !showRecovery ? (
             <>
+              {/* Inline error banner (server-rendered, works even if Sonner toast
+                  fails to hydrate — happens when React recovers from an earlier
+                  hydration mismatch). */}
+              {loginErrorMessage && !errorBannerDismissed && (
+                <div className="mb-4 flex items-start gap-3 rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+                  <svg className="w-5 h-5 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="8" x2="12" y2="12" />
+                    <line x1="12" y1="16" x2="12.01" y2="16" />
+                  </svg>
+                  <span className="flex-1">{loginErrorMessage}</span>
+                  <button type="button" onClick={() => setErrorBannerDismissed(true)} className="text-red-400 hover:text-red-600 dark:hover:text-red-200" aria-label="Fechar aviso">
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </div>
+              )}
+
               {/* Google Login — primary option */}
               <button
                 type="button"
