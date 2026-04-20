@@ -30,7 +30,7 @@ export default function DriverChatPage() {
         ? `/api/driver/chat?since=${encodeURIComponent(lastFetchRef.current)}`
         : '/api/driver/chat'
       const res = await fetch(url, { cache: 'no-store' })
-      if (res.status === 401) { router.replace('/login?redirect=/motorista/chat'); return }
+      if (res.status === 401) { router.replace('/motorista/login'); return }
       if (!res.ok) return
       const { data } = await res.json()
       const newMsgs: Msg[] = data.messages || []

@@ -27,8 +27,10 @@ export async function updateSession(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
 
-  // Rotas públicas
-  const publicPaths = ['/login', '/forgot-password', '/reset-password', '/api/auth/', '/api/quotes/approve', '/api/v1/', '/api/fiscal/webhook', '/api/portal/', '/portal/', '/api/integracoes/chatwoot/webhook']
+  // Rotas públicas (login, reset, portal do cliente, webhooks etc)
+  // /motorista/login é público pra que o motorista veja o PWA install prompt
+  // ANTES de estar logado (manifest + SW só ativam dentro do route group).
+  const publicPaths = ['/login', '/forgot-password', '/reset-password', '/api/auth/', '/api/quotes/approve', '/api/v1/', '/api/fiscal/webhook', '/api/portal/', '/portal/', '/api/integracoes/chatwoot/webhook', '/motorista/login']
   const isPublic = publicPaths.some(p => request.nextUrl.pathname.startsWith(p))
 
   // API routes: também aceitar Bearer token no header
@@ -44,7 +46,12 @@ export async function updateSession(request: NextRequest) {
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone()
-    url.pathname = '/login'
+    // Motorista nao-logado que tenta acessar /motorista/* vai pro login
+    // dedicado (onde o manifest/SW do PWA ja estao ativos). Todos os
+    // outros caem no /login global do ERP.
+    url.pathname = request.nextUrl.pathname.startsWith('/motorista')
+      ? '/motorista/login'
+      : '/login'
     return NextResponse.redirect(url)
   }
 

@@ -59,7 +59,7 @@ export default function RotaHojePage() {
     else setRefreshing(true)
     try {
       const res = await fetch('/api/driver/rota/hoje', { cache: 'no-store' })
-      if (res.status === 401) { router.replace('/login?redirect=/motorista/rota'); return }
+      if (res.status === 401) { router.replace('/motorista/login'); return }
       if (res.status === 403) { toast.error('Seu perfil nao e de motorista'); return }
       const { data } = await res.json()
       setRoute(data.route)
@@ -92,7 +92,7 @@ export default function RotaHojePage() {
 
   async function handleLogout() {
     await fetch('/auth/signout', { method: 'POST' }).catch(() => {})
-    router.replace('/login')
+    router.replace('/motorista/login')
   }
 
   const pendingStops = stops.filter(s => s.status !== 'COMPLETED' && s.status !== 'FAILED')
