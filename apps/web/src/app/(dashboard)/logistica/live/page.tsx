@@ -1,0 +1,163 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import dynamic from 'next/dynamic'
+import Link from 'next/link'
+import { ArrowLeft, Truck, CheckCircle2, AlertTriangle, RefreshCw } from 'lucide-react'
+
+// Leaflet precisa de DOM real — carrega só no client.
+const LeafletMap = dynamic(() => import('./leaflet-map'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center h-full bg-gray-100">
+      <div className="animate-spin h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full" />
+    </div>
+  ),
+})
+
+type LiveRoute = {
+  id: string
+  status: string | null
+  driver: { id: string; name: string; avatar_url: string | null } | null
+  last_location: { lat: number; lng: number; at: string | null } | null
+  completed_stops: number | null
+  total_stops: number | null
+  started_at: string | null
+  stops: Array<{
+    id: string; sequence: number; type: string
+    status: string | null; customer_name: string | null; address: string
+    lat: number | null; lng: number | null
+    completed_at: string | null
+    failure_reason: string | null
+  }>
+}
+
+export default function LogisticaLivePage() {
+  const [routes, setRoutes] = useState<LiveRoute[]>([])
+  const [loading, setLoading] = useState(true)
+  const [lastFetch, setLastFetch] = useState<Date | null>(null)
+
+  async function fetchLive() {
+    try {
+      const res = await fetch('/api/logistica/live', { cache: 'no-store' })
+      if (!res.ok) return
+      const { data } = await res.json()
+      setRoutes(data.routes || [])
+      setLastFetch(new Date())
+    } finally { setLoading(false) }
+  }
+
+  useEffect(() => {
+    fetchLive()
+    const id = setInterval(fetchLive, 15_000) // 15s polling
+    return () => clearInterval(id)
+  }, [])
+
+  const activeRoutes = routes.filter(r => r.status === 'IN_PROGRESS')
+  const plannedRoutes = routes.filter(r => r.status === 'PLANNED')
+  const completedRoutes = routes.filter(r => r.status === 'COMPLETED')
+
+  return (
+    <div className="flex flex-col h-[calc(100vh-64px)]">
+      {/* Header */}
+      <div className="bg-white border-b px-4 py-3 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-3">
+          <Link href="/logistica" className="text-gray-500 hover:text-gray-900">
+            <ArrowLeft className="w-5 h-5" />
+          </Link>
+          <div>
+            <h1 className="font-bold text-lg">Rastreamento ao Vivo</h1>
+            <p className="text-xs text-gray-500">
+              {routes.length} rota(s) hoje {lastFetch && `· atualizado ${new Date(lastFetch).toLocaleTimeString('pt-BR')}`}
+            </p>
+          </div>
+        </div>
+        <button onClick={fetchLive} disabled={loading}
+          className="p-2 rounded-lg border border-gray-300 hover:bg-gray-50">
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+        </button>
+      </div>
+
+      {/* Content: map + sidebar */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Map */}
+        <div className="flex-1 bg-gray-100 relative">
+          {routes.length === 0 && !loading ? (
+            <div className="h-full flex items-center justify-center text-gray-400 text-center">
+              <div>
+                <Truck className="w-12 h-12 mx-auto mb-2" />
+                <p>Nenhuma rota para hoje</p>
+              </div>
+            </div>
+          ) : (
+            <LeafletMap routes={routes} />
+          )}
+        </div>
+
+        {/* Sidebar lista de rotas */}
+        <aside className="w-80 bg-white border-l overflow-y-auto hidden md:block">
+          <section className="p-3 border-b">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-blue-700 mb-2">
+              Em rota ({activeRoutes.length})
+            </h2>
+            {activeRoutes.length === 0
+              ? <p className="text-xs text-gray-400">Nenhum motorista em rota</p>
+              : activeRoutes.map(r => <RouteCard key={r.id} route={r} />)}
+          </section>
+          {plannedRoutes.length > 0 && (
+            <section className="p-3 border-b">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">
+                Planejadas ({plannedRoutes.length})
+              </h2>
+              {plannedRoutes.map(r => <RouteCard key={r.id} route={r} />)}
+            </section>
+          )}
+          {completedRoutes.length > 0 && (
+            <section className="p-3">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-green-700 mb-2">
+                Finalizadas ({completedRoutes.length})
+              </h2>
+              {completedRoutes.map(r => <RouteCard key={r.id} route={r} />)}
+            </section>
+          )}
+        </aside>
+      </div>
+    </div>
+  )
+}
+
+function RouteCard({ route }: { route: LiveRoute }) {
+  const pct = route.total_stops
+    ? Math.round(((route.completed_stops || 0) / route.total_stops) * 100)
+    : 0
+  const agoMin = route.last_location?.at
+    ? Math.max(0, Math.round((Date.now() - new Date(route.last_location.at).getTime()) / 60000))
+    : null
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg p-3 mb-2">
+      <div className="flex items-center gap-2 mb-2">
+        {route.status === 'COMPLETED'
+          ? <CheckCircle2 className="w-4 h-4 text-green-600" />
+          : route.status === 'IN_PROGRESS'
+            ? <Truck className="w-4 h-4 text-blue-600" />
+            : <AlertTriangle className="w-4 h-4 text-gray-400" />}
+        <p className="font-medium text-sm truncate flex-1">
+          {route.driver?.name || 'Sem motorista'}
+        </p>
+      </div>
+      <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
+        <span>{route.completed_stops}/{route.total_stops} paradas</span>
+        <span>{pct}%</span>
+      </div>
+      <div className="bg-gray-200 rounded-full h-1.5 overflow-hidden">
+        <div className="bg-blue-600 h-full transition-all" style={{ width: `${pct}%` }} />
+      </div>
+      {agoMin !== null && (
+        <p className="text-[10px] text-gray-400 mt-2">
+          GPS: {agoMin < 1 ? 'agora' : `há ${agoMin}min`}
+        </p>
+      )}
+    </div>
+  )
+}

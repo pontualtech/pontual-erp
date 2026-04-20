@@ -164,6 +164,13 @@ export default function LogisticaPage() {
             />
           </div>
           <Link
+            href="/logistica/live"
+            className="flex items-center gap-2 rounded-lg border border-blue-600 px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 transition-colors"
+          >
+            <MapPin className="h-4 w-4" />
+            Ao Vivo
+          </Link>
+          <Link
             href="/logistica/nova"
             className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
           >
