@@ -124,7 +124,7 @@ export async function POST(req: NextRequest) {
     }, { status: 400 })
   }
 
-  // Authentication template — approved in minutes, optimized for OTPs
+  // Authentication template — body text is fixed by Meta. Only security flag + expiration + button are configurable.
   const templateBody = {
     name: 'pt_portal_otp',
     language: 'pt_BR',
@@ -132,9 +132,7 @@ export async function POST(req: NextRequest) {
     components: [
       {
         type: 'BODY',
-        text: '{{1}} é seu código de acesso ao Portal do Cliente. Este código expira em 10 minutos.',
         add_security_recommendation: true,
-        example: { body_text: [['123456']] },
       },
       {
         type: 'FOOTER',
