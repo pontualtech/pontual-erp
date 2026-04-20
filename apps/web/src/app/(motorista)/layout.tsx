@@ -10,11 +10,27 @@ import ServiceWorkerRegister from './components/sw-register'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Motorista — PontualERP',
-  description: 'App do motorista — rotas, coletas e entregas',
+  title: 'PontualRota — App do Motorista',
+  description: 'Gerenciar coletas e entregas em campo',
   manifest: '/motorista/manifest.webmanifest',
-  icons: { icon: '/favicon.svg' },
-  appleWebApp: { capable: true, statusBarStyle: 'black-translucent', title: 'PontualRota' },
+  // Icons para diferentes contextos — Chrome Android usa icon.src do manifest,
+  // Safari iOS usa apple-touch-icon (nao le manifest), Firefox usa shortcut.
+  icons: {
+    icon: [
+      { url: '/motorista/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/motorista/icon-512.png', sizes: '512x512', type: 'image/png' },
+    ],
+    apple: [
+      { url: '/motorista/icon-192.png', sizes: '192x192', type: 'image/png' },
+    ],
+    shortcut: '/motorista/icon-192.png',
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'PontualRota',
+    startupImage: '/motorista/icon-512.png',
+  },
 }
 
 export const viewport: Viewport = {
