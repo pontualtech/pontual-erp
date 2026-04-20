@@ -962,9 +962,22 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
               return
             }
 
-            const osPortalUrl = `${portalBase(cfg)}/os/${osData.id}`
+            // Build a one-click magic-link URL so the customer clicks and is
+            // logged in automatically. A plain /os/{id} URL lands them on the
+            // login page (no session), so they give up. The magic link is
+            // valid for 48h and tied to this specific customer+company.
+            let osPortalUrl = `${portalBase(cfg)}/os/${osData.id}`
+            try {
+              const { createAccessToken: catOs } = await import('@/lib/portal-auth')
+              const magicToken = catOs(osData.customer_id, cfg.companyId)
+              const tenantSlug = cfg.slug.replace('-suporte', '')
+              const redirectPath = `/portal/${tenantSlug}/os/${osData.id}`
+              osPortalUrl = `${portalBase(cfg)}/entrar?t=${magicToken}&r=${encodeURIComponent(redirectPath)}`
+            } catch (e) {
+              console.warn('[Bot] falha gerando magic-link para OS enrich, usando URL direta:', e instanceof Error ? e.message : String(e))
+            }
             query += `\n[DADOS DA OS #${osNum}: Status: ${status}, Equipamento: ${equip}, Defeito: ${osData.reported_issue || 'N/A'}, Diagnostico: ${osData.diagnosis || 'N/A'}, Tecnico: ${osData.user_profiles?.name || 'N/A'}, Previsao: ${previsao}, Custo: ${osData.total_cost ? 'R$ ' + (osData.total_cost / 100).toFixed(2) : 'N/A'}, Cliente: ${osData.customers?.legal_name || 'N/A'}, Email: ${osData.customers?.email || 'N/A'}, Portal: ${osPortalUrl}]`
-            console.log(`[Bot] OS enriched: #${osNum} → ${status} (${equip})`)
+            console.log(`[Bot] OS enriched: #${osNum} → ${status} (${equip}) with magic-link`)
           } else if (cfg.legacyOsMin > 0 && osNum >= cfg.legacyOsMin && osNum <= cfg.legacyOsMax) {
             // OS LEGADA — transferir direto pro humano, sem passar pelo Dify
             console.log(`[Bot] OS #${osNum} é legado (range ${cfg.legacyOsMin}-${cfg.legacyOsMax}) — transferência direta para humano`)
