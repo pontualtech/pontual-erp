@@ -65,8 +65,18 @@ export async function POST(req: NextRequest, { params }: Params) {
     const companyWhatsApp = (cfg['company.whatsapp'] || '').replace(/\D/g, '')
     const companyEmail = cfg['company.email'] || companySettings['email'] || ''
     const companyWebsite = cfg['company.website'] || ''
-    const slug = company?.slug || 'pontualtech'
-    const portalBase = process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'
+    const slug = company?.slug || ''
+    if (!slug) {
+      return NextResponse.json({ error: 'Empresa sem slug configurado' }, { status: 500 })
+    }
+    // Map known tenant slugs to their branded portal domain — fallback to
+    // portal.<slug>.com.br so a new tenant never silently uses PontualTech.
+    const PORTAL_DOMAIN_BY_SLUG: Record<string, string> = {
+      pontualtech: 'portal.pontualtech.com.br',
+      imprimitech: 'portal.imprimitech.com.br',
+    }
+    const portalHost = PORTAL_DOMAIN_BY_SLUG[slug] || cfg['company.portal_host'] || `portal.${slug}.com.br`
+    const portalBase = process.env.PORTAL_URL || `https://${portalHost}`
     const portalUrl = `${portalBase}/portal/${slug}`
     const osDetailUrl = `${portalUrl}/os/${os.id}`
     const osNum = String(os.os_number).padStart(4, '0')
@@ -177,7 +187,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     <div style="background:#fefce8;border:1px solid #fde68a;border-radius:10px;padding:16px;margin:0 0 24px">
       <p style="font-size:13px;font-weight:600;color:#854d0e;margin:0 0 8px">💡 Como acessar o Portal do Cliente:</p>
       <ol style="font-size:12px;color:#713f12;margin:0;padding-left:18px;line-height:1.8">
-        <li>Acesse <a href="${portalUrl}" style="color:#1e40af;font-weight:600">${slug === 'pontualtech' ? 'portal.pontualtech.com.br' : `portal.${slug}.com.br`}</a></li>
+        <li>Acesse <a href="${portalUrl}" style="color:#1e40af;font-weight:600">${portalHost}</a></li>
         <li>Login: seu <strong>CPF ou CNPJ</strong></li>
         <li>Senha: <strong>os 5 primeiros digitos</strong> do seu CPF/CNPJ</li>
         <li>Pronto! Acompanhe suas OS, aprove orcamentos e mais</li>

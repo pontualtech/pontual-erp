@@ -99,14 +99,18 @@ export async function sendWhatsAppEvolution(
 /**
  * Legacy function — sends via global env config (no multi-tenant).
  * @deprecated Use sendWhatsAppEvolution(companyId, phone, text) instead.
+ *
+ * Now requires EVOLUTION_INSTANCE to be set explicitly: removed the
+ * 'pontualtech' default that was silently sending from PontualTech's
+ * Evolution instance for any tenant that hit this legacy path.
  */
 export async function sendWhatsApp(phone: string, text: string): Promise<SendResult> {
   const url = process.env.EVOLUTION_API_URL || ''
   const key = process.env.EVOLUTION_API_KEY || ''
-  const instance = process.env.EVOLUTION_INSTANCE || 'pontualtech'
+  const instance = process.env.EVOLUTION_INSTANCE || ''
 
-  if (!url || !key) {
-    console.warn('[WhatsApp] Evolution API not configured, skipping')
+  if (!url || !key || !instance) {
+    console.warn('[WhatsApp] Evolution API not configured (need URL, KEY, INSTANCE), skipping')
     return { success: false, error: 'not_configured' }
   }
 

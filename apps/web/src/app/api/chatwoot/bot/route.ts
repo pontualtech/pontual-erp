@@ -407,6 +407,7 @@ async function callDify(
   let fullAnswer = ''
   let difyConvId = ''
 
+  let parseErrors = 0
   for (const line of rawResponse.split('\n')) {
     if (line.startsWith('data:')) {
       try {
@@ -414,9 +415,12 @@ async function callDify(
         if (evt.answer) fullAnswer += evt.answer
         if (evt.conversation_id) difyConvId = evt.conversation_id
       } catch {
-        // skip unparseable lines
+        parseErrors++
       }
     }
+  }
+  if (parseErrors > 0 && !fullAnswer) {
+    console.warn('[Bot] Dify SSE parse errors and empty answer:', { parseErrors, preview: rawResponse.slice(0, 200) })
   }
 
   return { answer: fullAnswer, conversation_id: difyConvId }
@@ -446,7 +450,8 @@ async function transcribeAudio(audioUrl: string): Promise<string> {
         console.warn('[Bot] Blocked internal audio URL')
         return ''
       }
-    } catch {
+    } catch (e) {
+      console.warn('[Bot] Audio URL parse failed:', audioUrl?.slice(0, 100), e instanceof Error ? e.message : String(e))
       return ''
     }
 
@@ -1194,7 +1199,9 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
                 { type: 'text', text: osDefect },
               ] }
             ])
-          } catch {} // fire and forget
+          } catch (e) {
+            console.warn('[Bot] template pt_os_aberta_v2 send failed for OS', osNum, e instanceof Error ? e.message : String(e))
+          }
           // Private note with all links for agents (always visible in conversation)
           const vdNote = parsed.vhsysData as Record<string, any>
           const noteLines = [

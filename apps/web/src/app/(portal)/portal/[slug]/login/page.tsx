@@ -14,6 +14,29 @@ export default function PortalLoginPage() {
   // Pre-fill document from URL param (from email links)
   const docFromUrl = searchParams.get('doc') || ''
   const redirectAfterLogin = searchParams.get('redirect') || ''
+  const loginError = searchParams.get('error') || ''
+
+  // Surface auth errors returned from the OAuth callback so the user knows why
+  // they were sent back to this screen.
+  useEffect(() => {
+    if (!loginError) return
+    const messages: Record<string, string> = {
+      google_access_denied: 'Login com Google cancelado.',
+      google_no_code: 'Login com Google nao concluido. Tente novamente.',
+      google_bad_state: 'Sessao expirou. Tente novamente.',
+      google_token_error: 'Nao foi possivel validar seu login Google.',
+      google_userinfo_error: 'Nao foi possivel obter seus dados do Google.',
+      google_unverified_email: 'Sua conta Google nao tem email verificado.',
+      google_not_configured: 'Login com Google nao esta configurado para esta empresa.',
+      email_not_registered: 'Seu email Google nao esta cadastrado. Use outra forma de acesso ou fale com o suporte.',
+      company_not_found: 'Empresa nao encontrada.',
+    }
+    toast.error(messages[loginError] || 'Erro ao fazer login: ' + loginError)
+    // Clean the URL so a refresh doesn't re-fire the toast
+    const url = new URL(window.location.href)
+    url.searchParams.delete('error')
+    window.history.replaceState({}, '', url.toString())
+  }, [loginError])
 
   const [company, setCompany] = useState<{ name: string; logo?: string } | null>(null)
   const [document, setDocument] = useState('')

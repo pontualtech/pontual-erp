@@ -20,18 +20,26 @@ export async function POST(req: NextRequest, { params }: Params) {
     })
     if (!invoice) return error('NF-e nao encontrada', 404)
 
-    // Load company settings
+    // Load company settings — NEVER fall back to another tenant's data.
+    // Missing values just render blank/omitted in the email template.
+    const company = await prisma.company.findUnique({
+      where: { id: user.companyId },
+      select: { name: true },
+    })
     const settings = await prisma.setting.findMany({ where: { company_id: user.companyId } })
     const cfg: Record<string, string> = {}
     for (const s of settings) cfg[s.key] = s.value
 
-    const companyName = cfg['company_name'] || cfg['company.name'] || 'PontualTech'
-    const companyPhone = cfg['phone'] || cfg['company.phone'] || '(11) 2626-3841'
-    const companyEmail = cfg['email'] || cfg['company.email'] || cfg['email.from_address'] || 'contato@pontualtech.com.br'
+    const companyName = cfg['company_name'] || cfg['company.name'] || company?.name || 'Empresa'
+    const companyPhone = cfg['phone'] || cfg['company.phone'] || ''
+    const companyEmail = cfg['email'] || cfg['company.email'] || cfg['email.from_address'] || ''
+    const companyAddress = cfg['address'] || cfg['company.address'] || ''
+    const companyCnpj = cfg['cnpj'] || cfg['company.cnpj'] || cfg['company.document'] || ''
     const fromName = cfg['email.from_name'] || companyName
-    const fromAddress = cfg['email.from_address'] || companyEmail
-    const whatsappNum = (cfg['company.whatsapp'] || cfg['whatsapp'] || '551126263841').replace(/\D/g, '')
-    const whatsappUrl = `https://wa.me/${whatsappNum}`
+    const fromAddress = cfg['email.from_address'] || companyEmail || 'no-reply@pontualtech.work'
+    const rawWhatsapp = cfg['company.whatsapp'] || cfg['whatsapp'] || ''
+    const whatsappNum = rawWhatsapp.replace(/\D/g, '')
+    const whatsappUrl = whatsappNum ? `https://wa.me/${whatsappNum}` : ''
 
     const chave = invoice.access_key || ''
     const chaveFormatada = chave.replace(/(\d{4})/g, '$1 ').trim()
@@ -85,15 +93,15 @@ export async function POST(req: NextRequest, { params }: Params) {
     <div style="text-align:center;margin-bottom:20px">
       <a href="https://www.nfe.fazenda.gov.br/portal/consultaRecibo.aspx" target="_blank" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 32px;border-radius:8px">Consultar NF-e na SEFAZ</a>
     </div>
-    <div style="text-align:center;margin-bottom:28px">
-      <a href="${whatsappUrl}" target="_blank" style="display:inline-block;background:#25d366;color:#fff;text-decoration:none;font-size:13px;font-weight:600;padding:10px 24px;border-radius:6px">WhatsApp Suporte: ${companyPhone}</a>
-    </div>
+    ${whatsappUrl ? `<div style="text-align:center;margin-bottom:28px">
+      <a href="${whatsappUrl}" target="_blank" style="display:inline-block;background:#25d366;color:#fff;text-decoration:none;font-size:13px;font-weight:600;padding:10px 24px;border-radius:6px">${companyPhone ? `WhatsApp Suporte: ${companyPhone}` : 'Falar pelo WhatsApp'}</a>
+    </div>` : ''}
   </td></tr>
   <tr><td style="background:#1e293b;padding:24px 32px;text-align:center">
     <p style="margin:0 0 4px;color:#fff;font-size:14px;font-weight:700">${companyName}</p>
-    <p style="margin:0 0 2px;color:#94a3b8;font-size:11px">Rua Ouvidor Peleja, 660 - Vila Mariana - Sao Paulo/SP - CEP 04128-001</p>
-    <p style="margin:0 0 2px;color:#94a3b8;font-size:11px">CNPJ: 32.772.178/0001-47 | Tel: ${companyPhone}</p>
-    <p style="margin:0;color:#94a3b8;font-size:11px">${companyEmail}</p>
+    ${companyAddress ? `<p style="margin:0 0 2px;color:#94a3b8;font-size:11px">${companyAddress}</p>` : ''}
+    ${(companyCnpj || companyPhone) ? `<p style="margin:0 0 2px;color:#94a3b8;font-size:11px">${[companyCnpj && `CNPJ: ${companyCnpj}`, companyPhone && `Tel: ${companyPhone}`].filter(Boolean).join(' | ')}</p>` : ''}
+    ${companyEmail ? `<p style="margin:0;color:#94a3b8;font-size:11px">${companyEmail}</p>` : ''}
   </td></tr>
 </table>
 </td></tr></table></body></html>`
