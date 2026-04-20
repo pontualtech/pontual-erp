@@ -40,24 +40,25 @@ export async function POST(req: NextRequest) {
   }
 
   // Auto-discover WABA ID from phone_number_id if not stored in settings
+  let discoveryDebug: any = null
   if (!wabaId && phoneNumberId) {
     try {
       const r = await fetch(
-        `https://graph.facebook.com/v21.0/${phoneNumberId}?fields=whatsapp_business_account`,
+        `https://graph.facebook.com/v21.0/${phoneNumberId}?fields=whatsapp_business_account,id,display_phone_number`,
         { headers: { Authorization: `Bearer ${token}` } }
       )
       const d = await r.json()
       wabaId = d?.whatsapp_business_account?.id
-      console.log('[create-otp-template] discovered WABA ID:', wabaId, 'from phone_number_id:', phoneNumberId)
-    } catch (e) {
-      console.error('[create-otp-template] WABA discovery failed:', e)
+      discoveryDebug = { status: r.status, response: d }
+    } catch (e: any) {
+      discoveryDebug = { error: String(e) }
     }
   }
 
   if (!wabaId) {
     return NextResponse.json({
       error: 'Cannot determine WABA ID',
-      detail: { has_token: true, has_phone_id: !!phoneNumberId, keys_found: Object.keys(cfg) },
+      detail: { has_token: true, has_phone_id: !!phoneNumberId, phone_number_id: phoneNumberId, discovery: discoveryDebug },
     }, { status: 400 })
   }
 
