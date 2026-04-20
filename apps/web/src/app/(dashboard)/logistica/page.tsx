@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import {
   Truck, Plus, Loader2, ArrowLeft, MapPin, Clock,
   Play, CheckCircle2, Eye, Route, CircleDot, Calendar,
+  MessageCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -163,6 +164,13 @@ export default function LogisticaPage() {
               className="rounded-lg border px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
             />
           </div>
+          <Link
+            href="/logistica/chat"
+            className="flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            <MessageCircle className="h-4 w-4" />
+            Chat
+          </Link>
           <Link
             href="/logistica/live"
             className="flex items-center gap-2 rounded-lg border border-blue-600 px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 transition-colors"

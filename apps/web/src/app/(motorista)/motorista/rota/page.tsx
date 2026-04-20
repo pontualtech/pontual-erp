@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Package, Truck, MapPin, Phone, CheckCircle2, AlertTriangle, RefreshCw, LogOut } from 'lucide-react'
+import { Package, Truck, MapPin, Phone, CheckCircle2, AlertTriangle, RefreshCw, LogOut, MessageCircle } from 'lucide-react'
 
 type Stop = {
   id: string
@@ -125,11 +125,15 @@ export default function RotaHojePage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => load(true)} disabled={refreshing} aria-label="Atualizar"
+          <Link href="/motorista/chat" aria-label="Chat com a base"
+            className="p-2 rounded-full hover:bg-white/10 active:scale-95 transition">
+            <MessageCircle className="w-5 h-5" />
+          </Link>
+          <button type="button" onClick={() => load(true)} disabled={refreshing} aria-label="Atualizar"
             className="p-2 rounded-full hover:bg-white/10 active:scale-95 transition">
             <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
           </button>
-          <button onClick={handleLogout} aria-label="Sair" className="p-2 rounded-full hover:bg-white/10">
+          <button type="button" onClick={handleLogout} aria-label="Sair" className="p-2 rounded-full hover:bg-white/10">
             <LogOut className="w-5 h-5" />
           </button>
         </div>
