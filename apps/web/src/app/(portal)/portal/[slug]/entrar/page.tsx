@@ -52,8 +52,15 @@ export default function MagicLinkEntryPage() {
           localStorage.setItem('portal_company', JSON.stringify(data.data.company))
         }
 
-        // Safe redirect: only allow same-origin paths
-        const safeRedirect = redirectTo.startsWith('/') ? redirectTo : `/portal/${slug}`
+        // Safe redirect: only allow same-origin relative paths. Must start with
+        // a single '/' and NOT '//...' (protocol-relative URL → external host)
+        // or '/\\...' (Windows-style network path that some browsers treat as
+        // protocol-relative). Without this check an attacker could craft
+        // ?r=//evil.com and leak the magic-link token to their domain.
+        const isSafe = redirectTo.startsWith('/')
+          && !redirectTo.startsWith('//')
+          && !redirectTo.startsWith('/\\')
+        const safeRedirect = isSafe ? redirectTo : `/portal/${slug}`
         router.replace(safeRedirect)
       })
       .catch(() => {

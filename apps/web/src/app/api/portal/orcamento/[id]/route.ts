@@ -519,23 +519,23 @@ export async function POST(request: NextRequest, { params }: Params) {
             <td style="background:linear-gradient(135deg,#1e40af 0%,#2563eb 50%,#3b82f6 100%);padding:36px 32px;text-align:center;">
               <div style="width:56px;height:56px;background:rgba(255,255,255,0.15);border-radius:14px;margin:0 auto 12px;line-height:56px;font-size:28px;">&#128203;</div>
               <h1 style="margin:0 0 4px;color:#ffffff;font-size:22px;font-weight:800;">Orcamento Recusado</h1>
-              <p style="margin:0;color:rgba(255,255,255,0.7);font-size:12px;">${companyName2}</p>
+              <p style="margin:0;color:rgba(255,255,255,0.7);font-size:12px;">${escapeHtml(companyName2)}</p>
             </td>
           </tr>
           <tr>
             <td style="padding:32px 32px 0;">
-              <p style="font-size:16px;margin:0 0 16px;color:#1e293b;">Ola <strong>${customerName2.split(' ')[0]}</strong>,</p>
+              <p style="font-size:16px;margin:0 0 16px;color:#1e293b;">Ola <strong>${escapeHtml(customerName2.split(' ')[0])}</strong>,</p>
               <p style="font-size:14px;color:#475569;margin:0 0 24px;line-height:1.7;">
-                Recebemos sua decisao sobre o orcamento da OS <strong>#${osNum2}</strong>.
+                Recebemos sua decisao sobre o orcamento da OS <strong>#${escapeHtml(osNum2)}</strong>.
                 Entendemos e respeitamos sua escolha.
               </p>
 
               <div style="background:#f8fafc;border:2px solid #e2e8f0;border-radius:10px;overflow:hidden;margin:0 0 24px;">
                 <div style="padding:16px;">
                   <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;color:#1e293b;">
-                    <tr><td style="padding:6px 0;font-weight:700;width:130px;color:#64748b;">Equipamento:</td><td style="padding:6px 0;">${equipment2}</td></tr>
-                    <tr><td style="padding:6px 0;font-weight:700;color:#64748b;">Valor orcado:</td><td style="padding:6px 0;font-weight:600;">${fmtValue2}</td></tr>
-                    ${reason ? `<tr><td style="padding:6px 0;font-weight:700;color:#64748b;">Motivo:</td><td style="padding:6px 0;">${reason}</td></tr>` : ''}
+                    <tr><td style="padding:6px 0;font-weight:700;width:130px;color:#64748b;">Equipamento:</td><td style="padding:6px 0;">${escapeHtml(equipment2)}</td></tr>
+                    <tr><td style="padding:6px 0;font-weight:700;color:#64748b;">Valor orcado:</td><td style="padding:6px 0;font-weight:600;">${escapeHtml(fmtValue2)}</td></tr>
+                    ${reason ? `<tr><td style="padding:6px 0;font-weight:700;color:#64748b;">Motivo:</td><td style="padding:6px 0;">${escapeHtml(reason)}</td></tr>` : ''}
                   </table>
                 </div>
               </div>

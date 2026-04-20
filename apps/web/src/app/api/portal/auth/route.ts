@@ -2,9 +2,20 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { createPortalToken } from '@/lib/portal-auth'
 import { compare } from 'bcryptjs'
-import { rateLimit } from '@/lib/rate-limit'
+import { rateLimit, getClientIp } from '@/lib/rate-limit'
 import { randomInt } from 'crypto'
 import { sendCompanyEmail } from '@/lib/send-email'
+
+// Returned for every failure path that could be used to enumerate customers.
+// The status code is 401 and the message does not distinguish "no such CPF"
+// from "wrong password" or "no access row yet" — all paths look identical
+// to an attacker trying to map which CPFs are registered in a tenant.
+function generic401() {
+  return NextResponse.json(
+    { error: 'Credenciais invalidas. Confira CPF/CNPJ e senha.' },
+    { status: 401 }
+  )
+}
 
 function generateOtp(): string {
   return String(randomInt(100000, 999999))
@@ -46,10 +57,21 @@ export async function POST(req: NextRequest) {
 
     const cleanDoc = document.replace(/[.\-\/]/g, '')
 
-    // Rate limiting: 5 tentativas por documento a cada 15 minutos
+    // Rate limit #1: per document — blocks focused brute force against one CPF
     const rateLimitKey = `portal-auth:${cleanDoc}`
     const rl = rateLimit(rateLimitKey, 5, 15 * 60 * 1000)
     if (!rl.allowed) {
+      return NextResponse.json(
+        { error: 'Muitas tentativas. Tente novamente em 15 minutos.' },
+        { status: 429 }
+      )
+    }
+
+    // Rate limit #2: per IP — blocks enumeration attacks where the attacker
+    // rotates the document each request to stay below the per-doc limit.
+    const clientIp = getClientIp(req)
+    const ipRl = rateLimit(`portal-auth-ip:${clientIp}`, 30, 15 * 60 * 1000)
+    if (!ipRl.allowed) {
       return NextResponse.json(
         { error: 'Muitas tentativas. Tente novamente em 15 minutos.' },
         { status: 429 }
@@ -61,6 +83,8 @@ export async function POST(req: NextRequest) {
     })
 
     if (!company) {
+      // Slug malformed / unknown — this one IS safe to report since it only
+      // reveals tenant existence, which is already public via the domain.
       return NextResponse.json({ error: 'Empresa nao encontrada' }, { status: 404 })
     }
 
@@ -72,12 +96,7 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    if (!customer) {
-      return NextResponse.json(
-        { error: 'Cliente nao encontrado. Verifique o CPF/CNPJ.' },
-        { status: 404 }
-      )
-    }
+    if (!customer) return generic401()
 
     const access = await prisma.customerAccess.findUnique({
       where: {
@@ -88,21 +107,10 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    if (!access) {
-      return NextResponse.json(
-        { error: 'Acesso nao cadastrado. Faca seu primeiro acesso.' },
-        { status: 403 }
-      )
-    }
-
-    if (!access.password_hash) {
-      return NextResponse.json({ error: 'Senha nao configurada. Entre em contato com a empresa.' }, { status: 401 })
-    }
+    if (!access || !access.password_hash) return generic401()
 
     const isValidPassword = await compare(password, access.password_hash)
-    if (!isValidPassword) {
-      return NextResponse.json({ error: 'Senha incorreta' }, { status: 401 })
-    }
+    if (!isValidPassword) return generic401()
 
     // --- 2FA: Generate OTP and send via email ---
     // Rate limit OTP generation: max 3 per hour per customer

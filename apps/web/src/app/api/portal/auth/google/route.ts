@@ -1,14 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { randomBytes, createHmac } from 'crypto'
+import { rateLimit, getClientIp } from '@/lib/rate-limit'
+
+function getStateSecret(): string {
+  // No 'dev-secret' fallback — a weak/default HMAC key lets an attacker forge
+  // OAuth state and bypass CSRF. If neither env is set we fail closed.
+  const secret = process.env.PORTAL_AUTH_SECRET || process.env.NEXTAUTH_SECRET
+  if (!secret || secret.length < 16) {
+    throw new Error('PORTAL_AUTH_SECRET ausente ou fraco — Google OAuth desabilitado')
+  }
+  return secret
+}
 
 function signState(payload: string): string {
-  const secret = process.env.PORTAL_AUTH_SECRET || process.env.NEXTAUTH_SECRET || 'dev-secret'
-  return createHmac('sha256', secret + ':google-state').update(payload).digest('base64url')
+  return createHmac('sha256', getStateSecret() + ':google-state').update(payload).digest('base64url')
 }
 
 // GET /api/portal/auth/google?slug={company_slug}&redirect={path}
 // Redirects user to Google OAuth consent screen
 export async function GET(req: NextRequest) {
+  // Rate limit the OAuth-init itself so an attacker can't hammer it to
+  // enumerate which slugs are configured (via the 503 vs 307 response split)
+  // or burn Google API quota.
+  const ip = getClientIp(req)
+  const rl = rateLimit(`google-init:${ip}`, 20, 60_000)
+  if (!rl.allowed) {
+    return NextResponse.json({ error: 'Muitas tentativas' }, { status: 429 })
+  }
+
   const { searchParams } = new URL(req.url)
   const slug = searchParams.get('slug')
   const redirect = searchParams.get('redirect') || ''
@@ -16,6 +35,15 @@ export async function GET(req: NextRequest) {
   if (!slug) {
     return NextResponse.json({ error: 'Empresa nao informada' }, { status: 400 })
   }
+
+  // Defense against open-redirect-via-OAuth: only accept same-origin relative
+  // paths in the `redirect` param. External URLs and protocol-relative URLs
+  // are silently discarded.
+  const safeRedirect = redirect.startsWith('/')
+    && !redirect.startsWith('//')
+    && !redirect.startsWith('/\\')
+    ? redirect
+    : ''
 
   // Per-tenant client_id: env var pattern GOOGLE_CLIENT_ID_{SLUG_UPPER}
   // Falls back to shared GOOGLE_CLIENT_ID if tenant-specific not set
@@ -36,7 +64,7 @@ export async function GET(req: NextRequest) {
   // CSRF protection via HMAC-signed state (stateless, works across domains).
   // Payload includes issued-at (10 min window) instead of cookie-based nonce.
   const nonce = randomBytes(16).toString('hex')
-  const payload = JSON.stringify({ slug, redirect, nonce, iat: Date.now() })
+  const payload = JSON.stringify({ slug, redirect: safeRedirect, nonce, iat: Date.now() })
   const payloadB64 = Buffer.from(payload).toString('base64url')
   const sig = signState(payloadB64)
   const state = `${payloadB64}.${sig}`

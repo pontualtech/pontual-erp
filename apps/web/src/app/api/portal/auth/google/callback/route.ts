@@ -20,7 +20,8 @@ function verifyState(state: string): { slug: string; redirect: string; nonce: st
   try {
     const [payloadB64, sig] = state.split('.')
     if (!payloadB64 || !sig) return null
-    const secret = process.env.PORTAL_AUTH_SECRET || process.env.NEXTAUTH_SECRET || 'dev-secret'
+    const secret = process.env.PORTAL_AUTH_SECRET || process.env.NEXTAUTH_SECRET
+    if (!secret || secret.length < 16) return null // fail closed
     const expected = createHmac('sha256', secret + ':google-state').update(payloadB64).digest('base64url')
     const sigBuf = Buffer.from(sig)
     const expBuf = Buffer.from(expected)

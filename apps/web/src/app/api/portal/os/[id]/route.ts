@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { getPortalUserFromRequest } from '@/lib/portal-auth'
+import { isAllowedOrigin } from '@/lib/csrf-origin'
 
 export async function GET(
   req: NextRequest,
@@ -169,6 +170,12 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    // Defense-in-depth CSRF: reject cross-origin POST (SameSite=Lax alone is
+    // not enough — an XSS on a sibling subdomain could still forge this).
+    if (!isAllowedOrigin(req)) {
+      return NextResponse.json({ error: 'Origem nao autorizada' }, { status: 403 })
+    }
+
     const portalUser = getPortalUserFromRequest(req)
     if (!portalUser) {
       return NextResponse.json({ error: 'Nao autenticado' }, { status: 401 })

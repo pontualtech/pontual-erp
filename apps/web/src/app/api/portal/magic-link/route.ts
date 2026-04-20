@@ -24,12 +24,28 @@ export async function POST(req: NextRequest) {
   try {
     let companyId: string
     const internalKey = req.headers.get('x-internal-key')
+    const configuredInternalKey = process.env.INTERNAL_API_KEY
 
-    if (internalKey && internalKey === process.env.INTERNAL_API_KEY) {
-      // Bot/webhook call — must provide company_id in body
+    // Fail closed if the env var is missing/empty — otherwise `'' === ''`
+    // would let ANY request through the internal-key branch.
+    if (configuredInternalKey && internalKey && internalKey === configuredInternalKey) {
+      // Bot/webhook call. The bot MUST also supply its botKey/company_id
+      // mapping — we no longer trust the body-provided company_id blindly.
+      // Valid company_ids are declared in env as BOT_*_COMPANY_ID, so the
+      // caller must pick one of those.
       const body = await req.json()
       if (!body.company_id) {
         return NextResponse.json({ error: 'company_id obrigatorio para chamadas internas' }, { status: 400 })
+      }
+      // Allowlist check: the company_id from the body must match an explicitly
+      // declared bot companyId env var. Without this, a leaked INTERNAL_API_KEY
+      // from Imprimitech's bot host could mint magic-links for PontualTech.
+      const allowedCompanyIds = Object.entries(process.env)
+        .filter(([k, v]) => k.startsWith('BOT_') && k.endsWith('_COMPANY_ID') && typeof v === 'string' && v.length > 0)
+        .map(([, v]) => v as string)
+      if (allowedCompanyIds.length > 0 && !allowedCompanyIds.includes(body.company_id)) {
+        console.warn('[MagicLink] bot tried unauthorized company_id', { requested: body.company_id, allowed: allowedCompanyIds.length })
+        return NextResponse.json({ error: 'company_id nao autorizado para este bot' }, { status: 403 })
       }
       companyId = body.company_id
 
