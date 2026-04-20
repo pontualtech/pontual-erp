@@ -29,6 +29,7 @@ export async function GET(req: NextRequest) {
   const code = searchParams.get('code')
   const stateParam = searchParams.get('state')
   const error = searchParams.get('error')
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'
 
   function redirectToLogin(slug: string, errMsg: string) {
     const isImpri = slug.includes('imprimitech')
