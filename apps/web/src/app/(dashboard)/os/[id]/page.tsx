@@ -2691,11 +2691,10 @@ export default function OSDetailPage() {
                   setGeneratingMagicLink(true)
                   try {
                     const customerId = (os as any).customer_id
-                    const redirect = `/portal/${(os as any).companies?.slug || 'pontualtech'}/os/${id}`
                     const res = await fetch('/api/portal/magic-link', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ customer_id: customerId, redirect, send_via_wa: true }),
+                      body: JSON.stringify({ customer_id: customerId, os_id: id, send_via_wa: true }),
                     })
                     const data = await res.json()
                     if (!res.ok) throw new Error(data.error || 'Erro ao gerar link')
@@ -2716,11 +2715,10 @@ export default function OSDetailPage() {
                   setGeneratingMagicLink(true)
                   try {
                     const customerId = (os as any).customer_id
-                    const redirect = `/portal/${(os as any).companies?.slug || 'pontualtech'}/os/${id}`
                     const res = await fetch('/api/portal/magic-link', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ customer_id: customerId, redirect }),
+                      body: JSON.stringify({ customer_id: customerId, os_id: id }),
                     })
                     const data = await res.json()
                     if (!res.ok) throw new Error(data.error || 'Erro ao gerar link')

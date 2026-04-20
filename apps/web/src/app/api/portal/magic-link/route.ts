@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
       }
       companyId = body.company_id
 
-      return buildLinkResponse(companyId, body.customer_id, body.redirect, undefined, body.send_via_wa)
+      return buildLinkResponse(companyId, body.customer_id, body.redirect, undefined, body.send_via_wa, body.os_id)
     }
 
     // Operator call — validate ERP session + permission
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
     companyId = auth.companyId
 
     const body = await req.json()
-    return buildLinkResponse(companyId, body.customer_id, body.redirect, auth.id, body.send_via_wa)
+    return buildLinkResponse(companyId, body.customer_id, body.redirect, auth.id, body.send_via_wa, body.os_id)
   } catch (err) {
     console.error('[MagicLink] Error:', err)
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
@@ -68,9 +68,10 @@ export async function POST(req: NextRequest) {
 async function buildLinkResponse(
   companyId: string,
   customerId: string,
-  redirect?: string,
-  userId?: string,
-  sendViaWa?: boolean,
+  redirect: string | undefined,
+  userId: string | undefined,
+  sendViaWa: boolean | undefined,
+  osId?: string,
 ) {
   if (!customerId) {
     return NextResponse.json({ error: 'customer_id obrigatorio' }, { status: 400 })
@@ -100,6 +101,21 @@ async function buildLinkResponse(
     return NextResponse.json({ error: 'Empresa nao encontrada' }, { status: 404 })
   }
 
+  // Prefer building the redirect server-side from os_id using the authoritative
+  // company.slug — the client cannot be trusted to know the right tenant slug
+  // (it used to fall back to 'pontualtech' for every OS, breaking Imprimitech).
+  let resolvedRedirect = redirect
+  if (osId) {
+    const os = await prisma.serviceOrder.findFirst({
+      where: { id: osId, company_id: companyId, customer_id: customerId, deleted_at: null },
+      select: { id: true },
+    })
+    if (!os) {
+      return NextResponse.json({ error: 'OS nao encontrada para este cliente' }, { status: 404 })
+    }
+    resolvedRedirect = `/portal/${company.slug}/os/${os.id}`
+  }
+
   const token = createAccessToken(customerId, companyId)
 
   // Build URL using tenant-specific portal domain when available
@@ -109,7 +125,7 @@ async function buildLinkResponse(
 
   const url = new URL(`${portalBase}/portal/${company.slug}/entrar`)
   url.searchParams.set('t', token)
-  if (redirect) url.searchParams.set('r', redirect)
+  if (resolvedRedirect) url.searchParams.set('r', resolvedRedirect)
 
   // Optionally push the link to the customer's WhatsApp directly
   // (Meta Cloud if configured, else Evolution fallback — transparent to caller)
