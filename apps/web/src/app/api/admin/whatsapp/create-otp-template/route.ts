@@ -12,7 +12,13 @@ import { prisma } from '@pontual/db'
  */
 export async function POST(req: NextRequest) {
   const internalKey = req.headers.get('x-internal-key')
-  if (internalKey !== process.env.INTERNAL_API_KEY && internalKey !== process.env.BOT_WEBHOOK_SECRET) {
+  const validKeys = [
+    process.env.INTERNAL_API_KEY,
+    process.env.BOT_WEBHOOK_SECRET,
+    process.env.CRON_SECRET,
+    process.env.CHATWOOT_WEBHOOK_SECRET,
+  ].filter(Boolean)
+  if (!internalKey || !validKeys.includes(internalKey)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
