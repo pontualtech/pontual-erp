@@ -76,11 +76,11 @@ export async function GET(req: NextRequest) {
   }
 
   const tokenData = await tokenRes.json()
-  const accessToken = tokenData.access_token as string
+  const googleAccessToken = tokenData.access_token as string
 
   // Get user info from Google
   const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-    headers: { Authorization: `Bearer ${accessToken}` },
+    headers: { Authorization: `Bearer ${googleAccessToken}` },
   })
 
   if (!userRes.ok) {
