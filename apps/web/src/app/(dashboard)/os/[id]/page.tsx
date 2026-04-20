@@ -1330,70 +1330,6 @@ export default function OSDetailPage() {
         </div>
       </div>
 
-      {/* ========== PROBLEMA / DIAGNOSTICO ========== */}
-      <div className="rounded-xl border bg-white p-4 shadow-sm">
-        <div className="flex items-center gap-2 mb-3">
-          <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-red-100">
-            <AlertTriangle className="h-4 w-4 text-red-600" />
-          </div>
-          <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Problema / Laudo</h2>
-        </div>
-        <div className="space-y-3">
-          {/* Reported issue (read-only) */}
-          <div>
-            <label className="block text-xs font-medium text-gray-400 uppercase mb-1">Defeito Relatado</label>
-            <div className="text-sm text-gray-900 bg-gray-50 rounded-lg p-3 min-h-[40px]">
-              {os.reported_issue || '--'}
-            </div>
-          </div>
-
-          {/* Diagnosis (editable) */}
-          <div>
-            <label className="flex items-center gap-1.5 text-xs font-medium text-gray-400 uppercase mb-1">
-              Laudo Tecnico
-              {savingField === 'diagnosis' && <Loader2 className="h-3 w-3 animate-spin text-blue-500" />}
-            </label>
-            <textarea
-              value={editDiagnosis}
-              onChange={e => setEditDiagnosis(e.target.value)}
-              placeholder="Descreva o laudo tecnico..."
-              rows={4}
-              className="w-full px-3 py-2 border rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-200 resize-y transition-colors"
-            />
-          </div>
-
-          {/* Notes (editable) */}
-          <div>
-            <label className="flex items-center gap-1.5 text-xs font-medium text-gray-400 uppercase mb-1">
-              Observacoes
-              {savingField === 'reception_notes' && <Loader2 className="h-3 w-3 animate-spin text-blue-500" />}
-            </label>
-            <textarea
-              value={editNotes}
-              onChange={e => setEditNotes(e.target.value)}
-              placeholder="Observacoes gerais..."
-              rows={4}
-              className="w-full px-3 py-2 border rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-200 resize-y transition-colors"
-            />
-          </div>
-
-          {/* Internal notes (editable, yellow bg) */}
-          <div>
-            <label className="flex items-center gap-1.5 text-xs font-medium text-yellow-600 uppercase mb-1">
-              Obs. Internas (somente equipe)
-              {savingField === 'internal_notes' && <Loader2 className="h-3 w-3 animate-spin text-yellow-600" />}
-            </label>
-            <textarea
-              value={editInternalNotes}
-              onChange={e => setEditInternalNotes(e.target.value)}
-              placeholder="Anotacoes internas..."
-              rows={4}
-              className="w-full px-3 py-2 border border-yellow-300 rounded-lg text-sm bg-yellow-50 focus:border-yellow-500 focus:ring-1 focus:ring-yellow-200 resize-y transition-colors"
-            />
-          </div>
-        </div>
-      </div>
-
       {/* ========== SERVICOS ========== */}
       <div className="rounded-xl border bg-white shadow-sm">
         <div className="flex items-center justify-between p-4 pb-2">
@@ -1661,6 +1597,70 @@ export default function OSDetailPage() {
             />
           </div>
         )}
+      </div>
+
+      {/* ========== PROBLEMA / DIAGNOSTICO ========== */}
+      <div className="rounded-xl border bg-white p-4 shadow-sm">
+        <div className="flex items-center gap-2 mb-3">
+          <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-red-100">
+            <AlertTriangle className="h-4 w-4 text-red-600" />
+          </div>
+          <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Problema / Laudo</h2>
+        </div>
+        <div className="space-y-3">
+          {/* Reported issue (read-only) */}
+          <div>
+            <label className="block text-xs font-medium text-gray-400 uppercase mb-1">Defeito Relatado</label>
+            <div className="text-sm text-gray-900 bg-gray-50 rounded-lg p-3 min-h-[40px]">
+              {os.reported_issue || '--'}
+            </div>
+          </div>
+
+          {/* Diagnosis (editable) */}
+          <div>
+            <label className="flex items-center gap-1.5 text-xs font-medium text-gray-400 uppercase mb-1">
+              Laudo Tecnico
+              {savingField === 'diagnosis' && <Loader2 className="h-3 w-3 animate-spin text-blue-500" />}
+            </label>
+            <textarea
+              value={editDiagnosis}
+              onChange={e => setEditDiagnosis(e.target.value)}
+              placeholder="Descreva o laudo tecnico..."
+              rows={4}
+              className="w-full px-3 py-2 border rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-200 resize-y transition-colors"
+            />
+          </div>
+
+          {/* Notes (editable) */}
+          <div>
+            <label className="flex items-center gap-1.5 text-xs font-medium text-gray-400 uppercase mb-1">
+              Observacoes
+              {savingField === 'reception_notes' && <Loader2 className="h-3 w-3 animate-spin text-blue-500" />}
+            </label>
+            <textarea
+              value={editNotes}
+              onChange={e => setEditNotes(e.target.value)}
+              placeholder="Observacoes gerais..."
+              rows={4}
+              className="w-full px-3 py-2 border rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-200 resize-y transition-colors"
+            />
+          </div>
+
+          {/* Internal notes (editable, yellow bg) */}
+          <div>
+            <label className="flex items-center gap-1.5 text-xs font-medium text-yellow-600 uppercase mb-1">
+              Obs. Internas (somente equipe)
+              {savingField === 'internal_notes' && <Loader2 className="h-3 w-3 animate-spin text-yellow-600" />}
+            </label>
+            <textarea
+              value={editInternalNotes}
+              onChange={e => setEditInternalNotes(e.target.value)}
+              placeholder="Anotacoes internas..."
+              rows={4}
+              className="w-full px-3 py-2 border border-yellow-300 rounded-lg text-sm bg-yellow-50 focus:border-yellow-500 focus:ring-1 focus:ring-yellow-200 resize-y transition-colors"
+            />
+          </div>
+        </div>
       </div>
 
       {/* ========== TOTALS + DESCONTO ========== */}
