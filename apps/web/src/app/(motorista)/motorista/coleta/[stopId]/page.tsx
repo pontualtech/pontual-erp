@@ -1,0 +1,246 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { useParams, useRouter } from 'next/navigation'
+import { toast } from 'sonner'
+import { ArrowLeft, Camera, ScanLine, Check } from 'lucide-react'
+import SignatureCanvas from '../../../components/signature-canvas'
+import OcrScanner from '../../../components/ocr-scanner'
+import CameraCapture from '../../../components/camera-capture'
+
+// Checklist padrão — o que o motorista sempre precisa conferir.
+// Cada item tem key (identifier estável) + label (o que o motorista vê).
+const CHECKLIST_ITEMS = [
+  { key: 'cables',         label: 'Cabos (força, USB, rede)' },
+  { key: 'power_supply',   label: 'Fonte / adaptador' },
+  { key: 'paper_tray',     label: 'Bandeja de papel' },
+  { key: 'leaks',          label: 'Vazamentos de tinta' },
+  { key: 'broken_parts',   label: 'Peças quebradas' },
+  { key: 'bad_condition',  label: 'Mau estado geral' },
+]
+
+type StopData = {
+  id: string
+  customer_name: string
+  address: string
+  os: { id: string; number: number; equipment: string; reported_issue: string | null } | null
+}
+
+function uuidv4() {
+  // Pequena implementação de uuid v4 (não depende de lib).
+  // crypto.randomUUID() existe em browsers modernos; fallback se falhar.
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16)
+  })
+}
+
+export default function ColetaPage() {
+  const router = useRouter()
+  const { stopId } = useParams<{ stopId: string }>()
+
+  const [stop, setStop] = useState<StopData | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  const [checklist, setChecklist] = useState(
+    CHECKLIST_ITEMS.map(i => ({ ...i, checked: false }))
+  )
+  const [serial, setSerial] = useState('')
+  const [serialSource, setSerialSource] = useState<'manual' | 'ocr' | 'ocr_corrected'>('manual')
+  const [observations, setObservations] = useState('')
+  const [signerName, setSignerName] = useState('')
+  const [signaturePng, setSignaturePng] = useState<string | null>(null)
+  const [extraPhotos, setExtraPhotos] = useState<string[]>([])
+
+  const [ocrOpen, setOcrOpen] = useState(false)
+  const [cameraOpen, setCameraOpen] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+
+  // Fetch stop data from today's rota (already enriched on the server)
+  useEffect(() => {
+    fetch('/api/driver/rota/hoje', { cache: 'no-store' })
+      .then(r => r.json())
+      .then(({ data }) => {
+        const found = (data.stops || []).find((s: any) => s.id === stopId)
+        if (!found) { toast.error('Parada nao encontrada'); router.back(); return }
+        if (found.type !== 'COLETA') { toast.error('Essa parada nao e coleta'); router.back(); return }
+        setStop(found)
+      })
+      .catch(() => toast.error('Falha ao carregar'))
+      .finally(() => setLoading(false))
+  }, [stopId, router])
+
+  function toggleItem(key: string) {
+    setChecklist(prev => prev.map(i => i.key === key ? { ...i, checked: !i.checked } : i))
+  }
+
+  async function handleOcrResult({ serial: s, source }: { serial: string | null; photoBase64: string; source: 'ocr' | 'manual' }) {
+    if (s) {
+      setSerial(s)
+      setSerialSource('ocr')
+      toast.success(`S/N lido: ${s}`)
+    } else {
+      toast.info('Não consegui ler — digite manualmente')
+    }
+    setOcrOpen(false)
+  }
+
+  async function getCurrentLocation(): Promise<{ lat: number; lng: number } | null> {
+    return new Promise(resolve => {
+      if (typeof navigator === 'undefined' || !navigator.geolocation) return resolve(null)
+      navigator.geolocation.getCurrentPosition(
+        p => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 6000, maximumAge: 30_000 }
+      )
+    })
+  }
+
+  async function finalizar() {
+    if (!serial.trim()) return toast.error('Informe o número de série')
+    if (!signaturePng) return toast.error('Peça a assinatura do cliente')
+    if (!signerName.trim()) return toast.error('Informe quem assinou')
+
+    setSubmitting(true)
+    try {
+      const location = await getCurrentLocation()
+      const payload = {
+        event_id: uuidv4(),
+        serial_number: serial.trim().toUpperCase(),
+        serial_source: serialSource,
+        checklist,
+        observations: observations.trim() || null,
+        signature_png_base64: signaturePng.replace(/^data:image\/png;base64,/, ''),
+        signer_name: signerName.trim(),
+        photos_base64: extraPhotos,
+        location,
+      }
+
+      const res = await fetch(`/api/driver/stop/${stopId}/coleta`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        toast.error(err.error || 'Falha ao salvar')
+        return
+      }
+
+      toast.success('Coleta registrada!')
+      router.replace('/motorista/rota')
+    } catch (err) {
+      toast.error('Erro de conexão. Tente novamente.')
+    } finally { setSubmitting(false) }
+  }
+
+  if (loading) {
+    return <div className="flex min-h-[100dvh] items-center justify-center">
+      <div className="animate-spin h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full" />
+    </div>
+  }
+  if (!stop) return null
+  if (ocrOpen) return <OcrScanner onResult={handleOcrResult} onCancel={() => setOcrOpen(false)} />
+  if (cameraOpen) return <CameraCapture
+    hint="Foto do estado do equipamento"
+    onCapture={b => { setExtraPhotos(p => [...p, b]); setCameraOpen(false) }}
+    onCancel={() => setCameraOpen(false)} />
+
+  return (
+    <div className="min-h-[100dvh] bg-slate-50">
+      <header className="sticky top-0 bg-purple-700 text-white px-4 py-3 flex items-center gap-3 shadow z-10">
+        <button onClick={() => router.back()} aria-label="Voltar" className="p-1"><ArrowLeft className="w-6 h-6" /></button>
+        <div className="flex-1 min-w-0">
+          <h1 className="font-bold leading-tight truncate">Coleta — {stop.customer_name}</h1>
+          <p className="text-xs opacity-80 truncate">{stop.os ? `OS #${stop.os.number}` : ''} {stop.os?.equipment}</p>
+        </div>
+      </header>
+
+      <main className="p-4 space-y-4 pb-32">
+        {stop.os?.reported_issue && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm">
+            <strong className="block text-xs uppercase text-amber-700 mb-1">Defeito relatado</strong>
+            {stop.os.reported_issue}
+          </div>
+        )}
+
+        <section>
+          <h2 className="font-semibold text-gray-900 mb-2">Checklist do equipamento</h2>
+          <div className="bg-white rounded-xl border divide-y">
+            {checklist.map(item => (
+              <label key={item.key} className="flex items-center gap-3 px-4 py-3 active:bg-gray-50">
+                <input type="checkbox" checked={item.checked} onChange={() => toggleItem(item.key)}
+                  className="w-5 h-5 accent-purple-600" />
+                <span className="flex-1">{item.label}</span>
+              </label>
+            ))}
+          </div>
+        </section>
+
+        <section>
+          <h2 className="font-semibold text-gray-900 mb-2">Número de série</h2>
+          <div className="flex gap-2">
+            <input value={serial}
+              onChange={e => { setSerial(e.target.value); if (serialSource === 'ocr') setSerialSource('ocr_corrected') }}
+              placeholder="Ex: X8PK291847" autoCapitalize="characters"
+              className="flex-1 border border-gray-300 rounded-lg px-4 py-3 bg-white" />
+            <button onClick={() => setOcrOpen(true)}
+              className="bg-blue-600 text-white px-4 rounded-lg flex items-center gap-1.5 active:scale-95">
+              <ScanLine className="w-5 h-5" /> OCR
+            </button>
+          </div>
+          {serialSource === 'ocr' && <p className="text-xs text-blue-600 mt-1">✓ Lido via câmera</p>}
+          {serialSource === 'ocr_corrected' && <p className="text-xs text-amber-600 mt-1">✎ OCR editado manualmente</p>}
+        </section>
+
+        <section>
+          <h2 className="font-semibold text-gray-900 mb-2">Observações <span className="text-xs font-normal text-gray-500">(opcional)</span></h2>
+          <textarea value={observations} onChange={e => setObservations(e.target.value)}
+            rows={3} placeholder="Ex: cliente reportou ruído ao ligar"
+            className="w-full border border-gray-300 rounded-lg px-4 py-3 bg-white" />
+        </section>
+
+        <section>
+          <h2 className="font-semibold text-gray-900 mb-2">Fotos extras <span className="text-xs font-normal text-gray-500">(opcional)</span></h2>
+          <div className="grid grid-cols-3 gap-2">
+            {extraPhotos.map((p, i) => (
+              <div key={i} className="relative aspect-square bg-gray-100 rounded-lg overflow-hidden">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={`data:image/jpeg;base64,${p}`} alt="" className="w-full h-full object-cover" />
+                <button onClick={() => setExtraPhotos(prev => prev.filter((_, idx) => idx !== i))}
+                  className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white text-xs">×</button>
+              </div>
+            ))}
+            <button onClick={() => setCameraOpen(true)}
+              className="aspect-square border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center text-gray-500 active:bg-gray-50">
+              <Camera className="w-6 h-6" />
+              <span className="text-xs mt-1">Adicionar</span>
+            </button>
+          </div>
+        </section>
+
+        <section>
+          <h2 className="font-semibold text-gray-900 mb-2">Assinatura do cliente</h2>
+          <input value={signerName} onChange={e => setSignerName(e.target.value)}
+            placeholder="Nome de quem está assinando"
+            className="w-full border border-gray-300 rounded-lg px-4 py-3 bg-white mb-2" />
+          <SignatureCanvas onChange={setSignaturePng} />
+        </section>
+      </main>
+
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t shadow-lg"
+        style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}>
+        <button onClick={finalizar} disabled={submitting}
+          className="w-full bg-green-600 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.99] transition">
+          {submitting ? (
+            <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full" />
+          ) : (
+            <><Check className="w-5 h-5" /> Finalizar Coleta</>
+          )}
+        </button>
+      </div>
+    </div>
+  )
+}
