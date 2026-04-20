@@ -7,6 +7,7 @@ import { ArrowLeft, Camera, ScanLine, Check } from 'lucide-react'
 import SignatureCanvas from '../../../components/signature-canvas'
 import OcrScanner from '../../../components/ocr-scanner'
 import CameraCapture from '../../../components/camera-capture'
+import { enqueueSubmission } from '../../../lib/offline-queue'
 
 // Checklist padrão — o que o motorista sempre precisa conferir.
 // Cada item tem key (identifier estável) + label (o que o motorista vê).
@@ -117,22 +118,14 @@ export default function ColetaPage() {
         location,
       }
 
-      const res = await fetch(`/api/driver/stop/${stopId}/coleta`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        toast.error(err.error || 'Falha ao salvar')
-        return
-      }
-
-      toast.success('Coleta registrada!')
+      // Offline-first: enfileira em IndexedDB e tenta enviar na hora.
+      // Se rede cair, sync worker retenta quando voltar. event_id garante
+      // idempotência no servidor (sem duplicar OS/history).
+      await enqueueSubmission(`/api/driver/stop/${stopId}/coleta`, payload)
+      toast.success('Coleta registrada! Sincronizando…')
       router.replace('/motorista/rota')
     } catch (err) {
-      toast.error('Erro de conexão. Tente novamente.')
+      toast.error('Erro ao salvar. Tente novamente.')
     } finally { setSubmitting(false) }
   }
 

@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { ArrowLeft, Check, X, Camera } from 'lucide-react'
 import SignatureCanvas from '../../../components/signature-canvas'
 import CameraCapture from '../../../components/camera-capture'
+import { enqueueSubmission } from '../../../lib/offline-queue'
 
 type PaymentMethod = 'pix' | 'dinheiro' | 'cartao_credito' | 'cartao_debito' | 'boleto'
 
@@ -110,20 +111,13 @@ export default function EntregaPage() {
         }
       }
 
-      const res = await fetch(`/api/driver/stop/${stopId}/entrega`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        toast.error(err.error || 'Falha ao salvar')
-        return
-      }
-      toast.success(outcome === 'entregue_aprovado' ? 'Entrega registrada!' : 'Recusa registrada')
+      // Offline-first via IndexedDB: se cair rede, sync worker tenta depois.
+      // event_id garante idempotência no servidor.
+      await enqueueSubmission(`/api/driver/stop/${stopId}/entrega`, payload)
+      toast.success(outcome === 'entregue_aprovado' ? 'Entrega registrada! Sincronizando…' : 'Recusa registrada')
       router.replace('/motorista/rota')
     } catch {
-      toast.error('Erro de conexão. Tente novamente.')
+      toast.error('Erro ao salvar. Tente novamente.')
     } finally { setSubmitting(false) }
   }
 

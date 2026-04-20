@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import { Toaster } from 'sonner'
 import '../globals.css'
+import ServiceWorkerRegister from './components/sw-register'
 
 // The motorista route group has its own <html>/<body> so we can tailor the
 // viewport (no pinch zoom) and PWA theme color without affecting ERP dashboard.
@@ -43,6 +44,7 @@ export default function MotoristaRootLayout({ children }: { children: React.Reac
         }}
       >
         {children}
+        <ServiceWorkerRegister />
         <Toaster position="top-center" richColors closeButton />
       </body>
     </html>

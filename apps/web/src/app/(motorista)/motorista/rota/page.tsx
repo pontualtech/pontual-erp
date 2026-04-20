@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Package, Truck, MapPin, Phone, CheckCircle2, AlertTriangle, RefreshCw, LogOut, MessageCircle } from 'lucide-react'
+import SyncBadge from '../../components/sync-badge'
 
 type Stop = {
   id: string
@@ -125,6 +126,7 @@ export default function RotaHojePage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <SyncBadge />
           <Link href="/motorista/chat" aria-label="Chat com a base"
             className="p-2 rounded-full hover:bg-white/10 active:scale-95 transition">
             <MessageCircle className="w-5 h-5" />
