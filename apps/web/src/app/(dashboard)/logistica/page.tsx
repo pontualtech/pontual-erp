@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import {
   Truck, Plus, Loader2, ArrowLeft, MapPin, Clock,
   Play, CheckCircle2, Eye, Route, CircleDot, Calendar,
-  MessageCircle,
+  MessageCircle, Trash2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -123,15 +123,48 @@ export default function LogisticaPage() {
     }
   }
 
-  const handleCompleteRoute = async (routeId: string) => {
+  const handleCompleteRoute = async (routeId: string, force = false) => {
     setActionLoading(routeId)
     try {
-      const res = await fetch(`/api/logistics/routes/${routeId}/complete`, { method: 'POST' })
-      if (!res.ok) throw new Error()
+      const url = `/api/logistics/routes/${routeId}/complete${force ? '?force=1' : ''}`
+      const res = await fetch(url, { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        // Se for erro de pendentes, oferece forcar conclusao
+        const msg: string = data?.error || 'Erro ao concluir rota'
+        if (!force && /pendente/i.test(msg)) {
+          if (window.confirm(msg + '\n\nForcar conclusao? Paradas pendentes serao marcadas como canceladas.')) {
+            setActionLoading(null)
+            return handleCompleteRoute(routeId, true)
+          }
+          return
+        }
+        toast.error(msg)
+        return
+      }
       toast.success('Rota concluida')
       loadRoutes()
     } catch {
       toast.error('Erro ao concluir rota')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const handleDeleteRoute = async (routeId: string) => {
+    if (!window.confirm('Excluir esta rota? Todas as paradas associadas tambem serao removidas. Esta acao nao pode ser desfeita.')) return
+    setActionLoading(routeId)
+    try {
+      const res = await fetch(`/api/logistics/routes/${routeId}`, { method: 'DELETE' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        toast.error(data?.error || 'Erro ao excluir rota')
+        return
+      }
+      toast.success('Rota excluida')
+      loadRoutes()
+    } catch {
+      toast.error('Erro ao excluir rota')
     } finally {
       setActionLoading(null)
     }
@@ -317,6 +350,17 @@ export default function LogisticaPage() {
                         Concluir
                       </button>
                     )}
+                    {/* Excluir — disponivel em qualquer status; backend faz cascade delete das paradas */}
+                    <button
+                      type="button"
+                      disabled={isLoading}
+                      onClick={() => handleDeleteRoute(route.id)}
+                      aria-label="Excluir rota"
+                      title="Excluir rota"
+                      className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors"
+                    >
+                      {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                    </button>
                   </div>
                 </div>
               )

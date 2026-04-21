@@ -12,6 +12,10 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (result instanceof NextResponse) return result
     const user = result
 
+    // ?force=1 permite encerrar rota com paradas pendentes (operador decide
+    // cancelar visitas que nao aconteceram). As pendentes viram FAILED.
+    const force = req.nextUrl.searchParams.get('force') === '1'
+
     const route = await prisma.logisticsRoute.findFirst({
       where: { id: params.id, company_id: user.companyId },
       include: { stops: true },
@@ -20,15 +24,22 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     if (route.status === 'COMPLETED') return error('Rota já foi concluída', 422)
 
-    // Verify all stops are COMPLETED or FAILED
     const pendingStops = route.stops.filter(
       (s) => s.status !== 'COMPLETED' && s.status !== 'FAILED'
     )
+
     if (pendingStops.length > 0) {
-      return error(
-        `Ainda há ${pendingStops.length} parada(s) pendente(s). Conclua ou marque como falha antes de finalizar a rota.`,
-        422
-      )
+      if (!force) {
+        return error(
+          `Ainda há ${pendingStops.length} parada(s) pendente(s). Conclua/marque como falha primeiro OU use 'forçar conclusão' para cancelar as pendentes.`,
+          422
+        )
+      }
+      // Forced: marca todas pendentes como FAILED com motivo
+      await prisma.logisticsStop.updateMany({
+        where: { route_id: params.id, company_id: user.companyId, status: { notIn: ['COMPLETED', 'FAILED'] } },
+        data: { status: 'FAILED', failure_reason: 'Cancelada no encerramento da rota pelo operador', completed_at: new Date() },
+      })
     }
 
     const updated = await prisma.logisticsRoute.update({
