@@ -968,7 +968,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
             // Build a one-click magic-link URL so the customer clicks and is
             // logged in automatically. A plain /os/{id} URL lands them on the
             // login page (no session), so they give up. The magic link is
-            // valid for 48h and tied to this specific customer+company.
+            // valid for 5 years and tied to this specific customer+company.
             let osPortalUrl = `${portalBase(cfg)}/os/${osData.id}`
             try {
               const { createAccessToken: catOs } = await import('@/lib/portal-auth')

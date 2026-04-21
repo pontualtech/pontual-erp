@@ -2682,7 +2682,7 @@ export default function OSDetailPage() {
             </div>
             <p className="text-sm text-gray-600 mb-4">
               Gera um link de acesso direto ao portal do cliente — sem senha, sem OTP.
-              Válido por 48 horas. O cliente clica e entra autenticado.
+              Link permanente (5 anos). O cliente clica e entra autenticado.
             </p>
 
             {!magicLinkUrl ? (

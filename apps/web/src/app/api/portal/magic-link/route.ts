@@ -18,7 +18,7 @@ import { sendWhatsAppCloud } from '@/lib/whatsapp/cloud-api'
  *   - redirect: optional path to redirect after auto-login (e.g., "/portal/impri/os/abc")
  *
  * Returns: { url: "https://erp.pontualtech.work/portal/{slug}/entrar?t=TOKEN&r=..." }
- *   Link is valid for 48 hours and sets a 7-day session cookie on click.
+ *   Link is valid for 5 years and sets a 7-day session cookie on click.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -136,7 +136,7 @@ async function buildLinkResponse(
       waResult = { attempted: true, success: false, error: 'Cliente sem telefone cadastrado' }
     } else {
       const firstName = (customer.legal_name || '').split(' ')[0] || 'Cliente'
-      const text = `Olá, ${firstName}!\n\nAqui está seu acesso direto ao portal do cliente da ${company.name}:\n\n${url.toString()}\n\nLink válido por 48 horas. Nenhuma senha necessária — basta clicar.`
+      const text = `Olá, ${firstName}!\n\nAqui está seu acesso direto ao portal do cliente da ${company.name}:\n\n${url.toString()}\n\nSalve este link — ele continua valendo para acompanhar suas OS. Nenhuma senha necessária, basta clicar.`
       const sent = await sendWhatsAppCloud(companyId, String(phone).replace(/\D/g, ''), text)
       waResult = {
         attempted: true,
@@ -150,7 +150,7 @@ async function buildLinkResponse(
   return NextResponse.json({
     data: {
       url: url.toString(),
-      expires_in_hours: 48,
+      expires_in_hours: 5 * 365 * 24, // 5 anos
       customer_name: customer.legal_name,
       company_name: company.name,
       wa: waResult,

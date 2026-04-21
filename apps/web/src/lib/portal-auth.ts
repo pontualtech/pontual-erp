@@ -101,15 +101,21 @@ interface AccessPayload {
   exp: number
 }
 
+// TTL de magic link = 5 anos (praticamente "nunca expira" pro uso do cliente).
+// Mantemos um exp fisico pra permitir rotacao da chave HMAC no futuro, se precisar.
+// Revogacao imediata: setar customer.deleted_at — o auto-login ja nega tokens de
+// clientes deletados (ver /api/portal/auth/auto-login).
+export const ACCESS_TOKEN_TTL_MS = 5 * 365 * 24 * 60 * 60 * 1000 // 5 anos
+
 /**
  * Gera token de acesso direto (magic link) para o portal.
- * Valido por 48 horas. Cliente clica e entra sem login.
+ * Valido por 5 anos — cliente clica e entra sem login.
  */
 export function createAccessToken(customerId: string, companyId: string): string {
   const payload: AccessPayload = {
     cid: customerId,
     mid: companyId,
-    exp: Date.now() + 48 * 60 * 60 * 1000, // 48h
+    exp: Date.now() + ACCESS_TOKEN_TTL_MS,
   }
   const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url')
   const signature = createHmac('sha256', getSecret() + ':access').update(payloadB64).digest('base64url')
