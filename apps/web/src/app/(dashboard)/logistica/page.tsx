@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import {
   Truck, Plus, Loader2, ArrowLeft, MapPin, Clock,
   Play, CheckCircle2, Eye, Route, CircleDot, Calendar,
-  MessageCircle, Trash2,
+  MessageCircle, Trash2, Users,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -210,6 +210,14 @@ export default function LogisticaPage() {
           >
             <MapPin className="h-4 w-4" />
             Ao Vivo
+          </Link>
+          <Link
+            href="/logistica/distribuir"
+            className="flex items-center gap-2 rounded-lg border border-purple-300 bg-white px-4 py-2 text-sm font-medium text-purple-700 hover:bg-purple-50 transition-colors"
+            title="Distribuir OS entre varios motoristas automaticamente"
+          >
+            <Users className="h-4 w-4" />
+            Distribuir
           </Link>
           <Link
             href="/logistica/nova"
