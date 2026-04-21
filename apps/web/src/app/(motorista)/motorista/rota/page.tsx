@@ -21,6 +21,12 @@ type Stop = {
   completed_at: string | null
   failure_reason: string | null
   os: { id: string; number: number; equipment: string; total_cost_cents: number } | null
+  // Visit notification (optional — endpoint /api/driver/rota/hoje passa os campos se existirem)
+  visit_notified_at?: string | null
+  visit_confirmed_at?: string | null
+  visit_reschedule_at?: string | null
+  visit_reschedule_note?: string | null
+  visit_eta_minutes?: number | null
 }
 
 type RouteData = {
@@ -95,6 +101,25 @@ export default function RotaHojePage() {
     router.replace('/motorista/login')
   }
 
+  // Handler invocado pelo StopCard ao tocar "Avisar cliente que estou a caminho".
+  // Calcula ETA aproximado via distância / 20km/h (SP urbano médio).
+  async function notifyCustomer(stopId: string, distKm: number | null) {
+    const etaMinutes = distKm !== null ? Math.max(5, Math.round((distKm / 20) * 60)) : null
+    try {
+      const res = await fetch(`/api/driver/stop/${stopId}/a-caminho`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eta_minutes: etaMinutes }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(data.error || 'Falha ao notificar cliente'); return }
+      if (data.data?.whatsapp === 'sent') toast.success('Cliente notificado via WhatsApp')
+      else if (data.data?.whatsapp === 'skipped_no_phone') toast.warning('Cliente sem telefone cadastrado')
+      else if (data.data?.whatsapp === 'failed') toast.error('WhatsApp falhou — copie o link do retorno')
+      await load(true)  // refresh a lista pra mostrar "Aguardando cliente"
+    } catch { toast.error('Erro de conexão') }
+  }
+
   const pendingStops = stops.filter(s => s.status !== 'COMPLETED' && s.status !== 'FAILED')
   const doneStops = stops.filter(s => s.status === 'COMPLETED' || s.status === 'FAILED')
 
@@ -167,7 +192,7 @@ export default function RotaHojePage() {
               </div>
             )}
             {sortedPending.map(stop => (
-              <StopCard key={stop.id} stop={stop} myLocation={myLocation} />
+              <StopCard key={stop.id} stop={stop} myLocation={myLocation} onNotifyCustomer={notifyCustomer} />
             ))}
           </section>
 
@@ -201,7 +226,11 @@ export default function RotaHojePage() {
   )
 }
 
-function StopCard({ stop, myLocation }: { stop: Stop; myLocation: { lat: number; lng: number } | null }) {
+function StopCard({ stop, myLocation, onNotifyCustomer }: {
+  stop: Stop
+  myLocation: { lat: number; lng: number } | null
+  onNotifyCustomer: (stopId: string, distKm: number | null) => Promise<void>
+}) {
   const isColeta = stop.type === 'COLETA'
   const href = isColeta ? `/motorista/coleta/${stop.id}` : `/motorista/entrega/${stop.id}`
   const accent = isColeta ? 'bg-purple-100 text-purple-700' : 'bg-emerald-100 text-emerald-700'
@@ -210,40 +239,84 @@ function StopCard({ stop, myLocation }: { stop: Stop; myLocation: { lat: number;
     ? distanceKm(myLocation, { lat: stop.lat, lng: stop.lng })
     : null
 
+  const [notifying, setNotifying] = useState(false)
+
+  // Estado da notificação ao cliente
+  const confirmed = !!stop.visit_confirmed_at
+  const rescheduled = !!stop.visit_reschedule_at
+  const notified = !!stop.visit_notified_at
+  const statusBadge = confirmed
+    ? { bg: 'bg-green-100', fg: 'text-green-700', label: '✓ Cliente confirmou' }
+    : rescheduled
+      ? { bg: 'bg-amber-100', fg: 'text-amber-700', label: '⚠ Pediu remarcar' }
+      : notified
+        ? { bg: 'bg-blue-100', fg: 'text-blue-700', label: '⏳ Aguardando cliente' }
+        : null
+
+  async function handleNotify(e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    setNotifying(true)
+    try { await onNotifyCustomer(stop.id, dist) }
+    finally { setNotifying(false) }
+  }
+
   return (
-    <Link href={href} className="block bg-white border border-gray-200 rounded-xl p-4 active:scale-[0.99] transition shadow-sm hover:shadow">
-      <div className="flex items-start gap-3">
-        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${accent} shrink-0`}>
-          <Icon className="w-5 h-5" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="text-xs font-bold uppercase tracking-wider text-gray-500">
-              {isColeta ? 'Coleta' : 'Entrega'}{stop.os ? ` — OS #${stop.os.number}` : ''}
-            </span>
-            {dist !== null && (
-              <span className="text-xs text-gray-400">{dist < 1 ? `${Math.round(dist * 1000)}m` : `${dist.toFixed(1)}km`}</span>
+    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm hover:shadow">
+      <Link href={href} className="block p-4 active:scale-[0.99] transition">
+        <div className="flex items-start gap-3">
+          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${accent} shrink-0`}>
+            <Icon className="w-5 h-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-gray-500">
+                {isColeta ? 'Coleta' : 'Entrega'}{stop.os ? ` — OS #${stop.os.number}` : ''}
+              </span>
+              {dist !== null && (
+                <span className="text-xs text-gray-400">{dist < 1 ? `${Math.round(dist * 1000)}m` : `${dist.toFixed(1)}km`}</span>
+              )}
+            </div>
+            <h3 className="font-semibold text-gray-900 mt-0.5 truncate">{stop.customer_name || 'Cliente'}</h3>
+            <p className="text-sm text-gray-600 mt-1 flex items-start gap-1">
+              <MapPin className="w-4 h-4 mt-0.5 shrink-0 text-gray-400" />
+              <span className="leading-tight">{stop.address}</span>
+            </p>
+            {stop.os?.equipment && (
+              <p className="text-xs text-gray-500 mt-1 truncate">{stop.os.equipment}</p>
+            )}
+            {!isColeta && stop.os?.total_cost_cents ? (
+              <p className="text-sm font-bold text-emerald-700 mt-2">Receber: {fmtBRL(stop.os.total_cost_cents)}</p>
+            ) : null}
+            {stop.customer_phone && (
+              <a href={`tel:${stop.customer_phone}`} onClick={e => e.stopPropagation()}
+                className="inline-flex items-center gap-1 text-xs text-blue-600 mt-2">
+                <Phone className="w-3 h-3" /> {stop.customer_phone}
+              </a>
+            )}
+            {statusBadge && (
+              <div className={`mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${statusBadge.bg} ${statusBadge.fg}`}>
+                {statusBadge.label}
+              </div>
+            )}
+            {rescheduled && stop.visit_reschedule_note && (
+              <p className="text-xs text-amber-700 italic mt-1">&quot;{stop.visit_reschedule_note}&quot;</p>
             )}
           </div>
-          <h3 className="font-semibold text-gray-900 mt-0.5 truncate">{stop.customer_name || 'Cliente'}</h3>
-          <p className="text-sm text-gray-600 mt-1 flex items-start gap-1">
-            <MapPin className="w-4 h-4 mt-0.5 shrink-0 text-gray-400" />
-            <span className="leading-tight">{stop.address}</span>
-          </p>
-          {stop.os?.equipment && (
-            <p className="text-xs text-gray-500 mt-1 truncate">{stop.os.equipment}</p>
-          )}
-          {!isColeta && stop.os?.total_cost_cents ? (
-            <p className="text-sm font-bold text-emerald-700 mt-2">Receber: {fmtBRL(stop.os.total_cost_cents)}</p>
-          ) : null}
-          {stop.customer_phone && (
-            <a href={`tel:${stop.customer_phone}`} onClick={e => e.stopPropagation()}
-              className="inline-flex items-center gap-1 text-xs text-blue-600 mt-2">
-              <Phone className="w-3 h-3" /> {stop.customer_phone}
-            </a>
-          )}
         </div>
-      </div>
-    </Link>
+      </Link>
+
+      {/* Botao "A caminho" — so aparece se ainda nao notificou e stop ainda pendente */}
+      {!notified && !confirmed && stop.status !== 'COMPLETED' && stop.status !== 'FAILED' && (
+        <button type="button" onClick={handleNotify} disabled={notifying}
+          className="w-full border-t border-gray-200 py-3 text-sm font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 active:bg-blue-200 disabled:opacity-60 flex items-center justify-center gap-2 transition">
+          {notifying ? (
+            <><RefreshCw className="w-4 h-4 animate-spin" /> Enviando…</>
+          ) : (
+            <>🚗 Avisar cliente que estou a caminho</>
+          )}
+        </button>
+      )}
+    </div>
   )
 }

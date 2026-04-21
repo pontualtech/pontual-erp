@@ -1214,6 +1214,13 @@ model LogisticsStop {
   event_id               String?   @unique          // idempotency key from device
   completed_lat          Decimal?  @db.Decimal(10, 8)
   completed_lng          Decimal?  @db.Decimal(11, 8)
+  // Customer ETA notification — motorista aciona "a caminho" pra avisar cliente
+  visit_notified_at      DateTime? @db.Timestamptz(6)
+  visit_eta_minutes      Int?                        // estimativa em min quando notificou
+  visit_confirm_token    String?   @unique           // HMAC token p/ link público de confirmacao
+  visit_confirmed_at     DateTime? @db.Timestamptz(6)
+  visit_reschedule_at    DateTime? @db.Timestamptz(6)
+  visit_reschedule_note  String?
   created_at             DateTime? @default(now()) @db.Timestamptz(6)
   route                  LogisticsRoute @relation(fields: [route_id], references: [id])
   @@index([route_id], map: "idx_stops_route")

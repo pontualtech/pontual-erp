@@ -31,6 +31,7 @@ export async function updateSession(request: NextRequest) {
   // /motorista/login é público pra que o motorista veja o PWA install prompt
   // ANTES de estar logado (manifest + SW só ativam dentro do route group).
   const publicPaths = ['/login', '/forgot-password', '/reset-password', '/api/auth/', '/api/quotes/approve', '/api/v1/', '/api/fiscal/webhook', '/api/portal/', '/portal/', '/api/integracoes/chatwoot/webhook', '/motorista/login']
+  // /portal/*/visita/ ja cai em /portal/ acima, mas mantemos o publicPaths explicito pra clareza
   const isPublic = publicPaths.some(p => request.nextUrl.pathname.startsWith(p))
 
   // API routes: também aceitar Bearer token no header

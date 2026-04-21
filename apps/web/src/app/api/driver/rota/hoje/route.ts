@@ -72,6 +72,11 @@ export async function GET() {
       window_end: s.scheduled_window_end,
       completed_at: s.completed_at,
       failure_reason: s.failure_reason,
+      visit_notified_at: s.visit_notified_at,
+      visit_confirmed_at: s.visit_confirmed_at,
+      visit_reschedule_at: s.visit_reschedule_at,
+      visit_reschedule_note: s.visit_reschedule_note,
+      visit_eta_minutes: s.visit_eta_minutes,
       os: os ? {
         id: os.id,
         number: os.os_number,
