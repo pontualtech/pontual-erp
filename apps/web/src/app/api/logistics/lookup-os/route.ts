@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
+import { ensureCustomersGeocoded, nearestNeighborOrder } from '@/lib/geocoding'
 
 /**
  * POST /api/logistics/lookup-os
@@ -64,6 +65,7 @@ export async function POST(req: NextRequest) {
           id: true, legal_name: true, trade_name: true,
           address_street: true, address_complement: true, address_number: true,
           address_neighborhood: true, address_city: true, address_state: true, address_zip: true,
+          address_lat: true, address_lng: true,
           mobile: true, phone: true,
         },
       },
@@ -75,6 +77,15 @@ export async function POST(req: NextRequest) {
   // Also identify which requested numbers weren't found (pra UI avisar)
   const foundNumbers = new Set(orders.map(o => o.os_number))
   const missing = numbers.filter(n => !foundNumbers.has(n))
+
+  // Geocoda customers que ainda não têm lat/lng (cache infinito no DB).
+  // Só faz network call na primeira vez que o cliente aparece numa rota.
+  const wantsSort = body.order === 'nearest'
+  let geocodedMap = new Map<string, { lat: number; lng: number }>()
+  if (wantsSort) {
+    const customerIds = orders.map(o => o.customers?.id).filter(Boolean) as string[]
+    geocodedMap = await ensureCustomersGeocoded(customerIds)
+  }
 
   const items = orders.map(os => {
     const c = os.customers
@@ -90,9 +101,13 @@ export async function POST(req: NextRequest) {
       : ''
 
     const statusName = os.module_statuses?.name || ''
-    // Heuristica: status "Coletar" ou "Coleta" → COLETA, "Entregar*" → ENTREGA
     const isColeta = /colet/i.test(statusName)
     const suggestedType: 'COLETA' | 'ENTREGA' = isColeta ? 'COLETA' : 'ENTREGA'
+
+    // Coords: prefere cache fresh do geocoder, senão o que já tinha no DB
+    const freshCoords = c?.id ? geocodedMap.get(c.id) : null
+    const lat = freshCoords?.lat ?? (c?.address_lat ? Number(c.address_lat) : null)
+    const lng = freshCoords?.lng ?? (c?.address_lng ? Number(c.address_lng) : null)
 
     return {
       os_id: os.id,
@@ -104,42 +119,48 @@ export async function POST(req: NextRequest) {
       customer_phone: c?.mobile || c?.phone || '',
       address: fullAddress,
       equipment: [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' '),
-      // campos brutos usados pra ordenacao por proximidade
+      lat,
+      lng,
+      // fallback ordering keys (quando não tiver lat/lng disponível)
       _city: (c?.address_city || '').toLowerCase().trim(),
       _neighborhood: (c?.address_neighborhood || '').toLowerCase().trim(),
       _zip: (c?.address_zip || '').replace(/\D/g, ''),
     }
   })
 
-  // Ordena por proximidade quando body.order === 'nearest':
-  //  1. Agrupa por cidade
-  //  2. Dentro de cidade, agrupa por bairro
-  //  3. Dentro de bairro, ordena por CEP (CEPs proximos sao geograficamente proximos na maioria)
-  //  4. Coletas vem antes de entregas dentro do mesmo cluster (motorista coleta antes de entregar)
-  //
-  // Isso NAO e "otimo" tipo TSP, mas elimina zigue-zague entre bairros, que e
-  // o maior desperdicio de tempo. Quando tivermos lat/lng + Distance Matrix
-  // fica plug and play.
-  if (body.order === 'nearest') {
-    items.sort((a, b) => {
-      if (a._city !== b._city) return a._city.localeCompare(b._city)
-      if (a._neighborhood !== b._neighborhood) return a._neighborhood.localeCompare(b._neighborhood)
-      if (a._zip !== b._zip) return a._zip.localeCompare(b._zip)
-      // Coleta antes de entrega no mesmo bairro
-      if (a.suggested_type !== b.suggested_type) return a.suggested_type === 'COLETA' ? -1 : 1
-      return a.os_number - b.os_number
-    })
+  let sortedItems = items
+  let sortMethod: 'haversine' | 'lexicographic' | 'none' = 'none'
+  if (wantsSort) {
+    const haveCoordsCount = items.filter(i => i.lat !== null && i.lng !== null).length
+    const ratio = haveCoordsCount / Math.max(items.length, 1)
+    if (ratio >= 0.6) {
+      // Tem lat/lng pra maioria → nearest-neighbor real
+      sortedItems = nearestNeighborOrder(items)
+      sortMethod = 'haversine'
+    } else {
+      // Fallback: ordenação lexicográfica por cidade → bairro → CEP
+      sortedItems = [...items].sort((a, b) => {
+        if (a._city !== b._city) return a._city.localeCompare(b._city)
+        if (a._neighborhood !== b._neighborhood) return a._neighborhood.localeCompare(b._neighborhood)
+        if (a._zip !== b._zip) return a._zip.localeCompare(b._zip)
+        if (a.suggested_type !== b.suggested_type) return a.suggested_type === 'COLETA' ? -1 : 1
+        return a.os_number - b.os_number
+      })
+      sortMethod = 'lexicographic'
+    }
   }
 
   // Remove campos internos antes de retornar
-  const cleanItems = items.map(({ _city, _neighborhood, _zip, ...rest }) => rest)
+  const cleanItems = sortedItems.map(({ _city, _neighborhood, _zip, ...rest }) => rest)
 
   return NextResponse.json({
     data: {
       items: cleanItems,
-      missing,     // OS numbers informados mas não encontrados
+      missing,
       total: cleanItems.length,
-      ordered: body.order === 'nearest',
+      ordered: wantsSort,
+      sort_method: sortMethod,
+      geocoded_now: geocodedMap.size,
     },
   })
 }

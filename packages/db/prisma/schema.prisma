@@ -364,6 +364,11 @@ model Customer {
   address_city         String?
   address_state        String?
   address_zip          String?
+  // Coordenadas cacheadas — populadas via Google Geocoding uma vez e reutilizadas
+  // pra ordenar rotas por proximidade. Recomputar se o endereço for editado.
+  address_lat          Decimal?  @db.Decimal(10, 8)
+  address_lng          Decimal?  @db.Decimal(11, 8)
+  address_geocoded_at  DateTime? @db.Timestamptz(6)
   state_registration   String?
   city_registration    String?
   notes                String?
