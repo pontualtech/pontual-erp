@@ -120,7 +120,12 @@ export default function RotaHojePage() {
     } catch { toast.error('Erro de conexão') }
   }
 
+  // Estatísticas do dia
   const pendingStops = stops.filter(s => s.status !== 'COMPLETED' && s.status !== 'FAILED')
+  const confirmedCount = pendingStops.filter(s => s.visit_confirmed_at).length
+  const toCollectCents = stops
+    .filter(s => s.type === 'ENTREGA' && s.status !== 'FAILED' && s.os?.total_cost_cents)
+    .reduce((sum, s) => sum + (s.os?.total_cost_cents || 0), 0)
   const doneStops = stops.filter(s => s.status === 'COMPLETED' || s.status === 'FAILED')
 
   // Ordena pendentes por proximidade se tivermos localização
@@ -180,21 +185,57 @@ export default function RotaHojePage() {
 
       {route && (
         <main className="pb-24">
-          {/* PENDENTES */}
-          <section className="px-4 py-4 space-y-3">
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
-              Pendentes ({sortedPending.length})
-            </h2>
-            {sortedPending.length === 0 && (
-              <div className="bg-green-50 border border-green-200 rounded-xl p-6 text-center">
-                <CheckCircle2 className="mx-auto w-12 h-12 text-green-600 mb-2" />
-                <p className="font-medium text-green-900">Tudo entregue. Boa rota!</p>
+          {/* Stats bar do dia — 3 metricas visiveis logo no topo */}
+          <section className="px-4 py-3 bg-white border-b border-gray-200">
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div>
+                <div className="text-2xl font-bold text-blue-700">{sortedPending.length}</div>
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Pendentes</div>
               </div>
-            )}
-            {sortedPending.map(stop => (
-              <StopCard key={stop.id} stop={stop} myLocation={myLocation} onNotifyCustomer={notifyCustomer} />
-            ))}
+              <div>
+                <div className="text-2xl font-bold text-green-700">{confirmedCount}</div>
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Confirmadas</div>
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-emerald-700">{toCollectCents > 0 ? fmtBRL(toCollectCents) : '—'}</div>
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">A receber</div>
+              </div>
+            </div>
           </section>
+
+          {/* PRÓXIMA PARADA — hero card gigante */}
+          {sortedPending.length > 0 && (
+            <section className="px-4 pt-4 pb-2">
+              <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-blue-600 mb-2">
+                👉 Próxima parada
+              </p>
+              <StopCard stop={sortedPending[0]} myLocation={myLocation}
+                onNotifyCustomer={notifyCustomer} featured />
+            </section>
+          )}
+
+          {/* DEMAIS PENDENTES — cards compactos */}
+          {sortedPending.length > 1 && (
+            <section className="px-4 pt-4 pb-2 space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                Depois ({sortedPending.length - 1})
+              </p>
+              {sortedPending.slice(1).map(stop => (
+                <StopCard key={stop.id} stop={stop} myLocation={myLocation}
+                  onNotifyCustomer={notifyCustomer} />
+              ))}
+            </section>
+          )}
+
+          {sortedPending.length === 0 && (
+            <section className="px-4 py-4">
+              <div className="bg-green-50 border border-green-200 rounded-xl p-8 text-center">
+                <CheckCircle2 className="mx-auto w-16 h-16 text-green-600 mb-3" />
+                <p className="font-bold text-green-900 text-lg">Tudo entregue!</p>
+                <p className="text-sm text-green-700 mt-1">Boa rota, motorista 🏁</p>
+              </div>
+            </section>
+          )}
 
           {/* FINALIZADAS */}
           {doneStops.length > 0 && (
@@ -226,14 +267,21 @@ export default function RotaHojePage() {
   )
 }
 
-function StopCard({ stop, myLocation, onNotifyCustomer }: {
+function StopCard({ stop, myLocation, onNotifyCustomer, featured = false }: {
   stop: Stop
   myLocation: { lat: number; lng: number } | null
   onNotifyCustomer: (stopId: string, distKm: number | null) => Promise<void>
+  featured?: boolean
 }) {
   const isColeta = stop.type === 'COLETA'
   const href = isColeta ? `/motorista/coleta/${stop.id}` : `/motorista/entrega/${stop.id}`
-  const accent = isColeta ? 'bg-purple-100 text-purple-700' : 'bg-emerald-100 text-emerald-700'
+  // Hero (featured) usa a cor tematica FORTE; compact usa tom clarinho
+  const accent = featured
+    ? (isColeta ? 'bg-purple-600 text-white' : 'bg-emerald-600 text-white')
+    : (isColeta ? 'bg-purple-100 text-purple-700' : 'bg-emerald-100 text-emerald-700')
+  const heroBorder = featured
+    ? (isColeta ? 'border-purple-300 shadow-purple-100' : 'border-emerald-300 shadow-emerald-100')
+    : 'border-gray-200'
   const Icon = isColeta ? Package : Truck
   const dist = myLocation && stop.lat && stop.lng
     ? distanceKm(myLocation, { lat: stop.lat, lng: stop.lng })
@@ -261,62 +309,112 @@ function StopCard({ stop, myLocation, onNotifyCustomer }: {
     finally { setNotifying(false) }
   }
 
-  return (
-    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm hover:shadow">
-      <Link href={href} className="block p-4 active:scale-[0.99] transition">
-        <div className="flex items-start gap-3">
-          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${accent} shrink-0`}>
-            <Icon className="w-5 h-5" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                {isColeta ? 'Coleta' : 'Entrega'}{stop.os ? ` — OS #${stop.os.number}` : ''}
-              </span>
-              {dist !== null && (
-                <span className="text-xs text-gray-400">{dist < 1 ? `${Math.round(dist * 1000)}m` : `${dist.toFixed(1)}km`}</span>
-              )}
+  // Diferença visual entre hero (featured) e compact
+  if (featured) {
+    return (
+      <div className={`bg-white border-2 ${heroBorder} rounded-2xl overflow-hidden shadow-lg`}>
+        <Link href={href} className="block p-5 active:scale-[0.99] transition">
+          <div className="flex items-center gap-3 mb-3">
+            <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${accent} shrink-0 shadow`}>
+              <Icon className="w-6 h-6" />
             </div>
-            <h3 className="font-semibold text-gray-900 mt-0.5 truncate">{stop.customer_name || 'Cliente'}</h3>
-            <p className="text-sm text-gray-600 mt-1 flex items-start gap-1">
-              <MapPin className="w-4 h-4 mt-0.5 shrink-0 text-gray-400" />
-              <span className="leading-tight">{stop.address}</span>
-            </p>
-            {stop.os?.equipment && (
-              <p className="text-xs text-gray-500 mt-1 truncate">{stop.os.equipment}</p>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                {isColeta ? 'Coleta' : 'Entrega'}{stop.os ? ` · OS #${stop.os.number}` : ''}
+              </p>
+              <h3 className="text-lg font-bold text-gray-900 truncate leading-tight">
+                {stop.customer_name || 'Cliente'}
+              </h3>
+            </div>
+            {dist !== null && (
+              <span className={`text-xs font-bold px-2 py-1 rounded-full ${isColeta ? 'bg-purple-50 text-purple-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                {dist < 1 ? `${Math.round(dist * 1000)}m` : `${dist.toFixed(1)}km`}
+              </span>
             )}
-            {!isColeta && stop.os?.total_cost_cents ? (
-              <p className="text-sm font-bold text-emerald-700 mt-2">Receber: {fmtBRL(stop.os.total_cost_cents)}</p>
-            ) : null}
+          </div>
+
+          <div className="flex items-start gap-2 text-sm text-gray-700 mb-2">
+            <MapPin className="w-4 h-4 mt-0.5 shrink-0 text-gray-400" />
+            <span className="leading-snug">{stop.address}</span>
+          </div>
+
+          {stop.os?.equipment && (
+            <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
+              <Package className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{stop.os.equipment}</span>
+            </div>
+          )}
+
+          {!isColeta && stop.os?.total_cost_cents ? (
+            <div className="mt-3 flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-emerald-700">A receber</span>
+              <span className="text-lg font-bold text-emerald-700">{fmtBRL(stop.os.total_cost_cents)}</span>
+            </div>
+          ) : null}
+
+          <div className="mt-3 flex items-center gap-2 flex-wrap">
             {stop.customer_phone && (
               <a href={`tel:${stop.customer_phone}`} onClick={e => e.stopPropagation()}
-                className="inline-flex items-center gap-1 text-xs text-blue-600 mt-2">
-                <Phone className="w-3 h-3" /> {stop.customer_phone}
+                className="inline-flex items-center gap-1.5 text-sm bg-blue-50 text-blue-700 px-3 py-1.5 rounded-full font-medium">
+                <Phone className="w-3.5 h-3.5" /> Ligar
               </a>
             )}
             {statusBadge && (
-              <div className={`mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${statusBadge.bg} ${statusBadge.fg}`}>
+              <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${statusBadge.bg} ${statusBadge.fg}`}>
                 {statusBadge.label}
-              </div>
+              </span>
             )}
-            {rescheduled && stop.visit_reschedule_note && (
-              <p className="text-xs text-amber-700 italic mt-1">&quot;{stop.visit_reschedule_note}&quot;</p>
+          </div>
+          {rescheduled && stop.visit_reschedule_note && (
+            <p className="text-xs text-amber-700 italic mt-2 bg-amber-50 p-2 rounded">&quot;{stop.visit_reschedule_note}&quot;</p>
+          )}
+        </Link>
+
+        {!notified && !confirmed && stop.status !== 'COMPLETED' && stop.status !== 'FAILED' && (
+          <button type="button" onClick={handleNotify} disabled={notifying}
+            className={`w-full py-3 text-sm font-bold text-white active:scale-[0.99] disabled:opacity-60 flex items-center justify-center gap-2 transition ${isColeta ? 'bg-purple-600 hover:bg-purple-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
+            {notifying ? (
+              <><RefreshCw className="w-4 h-4 animate-spin" /> Enviando…</>
+            ) : (
+              <>🚗 Avisar cliente que estou a caminho</>
+            )}
+          </button>
+        )}
+
+        <Link href={href} className={`block w-full py-3 text-sm font-bold text-center text-white active:scale-[0.99] transition ${isColeta ? 'bg-purple-700' : 'bg-emerald-700'}`}>
+          {isColeta ? 'Iniciar Coleta →' : 'Iniciar Entrega →'}
+        </Link>
+      </div>
+    )
+  }
+
+  // COMPACT CARD
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <Link href={href} className="block p-3 active:scale-[0.99] transition">
+        <div className="flex items-start gap-3">
+          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${accent} shrink-0`}>
+            <Icon className="w-4 h-4" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                {isColeta ? 'Coleta' : 'Entrega'}{stop.os ? ` · #${stop.os.number}` : ''}
+              </span>
+              {dist !== null && (
+                <span className="text-[10px] text-gray-400">{dist < 1 ? `${Math.round(dist * 1000)}m` : `${dist.toFixed(1)}km`}</span>
+              )}
+            </div>
+            <h3 className="font-semibold text-gray-900 text-sm truncate leading-tight">{stop.customer_name || 'Cliente'}</h3>
+            <p className="text-xs text-gray-500 truncate mt-0.5">{stop.address}</p>
+            {statusBadge && (
+              <span className={`inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold ${statusBadge.bg} ${statusBadge.fg}`}>
+                {statusBadge.label}
+              </span>
             )}
           </div>
         </div>
       </Link>
-
-      {/* Botao "A caminho" — so aparece se ainda nao notificou e stop ainda pendente */}
-      {!notified && !confirmed && stop.status !== 'COMPLETED' && stop.status !== 'FAILED' && (
-        <button type="button" onClick={handleNotify} disabled={notifying}
-          className="w-full border-t border-gray-200 py-3 text-sm font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 active:bg-blue-200 disabled:opacity-60 flex items-center justify-center gap-2 transition">
-          {notifying ? (
-            <><RefreshCw className="w-4 h-4 animate-spin" /> Enviando…</>
-          ) : (
-            <>🚗 Avisar cliente que estou a caminho</>
-          )}
-        </button>
-      )}
     </div>
   )
 }
