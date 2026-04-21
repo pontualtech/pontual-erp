@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { ArrowLeft, Camera, ScanLine, Check } from 'lucide-react'
+import { ArrowLeft, Camera, ScanLine, Check, Plus, X, Loader2 } from 'lucide-react'
 import SignatureCanvas from '../../../components/signature-canvas'
 import OcrScanner from '../../../components/ocr-scanner'
 import CameraCapture from '../../../components/camera-capture'
@@ -58,6 +58,16 @@ export default function ColetaPage() {
   const [cameraOpen, setCameraOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
+  // Extra-OS modal: motorista cria OS adicional quando cliente entrega
+  // equipamento nao cadastrado no momento da coleta
+  const [extraModal, setExtraModal] = useState(false)
+  const [extraForm, setExtraForm] = useState({
+    equipment_type: '', equipment_brand: '', equipment_model: '',
+    serial_number: '', reported_issue: '',
+  })
+  const [creatingExtra, setCreatingExtra] = useState(false)
+  const [extrasCreated, setExtrasCreated] = useState<number[]>([])
+
   // Fetch stop data from today's rota (already enriched on the server)
   useEffect(() => {
     fetch('/api/driver/rota/hoje', { cache: 'no-store' })
@@ -85,6 +95,27 @@ export default function ColetaPage() {
       toast.info('Não consegui ler — digite manualmente')
     }
     setOcrOpen(false)
+  }
+
+  async function handleCreateExtraOs() {
+    if (!extraForm.equipment_type.trim()) return toast.error('Informe o tipo do equipamento')
+    if (!extraForm.reported_issue.trim()) return toast.error('Descreva o problema relatado')
+    setCreatingExtra(true)
+    try {
+      const res = await fetch(`/api/driver/stop/${stopId}/extra-os`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(extraForm),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(body.error || 'Falha ao criar OS extra'); return }
+      const newNumber = body.data?.os?.number
+      toast.success(`OS #${newNumber} criada! Adicionada ao fim da rota pra voce coletar junto.`)
+      if (newNumber) setExtrasCreated(prev => [...prev, newNumber])
+      setExtraModal(false)
+      setExtraForm({ equipment_type: '', equipment_brand: '', equipment_model: '', serial_number: '', reported_issue: '' })
+    } catch { toast.error('Erro de conexao') }
+    finally { setCreatingExtra(false) }
   }
 
   async function getCurrentLocation(): Promise<{ lat: number; lng: number } | null> {
@@ -215,6 +246,28 @@ export default function ColetaPage() {
         </section>
 
         <section>
+          <div className="rounded-xl border-2 border-dashed border-blue-300 bg-blue-50 p-4">
+            <div className="flex items-start gap-3">
+              <div className="flex-1">
+                <h2 className="font-semibold text-blue-900">Cliente entregou outra maquina?</h2>
+                <p className="text-xs text-blue-700 mt-0.5">
+                  Crie uma OS extra pro mesmo cliente sem voltar ao escritorio. Vai direto pra sua rota.
+                </p>
+                {extrasCreated.length > 0 && (
+                  <p className="text-xs text-green-700 font-semibold mt-1.5">
+                    ✓ {extrasCreated.length} OS extra{extrasCreated.length > 1 ? 's' : ''} criada{extrasCreated.length > 1 ? 's' : ''}: {extrasCreated.map(n => `#${n}`).join(', ')}
+                  </p>
+                )}
+              </div>
+              <button type="button" onClick={() => setExtraModal(true)}
+                className="bg-blue-600 text-white text-sm font-bold px-3 py-2 rounded-lg flex items-center gap-1 active:scale-95 shrink-0">
+                <Plus className="w-4 h-4" /> Criar OS
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section>
           <h2 className="font-semibold text-gray-900 mb-2">Assinatura do cliente</h2>
           <input value={signerName} onChange={e => setSignerName(e.target.value)}
             placeholder="Nome de quem está assinando"
@@ -222,6 +275,91 @@ export default function ColetaPage() {
           <SignatureCanvas onChange={setSignaturePng} />
         </section>
       </main>
+
+      {/* Modal: criar OS extra */}
+      {extraModal && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60"
+          onClick={() => !creatingExtra && setExtraModal(false)}>
+          <div className="w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl p-5 shadow-2xl max-h-[90vh] overflow-y-auto"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold text-lg flex items-center gap-2 text-blue-700">
+                <Plus className="w-5 h-5" />
+                Nova OS em campo
+              </h3>
+              <button type="button" onClick={() => setExtraModal(false)} disabled={creatingExtra}
+                className="text-gray-400 hover:text-gray-600 p-1" aria-label="Fechar">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-600 mb-4">
+              Cliente <strong>{stop.customer_name}</strong> — essa OS entra na sua rota automaticamente.
+            </p>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
+                  Tipo de equipamento *
+                </label>
+                <input value={extraForm.equipment_type}
+                  onChange={e => setExtraForm(f => ({ ...f, equipment_type: e.target.value }))}
+                  placeholder="Ex: Impressora, Notebook, Monitor"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-base" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">Marca</label>
+                  <input value={extraForm.equipment_brand}
+                    onChange={e => setExtraForm(f => ({ ...f, equipment_brand: e.target.value }))}
+                    placeholder="Ex: HP, Epson"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">Modelo</label>
+                  <input value={extraForm.equipment_model}
+                    onChange={e => setExtraForm(f => ({ ...f, equipment_model: e.target.value }))}
+                    placeholder="Ex: L3150"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
+                  Numero de serie <span className="font-normal lowercase text-gray-400">(opcional)</span>
+                </label>
+                <input value={extraForm.serial_number}
+                  onChange={e => setExtraForm(f => ({ ...f, serial_number: e.target.value }))}
+                  placeholder="Voce pode adicionar depois"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
+                  Problema relatado *
+                </label>
+                <textarea value={extraForm.reported_issue}
+                  onChange={e => setExtraForm(f => ({ ...f, reported_issue: e.target.value }))}
+                  placeholder="Ex: nao liga, imprime com falha, faz barulho..."
+                  rows={3}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm resize-none" />
+              </div>
+            </div>
+
+            <div className="flex gap-2 mt-5">
+              <button type="button" onClick={() => setExtraModal(false)} disabled={creatingExtra}
+                className="flex-1 rounded-lg border px-4 py-3 text-sm font-medium text-gray-600 hover:bg-gray-50 active:scale-[0.99]">
+                Cancelar
+              </button>
+              <button type="button" onClick={handleCreateExtraOs} disabled={creatingExtra}
+                className="flex-[2] rounded-lg bg-blue-600 px-4 py-3 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50 active:scale-[0.99] flex items-center justify-center gap-2">
+                {creatingExtra && <Loader2 className="w-4 h-4 animate-spin" />}
+                Criar e adicionar a rota
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t shadow-lg"
         style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}>
