@@ -138,7 +138,12 @@ export async function GET(req: NextRequest) {
         take: limit,
         orderBy: { [sortBy]: sortDir },
         include: {
-          customers: { select: { id: true, legal_name: true, phone: true, document_number: true } },
+          customers: { select: {
+            id: true, legal_name: true, trade_name: true, phone: true, mobile: true, document_number: true,
+            // Endereco completo pra pre-preencher logistica/nova ao vincular cliente
+            address_street: true, address_number: true, address_complement: true,
+            address_neighborhood: true, address_city: true, address_state: true, address_zip: true,
+          } },
           module_statuses: { select: { id: true, name: true, color: true } },
           user_profiles: { select: { id: true, name: true } },
           accounts_receivable: {

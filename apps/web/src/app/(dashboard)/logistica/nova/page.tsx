@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import {
   ArrowLeft, Plus, Trash2, ChevronUp, ChevronDown, Loader2,
   X, Search, MapPin, Clock, Package, Truck as TruckIcon, GripVertical,
+  ClipboardPaste, Filter, Check,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -70,6 +71,21 @@ export default function NovaRotaPage() {
   const [timeStart, setTimeStart] = useState('')
   const [timeEnd, setTimeEnd] = useState('')
 
+  // Bulk import modal state
+  const [showBulkModal, setShowBulkModal] = useState(false)
+  const [bulkTab, setBulkTab] = useState<'status' | 'paste'>('status')
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>(['Coletar'])
+  const [pasteText, setPasteText] = useState('')
+  const [bulkLoading, setBulkLoading] = useState(false)
+  type BulkItem = {
+    os_id: string; os_number: number; status: string
+    suggested_type: 'COLETA' | 'ENTREGA'
+    customer_name: string; customer_phone: string; address: string; equipment: string
+    selected: boolean
+  }
+  const [bulkResults, setBulkResults] = useState<BulkItem[]>([])
+  const [bulkMissing, setBulkMissing] = useState<number[]>([])
+
   // Load drivers
   useEffect(() => {
     fetch('/api/users')
@@ -91,13 +107,25 @@ export default function NovaRotaPage() {
       if (!res.ok) throw new Error()
       const data = await res.json()
       setOsResults(
-        (data.data ?? []).map((os: any) => ({
-          id: os.id,
-          os_number: os.os_number,
-          customer_name: os.customers?.legal_name ?? os.customer_name ?? 'Sem cliente',
-          customer_address: os.customers?.address ?? os.address ?? null,
-          equipment_type: os.equipment_type,
-        }))
+        (data.data ?? []).map((os: any) => {
+          const c = os.customers
+          // Monta endereco completo: rua, numero, complemento, bairro, cidade/UF, CEP
+          const full = c ? [
+            c.address_street,
+            c.address_number ? `n° ${c.address_number}` : null,
+            c.address_complement,
+            c.address_neighborhood,
+            c.address_city && c.address_state ? `${c.address_city}/${c.address_state}` : c.address_city,
+            c.address_zip,
+          ].filter(Boolean).join(', ') : (os.address ?? null)
+          return {
+            id: os.id,
+            os_number: os.os_number,
+            customer_name: c?.trade_name || c?.legal_name || 'Sem cliente',
+            customer_address: full || null,
+            equipment_type: os.equipment_type,
+          }
+        })
       )
     } catch {
       setOsResults([])
@@ -125,6 +153,80 @@ export default function NovaRotaPage() {
   const openModal = () => {
     resetModal()
     setShowModal(true)
+  }
+
+  /** Extrai sequencias numericas de texto livre (colar OS). Aceita separadores
+   *  variados: vírgula, espaço, quebra de linha, ponto-e-vírgula, tab. */
+  function extractNumbers(text: string): number[] {
+    const matches = text.match(/\b\d{3,7}\b/g) || []
+    const nums = matches.map(m => parseInt(m, 10)).filter(n => Number.isFinite(n) && n > 0)
+    return Array.from(new Set(nums))  // dedup
+  }
+
+  /** Busca bulk no backend e popula bulkResults pra preview. */
+  async function fetchBulk() {
+    setBulkLoading(true)
+    setBulkResults([])
+    setBulkMissing([])
+    try {
+      const body: Record<string, unknown> = {}
+      if (bulkTab === 'paste') {
+        const nums = extractNumbers(pasteText)
+        if (nums.length === 0) { toast.error('Nenhum numero de OS encontrado'); return }
+        body.numbers = nums
+      } else {
+        if (selectedStatuses.length === 0) { toast.error('Selecione ao menos um status'); return }
+        body.statuses = selectedStatuses
+      }
+      const res = await fetch('/api/logistics/lookup-os', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json()
+      if (!res.ok) { toast.error(data?.error || 'Erro ao buscar OS'); return }
+      // Filtra OS ja adicionadas na rota pra nao duplicar
+      const alreadyAddedIds = new Set(stops.filter(s => s.os_id).map(s => s.os_id))
+      const items: BulkItem[] = (data.data.items || []).map((it: any) => ({
+        ...it,
+        selected: !alreadyAddedIds.has(it.os_id),
+      }))
+      setBulkResults(items)
+      setBulkMissing(data.data.missing || [])
+      if (items.length === 0) toast.info('Nenhuma OS encontrada')
+    } catch { toast.error('Falha de rede') }
+    finally { setBulkLoading(false) }
+  }
+
+  /** Adiciona as BulkItems selecionadas como stops na rota. */
+  function applyBulk() {
+    const toAdd = bulkResults.filter(b => b.selected)
+    if (toAdd.length === 0) { toast.error('Selecione pelo menos uma OS'); return }
+    const newStops: Stop[] = toAdd.map(b => ({
+      tempId: generateTempId(),
+      type: b.suggested_type,
+      os_id: b.os_id,
+      os_number: b.os_number,
+      customer_name: b.customer_name || 'Cliente',
+      address: b.address || '',
+      time_window_start: '',
+      time_window_end: '',
+    }))
+    setStops(prev => [...prev, ...newStops])
+    toast.success(`${toAdd.length} parada(s) adicionada(s)`)
+    setShowBulkModal(false)
+    setPasteText('')
+    setBulkResults([])
+    setBulkMissing([])
+  }
+
+  const openBulkModal = () => {
+    setBulkTab('status')
+    setSelectedStatuses(['Coletar', 'Entregar Reparado'])
+    setPasteText('')
+    setBulkResults([])
+    setBulkMissing([])
+    setShowBulkModal(true)
   }
 
   const addStop = () => {
@@ -281,14 +383,24 @@ export default function NovaRotaPage() {
             <label className="text-sm font-medium text-gray-700">
               Paradas ({stops.length})
             </label>
-            <button
-              type="button"
-              onClick={openModal}
-              className="flex items-center gap-1.5 rounded-lg border border-dashed border-gray-300 px-3 py-1.5 text-sm text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Adicionar Parada
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={openBulkModal}
+                className="flex items-center gap-1.5 rounded-lg bg-blue-50 border border-blue-200 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors"
+              >
+                <ClipboardPaste className="h-3.5 w-3.5" />
+                Importar em massa
+              </button>
+              <button
+                type="button"
+                onClick={openModal}
+                className="flex items-center gap-1.5 rounded-lg border border-dashed border-gray-300 px-3 py-1.5 text-sm text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Adicionar Parada
+              </button>
+            </div>
           </div>
 
           {stops.length === 0 ? (
@@ -397,6 +509,165 @@ export default function NovaRotaPage() {
           </Link>
         </div>
       </div>
+
+      {/* Bulk Import Modal */}
+      {showBulkModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowBulkModal(false)}>
+          <div className="w-full max-w-2xl rounded-xl bg-white shadow-xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-6 border-b">
+              <h3 className="text-lg font-semibold text-gray-900">Importar paradas em massa</h3>
+              <button type="button" aria-label="Fechar" onClick={() => setShowBulkModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Tabs */}
+            <div className="flex border-b">
+              <button
+                type="button"
+                onClick={() => { setBulkTab('status'); setBulkResults([]); setBulkMissing([]) }}
+                className={cn('flex-1 px-4 py-3 text-sm font-medium transition-colors flex items-center justify-center gap-2',
+                  bulkTab === 'status' ? 'border-b-2 border-blue-600 text-blue-700' : 'text-gray-500 hover:text-gray-700')}
+              >
+                <Filter className="h-4 w-4" /> Por status
+              </button>
+              <button
+                type="button"
+                onClick={() => { setBulkTab('paste'); setBulkResults([]); setBulkMissing([]) }}
+                className={cn('flex-1 px-4 py-3 text-sm font-medium transition-colors flex items-center justify-center gap-2',
+                  bulkTab === 'paste' ? 'border-b-2 border-blue-600 text-blue-700' : 'text-gray-500 hover:text-gray-700')}
+              >
+                <ClipboardPaste className="h-4 w-4" /> Colar numeros
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              {bulkTab === 'status' ? (
+                <div>
+                  <p className="text-sm text-gray-600 mb-3">
+                    Selecione os status. O sistema busca todas as OS nesses status e sugere o tipo de parada (COLETA/ENTREGA) automaticamente.
+                  </p>
+                  <div className="space-y-2">
+                    {[
+                      { name: 'Coletar', description: 'OS aguardando coleta no cliente' },
+                      { name: 'Entregar Reparado', description: 'OS consertada, aguardando entrega' },
+                      { name: 'Entregar Recusado', description: 'OS recusada, devolucao ao cliente' },
+                    ].map(s => {
+                      const checked = selectedStatuses.includes(s.name)
+                      return (
+                        <label key={s.name} className={cn('flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition',
+                          checked ? 'border-blue-400 bg-blue-50' : 'border-gray-200 hover:border-gray-300')}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={e => {
+                              setSelectedStatuses(prev => e.target.checked ? [...prev, s.name] : prev.filter(x => x !== s.name))
+                            }}
+                            className="h-4 w-4"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900">{s.name}</p>
+                            <p className="text-xs text-gray-500">{s.description}</p>
+                          </div>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-sm text-gray-600 mb-2">
+                    Cole os numeros das OS (1 por linha, separados por virgula, espaco, etc):
+                  </p>
+                  <textarea
+                    value={pasteText}
+                    onChange={e => setPasteText(e.target.value)}
+                    rows={5}
+                    placeholder="6023, 6024&#10;6025 6026&#10;6027"
+                    className="w-full rounded-lg border px-3 py-2 text-sm font-mono focus:border-blue-500 focus:outline-none"
+                  />
+                  {pasteText && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      {extractNumbers(pasteText).length} numero(s) detectado(s)
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={fetchBulk}
+                disabled={bulkLoading}
+                className="w-full flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              >
+                {bulkLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                Buscar OS
+              </button>
+
+              {/* Preview */}
+              {bulkResults.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-gray-700">
+                      {bulkResults.length} OS encontrada(s) &middot; {bulkResults.filter(b => b.selected).length} selecionada(s)
+                    </p>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => setBulkResults(prev => prev.map(b => ({ ...b, selected: true })))}
+                        className="text-xs text-blue-600 hover:underline">Marcar tudo</button>
+                      <button type="button" onClick={() => setBulkResults(prev => prev.map(b => ({ ...b, selected: false })))}
+                        className="text-xs text-gray-500 hover:underline">Desmarcar</button>
+                    </div>
+                  </div>
+                  <div className="space-y-1 max-h-64 overflow-y-auto border rounded-lg p-2">
+                    {bulkResults.map((b, i) => {
+                      const cfg = stopTypeConfig[b.suggested_type]
+                      const StopIcon = cfg.icon
+                      return (
+                        <label key={b.os_id} className="flex items-start gap-3 p-2 rounded hover:bg-gray-50 cursor-pointer">
+                          <input type="checkbox" checked={b.selected}
+                            onChange={e => setBulkResults(prev => prev.map((x, j) => j === i ? { ...x, selected: e.target.checked } : x))}
+                            className="h-4 w-4 mt-0.5" />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium', cfg.bg, cfg.text)}>
+                                <StopIcon className="h-3 w-3" /> {cfg.label}
+                              </span>
+                              <span className="text-xs font-semibold text-gray-600">#{b.os_number}</span>
+                              <span className="text-xs text-gray-400">{b.status}</span>
+                            </div>
+                            <p className="text-sm font-medium text-gray-900 truncate">{b.customer_name}</p>
+                            {b.address && <p className="text-xs text-gray-500 truncate">{b.address}</p>}
+                            {!b.address && <p className="text-xs text-red-500 italic">⚠ Cliente sem endereço cadastrado</p>}
+                          </div>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {bulkMissing.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+                  <strong>Não encontradas:</strong> {bulkMissing.join(', ')}
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t flex items-center justify-end gap-2">
+              <button type="button" onClick={() => setShowBulkModal(false)}
+                className="rounded-lg border px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
+                Cancelar
+              </button>
+              <button type="button" onClick={applyBulk}
+                disabled={bulkResults.filter(b => b.selected).length === 0}
+                className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50">
+                <Check className="h-4 w-4" />
+                Adicionar {bulkResults.filter(b => b.selected).length || ''} parada(s)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add Stop Modal */}
       {showModal && (
