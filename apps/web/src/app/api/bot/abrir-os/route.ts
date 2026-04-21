@@ -21,12 +21,18 @@ export async function POST(req: NextRequest) {
     if (!rl.allowed) return botError('Limite de criacao de OS atingido. Tente novamente em breve.', 429)
 
     const body = await req.json()
-    // Accept aliases from n8n/external systems
-    let { nome, documento, telefone, email, cep, endereco, equipamento, marca, modelo, numero_serie, defeito, observacoes, origem } = body
+    // Accept aliases from n8n/external systems (Dify Ana/Grazi use portuguese aliases)
+    let { nome, documento, telefone, email, cep, endereco, numero, complemento, bairro, cidade, uf, equipamento, marca, modelo, numero_serie, defeito, observacoes, origem } = body
     nome = nome || body.cliente_nome || body.name || body.customer_name
     documento = documento || body.cpf_cnpj || body.cpf || body.cnpj || body.document
     telefone = telefone || body.cliente_telefone || body.phone || body.mobile
     email = email || body.cliente_email
+    endereco = endereco || body.logradouro || body.rua || body.endereco_logradouro
+    numero = numero || body.endereco_numero || body.numero_endereco
+    complemento = complemento || body.endereco_complemento
+    bairro = bairro || body.endereco_bairro
+    cidade = cidade || body.endereco_cidade || body.localidade || body.municipio
+    uf = uf || body.estado || body.endereco_uf || body.endereco_estado
 
     // Sanitize: strip HTML tags to prevent stored XSS
     const stripHtml = (s: string) => s.replace(/<[^>]*>/g, '').trim()
@@ -37,6 +43,11 @@ export async function POST(req: NextRequest) {
     if (modelo) modelo = stripHtml(modelo)
     if (observacoes) observacoes = stripHtml(observacoes)
     if (endereco) endereco = stripHtml(endereco)
+    if (numero) numero = stripHtml(String(numero))
+    if (complemento) complemento = stripHtml(complemento)
+    if (bairro) bairro = stripHtml(bairro)
+    if (cidade) cidade = stripHtml(cidade)
+    if (uf) uf = stripHtml(uf)
 
     // Normalizar strings vazias para undefined
     if (typeof equipamento === 'string' && !equipamento.trim()) equipamento = undefined
@@ -51,6 +62,41 @@ export async function POST(req: NextRequest) {
     if (marca) marca = formatName(marca.normalize('NFC'))
     if (modelo) modelo = formatName(modelo.normalize('NFC'))
     if (defeito) defeito = formatDescription(defeito.normalize('NFC'))
+    if (endereco) endereco = formatName(endereco.normalize('NFC'))
+    if (bairro) bairro = formatName(bairro.normalize('NFC'))
+    if (cidade) cidade = formatName(cidade.normalize('NFC'))
+
+    // UF: sempre 2 letras maiúsculas
+    if (uf) uf = String(uf).replace(/[^A-Za-z]/g, '').toUpperCase().slice(0, 2) || undefined
+
+    // Email: normalize (lowercase + trim)
+    if (email) email = String(email).trim().toLowerCase() || undefined
+
+    // Telefone: só dígitos, remove prefixo 55 se for celular BR padrão (DDD+9) para evitar duplo 55 depois
+    if (telefone) {
+      let phoneDigits = String(telefone).replace(/\D/g, '')
+      if (phoneDigits.length === 13 && phoneDigits.startsWith('55')) phoneDigits = phoneDigits.slice(2)
+      telefone = phoneDigits || undefined
+    }
+
+    // CEP + auto-enrich via ViaCEP se componentes granulares faltarem
+    // Dify Ana/Grazi geralmente enviam só o CEP — preenche o resto automaticamente
+    // evitando que tudo caia como string única no campo address_street.
+    const cepDigits = cep ? String(cep).replace(/\D/g, '') : ''
+    if (cepDigits.length === 8 && (!endereco || !bairro || !cidade || !uf)) {
+      try {
+        const vc = await fetch(`https://viacep.com.br/ws/${cepDigits}/json/`, { signal: AbortSignal.timeout(5000) })
+        const vcData = await vc.json().catch(() => ({}))
+        if (!vcData.erro) {
+          if (!endereco && vcData.logradouro) endereco = formatName(String(vcData.logradouro).normalize('NFC'))
+          if (!bairro && vcData.bairro) bairro = formatName(String(vcData.bairro).normalize('NFC'))
+          if (!cidade && vcData.localidade) cidade = formatName(String(vcData.localidade).normalize('NFC'))
+          if (!uf && vcData.uf) uf = String(vcData.uf).toUpperCase().slice(0, 2)
+        }
+      } catch {
+        // ViaCEP indisponível — segue em frente com o que temos
+      }
+    }
 
     // Se equipamento é apenas marca+modelo combinados, usar tipo genérico
     if (equipamento && marca && modelo) {
@@ -79,15 +125,14 @@ export async function POST(req: NextRequest) {
       // If CPF/CNPJ provided but not found → new customer (do NOT fallback to phone)
     } else if (telefone && !docDigits) {
       // Only search by phone when NO document was provided (e.g. WhatsApp bot without CPF)
-      const phoneDigits = telefone.replace(/\D/g, '')
-      if (phoneDigits.length >= 10) {
+      if (telefone.length >= 10) {
         customer = await prisma.customer.findFirst({
           where: {
             company_id: companyId, deleted_at: null,
             OR: [
-              { mobile: phoneDigits },
-              { mobile: phoneDigits.startsWith('55') ? phoneDigits.slice(2) : `55${phoneDigits}` },
-              { phone: phoneDigits },
+              { mobile: telefone },
+              { mobile: telefone.startsWith('55') ? telefone.slice(2) : `55${telefone}` },
+              { phone: telefone },
             ],
           },
         })
@@ -103,20 +148,37 @@ export async function POST(req: NextRequest) {
           person_type: isPJ ? 'JURIDICA' : 'FISICA',
           customer_type: 'CLIENTE',
           document_number: docDigits || undefined,
-          mobile: telefone?.replace(/\D/g, '') || undefined,
+          mobile: telefone || undefined,
           email: email || undefined,
-          address_zip: cep?.replace(/\D/g, '') || undefined,
+          address_zip: cepDigits || undefined,
           address_street: endereco || undefined,
+          address_number: numero || undefined,
+          address_complement: complemento || undefined,
+          address_neighborhood: bairro || undefined,
+          address_city: cidade || undefined,
+          address_state: uf || undefined,
         },
       })
       isNewCustomer = true
-    } else if (origem === 'site-pontualtech') {
-      // Update existing customer with data from site form (site data is more recent/explicit)
+    } else {
+      // Cliente existente — comportamento por origem:
+      //   - site-pontualtech: sobrescreve (dados do formulário são mais recentes/explícitos)
+      //   - bots (Ana/Grazi) e demais: preenche apenas campos vazios ("fill blanks"),
+      //     nunca sobrescreve dado já cadastrado sem intenção explícita do operador.
+      const isSite = origem === 'site-pontualtech'
+      const blank = (v: unknown) => v === null || v === undefined || (typeof v === 'string' && !v.trim())
+      const shouldSet = (currentValue: unknown) => isSite || blank(currentValue)
+
       const updates: Record<string, string> = {}
-      if (email) updates.email = email
-      if (telefone) updates.mobile = telefone.replace(/\D/g, '')
-      if (cep) updates.address_zip = cep.replace(/\D/g, '')
-      if (endereco) updates.address_street = endereco
+      if (email && shouldSet(customer.email)) updates.email = email
+      if (telefone && shouldSet(customer.mobile)) updates.mobile = telefone
+      if (cepDigits && shouldSet(customer.address_zip)) updates.address_zip = cepDigits
+      if (endereco && shouldSet(customer.address_street)) updates.address_street = endereco
+      if (numero && shouldSet(customer.address_number)) updates.address_number = numero
+      if (complemento && shouldSet(customer.address_complement)) updates.address_complement = complemento
+      if (bairro && shouldSet(customer.address_neighborhood)) updates.address_neighborhood = bairro
+      if (cidade && shouldSet(customer.address_city)) updates.address_city = cidade
+      if (uf && shouldSet(customer.address_state)) updates.address_state = uf
       if (Object.keys(updates).length > 0) {
         customer = await prisma.customer.update({ where: { id: customer.id }, data: updates })
       }
