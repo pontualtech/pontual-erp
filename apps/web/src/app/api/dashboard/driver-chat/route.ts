@@ -126,6 +126,22 @@ export async function POST(req: NextRequest) {
     },
   })
 
+  // Push notification fire-and-forget — motorista recebe mesmo com app fechado.
+  // Se nao tiver subscription, web-push silenciosamente devolve {sent:0}.
+  void (async () => {
+    try {
+      const { sendPushToUser } = await import('@/lib/web-push')
+      await sendPushToUser(driver_id, {
+        title: `Mensagem de ${auth.name.split(' ')[0]}`,
+        body: created.message.slice(0, 140),
+        url: '/motorista/chat',
+        tag: `chat:${driver_id}`,
+      })
+    } catch (err) {
+      console.warn('[driver-chat] push falhou:', err instanceof Error ? err.message : String(err))
+    }
+  })()
+
   return NextResponse.json({
     data: {
       id: created.id,

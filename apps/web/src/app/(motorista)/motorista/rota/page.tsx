@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { Package, Truck, MapPin, Phone, CheckCircle2, AlertTriangle, RefreshCw, LogOut, MessageCircle } from 'lucide-react'
 import SyncBadge from '../../components/sync-badge'
 import InstallPrompt from '../../components/install-prompt'
+import PushPermission from '../../components/push-permission'
 
 type Stop = {
   id: string
@@ -149,6 +150,7 @@ export default function RotaHojePage() {
   return (
     <div className="min-h-[100dvh]">
       <InstallPrompt />
+      <PushPermission />
       {/* Header */}
       <header className="sticky top-0 bg-blue-700 text-white px-4 py-3 flex items-center justify-between z-10 shadow">
         <div>

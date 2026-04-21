@@ -984,6 +984,23 @@ model Payment {
   @@map("payments")
 }
 
+/// Web Push subscriptions do APP DO MOTORISTA (PWA /motorista/*).
+/// Tabela separada do PushSubscription do portal cliente porque user_id
+/// aqui referencia UserProfile (operador/motorista), não Customer.
+model DriverPushSubscription {
+  id          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  user_id     String                                  // UserProfile.id
+  endpoint    String    @unique
+  p256dh      String
+  auth        String
+  user_agent  String?
+  last_seen   DateTime? @db.Timestamptz(6)
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([user_id], map: "idx_driver_push_user")
+  @@map("driver_push_subscriptions")
+}
+
 model LoginOtp {
   id          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
   company_id  String

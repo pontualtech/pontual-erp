@@ -107,3 +107,42 @@ async function networkFirst(req, cacheName) {
     throw err
   }
 }
+
+// ============================================================
+// PUSH NOTIFICATIONS — chat msg do operador / nova rota / etc.
+// ============================================================
+
+self.addEventListener('push', (event) => {
+  let payload = { title: 'PontualRota', body: '', url: '/motorista/rota', tag: 'default' }
+  if (event.data) {
+    try { payload = { ...payload, ...event.data.json() } }
+    catch { payload.body = event.data.text() }
+  }
+
+  const options = {
+    body: payload.body,
+    tag: payload.tag,
+    icon: payload.icon || '/motorista/icon-192.png',
+    badge: payload.badge || '/motorista/icon-192.png',
+    data: { url: payload.url },
+    requireInteraction: false,
+    vibrate: [120, 60, 120],   // padrão curto para não incomodar
+  }
+  event.waitUntil(self.registration.showNotification(payload.title, options))
+})
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const url = event.notification.data?.url || '/motorista/rota'
+  event.waitUntil((async () => {
+    // Se já tem janela aberta no app do motorista, foca ela em vez de abrir nova
+    const clientsList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    for (const client of clientsList) {
+      if (client.url.includes('/motorista') && 'focus' in client) {
+        client.navigate(url)
+        return client.focus()
+      }
+    }
+    if (self.clients.openWindow) return self.clients.openWindow(url)
+  })())
+})
