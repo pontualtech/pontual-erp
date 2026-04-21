@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 import {
   ArrowLeft, Loader2, Play, CheckCircle2, XCircle, MapPin,
   Clock, Package, Truck as TruckIcon, Camera, FileSignature,
-  AlertTriangle, Image, Map, Eye,
+  AlertTriangle, Image, Map, Eye, ArrowUp, ArrowDown, Printer, CalendarClock,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -35,6 +35,8 @@ interface RouteStop {
   failure_reason: string | null
   photos: StopPhoto[]
   signature_url: string | null
+  visit_reschedule_at?: string | null
+  visit_reschedule_note?: string | null
 }
 
 interface RouteDetail {
@@ -91,6 +93,10 @@ export default function RouteDetailPage() {
   const [failureModal, setFailureModal] = useState<{ stopId: string } | null>(null)
   const [failureReason, setFailureReason] = useState('')
 
+  // Postpone modal
+  const [postponeModal, setPostponeModal] = useState<{ stopId: string } | null>(null)
+  const [postponeReason, setPostponeReason] = useState('')
+
   // Photo upload
   const [uploadingPhoto, setUploadingPhoto] = useState<string | null>(null)
 
@@ -111,9 +117,14 @@ export default function RouteDetailPage() {
 
   useEffect(() => { loadRoute() }, [loadRoute])
 
-  // ESC closes failure modal
+  // ESC closes modals
   useEffect(() => {
-    function handleEsc(e: KeyboardEvent) { if (e.key === 'Escape') setFailureModal(null) }
+    function handleEsc(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setFailureModal(null)
+        setPostponeModal(null)
+      }
+    }
     document.addEventListener('keydown', handleEsc)
     return () => document.removeEventListener('keydown', handleEsc)
   }, [])
@@ -161,6 +172,47 @@ export default function RouteDetailPage() {
       if (action === 'fail') setFailureModal(null)
     } catch {
       toast.error('Erro ao atualizar parada')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const handleMoveStop = async (stopId: string, direction: 'up' | 'down' | 'bottom') => {
+    setActionLoading(stopId)
+    try {
+      const res = await fetch(`/api/logistics/routes/${routeId}/stops/${stopId}/move`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ direction }),
+      })
+      if (!res.ok) {
+        const { error: msg } = await res.json().catch(() => ({ error: 'Erro' }))
+        toast.error(msg || 'Nao foi possivel mover')
+        return
+      }
+      loadRoute()
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const handlePostponeStop = async (stopId: string, reason: string) => {
+    setActionLoading(stopId)
+    try {
+      const res = await fetch(`/api/logistics/routes/${routeId}/stops/${stopId}/adiar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason }),
+      })
+      if (!res.ok) {
+        const { error: msg } = await res.json().catch(() => ({ error: 'Erro' }))
+        toast.error(msg || 'Erro ao adiar parada')
+        return
+      }
+      toast.success('Parada adiada e movida pro fim')
+      setPostponeModal(null)
+      setPostponeReason('')
+      loadRoute()
     } finally {
       setActionLoading(null)
     }
@@ -260,6 +312,16 @@ export default function RouteDetailPage() {
 
           {/* Route Actions */}
           <div className="flex items-center gap-2">
+            <Link
+              href={`/logistica/${routeId}/imprimir`}
+              target="_blank"
+              rel="noopener"
+              className="flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+              title="Abre em nova aba com dialogo de impressao"
+            >
+              <Printer className="h-4 w-4" />
+              Imprimir
+            </Link>
             {route.status === 'PLANNED' && (
               <button
                 type="button"
@@ -404,6 +466,14 @@ export default function RouteDetailPage() {
                           </div>
                         )}
 
+                        {/* Reschedule note — quando adiada */}
+                        {stop.visit_reschedule_at && stop.visit_reschedule_note && (
+                          <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 flex items-start gap-1.5">
+                            <CalendarClock className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                            <span><span className="font-medium">Adiada:</span> {stop.visit_reschedule_note}</span>
+                          </div>
+                        )}
+
                         {/* Photos */}
                         {stop.photos && stop.photos.length > 0 && (
                           <div className="mt-3 flex flex-wrap gap-2">
@@ -440,57 +510,91 @@ export default function RouteDetailPage() {
                           </div>
                         )}
 
-                        {/* Actions */}
-                        {isActive && stop.status !== 'COMPLETED' && stop.status !== 'FAILED' && (
-                          <div className="mt-3 flex flex-wrap items-center gap-2 pt-2 border-t border-gray-200">
-                            {stop.status === 'PENDING' && (
-                              <button
-                                type="button"
-                                disabled={isLoadingStop}
-                                onClick={() => handleStopAction(stop.id, 'arrive')}
-                                className="flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-50 transition-colors"
-                              >
-                                {isLoadingStop ? <Loader2 className="h-3 w-3 animate-spin" /> : <MapPin className="h-3 w-3" />}
-                                Registrar Chegada
-                              </button>
-                            )}
-                            {stop.status === 'ARRIVED' && (
-                              <button
-                                type="button"
-                                disabled={isLoadingStop}
-                                onClick={() => handleStopAction(stop.id, 'complete')}
-                                className="flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
-                              >
-                                {isLoadingStop ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
-                                Concluir
-                              </button>
-                            )}
+                        {/* Reorder + Adiar actions — disponiveis em PLANNED e IN_PROGRESS, nao em COMPLETED/FAILED */}
+                        {stop.status !== 'COMPLETED' && stop.status !== 'FAILED' && route.status !== 'COMPLETED' && (
+                          <div className="mt-3 flex flex-wrap items-center gap-1.5 pt-2 border-t border-gray-200">
+                            <button
+                              type="button"
+                              disabled={isLoadingStop || index === 0}
+                              onClick={() => handleMoveStop(stop.id, 'up')}
+                              title="Subir"
+                              className="p-1.5 rounded-lg border text-gray-600 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                            >
+                              <ArrowUp className="h-3.5 w-3.5" />
+                            </button>
                             <button
                               type="button"
                               disabled={isLoadingStop}
-                              onClick={() => { setFailureModal({ stopId: stop.id }); setFailureReason('') }}
-                              className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors"
+                              onClick={() => handleMoveStop(stop.id, 'down')}
+                              title="Descer"
+                              className="p-1.5 rounded-lg border text-gray-600 hover:bg-gray-100 disabled:opacity-30 transition-colors"
                             >
-                              <XCircle className="h-3 w-3" />
-                              Falha
+                              <ArrowDown className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isLoadingStop}
+                              onClick={() => { setPostponeModal({ stopId: stop.id }); setPostponeReason('') }}
+                              title="Adiar para o fim da rota"
+                              className="flex items-center gap-1 rounded-lg border border-amber-200 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50 transition-colors"
+                            >
+                              <CalendarClock className="h-3 w-3" />
+                              Adiar
                             </button>
 
-                            {/* Photo upload */}
-                            <label className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-100 cursor-pointer transition-colors">
-                              {uploadingPhoto === stop.id ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                              ) : (
-                                <Camera className="h-3 w-3" />
-                              )}
-                              Foto
-                              <input
-                                type="file"
-                                accept="image/*"
-                                multiple
-                                className="hidden"
-                                onChange={e => handlePhotoUpload(stop.id, e.target.files)}
-                              />
-                            </label>
+                            {/* Acoes de execucao — so rota IN_PROGRESS */}
+                            {isActive && (
+                              <>
+                                {stop.status === 'PENDING' && (
+                                  <button
+                                    type="button"
+                                    disabled={isLoadingStop}
+                                    onClick={() => handleStopAction(stop.id, 'arrive')}
+                                    className="flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-50 transition-colors"
+                                  >
+                                    {isLoadingStop ? <Loader2 className="h-3 w-3 animate-spin" /> : <MapPin className="h-3 w-3" />}
+                                    Registrar Chegada
+                                  </button>
+                                )}
+                                {stop.status === 'ARRIVED' && (
+                                  <button
+                                    type="button"
+                                    disabled={isLoadingStop}
+                                    onClick={() => handleStopAction(stop.id, 'complete')}
+                                    className="flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
+                                  >
+                                    {isLoadingStop ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+                                    Concluir
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  disabled={isLoadingStop}
+                                  onClick={() => { setFailureModal({ stopId: stop.id }); setFailureReason('') }}
+                                  className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors"
+                                >
+                                  <XCircle className="h-3 w-3" />
+                                  Falha
+                                </button>
+
+                                {/* Photo upload */}
+                                <label className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-100 cursor-pointer transition-colors">
+                                  {uploadingPhoto === stop.id ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <Camera className="h-3 w-3" />
+                                  )}
+                                  Foto
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    multiple
+                                    className="hidden"
+                                    onChange={e => handlePhotoUpload(stop.id, e.target.files)}
+                                  />
+                                </label>
+                              </>
+                            )}
                           </div>
                         )}
                       </div>
@@ -501,6 +605,54 @@ export default function RouteDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Postpone Modal — adiar parada */}
+      {postponeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setPostponeModal(null)}>
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl mx-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                <CalendarClock className="h-5 w-5 text-amber-600" />
+                Adiar Parada
+              </h3>
+              <button type="button" title="Fechar" onClick={() => setPostponeModal(null)} className="text-gray-400 hover:text-gray-600">
+                <XCircle className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <p className="text-xs text-gray-500">A parada ira pro fim da rota e ficara marcada como adiada. Continua pendente — voce pode tentar novamente depois.</p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Motivo</label>
+                <textarea
+                  value={postponeReason}
+                  onChange={e => setPostponeReason(e.target.value)}
+                  placeholder="Ex: Cliente ausente, pediu pra voltar depois das 16h..."
+                  rows={3}
+                  className="w-full rounded-lg border px-3 py-2 text-sm focus:border-amber-500 focus:outline-none resize-none"
+                />
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={!postponeReason.trim() || actionLoading === postponeModal.stopId}
+                  onClick={() => handlePostponeStop(postponeModal.stopId, postponeReason)}
+                  className="flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50 transition-colors"
+                >
+                  {actionLoading === postponeModal.stopId && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Confirmar Adiamento
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPostponeModal(null)}
+                  className="rounded-lg border px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Failure Reason Modal */}
       {failureModal && (

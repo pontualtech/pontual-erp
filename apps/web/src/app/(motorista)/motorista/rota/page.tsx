@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Package, Truck, MapPin, Phone, CheckCircle2, AlertTriangle, RefreshCw, LogOut, MessageCircle } from 'lucide-react'
+import { Package, Truck, MapPin, Phone, CheckCircle2, AlertTriangle, RefreshCw, LogOut, MessageCircle, ArrowUp, ArrowDown, CalendarClock, Printer, X } from 'lucide-react'
 import SyncBadge from '../../components/sync-badge'
 import InstallPrompt from '../../components/install-prompt'
 import PushPermission from '../../components/push-permission'
@@ -59,6 +59,9 @@ export default function RotaHojePage() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [myLocation, setMyLocation] = useState<{ lat: number; lng: number } | null>(null)
+  const [postponeModal, setPostponeModal] = useState<{ stopId: string; customerName: string } | null>(null)
+  const [postponeReason, setPostponeReason] = useState('')
+  const [postponing, setPostponing] = useState(false)
 
   // Fetch rota
   const load = useCallback(async (silent = false) => {
@@ -100,6 +103,44 @@ export default function RotaHojePage() {
   async function handleLogout() {
     await fetch('/auth/signout', { method: 'POST' }).catch(() => {})
     router.replace('/motorista/login')
+  }
+
+  async function handleMove(stopId: string, direction: 'up' | 'down' | 'bottom') {
+    try {
+      const res = await fetch(`/api/driver/stop/${stopId}/move`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ direction }),
+      })
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({ error: 'Erro' }))
+        toast.error(error || 'Nao foi possivel mover')
+        return
+      }
+      await load(true)
+    } catch { toast.error('Erro de conexao') }
+  }
+
+  async function handlePostpone() {
+    if (!postponeModal || !postponeReason.trim()) return
+    setPostponing(true)
+    try {
+      const res = await fetch(`/api/driver/stop/${postponeModal.stopId}/adiar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: postponeReason.trim() }),
+      })
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({ error: 'Erro' }))
+        toast.error(error || 'Erro ao adiar')
+        return
+      }
+      toast.success('Parada adiada pro fim da rota')
+      setPostponeModal(null)
+      setPostponeReason('')
+      await load(true)
+    } catch { toast.error('Erro de conexao') }
+    finally { setPostponing(false) }
   }
 
   // Handler invocado pelo StopCard ao tocar "Avisar cliente que estou a caminho".
@@ -165,6 +206,13 @@ export default function RotaHojePage() {
             className="p-2 rounded-full hover:bg-white/10 active:scale-95 transition">
             <MessageCircle className="w-5 h-5" />
           </Link>
+          {route && (
+            <Link href={`/logistica/${route.id}/imprimir`} target="_blank" rel="noopener"
+              aria-label="Imprimir rota"
+              className="p-2 rounded-full hover:bg-white/10 active:scale-95 transition">
+              <Printer className="w-5 h-5" />
+            </Link>
+          )}
           <button type="button" onClick={() => load(true)} disabled={refreshing} aria-label="Atualizar"
             className="p-2 rounded-full hover:bg-white/10 active:scale-95 transition">
             <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
@@ -212,7 +260,10 @@ export default function RotaHojePage() {
                 👉 Próxima parada
               </p>
               <StopCard stop={sortedPending[0]} myLocation={myLocation}
-                onNotifyCustomer={notifyCustomer} featured />
+                onNotifyCustomer={notifyCustomer}
+                onMove={handleMove}
+                onAskPostpone={s => { setPostponeModal({ stopId: s.id, customerName: s.customer_name }); setPostponeReason('') }}
+                featured />
             </section>
           )}
 
@@ -224,7 +275,9 @@ export default function RotaHojePage() {
               </p>
               {sortedPending.slice(1).map(stop => (
                 <StopCard key={stop.id} stop={stop} myLocation={myLocation}
-                  onNotifyCustomer={notifyCustomer} />
+                  onNotifyCustomer={notifyCustomer}
+                  onMove={handleMove}
+                  onAskPostpone={s => { setPostponeModal({ stopId: s.id, customerName: s.customer_name }); setPostponeReason('') }} />
               ))}
             </section>
           )}
@@ -265,14 +318,72 @@ export default function RotaHojePage() {
           )}
         </main>
       )}
+
+      {/* Modal de adiar parada */}
+      {postponeModal && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4"
+          onClick={() => !postponing && setPostponeModal(null)}>
+          <div className="w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl p-5 shadow-2xl"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold text-lg flex items-center gap-2 text-amber-700">
+                <CalendarClock className="w-5 h-5" />
+                Adiar parada
+              </h3>
+              <button type="button" onClick={() => setPostponeModal(null)} disabled={postponing}
+                className="text-gray-400 hover:text-gray-600 p-1" aria-label="Fechar">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-600 mb-3">
+              <strong>{postponeModal.customerName}</strong> vai pro fim da rota. Volta a ficar pendente — voce pode tentar novamente depois.
+            </p>
+            <div className="space-y-2">
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                Motivo
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {['Cliente ausente', 'Portao fechado', 'Pediu voltar depois', 'Horario combinado'].map(preset => (
+                  <button key={preset} type="button"
+                    onClick={() => setPostponeReason(preset)}
+                    className={`text-xs px-2.5 py-1 rounded-full border ${postponeReason === preset ? 'bg-amber-100 border-amber-300 text-amber-800' : 'border-gray-200 text-gray-600'} active:scale-95`}>
+                    {preset}
+                  </button>
+                ))}
+              </div>
+              <textarea
+                value={postponeReason}
+                onChange={e => setPostponeReason(e.target.value)}
+                placeholder="Ou descreva: ex. cliente pediu pra voltar apos 15h"
+                rows={2}
+                className="w-full rounded-lg border px-3 py-2 text-sm focus:border-amber-500 focus:outline-none resize-none"
+              />
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button type="button" onClick={() => setPostponeModal(null)} disabled={postponing}
+                className="flex-1 rounded-lg border px-4 py-3 text-sm font-medium text-gray-600 hover:bg-gray-50 active:scale-[0.99]">
+                Cancelar
+              </button>
+              <button type="button" onClick={handlePostpone}
+                disabled={!postponeReason.trim() || postponing}
+                className="flex-[2] rounded-lg bg-amber-600 px-4 py-3 text-sm font-bold text-white hover:bg-amber-700 disabled:opacity-50 active:scale-[0.99] flex items-center justify-center gap-2">
+                {postponing && <RefreshCw className="w-4 h-4 animate-spin" />}
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
-function StopCard({ stop, myLocation, onNotifyCustomer, featured = false }: {
+function StopCard({ stop, myLocation, onNotifyCustomer, onMove, onAskPostpone, featured = false }: {
   stop: Stop
   myLocation: { lat: number; lng: number } | null
   onNotifyCustomer: (stopId: string, distKm: number | null) => Promise<void>
+  onMove: (stopId: string, direction: 'up' | 'down' | 'bottom') => Promise<void>
+  onAskPostpone: (stop: Stop) => void
   featured?: boolean
 }) {
   const isColeta = stop.type === 'COLETA'
@@ -386,6 +497,24 @@ function StopCard({ stop, myLocation, onNotifyCustomer, featured = false }: {
         <Link href={href} className={`block w-full py-3 text-sm font-bold text-center text-white active:scale-[0.99] transition ${isColeta ? 'bg-purple-700' : 'bg-emerald-700'}`}>
           {isColeta ? 'Iniciar Coleta →' : 'Iniciar Entrega →'}
         </Link>
+
+        {/* Controles de reordenar/adiar — sempre visiveis na hero card */}
+        <div className="flex items-center border-t border-gray-200 bg-gray-50">
+          <button type="button" onClick={() => onMove(stop.id, 'up')}
+            className="flex-1 flex items-center justify-center gap-1 py-2.5 text-xs font-medium text-gray-600 hover:bg-gray-100 active:scale-[0.99]">
+            <ArrowUp className="w-3.5 h-3.5" /> Subir
+          </button>
+          <div className="w-px bg-gray-200 h-5" />
+          <button type="button" onClick={() => onMove(stop.id, 'down')}
+            className="flex-1 flex items-center justify-center gap-1 py-2.5 text-xs font-medium text-gray-600 hover:bg-gray-100 active:scale-[0.99]">
+            <ArrowDown className="w-3.5 h-3.5" /> Descer
+          </button>
+          <div className="w-px bg-gray-200 h-5" />
+          <button type="button" onClick={() => onAskPostpone(stop)}
+            className="flex-1 flex items-center justify-center gap-1 py-2.5 text-xs font-semibold text-amber-700 hover:bg-amber-50 active:scale-[0.99]">
+            <CalendarClock className="w-3.5 h-3.5" /> Adiar
+          </button>
+        </div>
       </div>
     )
   }
@@ -417,6 +546,27 @@ function StopCard({ stop, myLocation, onNotifyCustomer, featured = false }: {
           </div>
         </div>
       </Link>
+
+      {/* Controles inline — nao passam pelo Link pra evitar navegacao */}
+      <div className="flex items-center border-t border-gray-100 bg-gray-50">
+        <button type="button" onClick={() => onMove(stop.id, 'up')}
+          className="flex-1 flex items-center justify-center gap-1 py-2 text-[11px] text-gray-600 hover:bg-gray-100 active:scale-95"
+          aria-label="Subir">
+          <ArrowUp className="w-3 h-3" /> Subir
+        </button>
+        <div className="w-px bg-gray-200 h-4" />
+        <button type="button" onClick={() => onMove(stop.id, 'down')}
+          className="flex-1 flex items-center justify-center gap-1 py-2 text-[11px] text-gray-600 hover:bg-gray-100 active:scale-95"
+          aria-label="Descer">
+          <ArrowDown className="w-3 h-3" /> Descer
+        </button>
+        <div className="w-px bg-gray-200 h-4" />
+        <button type="button" onClick={() => onAskPostpone(stop)}
+          className="flex-1 flex items-center justify-center gap-1 py-2 text-[11px] font-semibold text-amber-700 hover:bg-amber-50 active:scale-95"
+          aria-label="Adiar">
+          <CalendarClock className="w-3 h-3" /> Adiar
+        </button>
+      </div>
     </div>
   )
 }

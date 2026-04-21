@@ -22,7 +22,41 @@ export async function GET(req: NextRequest, { params }: Params) {
 
     if (!route) return error('Rota não encontrada', 404)
 
-    return success(route)
+    // Enrich stops com dados de OS (os_number, equipamento, issue) —
+    // usado pela tela de impressao e pela timeline de detalhes. Buscado
+    // em lote pra evitar N+1.
+    const osIds = route.stops.map(s => s.os_id).filter(Boolean) as string[]
+    const osList = osIds.length === 0 ? [] : await prisma.serviceOrder.findMany({
+      where: { id: { in: osIds }, company_id: user.companyId },
+      select: {
+        id: true,
+        os_number: true,
+        equipment_type: true,
+        equipment_brand: true,
+        equipment_model: true,
+        reported_issue: true,
+        total_cost: true,
+        customers: { select: { legal_name: true, mobile: true, phone: true } },
+      },
+    })
+    const osById = new Map(osList.map(o => [o.id, o]))
+
+    const stopsEnriched = route.stops.map(s => {
+      const os = s.os_id ? osById.get(s.os_id) : null
+      return {
+        ...s,
+        os_number: os?.os_number ?? null,
+        equipment_type: os?.equipment_type ?? null,
+        equipment_brand: os?.equipment_brand ?? null,
+        equipment_model: os?.equipment_model ?? null,
+        reported_issue: os?.reported_issue ?? null,
+        os_total_cost_cents: os?.total_cost ?? null,
+        customer_name: s.customer_name || os?.customers?.legal_name || null,
+        customer_phone: s.customer_phone || os?.customers?.mobile || os?.customers?.phone || null,
+      }
+    })
+
+    return success({ ...route, stops: stopsEnriched })
   } catch (err) {
     return handleError(err)
   }
