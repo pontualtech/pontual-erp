@@ -1205,7 +1205,26 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
         })
         const erpData = await erpResp.json()
         const osNum = erpData.os_numero || 0
+        const osId = erpData.os_id as string | undefined
+        const customerId = erpData.cliente_id as string | undefined
         const clienteNome = erpData.cliente_nome || parsed.vhsysData.nome || 'Cliente'
+
+        // Generate a one-click magic-link for this customer so the message to them
+        // lands them already authenticated on the new OS. Falls back to the generic
+        // portal URL if token creation fails (missing env, etc).
+        let magicPortalUrl = `${portalBase(cfg)}/login`
+        if (customerId && osId) {
+          try {
+            const { createAccessToken: cat } = await import('@/lib/portal-auth')
+            const magicToken = cat(customerId, cfg.companyId)
+            const tenantSlug = cfg.slug.replace('-suporte', '')
+            const redirectPath = `/portal/${tenantSlug}/os/${osId}`
+            magicPortalUrl = `${portalBase(cfg)}/entrar?t=${magicToken}&r=${encodeURIComponent(redirectPath)}`
+          } catch (e) {
+            console.warn('[Bot] falha gerando magic-link pos abertura, usando URL de login:', e instanceof Error ? e.message : String(e))
+          }
+        }
+
         if (osNum > 0) {
           await cwSendMessage(cfg, conversationId, `✅ *OS #${osNum}* aberta para ${clienteNome}!`)
           // Send professional template with button via Cloud API
@@ -1223,6 +1242,12 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
           } catch (e) {
             console.warn('[Bot] template pt_os_aberta_v2 send failed for OS', osNum, e instanceof Error ? e.message : String(e))
           }
+
+          // Send the magic-link directly in the conversation so the customer always
+          // has a 1-click access URL — independent of whether the template carries
+          // a URL button. Inside the 24h reply window this always delivers.
+          await cwSendMessage(cfg, conversationId, `🔗 Acompanhe sua OS pelo portal (acesso direto, sem senha):\n${magicPortalUrl}`)
+
           // Private note with all links for agents (always visible in conversation)
           const vdNote = parsed.vhsysData as Record<string, any>
           const noteLines = [
@@ -1232,7 +1257,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
             `📧 ${String(vdNote.email || 'N/I')} | 📍 ${String(vdNote.endereco || 'N/I')}`,
             ``,
             `🔗 ERP: ${ERP_BASE_URL}/os/${osNum}`,
-            `🔗 Portal: ${cfg.portalUrl}`,
+            `🔗 Portal (magic-link): ${magicPortalUrl}`,
           ]
           await cwSendMessage(cfg, conversationId, noteLines.join('\n'), true)
           await cwSetLabels(cfg, conversationId, ['os_aberta'])
@@ -1252,7 +1277,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
               modelo: String(vd.modelo || ''),
               ultima_os: String(osNum),
               erp_os_link: `${ERP_BASE_URL}/os/${osNum}`,
-              portal_link: cfg.portalUrl,
+              portal_link: `${portalBase(cfg)}/login`,
               erp_cliente_id: String(erpData.cliente_id || ''),
             }
             try {
@@ -1514,9 +1539,27 @@ async function handleOSConfirmation(
       const result = await res.json()
 
       if (result.ok) {
+        const payload = result.dados || result.data || {}
+        const osNumber = payload.os_numero
+        const osIdLegacy = payload.os_id as string | undefined
+        const cidLegacy = payload.cliente_id as string | undefined
+
+        let portalLine = ''
+        if (osIdLegacy && cidLegacy) {
+          try {
+            const { createAccessToken: cat } = await import('@/lib/portal-auth')
+            const token = cat(cidLegacy, cfg.companyId)
+            const tenantSlug = cfg.slug.replace('-suporte', '')
+            const redirect = `/portal/${tenantSlug}/os/${osIdLegacy}`
+            portalLine = `\n\n🔗 Acesso direto (sem senha): ${portalBase(cfg)}/entrar?t=${token}&r=${encodeURIComponent(redirect)}`
+          } catch {
+            portalLine = `\n\n🔗 Portal: ${portalBase(cfg)}/login`
+          }
+        }
+
         await cwSendMessage(cfg,
           conversationId,
-          `OS #${result.dados?.os_numero || result.data?.os_numero} criada com sucesso! Voce recebera atualizacoes sobre o andamento do servico.`
+          `OS #${osNumber} criada com sucesso! Voce recebera atualizacoes sobre o andamento do servico.${portalLine}`
         )
         await cwSetLabels(cfg, conversationId, ['os_criada_bot'])
       } else {
