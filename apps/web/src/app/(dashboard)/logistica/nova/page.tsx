@@ -77,6 +77,7 @@ export default function NovaRotaPage() {
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>(['Coletar'])
   const [pasteText, setPasteText] = useState('')
   const [bulkLoading, setBulkLoading] = useState(false)
+  const [orderByProximity, setOrderByProximity] = useState(true)  // default ON — faz roteiro melhor
   type BulkItem = {
     os_id: string; os_number: number; status: string
     suggested_type: 'COLETA' | 'ENTREGA'
@@ -178,6 +179,7 @@ export default function NovaRotaPage() {
         if (selectedStatuses.length === 0) { toast.error('Selecione ao menos um status'); return }
         body.statuses = selectedStatuses
       }
+      if (orderByProximity) body.order = 'nearest'
       const res = await fetch('/api/logistics/lookup-os', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -594,6 +596,22 @@ export default function NovaRotaPage() {
                 </div>
               )}
 
+              {/* Opcao de ordenacao — default ON porque 95% dos casos o operador
+                  quer a rota agrupada por bairro. Desligavel pra manter ordem
+                  crono/numerica original. */}
+              <label className="flex items-start gap-2 p-3 rounded-lg bg-green-50 border border-green-200 cursor-pointer">
+                <input type="checkbox" checked={orderByProximity}
+                  onChange={e => setOrderByProximity(e.target.checked)}
+                  className="h-4 w-4 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-green-900">📍 Ordenar por proximidade</p>
+                  <p className="text-xs text-green-700 mt-0.5">
+                    Agrupa paradas por cidade → bairro → CEP. Motorista pega tudo
+                    de um bairro de uma vez, sem zigue-zague.
+                  </p>
+                </div>
+              </label>
+
               <button
                 type="button"
                 onClick={fetchBulk}
@@ -627,6 +645,11 @@ export default function NovaRotaPage() {
                           <input type="checkbox" checked={b.selected}
                             onChange={e => setBulkResults(prev => prev.map((x, j) => j === i ? { ...x, selected: e.target.checked } : x))}
                             className="h-4 w-4 mt-0.5" />
+                          {orderByProximity && (
+                            <div className="w-6 h-6 rounded-full bg-gray-100 text-gray-600 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
+                              {i + 1}
+                            </div>
+                          )}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium', cfg.bg, cfg.text)}>

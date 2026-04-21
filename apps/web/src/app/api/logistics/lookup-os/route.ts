@@ -104,14 +104,42 @@ export async function POST(req: NextRequest) {
       customer_phone: c?.mobile || c?.phone || '',
       address: fullAddress,
       equipment: [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' '),
+      // campos brutos usados pra ordenacao por proximidade
+      _city: (c?.address_city || '').toLowerCase().trim(),
+      _neighborhood: (c?.address_neighborhood || '').toLowerCase().trim(),
+      _zip: (c?.address_zip || '').replace(/\D/g, ''),
     }
   })
 
+  // Ordena por proximidade quando body.order === 'nearest':
+  //  1. Agrupa por cidade
+  //  2. Dentro de cidade, agrupa por bairro
+  //  3. Dentro de bairro, ordena por CEP (CEPs proximos sao geograficamente proximos na maioria)
+  //  4. Coletas vem antes de entregas dentro do mesmo cluster (motorista coleta antes de entregar)
+  //
+  // Isso NAO e "otimo" tipo TSP, mas elimina zigue-zague entre bairros, que e
+  // o maior desperdicio de tempo. Quando tivermos lat/lng + Distance Matrix
+  // fica plug and play.
+  if (body.order === 'nearest') {
+    items.sort((a, b) => {
+      if (a._city !== b._city) return a._city.localeCompare(b._city)
+      if (a._neighborhood !== b._neighborhood) return a._neighborhood.localeCompare(b._neighborhood)
+      if (a._zip !== b._zip) return a._zip.localeCompare(b._zip)
+      // Coleta antes de entrega no mesmo bairro
+      if (a.suggested_type !== b.suggested_type) return a.suggested_type === 'COLETA' ? -1 : 1
+      return a.os_number - b.os_number
+    })
+  }
+
+  // Remove campos internos antes de retornar
+  const cleanItems = items.map(({ _city, _neighborhood, _zip, ...rest }) => rest)
+
   return NextResponse.json({
     data: {
-      items,
+      items: cleanItems,
       missing,     // OS numbers informados mas não encontrados
-      total: items.length,
+      total: cleanItems.length,
+      ordered: body.order === 'nearest',
     },
   })
 }
