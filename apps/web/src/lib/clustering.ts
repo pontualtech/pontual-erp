@@ -57,8 +57,10 @@ export type ClusterResult<T> = {
 export function balancedKMeans<T extends WithCoords>(
   items: T[],
   k: number,
-  maxIterations = 25,
+  options: { maxIterations?: number; startPoint?: { lat: number; lng: number } | null } = {},
 ): ClusterResult<T> {
+  const maxIterations = options.maxIterations ?? 25
+  const startPoint = options.startPoint ?? null
   if (k <= 0) return { assignments: [], iterations: 0, balanced: true }
   if (items.length === 0) {
     return { assignments: Array.from({ length: k }, () => []), iterations: 0, balanced: true }
@@ -126,10 +128,14 @@ export function balancedKMeans<T extends WithCoords>(
     if (!moved) break
   }
 
-  // 6. Dentro de cada cluster, ordena por nearest-neighbor (partindo do centroide)
+  // 6. Dentro de cada cluster, ordena por nearest-neighbor.
+  // Se houver startPoint (sede da empresa), usa como ponto de partida —
+  // motorista sai da sede e volta pro ultimo cliente mais perto dali.
+  // Senao, usa o centroide do cluster como partida (comportamento antigo).
   const finalAssignments: T[][] = assignments.map((cluster, i) => {
     if (cluster.length === 0) return []
-    return nearestNeighborOrder(cluster, centroids[i]) as T[]
+    const start = startPoint || centroids[i]
+    return nearestNeighborOrder(cluster, start) as T[]
   })
 
   // 7. Distribui sem-coords round-robin nos clusters menores primeiro

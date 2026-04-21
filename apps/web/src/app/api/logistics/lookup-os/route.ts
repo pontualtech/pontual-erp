@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { ensureCustomersGeocoded, nearestNeighborOrder } from '@/lib/geocoding'
+import { getCompanyHQ } from '@/lib/company-hq'
 
 /**
  * POST /api/logistics/lookup-os
@@ -82,9 +83,16 @@ export async function POST(req: NextRequest) {
   // Só faz network call na primeira vez que o cliente aparece numa rota.
   const wantsSort = body.order === 'nearest'
   let geocodedMap = new Map<string, { lat: number; lng: number }>()
+  let hq: { lat: number; lng: number; formatted: string } | null = null
   if (wantsSort) {
     const customerIds = orders.map(o => o.customers?.id).filter(Boolean) as string[]
-    geocodedMap = await ensureCustomersGeocoded(customerIds)
+    // Paraleliza: geocoda clientes e resolve HQ ao mesmo tempo
+    const [geocoded, hqResolved] = await Promise.all([
+      ensureCustomersGeocoded(customerIds),
+      getCompanyHQ(auth.companyId),
+    ])
+    geocodedMap = geocoded
+    hq = hqResolved
   }
 
   const items = orders.map(os => {
@@ -134,8 +142,10 @@ export async function POST(req: NextRequest) {
     const haveCoordsCount = items.filter(i => i.lat !== null && i.lng !== null).length
     const ratio = haveCoordsCount / Math.max(items.length, 1)
     if (ratio >= 0.6) {
-      // Tem lat/lng pra maioria → nearest-neighbor real
-      sortedItems = nearestNeighborOrder(items)
+      // Tem lat/lng pra maioria → nearest-neighbor real partindo da SEDE
+      // da empresa (se configurada) — garante que motorista sempre comeca
+      // do ponto certo e volta pra fazer a ultima parada mais perto dali
+      sortedItems = nearestNeighborOrder(items, hq)
       sortMethod = 'haversine'
     } else {
       // Fallback: ordenação lexicográfica por cidade → bairro → CEP
@@ -161,6 +171,7 @@ export async function POST(req: NextRequest) {
       ordered: wantsSort,
       sort_method: sortMethod,
       geocoded_now: geocodedMap.size,
+      hq: hq ? { lat: hq.lat, lng: hq.lng } : null,
     },
   })
 }

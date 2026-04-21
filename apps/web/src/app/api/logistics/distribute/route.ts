@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { ensureCustomersGeocoded } from '@/lib/geocoding'
 import { balancedKMeans } from '@/lib/clustering'
+import { getCompanyHQ } from '@/lib/company-hq'
 
 /**
  * POST /api/logistics/distribute
@@ -103,9 +104,12 @@ export async function POST(req: NextRequest) {
   // Filtra exclusoes
   const filtered = orders.filter(o => !excludedIds.has(o.id))
 
-  // Geocoda customers faltantes
+  // Geocoda customers faltantes + resolve HQ em paralelo
   const customerIds = filtered.map(o => o.customers?.id).filter(Boolean) as string[]
-  const geocodedMap = await ensureCustomersGeocoded(customerIds)
+  const [geocodedMap, hq] = await Promise.all([
+    ensureCustomersGeocoded(customerIds),
+    getCompanyHQ(auth.companyId),
+  ])
 
   // Monta items pra clustering
   const items = filtered.map(os => {
@@ -141,8 +145,8 @@ export async function POST(req: NextRequest) {
     }
   })
 
-  // Executa k-means balanceado
-  const result = balancedKMeans(items, drivers.length)
+  // Executa k-means balanceado — cada cluster ordenado a partir da sede
+  const result = balancedKMeans(items, drivers.length, { startPoint: hq })
 
   // Monta resposta: mapeia cluster -> motorista na ordem fornecida
   const assignments = drivers.map((driver, idx) => ({
@@ -159,6 +163,7 @@ export async function POST(req: NextRequest) {
       geocoded_now: geocodedMap.size,
       missing,
       excluded_count: excludedIds.size,
+      hq: hq ? { lat: hq.lat, lng: hq.lng, formatted: hq.formatted } : null,
     },
   })
 }

@@ -116,15 +116,40 @@ export async function PUT(req: NextRequest) {
 
     const body = await req.json()
 
+    // Detecta se o endereco mudou pra invalidar o cache de geocoding da sede.
+    // Se mesmo 1 dos campos de endereco muda, a proxima rota precisa regeocodar.
+    const addressFields = ['logradouro', 'numero', 'bairro', 'municipio', 'uf', 'cep']
+    const oldAddressSettings = await prisma.setting.findMany({
+      where: {
+        company_id: user.companyId,
+        key: { in: addressFields.map(f => FIELD_MAP[f]).filter(Boolean) },
+      },
+    })
+    const oldAddress = new Map(oldAddressSettings.map(s => [s.key, s.value]))
+    let addressChanged = false
+
     for (const [field, settingKey] of Object.entries(FIELD_MAP)) {
       const value = body[field]
       if (value !== undefined && value !== null) {
+        if (addressFields.includes(field) && oldAddress.get(settingKey) !== String(value)) {
+          addressChanged = true
+        }
         await prisma.setting.upsert({
           where: { company_id_key: { company_id: user.companyId, key: settingKey } },
           create: { company_id: user.companyId, key: settingKey, value: String(value), type: 'string' },
           update: { value: String(value) },
         })
       }
+    }
+
+    // Invalida cache de geocoding da sede quando endereco muda
+    if (addressChanged) {
+      await prisma.setting.deleteMany({
+        where: {
+          company_id: user.companyId,
+          key: { in: ['geocoding.hq_lat', 'geocoding.hq_lng'] },
+        },
+      })
     }
 
     // Atualizar Company.name se razao_social ou nome_fantasia fornecido
