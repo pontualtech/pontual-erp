@@ -83,14 +83,36 @@ export async function sendWhatsAppCloud(
     const data = await res.json()
 
     if (!res.ok) {
+      const errCode = data.error?.code
+      const errMsg = data.error?.message || `HTTP ${res.status}`
+
+      // Codigos de erro Meta relacionados a janela 24h / politica de conversa:
+      //   131047 — outside 24h window, precisa template
+      //   131026 — message undeliverable (regras de sessao)
+      //   131051 — unsupported message type
+      // Nesses casos, tenta Evolution API como fallback (regras diferentes,
+      // frequentemente consegue entregar pelo WhatsApp Web/nao-oficial)
+      const shouldFallback = [131047, 131026, 131051].includes(errCode)
+      if (shouldFallback) {
+        console.info(`[WhatsApp Cloud] Error ${errCode} (${errMsg}) — falling back to Evolution`)
+        const evoResult = await sendWhatsAppEvolution(companyId, phone, text)
+        if (evoResult.success) {
+          return { success: true, messageId: undefined }
+        }
+        return { success: false, error: `Cloud ${errCode}: ${errMsg} | Evolution: ${evoResult.error}` }
+      }
+
       console.error('[WhatsApp Cloud] Send error:', { status: res.status, error: data.error })
-      return { success: false, error: data.error?.message || `HTTP ${res.status}` }
+      return { success: false, error: errMsg }
     }
 
     const messageId = data.messages?.[0]?.id
     return { success: true, messageId }
   } catch (err) {
     console.error('[WhatsApp Cloud] Send failed:', err)
+    // Exception (timeout, network) — tenta Evolution como fallback
+    const evoResult = await sendWhatsAppEvolution(companyId, phone, text)
+    if (evoResult.success) return { success: true }
     return { success: false, error: String(err) }
   }
 }

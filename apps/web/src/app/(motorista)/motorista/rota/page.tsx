@@ -298,22 +298,40 @@ export default function RotaHojePage() {
               <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
                 Finalizadas ({doneStops.length})
               </h2>
-              {doneStops.map(stop => (
-                <div key={stop.id}
-                  className="bg-white border border-gray-200 rounded-xl p-3 opacity-60 flex items-center gap-3">
-                  {stop.status === 'COMPLETED'
-                    ? <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
-                    : <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />}
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate">
-                      {stop.type === 'COLETA' ? 'Coleta' : 'Entrega'} — {stop.customer_name}
-                    </p>
-                    <p className="text-xs text-gray-500 truncate">
-                      {stop.os ? `OS #${stop.os.number}` : ''} {stop.failure_reason && `— ${stop.failure_reason}`}
-                    </p>
+              {doneStops.map(stop => {
+                const editable = stop.status === 'COMPLETED'
+                const editHref = editable
+                  ? (stop.type === 'COLETA' ? `/motorista/coleta/${stop.id}` : `/motorista/entrega/${stop.id}`)
+                  : null
+                const content = (
+                  <div className="flex items-center gap-3 w-full">
+                    {stop.status === 'COMPLETED'
+                      ? <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
+                      : <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate">
+                        {stop.type === 'COLETA' ? 'Coleta' : 'Entrega'} — {stop.customer_name}
+                      </p>
+                      <p className="text-xs text-gray-500 truncate">
+                        {stop.os ? `OS #${stop.os.number}` : ''} {stop.failure_reason && `— ${stop.failure_reason}`}
+                      </p>
+                    </div>
+                    {editable && (
+                      <span className="text-[10px] text-amber-600 font-semibold shrink-0">✏️ Editar</span>
+                    )}
                   </div>
-                </div>
-              ))}
+                )
+                return editable && editHref ? (
+                  <Link key={stop.id} href={editHref}
+                    className="block bg-white border border-gray-200 rounded-xl p-3 opacity-75 active:scale-[0.99] hover:opacity-100 transition">
+                    {content}
+                  </Link>
+                ) : (
+                  <div key={stop.id} className="bg-white border border-gray-200 rounded-xl p-3 opacity-60">
+                    {content}
+                  </div>
+                )
+              })}
             </section>
           )}
         </main>

@@ -68,31 +68,75 @@ export default function ColetaPage() {
   const [creatingExtra, setCreatingExtra] = useState(false)
   const [extrasCreated, setExtrasCreated] = useState<number[]>([])
 
-  // Fetch stop data from today's rota (already enriched on the server)
+  // Fetch stop data — usa /api/driver/stop/[id] que retorna TODOS os
+  // campos (serial, checklist, assinatura, etc) pra suportar EDICAO
+  // quando a coleta ja foi finalizada.
   useEffect(() => {
-    fetch('/api/driver/rota/hoje', { cache: 'no-store' })
-      .then(r => r.json())
-      .then(({ data }) => {
-        const found = (data.stops || []).find((s: any) => s.id === stopId)
-        if (!found) { toast.error('Parada nao encontrada'); router.back(); return }
-        if (found.type !== 'COLETA') { toast.error('Essa parada nao e coleta'); router.back(); return }
-        setStop(found)
-      })
-      .catch(() => toast.error('Falha ao carregar'))
-      .finally(() => setLoading(false))
+    async function load() {
+      try {
+        const res = await fetch(`/api/driver/stop/${stopId}`, { cache: 'no-store' })
+        if (!res.ok) { toast.error('Parada nao encontrada'); router.back(); return }
+        const { data } = await res.json()
+        if (data.type !== 'COLETA') { toast.error('Essa parada nao e coleta'); router.back(); return }
+
+        // Complementa com dados de OS da rota/hoje (pra mostrar problema, equipamento)
+        try {
+          const rotaRes = await fetch('/api/driver/rota/hoje', { cache: 'no-store' })
+          const { data: rotaData } = await rotaRes.json()
+          const rotaStop = (rotaData.stops || []).find((s: any) => s.id === stopId)
+          if (rotaStop?.os) (data as any).os = rotaStop.os
+        } catch {}
+
+        setStop(data)
+
+        // Se ja foi finalizada (COMPLETED), pre-carrega campos pra edicao
+        if (data.status === 'COMPLETED') {
+          if (data.serial_number) setSerial(data.serial_number)
+          if (data.serial_source) setSerialSource(data.serial_source as any)
+          if (data.observations) setObservations(data.observations)
+          if (data.signer_name) setSignerName(data.signer_name)
+          if (Array.isArray(data.checklist) && data.checklist.length > 0) {
+            setChecklist(data.checklist as any)
+          }
+          // photo_urls[0] e assinatura, resto sao fotos extras
+          if (Array.isArray(data.photo_urls) && data.photo_urls.length > 0) {
+            const [sig, ...extras] = data.photo_urls as string[]
+            if (sig?.startsWith('data:image/png')) setSignaturePng(sig)
+            // Extras sao data:URL — convertemos pra base64 puro
+            const extraBase64s = extras
+              .filter(u => typeof u === 'string' && u.startsWith('data:image/jpeg'))
+              .map(u => u.replace(/^data:image\/jpeg;base64,/, ''))
+            setExtraPhotos(extraBase64s)
+          }
+          toast.info('Coleta ja finalizada — editando dados')
+        }
+      } catch {
+        toast.error('Falha ao carregar')
+      } finally {
+        setLoading(false)
+      }
+    }
+    load()
   }, [stopId, router])
 
   function toggleItem(key: string) {
     setChecklist(prev => prev.map(i => i.key === key ? { ...i, checked: !i.checked } : i))
   }
 
-  async function handleOcrResult({ serial: s, source }: { serial: string | null; photoBase64: string; source: 'ocr' | 'manual' }) {
+  async function handleOcrResult({ serial: s, photoBase64, source }: { serial: string | null; photoBase64: string; source: 'ocr' | 'manual' }) {
     if (s) {
       setSerial(s)
       setSerialSource('ocr')
       toast.success(`S/N lido: ${s}`)
     } else {
       toast.info('Não consegui ler — digite manualmente')
+    }
+    // Salva a foto do OCR automaticamente — motorista fotografou a etiqueta
+    // do equipamento, essa foto vira evidencia do cadastro (numero de serie,
+    // modelo, estado da placa). Independente do OCR ter sucesso ou nao, a
+    // foto fica salva como anexo da coleta.
+    if (photoBase64) {
+      setExtraPhotos(prev => [...prev, photoBase64])
     }
     setOcrOpen(false)
   }
@@ -136,25 +180,57 @@ export default function ColetaPage() {
 
     setSubmitting(true)
     try {
-      const location = await getCurrentLocation()
-      const payload = {
-        event_id: uuidv4(),
-        serial_number: serial.trim().toUpperCase(),
-        serial_source: serialSource,
-        checklist,
-        observations: observations.trim() || null,
-        signature_png_base64: signaturePng.replace(/^data:image\/png;base64,/, ''),
-        signer_name: signerName.trim(),
-        photos_base64: extraPhotos,
-        location,
-      }
+      const isEditing = stop?.status === 'COMPLETED'
 
-      // Offline-first: enfileira em IndexedDB e tenta enviar na hora.
-      // Se rede cair, sync worker retenta quando voltar. event_id garante
-      // idempotência no servidor (sem duplicar OS/history).
-      await enqueueSubmission(`/api/driver/stop/${stopId}/coleta`, payload)
-      toast.success('Coleta registrada! Sincronizando…')
-      router.replace('/motorista/rota')
+      // Se assinatura veio de uma data-URL pre-carregada, reextrai o base64;
+      // se for assinatura nova do SignatureCanvas, tambem vem como data:url
+      const sigBase64 = signaturePng.replace(/^data:image\/png;base64,/, '')
+
+      // Se editando, extraPhotos tem base64 puro (removemos prefix no load)
+      // Se novo, extraPhotos tem base64 puro direto do CameraCapture
+      const photosBase64 = extraPhotos
+
+      if (isEditing) {
+        // Modo EDICAO: PATCH simples, sem offline queue (ja ta COMPLETED,
+        // cliente ja foi notificado, OS ja transicionou — so corrige campos)
+        const res = await fetch(`/api/driver/stop/${stopId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            serial_number: serial.trim().toUpperCase(),
+            serial_source: serialSource,
+            checklist,
+            observations: observations.trim() || null,
+            signature_png_base64: sigBase64,
+            signer_name: signerName.trim(),
+            photos_base64: photosBase64,
+          }),
+        })
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}))
+          toast.error(body.error || 'Erro ao salvar alteracoes')
+          return
+        }
+        toast.success('Alteracoes salvas!')
+        router.replace('/motorista/rota')
+      } else {
+        // Modo FINALIZAR: POST com offline queue + notificacoes
+        const location = await getCurrentLocation()
+        const payload = {
+          event_id: uuidv4(),
+          serial_number: serial.trim().toUpperCase(),
+          serial_source: serialSource,
+          checklist,
+          observations: observations.trim() || null,
+          signature_png_base64: sigBase64,
+          signer_name: signerName.trim(),
+          photos_base64: photosBase64,
+          location,
+        }
+        await enqueueSubmission(`/api/driver/stop/${stopId}/coleta`, payload)
+        toast.success('Coleta registrada! Sincronizando…')
+        router.replace('/motorista/rota')
+      }
     } catch (err) {
       toast.error('Erro ao salvar. Tente novamente.')
     } finally { setSubmitting(false) }
@@ -174,10 +250,12 @@ export default function ColetaPage() {
 
   return (
     <div className="min-h-[100dvh] bg-slate-50">
-      <header className="sticky top-0 bg-purple-700 text-white px-4 py-3 flex items-center gap-3 shadow z-10">
-        <button onClick={() => router.back()} aria-label="Voltar" className="p-1"><ArrowLeft className="w-6 h-6" /></button>
+      <header className={`sticky top-0 ${stop.status === 'COMPLETED' ? 'bg-amber-600' : 'bg-purple-700'} text-white px-4 py-3 flex items-center gap-3 shadow z-10`}>
+        <button type="button" onClick={() => router.back()} aria-label="Voltar" className="p-1"><ArrowLeft className="w-6 h-6" /></button>
         <div className="flex-1 min-w-0">
-          <h1 className="font-bold leading-tight truncate">Coleta — {stop.customer_name}</h1>
+          <h1 className="font-bold leading-tight truncate">
+            {stop.status === 'COMPLETED' ? '✏️ Editando Coleta' : 'Coleta'} — {stop.customer_name}
+          </h1>
           <p className="text-xs opacity-80 truncate">{stop.os ? `OS #${stop.os.number}` : ''} {stop.os?.equipment}</p>
         </div>
       </header>
@@ -363,12 +441,12 @@ export default function ColetaPage() {
 
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t shadow-lg"
         style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}>
-        <button onClick={finalizar} disabled={submitting}
-          className="w-full bg-green-600 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.99] transition">
+        <button type="button" onClick={finalizar} disabled={submitting}
+          className={`w-full text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.99] transition ${stop.status === 'COMPLETED' ? 'bg-amber-600' : 'bg-green-600'}`}>
           {submitting ? (
             <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full" />
           ) : (
-            <><Check className="w-5 h-5" /> Finalizar Coleta</>
+            <><Check className="w-5 h-5" /> {stop.status === 'COMPLETED' ? 'Salvar Alteracoes' : 'Finalizar Coleta'}</>
           )}
         </button>
       </div>
