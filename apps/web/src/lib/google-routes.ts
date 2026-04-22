@@ -21,12 +21,17 @@ export type RouteLeg = {
 }
 
 export type RoutePlan = {
-  polyline: string  // encoded polyline — decodificar no cliente
+  polyline: string        // polyline do 1o batch (compat)
+  polylines: string[]     // todos os batches — usa esse no frontend
   total_distance_m: number
   total_duration_s: number
   legs: RouteLeg[]
   source: 'google' | 'haversine'
 }
+
+// Google Routes API v2 Basic: max 25 intermediates por request.
+// Rotas maiores sao divididas em batches com overlap de 1 waypoint.
+const MAX_INTERMEDIATES_PER_CALL = 25
 
 type Waypoint = {
   stop_id: string
@@ -54,20 +59,64 @@ function haversineM(a: { lat: number; lng: number }, b: { lat: number; lng: numb
 /**
  * Calcula rota otima pelas ruas. Waypoints em ordem (origem ->
  * paradas intermediarias -> destino). Min 2 pontos.
- * Fallback para linhas retas (Haversine) se API key nao configurada.
+ *
+ * Rotas com >25 intermediarios sao divididas em batches (limite
+ * do Google Routes API Basic). Legs e totais sao concatenados,
+ * polyline e devolvida como array (polylines) alem de string.
+ *
+ * Fallback Haversine se API key ausente OU em caso de erro.
  */
 export async function computeRoutePlan(waypoints: Waypoint[]): Promise<RoutePlan> {
   if (waypoints.length < 2) {
-    return { polyline: '', total_distance_m: 0, total_duration_s: 0, legs: [], source: 'haversine' }
+    return { polyline: '', polylines: [], total_distance_m: 0, total_duration_s: 0, legs: [], source: 'haversine' }
   }
 
   const apiKey = getKey()
   if (!apiKey) return fallbackHaversine(waypoints)
 
-  const origin = waypoints[0]
-  const destination = waypoints[waypoints.length - 1]
-  const intermediates = waypoints.slice(1, -1)
+  // Quebra em batches: cada batch tem ate MAX_INTERMEDIATES_PER_CALL
+  // waypoints intermediarios. Overlap de 1 ponto entre batches mantem
+  // a continuidade — o destino do batch N vira origem do batch N+1.
+  const batches: Waypoint[][] = []
+  const stepStops = MAX_INTERMEDIATES_PER_CALL + 1 // +1 = destino do batch
+  let cursor = 0
+  while (cursor < waypoints.length - 1) {
+    const end = Math.min(cursor + stepStops, waypoints.length - 1)
+    batches.push(waypoints.slice(cursor, end + 1))
+    cursor = end
+  }
 
+  const polylines: string[] = []
+  const legs: RouteLeg[] = []
+  let totalDist = 0
+  let totalDur = 0
+
+  for (const batch of batches) {
+    const one = await fetchBatch(apiKey, batch)
+    if (!one) return fallbackHaversine(waypoints) // qualquer falha -> degrada rota inteira
+    if (one.polyline) polylines.push(one.polyline)
+    legs.push(...one.legs)
+    totalDist += one.distance_m
+    totalDur += one.duration_s
+  }
+
+  return {
+    polyline: polylines[0] || '',
+    polylines,
+    total_distance_m: totalDist,
+    total_duration_s: totalDur,
+    legs,
+    source: 'google',
+  }
+}
+
+/** Uma chamada Google Routes para um batch de <=26 waypoints. */
+async function fetchBatch(apiKey: string, wp: Waypoint[]): Promise<{
+  polyline: string; distance_m: number; duration_s: number; legs: RouteLeg[]
+} | null> {
+  const origin = wp[0]
+  const destination = wp[wp.length - 1]
+  const intermediates = wp.slice(1, -1)
   const body = {
     origin: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } },
     destination: { location: { latLng: { latitude: destination.lat, longitude: destination.lng } } },
@@ -86,41 +135,35 @@ export async function computeRoutePlan(waypoints: Waypoint[]): Promise<RoutePlan
       headers: {
         'Content-Type': 'application/json',
         'X-Goog-Api-Key': apiKey,
-        // Field mask obrigatorio: devolve apenas o que precisamos
         'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs.duration,routes.legs.distanceMeters',
       },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(15_000),
     })
-
     if (!res.ok) {
       const err = await res.text().catch(() => '')
       console.error('[Routes API] HTTP', res.status, err.slice(0, 300))
-      return fallbackHaversine(waypoints)
+      return null
     }
-
     const data = await res.json()
     const route = data.routes?.[0]
-    if (!route) return fallbackHaversine(waypoints)
-
+    if (!route) return null
     const apiLegs: any[] = route.legs || []
     const legs: RouteLeg[] = apiLegs.map((leg: any, i: number) => ({
       distance_m: Number(leg.distanceMeters) || 0,
       duration_s: parseDurationSeconds(leg.duration),
-      from_stop_id: waypoints[i].stop_id,
-      to_stop_id: waypoints[i + 1].stop_id,
+      from_stop_id: wp[i].stop_id,
+      to_stop_id: wp[i + 1].stop_id,
     }))
-
     return {
       polyline: route.polyline?.encodedPolyline || '',
-      total_distance_m: Number(route.distanceMeters) || 0,
-      total_duration_s: parseDurationSeconds(route.duration),
+      distance_m: Number(route.distanceMeters) || 0,
+      duration_s: parseDurationSeconds(route.duration),
       legs,
-      source: 'google',
     }
   } catch (err) {
     console.error('[Routes API] Failed:', err instanceof Error ? err.message : String(err))
-    return fallbackHaversine(waypoints)
+    return null
   }
 }
 
@@ -148,6 +191,7 @@ function fallbackHaversine(waypoints: Waypoint[]): RoutePlan {
   }
   return {
     polyline: '', // sem polyline real no fallback — frontend usa linha reta
+    polylines: [],
     total_distance_m: total,
     total_duration_s: legs.reduce((s, l) => s + l.duration_s, 0),
     legs,

@@ -102,7 +102,8 @@ function decodePolyline(str: string): [number, number][] {
 }
 
 export type StopRoutePlan = {
-  polyline: string  // encoded polyline from Google
+  polyline?: string         // compat — primeira polyline
+  polylines?: string[]      // todos os segmentos (rotas grandes sao batched)
   total_distance_m: number
   total_duration_s: number
   legs: Array<{ distance_m: number; duration_s: number; from_stop_id: string; to_stop_id: string }>
@@ -276,14 +277,20 @@ export default function LeafletMap({ routes, drivers = [], trail = null, playbac
           .sort((a, b) => a.sequence - b.sequence)
         if (ordered.length < 2) continue
 
-        // 1) Linha principal — polyline real do Google (se disponivel)
-        //    ou linha reta conectando stops
-        if (stopRoutePlan?.polyline) {
-          const coords = decodePolyline(stopRoutePlan.polyline)
-          const line = L.polyline(coords, {
-            color: '#4f46e5', weight: 4, opacity: 0.65,
-          }).addTo(map)
-          routeLayersRef.current.push(line)
+        // 1) Linha principal — polylines reais do Google (array, pois
+        //    rotas grandes sao divididas em batches) ou linha reta.
+        const polys = stopRoutePlan?.polylines?.length
+          ? stopRoutePlan.polylines
+          : (stopRoutePlan?.polyline ? [stopRoutePlan.polyline] : [])
+        if (polys.length > 0) {
+          for (const p of polys) {
+            if (!p) continue
+            const coords = decodePolyline(p)
+            const line = L.polyline(coords, {
+              color: '#4f46e5', weight: 4, opacity: 0.65,
+            }).addTo(map)
+            routeLayersRef.current.push(line)
+          }
         } else {
           const latlngs = ordered.map(s => [s.lat as number, s.lng as number] as [number, number])
           const line = L.polyline(latlngs, {
@@ -385,8 +392,11 @@ export default function LeafletMap({ routes, drivers = [], trail = null, playbac
     if (trail && trail.points.length > 0) {
       trail.points.forEach(p => allLatLngs.push([p.lat, p.lng]))
     }
-    if (stopRoutePlan?.polyline) {
-      decodePolyline(stopRoutePlan.polyline).forEach(p => allLatLngs.push(p))
+    const boundsPolys = stopRoutePlan?.polylines?.length
+      ? stopRoutePlan.polylines
+      : (stopRoutePlan?.polyline ? [stopRoutePlan.polyline] : [])
+    for (const p of boundsPolys) {
+      if (p) decodePolyline(p).forEach(pt => allLatLngs.push(pt))
     }
     if (allLatLngs.length > 1) {
       const bounds = L.latLngBounds(allLatLngs)
