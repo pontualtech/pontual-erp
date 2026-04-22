@@ -1196,6 +1196,12 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
         message_history: assistantHistory as any,
       }
 
+    // Flag pra fechar a conversa no Chatwoot ao final do loop — usado em
+    // cenarios onde a interacao com o cliente ja cumpriu seu objetivo
+    // (ex: OS aberta com sucesso, nao precisa mais bot). Cron pula convs
+    // resolved, entao nao dispara follow-up.
+    let shouldResolveConv = false
+
     // Handle action tags
     if (parsed.action === 'ABRIR_OS' && parsed.vhsysData) {
       // Ana already confirmed with client — create OS immediately
@@ -1353,6 +1359,12 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
           ]
           await cwSendMessage(cfg, conversationId, noteLines.join('\n'), true)
           await cwSetLabels(cfg, conversationId, ['os_aberta'])
+
+          // OS aberta com sucesso = objetivo do cliente cumprido. Fecha a
+          // conversa no Chatwoot pra (a) liberar o painel do atendente e
+          // (b) evitar que follow-up automatico dispare (cron pula resolved).
+          // Chatwoot reabre automaticamente se o cliente voltar a mandar msg.
+          shouldResolveConv = true
 
           // Sync contact data to Chatwoot (keep CRM in sync with ERP)
           if (contactId) {
@@ -1556,8 +1568,12 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       }
     }
 
-    // Post-send actions
-    if (parsed.action === 'ENCERRAR_CONVERSA') {
+    // Post-send actions: fecha a conversa Chatwoot em 2 cenarios
+    // 1) Dify explicitamente emitiu ENCERRAR_CONVERSA
+    // 2) OS foi aberta com sucesso (shouldResolveConv=true) — objetivo do cliente cumprido
+    // Pausa de 2s pra garantir que a mensagem de resposta/magic-link ja foi
+    // entregue antes de fechar (evita race condition no painel do atendente).
+    if (parsed.action === 'ENCERRAR_CONVERSA' || shouldResolveConv) {
       await new Promise(r => setTimeout(r, 2000))
       await cwResolve(cfg, conversationId)
     }
