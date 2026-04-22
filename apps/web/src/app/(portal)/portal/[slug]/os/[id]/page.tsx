@@ -450,16 +450,21 @@ export default function PortalOSDetailPage() {
             os.history.forEach((h) => {
               historyDateMap[h.to_status.name] = h.created_at
             })
+            // Fonte de verdade do "past": historico real de transicoes, nao o
+            // campo `order` que e so sort key (e nao-unico — Entregue=14,
+            // LAUDO=14; Cancelada=15, Renegociar=15, Entregue Recusado=15).
+            // Usar `order < currentOrder` fazia o portal marcar Entregue como
+            // "past" quando a OS estava em Renegociar, mesmo nunca tendo sido
+            // entregue — cliente via OS como concluida erroneamente.
+            const visitedStatusNames = new Set(os.history.map((h) => h.to_status.name))
             return (
               <div className="mb-6">
                 <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 capitalize mb-3">Progresso</h3>
                 <div className="flex flex-col gap-0">
                   {os.all_statuses.map((s, i) => {
-                    const currentOrder = os.status.order ?? 0
-                    const statusOrder = s.order ?? 0
                     const isActive = s.id === os.status.id
-                    const isPast = statusOrder < currentOrder
-                    const isFuture = statusOrder > currentOrder
+                    const isPast = !isActive && visitedStatusNames.has(s.name)
+                    const isFuture = !isActive && !isPast
                     const friendlyName = s.name
                     const historyDate = historyDateMap[s.name]
 
