@@ -83,16 +83,13 @@ export async function POST(req: NextRequest, { params }: Params) {
         try {
           const phone = customerPhone.replace(/\D/g, '')
           const fallback = `*Orcamento pronto — OS #${osNum}*\n\nValor: ${fmtValue}\nEquipamento: ${equipment || 'Equipamento'}\n\nAcesse o portal para aprovar ou recusar o orcamento.`
-          // Magic-link quote notification (v2 has dynamic URL button for one-click portal access)
-          const { createAccessToken } = await import('@/lib/portal-auth')
-          const magicToken = createAccessToken(os.customer_id, user.companyId)
-          const waResult = await sendWhatsAppTemplate(user.companyId, phone, 'pontualtech_orcamento_v2', 'pt_BR', [
+          // v2 com magic-link esta PENDING — usar approved sem sufixo.
+          const waResult = await sendWhatsAppTemplate(user.companyId, phone, 'pontualtech_orcamento', 'pt_BR', [
             { type: 'body', parameters: [
               { type: 'text', text: osNum },
               { type: 'text', text: fmtValue },
               { type: 'text', text: equipment || 'Equipamento' },
             ] },
-            { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: magicToken }] },
           ], fallback)
           results.push({ channel: 'whatsapp', status: waResult.success ? 'enviado' : 'erro' })
         } catch {
