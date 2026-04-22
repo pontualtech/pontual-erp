@@ -4,6 +4,12 @@ import { requirePermission } from '@/lib/auth'
 import { requireDriver } from '@/lib/driver-auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { computeRoutePlan, type RoutePlan } from '@/lib/google-routes'
+import { getCompanyHQ } from '@/lib/company-hq'
+
+// stop_ids ficticios pra marcar HQ nos legs — frontend desenha marker
+// especial e ignora esses ids no legByStops lookup.
+const HQ_START_ID = '__HQ_START__'
+const HQ_END_ID = '__HQ_END__'
 
 /**
  * GET /api/logistics/routes/[id]/plan
@@ -74,7 +80,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       return error('Rota de outro motorista', 403)
     }
 
-    const waypoints = route.stops
+    const stopWaypoints = route.stops
       .filter(s => s.lat != null && s.lng != null)
       .map(s => ({
         stop_id: s.id,
@@ -82,19 +88,43 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         lng: Number(s.lng),
       }))
 
+    if (stopWaypoints.length < 1) {
+      return success({
+        polyline: '', total_distance_m: 0, total_duration_s: 0, legs: [],
+        source: 'haversine', cached: false, hq: null,
+      })
+    }
+
+    // Round trip: HQ -> paradas em sequence -> HQ. Se empresa nao
+    // configurou endereco, usa so as paradas (comportamento antigo).
+    const hq = await getCompanyHQ(companyId)
+    const waypoints = hq
+      ? [
+          { stop_id: HQ_START_ID, lat: hq.lat, lng: hq.lng },
+          ...stopWaypoints,
+          { stop_id: HQ_END_ID, lat: hq.lat, lng: hq.lng },
+        ]
+      : stopWaypoints
+
     if (waypoints.length < 2) {
       return success({
         polyline: '', total_distance_m: 0, total_duration_s: 0, legs: [],
-        source: 'haversine', cached: false,
+        source: 'haversine', cached: false, hq: hq ? { lat: hq.lat, lng: hq.lng } : null,
       })
     }
 
     const plan = await computeRoutePlan(waypoints)
 
+    // Enriquece resposta com HQ pra frontend desenhar marker especial.
+    const planWithHq = {
+      ...plan,
+      hq: hq ? { lat: hq.lat, lng: hq.lng, formatted: hq.formatted } : null,
+    }
+
     // So cacheia se foi resposta real do Google. Fallback haversine
     // pode ser transient (API down, quota, batching); nao trava por 24h.
     if (plan.source === 'google') {
-      const toSave = JSON.stringify({ ...plan, cached_at: new Date().toISOString() })
+      const toSave = JSON.stringify({ ...planWithHq, cached_at: new Date().toISOString() })
       await prisma.setting.upsert({
         where: { company_id_key: { company_id: companyId, key: cacheKey } },
         create: { company_id: companyId, key: cacheKey, value: toSave, type: 'json' },
@@ -102,7 +132,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       })
     }
 
-    return success({ ...plan, cached: false })
+    return success({ ...planWithHq, cached: false })
   } catch (err) {
     return handleError(err)
   }

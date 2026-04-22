@@ -116,6 +116,7 @@ export type StopRoutePlan = {
   total_duration_s: number
   legs: Array<{ distance_m: number; duration_s: number; from_stop_id: string; to_stop_id: string }>
   source: 'google' | 'haversine'
+  hq?: { lat: number; lng: number; formatted?: string } | null
 }
 
 export default function LeafletMap({ routes, drivers = [], trail = null, playbackIndex = -1, showStopRoute = false, stopRoutePlan = null }: {
@@ -134,6 +135,7 @@ export default function LeafletMap({ routes, drivers = [], trail = null, playbac
   const trailLayerRef = useRef<any>(null)
   const playbackMarkerRef = useRef<any>(null)
   const routeLayersRef = useRef<any[]>([]) // polyline + distance labels entre stops
+  const hqMarkerRef = useRef<any>(null) // marker da base (sede da empresa)
   // Guarda assinatura pra saber quando "a rota mudou" (novas paradas ou
   // plan atualizado). Usado pra decidir se reajusta o zoom — se o user
   // manualmente fez zoom/pan, nao queremos resetar a cada tick de GPS.
@@ -283,6 +285,35 @@ export default function LeafletMap({ routes, drivers = [], trail = null, playbac
       }
     }
 
+    // HQ marker — base da empresa, ponto de partida e retorno da rota
+    if (hqMarkerRef.current) {
+      map.removeLayer(hqMarkerRef.current)
+      hqMarkerRef.current = null
+    }
+    if (showStopRoute && stopRoutePlan?.hq) {
+      const hqLat = toFinite(stopRoutePlan.hq.lat)
+      const hqLng = toFinite(stopRoutePlan.hq.lng)
+      if (hqLat != null && hqLng != null) {
+        const hqIcon = L.divIcon({
+          className: '',
+          html: `<div style="
+            width:34px;height:34px;background:#1e293b;border:3px solid #fbbf24;
+            border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);
+            display:flex;align-items:center;justify-content:center;
+            color:white;font-size:18px;
+          " title="Base da empresa">🏢</div>`,
+          iconSize: [34, 34], iconAnchor: [17, 17],
+        })
+        hqMarkerRef.current = L.marker([hqLat, hqLng], { icon: hqIcon, zIndexOffset: 1000 }).addTo(map)
+        hqMarkerRef.current.bindPopup(`
+          <div style="font-size:12px;max-width:240px">
+            <strong>🏢 Base</strong><br/>
+            <span style="color:#6b7280">${escapeHtml(stopRoutePlan.hq.formatted || 'Ponto de partida e retorno')}</span>
+          </div>
+        `)
+      }
+    }
+
     // ROTA PLANEJADA. Se tem plan do Google (polyline encoded), desenha
     // caminho real pelas ruas + labels com km e min reais. Fallback para
     // linha reta + Haversine quando plan ausente ou polyline vazio.
@@ -423,6 +454,10 @@ export default function LeafletMap({ routes, drivers = [], trail = null, playbac
       : (stopRoutePlan?.polyline ? [stopRoutePlan.polyline] : [])
     for (const p of boundsPolys) {
       if (p) decodePolyline(p).forEach(pt => allLatLngs.push(pt))
+    }
+    if (stopRoutePlan?.hq) {
+      const hl = toFinite(stopRoutePlan.hq.lat); const hg = toFinite(stopRoutePlan.hq.lng)
+      if (hl != null && hg != null) allLatLngs.push([hl, hg])
     }
     // Assinatura do que pode justificar um re-fit: ids e sequencias das
     // stops + id das rotas + polyline plan (primeiro char e length).
