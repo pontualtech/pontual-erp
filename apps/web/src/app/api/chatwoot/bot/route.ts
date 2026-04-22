@@ -1204,11 +1204,29 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
         // Bug historico: Dify as vezes retorna "cpf" ou "cnpj" (em vez de
         // "cpf_cnpj"), e as vezes nao retorna telefone esperando que o bot
         // use o do Chatwoot. Aceitamos tudo e preferimos o primeiro nao-vazio.
+        // BUG CRITICO DESCOBERTO: Ana as vezes envia valores PLACEHOLDER do
+        // template do prompt (ex: "[nome]", "[cpf/cnpj]") em vez dos dados
+        // reais que coletou da conversa. Isso gerava cadastro literal com
+        // string "[cpf/cnpj]" no campo document_number. O isPlaceholder
+        // detecta esses casos e retorna empty — forcando fallback ou log
+        // de warning pro operador investigar.
         const vd = parsed.vhsysData as Record<string, any>
+        const isPlaceholder = (s: string) =>
+          /^\[[^\]]*\]$/.test(s.trim()) ||                // "[qualquer coisa]"
+          /^\{\{[^}]*\}\}$/.test(s.trim()) ||             // "{{variavel}}"
+          /^<[^>]*>$/.test(s.trim()) ||                   // "<placeholder>"
+          ['n/a', 'null', 'undefined', 'nao informado', 'nao informada', 'nao informados'].includes(s.trim().toLowerCase())
         const pick = (...keys: string[]): string => {
           for (const k of keys) {
-            const v = vd[k]
-            if (v !== undefined && v !== null && String(v).trim()) return String(v).trim()
+            const raw = vd[k]
+            if (raw === undefined || raw === null) continue
+            const v = String(raw).trim()
+            if (!v) continue
+            if (isPlaceholder(v)) {
+              console.warn(`[Bot/ABRIR_OS] ⚠️ Ana enviou placeholder literal "${v}" em "${k}" — ignorando. Prompt do Dify precisa substituir [placeholders] pelos valores reais.`)
+              continue
+            }
+            return v
           }
           return ''
         }
@@ -1300,10 +1318,14 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
 
           // Private note with all links for agents (always visible in conversation)
           const vdNote = parsed.vhsysData as Record<string, any>
+          const isPh = (s: string) => /^\[[^\]]*\]$/.test(s.trim()) || /^\{\{[^}]*\}\}$/.test(s.trim()) || /^<[^>]*>$/.test(s.trim())
           const pickNote = (...keys: string[]) => {
             for (const k of keys) {
-              const v = vdNote[k]
-              if (v !== undefined && v !== null && String(v).trim()) return String(v).trim()
+              const raw = vdNote[k]
+              if (raw === undefined || raw === null) continue
+              const v = String(raw).trim()
+              if (!v || isPh(v)) continue
+              return v
             }
             return ''
           }
@@ -1326,8 +1348,13 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
             const vd = parsed.vhsysData as Record<string, any>
             const pickVd = (...keys: string[]) => {
               for (const k of keys) {
-                const v = vd[k]
-                if (v !== undefined && v !== null && String(v).trim()) return String(v).trim()
+                const raw = vd[k]
+                if (raw === undefined || raw === null) continue
+                const v = String(raw).trim()
+                if (!v) continue
+                // Rejeita placeholder do prompt (bug Dify: [nome], [cpf/cnpj], etc)
+                if (/^\[[^\]]*\]$/.test(v) || /^\{\{[^}]*\}\}$/.test(v) || /^<[^>]*>$/.test(v)) continue
+                return v
               }
               return ''
             }
