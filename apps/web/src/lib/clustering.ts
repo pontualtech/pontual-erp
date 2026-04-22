@@ -152,3 +152,143 @@ export function balancedKMeans<T extends WithCoords>(
 
   return { assignments: finalAssignments, iterations, balanced }
 }
+
+/**
+ * Clustering por DENSIDADE: sem limite de capacidade. Cada OS vai pro
+ * motorista cujo centroide mais proximo esta. Clusters densos
+ * naturalmente acumulam mais paradas; clusters longe da base pegam
+ * menos porque tem menos OSes naquela regiao.
+ *
+ * Prioridade quando o user quer eficiencia > balanceamento:
+ * "motorista A tem 15 paradas todas no centro, motorista B tem 3 no
+ *  interior" — economia de combustivel e tempo e maior.
+ *
+ * Algoritmo:
+ *  1. k-means++ init pra escolher k seeds bem distribuidas
+ *  2. Itera: atribui cada OS ao centroide mais proximo (sem cap)
+ *  3. Recalcula centroides como media dos items atribuidos
+ *  4. Estabiliza quando nenhuma mudanca
+ */
+export function densityKMeans<T extends WithCoords>(
+  items: T[],
+  k: number,
+  options: { maxIterations?: number; startPoint?: { lat: number; lng: number } | null } = {},
+): ClusterResult<T> {
+  const maxIterations = options.maxIterations ?? 25
+  const startPoint = options.startPoint ?? null
+  if (k <= 0) return { assignments: [], iterations: 0, balanced: true }
+  if (items.length === 0) {
+    return { assignments: Array.from({ length: k }, () => []), iterations: 0, balanced: true }
+  }
+  if (k === 1) {
+    const sorted = nearestNeighborOrder(items, startPoint)
+    return { assignments: [sorted], iterations: 0, balanced: true }
+  }
+
+  const withCoords = items.filter(i => i.lat !== null && i.lng !== null) as (T & { lat: number; lng: number })[]
+  const withoutCoords = items.filter(i => i.lat === null || i.lng === null)
+
+  if (withCoords.length === 0) {
+    const assignments: T[][] = Array.from({ length: k }, () => [])
+    items.forEach((item, idx) => assignments[idx % k].push(item))
+    return { assignments, iterations: 0, balanced: true }
+  }
+
+  let centroids = kMeansPPInit(withCoords, k)
+  let assignments: (T & { lat: number; lng: number })[][] = Array.from({ length: k }, () => [])
+  let iterations = 0
+  let stable = false
+
+  for (let iter = 0; iter < maxIterations && !stable; iter++) {
+    iterations = iter + 1
+    const newAssignments: (T & { lat: number; lng: number })[][] = Array.from({ length: k }, () => [])
+
+    for (const item of withCoords) {
+      let bestCi = 0
+      let bestDist = Infinity
+      for (let ci = 0; ci < centroids.length; ci++) {
+        const d = haversineKm(centroids[ci], item)
+        if (d < bestDist) { bestDist = d; bestCi = ci }
+      }
+      newAssignments[bestCi].push(item)
+    }
+
+    // Verifica estabilidade: sizes identicas = estabilizou (aprox)
+    stable = assignments.every((a, i) => a.length === newAssignments[i].length)
+    assignments = newAssignments
+
+    // Recalcula centroides como media dos items
+    centroids = assignments.map((cluster, ci) => {
+      if (cluster.length === 0) return centroids[ci]
+      const meanLat = cluster.reduce((s, i) => s + i.lat, 0) / cluster.length
+      const meanLng = cluster.reduce((s, i) => s + i.lng, 0) / cluster.length
+      return { lat: meanLat, lng: meanLng }
+    })
+  }
+
+  // Ordena cada cluster: nearest-neighbor partindo da HQ
+  const finalAssignments: T[][] = assignments.map(cluster => {
+    const origin = startPoint || { lat: cluster[0]?.lat || 0, lng: cluster[0]?.lng || 0 }
+    return nearestNeighborOrder(cluster, origin)
+  })
+
+  // Items sem coords vao todos pro cluster menor (nao afetam muito)
+  for (const item of withoutCoords) {
+    const smallest = finalAssignments
+      .map((c, ci) => ({ ci, len: c.length }))
+      .sort((a, b) => a.len - b.len)[0]
+    finalAssignments[smallest.ci].push(item)
+  }
+
+  return { assignments: finalAssignments, iterations, balanced: false }
+}
+
+/**
+ * Ordena items de um cluster respeitando PRIORIDADE operacional:
+ *   1. COLETAS primeiro (cliente esperando motorista buscar)
+ *   2. ENTREGAS REPARADAS (equipamento pronto, cliente esperando devolver)
+ *   3. Outras entregas (recusadas/negociar — baixa prioridade)
+ *
+ * Dentro de cada grupo aplica nearest-neighbor pra minimizar trajeto.
+ * Combina: "priorize coletas" + "cada grupo em caminho otimo".
+ */
+export type Classified = { classification: 'coleta' | 'entrega_reparado' | 'entrega_outra' }
+
+export function orderByPriority<T extends WithCoords & Classified>(
+  items: T[],
+  startPoint: { lat: number; lng: number } | null,
+): T[] {
+  const buckets = {
+    coleta: [] as T[],
+    entrega_reparado: [] as T[],
+    entrega_outra: [] as T[],
+  }
+  for (const it of items) buckets[it.classification].push(it)
+
+  // Nearest-neighbor dentro de cada bucket. O ponto de partida do proximo
+  // bucket e o ultimo item do bucket anterior — trajeto continuo.
+  const ordered: T[] = []
+  let cursor = startPoint
+  for (const key of ['coleta', 'entrega_reparado', 'entrega_outra'] as const) {
+    if (buckets[key].length === 0) continue
+    const sorted = nearestNeighborOrder(buckets[key], cursor)
+    ordered.push(...sorted)
+    const last = sorted[sorted.length - 1]
+    if (last && last.lat != null && last.lng != null) {
+      cursor = { lat: last.lat, lng: last.lng }
+    }
+  }
+  return ordered
+}
+
+/**
+ * Classifica uma OS baseado no tipo sugerido + nome do status.
+ * Heuristica tolerante a variacoes entre empresas (com/sem acento).
+ */
+export function classifyOrder(type: string, statusName: string): Classified['classification'] {
+  const s = (statusName || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+  const t = (type || '').toUpperCase()
+  if (t === 'COLETA' || /colet/.test(s)) return 'coleta'
+  if (/reparad/.test(s)) return 'entrega_reparado'
+  return 'entrega_outra'
+}

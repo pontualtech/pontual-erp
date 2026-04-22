@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { ensureCustomersGeocoded } from '@/lib/geocoding'
-import { balancedKMeans } from '@/lib/clustering'
+import { balancedKMeans, densityKMeans, orderByPriority, classifyOrder } from '@/lib/clustering'
 import { getCompanyHQ } from '@/lib/company-hq'
 
 /**
@@ -111,7 +111,7 @@ export async function POST(req: NextRequest) {
     getCompanyHQ(auth.companyId),
   ])
 
-  // Monta items pra clustering
+  // Monta items pra clustering (com classificacao pra priorizacao)
   const items = filtered.map(os => {
     const c = os.customers
     const fullAddress = c
@@ -126,6 +126,7 @@ export async function POST(req: NextRequest) {
       : ''
     const statusName = os.module_statuses?.name || ''
     const isColeta = /colet/i.test(statusName)
+    const suggested_type = (isColeta ? 'COLETA' : 'ENTREGA') as 'COLETA' | 'ENTREGA'
     const freshCoords = c?.id ? geocodedMap.get(c.id) : null
     const lat = freshCoords?.lat ?? (c?.address_lat ? Number(c.address_lat) : null)
     const lng = freshCoords?.lng ?? (c?.address_lng ? Number(c.address_lng) : null)
@@ -134,7 +135,8 @@ export async function POST(req: NextRequest) {
       os_id: os.id,
       os_number: os.os_number,
       status: statusName,
-      suggested_type: (isColeta ? 'COLETA' : 'ENTREGA') as 'COLETA' | 'ENTREGA',
+      suggested_type,
+      classification: classifyOrder(suggested_type, statusName),
       customer_id: c?.id || null,
       customer_name: c?.trade_name || c?.legal_name || '',
       customer_phone: c?.mobile || c?.phone || '',
@@ -145,8 +147,20 @@ export async function POST(req: NextRequest) {
     }
   })
 
-  // Executa k-means balanceado — cada cluster ordenado a partir da sede
-  const result = balancedKMeans(items, drivers.length, { startPoint: hq })
+  // Strategy: 'density' prioriza eficiencia (clusters densos com mais
+  // paradas); 'balanced' mantem k-means antigo. Default = density.
+  const strategy: 'density' | 'balanced' = body.strategy === 'balanced' ? 'balanced' : 'density'
+  const result = strategy === 'density'
+    ? densityKMeans(items, drivers.length, { startPoint: hq })
+    : balancedKMeans(items, drivers.length, { startPoint: hq })
+
+  // Aplica prioridade dentro de cada cluster:
+  //   1. COLETAS (cliente esperando motorista buscar)
+  //   2. ENTREGAS REPARADAS (equipamento pronto)
+  //   3. Outras entregas (recusadas/negociar)
+  result.assignments = result.assignments.map(cluster =>
+    orderByPriority(cluster as any, hq),
+  )
 
   // Monta resposta: mapeia cluster -> motorista na ordem fornecida
   const assignments = drivers.map((driver, idx) => ({
@@ -158,6 +172,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     data: {
       assignments,
+      strategy,
       balanced: result.balanced,
       iterations: result.iterations,
       geocoded_now: geocodedMap.size,
