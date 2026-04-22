@@ -1,14 +1,21 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Package, Truck, MapPin, Phone, CheckCircle2, AlertTriangle, RefreshCw, LogOut, MessageCircle, ArrowUp, ArrowDown, CalendarClock, Printer, X } from 'lucide-react'
+import { Package, Truck, MapPin, Phone, CheckCircle2, AlertTriangle, RefreshCw, LogOut, MessageCircle, ArrowUp, ArrowDown, CalendarClock, Printer, X, Navigation } from 'lucide-react'
 import SyncBadge from '../../components/sync-badge'
 import InstallPrompt from '../../components/install-prompt'
 import PushPermission from '../../components/push-permission'
 import StopChat from '../_components/StopChat'
+
+// Leaflet precisa de DOM — dynamic client-side only.
+const LeafletMap = dynamic(() => import('../../../(dashboard)/logistica/live/leaflet-map'), {
+  ssr: false,
+  loading: () => <div className="h-[280px] bg-gray-100 animate-pulse" />,
+})
 
 type Stop = {
   id: string
@@ -64,6 +71,7 @@ export default function RotaHojePage() {
   const [postponeReason, setPostponeReason] = useState('')
   const [postponing, setPostponing] = useState(false)
   const [routeTotals, setRouteTotals] = useState<{ distance_m: number; duration_s: number; source: 'google' | 'haversine' } | null>(null)
+  const [routePlanFull, setRoutePlanFull] = useState<any>(null) // passado pro LeafletMap pra desenhar polyline real
 
   // Fetch rota
   const load = useCallback(async (silent = false) => {
@@ -91,6 +99,7 @@ export default function RotaHojePage() {
       .then(r => r.ok ? r.json() : null)
       .then(j => {
         if (cancelled || !j?.data) return
+        setRoutePlanFull(j.data)
         setRouteTotals({
           distance_m: Number(j.data.total_distance_m) || 0,
           duration_s: Number(j.data.total_duration_s) || 0,
@@ -281,6 +290,36 @@ export default function RotaHojePage() {
               </div>
             )}
           </section>
+
+          {/* Mapa da rota — mesma polyline real da tela do atendente.
+              Motorista ve visao geral e decide se quer 'seguir' via
+              navegador do celular (Google Maps / Waze). */}
+          {route && stops.some(s => s.lat != null && s.lng != null) && (
+            <section className="px-4 pt-3">
+              <div className="rounded-xl overflow-hidden border border-gray-200 bg-white">
+                <div className="h-[260px] relative">
+                  <LeafletMap
+                    routes={[{
+                      id: route.id,
+                      status: route.status,
+                      driver: null,
+                      last_location: myLocation ? { lat: myLocation.lat, lng: myLocation.lng, at: new Date() } : null,
+                      completed_stops: stops.filter(s => s.status === 'COMPLETED').length,
+                      total_stops: stops.length,
+                      stops: stops.map(s => ({
+                        id: s.id, sequence: s.sequence, type: s.type, status: s.status,
+                        customer_name: s.customer_name, address: s.address,
+                        lat: s.lat, lng: s.lng,
+                        completed_at: null, failure_reason: null,
+                      })),
+                    }]}
+                    showStopRoute
+                    stopRoutePlan={routePlanFull}
+                  />
+                </div>
+              </div>
+            </section>
+          )}
 
           {/* PRÓXIMA PARADA — hero card gigante */}
           {sortedPending.length > 0 && (
@@ -574,6 +613,16 @@ function StopCard({ stop, myLocation, onNotifyCustomer, onMove, onAskPostpone, f
               <a href={`tel:${stop.customer_phone}`} onClick={e => e.stopPropagation()}
                 className="inline-flex items-center gap-1.5 text-sm bg-blue-50 text-blue-700 px-3 py-1.5 rounded-full font-medium">
                 <Phone className="w-3.5 h-3.5" /> Ligar
+              </a>
+            )}
+            {/* Navegar: abre Google Maps (universal — mobile escolhe app). */}
+            {stop.lat != null && stop.lng != null && (
+              <a
+                href={`https://www.google.com/maps/dir/?api=1&destination=${stop.lat},${stop.lng}&travelmode=driving`}
+                target="_blank" rel="noopener noreferrer"
+                onClick={e => e.stopPropagation()}
+                className="inline-flex items-center gap-1.5 text-sm bg-green-50 text-green-700 px-3 py-1.5 rounded-full font-medium active:scale-95">
+                <Navigation className="w-3.5 h-3.5" /> Navegar
               </a>
             )}
             {/* Chat disponivel apos motorista avisar que esta a caminho (notified)
