@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, paginated, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
+import { geocodeAddress } from '@/lib/geocoding'
 
 export async function GET(req: NextRequest) {
   try {
@@ -73,6 +74,19 @@ export async function POST(req: NextRequest) {
       if (!driver) return error('Motorista não encontrado', 404)
     }
 
+    // Geocoda stops avulsos (sem lat/lng explicito e sem os_id). Isso
+    // acontece quando o usuario digita o endereco manualmente em
+    // /logistica/nova. Fazemos em paralelo antes da transacao pra nao
+    // prender o lock do DB durante HTTP externos.
+    const geocoded = await Promise.all(stops.map(async (stop: any) => {
+      if ((stop.lat != null && stop.lng != null) || !stop.address) return stop
+      try {
+        const coords = await geocodeAddress(String(stop.address))
+        if (coords) return { ...stop, lat: coords.lat, lng: coords.lng }
+      } catch { /* silently fallback */ }
+      return stop
+    }))
+
     const route = await prisma.$transaction(async (tx) => {
       const created = await tx.logisticsRoute.create({
         data: {
@@ -80,14 +94,14 @@ export async function POST(req: NextRequest) {
           driver_id: driver_id || null,
           date: new Date(date),
           status: 'PLANNED',
-          total_stops: stops.length,
+          total_stops: geocoded.length,
           completed_stops: 0,
           notes: notes || null,
         },
       })
 
       // Create stops
-      const stopsData = stops.map((stop: any, index: number) => ({
+      const stopsData = geocoded.map((stop: any, index: number) => ({
         company_id: user.companyId,
         route_id: created.id,
         os_id: stop.os_id || null,

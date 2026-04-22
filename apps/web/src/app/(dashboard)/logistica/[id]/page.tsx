@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import dynamic from 'next/dynamic'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
@@ -8,8 +9,20 @@ import {
   ArrowLeft, Loader2, Play, CheckCircle2, XCircle, MapPin,
   Clock, Package, Truck as TruckIcon, Camera, FileSignature,
   AlertTriangle, Image, Map, Eye, ArrowUp, ArrowDown, Printer, CalendarClock,
+  Wand2, Plus,
 } from 'lucide-react'
 import { toast } from 'sonner'
+
+// Leaflet precisa de DOM real — carrega so no client. Reusa o mesmo
+// componente do /logistica/live pra nao duplicar codigo Leaflet.
+const LeafletMap = dynamic(() => import('../live/leaflet-map'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center h-full bg-gray-50">
+      <Loader2 className="h-6 w-6 text-gray-300 animate-spin" />
+    </div>
+  ),
+})
 
 /* ---------- Interfaces ---------- */
 
@@ -47,6 +60,14 @@ interface RouteDetail {
   started_at: string | null
   completed_at: string | null
   stops: RouteStop[]
+  // Campos novos pra alimentar o LeafletMap — devolvidos pelo GET
+  // /api/logistics/routes/[id] (tabela LogisticsRoute)
+  driver_id?: string | null
+  last_lat?: number | null
+  last_lng?: number | null
+  last_location_at?: string | null
+  total_stops?: number | null
+  completed_stops?: number | null
 }
 
 /* ---------- Helpers ---------- */
@@ -96,6 +117,15 @@ export default function RouteDetailPage() {
   // Postpone modal
   const [postponeModal, setPostponeModal] = useState<{ stopId: string } | null>(null)
   const [postponeReason, setPostponeReason] = useState('')
+
+  // Add stop modal
+  const [addStopModal, setAddStopModal] = useState(false)
+  const [addStopForm, setAddStopForm] = useState({
+    type: 'COLETA' as 'COLETA' | 'ENTREGA',
+    customer_name: '', customer_phone: '', address: '',
+  })
+  const [addingStop, setAddingStop] = useState(false)
+  const [recalculating, setRecalculating] = useState(false)
 
   // Photo upload
   const [uploadingPhoto, setUploadingPhoto] = useState<string | null>(null)
@@ -175,6 +205,37 @@ export default function RouteDetailPage() {
     } finally {
       setActionLoading(null)
     }
+  }
+
+  const handleRecalculate = async () => {
+    if (!route) return
+    setRecalculating(true)
+    try {
+      const res = await fetch(`/api/logistics/routes/${routeId}/recalculate`, { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) { toast.error(data?.error || 'Erro ao recalcular'); return }
+      toast.success(`Rota reotimizada — ${data.data?.reordered || 0} paradas reordenadas${data.data?.hq_used ? ' partindo da sede' : ''}`)
+      loadRoute()
+    } finally { setRecalculating(false) }
+  }
+
+  const handleAddStop = async () => {
+    if (!addStopForm.address.trim()) { toast.error('Endereco obrigatorio'); return }
+    if (!addStopForm.customer_name.trim()) { toast.error('Nome do cliente obrigatorio'); return }
+    setAddingStop(true)
+    try {
+      const res = await fetch(`/api/logistics/routes/${routeId}/stops`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(addStopForm),
+      })
+      const data = await res.json()
+      if (!res.ok) { toast.error(data?.error || 'Erro ao adicionar'); return }
+      toast.success(`Parada adicionada${data.data?.geocoded ? ' (endereco geocodado)' : ' sem coords'} — considere recalcular pra otimizar`)
+      setAddStopModal(false)
+      setAddStopForm({ type: 'COLETA', customer_name: '', customer_phone: '', address: '' })
+      loadRoute()
+    } finally { setAddingStop(false) }
   }
 
   const handleMoveStop = async (stopId: string, direction: 'up' | 'down' | 'bottom') => {
@@ -312,6 +373,22 @@ export default function RouteDetailPage() {
 
           {/* Route Actions */}
           <div className="flex items-center gap-2">
+            {route.status !== 'COMPLETED' && (
+              <>
+                <button type="button" onClick={() => setAddStopModal(true)}
+                  title="Adicionar parada avulsa"
+                  className="flex items-center gap-2 rounded-lg border border-blue-300 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 transition-colors">
+                  <Plus className="h-4 w-4" />
+                  Adicionar parada
+                </button>
+                <button type="button" onClick={handleRecalculate} disabled={recalculating}
+                  title="Reotimizar ordem das paradas pendentes por proximidade (sai da sede)"
+                  className="flex items-center gap-2 rounded-lg border border-purple-300 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-50 disabled:opacity-50 transition-colors">
+                  {recalculating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+                  Recalcular
+                </button>
+              </>
+            )}
             <Link
               href={`/logistica/${routeId}/imprimir`}
               target="_blank"
@@ -365,12 +442,30 @@ export default function RouteDetailPage() {
         </div>
       </div>
 
-      {/* Map Placeholder */}
-      <div className="rounded-xl border bg-white p-8 shadow-sm">
-        <div className="flex flex-col items-center justify-center text-center">
-          <Map className="h-10 w-10 text-gray-200 mb-2" />
-          <p className="text-sm text-gray-400">Mapa em desenvolvimento</p>
-        </div>
+      {/* Mapa Leaflet com paradas + posicao atual do motorista */}
+      <div className="rounded-xl border bg-white shadow-sm overflow-hidden h-[420px]">
+        <LeafletMap
+          routes={[{
+            id: route.id,
+            status: route.status,
+            driver: route.driver_id
+              ? { id: route.driver_id, name: route.driver_name, avatar_url: null }
+              : null,
+            last_location: (route.last_lat && route.last_lng) ? {
+              lat: Number(route.last_lat),
+              lng: Number(route.last_lng),
+              at: route.last_location_at ?? null,
+            } : null,
+            completed_stops: route.completed_stops ?? route.stops.filter(s => s.status === 'COMPLETED').length,
+            total_stops: route.total_stops ?? route.stops.length,
+            stops: route.stops.map(s => ({
+              id: s.id, sequence: s.sequence, type: s.type, status: s.status,
+              customer_name: s.customer_name, address: s.address,
+              lat: (s as any).lat ?? null, lng: (s as any).lng ?? null,
+              completed_at: s.completed_at, failure_reason: s.failure_reason,
+            })),
+          }]}
+        />
       </div>
 
       {/* Stops Timeline */}
@@ -605,6 +700,84 @@ export default function RouteDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Add Stop Modal */}
+      {addStopModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => !addingStop && setAddStopModal(false)}>
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl mx-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                <Plus className="h-5 w-5 text-blue-600" />
+                Adicionar Parada
+              </h3>
+              <button type="button" onClick={() => setAddStopModal(false)}
+                aria-label="Fechar" title="Fechar"
+                className="text-gray-400 hover:text-gray-600">
+                <XCircle className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <p className="text-xs text-gray-500">
+                Pode ser uma OS existente ou endereco avulso. Se informar endereco sem lat/lng, o sistema geocoda automaticamente.
+              </p>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Tipo</label>
+                <div className="flex gap-2">
+                  {(['COLETA', 'ENTREGA'] as const).map(t => (
+                    <button key={t} type="button"
+                      onClick={() => setAddStopForm(f => ({ ...f, type: t }))}
+                      className={cn('flex-1 rounded-lg border px-3 py-2 text-sm font-medium',
+                        addStopForm.type === t
+                          ? t === 'COLETA' ? 'bg-purple-100 border-purple-300 text-purple-700' : 'bg-emerald-100 border-emerald-300 text-emerald-700'
+                          : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                      )}>
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Nome do Cliente *</label>
+                <input type="text" value={addStopForm.customer_name}
+                  onChange={e => setAddStopForm(f => ({ ...f, customer_name: e.target.value }))}
+                  placeholder="Nome completo ou razao social"
+                  className="w-full rounded-lg border px-3 py-2 text-sm" />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Telefone <span className="text-gray-400 font-normal">(opcional)</span></label>
+                <input type="text" value={addStopForm.customer_phone}
+                  onChange={e => setAddStopForm(f => ({ ...f, customer_phone: e.target.value }))}
+                  placeholder="11999998888"
+                  className="w-full rounded-lg border px-3 py-2 text-sm" />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Endereco *</label>
+                <input type="text" value={addStopForm.address}
+                  onChange={e => setAddStopForm(f => ({ ...f, address: e.target.value }))}
+                  placeholder="Rua X, 123, bairro, cidade, UF, CEP"
+                  className="w-full rounded-lg border px-3 py-2 text-sm" />
+                <p className="text-[10px] text-gray-400 mt-1">Quanto mais completo, melhor o geocoding — inclua cidade/UF/CEP</p>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={handleAddStop} disabled={addingStop}
+                  className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2">
+                  {addingStop && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Adicionar
+                </button>
+                <button type="button" onClick={() => setAddStopModal(false)}
+                  className="rounded-lg border px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Postpone Modal — adiar parada */}
       {postponeModal && (
