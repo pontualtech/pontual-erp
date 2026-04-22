@@ -1718,6 +1718,7 @@ export default function OSDetailPage() {
                     </select>
                   </div>
                   {discountAmt > 0 && <p className="text-xs text-red-500 mt-0.5">-{fmt(discountAmt)}</p>}
+                  <CouponBadge osId={id} onApplied={() => loadOS()} />
                 </div>
               </div>
               <div className="text-right">
@@ -3574,6 +3575,67 @@ function DetailRow({ label, children }: { label: string; children: React.ReactNo
     <div className="flex items-baseline justify-between">
       <span className="text-xs text-gray-400 uppercase font-medium">{label}</span>
       {children}
+    </div>
+  )
+}
+
+/** Badge que busca cupons disponiveis do cliente e oferece aplicar. */
+function CouponBadge({ osId, onApplied }: { osId: string; onApplied: () => void }) {
+  const [available, setAvailable] = useState<Array<{
+    id: string; code: string; source: string
+    discount_type: 'percent' | 'fixed' | string; discount_value: number
+  }>>([])
+  const [applying, setApplying] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(`/api/os/${osId}/coupons`, { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => { if (!cancelled && j?.data) setAvailable(j.data.available || []) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [osId])
+
+  if (available.length === 0) return null
+
+  async function apply(c: typeof available[number]) {
+    setApplying(c.id)
+    try {
+      const res = await fetch(`/api/os/${osId}/coupons/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ coupon_id: c.id }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        toast.error(j?.error || 'Falha ao aplicar cupom')
+        return
+      }
+      toast.success(`Cupom ${c.code} aplicado — desconto de R$ ${(j.data.discount_applied_cents / 100).toFixed(2)}`)
+      setAvailable(prev => prev.filter(x => x.id !== c.id))
+      onApplied()
+    } catch {
+      toast.error('Falha de rede')
+    } finally {
+      setApplying(null)
+    }
+  }
+
+  return (
+    <div className="mt-1.5 space-y-1">
+      {available.map(c => (
+        <button key={c.id} type="button" disabled={applying === c.id}
+          onClick={() => apply(c)}
+          className="w-full text-left rounded border border-green-300 bg-green-50 hover:bg-green-100 px-2 py-1 text-[10px] text-green-800 font-medium flex items-center justify-between gap-1 disabled:opacity-60">
+          <span className="flex items-center gap-1 truncate">
+            🎁 <span className="font-mono">{c.code}</span>
+            <span className="text-green-600">
+              {c.discount_type === 'percent' ? `${c.discount_value}%` : `R$ ${(c.discount_value / 100).toFixed(2)}`}
+            </span>
+          </span>
+          <span className="text-[9px]">aplicar</span>
+        </button>
+      ))}
     </div>
   )
 }
