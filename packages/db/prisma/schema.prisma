@@ -70,6 +70,14 @@ model UserProfile {
   is_active      Boolean?       @default(true)
   last_login_at  DateTime?      @db.Timestamptz(6)
   preferences    Json?          @default("{}")
+  // GPS tracking — usado pelo /logistica/live pra ver onde estao os
+  // motoristas mesmo SEM rota ativa (ex: entre rotas, tarefa avulsa,
+  // inicio do dia antes de pegar rota). Atualizado pelo driver app
+  // via /api/driver/location ~1x a cada 10s.
+  last_lat          Decimal?  @db.Decimal(10, 8)
+  last_lng          Decimal?  @db.Decimal(11, 8)
+  last_location_at  DateTime? @db.Timestamptz(6)
+  last_accuracy_m   Int?
   created_at     DateTime?      @default(now()) @db.Timestamptz(6)
   updated_at     DateTime?      @default(now()) @db.Timestamptz(6)
   service_orders    ServiceOrder[]

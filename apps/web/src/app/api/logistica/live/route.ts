@@ -5,9 +5,13 @@ import { requirePermission } from '@/lib/auth'
 /**
  * GET /api/logistica/live
  *
- * Returns today's active routes with driver + current position + stops, for
- * the dashboard live tracking map. Polled every ~15s from the UI. Only
- * operators with `logistica.view` see anything.
+ * Retorna o estado operacional "ao vivo" pra o dashboard de rastreamento:
+ *   - routes: rotas de hoje (com progresso, paradas, posicao atualizada)
+ *   - drivers: TODOS os motoristas com localizacao recente (<4h),
+ *              inclusive os SEM rota ativa — permite ver onde estao
+ *              motoristas parados/livres/entre rotas
+ *
+ * Pollado a cada ~15s pelo frontend. Permissao: logistica.view.
  */
 export async function GET() {
   const auth = await requirePermission('logistica', 'view')
@@ -36,6 +40,37 @@ export async function GET() {
     },
   })
 
+  // Busca TODOS motoristas (role contem "motorista" ou "driver") da
+  // empresa com localizacao reportada nas ultimas 4h. Inclui tanto os
+  // que tem rota quanto os que nao tem — o frontend diferencia via flag.
+  const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000)
+  const drivers = await prisma.userProfile.findMany({
+    where: {
+      company_id: auth.companyId,
+      is_active: true,
+      last_location_at: { gte: fourHoursAgo },
+      roles: { OR: [
+        { name: { contains: 'motorista', mode: 'insensitive' } },
+        { name: { contains: 'driver', mode: 'insensitive' } },
+      ]},
+    },
+    select: {
+      id: true,
+      name: true,
+      avatar_url: true,
+      last_lat: true,
+      last_lng: true,
+      last_location_at: true,
+      last_accuracy_m: true,
+    },
+  })
+
+  // Marca cada motorista com flag "tem rota hoje?" pra o frontend
+  // colorir diferente. Motorista sem rota aparece como "Livre".
+  const driversWithRouteToday = new Set(
+    routes.map(r => r.driver_id).filter(Boolean) as string[]
+  )
+
   return NextResponse.json({
     data: {
       routes: routes.map(r => ({
@@ -63,6 +98,16 @@ export async function GET() {
           completed_at: s.completed_at,
           failure_reason: s.failure_reason,
         })),
+      })),
+      drivers: drivers.map(d => ({
+        id: d.id,
+        name: d.name,
+        avatar_url: d.avatar_url,
+        lat: d.last_lat ? Number(d.last_lat) : null,
+        lng: d.last_lng ? Number(d.last_lng) : null,
+        at: d.last_location_at,
+        accuracy_m: d.last_accuracy_m,
+        has_route_today: driversWithRouteToday.has(d.id),
       })),
     },
   })

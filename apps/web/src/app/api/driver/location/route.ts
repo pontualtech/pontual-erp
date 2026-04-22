@@ -30,6 +30,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'lat/lng fora de faixa' }, { status: 400 })
   }
 
+  const accuracy = Number.isFinite(body.accuracy_m) ? Math.round(body.accuracy_m) : null
+  const now = new Date()
+
+  // Sempre atualiza a posicao do motorista no user_profile — isso permite
+  // que /logistica/live mostre o motorista no mapa mesmo SEM rota ativa
+  // (ex: parado na empresa, entre rotas, saindo pra banco).
+  await prisma.userProfile.update({
+    where: { id: auth.id },
+    data: {
+      last_lat: lat,
+      last_lng: lng,
+      last_location_at: now,
+      last_accuracy_m: accuracy,
+    },
+  }).catch(e => console.warn('[driver/location] failed updating user_profile:', e?.message))
+
+  // Se tiver rota hoje, tambem atualiza la pra manter o historico "in route"
+  // funcional (cards de progresso no sidebar).
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   const tomorrow = new Date(today)
@@ -39,12 +57,12 @@ export async function POST(req: NextRequest) {
     where: { company_id: auth.companyId, driver_id: auth.id, date: { gte: today, lt: tomorrow } },
     select: { id: true },
   })
-  if (!route) return NextResponse.json({ ok: true, no_route: true })
+  if (route) {
+    await prisma.logisticsRoute.update({
+      where: { id: route.id },
+      data: { last_lat: lat, last_lng: lng, last_location_at: now },
+    })
+  }
 
-  await prisma.logisticsRoute.update({
-    where: { id: route.id },
-    data: { last_lat: lat, last_lng: lng, last_location_at: new Date() },
-  })
-
-  return NextResponse.json({ ok: true })
+  return NextResponse.json({ ok: true, has_route: !!route })
 }

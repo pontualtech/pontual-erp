@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
-import { ArrowLeft, Truck, CheckCircle2, AlertTriangle, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Truck, CheckCircle2, AlertTriangle, RefreshCw, User } from 'lucide-react'
 
 // Leaflet precisa de DOM real — carrega só no client.
 const LeafletMap = dynamic(() => import('./leaflet-map'), {
@@ -32,8 +32,20 @@ type LiveRoute = {
   }>
 }
 
+type FreeDriver = {
+  id: string
+  name: string
+  avatar_url: string | null
+  lat: number | null
+  lng: number | null
+  at: string | null
+  accuracy_m: number | null
+  has_route_today: boolean
+}
+
 export default function LogisticaLivePage() {
   const [routes, setRoutes] = useState<LiveRoute[]>([])
+  const [drivers, setDrivers] = useState<FreeDriver[]>([])
   const [loading, setLoading] = useState(true)
   const [lastFetch, setLastFetch] = useState<Date | null>(null)
 
@@ -43,6 +55,7 @@ export default function LogisticaLivePage() {
       if (!res.ok) return
       const { data } = await res.json()
       setRoutes(data.routes || [])
+      setDrivers(data.drivers || [])
       setLastFetch(new Date())
     } finally { setLoading(false) }
   }
@@ -56,6 +69,7 @@ export default function LogisticaLivePage() {
   const activeRoutes = routes.filter(r => r.status === 'IN_PROGRESS')
   const plannedRoutes = routes.filter(r => r.status === 'PLANNED')
   const completedRoutes = routes.filter(r => r.status === 'COMPLETED')
+  const freeDrivers = drivers.filter(d => !d.has_route_today)
 
   return (
     <div className="flex flex-col h-[calc(100vh-64px)]">
@@ -68,11 +82,14 @@ export default function LogisticaLivePage() {
           <div>
             <h1 className="font-bold text-lg">Rastreamento ao Vivo</h1>
             <p className="text-xs text-gray-500">
-              {routes.length} rota(s) hoje {lastFetch && `· atualizado ${new Date(lastFetch).toLocaleTimeString('pt-BR')}`}
+              {routes.length} rota(s){freeDrivers.length > 0 && ` · ${freeDrivers.length} livre(s)`}
+              {lastFetch && ` · atualizado ${new Date(lastFetch).toLocaleTimeString('pt-BR')}`}
             </p>
           </div>
         </div>
-        <button onClick={fetchLive} disabled={loading}
+        <button type="button" onClick={fetchLive} disabled={loading}
+          aria-label="Atualizar"
+          title="Atualizar agora"
           className="p-2 rounded-lg border border-gray-300 hover:bg-gray-50">
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
         </button>
@@ -82,15 +99,16 @@ export default function LogisticaLivePage() {
       <div className="flex-1 flex overflow-hidden">
         {/* Map */}
         <div className="flex-1 bg-gray-100 relative">
-          {routes.length === 0 && !loading ? (
+          {routes.length === 0 && drivers.length === 0 && !loading ? (
             <div className="h-full flex items-center justify-center text-gray-400 text-center">
               <div>
                 <Truck className="w-12 h-12 mx-auto mb-2" />
-                <p>Nenhuma rota para hoje</p>
+                <p>Nenhum motorista ativo agora</p>
+                <p className="text-xs mt-1">Motoristas aparecem aqui assim que abrirem o app</p>
               </div>
             </div>
           ) : (
-            <LeafletMap routes={routes} />
+            <LeafletMap routes={routes} drivers={drivers} />
           )}
         </div>
 
@@ -104,6 +122,16 @@ export default function LogisticaLivePage() {
               ? <p className="text-xs text-gray-400">Nenhum motorista em rota</p>
               : activeRoutes.map(r => <RouteCard key={r.id} route={r} />)}
           </section>
+          {freeDrivers.length > 0 && (
+            <section className="p-3 border-b bg-amber-50/50">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-amber-700 mb-2 flex items-center gap-1.5">
+                <User className="w-3.5 h-3.5" />
+                Livres ({freeDrivers.length})
+              </h2>
+              <p className="text-[10px] text-amber-600 mb-2">Motoristas com GPS ativo mas sem rota hoje</p>
+              {freeDrivers.map(d => <FreeDriverCard key={d.id} driver={d} />)}
+            </section>
+          )}
           {plannedRoutes.length > 0 && (
             <section className="p-3 border-b">
               <h2 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">
@@ -122,6 +150,32 @@ export default function LogisticaLivePage() {
           )}
         </aside>
       </div>
+    </div>
+  )
+}
+
+function FreeDriverCard({ driver }: { driver: FreeDriver }) {
+  const agoMin = driver.at
+    ? Math.max(0, Math.round((Date.now() - new Date(driver.at).getTime()) / 60000))
+    : null
+  const hasCoords = driver.lat !== null && driver.lng !== null
+  return (
+    <div className="bg-white border border-amber-200 rounded-lg p-3 mb-2">
+      <div className="flex items-center gap-2 mb-1">
+        <div className="w-7 h-7 rounded-full bg-amber-500 text-white flex items-center justify-center text-xs font-bold shrink-0">
+          {driver.name.charAt(0).toUpperCase()}
+        </div>
+        <p className="font-medium text-sm truncate flex-1">{driver.name}</p>
+      </div>
+      <p className="text-[11px] text-amber-700 font-semibold">🚶 Livre — sem rota</p>
+      {hasCoords ? (
+        <p className="text-[10px] text-gray-500 mt-1">
+          GPS: {agoMin === null ? '—' : agoMin < 1 ? 'agora' : `há ${agoMin}min`}
+          {driver.accuracy_m ? ` · ±${driver.accuracy_m}m` : ''}
+        </p>
+      ) : (
+        <p className="text-[10px] text-gray-400 mt-1 italic">Sem localização</p>
+      )}
     </div>
   )
 }
