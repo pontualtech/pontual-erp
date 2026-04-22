@@ -2,6 +2,56 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requireDriver } from '@/lib/driver-auth'
 import { findStatusByName } from '@/lib/module-status'
+import { sendCompanyEmail } from '@/lib/send-email'
+
+function fmtBRL(cents: number): string {
+  return (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
+
+/**
+ * Envia recibo do pagamento por e-mail pro cliente.
+ * Fire-and-forget — falhas de SMTP nao quebram a entrega.
+ */
+async function sendReceiptEmail(
+  companyId: string,
+  osId: string,
+  amountCents: number,
+  method: string,
+  signerName: string,
+): Promise<void> {
+  const os = await prisma.serviceOrder.findFirst({
+    where: { id: osId, company_id: companyId },
+    select: { os_number: true, customers: { select: { legal_name: true, email: true } } },
+  })
+  const email = os?.customers?.email
+  if (!email) return
+  const company = await prisma.company.findUnique({ where: { id: companyId }, select: { name: true } })
+  const name = os.customers?.legal_name || 'Cliente'
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:540px;margin:0 auto;padding:20px">
+      <div style="border-bottom:3px solid #4f46e5;padding-bottom:8px;margin-bottom:20px">
+        <h2 style="margin:0;color:#111">Recibo de pagamento</h2>
+        <p style="margin:0;color:#6b7280;font-size:12px">${company?.name || 'ERP'}</p>
+      </div>
+      <p>Ola, <strong>${name}</strong>,</p>
+      <p>Confirmamos o pagamento recebido na entrega da OS <strong>#${os.os_number}</strong>:</p>
+      <table style="width:100%;border-collapse:collapse;margin:16px 0">
+        <tr><td style="padding:6px 0;color:#6b7280">Valor pago</td><td style="padding:6px 0;text-align:right;font-weight:700;font-size:18px">${fmtBRL(amountCents)}</td></tr>
+        <tr><td style="padding:6px 0;color:#6b7280">Forma</td><td style="padding:6px 0;text-align:right">${method}</td></tr>
+        <tr><td style="padding:6px 0;color:#6b7280">Recebido por</td><td style="padding:6px 0;text-align:right">${signerName}</td></tr>
+        <tr><td style="padding:6px 0;color:#6b7280">Data</td><td style="padding:6px 0;text-align:right">${new Date().toLocaleString('pt-BR')}</td></tr>
+      </table>
+      <p style="color:#6b7280;font-size:12px;margin-top:24px">
+        Este e-mail serve como comprovante de recebimento. Dúvidas? Responda esta mensagem.
+      </p>
+    </div>
+  `
+  try {
+    await sendCompanyEmail(companyId, email, `Recibo de pagamento — OS #${os.os_number}`, html)
+  } catch (err) {
+    console.warn('[driver/entrega] Recibo email falhou:', err instanceof Error ? err.message : String(err))
+  }
+}
 
 type Body = {
   event_id: string
@@ -161,22 +211,54 @@ export async function POST(
           },
         })
 
-        // Cria Payment se aprovado e houver valor
+        // Cria Payment + AccountReceivable (PAGO) se aprovado e houver valor
         if (isApproved && body.payment!.amount_cents > 0) {
-          await prisma.payment.create({
-            data: {
-              company_id: auth.companyId,
-              service_order_id: os.id,
-              customer_id: os.customer_id,
-              provider: 'driver_app',
-              idempotency_key: `driver-${body.event_id}`,
-              amount: body.payment!.amount_cents,
-              status: 'CONFIRMED',
-              method: PAYMENT_METHOD_MAP[body.payment!.method],
-              billing_type: PAYMENT_METHOD_MAP[body.payment!.method],
-              paid_at: new Date(),
-            },
-          }).catch(err => console.warn('[driver/entrega] Payment create falhou:', err))
+          const amount = body.payment!.amount_cents
+          const paymentMethodMapped = PAYMENT_METHOD_MAP[body.payment!.method]
+          const installmentCount = Math.max(1, Number(body.payment!.installments || 1))
+
+          try {
+            await prisma.payment.create({
+              data: {
+                company_id: auth.companyId,
+                service_order_id: os.id,
+                customer_id: os.customer_id,
+                provider: 'driver_app',
+                idempotency_key: `driver-${body.event_id}`,
+                amount,
+                status: 'CONFIRMED',
+                method: paymentMethodMapped,
+                billing_type: paymentMethodMapped,
+                paid_at: new Date(),
+              },
+            })
+          } catch (err) {
+            console.warn('[driver/entrega] Payment create falhou:', err)
+          }
+
+          // Lanca conta a receber ja quitada — essa AR e o elo entre OS
+          // e financeiro. Status PAGO pq cliente pagou na hora.
+          try {
+            await prisma.accountReceivable.create({
+              data: {
+                company_id: auth.companyId,
+                customer_id: os.customer_id,
+                service_order_id: os.id,
+                description: `Entrega OS #${os.os_number} — ${body.payment!.method}`,
+                total_amount: amount,
+                received_amount: amount,
+                due_date: new Date(),
+                status: 'PAGO',
+                payment_method: paymentMethodMapped,
+                installment_count: installmentCount,
+              },
+            })
+          } catch (err) {
+            console.warn('[driver/entrega] AR create falhou:', err)
+          }
+
+          // Email de recibo (fire-and-forget)
+          void sendReceiptEmail(auth.companyId, os.id, amount, body.payment!.method, body.signer_name!).catch(() => {})
         }
       }
     } catch (err) {
