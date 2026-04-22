@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import {
   Truck, Plus, Loader2, ArrowLeft, MapPin, Clock,
   Play, CheckCircle2, Eye, Route, CircleDot, Calendar,
-  MessageCircle, Trash2, Users,
+  MessageCircle, Trash2, Users, BarChart3,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -197,6 +197,14 @@ export default function LogisticaPage() {
               className="rounded-lg border px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
             />
           </div>
+          <Link
+            href="/logistica/historico"
+            className="flex items-center gap-2 rounded-lg border border-indigo-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-50 transition-colors"
+            title="Historico de rotas + dashboard de produtividade"
+          >
+            <BarChart3 className="h-4 w-4" />
+            Historico
+          </Link>
           <Link
             href="/logistica/chat"
             className="flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
