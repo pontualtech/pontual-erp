@@ -445,25 +445,62 @@ export default function PortalOSDetailPage() {
 
           {/* Status Timeline */}
           {os.all_statuses.length > 0 && (() => {
-            // Nomes já vêm mapeados da API — usar direto
+            // Normalizador multi-tenant: "Orçar" (PT) e "Orcar" (IM) viram
+            // ambos "orcar" — evita divergir por causa de acento.
+            const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
+
+            // Fluxo principal do reparo (7 passos do caminho feliz). Qualquer
+            // outro status do cadastro e considerado "branch" (negociacao,
+            // espera de peca, recusa, cancelamento, renegociacao, laudo) e
+            // nao aparece no stepper — em vez disso, um banner destacado
+            // comunica o estado atual quando o cliente esta num branch.
+            const MAIN_FLOW = new Set([
+              'coletar',
+              'orcar',
+              'aguardando aprovacao',
+              'aprovado',
+              'em execucao',
+              'entregar reparado',
+              'entregue',
+              'entregue reparado',
+            ])
+            const isMainFlow = (name: string) => MAIN_FLOW.has(norm(name))
+
+            const mainStatuses = os.all_statuses.filter((s) => isMainFlow(s.name))
+            const currentIsBranch = !isMainFlow(os.status.name)
+
             const historyDateMap: Record<string, string> = {}
             os.history.forEach((h) => {
               historyDateMap[h.to_status.name] = h.created_at
             })
             // Fonte de verdade do "past": historico real de transicoes, nao o
-            // campo `order` que e so sort key (e nao-unico — Entregue=14,
-            // LAUDO=14; Cancelada=15, Renegociar=15, Entregue Recusado=15).
-            // Usar `order < currentOrder` fazia o portal marcar Entregue como
-            // "past" quando a OS estava em Renegociar, mesmo nunca tendo sido
-            // entregue — cliente via OS como concluida erroneamente.
+            // campo `order` (nao-unico). `order < currentOrder` marcava Entregue
+            // como "past" mesmo em OS que estava em Renegociar — cliente via
+            // entrega erroneamente concluida.
             const visitedStatusNames = new Set(os.history.map((h) => h.to_status.name))
+
             return (
               <div className="mb-6">
                 <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 capitalize mb-3">Progresso</h3>
+
+                {currentIsBranch && (
+                  <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950 p-3 flex items-start gap-2">
+                    <svg className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M4.93 19h14.14a2 2 0 001.74-3L13.74 4a2 2 0 00-3.48 0L3.19 16a2 2 0 001.74 3z" />
+                    </svg>
+                    <div className="text-sm">
+                      <div className="font-semibold text-amber-900 dark:text-amber-200">Atencao: OS em {os.status.name}</div>
+                      <div className="text-amber-800 dark:text-amber-300 mt-0.5">
+                        Ha uma pendencia fora do fluxo normal de reparo. Verifique as atualizacoes recentes abaixo ou entre em contato com o suporte.
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex flex-col gap-0">
-                  {os.all_statuses.map((s, i) => {
-                    const isActive = s.id === os.status.id
-                    const isPast = !isActive && visitedStatusNames.has(s.name)
+                  {mainStatuses.map((s, i) => {
+                    const isActive = !currentIsBranch && s.id === os.status.id
+                    const isPast = visitedStatusNames.has(s.name) && !isActive
                     const isFuture = !isActive && !isPast
                     const friendlyName = s.name
                     const historyDate = historyDateMap[s.name]
