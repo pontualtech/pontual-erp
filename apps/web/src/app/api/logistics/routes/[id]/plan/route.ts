@@ -91,13 +91,16 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
     const plan = await computeRoutePlan(waypoints)
 
-    // Cacheia (upsert)
-    const toSave = JSON.stringify({ ...plan, cached_at: new Date().toISOString() })
-    await prisma.setting.upsert({
-      where: { company_id_key: { company_id: companyId, key: cacheKey } },
-      create: { company_id: companyId, key: cacheKey, value: toSave, type: 'json' },
-      update: { value: toSave, updated_at: new Date() },
-    })
+    // So cacheia se foi resposta real do Google. Fallback haversine
+    // pode ser transient (API down, quota, batching); nao trava por 24h.
+    if (plan.source === 'google') {
+      const toSave = JSON.stringify({ ...plan, cached_at: new Date().toISOString() })
+      await prisma.setting.upsert({
+        where: { company_id_key: { company_id: companyId, key: cacheKey } },
+        create: { company_id: companyId, key: cacheKey, value: toSave, type: 'json' },
+        update: { value: toSave, updated_at: new Date() },
+      })
+    }
 
     return success({ ...plan, cached: false })
   } catch (err) {
