@@ -8,6 +8,7 @@ import { Package, Truck, MapPin, Phone, CheckCircle2, AlertTriangle, RefreshCw, 
 import SyncBadge from '../../components/sync-badge'
 import InstallPrompt from '../../components/install-prompt'
 import PushPermission from '../../components/push-permission'
+import StopChat from '../_components/StopChat'
 
 type Stop = {
   id: string
@@ -415,6 +416,7 @@ function StopCard({ stop, myLocation, onNotifyCustomer, onMove, onAskPostpone, f
 
   const [notifying, setNotifying] = useState(false)
   const [eta, setEta] = useState<{ minutes: number; distance_m: number; source: string } | null>(null)
+  const [chatOpen, setChatOpen] = useState(false)
 
   // Busca ETA real (Distance Matrix Google com trafego) SO pra hero card,
   // porque e o unico visivel em destaque. Cache 5min do lado server, entao
@@ -458,6 +460,7 @@ function StopCard({ stop, myLocation, onNotifyCustomer, onMove, onAskPostpone, f
   // Diferença visual entre hero (featured) e compact
   if (featured) {
     return (
+      <>
       <div className={`bg-white border-2 ${heroBorder} rounded-2xl overflow-hidden shadow-lg`}>
         <Link href={href} className="block p-5 active:scale-[0.99] transition">
           <div className="flex items-center gap-3 mb-3">
@@ -513,6 +516,15 @@ function StopCard({ stop, myLocation, onNotifyCustomer, onMove, onAskPostpone, f
                 <Phone className="w-3.5 h-3.5" /> Ligar
               </a>
             )}
+            {/* Chat disponivel apos motorista avisar que esta a caminho (notified)
+                ou quando stop ja esta ativo (EN_ROUTE/ARRIVED). Evita botao
+                'morto' antes de iniciar a ida. */}
+            {(notified || stop.status === 'EN_ROUTE' || stop.status === 'ARRIVED') && (
+              <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); setChatOpen(true) }}
+                className="inline-flex items-center gap-1.5 text-sm bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-full font-medium hover:bg-indigo-100">
+                <MessageCircle className="w-3.5 h-3.5" /> Conversar
+              </button>
+            )}
             {statusBadge && (
               <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${statusBadge.bg} ${statusBadge.fg}`}>
                 {statusBadge.label}
@@ -557,6 +569,9 @@ function StopCard({ stop, myLocation, onNotifyCustomer, onMove, onAskPostpone, f
           </button>
         </div>
       </div>
+      <StopChat stopId={stop.id} customerName={stop.customer_name || 'Cliente'}
+        open={chatOpen} onClose={() => setChatOpen(false)} />
+      </>
     )
   }
 
