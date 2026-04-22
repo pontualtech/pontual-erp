@@ -417,6 +417,7 @@ function StopCard({ stop, myLocation, onNotifyCustomer, onMove, onAskPostpone, f
   const [notifying, setNotifying] = useState(false)
   const [eta, setEta] = useState<{ minutes: number; distance_m: number; source: string } | null>(null)
   const [chatOpen, setChatOpen] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
 
   // Busca ETA real (Distance Matrix Google com trafego) SO pra hero card,
   // porque e o unico visivel em destaque. Cache 5min do lado server, entao
@@ -436,6 +437,32 @@ function StopCard({ stop, myLocation, onNotifyCustomer, onMove, onAskPostpone, f
     const id = setInterval(fetchEta, 60_000) // 1min
     return () => { cancelled = true; clearInterval(id) }
   }, [featured, stop.id, stop.lat, stop.lng])
+
+  // Polling leve do unread_count quando stop ja foi notificado e o chat
+  // esta fechado. Se aberto, o proprio drawer cuida do incremental.
+  // 30s pra nao sobrecarregar — notificacao push cuidaria disso melhor
+  // mas no MVP isso basta.
+  useEffect(() => {
+    if (!featured) return
+    const shouldPoll = (stop.visit_notified_at || stop.status === 'EN_ROUTE' || stop.status === 'ARRIVED') && !chatOpen
+    if (!shouldPoll) return
+    let cancelled = false
+    async function check() {
+      try {
+        const res = await fetch(`/api/driver/stop/${stop.id}/messages`, { cache: 'no-store' })
+        if (!res.ok) return
+        const { data } = await res.json()
+        if (!cancelled) setUnreadCount(Number(data.unread_count || 0))
+      } catch {}
+    }
+    check()
+    const id = setInterval(check, 30_000)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [featured, stop.id, stop.status, stop.visit_notified_at, chatOpen])
+
+  // Quando motorista abrir o chat, zera o badge local imediatamente
+  // (o fetch do drawer vai reagir mas visualmente some na hora).
+  useEffect(() => { if (chatOpen) setUnreadCount(0) }, [chatOpen])
 
   // Estado da notificação ao cliente
   const confirmed = !!stop.visit_confirmed_at
@@ -521,8 +548,13 @@ function StopCard({ stop, myLocation, onNotifyCustomer, onMove, onAskPostpone, f
                 'morto' antes de iniciar a ida. */}
             {(notified || stop.status === 'EN_ROUTE' || stop.status === 'ARRIVED') && (
               <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); setChatOpen(true) }}
-                className="inline-flex items-center gap-1.5 text-sm bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-full font-medium hover:bg-indigo-100">
-                <MessageCircle className="w-3.5 h-3.5" /> Conversar
+                className={`relative inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-full font-medium transition ${
+                  unreadCount > 0
+                    ? 'bg-red-500 text-white hover:bg-red-600 shadow-md animate-pulse'
+                    : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                }`}>
+                <MessageCircle className="w-3.5 h-3.5" />
+                {unreadCount > 0 ? `${unreadCount} nova${unreadCount > 1 ? 's' : ''}` : 'Conversar'}
               </button>
             )}
             {statusBadge && (

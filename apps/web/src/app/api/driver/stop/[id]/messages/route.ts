@@ -54,6 +54,17 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     take: 200,
   })
 
+  // "Nao lidas" = mensagens do cliente APOS a ultima mensagem do motorista.
+  // Simples, sem flag de read/unread no DB. Resposta do motorista "zera"
+  // o contador naturalmente. Query em lote (sem since) pra sempre retornar.
+  let unreadCount = 0
+  if (!since) {
+    const all = msgs
+    const lastDriverIdx = [...all].reverse().findIndex(m => m.sender_id !== CUSTOMER_SENDER_ID)
+    const sliceFrom = lastDriverIdx === -1 ? 0 : all.length - lastDriverIdx
+    unreadCount = all.slice(sliceFrom).filter(m => m.sender_id === CUSTOMER_SENDER_ID).length
+  }
+
   return NextResponse.json({
     data: {
       messages: msgs.map(m => ({
@@ -63,7 +74,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         sender_name: m.sender_name,
         created_at: m.created_at,
       })),
-      // Informa a UI se o stop ainda permite envio de msg
+      unread_count: unreadCount,
       active: stop.status === 'EN_ROUTE' || stop.status === 'ARRIVED',
       stop_status: stop.status,
     },
