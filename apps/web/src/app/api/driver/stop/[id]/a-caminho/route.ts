@@ -113,7 +113,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     // Tenta template primeiro (4 parametros: cliente, motorista, eta, link)
     const templateResult = await sendWhatsAppTemplate(
-      auth.companyId, normalizedPhone, 'pt_a_caminho_v1', 'pt_BR',
+      auth.companyId, normalizedPhone, 'pt_a_caminho_v2', 'pt_BR',
       [{
         type: 'body',
         parameters: [

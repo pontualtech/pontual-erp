@@ -55,16 +55,16 @@ export async function POST(req: NextRequest) {
   if (!wabaId) return NextResponse.json({ error: 'Missing whatsapp.cloud.business_account_id (envie via body.waba_id ou configure settings)' }, { status: 400 })
 
   const templateBody = {
-    name: 'pt_a_caminho_v1',
+    name: 'pt_a_caminho_v2',
     language: 'pt_BR',
     category: 'UTILITY',
     components: [
       {
         type: 'BODY',
-        // Meta nao aceita variavel no inicio nem no fim do texto. Por isso:
-        // - Inicio: 'Ola ' antes de {{1}}
-        // - Fim: 'Em caso de duvida, responda esta mensagem.' depois de {{4}}
-        text: 'Ola {{1}}! Seu tecnico {{2}} esta a caminho{{3}}.\n\nConfirme sua disponibilidade ou solicite remarcar no link: {{4}}\n\nEm caso de duvida, responda esta mensagem.',
+        // v2: 'motorista' em vez de 'tecnico' (motorista faz coleta/entrega,
+        // tecnico fica no laboratorio fazendo diagnostico — papeis diferentes)
+        // Meta nao aceita variavel no inicio nem no fim do texto.
+        text: 'Ola {{1}}! Nosso motorista {{2}} esta a caminho{{3}}.\n\nConfirme sua disponibilidade ou solicite remarcar no link: {{4}}\n\nEm caso de duvida, responda esta mensagem.',
         example: {
           body_text: [[
             'Maria',
@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: res.ok,
       status: res.status,
-      template_name: 'pt_a_caminho_v1',
+      template_name: 'pt_a_caminho_v2',
       meta_response: data,
       next_step: res.ok
         ? 'Template registrado! Aprovacao do Meta leva alguns minutos. Status: PENDING -> APPROVED.'
