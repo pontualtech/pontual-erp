@@ -105,10 +105,28 @@ function startCronJobs() {
     }
   }, 24 * 60 * 60 * 1000) // 24 hours
 
+  // Google Reviews — every 5 min (envia link avaliacao 10min apos entrega aprovada)
+  setInterval(async () => {
+    try {
+      const res = await fetch(`${BASE_URL}/api/internal/cron/google-reviews`, {
+        method: 'POST', headers,
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.data?.sent > 0) {
+          console.log(`[Cron/GoogleReviews] Sent ${data.data.sent} review links`)
+        }
+      }
+    } catch (err) {
+      console.error('[Cron/GoogleReviews] Error:', err instanceof Error ? err.message : err)
+    }
+  }, 5 * 60 * 1000) // 5 minutes
+
   console.log('[Cron] Internal cron jobs started:')
   console.log('  - Bot Follow-up: every 5 min')
   console.log('  - Quote Reminder: every 30 min')
   console.log('  - Billing Reminder: every 1 hour')
   console.log('  - Driver Inactivity: every 10 min')
+  console.log('  - Google Reviews: every 5 min')
   console.log('  - Cleanup Location History: every 24h')
 }

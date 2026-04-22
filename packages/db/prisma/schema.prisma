@@ -1280,6 +1280,10 @@ model LogisticsStop {
   visit_confirmed_at     DateTime? @db.Timestamptz(6)
   visit_reschedule_at    DateTime? @db.Timestamptz(6)
   visit_reschedule_note  String?
+  // Google Reviews — marcado quando cron envia o link de avaliacao
+  // (so pra stops COMPLETED + OS Entregue Reparado). NULL = ainda nao
+  // enviado; preenchido = ja foi, evita duplicidade.
+  reviews_sent_at        DateTime? @db.Timestamptz(6)
   created_at             DateTime? @default(now()) @db.Timestamptz(6)
   route                  LogisticsRoute @relation(fields: [route_id], references: [id])
   @@index([route_id], map: "idx_stops_route")
