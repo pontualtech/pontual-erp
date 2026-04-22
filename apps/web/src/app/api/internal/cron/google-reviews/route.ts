@@ -16,11 +16,12 @@ function buildCouponToken(companyId: string, customerId: string): string {
 }
 
 function getBaseUrl(companyId: string): string {
-  // Pontualtech e Imprimitech rodam no mesmo ERP mas com dominios
-  // distintos na URL publica. Usa erp.pontualtech.work como fallback
-  // seguro — o redirect do endpoint vai pro Google independente.
-  if (companyId === 'pontualtech-001') return 'https://erp.pontualtech.work'
-  return process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'
+  // Dominio `.work` parece ser filtrado pelo Meta (templates aceitos
+  // mas nao entregues). Usa dominios `.com.br` do portal — mesmo app
+  // via Traefik, mas credibilidade maior pro Meta.
+  if (companyId === 'pontualtech-001') return 'https://portal.pontualtech.com.br'
+  if (companyId === '86c829cf-32ed-4e40-80cd-59ce4178aa1a') return 'https://portal.imprimitech.com.br'
+  return process.env.NEXT_PUBLIC_APP_URL || 'https://portal.pontualtech.com.br'
 }
 
 /**

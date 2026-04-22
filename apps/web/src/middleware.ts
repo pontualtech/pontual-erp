@@ -31,9 +31,10 @@ export async function middleware(request: NextRequest) {
   const isAllowedOrigin = CORS_ORIGINS.includes(origin)
 
   // Redirect root/login paths on customer-portal hosts to the tenant portal login.
-  // Only applies to page routes — never to /portal/*, /api/*, or static assets.
+  // Only applies to page routes — never to /portal/*, /api/*, /_next/* ou
+  // /cupom-avaliacao/* (endpoint publico que cria cupom + redireciona).
   const portalSlug = PORTAL_HOST_SLUG[host.toLowerCase()]
-  if (portalSlug && !pathname.startsWith('/portal/') && !pathname.startsWith('/api/') && !pathname.startsWith('/_next/')) {
+  if (portalSlug && !pathname.startsWith('/portal/') && !pathname.startsWith('/api/') && !pathname.startsWith('/_next/') && !pathname.startsWith('/cupom-avaliacao/')) {
     const url = request.nextUrl.clone()
     url.pathname = `/portal/${portalSlug}/login`
     return NextResponse.redirect(url)
