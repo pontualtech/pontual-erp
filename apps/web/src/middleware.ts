@@ -66,6 +66,11 @@ export async function middleware(request: NextRequest) {
   if (pathname.startsWith('/api/chatwoot/') || pathname.startsWith('/api/webhook/') || pathname.startsWith('/api/webhooks/')) {
     return NextResponse.next()
   }
+  // Redirect publico do cupom: cliente clica no link WhatsApp, endpoint
+  // cria o cupom e devolve 302 pro Google Reviews. Requer ser publico.
+  if (pathname.startsWith('/cupom-avaliacao/')) {
+    return NextResponse.next()
+  }
   // Internal routes with their own auth (X-Internal-Key header)
   if (pathname.startsWith('/api/internal/')) {
     return NextResponse.next()
