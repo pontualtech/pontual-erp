@@ -171,7 +171,13 @@ export async function GET(request: NextRequest) {
             `${cwCfg.cwUrl}/api/v1/accounts/${cwCfg.cwAccountId}/conversations/${conv.chatwoot_conv_id}`,
             { headers: { api_access_token: cwCfg.cwToken }, signal: AbortSignal.timeout(5000) }
           )
-          if (convRes.ok) {
+          // Guard 0: conversa nao existe mais no Chatwoot (404) — orfa, nao
+          // adianta reagendar. Limpa e segue. Antes ficava tentando enviar
+          // e recebendo 404 no send, spameando logs.
+          if (convRes.status === 404) {
+            shouldSkip = true
+            skipReason = 'Chatwoot conv nao existe mais (404)'
+          } else if (convRes.ok) {
             const convData = await convRes.json()
             // Guard 1: conversa resolved
             if (convData.status === 'resolved') {

@@ -24,8 +24,8 @@ export async function POST(req: NextRequest) {
     // Accept aliases from n8n/external systems (Dify Ana/Grazi use portuguese aliases)
     let { nome, documento, telefone, email, cep, endereco, numero, complemento, bairro, cidade, uf, equipamento, marca, modelo, numero_serie, defeito, observacoes, origem } = body
     nome = nome || body.cliente_nome || body.name || body.customer_name
-    documento = documento || body.cpf_cnpj || body.cpf || body.cnpj || body.document
-    telefone = telefone || body.cliente_telefone || body.phone || body.mobile
+    documento = documento || body.cpf_cnpj || body.cpf || body.cnpj || body.document || body.documento || body.cpfcnpj
+    telefone = telefone || body.cliente_telefone || body.phone || body.mobile || body.phone_number || body.celular || body.whatsapp
     email = email || body.cliente_email
     endereco = endereco || body.logradouro || body.rua || body.endereco_logradouro
     numero = numero || body.endereco_numero || body.numero_endereco
