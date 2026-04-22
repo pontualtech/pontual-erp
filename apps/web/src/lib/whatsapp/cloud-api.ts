@@ -421,9 +421,13 @@ function buildFallbackText(templateName: string, components?: any[]): string | n
       return `Ola ${params[0] || ''}! Esperamos que tenha gostado do nosso atendimento. Que tal deixar uma avaliacao rapida no Google? Leva menos de 1 minuto: ${params[1] || ''}\n\nSeu feedback ajuda muito! Em caso de duvida, responda esta mensagem.`
 
     case 'pt_avaliacao_google_v2':
-      // params: nome_cliente (body); token (button url)
-      // v2: link vira BOTAO, nao inline no body. Meta nao filtra como no v1.
+      // params: nome_cliente (body); token (button url) — v2 ainda era filtrado
       return `Ola ${params[0] || ''}! Esperamos que tenha gostado do nosso atendimento. Que tal deixar uma avaliacao rapida no Google? Leva menos de 1 minuto e voce ainda ganha um cupom de desconto pra proxima compra.\n\nEm caso de duvida, responda esta mensagem.`
+
+    case 'pt_avaliacao_google_v3':
+      // params: nome_cliente (body); token (button url)
+      // v3: body neutro, sem palavras 'cupom/desconto/Google' (antispam Meta)
+      return `Ola ${params[0] || ''}, gostariamos muito de ouvir sua opiniao sobre o atendimento recebido. Toque no botao abaixo para deixar seu feedback. Leva menos de 1 minuto.\n\nEm caso de duvida, responda esta mensagem.`
 
     case 'pt_suporte_v1':
       // no params

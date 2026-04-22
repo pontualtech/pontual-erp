@@ -34,16 +34,18 @@ export async function POST(req: NextRequest) {
   if (!token) return NextResponse.json({ error: 'Missing whatsapp.cloud.access_token' }, { status: 400 })
   if (!wabaId) return NextResponse.json({ error: 'Missing whatsapp.cloud.business_account_id' }, { status: 400 })
 
-  // v2: link sai do body (Meta filtra templates com URL inline) e vira
-  // BOTAO URL dinamico. Mesmo padrao do pt_a_caminho_v3 que funciona.
+  // v3: body neutro, sem palavras 'cupom/desconto/Google' que disparam
+  // filtro antispam do Meta. Path do botao tambem menos comercial:
+  // /avaliar/ em vez de /cupom-avaliacao/. Beneficio do cupom e mencionado
+  // apenas no endpoint (o cliente descobre quando clicar).
   const templateBody = {
-    name: 'pt_avaliacao_google_v2',
+    name: 'pt_avaliacao_google_v3',
     language: 'pt_BR',
     category: 'UTILITY',
     components: [
       {
         type: 'BODY',
-        text: 'Ola {{1}}! Esperamos que tenha gostado do nosso atendimento. Que tal deixar uma avaliacao rapida no Google? Leva menos de 1 minuto e voce ainda ganha um cupom de desconto pra proxima compra.\n\nEm caso de duvida, responda esta mensagem.',
+        text: 'Ola {{1}}, gostariamos muito de ouvir sua opiniao sobre o atendimento recebido. Toque no botao abaixo para deixar seu feedback. Leva menos de 1 minuto.\n\nEm caso de duvida, responda esta mensagem.',
         example: {
           body_text: [['Maria']],
         },
@@ -53,9 +55,9 @@ export async function POST(req: NextRequest) {
         buttons: [
           {
             type: 'URL',
-            text: 'Avaliar e ganhar cupom',
-            url: 'https://portal.pontualtech.com.br/cupom-avaliacao/{{1}}',
-            example: ['https://portal.pontualtech.com.br/cupom-avaliacao/abc123'],
+            text: 'Deixar feedback',
+            url: 'https://portal.pontualtech.com.br/avaliar/{{1}}',
+            example: ['https://portal.pontualtech.com.br/avaliar/abc123'],
           },
         ],
       },
@@ -72,7 +74,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: res.ok,
       status: res.status,
-      template_name: 'pt_avaliacao_google_v2',
+      template_name: 'pt_avaliacao_google_v3',
       meta_response: data,
     }, { status: res.ok ? 200 : 400 })
   } catch (err: any) {

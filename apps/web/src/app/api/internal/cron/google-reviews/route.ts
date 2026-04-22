@@ -159,11 +159,11 @@ export async function POST(req: NextRequest) {
         ? buildCouponToken(stop.company_id, customerId)
         : 'sem-token'
 
-      const fallback = `Ola, ${firstName}! Esperamos que tenha gostado do nosso atendimento. Que tal deixar uma avaliacao rapida no Google? Leva menos de 1 minuto: ${getBaseUrl(stop.company_id)}/cupom-avaliacao/${token}\n\nApos avaliar, voce ganha 10% de desconto na proxima!`
+      const fallback = `Ola, ${firstName}! Gostariamos muito de ouvir sua opiniao sobre o atendimento. Toque no link pra deixar seu feedback: ${getBaseUrl(stop.company_id)}/avaliar/${token}`
 
-      // v2 primeiro (botao), v1 como fallback se v2 indisponivel
+      // v3 primeiro (body neutro + path /avaliar), v2 fallback, v1 ultimo
       let r = await sendWhatsAppTemplate(
-        stop.company_id, normalizedPhone, 'pt_avaliacao_google_v2', 'pt_BR',
+        stop.company_id, normalizedPhone, 'pt_avaliacao_google_v3', 'pt_BR',
         [
           {
             type: 'body',
@@ -179,7 +179,16 @@ export async function POST(req: NextRequest) {
         fallback,
       )
       if (!r.success) {
-        // v2 falhou (nao registrado ainda), tenta v1 como fallback
+        r = await sendWhatsAppTemplate(
+          stop.company_id, normalizedPhone, 'pt_avaliacao_google_v2', 'pt_BR',
+          [
+            { type: 'body', parameters: [{ type: 'text', text: firstName }] },
+            { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: token }] },
+          ],
+          fallback,
+        )
+      }
+      if (!r.success) {
         const fullLink = `${getBaseUrl(stop.company_id)}/cupom-avaliacao/${token}`
         r = await sendWhatsAppTemplate(
           stop.company_id, normalizedPhone, 'pt_avaliacao_google_v1', 'pt_BR',

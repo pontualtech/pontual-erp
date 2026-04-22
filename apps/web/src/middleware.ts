@@ -34,7 +34,7 @@ export async function middleware(request: NextRequest) {
   // Only applies to page routes — never to /portal/*, /api/*, /_next/* ou
   // /cupom-avaliacao/* (endpoint publico que cria cupom + redireciona).
   const portalSlug = PORTAL_HOST_SLUG[host.toLowerCase()]
-  if (portalSlug && !pathname.startsWith('/portal/') && !pathname.startsWith('/api/') && !pathname.startsWith('/_next/') && !pathname.startsWith('/cupom-avaliacao/')) {
+  if (portalSlug && !pathname.startsWith('/portal/') && !pathname.startsWith('/api/') && !pathname.startsWith('/_next/') && !pathname.startsWith('/cupom-avaliacao/') && !pathname.startsWith('/avaliar/')) {
     const url = request.nextUrl.clone()
     url.pathname = `/portal/${portalSlug}/login`
     return NextResponse.redirect(url)
@@ -69,7 +69,9 @@ export async function middleware(request: NextRequest) {
   }
   // Redirect publico do cupom: cliente clica no link WhatsApp, endpoint
   // cria o cupom e devolve 302 pro Google Reviews. Requer ser publico.
-  if (pathname.startsWith('/cupom-avaliacao/')) {
+  // /avaliar/ = alias mais neutro de /cupom-avaliacao/ (Meta filtra
+  // menos URLs com palavras comerciais).
+  if (pathname.startsWith('/cupom-avaliacao/') || pathname.startsWith('/avaliar/')) {
     return NextResponse.next()
   }
   // Internal routes with their own auth (X-Internal-Key header)
