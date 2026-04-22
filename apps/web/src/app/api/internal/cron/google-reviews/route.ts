@@ -120,9 +120,9 @@ export async function POST(req: NextRequest) {
         continue
       }
       const os = await prisma.serviceOrder.findFirst({
-        where: { id: stop.os_id, company_id: stop.company_id },
+        where: { id: stop.os_id, company_id: stop.company_id, deleted_at: null },
         select: {
-          status_id: true, os_number: true,
+          status_id: true, os_number: true, customer_id: true,
           customers: { select: { legal_name: true, mobile: true, phone: true } },
         },
       })
@@ -149,16 +149,8 @@ export async function POST(req: NextRequest) {
       const customerName = os.customers?.legal_name || stop.customer_name || 'Cliente'
       const firstName = customerName.split(' ')[0]
 
-      // Precisa do customer_id pra gerar o token do cupom. Se nao veio
-      // no findFirst, busca explicito. Sem customer_id nao cria cupom.
-      let customerId: string | null = null
-      if (stop.os_id) {
-        const osWithCust = await prisma.serviceOrder.findUnique({
-          where: { id: stop.os_id },
-          select: { customer_id: true },
-        })
-        customerId = osWithCust?.customer_id || null
-      }
+      // customer_id pra gerar o token do cupom — ja veio no select de os.
+      const customerId: string | null = os.customer_id || null
 
       // Link vai pelo nosso endpoint: /cupom-avaliacao/[token] cria o
       // cupom e redireciona pro Google. Fallback: URL direta se nao

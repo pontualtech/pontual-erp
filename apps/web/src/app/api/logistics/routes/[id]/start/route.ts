@@ -68,18 +68,35 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (setting) notifyClients = setting.value !== 'false'
     if (typeof body.notify_clients === 'boolean') notifyClients = body.notify_clients
 
-    const updated = await prisma.logisticsRoute.update({
-      where: { id: params.id, company_id: companyId },
+    // Compare-and-set atomico: so muda se status for PLANNED (nao ja
+    // IN_PROGRESS). Evita race condition em 2 cliques simultaneos — se
+    // 2 requests chegam juntas, so 1 passa no updateMany e dispara
+    // notificacoes em massa. A outra recebe 0 rows e retorna conflito.
+    const flipped = await prisma.logisticsRoute.updateMany({
+      where: {
+        id: params.id,
+        company_id: companyId,
+        status: { not: 'IN_PROGRESS' },
+        started_at: null,
+      },
       data: {
         status: 'IN_PROGRESS',
         started_at: new Date(),
         updated_at: new Date(),
       },
+    })
+    if (flipped.count === 0) {
+      return error('Rota já está em andamento (detectado por outro dispositivo)', 422)
+    }
+
+    const updated = await prisma.logisticsRoute.findUnique({
+      where: { id: params.id },
       include: {
         stops: { orderBy: { sequence: 'asc' } },
         driver: { select: { id: true, name: true } },
       },
     })
+    if (!updated) return error('Rota desapareceu', 500)
 
     // Dispara notificacao em massa (fire-and-forget, nao bloqueia retorno)
     let notifiedCount = 0

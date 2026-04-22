@@ -1575,6 +1575,9 @@ model Coupon {
   customers       Customer  @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([company_id, code])
+  // Previne 2 cupons de mesma origem pro mesmo cliente (ex: 'review' so
+  // 1 cupom). Outros tipos (manual) podem usar source='manual-<uniq>'.
+  @@unique([company_id, customer_id, source])
   @@index([company_id, customer_id])
   @@index([company_id, used_at]) // query rapida: 'cupons disponiveis desse cliente'
   @@map("coupons")

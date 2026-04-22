@@ -105,15 +105,24 @@ export async function POST(
   if (errs.length) return NextResponse.json({ error: errs.join(', ') }, { status: 400 })
 
   // Idempotency
-  const byEvent = await prisma.logisticsStop.findFirst({
-    where: { event_id: body.event_id!, company_id: auth.companyId },
-    select: { id: true, completed_at: true },
+  // Idempotencia: event_id tem unique constraint no DB — se ja existe
+  // em ANY stop (completed_at preenchido ou nao), retornamos 'already'.
+  // Atomico: se duas requests concorrentes com mesmo event_id chegarem,
+  // so 1 vai conseguir o compare-and-set do update abaixo.
+  const byEvent = await prisma.logisticsStop.findUnique({
+    where: { event_id: body.event_id! },
+    select: { id: true, completed_at: true, company_id: true },
   })
-  if (byEvent && byEvent.id !== params.id) {
-    return NextResponse.json({ error: 'event_id em conflito com outra parada' }, { status: 409 })
-  }
-  if (byEvent?.completed_at) {
-    return NextResponse.json({ data: { id: byEvent.id, already_completed: true } })
+  if (byEvent) {
+    if (byEvent.company_id !== auth.companyId) {
+      return NextResponse.json({ error: 'event_id em conflito' }, { status: 409 })
+    }
+    if (byEvent.id !== params.id) {
+      return NextResponse.json({ error: 'event_id em conflito com outra parada' }, { status: 409 })
+    }
+    if (byEvent.completed_at) {
+      return NextResponse.json({ data: { id: byEvent.id, already_completed: true } })
+    }
   }
 
   const stop = await prisma.logisticsStop.findFirst({
@@ -159,25 +168,35 @@ export async function POST(
   if (body.payment?.receipt_photo_base64)
     photoUrls.push(`data:image/jpeg;base64,${body.payment.receipt_photo_base64}`)
 
-  await prisma.logisticsStop.update({
-    where: { id: params.id },
-    data: {
-      status: isApproved ? 'COMPLETED' : 'FAILED',
-      completed_at: new Date(),
-      signature_url: `data:image/png;base64,${body.signature_png_base64!}`,
-      signer_name: body.signer_name!,
-      event_id: body.event_id!,
-      failure_reason: isRefused ? body.refusal_reason!.trim() : null,
-      payment_method: isApproved ? body.payment!.method : null,
-      payment_amount_cents: isApproved ? body.payment!.amount_cents : null,
-      payment_receipt_url: body.payment?.receipt_photo_base64
-        ? `data:image/jpeg;base64,${body.payment.receipt_photo_base64}`
-        : null,
-      completed_lat: body.location?.lat ?? null,
-      completed_lng: body.location?.lng ?? null,
-      photo_urls: photoUrls as any,
-    },
-  })
+  // Compare-and-set: so consegue atualizar se completed_at ainda for
+  // NULL. Se 2 requests concorrentes tentarem finalizar a mesma entrega,
+  // a segunda recebe P2025 (no record found) e retorna already_completed.
+  try {
+    await prisma.logisticsStop.update({
+      where: { id: params.id, completed_at: null } as any,
+      data: {
+        status: isApproved ? 'COMPLETED' : 'FAILED',
+        completed_at: new Date(),
+        signature_url: `data:image/png;base64,${body.signature_png_base64!}`,
+        signer_name: body.signer_name!,
+        event_id: body.event_id!,
+        failure_reason: isRefused ? body.refusal_reason!.trim() : null,
+        payment_method: isApproved ? body.payment!.method : null,
+        payment_amount_cents: isApproved ? body.payment!.amount_cents : null,
+        payment_receipt_url: body.payment?.receipt_photo_base64
+          ? `data:image/jpeg;base64,${body.payment.receipt_photo_base64}`
+          : null,
+        completed_lat: body.location?.lat ?? null,
+        completed_lng: body.location?.lng ?? null,
+        photo_urls: photoUrls as any,
+      },
+    })
+  } catch (err: any) {
+    if (err?.code === 'P2025') {
+      return NextResponse.json({ data: { id: params.id, already_completed: true } })
+    }
+    throw err
+  }
 
   // Incrementa completed_stops da rota
   await prisma.logisticsRoute.updateMany({
@@ -185,80 +204,107 @@ export async function POST(
     data: { completed_stops: { increment: 1 } },
   })
 
-  // Transition OS + (se aprovado) criar Payment
+  // Transition OS + (se aprovado) criar Payment + AR atomicamente.
+  // OS deletada (deleted_at) e ignorada pra nao criar lancamento fantasma.
   if (stop.os_id && targetStatus) {
     try {
       const os = await prisma.serviceOrder.findFirst({
-        where: { id: stop.os_id, company_id: auth.companyId },
+        where: { id: stop.os_id, company_id: auth.companyId, deleted_at: null },
         select: { id: true, os_number: true, customer_id: true, total_cost: true },
       })
       if (os) {
-        await prisma.serviceOrder.update({
-          where: { id: os.id },
-          data: {
-            status_id: targetStatus.id,
-            ...(isApproved ? { actual_delivery: new Date() } : {}),
-          },
-        })
-        await prisma.serviceOrderHistory.create({
-          data: {
-            company_id: auth.companyId,
-            service_order_id: os.id,
-            to_status_id: targetStatus.id,
-            changed_by: auth.id,
-            notes: isApproved
-              ? `Entrega finalizada por ${auth.name} — pagamento: ${body.payment!.method}`
-              : `Recusada pelo cliente — ${body.refusal_reason!.trim()}`,
-          },
-        })
+        const shouldCreateFinancial = isApproved && body.payment!.amount_cents > 0
+        const amount = shouldCreateFinancial ? body.payment!.amount_cents : 0
+        const paymentMethodMapped = shouldCreateFinancial ? PAYMENT_METHOD_MAP[body.payment!.method] : ''
+        const installmentCount = shouldCreateFinancial ? Math.max(1, Number(body.payment!.installments || 1)) : 1
 
-        // Cria Payment + AccountReceivable (PAGO) se aprovado e houver valor
-        if (isApproved && body.payment!.amount_cents > 0) {
-          const amount = body.payment!.amount_cents
-          const paymentMethodMapped = PAYMENT_METHOD_MAP[body.payment!.method]
-          const installmentCount = Math.max(1, Number(body.payment!.installments || 1))
+        // Idempotencia do AR: checa se ja existe AR vinculada a OS + event_id.
+        // Usa description pra carregar o event_id (nao tem campo dedicado).
+        const arDescription = shouldCreateFinancial
+          ? `Entrega OS #${os.os_number} — ${body.payment!.method} [event:${body.event_id}]`
+          : ''
 
+        const txOps: any[] = [
+          prisma.serviceOrder.update({
+            where: { id: os.id },
+            data: {
+              status_id: targetStatus.id,
+              ...(isApproved ? { actual_delivery: new Date() } : {}),
+            },
+          }),
+          prisma.serviceOrderHistory.create({
+            data: {
+              company_id: auth.companyId,
+              service_order_id: os.id,
+              to_status_id: targetStatus.id,
+              changed_by: auth.id,
+              notes: isApproved
+                ? `Entrega finalizada por ${auth.name} — pagamento: ${body.payment!.method}`
+                : `Recusada pelo cliente — ${body.refusal_reason!.trim()}`,
+            },
+          }),
+        ]
+
+        if (shouldCreateFinancial) {
+          // Payment tem idempotency_key unique — retry seguro
+          txOps.push(prisma.payment.upsert({
+            where: { idempotency_key: `driver-${body.event_id}` },
+            update: {},
+            create: {
+              company_id: auth.companyId,
+              service_order_id: os.id,
+              customer_id: os.customer_id,
+              provider: 'driver_app',
+              idempotency_key: `driver-${body.event_id}`,
+              amount,
+              status: 'CONFIRMED',
+              method: paymentMethodMapped,
+              billing_type: paymentMethodMapped,
+              paid_at: new Date(),
+            },
+          }))
+        }
+
+        try {
+          await prisma.$transaction(txOps)
+        } catch (err) {
+          console.warn('[driver/entrega] transaction falhou:', err instanceof Error ? err.message : String(err))
+          throw err
+        }
+
+        if (shouldCreateFinancial) {
+          // AR idempotente: checa descricao com event_id antes de criar.
+          // Fora da $transaction pra nao quebrar tudo se AR falhar por
+          // regra de negocio (campo ausente etc) — mas ainda idempotente.
           try {
-            await prisma.payment.create({
-              data: {
+            const existingAR = await prisma.accountReceivable.findFirst({
+              where: {
                 company_id: auth.companyId,
                 service_order_id: os.id,
-                customer_id: os.customer_id,
-                provider: 'driver_app',
-                idempotency_key: `driver-${body.event_id}`,
-                amount,
-                status: 'CONFIRMED',
-                method: paymentMethodMapped,
-                billing_type: paymentMethodMapped,
-                paid_at: new Date(),
+                description: { contains: `[event:${body.event_id}]` },
               },
+              select: { id: true },
             })
-          } catch (err) {
-            console.warn('[driver/entrega] Payment create falhou:', err)
-          }
-
-          // Lanca conta a receber ja quitada — essa AR e o elo entre OS
-          // e financeiro. Status PAGO pq cliente pagou na hora.
-          try {
-            await prisma.accountReceivable.create({
-              data: {
-                company_id: auth.companyId,
-                customer_id: os.customer_id,
-                service_order_id: os.id,
-                description: `Entrega OS #${os.os_number} — ${body.payment!.method}`,
-                total_amount: amount,
-                received_amount: amount,
-                due_date: new Date(),
-                status: 'PAGO',
-                payment_method: paymentMethodMapped,
-                installment_count: installmentCount,
-              },
-            })
+            if (!existingAR) {
+              await prisma.accountReceivable.create({
+                data: {
+                  company_id: auth.companyId,
+                  customer_id: os.customer_id,
+                  service_order_id: os.id,
+                  description: arDescription,
+                  total_amount: amount,
+                  received_amount: amount,
+                  due_date: new Date(),
+                  status: 'PAGO',
+                  payment_method: paymentMethodMapped,
+                  installment_count: installmentCount,
+                },
+              })
+            }
           } catch (err) {
             console.warn('[driver/entrega] AR create falhou:', err)
           }
 
-          // Email de recibo (fire-and-forget)
           void sendReceiptEmail(auth.companyId, os.id, amount, body.payment!.method, body.signer_name!).catch(() => {})
         }
       }

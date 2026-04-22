@@ -31,7 +31,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       include: { module_statuses: { select: { is_final: true } } },
     })
     if (!os) return error('OS nao encontrada', 404)
-    if ((os as any).module_statuses?.is_final) {
+    if (os.module_statuses?.is_final) {
       return error('OS em status final — nao e possivel alterar desconto', 400)
     }
     if (!os.customer_id) return error('OS sem cliente — nao aceita cupom', 400)
@@ -65,23 +65,33 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     const newTotal = Math.max(0, subtotal - newDiscount)
 
-    await prisma.$transaction([
-      prisma.coupon.update({
-        where: { id: coupon.id },
-        data: {
-          used_at: new Date(),
-          used_on_os_id: os.id,
-        },
-      }),
-      prisma.serviceOrder.update({
-        where: { id: os.id },
-        data: {
-          discount_amount: newDiscount,
-          total_cost: newTotal,
-          updated_at: new Date(),
-        },
-      }),
-    ])
+    // Compare-and-set no cupom: used_at precisa ainda ser NULL no momento
+    // do update. Se outra request marcou usado, este update lança P2025 e
+    // a transacao aborta — o OS nao recebe desconto duplo.
+    try {
+      await prisma.$transaction([
+        prisma.coupon.update({
+          where: { id: coupon.id, used_at: null } as any,
+          data: {
+            used_at: new Date(),
+            used_on_os_id: os.id,
+          },
+        }),
+        prisma.serviceOrder.update({
+          where: { id: os.id },
+          data: {
+            discount_amount: newDiscount,
+            total_cost: newTotal,
+            updated_at: new Date(),
+          },
+        }),
+      ])
+    } catch (err: any) {
+      if (err?.code === 'P2025') {
+        return error('Cupom ja foi usado em outra OS', 409)
+      }
+      throw err
+    }
 
     logAudit({
       companyId: user.companyId,
