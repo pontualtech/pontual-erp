@@ -401,6 +401,26 @@ function StopCard({ stop, myLocation, onNotifyCustomer, onMove, onAskPostpone, f
     : null
 
   const [notifying, setNotifying] = useState(false)
+  const [eta, setEta] = useState<{ minutes: number; distance_m: number; source: string } | null>(null)
+
+  // Busca ETA real (Distance Matrix Google com trafego) SO pra hero card,
+  // porque e o unico visivel em destaque. Cache 5min do lado server, entao
+  // polling a cada 60s aqui e seguro.
+  useEffect(() => {
+    if (!featured || !stop.lat || !stop.lng) return
+    let cancelled = false
+    async function fetchEta() {
+      try {
+        const res = await fetch(`/api/driver/eta?stopId=${stop.id}`, { cache: 'no-store' })
+        if (!res.ok) return
+        const { data } = await res.json()
+        if (!cancelled) setEta({ minutes: data.eta_minutes, distance_m: data.distance_m, source: data.source })
+      } catch {}
+    }
+    fetchEta()
+    const id = setInterval(fetchEta, 60_000) // 1min
+    return () => { cancelled = true; clearInterval(id) }
+  }, [featured, stop.id, stop.lat, stop.lng])
 
   // Estado da notificação ao cliente
   const confirmed = !!stop.visit_confirmed_at
@@ -440,9 +460,17 @@ function StopCard({ stop, myLocation, onNotifyCustomer, onMove, onAskPostpone, f
               </h3>
             </div>
             {dist !== null && (
-              <span className={`text-xs font-bold px-2 py-1 rounded-full ${isColeta ? 'bg-purple-50 text-purple-700' : 'bg-emerald-50 text-emerald-700'}`}>
-                {dist < 1 ? `${Math.round(dist * 1000)}m` : `${dist.toFixed(1)}km`}
-              </span>
+              <div className="flex flex-col items-end gap-1 shrink-0">
+                <span className={`text-xs font-bold px-2 py-1 rounded-full ${isColeta ? 'bg-purple-50 text-purple-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                  {dist < 1 ? `${Math.round(dist * 1000)}m` : `${dist.toFixed(1)}km`}
+                </span>
+                {eta && (
+                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${eta.source === 'google' ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-600'}`}
+                    title={eta.source === 'google' ? 'ETA com trafego real' : 'ETA estimado'}>
+                    ⏱️ ~{eta.minutes}min
+                  </span>
+                )}
+              </div>
             )}
           </div>
 

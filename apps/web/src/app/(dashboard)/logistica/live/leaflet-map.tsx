@@ -69,12 +69,23 @@ async function loadLeaflet(): Promise<any> {
   })
 }
 
-export default function LeafletMap({ routes, drivers = [] }: { routes: LiveRoute[]; drivers?: FreeDriver[] }) {
+// Serie temporal de pontos GPS de um motorista — usado pra desenhar
+// o trajeto (polyline) e replay via timeline slider.
+type TrailPoint = { lat: number; lng: number; at: string | Date; accuracy_m: number | null }
+
+export default function LeafletMap({ routes, drivers = [], trail = null, playbackIndex = -1 }: {
+  routes: LiveRoute[]
+  drivers?: FreeDriver[]
+  trail?: { driver_name: string; points: TrailPoint[] } | null
+  playbackIndex?: number  // -1 = desativado (mostra trail completo estatico)
+}) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<any>(null)
   const driverMarkersRef = useRef<Map<string, any>>(new Map())
   const freeDriverMarkersRef = useRef<Map<string, any>>(new Map())
   const stopMarkersRef = useRef<any[]>([])
+  const trailLayerRef = useRef<any>(null)
+  const playbackMarkerRef = useRef<any>(null)
 
   // Init map
   useEffect(() => {
@@ -205,7 +216,40 @@ export default function LeafletMap({ routes, drivers = [] }: { routes: LiveRoute
       }
     }
 
-    // Auto-fit se tiver pontos (inclui motoristas livres no bounds)
+    // TRAIL (polyline do trajeto do dia) + PLAYBACK MARKER
+    // Se trail tem pontos, desenha uma polyline azul clarinha ligando
+    // todos. Se playbackIndex >= 0, mostra um marker "fantasma" na
+    // posicao [playbackIndex] — usado pelo slider de replay.
+    if (trailLayerRef.current) {
+      map.removeLayer(trailLayerRef.current)
+      trailLayerRef.current = null
+    }
+    if (playbackMarkerRef.current) {
+      map.removeLayer(playbackMarkerRef.current)
+      playbackMarkerRef.current = null
+    }
+    if (trail && trail.points.length > 1) {
+      const latlngs = trail.points.map(p => [p.lat, p.lng] as [number, number])
+      trailLayerRef.current = L.polyline(latlngs, {
+        color: '#2563eb', weight: 3, opacity: 0.6, dashArray: '6,4',
+      }).addTo(map)
+      if (playbackIndex >= 0 && playbackIndex < trail.points.length) {
+        const pt = trail.points[playbackIndex]
+        const icon = L.divIcon({
+          className: '',
+          html: `<div style="
+            width:34px;height:34px;background:#1e40af;border:3px solid #fef08a;
+            border-radius:50%;box-shadow:0 2px 8px rgba(0,0,0,0.4);
+            display:flex;align-items:center;justify-content:center;
+            color:white;font-weight:700;font-size:14px;
+          ">⏱️</div>`,
+          iconSize: [34, 34], iconAnchor: [17, 17],
+        })
+        playbackMarkerRef.current = L.marker([pt.lat, pt.lng], { icon }).addTo(map)
+      }
+    }
+
+    // Auto-fit se tiver pontos (inclui motoristas livres + trail no bounds)
     const allLatLngs: [number, number][] = []
     routes.forEach(r => {
       if (r.last_location) allLatLngs.push([r.last_location.lat, r.last_location.lng])
@@ -218,11 +262,14 @@ export default function LeafletMap({ routes, drivers = [] }: { routes: LiveRoute
     drivers.forEach(d => {
       if (d.lat && d.lng && !d.has_route_today) allLatLngs.push([d.lat, d.lng])
     })
+    if (trail && trail.points.length > 0) {
+      trail.points.forEach(p => allLatLngs.push([p.lat, p.lng]))
+    }
     if (allLatLngs.length > 1) {
       const bounds = L.latLngBounds(allLatLngs)
       map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 })
     }
-  }, [routes, drivers])
+  }, [routes, drivers, trail, playbackIndex])
 
   return <div ref={containerRef} style={{ height: '100%', width: '100%' }} />
 }

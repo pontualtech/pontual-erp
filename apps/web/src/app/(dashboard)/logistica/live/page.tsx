@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
-import { ArrowLeft, Truck, CheckCircle2, AlertTriangle, RefreshCw, User } from 'lucide-react'
+import { ArrowLeft, Truck, CheckCircle2, AlertTriangle, RefreshCw, User, Route as RouteIcon, X, Play, Pause } from 'lucide-react'
 
 // Leaflet precisa de DOM real — carrega só no client.
 const LeafletMap = dynamic(() => import('./leaflet-map'), {
@@ -43,11 +43,22 @@ type FreeDriver = {
   has_route_today: boolean
 }
 
+type TrailData = {
+  driver_id: string
+  driver_name: string
+  points: Array<{ lat: number; lng: number; at: string; accuracy_m: number | null }>
+}
+
 export default function LogisticaLivePage() {
   const [routes, setRoutes] = useState<LiveRoute[]>([])
   const [drivers, setDrivers] = useState<FreeDriver[]>([])
   const [loading, setLoading] = useState(true)
   const [lastFetch, setLastFetch] = useState<Date | null>(null)
+
+  // Trail + replay state
+  const [trail, setTrail] = useState<TrailData | null>(null)
+  const [playbackIndex, setPlaybackIndex] = useState<number>(-1)  // -1 = live (desliga playback)
+  const [playing, setPlaying] = useState(false)
 
   async function fetchLive() {
     try {
@@ -59,6 +70,38 @@ export default function LogisticaLivePage() {
       setLastFetch(new Date())
     } finally { setLoading(false) }
   }
+
+  async function loadTrail(driverId: string, driverName: string) {
+    setPlaying(false)
+    setPlaybackIndex(-1)
+    try {
+      const res = await fetch(`/api/logistica/trail/${driverId}`, { cache: 'no-store' })
+      if (!res.ok) return
+      const { data } = await res.json()
+      setTrail({ driver_id: driverId, driver_name: driverName, points: data.points || [] })
+    } catch {}
+  }
+
+  function clearTrail() {
+    setTrail(null)
+    setPlaying(false)
+    setPlaybackIndex(-1)
+  }
+
+  // Auto-playback: avanca 1 frame a cada 300ms
+  useEffect(() => {
+    if (!playing || !trail) return
+    const id = setInterval(() => {
+      setPlaybackIndex(prev => {
+        if (prev >= trail.points.length - 1) {
+          setPlaying(false)
+          return prev
+        }
+        return prev + 1
+      })
+    }, 300)
+    return () => clearInterval(id)
+  }, [playing, trail])
 
   useEffect(() => {
     fetchLive()
@@ -108,7 +151,55 @@ export default function LogisticaLivePage() {
               </div>
             </div>
           ) : (
-            <LeafletMap routes={routes} drivers={drivers} />
+            <LeafletMap
+              routes={routes}
+              drivers={drivers}
+              trail={trail}
+              playbackIndex={playbackIndex}
+            />
+          )}
+
+          {/* Timeline replay overlay — so aparece quando trail carregado */}
+          {trail && trail.points.length > 0 && (
+            <div className="absolute bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-96 bg-white rounded-lg shadow-lg p-3 border border-blue-200 z-[1000]">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <RouteIcon className="w-4 h-4 text-blue-600 shrink-0" />
+                  <span className="font-semibold text-sm truncate">
+                    Trajeto: {trail.driver_name}
+                  </span>
+                  <span className="text-[10px] text-gray-400">
+                    ({trail.points.length} pts)
+                  </span>
+                </div>
+                <button type="button" onClick={clearTrail}
+                  aria-label="Fechar trajeto"
+                  className="text-gray-400 hover:text-gray-700">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => setPlaying(!playing)}
+                  aria-label={playing ? 'Pausar' : 'Reproduzir'}
+                  className="p-2 rounded-full bg-blue-600 text-white hover:bg-blue-700 shrink-0">
+                  {playing ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+                </button>
+                <input
+                  type="range"
+                  min={-1}
+                  max={trail.points.length - 1}
+                  value={playbackIndex}
+                  onChange={e => { setPlaybackIndex(Number(e.target.value)); setPlaying(false) }}
+                  className="flex-1 accent-blue-600"
+                  aria-label="Timeline"
+                />
+                <span className="text-[10px] text-gray-500 min-w-[55px] text-right font-mono">
+                  {playbackIndex < 0
+                    ? 'agora'
+                    : new Date(trail.points[playbackIndex]?.at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+            </div>
           )}
         </div>
 
@@ -120,7 +211,7 @@ export default function LogisticaLivePage() {
             </h2>
             {activeRoutes.length === 0
               ? <p className="text-xs text-gray-400">Nenhum motorista em rota</p>
-              : activeRoutes.map(r => <RouteCard key={r.id} route={r} />)}
+              : activeRoutes.map(r => <RouteCard key={r.id} route={r} onViewTrail={loadTrail} />)}
           </section>
           {freeDrivers.length > 0 && (
             <section className="p-3 border-b bg-amber-50/50">
@@ -129,7 +220,7 @@ export default function LogisticaLivePage() {
                 Livres ({freeDrivers.length})
               </h2>
               <p className="text-[10px] text-amber-600 mb-2">Motoristas com GPS ativo mas sem rota hoje</p>
-              {freeDrivers.map(d => <FreeDriverCard key={d.id} driver={d} />)}
+              {freeDrivers.map(d => <FreeDriverCard key={d.id} driver={d} onViewTrail={loadTrail} />)}
             </section>
           )}
           {plannedRoutes.length > 0 && (
@@ -154,7 +245,7 @@ export default function LogisticaLivePage() {
   )
 }
 
-function FreeDriverCard({ driver }: { driver: FreeDriver }) {
+function FreeDriverCard({ driver, onViewTrail }: { driver: FreeDriver; onViewTrail?: (id: string, name: string) => void }) {
   const agoMin = driver.at
     ? Math.max(0, Math.round((Date.now() - new Date(driver.at).getTime()) / 60000))
     : null
@@ -168,19 +259,28 @@ function FreeDriverCard({ driver }: { driver: FreeDriver }) {
         <p className="font-medium text-sm truncate flex-1">{driver.name}</p>
       </div>
       <p className="text-[11px] text-amber-700 font-semibold">🚶 Livre — sem rota</p>
-      {hasCoords ? (
-        <p className="text-[10px] text-gray-500 mt-1">
-          GPS: {agoMin === null ? '—' : agoMin < 1 ? 'agora' : `há ${agoMin}min`}
-          {driver.accuracy_m ? ` · ±${driver.accuracy_m}m` : ''}
-        </p>
-      ) : (
-        <p className="text-[10px] text-gray-400 mt-1 italic">Sem localização</p>
-      )}
+      <div className="flex items-center justify-between mt-1">
+        {hasCoords ? (
+          <p className="text-[10px] text-gray-500">
+            GPS: {agoMin === null ? '—' : agoMin < 1 ? 'agora' : `há ${agoMin}min`}
+            {driver.accuracy_m ? ` · ±${driver.accuracy_m}m` : ''}
+          </p>
+        ) : (
+          <p className="text-[10px] text-gray-400 italic">Sem localização</p>
+        )}
+        {onViewTrail && hasCoords && (
+          <button type="button"
+            onClick={() => onViewTrail(driver.id, driver.name)}
+            className="text-[10px] text-blue-600 hover:text-blue-800 font-medium ml-auto flex items-center gap-1">
+            <RouteIcon className="w-3 h-3" /> Trajeto
+          </button>
+        )}
+      </div>
     </div>
   )
 }
 
-function RouteCard({ route }: { route: LiveRoute }) {
+function RouteCard({ route, onViewTrail }: { route: LiveRoute; onViewTrail?: (id: string, name: string) => void }) {
   const pct = route.total_stops
     ? Math.round(((route.completed_stops || 0) / route.total_stops) * 100)
     : 0
@@ -207,11 +307,20 @@ function RouteCard({ route }: { route: LiveRoute }) {
       <div className="bg-gray-200 rounded-full h-1.5 overflow-hidden">
         <div className="bg-blue-600 h-full transition-all" style={{ width: `${pct}%` }} />
       </div>
-      {agoMin !== null && (
-        <p className="text-[10px] text-gray-400 mt-2">
-          GPS: {agoMin < 1 ? 'agora' : `há ${agoMin}min`}
-        </p>
-      )}
+      <div className="flex items-center justify-between mt-2">
+        {agoMin !== null && (
+          <p className="text-[10px] text-gray-400">
+            GPS: {agoMin < 1 ? 'agora' : `há ${agoMin}min`}
+          </p>
+        )}
+        {onViewTrail && route.driver && (
+          <button type="button"
+            onClick={() => onViewTrail(route.driver!.id, route.driver!.name)}
+            className="text-[10px] text-blue-600 hover:text-blue-800 font-medium ml-auto flex items-center gap-1">
+            <RouteIcon className="w-3 h-3" /> Ver trajeto
+          </button>
+        )}
+      </div>
     </div>
   )
 }

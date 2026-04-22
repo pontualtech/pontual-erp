@@ -75,8 +75,40 @@ function startCronJobs() {
     }
   }, 60 * 60 * 1000) // 1 hour
 
+  // Driver Inactivity — every 10 minutes (so-opera em horario comercial)
+  setInterval(async () => {
+    try {
+      const res = await fetch(`${BASE_URL}/api/cron/driver-inactivity`, { headers })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.data?.alerted > 0) {
+          console.log(`[Cron/DriverInactivity] Alerted ${data.data.alerted} drivers`)
+        }
+      }
+    } catch (err) {
+      console.error('[Cron/DriverInactivity] Error:', err instanceof Error ? err.message : err)
+    }
+  }, 10 * 60 * 1000) // 10 minutes
+
+  // Location history cleanup — once every 24h (ultima madrugada)
+  setInterval(async () => {
+    try {
+      const res = await fetch(`${BASE_URL}/api/cron/cleanup-location-history`, { headers })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.data?.deleted > 0) {
+          console.log(`[Cron/CleanupLocation] Deleted ${data.data.deleted} old GPS rows`)
+        }
+      }
+    } catch (err) {
+      console.error('[Cron/CleanupLocation] Error:', err instanceof Error ? err.message : err)
+    }
+  }, 24 * 60 * 60 * 1000) // 24 hours
+
   console.log('[Cron] Internal cron jobs started:')
   console.log('  - Bot Follow-up: every 5 min')
   console.log('  - Quote Reminder: every 30 min')
   console.log('  - Billing Reminder: every 1 hour')
+  console.log('  - Driver Inactivity: every 10 min')
+  console.log('  - Cleanup Location History: every 24h')
 }

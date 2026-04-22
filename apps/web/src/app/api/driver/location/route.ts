@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requireDriver } from '@/lib/driver-auth'
 import { rateLimit } from '@/lib/rate-limit'
+import { haversineKm } from '@/lib/geocoding'
+
+// Raio em metros pra considerar que o motorista chegou na parada.
+// 200m e o sweet spot: GPS urbano tem ~10-30m de erro, e prediums grandes
+// podem ter 50-100m de extensao. 200m da margem sem ser absurdo.
+const ARRIVED_RADIUS_M = 200
 
 /**
  * POST /api/driver/location
@@ -36,15 +42,28 @@ export async function POST(req: NextRequest) {
   // Sempre atualiza a posicao do motorista no user_profile — isso permite
   // que /logistica/live mostre o motorista no mapa mesmo SEM rota ativa
   // (ex: parado na empresa, entre rotas, saindo pra banco).
-  await prisma.userProfile.update({
-    where: { id: auth.id },
-    data: {
-      last_lat: lat,
-      last_lng: lng,
-      last_location_at: now,
-      last_accuracy_m: accuracy,
-    },
-  }).catch(e => console.warn('[driver/location] failed updating user_profile:', e?.message))
+  // Em paralelo, insere no historico pra trail/replay/auditoria.
+  await Promise.all([
+    prisma.userProfile.update({
+      where: { id: auth.id },
+      data: {
+        last_lat: lat,
+        last_lng: lng,
+        last_location_at: now,
+        last_accuracy_m: accuracy,
+      },
+    }).catch(e => console.warn('[driver/location] failed updating user_profile:', e?.message)),
+    prisma.driverLocationHistory.create({
+      data: {
+        company_id: auth.companyId,
+        driver_id: auth.id,
+        lat,
+        lng,
+        accuracy_m: accuracy,
+        captured_at: now,
+      },
+    }).catch(e => console.warn('[driver/location] failed inserting history:', e?.message)),
+  ])
 
   // Se tiver rota hoje, tambem atualiza la pra manter o historico "in route"
   // funcional (cards de progresso no sidebar).
@@ -57,12 +76,47 @@ export async function POST(req: NextRequest) {
     where: { company_id: auth.companyId, driver_id: auth.id, date: { gte: today, lt: tomorrow } },
     select: { id: true },
   })
+  let geofenceTriggered: { stop_id: string; customer_name: string | null; distance_m: number } | null = null
   if (route) {
     await prisma.logisticsRoute.update({
       where: { id: route.id },
       data: { last_lat: lat, last_lng: lng, last_location_at: now },
     })
+
+    // Geofencing: se ha proxima parada PENDING com lat/lng e o motorista
+    // estiver a < ARRIVED_RADIUS_M dela, marca chegada automatica.
+    // Pega a parada com menor sequence ainda pendente (a "proxima" da rota).
+    const nextPending = await prisma.logisticsStop.findFirst({
+      where: {
+        route_id: route.id, company_id: auth.companyId,
+        status: 'PENDING',
+        lat: { not: null }, lng: { not: null },
+      },
+      orderBy: { sequence: 'asc' },
+      select: { id: true, customer_name: true, lat: true, lng: true },
+    })
+    if (nextPending && nextPending.lat && nextPending.lng) {
+      const distKm = haversineKm(
+        { lat, lng },
+        { lat: Number(nextPending.lat), lng: Number(nextPending.lng) }
+      )
+      const distM = Math.round(distKm * 1000)
+      if (distM <= ARRIVED_RADIUS_M) {
+        // Auto-marca chegada na parada (status=ARRIVED) + log
+        await prisma.logisticsStop.update({
+          where: { id: nextPending.id },
+          data: { status: 'ARRIVED', arrived_at: now, completed_lat: lat, completed_lng: lng },
+        }).then(() => {
+          geofenceTriggered = {
+            stop_id: nextPending.id,
+            customer_name: nextPending.customer_name,
+            distance_m: distM,
+          }
+          console.log(`[driver/location] geofence: ${auth.id} chegou em ${nextPending.customer_name} (${distM}m)`)
+        }).catch(e => console.warn('[driver/location] auto-arrive failed:', e?.message))
+      }
+    }
   }
 
-  return NextResponse.json({ ok: true, has_route: !!route })
+  return NextResponse.json({ ok: true, has_route: !!route, geofence: geofenceTriggered })
 }

@@ -78,10 +78,15 @@ model UserProfile {
   last_lng          Decimal?  @db.Decimal(11, 8)
   last_location_at  DateTime? @db.Timestamptz(6)
   last_accuracy_m   Int?
+  // Flag pro motorista. Quando true, sistema notifica admin via WhatsApp/email
+  // se ele ficar mais de inactivity_threshold_minutes (default 30) sem GPS
+  // durante horario comercial.
+  notify_inactivity Boolean?   @default(false)
   created_at     DateTime?      @default(now()) @db.Timestamptz(6)
   updated_at     DateTime?      @default(now()) @db.Timestamptz(6)
   service_orders    ServiceOrder[]
   logistics_routes  LogisticsRoute[]
+  location_history  DriverLocationHistory[]
   companies      Company        @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   roles          Role           @relation(fields: [role_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
@@ -89,6 +94,30 @@ model UserProfile {
   @@index([company_id], map: "idx_user_profiles_company")
   @@index([email], map: "idx_user_profiles_email")
   @@map("user_profiles")
+}
+
+// Historico de posicoes GPS dos motoristas. Usado pra:
+//   1. Desenhar trajeto do dia no mapa (/logistica/live com motorista selecionado)
+//   2. Replay timeline (slider voltando no tempo)
+//   3. Auditoria: provar onde o motorista esteve em caso de disputa
+//   4. Geofencing detection (compara posicao com proxima parada pendente)
+//
+// Auto-cleanup: cron diario apaga registros >7 dias.
+// Volume estimado: 6 GPS/min * 8h/dia = 2880 rows/dia/motorista. 10 motoristas
+// * 7 dias = 200k rows max. Index em (driver_id, captured_at) e suficiente.
+model DriverLocationHistory {
+  id           String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id   String
+  driver_id    String
+  lat          Decimal   @db.Decimal(10, 8)
+  lng          Decimal   @db.Decimal(11, 8)
+  accuracy_m   Int?
+  captured_at  DateTime  @default(now()) @db.Timestamptz(6)
+  driver       UserProfile @relation(fields: [driver_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([driver_id, captured_at(sort: Desc)], map: "idx_driver_loc_history_driver_ts")
+  @@index([company_id, captured_at(sort: Desc)], map: "idx_driver_loc_history_company_ts")
+  @@map("driver_location_history")
 }
 
 model Role {
