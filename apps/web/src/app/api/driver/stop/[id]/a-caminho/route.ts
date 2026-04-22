@@ -101,13 +101,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (phone && phone.length >= 10) {
     const firstName = customerName.split(' ')[0]
     const motoristaFirstName = auth.name.split(' ')[0]
-    const etaText = etaMinutes ? ` — previsao: ${etaMinutes} min` : ''
+    // IMPORTANTE: Meta bloqueia silenciosamente parametros iniciando
+    // com espaco, tab ou newline (regra anti-spam nao documentada).
+    // Sempre comecamos com pontuacao. Template tem '...esta a caminho{{3}}.',
+    // entao {{3}} comeca com '.' vira '...caminho. Previsao...'
+    const etaParam = etaMinutes ? `. Previsao: ${etaMinutes} min` : '.'
+    const etaTextFreeform = etaMinutes ? `, previsao: ${etaMinutes} min` : ''
     const normalizedPhone = phone.startsWith('55') ? phone : `55${phone}`
 
     // Monta free text pra fallback (usado se template nao esta disponivel)
     const freeText =
       `Ola, ${firstName}!\n\n` +
-      `Nosso tecnico ${motoristaFirstName} esta a caminho${etaText}\n\n` +
+      `Nosso motorista ${motoristaFirstName} esta a caminho${etaTextFreeform}.\n\n` +
       `Confirme sua disponibilidade ou solicite remarcar:\n${link}\n\n` +
       `— ${company.name}`
 
@@ -119,7 +124,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         parameters: [
           { type: 'text', text: firstName },
           { type: 'text', text: motoristaFirstName },
-          { type: 'text', text: etaText },
+          { type: 'text', text: etaParam },
           { type: 'text', text: link },
         ],
       }],
