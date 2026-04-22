@@ -1215,7 +1215,11 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
           /^\[[^\]]*\]$/.test(s.trim()) ||                // "[qualquer coisa]"
           /^\{\{[^}]*\}\}$/.test(s.trim()) ||             // "{{variavel}}"
           /^<[^>]*>$/.test(s.trim()) ||                   // "<placeholder>"
-          ['n/a', 'null', 'undefined', 'nao informado', 'nao informada', 'nao informados'].includes(s.trim().toLowerCase())
+          // Strings literais que o LLM inventa quando nao tem o valor.
+          // "whatsapp"/"wa" sao comuns em campo telefone quando o bot deveria
+          // usar o numero do sender; "n/i" (nao informado), "nao informado",
+          // "nao cadastrado" sao inventados em qualquer campo.
+          ['n/a', 'n/i', 'null', 'undefined', 'nao informado', 'nao informada', 'nao informados', 'nao cadastrado', 'whatsapp', 'wa', 'sem cadastro', 'sem telefone', 'sem email', 'sem cpf'].includes(s.trim().toLowerCase())
         const pick = (...keys: string[]): string => {
           for (const k of keys) {
             const raw = vd[k]
@@ -1238,8 +1242,13 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
 
         // Telefone: prioriza o que o Dify extraiu, depois o da mensagem
         // (sender.phone_number do webhook Chatwoot — sempre populado pra
-        // canais WhatsApp). Fallback crucial pro cadastro nao ficar vazio.
-        const telefone = pick('telefone', 'phone', 'phone_number', 'mobile', 'celular', 'whatsapp') || phone || ''
+        // canais WhatsApp). Validacao: o LLM as vezes emite placeholders
+        // como "N/I", "WHATSAPP", "[numero do whatsapp]" em vez do numero —
+        // consideramos valido so se tiver >=10 digitos apos strip.
+        const telRaw = pick('telefone', 'phone', 'phone_number', 'mobile', 'celular', 'whatsapp') || ''
+        const telDigits = String(telRaw).replace(/\D/g, '')
+        const senderDigits = String(phone || '').replace(/\D/g, '')
+        const telefone = telDigits.length >= 10 ? telDigits : senderDigits
 
         const nome = pick('nome', 'cliente', 'nome_cliente', 'customer_name', 'name') || sender.name || 'Cliente WhatsApp'
         const email = pick('email', 'email_cliente', 'customer_email')
@@ -1330,7 +1339,9 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
             return ''
           }
           const docNote = pickNote('cpf_cnpj', 'cpf', 'cnpj', 'document', 'documento') || 'N/I'
-          const telNote = pickNote('telefone', 'phone', 'phone_number', 'mobile') || phone || 'N/I'
+          // Reutiliza o telefone JA validado (>=10 digitos ou fallback pro sender)
+          // em vez de consultar o payload bruto do Dify, que pode conter "WHATSAPP"/"N/I".
+          const telNote = telefone || 'N/I'
           const noteLines = [
             `📋 *OS #${osNum}* — ${clienteNome}${erpData.cliente_novo ? ' (NOVO)' : ''}`,
             `🖨️ ${String(vdNote.marca || '')} ${String(vdNote.modelo || '')} — ${String(vdNote.defeito || '')}`,

@@ -72,11 +72,14 @@ export async function POST(req: NextRequest) {
     // Email: normalize (lowercase + trim)
     if (email) email = String(email).trim().toLowerCase() || undefined
 
-    // Telefone: só dígitos, remove prefixo 55 se for celular BR padrão (DDD+9) para evitar duplo 55 depois
+    // Telefone: só dígitos, remove prefixo 55 se for celular BR padrão (DDD+9) para evitar duplo 55 depois.
+    // Descarta valores invalidos (<10 digitos) — bots as vezes emitem placeholders como "WHATSAPP" ou "N/I"
+    // que depois de strip ficam com 0/poucos digitos. Melhor armazenar NULL do que lixo.
     if (telefone) {
       let phoneDigits = String(telefone).replace(/\D/g, '')
       if (phoneDigits.length === 13 && phoneDigits.startsWith('55')) phoneDigits = phoneDigits.slice(2)
-      telefone = phoneDigits || undefined
+      if (phoneDigits.length === 12 && phoneDigits.startsWith('55')) phoneDigits = phoneDigits.slice(2)
+      telefone = phoneDigits.length >= 10 ? phoneDigits : undefined
     }
 
     // CEP + auto-enrich via ViaCEP se componentes granulares faltarem
