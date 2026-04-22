@@ -170,15 +170,10 @@ export default function RotaHojePage() {
     .reduce((sum, s) => sum + (s.os?.total_cost_cents || 0), 0)
   const doneStops = stops.filter(s => s.status === 'COMPLETED' || s.status === 'FAILED')
 
-  // Ordena pendentes por proximidade se tivermos localização
-  const sortedPending = myLocation
-    ? [...pendingStops].sort((a, b) => {
-        if (!a.lat || !b.lat) return a.sequence - b.sequence
-        const da = distanceKm(myLocation, { lat: a.lat, lng: a.lng! })
-        const db = distanceKm(myLocation, { lat: b.lat, lng: b.lng! })
-        return da - db
-      })
-    : pendingStops
+  // Ordem planejada pelo admin (sequence asc) — NAO reordenar por GPS.
+  // Admin define a sequencia em /logistica/nova ou /logistica/[id]; o
+  // motorista deve seguir essa ordem, nao pular baseado em proximidade.
+  const sortedPending = [...pendingStops].sort((a, b) => a.sequence - b.sequence)
 
   if (loading) {
     return (
