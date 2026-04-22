@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Package, Truck, MapPin, Phone, CheckCircle2, AlertTriangle, RefreshCw, LogOut, MessageCircle, ArrowUp, ArrowDown, CalendarClock, Printer, X, Navigation } from 'lucide-react'
+import { Package, Truck, MapPin, Phone, CheckCircle2, AlertTriangle, RefreshCw, LogOut, MessageCircle, ArrowUp, ArrowDown, CalendarClock, Printer, X, Navigation, Plus } from 'lucide-react'
 import SyncBadge from '../../components/sync-badge'
 import InstallPrompt from '../../components/install-prompt'
 import PushPermission from '../../components/push-permission'
@@ -257,6 +257,11 @@ export default function RotaHojePage() {
         </div>
         <div className="flex items-center gap-2">
           <SyncBadge />
+          <Link href="/motorista/avulso" aria-label="Nova parada avulsa"
+            className="p-2 rounded-full hover:bg-white/10 active:scale-95 transition"
+            title="Lancar coleta/entrega fora de rota">
+            <Plus className="w-5 h-5" />
+          </Link>
           <Link href="/motorista/chat" aria-label="Chat com a base"
             className="p-2 rounded-full hover:bg-white/10 active:scale-95 transition">
             <MessageCircle className="w-5 h-5" />
