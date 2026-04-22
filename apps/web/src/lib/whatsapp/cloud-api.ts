@@ -406,6 +406,10 @@ function buildFallbackText(templateName: string, components?: any[]): string | n
       // params: os_num, equipment, problema
       return `*OS #${params[0] || ''} aberta!*\n\nEquipamento: ${params[1] || ''}\nProblema: ${params[2] || ''}\n\nAcompanhe pelo portal do cliente.`
 
+    case 'pt_a_caminho_v1':
+      // params: nome_cliente, nome_motorista, eta_text, link
+      return `Ola, ${params[0] || ''}!\n\nNosso tecnico ${params[1] || ''} esta a caminho${params[2] || ''}\n\nConfirme sua disponibilidade ou solicite remarcar:\n${params[3] || ''}`
+
     case 'pt_suporte_v1':
       // no params
       return `Estamos transferindo voce para nosso suporte humano. Em breve um atendente vai te ajudar!\n\nAcompanhe pelo portal do cliente.`

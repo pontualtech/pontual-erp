@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requireDriver } from '@/lib/driver-auth'
 import { createVisitToken } from '@/lib/visit-token'
-import { sendWhatsAppCloud } from '@/lib/whatsapp/cloud-api'
+import { sendWhatsAppCloud, sendWhatsAppTemplate } from '@/lib/whatsapp/cloud-api'
 import { rateLimit } from '@/lib/rate-limit'
 
 /**
@@ -88,22 +88,56 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const portalHost = PORTAL_DOMAIN_BY_SLUG[company.slug] || `portal.${company.slug}.com.br`
   const link = `https://${portalHost}/portal/${company.slug}/visita/${token}`
 
-  // Envia WhatsApp — fallback graceful se não configurado
+  // Envia WhatsApp. Estrategia:
+  //   1. TENTA TEMPLATE "pt_a_caminho_v1" primeiro — funciona fora da janela
+  //      24h porque e template aprovado pelo Meta (pra empresas com Cloud
+  //      API, caso da PontualTech).
+  //   2. Se template falhar (nao registrado/aprovado), cai pra free text
+  //      via sendWhatsAppCloud. Esse tem fallback automatico pra Evolution
+  //      quando Cloud nao ta configurado (caso da Imprimitech).
   let waStatus: 'sent' | 'skipped_no_phone' | 'failed' = 'skipped_no_phone'
   let waError: string | null = null
+  let waMethod: 'template' | 'free_text' | null = null
   if (phone && phone.length >= 10) {
     const firstName = customerName.split(' ')[0]
-    const etaText = etaMinutes ? ` Previsão: ${etaMinutes} min.` : ''
-    const text =
-      `Olá, ${firstName}!\n\n` +
-      `Nosso técnico ${auth.name.split(' ')[0]} está a caminho${etaText}\n\n` +
-      `Por favor, confirme se estará disponível ou solicite remarcar:\n${link}\n\n` +
+    const motoristaFirstName = auth.name.split(' ')[0]
+    const etaText = etaMinutes ? ` — previsao: ${etaMinutes} min` : ''
+    const normalizedPhone = phone.startsWith('55') ? phone : `55${phone}`
+
+    // Monta free text pra fallback (usado se template nao esta disponivel)
+    const freeText =
+      `Ola, ${firstName}!\n\n` +
+      `Nosso tecnico ${motoristaFirstName} esta a caminho${etaText}\n\n` +
+      `Confirme sua disponibilidade ou solicite remarcar:\n${link}\n\n` +
       `— ${company.name}`
 
-    const normalizedPhone = phone.startsWith('55') ? phone : `55${phone}`
-    const sent = await sendWhatsAppCloud(auth.companyId, normalizedPhone, text)
-    waStatus = sent.success ? 'sent' : 'failed'
-    waError = sent.success ? null : (sent.error || 'falha ao enviar')
+    // Tenta template primeiro (4 parametros: cliente, motorista, eta, link)
+    const templateResult = await sendWhatsAppTemplate(
+      auth.companyId, normalizedPhone, 'pt_a_caminho_v1', 'pt_BR',
+      [{
+        type: 'body',
+        parameters: [
+          { type: 'text', text: firstName },
+          { type: 'text', text: motoristaFirstName },
+          { type: 'text', text: etaText },
+          { type: 'text', text: link },
+        ],
+      }],
+      freeText,  // fallback text pra Evolution se Cloud nao configurado
+    )
+
+    if (templateResult.success) {
+      waStatus = 'sent'
+      waMethod = 'template'
+    } else {
+      // Template falhou — tenta free text (funciona na janela 24h + Evolution)
+      const freeTextResult = await sendWhatsAppCloud(auth.companyId, normalizedPhone, freeText)
+      waStatus = freeTextResult.success ? 'sent' : 'failed'
+      waMethod = freeTextResult.success ? 'free_text' : null
+      waError = freeTextResult.success ? null : (
+        `template: ${templateResult.error || 'falha'} | free_text: ${freeTextResult.error || 'falha'}`
+      )
+    }
   }
 
   return NextResponse.json({
@@ -112,6 +146,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       notified_at: new Date(),
       eta_minutes: etaMinutes,
       whatsapp: waStatus,
+      whatsapp_method: waMethod, // 'template' | 'free_text' | null
       whatsapp_error: waError,
       confirmation_link: link, // motorista pode copiar se WA falhar
     },
