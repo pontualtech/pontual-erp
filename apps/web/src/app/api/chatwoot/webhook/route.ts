@@ -142,6 +142,61 @@ export async function POST(req: NextRequest) {
 
     console.log(`[Webhook] Message from ${phone || 'unknown'} in conversation ${conversationId}: ${content.substring(0, 80)}`)
 
+    // 2.5. Stop ativo? Se o cliente tem um LogisticsStop EN_ROUTE/ARRIVED,
+    // clonar msg em ChatMessage channel=stop:<id> e pausar a Marta.
+    // Matching por ultimos 8 digitos do telefone cobre variacoes 55/DDD.
+    if (phone) {
+      try {
+        const digits = String(phone).replace(/\D/g, '')
+        const tail = digits.slice(-8)
+        if (tail.length === 8) {
+          const activeStops = await prisma.logisticsStop.findMany({
+            where: { status: { in: ['EN_ROUTE', 'ARRIVED'] } },
+            orderBy: { visit_notified_at: 'desc' },
+            take: 50,
+            select: { id: true, company_id: true, customer_phone: true, os_id: true },
+          })
+          let match = activeStops.find(s => (s.customer_phone || '').replace(/\D/g, '').endsWith(tail))
+          if (!match) {
+            const osIds = activeStops.filter(s => s.os_id).map(s => s.os_id as string)
+            if (osIds.length > 0) {
+              const orders = await prisma.serviceOrder.findMany({
+                where: { id: { in: osIds } },
+                select: { id: true, customers: { select: { mobile: true, phone: true } } },
+              })
+              const osIdToPhones = new Map<string, string[]>()
+              for (const o of orders) {
+                osIdToPhones.set(o.id, [o.customers?.mobile, o.customers?.phone].filter(Boolean).map(x => String(x).replace(/\D/g, '')))
+              }
+              match = activeStops.find(s => {
+                if (!s.os_id) return false
+                const ps = osIdToPhones.get(s.os_id) || []
+                return ps.some(p => p.endsWith(tail))
+              })
+            }
+          }
+          if (match) {
+            await prisma.chatMessage.create({
+              data: {
+                company_id: match.company_id,
+                sender_id: 'customer',
+                sender_name: (sender.name || 'Cliente').toString().slice(0, 80),
+                message: content,
+                channel: `stop:${match.id}`,
+              },
+            })
+            await prisma.botConversation.updateMany({
+              where: { chatwoot_conv_id: conversationId },
+              data: { human_takeover: true, step: 'HUMAN' },
+            })
+            console.log(`[Webhook] msg clonada pra stop:${match.id} + marta pausada`)
+          }
+        }
+      } catch (err) {
+        console.warn('[Webhook] falha ao clonar pra stop:', err instanceof Error ? err.message : String(err))
+      }
+    }
+
     // 3. Identify customer by phone
     let customerId: string | undefined
     let companyId: string | undefined
