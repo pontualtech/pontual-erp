@@ -61,25 +61,42 @@ export async function getDistanceAndDuration(
   }
 
   try {
-    const url = new URL('https://maps.googleapis.com/maps/api/distancematrix/json')
-    url.searchParams.set('origins', `${origin.lat},${origin.lng}`)
-    url.searchParams.set('destinations', `${destination.lat},${destination.lng}`)
-    url.searchParams.set('mode', 'driving')
-    url.searchParams.set('departure_time', 'now')
-    url.searchParams.set('traffic_model', 'best_guess')
-    url.searchParams.set('region', 'br')
-    url.searchParams.set('language', 'pt-BR')
-    url.searchParams.set('key', apiKey)
-
-    const res = await fetch(url.toString(), { signal: AbortSignal.timeout(8000) })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    // Usa Routes API (moderna) em vez de Distance Matrix (legacy/deprecated).
+    // Routes API e habilitada por default em projetos GCP novos, mais barata,
+    // e suporta FieldMask pra economizar custos (so cobra pelos campos pedidos).
+    const res = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': apiKey,
+        // Mask essencial — sem isso Google retorna 400. Pede so os 2 campos
+        // que a gente usa (distance+duration), minimizando custo.
+        'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters',
+      },
+      body: JSON.stringify({
+        origin: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } },
+        destination: { location: { latLng: { latitude: destination.lat, longitude: destination.lng } } },
+        travelMode: 'DRIVE',
+        routingPreference: 'TRAFFIC_AWARE_OPTIMAL',
+        computeAlternativeRoutes: false,
+        languageCode: 'pt-BR',
+        regionCode: 'BR',
+        units: 'METRIC',
+      }),
+      signal: AbortSignal.timeout(8000),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text().then(t => t.slice(0, 200))}`)
     const data = await res.json()
-    const elem = data.rows?.[0]?.elements?.[0]
-    if (!elem || elem.status !== 'OK') throw new Error(`status ${elem?.status || 'no element'}`)
+    const route = data.routes?.[0]
+    if (!route) throw new Error('no route in response')
+
+    // duration vem como string tipo "123s"
+    const durationStr: string = route.duration || '0s'
+    const durationS = parseInt(durationStr.replace('s', '')) || 0
 
     const result: DistanceResult = {
-      distance_m: elem.distance?.value || 0,
-      duration_s: elem.duration_in_traffic?.value || elem.duration?.value || 0,
+      distance_m: route.distanceMeters || 0,
+      duration_s: durationS,
       source: 'google',
     }
     cache.set(k, { result, expiresAt: Date.now() + TTL_MS })

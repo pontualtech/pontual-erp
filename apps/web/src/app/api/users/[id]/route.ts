@@ -93,6 +93,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
       ...(data.preferences ? { preferences: data.preferences as any } : {}),
       ...(body.roleId ? { role_id: body.roleId } : {}),
       ...(body.isActive !== undefined ? { is_active: body.isActive } : {}),
+      ...(body.notifyInactivity !== undefined ? { notify_inactivity: Boolean(body.notifyInactivity) } : {}),
     }
 
     // Update password in Supabase Auth if provided

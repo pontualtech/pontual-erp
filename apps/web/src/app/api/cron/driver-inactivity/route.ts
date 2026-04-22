@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { timingSafeEqual } from 'crypto'
 import { prisma } from '@pontual/db'
 import { success, error, handleError } from '@/lib/api-response'
+import { sendWhatsAppCloud } from '@/lib/whatsapp/cloud-api'
 
 /**
  * GET /api/cron/driver-inactivity
@@ -64,17 +65,32 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    const alerted: { id: string; name: string; last_gps_min_ago: number }[] = []
+    // Busca admins por empresa de uma vez (cache por company pra evitar N queries)
+    const adminsByCompany = new Map<string, Array<{ id: string; name: string; phone: string | null }>>()
+    async function getAdminsForCompany(companyId: string) {
+      if (adminsByCompany.has(companyId)) return adminsByCompany.get(companyId)!
+      const admins = await prisma.userProfile.findMany({
+        where: {
+          company_id: companyId, is_active: true,
+          phone: { not: null },  // so admins com telefone recebem
+          roles: { name: { contains: 'admin', mode: 'insensitive' } },
+        },
+        select: { id: true, name: true, phone: true },
+      })
+      adminsByCompany.set(companyId, admins)
+      return admins
+    }
+
+    const alerted: { id: string; name: string; last_gps_min_ago: number; whatsapp_sent: number }[] = []
     for (const drv of drivers) {
       const last = cronCache.get(drv.id) ?? 0
-      if (Date.now() - last < DEDUPE_MINUTES * 60 * 1000) continue // dedup
+      if (Date.now() - last < DEDUPE_MINUTES * 60 * 1000) continue
 
       const minAgo = drv.last_location_at
         ? Math.round((Date.now() - drv.last_location_at.getTime()) / 60000)
         : 999
 
-      // Cria registro na tabela de audit_log pra aparecer no painel.
-      // (Substituir por notification table quando existir uma)
+      // Audit log (fica no DB pro painel mostrar historico)
       await prisma.auditLog.create({
         data: {
           company_id: drv.company_id,
@@ -90,9 +106,25 @@ export async function GET(request: NextRequest) {
         },
       }).catch(e => console.warn('[driver-inactivity] audit log failed:', e?.message))
 
+      // WhatsApp pros admins da empresa (free text — requer janela 24h aberta
+      // com o admin). Se nao tiver, o envio falha silenciosamente e fica so
+      // o audit log.
+      const admins = await getAdminsForCompany(drv.company_id)
+      const msg = `⚠️ *Alerta de inatividade*\n\nO motorista *${drv.name}* está há *${minAgo} minutos* sem enviar localização (GPS).\n\nÚltimo sinal: ${drv.last_location_at?.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }) || '—'}\n\nVerifique se está tudo bem com ele.`
+      let whatsappSent = 0
+      for (const adm of admins) {
+        if (!adm.phone) continue
+        try {
+          const res = await sendWhatsAppCloud(drv.company_id, adm.phone, msg)
+          if (res.success) whatsappSent++
+        } catch (e) {
+          console.warn(`[driver-inactivity] WhatsApp to ${adm.name} failed:`, (e as Error).message)
+        }
+      }
+
       cronCache.set(drv.id, Date.now())
-      alerted.push({ id: drv.id, name: drv.name, last_gps_min_ago: minAgo })
-      console.log(`[driver-inactivity] alerta: ${drv.name} sem GPS ha ${minAgo}min`)
+      alerted.push({ id: drv.id, name: drv.name, last_gps_min_ago: minAgo, whatsapp_sent: whatsappSent })
+      console.log(`[driver-inactivity] alerta: ${drv.name} sem GPS ha ${minAgo}min (${whatsappSent} WhatsApp(s) enviado(s))`)
     }
 
     return success({ checked: drivers.length, alerted: alerted.length, alerts: alerted })

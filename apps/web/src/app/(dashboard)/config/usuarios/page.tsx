@@ -18,6 +18,7 @@ interface User {
   roles: Role
   role_id: string
   is_active: boolean
+  notify_inactivity: boolean
   created_at: string
 }
 
@@ -386,7 +387,13 @@ function EditUserModal({ user, roles, onClose, onUpdated }: { user: User; roles:
     phone: user.phone || '',
     roleId: user.role_id || user.roles?.id || '',
     is_active: user.is_active,
+    notify_inactivity: user.notify_inactivity ?? false,
   })
+
+  // Detecta se o perfil selecionado e de motorista (pra mostrar o toggle
+  // condicional — nao faz sentido habilitar pra atendente/admin)
+  const selectedRole = roles.find(r => r.id === form.roleId)
+  const isDriverRole = /motorista|driver/i.test(selectedRole?.name || '')
 
   async function handleResetPassword() {
     if (newPassword.length < 6) {
@@ -438,6 +445,7 @@ function EditUserModal({ user, roles, onClose, onUpdated }: { user: User; roles:
           phone: form.phone || undefined,
           roleId: form.roleId,
           isActive: form.is_active,
+          notifyInactivity: form.notify_inactivity,
         }),
       })
       const data = await res.json()
@@ -517,6 +525,25 @@ function EditUserModal({ user, roles, onClose, onUpdated }: { user: User; roles:
             />
             <label htmlFor="is_active" className="text-sm text-gray-700">Usuario ativo</label>
           </div>
+
+          {/* Alerta de inatividade: so aparece pra motorista */}
+          {isDriverRole && (
+            <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <input
+                type="checkbox"
+                id="notify_inactivity"
+                checked={form.notify_inactivity}
+                onChange={e => update('notify_inactivity', e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 mt-0.5"
+              />
+              <label htmlFor="notify_inactivity" className="text-sm text-gray-700">
+                <span className="font-medium">🔔 Alertar se ficar inativo</span>
+                <span className="block text-xs text-gray-500 mt-0.5">
+                  Se este motorista ficar sem GPS por mais de 30min em horario comercial (seg-sex, 8-18h), admins da empresa recebem aviso no WhatsApp.
+                </span>
+              </label>
+            </div>
+          )}
 
           {/* Redefinir Senha */}
           <div className="border-t pt-4">
