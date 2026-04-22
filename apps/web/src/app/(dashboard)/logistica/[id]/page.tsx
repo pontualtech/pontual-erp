@@ -182,11 +182,26 @@ export default function RouteDetailPage() {
   }, [])
 
   const handleStartRoute = async () => {
+    const clientCount = (route?.stops || []).filter(s =>
+      s.status !== 'COMPLETED' && s.status !== 'FAILED'
+    ).length
+    const notify = window.confirm(
+      `Iniciar rota?\n\n` +
+      `Enviar WhatsApp "Motorista saiu da base" para os ${clientCount} cliente(s)?\n\n` +
+      `OK = iniciar e notificar todos\n` +
+      `Cancelar = iniciar sem notificar`,
+    )
     setActionLoading('route-start')
     try {
-      const res = await fetch(`/api/logistics/routes/${routeId}/start`, { method: 'POST' })
+      const res = await fetch(`/api/logistics/routes/${routeId}/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notify_clients: notify }),
+      })
       if (!res.ok) throw new Error()
-      toast.success('Rota iniciada')
+      const j = await res.json().catch(() => ({}))
+      const n = j?.data?.notified_clients ?? 0
+      toast.success(notify && n > 0 ? `Rota iniciada — ${n} cliente(s) notificado(s)` : 'Rota iniciada')
       loadRoute()
     } catch {
       toast.error('Erro ao iniciar rota')
