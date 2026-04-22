@@ -55,6 +55,7 @@ model Company {
   price_table         PriceTable[]
   nps_surveys         NpsSurvey[]
   payments            Payment[]
+  coupons             Coupon[]
 
   @@map("companies")
 }
@@ -426,6 +427,7 @@ model Customer {
   contracts            Contract[]
   nps_surveys          NpsSurvey[]
   payments             Payment[]
+  coupons              Coupon[]
 
   @@unique([company_id, vhsys_id])
   // Partial unique index on (company_id, document_number) WHERE document_number IS NOT NULL AND document_number != ''
@@ -1551,4 +1553,29 @@ model BotConversation {
   @@index([chatwoot_contact_id])
   @@index([follow_up_next_at]) // cron queries by this field
   @@map("bot_conversations")
+}
+
+// Cupom de desconto por fidelidade. Gerado quando o cliente clica no
+// link do template de avaliacao (assume que foi avaliar no Google).
+// Sem prazo de validade — usado na proxima OS para abater do total.
+model Coupon {
+  id              String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id      String
+  customer_id     String
+  code            String    // e.g. "REVIEW-ABC123"
+  source          String    @default("review") // review | manual | other
+  discount_type   String    @default("percent") // percent | fixed
+  discount_value  Int       // percent: valor inteiro (ex: 10 = 10%). fixed: centavos.
+  used_at         DateTime? @db.Timestamptz(6) // null = disponivel; preenchido = usado
+  used_on_os_id   String?
+  notes           String?
+  issued_at       DateTime? @default(now()) @db.Timestamptz(6)
+  created_at      DateTime? @default(now()) @db.Timestamptz(6)
+  companies       Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customers       Customer  @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([company_id, code])
+  @@index([company_id, customer_id])
+  @@index([company_id, used_at]) // query rapida: 'cupons disponiveis desse cliente'
+  @@map("coupons")
 }
