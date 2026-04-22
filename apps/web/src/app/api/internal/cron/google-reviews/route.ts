@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
-import { sendWhatsAppTemplate } from '@/lib/whatsapp/cloud-api'
+import { sendWhatsAppTemplate, sendWhatsAppCloud } from '@/lib/whatsapp/cloud-api'
 import { findStatusByName } from '@/lib/module-status'
 import crypto from 'crypto'
 
@@ -159,25 +159,25 @@ export async function POST(req: NextRequest) {
         ? buildCouponToken(stop.company_id, customerId)
         : 'sem-token'
 
-      const fallback = `Ola, ${firstName}! Gostariamos muito de ouvir sua opiniao sobre o atendimento. Toque no link pra deixar seu feedback: ${getBaseUrl(stop.company_id)}/avaliar/${token}`
+      const link = `${getBaseUrl(stop.company_id)}/avaliar/${token}`
+      const freeText = `Ola, ${firstName}! Gostariamos muito de ouvir sua opiniao sobre o atendimento. Toque no link para deixar seu feedback:\n\n${link}`
 
-      // v3 primeiro (body neutro + path /avaliar), v2 fallback, v1 ultimo
-      let r = await sendWhatsAppTemplate(
-        stop.company_id, normalizedPhone, 'pt_avaliacao_google_v3', 'pt_BR',
-        [
-          {
-            type: 'body',
-            parameters: [{ type: 'text', text: firstName }],
-          },
-          {
-            type: 'button',
-            sub_type: 'url',
-            index: '0',
-            parameters: [{ type: 'text', text: token }],
-          },
-        ],
-        fallback,
-      )
+      // Estrategia: FREE TEXT primeiro (chega direto se janela 24h aberta —
+      // normalmente esta, pois cliente interagiu com bot recentemente).
+      // So cai pro template se free text falhar (fora da janela 24h).
+      let r = await sendWhatsAppCloud(stop.company_id, normalizedPhone, freeText)
+
+      if (!r.success) {
+        // Fora da janela 24h — tenta templates com botao (sem palavras filtradas)
+        r = await sendWhatsAppTemplate(
+          stop.company_id, normalizedPhone, 'pt_avaliacao_google_v3', 'pt_BR',
+          [
+            { type: 'body', parameters: [{ type: 'text', text: firstName }] },
+            { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: token }] },
+          ],
+          freeText,
+        )
+      }
       if (!r.success) {
         r = await sendWhatsAppTemplate(
           stop.company_id, normalizedPhone, 'pt_avaliacao_google_v2', 'pt_BR',
@@ -185,21 +185,7 @@ export async function POST(req: NextRequest) {
             { type: 'body', parameters: [{ type: 'text', text: firstName }] },
             { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: token }] },
           ],
-          fallback,
-        )
-      }
-      if (!r.success) {
-        const fullLink = `${getBaseUrl(stop.company_id)}/cupom-avaliacao/${token}`
-        r = await sendWhatsAppTemplate(
-          stop.company_id, normalizedPhone, 'pt_avaliacao_google_v1', 'pt_BR',
-          [{
-            type: 'body',
-            parameters: [
-              { type: 'text', text: firstName },
-              { type: 'text', text: fullLink },
-            ],
-          }],
-          fallback,
+          freeText,
         )
       }
       if (r.success) {
