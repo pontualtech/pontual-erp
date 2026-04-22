@@ -27,10 +27,6 @@ export async function GET(req: NextRequest) {
     prisma.logisticsStop.findFirst({
       where: { id: stopId, company_id: auth.companyId },
       include: { route: { select: { driver_id: true } } },
-      select: {
-        id: true, lat: true, lng: true, customer_name: true,
-        route: { select: { driver_id: true } },
-      } as any,
     }),
     prisma.userProfile.findUnique({
       where: { id: auth.id },
@@ -39,7 +35,7 @@ export async function GET(req: NextRequest) {
   ])
 
   if (!stop) return NextResponse.json({ error: 'Parada nao encontrada' }, { status: 404 })
-  if ((stop as any).route?.driver_id !== auth.id) {
+  if (stop.route?.driver_id !== auth.id) {
     return NextResponse.json({ error: 'Parada nao e da sua rota' }, { status: 403 })
   }
   if (!stop.lat || !stop.lng) {
