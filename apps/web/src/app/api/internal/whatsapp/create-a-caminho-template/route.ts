@@ -54,25 +54,35 @@ export async function POST(req: NextRequest) {
   if (!token) return NextResponse.json({ error: 'Missing whatsapp.cloud.access_token' }, { status: 400 })
   if (!wabaId) return NextResponse.json({ error: 'Missing whatsapp.cloud.business_account_id (envie via body.waba_id ou configure settings)' }, { status: 400 })
 
+  // v3: acrescenta BUTTONS com URL dinamica pro token de confirmacao.
+  // Cliente toca no botao 'Confirmar / Remarcar' em vez de URL inline.
+  // 3 body params + 1 button param (visita token).
   const templateBody = {
-    name: 'pt_a_caminho_v2',
+    name: 'pt_a_caminho_v3',
     language: 'pt_BR',
     category: 'UTILITY',
     components: [
       {
         type: 'BODY',
-        // v2: 'motorista' em vez de 'tecnico' (motorista faz coleta/entrega,
-        // tecnico fica no laboratorio fazendo diagnostico — papeis diferentes)
-        // Meta nao aceita variavel no inicio nem no fim do texto.
-        text: 'Ola {{1}}! Nosso motorista {{2}} esta a caminho{{3}}.\n\nConfirme sua disponibilidade ou solicite remarcar no link: {{4}}\n\nEm caso de duvida, responda esta mensagem.',
+        text: 'Ola {{1}}! Nosso motorista {{2}} esta a caminho{{3}}.\n\nConfirme sua disponibilidade ou solicite remarcar no botao abaixo. Em caso de duvida, responda esta mensagem.',
         example: {
           body_text: [[
             'Maria',
             'Emerson',
-            ' - previsao: 15 min',
-            'https://portal.pontualtech.com.br/portal/pontualtech/visita/abc123',
+            '. Previsao: 15 min',
           ]],
         },
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Confirmar ou Remarcar',
+            url: 'https://portal.pontualtech.com.br/portal/pontualtech/visita/{{1}}',
+            example: ['https://portal.pontualtech.com.br/portal/pontualtech/visita/abc123'],
+          },
+        ],
       },
     ],
   }
@@ -90,7 +100,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: res.ok,
       status: res.status,
-      template_name: 'pt_a_caminho_v2',
+      template_name: 'pt_a_caminho_v3',
       meta_response: data,
       next_step: res.ok
         ? 'Template registrado! Aprovacao do Meta leva alguns minutos. Status: PENDING -> APPROVED.'
