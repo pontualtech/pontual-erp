@@ -73,6 +73,14 @@ async function loadLeaflet(): Promise<any> {
 // o trajeto (polyline) e replay via timeline slider.
 type TrailPoint = { lat: number; lng: number; at: string | Date; accuracy_m: number | null }
 
+// Coerce pra number e valida. Prisma devolve lat/lng como Decimal
+// (objeto); se passar direto pro Leaflet vira NaN e quebra o mapa.
+function toFinite(n: any): number | null {
+  if (n == null) return null
+  const x = typeof n === 'number' ? n : Number(n)
+  return Number.isFinite(x) ? x : null
+}
+
 // Haversine — distancia em km entre dois pontos geodesicos.
 function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
   const R = 6371
@@ -157,8 +165,11 @@ export default function LeafletMap({ routes, drivers = [], trail = null, playbac
     const seenDrivers = new Set<string>()
     for (const route of routes) {
       if (!route.last_location || !route.driver) continue
+      const dLat = toFinite(route.last_location.lat)
+      const dLng = toFinite(route.last_location.lng)
+      if (dLat == null || dLng == null) continue
       seenDrivers.add(route.driver.id)
-      const pos = [route.last_location.lat, route.last_location.lng] as [number, number]
+      const pos = [dLat, dLng] as [number, number]
 
       const existing = driverMarkersRef.current.get(route.driver.id)
       if (existing) {
@@ -193,11 +204,12 @@ export default function LeafletMap({ routes, drivers = [], trail = null, playbac
     // Upsert FREE drivers (sem rota hoje) — cor cinza/laranja pra diferenciar
     const seenFree = new Set<string>()
     for (const d of drivers) {
-      if (!d.lat || !d.lng) continue
+      const fLat = toFinite(d.lat); const fLng = toFinite(d.lng)
+      if (fLat == null || fLng == null) continue
       // Pula motoristas que ja estao em rota (ja renderizados acima em azul)
       if (d.has_route_today) continue
       seenFree.add(d.id)
-      const pos = [d.lat, d.lng] as [number, number]
+      const pos = [fLat, fLng] as [number, number]
       const existing = freeDriverMarkersRef.current.get(d.id)
       if (existing) {
         existing.setLatLng(pos)
@@ -233,7 +245,9 @@ export default function LeafletMap({ routes, drivers = [], trail = null, playbac
     // contexto completo da rota planejada.
     for (const route of routes) {
       for (const stop of route.stops) {
-        if (!stop.lat || !stop.lng) continue
+        const sLat = toFinite(stop.lat)
+        const sLng = toFinite(stop.lng)
+        if (sLat == null || sLng == null) continue
         const isDone = stop.status === 'COMPLETED'
         const isFailed = stop.status === 'FAILED'
         if (!showStopRoute && (isDone || isFailed)) continue
@@ -252,7 +266,7 @@ export default function LeafletMap({ routes, drivers = [], trail = null, playbac
           ">${label}</div>`,
           iconSize: [28, 28], iconAnchor: [14, 14],
         })
-        const marker = L.marker([stop.lat, stop.lng], { icon }).addTo(map)
+        const marker = L.marker([sLat, sLng], { icon }).addTo(map)
         const statusLabel = isDone ? ' · concluída' : isFailed ? ' · falhou' : ''
         marker.bindPopup(`
           <div style="font-size:12px;max-width:220px">
@@ -272,8 +286,10 @@ export default function LeafletMap({ routes, drivers = [], trail = null, playbac
     routeLayersRef.current = []
     if (showStopRoute) {
       for (const route of routes) {
-        const ordered = [...route.stops]
-          .filter(s => s.lat != null && s.lng != null)
+        // Normaliza coords: Prisma Decimal -> number validado.
+        const ordered = route.stops
+          .map(s => ({ ...s, _lat: toFinite(s.lat), _lng: toFinite(s.lng) }))
+          .filter(s => s._lat != null && s._lng != null)
           .sort((a, b) => a.sequence - b.sequence)
         if (ordered.length < 2) continue
 
@@ -292,7 +308,7 @@ export default function LeafletMap({ routes, drivers = [], trail = null, playbac
             routeLayersRef.current.push(line)
           }
         } else {
-          const latlngs = ordered.map(s => [s.lat as number, s.lng as number] as [number, number])
+          const latlngs = ordered.map(s => [s._lat as number, s._lng as number] as [number, number])
           const line = L.polyline(latlngs, {
             color: '#4f46e5', weight: 3, opacity: 0.55, dashArray: '4,6',
           }).addTo(map)
@@ -315,11 +331,12 @@ export default function LeafletMap({ routes, drivers = [], trail = null, playbac
             km = leg.distance_m / 1000
             minutes = Math.round(leg.duration_s / 60)
           } else {
-            km = haversineKm({ lat: a.lat!, lng: a.lng! }, { lat: b.lat!, lng: b.lng! })
+            km = haversineKm({ lat: a._lat!, lng: a._lng! }, { lat: b._lat!, lng: b._lng! })
             minutes = null
           }
-          const midLat = (a.lat! + b.lat!) / 2
-          const midLng = (a.lng! + b.lng!) / 2
+          const midLat = (a._lat! + b._lat!) / 2
+          const midLng = (a._lng! + b._lng!) / 2
+          if (!Number.isFinite(midLat) || !Number.isFinite(midLng)) continue
           const kmText = km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(1)}km`
           const timeText = minutes != null
             ? (minutes >= 60 ? `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, '0')}` : `${minutes}min`)
@@ -379,15 +396,20 @@ export default function LeafletMap({ routes, drivers = [], trail = null, playbac
     // Auto-fit se tiver pontos (inclui motoristas livres + trail no bounds)
     const allLatLngs: [number, number][] = []
     routes.forEach(r => {
-      if (r.last_location) allLatLngs.push([r.last_location.lat, r.last_location.lng])
+      if (r.last_location) {
+        const la = toFinite(r.last_location.lat); const ln = toFinite(r.last_location.lng)
+        if (la != null && ln != null) allLatLngs.push([la, ln])
+      }
       r.stops.forEach(s => {
-        if (s.lat && s.lng && s.status !== 'COMPLETED' && s.status !== 'FAILED') {
-          allLatLngs.push([s.lat, s.lng])
+        const la = toFinite(s.lat); const ln = toFinite(s.lng)
+        if (la != null && ln != null && s.status !== 'COMPLETED' && s.status !== 'FAILED') {
+          allLatLngs.push([la, ln])
         }
       })
     })
     drivers.forEach(d => {
-      if (d.lat && d.lng && !d.has_route_today) allLatLngs.push([d.lat, d.lng])
+      const la = toFinite(d.lat); const ln = toFinite(d.lng)
+      if (la != null && ln != null && !d.has_route_today) allLatLngs.push([la, ln])
     })
     if (trail && trail.points.length > 0) {
       trail.points.forEach(p => allLatLngs.push([p.lat, p.lng]))
