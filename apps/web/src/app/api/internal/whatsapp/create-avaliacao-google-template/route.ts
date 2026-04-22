@@ -34,17 +34,30 @@ export async function POST(req: NextRequest) {
   if (!token) return NextResponse.json({ error: 'Missing whatsapp.cloud.access_token' }, { status: 400 })
   if (!wabaId) return NextResponse.json({ error: 'Missing whatsapp.cloud.business_account_id' }, { status: 400 })
 
+  // v2: link sai do body (Meta filtra templates com URL inline) e vira
+  // BOTAO URL dinamico. Mesmo padrao do pt_a_caminho_v3 que funciona.
   const templateBody = {
-    name: 'pt_avaliacao_google_v1',
+    name: 'pt_avaliacao_google_v2',
     language: 'pt_BR',
     category: 'UTILITY',
     components: [
       {
         type: 'BODY',
-        text: 'Ola {{1}}! Esperamos que tenha gostado do nosso atendimento. Que tal deixar uma avaliacao rapida no Google? Leva menos de 1 minuto: {{2}}\n\nSeu feedback ajuda muito! Em caso de duvida, responda esta mensagem.',
+        text: 'Ola {{1}}! Esperamos que tenha gostado do nosso atendimento. Que tal deixar uma avaliacao rapida no Google? Leva menos de 1 minuto e voce ainda ganha um cupom de desconto pra proxima compra.\n\nEm caso de duvida, responda esta mensagem.',
         example: {
-          body_text: [['Maria', 'https://g.page/r/XXXXXX/review']],
+          body_text: [['Maria']],
         },
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Avaliar e ganhar cupom',
+            url: 'https://portal.pontualtech.com.br/cupom-avaliacao/{{1}}',
+            example: ['https://portal.pontualtech.com.br/cupom-avaliacao/abc123'],
+          },
+        ],
       },
     ],
   }
@@ -59,7 +72,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: res.ok,
       status: res.status,
-      template_name: 'pt_avaliacao_google_v1',
+      template_name: 'pt_avaliacao_google_v2',
       meta_response: data,
     }, { status: res.ok ? 200 : 400 })
   } catch (err: any) {

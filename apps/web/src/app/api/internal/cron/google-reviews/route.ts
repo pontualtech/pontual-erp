@@ -153,26 +153,46 @@ export async function POST(req: NextRequest) {
       // customer_id pra gerar o token do cupom — ja veio no select de os.
       const customerId: string | null = os.customer_id || null
 
-      // Link vai pelo nosso endpoint: /cupom-avaliacao/[token] cria o
-      // cupom e redireciona pro Google. Fallback: URL direta se nao
-      // tiver customer_id (edge case).
-      const clickLink = customerId
-        ? `${getBaseUrl(stop.company_id)}/cupom-avaliacao/${buildCouponToken(stop.company_id, customerId)}`
-        : cache.reviewsUrl
+      // Token do cupom vai como PARAMETRO DO BOTAO URL (nao no body).
+      // Template v2 tem botao https://portal.pontualtech.com.br/cupom-avaliacao/{{1}}.
+      const token = customerId
+        ? buildCouponToken(stop.company_id, customerId)
+        : 'sem-token'
 
-      const fallback = `Ola, ${firstName}! Esperamos que tenha gostado do nosso atendimento. Que tal deixar uma avaliacao rapida no Google? Leva menos de 1 minuto: ${clickLink}\n\nApos avaliar, voce ganha 10% de desconto na proxima!`
+      const fallback = `Ola, ${firstName}! Esperamos que tenha gostado do nosso atendimento. Que tal deixar uma avaliacao rapida no Google? Leva menos de 1 minuto: ${getBaseUrl(stop.company_id)}/cupom-avaliacao/${token}\n\nApos avaliar, voce ganha 10% de desconto na proxima!`
 
-      const r = await sendWhatsAppTemplate(
-        stop.company_id, normalizedPhone, 'pt_avaliacao_google_v1', 'pt_BR',
-        [{
-          type: 'body',
-          parameters: [
-            { type: 'text', text: firstName },
-            { type: 'text', text: clickLink },
-          ],
-        }],
+      // v2 primeiro (botao), v1 como fallback se v2 indisponivel
+      let r = await sendWhatsAppTemplate(
+        stop.company_id, normalizedPhone, 'pt_avaliacao_google_v2', 'pt_BR',
+        [
+          {
+            type: 'body',
+            parameters: [{ type: 'text', text: firstName }],
+          },
+          {
+            type: 'button',
+            sub_type: 'url',
+            index: '0',
+            parameters: [{ type: 'text', text: token }],
+          },
+        ],
         fallback,
       )
+      if (!r.success) {
+        // v2 falhou (nao registrado ainda), tenta v1 como fallback
+        const fullLink = `${getBaseUrl(stop.company_id)}/cupom-avaliacao/${token}`
+        r = await sendWhatsAppTemplate(
+          stop.company_id, normalizedPhone, 'pt_avaliacao_google_v1', 'pt_BR',
+          [{
+            type: 'body',
+            parameters: [
+              { type: 'text', text: firstName },
+              { type: 'text', text: fullLink },
+            ],
+          }],
+          fallback,
+        )
+      }
       if (r.success) {
         await prisma.logisticsStop.update({
           where: { id: stop.id },

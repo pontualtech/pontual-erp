@@ -417,8 +417,13 @@ function buildFallbackText(templateName: string, components?: any[]): string | n
       return `Ola ${params[0] || ''}! Nosso motorista ${params[1] || ''} acabou de sair da base e esta em rota para o atendimento de hoje. Em breve avisaremos quando estiver chegando no seu endereco.\n\nEm caso de duvida, responda esta mensagem.`
 
     case 'pt_avaliacao_google_v1':
-      // params: nome_cliente, link_avaliacao
+      // params: nome_cliente, link_avaliacao (v1: link inline)
       return `Ola ${params[0] || ''}! Esperamos que tenha gostado do nosso atendimento. Que tal deixar uma avaliacao rapida no Google? Leva menos de 1 minuto: ${params[1] || ''}\n\nSeu feedback ajuda muito! Em caso de duvida, responda esta mensagem.`
+
+    case 'pt_avaliacao_google_v2':
+      // params: nome_cliente (body); token (button url)
+      // v2: link vira BOTAO, nao inline no body. Meta nao filtra como no v1.
+      return `Ola ${params[0] || ''}! Esperamos que tenha gostado do nosso atendimento. Que tal deixar uma avaliacao rapida no Google? Leva menos de 1 minuto e voce ainda ganha um cupom de desconto pra proxima compra.\n\nEm caso de duvida, responda esta mensagem.`
 
     case 'pt_suporte_v1':
       // no params
