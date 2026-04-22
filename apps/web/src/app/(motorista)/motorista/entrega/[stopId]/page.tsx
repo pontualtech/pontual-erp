@@ -46,6 +46,8 @@ export default function EntregaPage() {
   const [refusalReason, setRefusalReason] = useState('')
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null)
   const [paymentNotes, setPaymentNotes] = useState('')
+  // Parcelas — so aparece quando cartao_credito. Cliente escolhe 1-12x.
+  const [installments, setInstallments] = useState<number>(1)
   const [receiptPhoto, setReceiptPhoto] = useState<string | null>(null)
   const [cameraOpen, setCameraOpen] = useState(false)
   const [signerName, setSignerName] = useState('')
@@ -106,6 +108,7 @@ export default function EntregaPage() {
         payload.payment = {
           method: paymentMethod,
           amount_cents: amountCents,
+          installments: paymentMethod === 'cartao_credito' ? installments : 1,
           receipt_photo_base64: receiptPhoto,
           notes: paymentNotes.trim() || null,
         }
@@ -209,6 +212,29 @@ export default function EntregaPage() {
                 ))}
               </div>
             </section>
+
+            {/* Parcelas — so pra cartao de credito. Cliente escolhe 1x-12x. */}
+            {paymentMethod === 'cartao_credito' && amountCents > 0 && (
+              <section>
+                <h2 className="font-semibold text-gray-900 mb-2">Parcelas</h2>
+                <div className="grid grid-cols-4 gap-2">
+                  {[1,2,3,4,5,6,7,8,9,10,11,12].map(n => (
+                    <button key={n} type="button" onClick={() => setInstallments(n)}
+                      className={`py-2 rounded-lg border-2 text-sm font-semibold transition ${
+                        installments === n
+                          ? 'border-emerald-600 bg-emerald-50 text-emerald-700'
+                          : 'border-gray-300 bg-white text-gray-700'
+                      }`}>
+                      {n}x
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  {installments}x de <strong>{fmtBRL(Math.round(amountCents / installments))}</strong>
+                  {installments > 1 && ' (sem juros — se operadora cobrar, vem descontado no liquido)'}
+                </p>
+              </section>
+            )}
 
             {needsReceipt && (
               <section>

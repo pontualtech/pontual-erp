@@ -273,9 +273,12 @@ export async function POST(
         }
 
         if (shouldCreateFinancial) {
-          // AR idempotente: checa descricao com event_id antes de criar.
-          // Fora da $transaction pra nao quebrar tudo se AR falhar por
-          // regra de negocio (campo ausente etc) — mas ainda idempotente.
+          // AR: pix/dinheiro/boleto = PAGO (recebido no ato).
+          //     cartao_credito/debito = PENDENTE + installments + card_fee
+          //     (valor so liquida apos D+N da operadora).
+          // Igual ao que o atendente faz em /api/os/[id]/transition.
+          const pmLower = (body.payment!.method || '').toLowerCase()
+          const isCard = pmLower.includes('cart')
           try {
             const existingAR = await prisma.accountReceivable.findFirst({
               where: {
@@ -286,20 +289,112 @@ export async function POST(
               select: { id: true },
             })
             if (!existingAR) {
-              await prisma.accountReceivable.create({
+              // Calcula card_fee via setting card_fee.* da empresa
+              let cardFeeTotal = 0
+              let netAmount = amount
+              let daysToReceive = 0
+              if (isCard) {
+                const feeSettings = await prisma.setting.findMany({
+                  where: { company_id: auth.companyId, key: { startsWith: 'card_fee.' } },
+                })
+                for (const setting of feeSettings) {
+                  try {
+                    const cfg = JSON.parse(setting.value)
+                    if (pmLower.includes(String(cfg.name || '').toLowerCase()) || feeSettings.length === 1) {
+                      const isDebit = pmLower.includes('debito') || pmLower.includes('débito')
+                      const debitPct = cfg.debit?.fee_pct ?? cfg.debit_fee_pct
+                      if (installmentCount === 1 && isDebit && debitPct != null) {
+                        cardFeeTotal = Math.round(amount * debitPct / 100)
+                        daysToReceive = cfg.debit?.days_to_receive ?? 1
+                      } else {
+                        const ranges = cfg.credit?.installments || cfg.installments || []
+                        for (const range of ranges) {
+                          if (installmentCount >= range.from && installmentCount <= range.to) {
+                            cardFeeTotal = Math.round(amount * range.fee_pct / 100)
+                            daysToReceive = range.days_to_receive ?? 1
+                            break
+                          }
+                        }
+                      }
+                      netAmount = amount - cardFeeTotal
+                      break
+                    }
+                  } catch { /* skip invalid */ }
+                }
+              }
+
+              // Data de vencimento: hoje pra a vista, +D dias uteis pra cartao
+              const dueDate = new Date()
+              if (daysToReceive > 0) {
+                let dias = 0
+                while (dias < daysToReceive) {
+                  dueDate.setDate(dueDate.getDate() + 1)
+                  const dow = dueDate.getDay()
+                  if (dow !== 0 && dow !== 6) dias++
+                }
+              }
+
+              const ar = await prisma.accountReceivable.create({
                 data: {
                   company_id: auth.companyId,
                   customer_id: os.customer_id,
                   service_order_id: os.id,
                   description: arDescription,
                   total_amount: amount,
-                  received_amount: amount,
-                  due_date: new Date(),
-                  status: 'PAGO',
+                  received_amount: isCard ? 0 : amount,
+                  due_date: dueDate,
+                  status: isCard ? 'PENDENTE' : 'PAGO',
                   payment_method: paymentMethodMapped,
                   installment_count: installmentCount,
+                  card_fee_total: cardFeeTotal,
+                  net_amount: netAmount,
+                  notes: isCard
+                    ? `Cartao ${installmentCount}x via motorista ${auth.name}. Taxa R$ ${(cardFeeTotal / 100).toFixed(2)}, Liquido R$ ${(netAmount / 100).toFixed(2)}, Recebe D+${daysToReceive}`
+                    : `Recebido via motorista ${auth.name}`,
                 },
               })
+
+              // Parcelas (so quando > 1)
+              if (installmentCount > 1) {
+                const baseAmount = Math.floor(amount / installmentCount)
+                const remainder = amount - baseAmount * installmentCount
+                const intervalDias = (isCard && daysToReceive > 0) ? daysToReceive : 30
+                const installments = []
+                const baseDate = new Date()
+                for (let i = 0; i < installmentCount; i++) {
+                  const instDue = new Date(baseDate)
+                  instDue.setDate(instDue.getDate() + intervalDias * (i + 1))
+                  installments.push({
+                    company_id: auth.companyId,
+                    parent_type: 'RECEIVABLE',
+                    parent_id: ar.id,
+                    installment_number: i + 1,
+                    amount: i === 0 ? baseAmount + remainder : baseAmount,
+                    due_date: instDue,
+                    status: 'PENDENTE',
+                  })
+                }
+                await prisma.installment.createMany({ data: installments })
+              }
+
+              // Despesa da taxa do cartao (AccountPayable)
+              if (cardFeeTotal > 0) {
+                const feeCategory = await prisma.category.findFirst({
+                  where: { company_id: auth.companyId, module: 'financeiro_despesa', name: { contains: 'Taxas de Cartao' } },
+                })
+                await prisma.accountPayable.create({
+                  data: {
+                    company_id: auth.companyId,
+                    category_id: feeCategory?.id || null,
+                    description: `Taxa cartao OS-${String(os.os_number).padStart(4, '0')} — ${body.payment!.method} ${installmentCount > 1 ? installmentCount + 'x' : ''}`.trim(),
+                    total_amount: cardFeeTotal,
+                    paid_amount: 0,
+                    due_date: new Date(),
+                    status: 'PENDENTE',
+                    payment_method: 'Desconto automatico',
+                  },
+                })
+              }
             }
           } catch (err) {
             console.warn('[driver/entrega] AR create falhou:', err)
