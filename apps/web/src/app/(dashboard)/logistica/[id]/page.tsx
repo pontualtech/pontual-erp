@@ -701,10 +701,10 @@ export default function RouteDetailPage() {
         )}
       </div>
 
-      {/* Add Stop Modal */}
+      {/* Add Stop Modal — z-[1001] pra ficar acima das tiles do Leaflet (z~600) */}
       {addStopModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => !addingStop && setAddStopModal(false)}>
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl mx-4" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[1001] flex items-center justify-center bg-black/40 p-4 overflow-y-auto" onClick={() => !addingStop && setAddStopModal(false)}>
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl my-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-gray-900 flex items-center gap-2">
                 <Plus className="h-5 w-5 text-blue-600" />
@@ -781,8 +781,8 @@ export default function RouteDetailPage() {
 
       {/* Postpone Modal — adiar parada */}
       {postponeModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setPostponeModal(null)}>
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl mx-4" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[1001] flex items-center justify-center bg-black/40 p-4 overflow-y-auto" onClick={() => setPostponeModal(null)}>
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl my-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-gray-900 flex items-center gap-2">
                 <CalendarClock className="h-5 w-5 text-amber-600" />
@@ -829,8 +829,8 @@ export default function RouteDetailPage() {
 
       {/* Failure Reason Modal */}
       {failureModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setFailureModal(null)}>
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl mx-4" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[1001] flex items-center justify-center bg-black/40 p-4 overflow-y-auto" onClick={() => setFailureModal(null)}>
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl my-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-gray-900 flex items-center gap-2">
                 <XCircle className="h-5 w-5 text-red-500" />
