@@ -129,10 +129,15 @@ export default function RouteDetailPage() {
   const [addStopModal, setAddStopModal] = useState(false)
   const [addStopForm, setAddStopForm] = useState({
     type: 'COLETA' as 'COLETA' | 'ENTREGA',
-    customer_name: '', customer_phone: '', address: '',
+    customer_name: '', customer_phone: '', address: '', os_id: null as string | null,
   })
   const [addingStop, setAddingStop] = useState(false)
   const [recalculating, setRecalculating] = useState(false)
+  // Busca de OS/cliente pro autofill no modal de adicionar parada
+  const [addStopSearchMode, setAddStopSearchMode] = useState<'os' | 'doc' | 'manual'>('os')
+  const [addStopSearchInput, setAddStopSearchInput] = useState('')
+  const [addStopSearching, setAddStopSearching] = useState(false)
+  const [addStopSearchResults, setAddStopSearchResults] = useState<any[]>([])
 
   // Photo upload
   const [uploadingPhoto, setUploadingPhoto] = useState<string | null>(null)
@@ -256,6 +261,46 @@ export default function RouteDetailPage() {
     } finally { setRecalculating(false) }
   }
 
+  const resetAddStopForm = () => {
+    setAddStopForm({ type: 'COLETA', customer_name: '', customer_phone: '', address: '', os_id: null })
+    setAddStopSearchInput('')
+    setAddStopSearchResults([])
+    setAddStopSearchMode('os')
+  }
+
+  const handleAddStopSearch = async () => {
+    const q = addStopSearchInput.trim()
+    if (!q) return toast.error('Digite OS ou CPF/CNPJ')
+    setAddStopSearching(true)
+    setAddStopSearchResults([])
+    try {
+      const qs = addStopSearchMode === 'os'
+        ? `number=${encodeURIComponent(q)}`
+        : `doc=${encodeURIComponent(q)}`
+      const res = await fetch(`/api/logistics/os/lookup?${qs}`, { cache: 'no-store' })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(j?.error || 'Falha na busca'); return }
+      const items = j.data?.items || []
+      setAddStopSearchResults(items)
+      if (items.length === 0) toast.info('Nenhuma OS EXTERNA encontrada')
+    } catch { toast.error('Falha de rede') }
+    finally { setAddStopSearching(false) }
+  }
+
+  const applyOsToForm = (item: any) => {
+    setAddStopForm(f => ({
+      ...f,
+      type: item.suggested_type || f.type,
+      customer_name: item.customer_name || '',
+      customer_phone: item.customer_phone || '',
+      address: item.address || '',
+      os_id: item.os_id || null,
+    }))
+    setAddStopSearchResults([])
+    setAddStopSearchInput('')
+    toast.success(`OS #${item.os_number} carregada`)
+  }
+
   const handleAddStop = async () => {
     if (!addStopForm.address.trim()) { toast.error('Endereco obrigatorio'); return }
     if (!addStopForm.customer_name.trim()) { toast.error('Nome do cliente obrigatorio'); return }
@@ -270,7 +315,7 @@ export default function RouteDetailPage() {
       if (!res.ok) { toast.error(data?.error || 'Erro ao adicionar'); return }
       toast.success(`Parada adicionada${data.data?.geocoded ? ' (endereco geocodado)' : ' sem coords'} — considere recalcular pra otimizar`)
       setAddStopModal(false)
-      setAddStopForm({ type: 'COLETA', customer_name: '', customer_phone: '', address: '' })
+      resetAddStopForm()
       loadRoute()
     } finally { setAddingStop(false) }
   }
@@ -771,6 +816,55 @@ export default function RouteDetailPage() {
               </button>
             </div>
             <div className="space-y-3">
+              {/* Busca por OS ou CPF/CNPJ — autofill os campos abaixo */}
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
+                <div className="flex gap-1">
+                  {(['os', 'doc', 'manual'] as const).map(m => (
+                    <button key={m} type="button"
+                      onClick={() => { setAddStopSearchMode(m); setAddStopSearchResults([]) }}
+                      className={cn('flex-1 rounded px-2 py-1 text-xs font-medium transition',
+                        addStopSearchMode === m
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100',
+                      )}>
+                      {m === 'os' ? 'Por OS' : m === 'doc' ? 'Por CPF/CNPJ' : 'Manual'}
+                    </button>
+                  ))}
+                </div>
+                {addStopSearchMode !== 'manual' && (
+                  <>
+                    <div className="flex gap-2">
+                      <input
+                        value={addStopSearchInput}
+                        onChange={e => setAddStopSearchInput(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddStopSearch() } }}
+                        inputMode={addStopSearchMode === 'os' ? 'numeric' : 'tel'}
+                        placeholder={addStopSearchMode === 'os' ? 'Numero da OS (ex: 60123)' : 'CPF ou CNPJ'}
+                        className="flex-1 rounded border border-gray-300 px-2 py-1.5 text-sm" />
+                      <button type="button" onClick={handleAddStopSearch} disabled={addStopSearching || !addStopSearchInput.trim()}
+                        className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm font-medium disabled:opacity-50">
+                        {addStopSearching ? '…' : 'Buscar'}
+                      </button>
+                    </div>
+                    {addStopSearchResults.length > 0 && (
+                      <div className="space-y-1 max-h-56 overflow-y-auto">
+                        {addStopSearchResults.map((r: any) => (
+                          <button key={r.os_id} type="button" onClick={() => applyOsToForm(r)}
+                            className="w-full text-left rounded border border-gray-200 bg-white hover:bg-blue-50 px-2 py-1.5">
+                            <div className="flex items-baseline justify-between">
+                              <span className="text-xs font-semibold text-gray-900">OS #{r.os_number}</span>
+                              <span className="text-[10px] text-gray-500">{r.status}</span>
+                            </div>
+                            <div className="text-xs text-gray-700 truncate">{r.customer_name}</div>
+                            <div className="text-[10px] text-gray-500 truncate">{r.address}</div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
               <p className="text-xs text-gray-500">
                 Pode ser uma OS existente ou endereco avulso. Se informar endereco sem lat/lng, o sistema geocoda automaticamente.
               </p>
