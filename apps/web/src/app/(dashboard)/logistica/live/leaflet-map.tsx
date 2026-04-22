@@ -73,11 +73,23 @@ async function loadLeaflet(): Promise<any> {
 // o trajeto (polyline) e replay via timeline slider.
 type TrailPoint = { lat: number; lng: number; at: string | Date; accuracy_m: number | null }
 
-export default function LeafletMap({ routes, drivers = [], trail = null, playbackIndex = -1 }: {
+// Haversine — distancia em km entre dois pontos geodesicos.
+function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const R = 6371
+  const dLat = (b.lat - a.lat) * Math.PI / 180
+  const dLon = (b.lng - a.lng) * Math.PI / 180
+  const la1 = a.lat * Math.PI / 180
+  const la2 = b.lat * Math.PI / 180
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLon / 2) ** 2
+  return 2 * R * Math.asin(Math.sqrt(x))
+}
+
+export default function LeafletMap({ routes, drivers = [], trail = null, playbackIndex = -1, showStopRoute = false }: {
   routes: LiveRoute[]
   drivers?: FreeDriver[]
   trail?: { driver_name: string; points: TrailPoint[] } | null
   playbackIndex?: number  // -1 = desativado (mostra trail completo estatico)
+  showStopRoute?: boolean // desenha polyline conectando stops em sequence + distancias
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<any>(null)
@@ -86,6 +98,7 @@ export default function LeafletMap({ routes, drivers = [], trail = null, playbac
   const stopMarkersRef = useRef<any[]>([])
   const trailLayerRef = useRef<any>(null)
   const playbackMarkerRef = useRef<any>(null)
+  const routeLayersRef = useRef<any[]>([]) // polyline + distance labels entre stops
 
   // Init map
   useEffect(() => {
@@ -188,12 +201,19 @@ export default function LeafletMap({ routes, drivers = [], trail = null, playbac
       }
     })
 
-    // Adiciona marker pra cada stop pendente
+    // Adiciona marker pra cada stop. Quando showStopRoute=true, mostra
+    // tambem stops COMPLETED/FAILED (em cinza/verde/vermelho) pra dar
+    // contexto completo da rota planejada.
     for (const route of routes) {
       for (const stop of route.stops) {
         if (!stop.lat || !stop.lng) continue
-        if (stop.status === 'COMPLETED' || stop.status === 'FAILED') continue
-        const color = stop.type === 'COLETA' ? '#9333ea' : '#059669'
+        const isDone = stop.status === 'COMPLETED'
+        const isFailed = stop.status === 'FAILED'
+        if (!showStopRoute && (isDone || isFailed)) continue
+
+        const baseColor = stop.type === 'COLETA' ? '#9333ea' : '#059669'
+        const color = isFailed ? '#dc2626' : isDone ? '#6b7280' : baseColor
+        const label = isDone ? '✓' : isFailed ? '✕' : String(stop.sequence)
         const icon = L.divIcon({
           className: '',
           html: `<div style="
@@ -201,18 +221,60 @@ export default function LeafletMap({ routes, drivers = [], trail = null, playbac
             border-radius:50%;box-shadow:0 2px 4px rgba(0,0,0,0.3);
             display:flex;align-items:center;justify-content:center;
             color:white;font-weight:700;font-size:12px;
-          ">${stop.sequence}</div>`,
+            ${isDone ? 'opacity:0.75' : ''}
+          ">${label}</div>`,
           iconSize: [28, 28], iconAnchor: [14, 14],
         })
         const marker = L.marker([stop.lat, stop.lng], { icon }).addTo(map)
+        const statusLabel = isDone ? ' · concluída' : isFailed ? ' · falhou' : ''
         marker.bindPopup(`
           <div style="font-size:12px;max-width:220px">
             <strong>${escapeHtml(stop.customer_name || 'Cliente')}</strong><br/>
-            <span style="color:${color};font-weight:600">${stop.type === 'COLETA' ? 'Coleta' : 'Entrega'} #${stop.sequence}</span><br/>
+            <span style="color:${color};font-weight:600">${stop.type === 'COLETA' ? 'Coleta' : 'Entrega'} #${stop.sequence}${statusLabel}</span><br/>
             <span style="color:#6b7280">${escapeHtml(stop.address)}</span>
           </div>
         `)
         stopMarkersRef.current.push(marker)
+      }
+    }
+
+    // ROTA PLANEJADA: polyline conectando stops em sequence + labels
+    // com distancia (linha reta, Haversine) entre consecutivas.
+    routeLayersRef.current.forEach(l => map.removeLayer(l))
+    routeLayersRef.current = []
+    if (showStopRoute) {
+      for (const route of routes) {
+        const ordered = [...route.stops]
+          .filter(s => s.lat != null && s.lng != null)
+          .sort((a, b) => a.sequence - b.sequence)
+        if (ordered.length < 2) continue
+        const latlngs = ordered.map(s => [s.lat as number, s.lng as number] as [number, number])
+        const line = L.polyline(latlngs, {
+          color: '#4f46e5', weight: 3, opacity: 0.55, dashArray: '4,6',
+        }).addTo(map)
+        routeLayersRef.current.push(line)
+
+        for (let i = 0; i < ordered.length - 1; i++) {
+          const a = ordered[i]; const b = ordered[i + 1]
+          const km = haversineKm({ lat: a.lat!, lng: a.lng! }, { lat: b.lat!, lng: b.lng! })
+          const midLat = (a.lat! + b.lat!) / 2
+          const midLng = (a.lng! + b.lng!) / 2
+          const kmText = km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(1)}km`
+          const label = L.marker([midLat, midLng], {
+            interactive: false,
+            icon: L.divIcon({
+              className: '',
+              html: `<div style="
+                background:white;border:1px solid #4f46e5;color:#4338ca;
+                padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;
+                white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15);
+                transform:translate(-50%,-50%);display:inline-block;
+              ">${kmText}</div>`,
+              iconSize: [0, 0], iconAnchor: [0, 0],
+            }),
+          }).addTo(map)
+          routeLayersRef.current.push(label)
+        }
       }
     }
 
@@ -269,7 +331,7 @@ export default function LeafletMap({ routes, drivers = [], trail = null, playbac
       const bounds = L.latLngBounds(allLatLngs)
       map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 })
     }
-  }, [routes, drivers, trail, playbackIndex])
+  }, [routes, drivers, trail, playbackIndex, showStopRoute])
 
   return <div ref={containerRef} style={{ height: '100%', width: '100%' }} />
 }

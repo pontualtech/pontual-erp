@@ -465,6 +465,7 @@ export default function RouteDetailPage() {
               completed_at: s.completed_at, failure_reason: s.failure_reason,
             })),
           }]}
+          showStopRoute
         />
       </div>
 
