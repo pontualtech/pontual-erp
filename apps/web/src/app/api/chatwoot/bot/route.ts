@@ -2152,18 +2152,27 @@ async function checkFollowUpOptOut(companyId: string, content: string): Promise<
 async function scheduleFollowUp(companyId: string, botConvId: string) {
   try {
     const cfg = await getFollowUpSettings(companyId)
-    if (cfg['bot.followup.enabled'] !== 'true') return
+    if (cfg['bot.followup.enabled'] !== 'true') {
+      console.log('[Bot/scheduleFollowUp] skipped - enabled!=true for', companyId)
+      return
+    }
 
     const intervalMinutes = parseInt(cfg['bot.followup.interval_1_minutes'] || '60')
     const nextAt = new Date(Date.now() + intervalMinutes * 60 * 1000)
 
+    // IMPORTANTE: NAO setamos follow_up_paused_at aqui. Antes era `new Date()`
+    // mas isso nao fazia sentido semantico (paused_at deveria ser NULL pra
+    // agendamento ATIVO). O cron atual nao usa o campo, mas outros lugares
+    // do codigo tratam non-null como "pausado" — mantendo null garante que
+    // o cron vai pegar o follow-up quando nextAt chegar.
     await prisma.botConversation.update({
       where: { id: botConvId },
       data: {
         follow_up_next_at: nextAt,
-        follow_up_paused_at: new Date(),
+        follow_up_paused_at: null,
       },
     })
+    console.log('[Bot/scheduleFollowUp] scheduled for', botConvId, '-> ' + nextAt.toISOString())
   } catch (err) {
     console.error('[Bot] Failed to schedule follow-up:', err)
   }
