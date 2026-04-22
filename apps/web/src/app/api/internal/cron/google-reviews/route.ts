@@ -2,6 +2,26 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { sendWhatsAppTemplate } from '@/lib/whatsapp/cloud-api'
 import { findStatusByName } from '@/lib/module-status'
+import crypto from 'crypto'
+
+/**
+ * Gera token HMAC pro link /cupom-avaliacao/[token]. Mesma logica do
+ * endpoint publico — se o cliente clicar, ganha cupom e vai pro Google.
+ */
+function buildCouponToken(companyId: string, customerId: string): string {
+  const secret = process.env.ERP_TOKEN_SECRET || process.env.CRON_SECRET || 'fallback-dev-secret'
+  const payload = Buffer.from(JSON.stringify({ c: companyId, u: customerId, t: Date.now() })).toString('base64url')
+  const sig = crypto.createHmac('sha256', secret).update(payload).digest('base64url')
+  return `${payload}.${sig}`
+}
+
+function getBaseUrl(companyId: string): string {
+  // Pontualtech e Imprimitech rodam no mesmo ERP mas com dominios
+  // distintos na URL publica. Usa erp.pontualtech.work como fallback
+  // seguro — o redirect do endpoint vai pro Google independente.
+  if (companyId === 'pontualtech-001') return 'https://erp.pontualtech.work'
+  return process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'
+}
 
 /**
  * POST /api/internal/cron/google-reviews
@@ -128,7 +148,26 @@ export async function POST(req: NextRequest) {
       const normalizedPhone = rawPhone.startsWith('55') ? rawPhone : `55${rawPhone}`
       const customerName = os.customers?.legal_name || stop.customer_name || 'Cliente'
       const firstName = customerName.split(' ')[0]
-      const fallback = `Ola, ${firstName}! Esperamos que tenha gostado do nosso atendimento. Que tal deixar uma avaliacao rapida no Google? Leva menos de 1 minuto: ${cache.reviewsUrl}`
+
+      // Precisa do customer_id pra gerar o token do cupom. Se nao veio
+      // no findFirst, busca explicito. Sem customer_id nao cria cupom.
+      let customerId: string | null = null
+      if (stop.os_id) {
+        const osWithCust = await prisma.serviceOrder.findUnique({
+          where: { id: stop.os_id },
+          select: { customer_id: true },
+        })
+        customerId = osWithCust?.customer_id || null
+      }
+
+      // Link vai pelo nosso endpoint: /cupom-avaliacao/[token] cria o
+      // cupom e redireciona pro Google. Fallback: URL direta se nao
+      // tiver customer_id (edge case).
+      const clickLink = customerId
+        ? `${getBaseUrl(stop.company_id)}/cupom-avaliacao/${buildCouponToken(stop.company_id, customerId)}`
+        : cache.reviewsUrl
+
+      const fallback = `Ola, ${firstName}! Esperamos que tenha gostado do nosso atendimento. Que tal deixar uma avaliacao rapida no Google? Leva menos de 1 minuto: ${clickLink}\n\nApos avaliar, voce ganha 10% de desconto na proxima!`
 
       const r = await sendWhatsAppTemplate(
         stop.company_id, normalizedPhone, 'pt_avaliacao_google_v1', 'pt_BR',
@@ -136,7 +175,7 @@ export async function POST(req: NextRequest) {
           type: 'body',
           parameters: [
             { type: 'text', text: firstName },
-            { type: 'text', text: cache.reviewsUrl },
+            { type: 'text', text: clickLink },
           ],
         }],
         fallback,
