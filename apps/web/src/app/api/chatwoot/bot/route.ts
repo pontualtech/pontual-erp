@@ -329,6 +329,13 @@ interface DifyResponse {
   conversation_id: string
 }
 
+// Cache per-company do status do blocking mode. Muitos workflows Dify
+// retornam 500 em blocking mas funcionam em streaming — detectamos uma
+// vez e pulamos direto pra streaming nas proximas (economiza 3-30s por
+// request). Reset a cada 30min pra revalidar.
+const difyBlockingStatus = new Map<string, { working: boolean; checkedAt: number }>()
+const BLOCKING_RECHECK_MS = 30 * 60 * 1000
+
 async function callDify(
   cfg: BotCompanyConfig,
   query: string,
@@ -356,34 +363,46 @@ async function callDify(
     })
   }
 
-  const res = await fetch(`${cfg.difyBaseUrl}/v1/chat-messages`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${cfg.difyApiKey}`,
-    },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(30000), // 30s timeout — prevents lock from being held if Dify hangs
-  })
+  // Se sabemos que blocking nao funciona nessa empresa, pula pra streaming
+  const cachedBlocking = difyBlockingStatus.get(cfg.companyId)
+  const blockingKnownBroken = cachedBlocking
+    && !cachedBlocking.working
+    && (Date.now() - cachedBlocking.checkedAt) < BLOCKING_RECHECK_MS
 
-  if (res.ok) {
-    const data = await res.json()
-    return {
-      answer: data.answer || '',
-      conversation_id: data.conversation_id || '',
+  let res: Response | null = null
+  if (!blockingKnownBroken) {
+    res = await fetch(`${cfg.difyBaseUrl}/v1/chat-messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${cfg.difyApiKey}`,
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(30000),
+    })
+
+    if (res.ok) {
+      const data = await res.json()
+      difyBlockingStatus.set(cfg.companyId, { working: true, checkedAt: Date.now() })
+      return {
+        answer: data.answer || '',
+        conversation_id: data.conversation_id || '',
+      }
     }
-  }
 
-  // If Dify says conversation doesn't exist in blocking mode, retry as new conversation
-  if (res.status === 404 && conversationId) {
-    const errBody = await res.text()
-    if (errBody.includes('Conversation Not Exists')) {
-      console.warn(`[Bot] Dify conversation ${conversationId} expired (blocking) — retrying as new conversation`)
-      return callDify(cfg, query, user, undefined, imageUrls)
+    // If Dify says conversation doesn't exist in blocking mode, retry as new conversation
+    if (res.status === 404 && conversationId) {
+      const errBody = await res.text()
+      if (errBody.includes('Conversation Not Exists')) {
+        console.warn(`[Bot] Dify conversation ${conversationId} expired (blocking) — retrying as new conversation`)
+        return callDify(cfg, query, user, undefined, imageUrls)
+      }
     }
-  }
 
-  console.warn(`[Bot] Dify blocking failed (${res.status}), trying streaming...`)
+    // Blocking falhou — marca como quebrado e faz fallback pra streaming
+    difyBlockingStatus.set(cfg.companyId, { working: false, checkedAt: Date.now() })
+    console.warn(`[Bot] Dify blocking failed (${res.status}) for company ${cfg.companyId.slice(0,8)} — flagging streaming-only for 30min`)
+  }
 
   const streamPayload = { ...payload, response_mode: 'streaming' }
   const streamRes = await fetch(`${cfg.difyBaseUrl}/v1/chat-messages`, {
