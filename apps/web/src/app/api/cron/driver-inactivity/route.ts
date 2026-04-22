@@ -90,13 +90,16 @@ export async function GET(request: NextRequest) {
         ? Math.round((Date.now() - drv.last_location_at.getTime()) / 60000)
         : 999
 
-      // Audit log (fica no DB pro painel mostrar historico)
+      // Audit log (fica no DB pro painel mostrar historico).
+      // user_id e o proprio motorista — a acao e "sistema detectou que ele
+      // ficou inativo" (nao tem outro user pra atribuir, o cron nao roda
+      // como usuario).
       await prisma.auditLog.create({
         data: {
           company_id: drv.company_id,
+          user_id: drv.id,
           module: 'logistics',
           action: 'driver_inactive_alert',
-          entity_type: 'user_profile',
           entity_id: drv.id,
           new_value: {
             driver_name: drv.name,
