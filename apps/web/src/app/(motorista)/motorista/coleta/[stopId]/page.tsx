@@ -24,6 +24,16 @@ type StopData = {
   id: string
   customer_name: string
   address: string
+  type?: string
+  status?: string
+  serial_number?: string | null
+  serial_source?: string | null
+  checklist?: Array<{ key: string; label: string; checked: boolean }> | null
+  observations?: string | null
+  signer_name?: string | null
+  signature_url?: string | null
+  photo_urls?: string[] | null
+  completed_at?: string | null
   os: { id: string; number: number; equipment: string; reported_issue: string | null } | null
 }
 
