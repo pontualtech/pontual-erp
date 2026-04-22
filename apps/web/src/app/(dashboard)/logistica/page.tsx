@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import {
   Truck, Plus, Loader2, ArrowLeft, MapPin, Clock,
   Play, CheckCircle2, Eye, Route, CircleDot, Calendar,
-  MessageCircle, Trash2, Users, BarChart3,
+  MessageCircle, Trash2, Users, BarChart3, ArrowRightLeft,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -226,6 +226,14 @@ export default function LogisticaPage() {
           >
             <Users className="h-4 w-4" />
             Distribuir
+          </Link>
+          <Link
+            href={`/logistica/redistribuir?date=${date}`}
+            className="flex items-center gap-2 rounded-lg border border-indigo-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-50 transition-colors"
+            title="Mover paradas entre motoristas do mesmo dia"
+          >
+            <ArrowRightLeft className="h-4 w-4" />
+            Redistribuir
           </Link>
           <Link
             href="/logistica/nova"
