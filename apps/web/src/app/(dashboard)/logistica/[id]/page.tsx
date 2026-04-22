@@ -109,6 +109,13 @@ export default function RouteDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [routePlan, setRoutePlan] = useState<{
+    polyline: string
+    total_distance_m: number
+    total_duration_s: number
+    legs: Array<{ distance_m: number; duration_s: number; from_stop_id: string; to_stop_id: string }>
+    source: 'google' | 'haversine'
+  } | null>(null)
 
   // Failure modal
   const [failureModal, setFailureModal] = useState<{ stopId: string } | null>(null)
@@ -146,6 +153,21 @@ export default function RouteDetailPage() {
   }, [routeId])
 
   useEffect(() => { loadRoute() }, [loadRoute])
+
+  // Plano de rota real (Google Routes) — polyline pelas ruas + totais.
+  // Cacheado no backend 24h, entao essa chamada e baratissima em navegacoes
+  // repetidas. Recalcula quando numero/sequencia de stops muda.
+  useEffect(() => {
+    if (!route) return
+    const stopSignature = route.stops.map(s => `${s.id}:${s.sequence}`).join('|')
+    let cancelled = false
+    fetch(`/api/logistics/routes/${routeId}/plan`, { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => { if (!cancelled && j?.data) setRoutePlan(j.data) })
+      .catch(() => {})
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeId, route?.stops.map(s => `${s.id}:${s.sequence}`).join('|')])
 
   // ESC closes modals
   useEffect(() => {
@@ -443,7 +465,21 @@ export default function RouteDetailPage() {
       </div>
 
       {/* Mapa Leaflet com paradas + posicao atual do motorista */}
-      <div className="rounded-xl border bg-white shadow-sm overflow-hidden h-[420px]">
+      <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
+        {routePlan && (routePlan.total_distance_m > 0 || routePlan.total_duration_s > 0) && (
+          <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100 bg-indigo-50/60 text-xs">
+            <div className="flex items-center gap-4 text-indigo-900 font-medium">
+              <span>Total: <strong>{(routePlan.total_distance_m / 1000).toFixed(1)} km</strong></span>
+              <span>Tempo: <strong>{routePlan.total_duration_s >= 3600
+                ? `${Math.floor(routePlan.total_duration_s / 3600)}h${String(Math.round((routePlan.total_duration_s % 3600) / 60)).padStart(2, '0')}`
+                : `${Math.round(routePlan.total_duration_s / 60)} min`}</strong></span>
+            </div>
+            <span className="text-gray-500">
+              {routePlan.source === 'google' ? 'via Google Routes (trafego real)' : 'estimativa linha reta'}
+            </span>
+          </div>
+        )}
+        <div className="h-[420px]">
         <LeafletMap
           routes={[{
             id: route.id,
@@ -466,7 +502,9 @@ export default function RouteDetailPage() {
             })),
           }]}
           showStopRoute
+          stopRoutePlan={routePlan}
         />
+        </div>
       </div>
 
       {/* Stops Timeline */}

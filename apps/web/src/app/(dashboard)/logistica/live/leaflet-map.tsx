@@ -84,12 +84,38 @@ function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: num
   return 2 * R * Math.asin(Math.sqrt(x))
 }
 
-export default function LeafletMap({ routes, drivers = [], trail = null, playbackIndex = -1, showStopRoute = false }: {
+// Decodifica polyline encoded do Google (algoritmo oficial).
+// Ref: https://developers.google.com/maps/documentation/utilities/polylinealgorithm
+function decodePolyline(str: string): [number, number][] {
+  const coords: [number, number][] = []
+  let i = 0, lat = 0, lng = 0
+  while (i < str.length) {
+    let b = 0, shift = 0, result = 0
+    do { b = str.charCodeAt(i++) - 63; result |= (b & 0x1f) << shift; shift += 5 } while (b >= 0x20)
+    lat += (result & 1) ? ~(result >> 1) : (result >> 1)
+    shift = 0; result = 0
+    do { b = str.charCodeAt(i++) - 63; result |= (b & 0x1f) << shift; shift += 5 } while (b >= 0x20)
+    lng += (result & 1) ? ~(result >> 1) : (result >> 1)
+    coords.push([lat / 1e5, lng / 1e5])
+  }
+  return coords
+}
+
+export type StopRoutePlan = {
+  polyline: string  // encoded polyline from Google
+  total_distance_m: number
+  total_duration_s: number
+  legs: Array<{ distance_m: number; duration_s: number; from_stop_id: string; to_stop_id: string }>
+  source: 'google' | 'haversine'
+}
+
+export default function LeafletMap({ routes, drivers = [], trail = null, playbackIndex = -1, showStopRoute = false, stopRoutePlan = null }: {
   routes: LiveRoute[]
   drivers?: FreeDriver[]
   trail?: { driver_name: string; points: TrailPoint[] } | null
   playbackIndex?: number  // -1 = desativado (mostra trail completo estatico)
   showStopRoute?: boolean // desenha polyline conectando stops em sequence + distancias
+  stopRoutePlan?: StopRoutePlan | null // plano real via Google Routes; se null usa linha reta
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<any>(null)
@@ -238,8 +264,9 @@ export default function LeafletMap({ routes, drivers = [], trail = null, playbac
       }
     }
 
-    // ROTA PLANEJADA: polyline conectando stops em sequence + labels
-    // com distancia (linha reta, Haversine) entre consecutivas.
+    // ROTA PLANEJADA. Se tem plan do Google (polyline encoded), desenha
+    // caminho real pelas ruas + labels com km e min reais. Fallback para
+    // linha reta + Haversine quando plan ausente ou polyline vazio.
     routeLayersRef.current.forEach(l => map.removeLayer(l))
     routeLayersRef.current = []
     if (showStopRoute) {
@@ -248,18 +275,49 @@ export default function LeafletMap({ routes, drivers = [], trail = null, playbac
           .filter(s => s.lat != null && s.lng != null)
           .sort((a, b) => a.sequence - b.sequence)
         if (ordered.length < 2) continue
-        const latlngs = ordered.map(s => [s.lat as number, s.lng as number] as [number, number])
-        const line = L.polyline(latlngs, {
-          color: '#4f46e5', weight: 3, opacity: 0.55, dashArray: '4,6',
-        }).addTo(map)
-        routeLayersRef.current.push(line)
 
+        // 1) Linha principal — polyline real do Google (se disponivel)
+        //    ou linha reta conectando stops
+        if (stopRoutePlan?.polyline) {
+          const coords = decodePolyline(stopRoutePlan.polyline)
+          const line = L.polyline(coords, {
+            color: '#4f46e5', weight: 4, opacity: 0.65,
+          }).addTo(map)
+          routeLayersRef.current.push(line)
+        } else {
+          const latlngs = ordered.map(s => [s.lat as number, s.lng as number] as [number, number])
+          const line = L.polyline(latlngs, {
+            color: '#4f46e5', weight: 3, opacity: 0.55, dashArray: '4,6',
+          }).addTo(map)
+          routeLayersRef.current.push(line)
+        }
+
+        // 2) Labels entre paradas. Se tem plan, usa distancia + tempo
+        //    reais. Senao, linha reta Haversine.
+        const legByStops = new Map<string, { distance_m: number; duration_s: number }>()
+        if (stopRoutePlan?.legs) {
+          for (const leg of stopRoutePlan.legs) {
+            legByStops.set(`${leg.from_stop_id}->${leg.to_stop_id}`, leg)
+          }
+        }
         for (let i = 0; i < ordered.length - 1; i++) {
           const a = ordered[i]; const b = ordered[i + 1]
-          const km = haversineKm({ lat: a.lat!, lng: a.lng! }, { lat: b.lat!, lng: b.lng! })
+          const leg = legByStops.get(`${a.id}->${b.id}`)
+          let km: number; let minutes: number | null
+          if (leg) {
+            km = leg.distance_m / 1000
+            minutes = Math.round(leg.duration_s / 60)
+          } else {
+            km = haversineKm({ lat: a.lat!, lng: a.lng! }, { lat: b.lat!, lng: b.lng! })
+            minutes = null
+          }
           const midLat = (a.lat! + b.lat!) / 2
           const midLng = (a.lng! + b.lng!) / 2
           const kmText = km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(1)}km`
+          const timeText = minutes != null
+            ? (minutes >= 60 ? `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, '0')}` : `${minutes}min`)
+            : ''
+          const labelText = timeText ? `${kmText} · ${timeText}` : kmText
           const label = L.marker([midLat, midLng], {
             interactive: false,
             icon: L.divIcon({
@@ -269,7 +327,7 @@ export default function LeafletMap({ routes, drivers = [], trail = null, playbac
                 padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;
                 white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15);
                 transform:translate(-50%,-50%);display:inline-block;
-              ">${kmText}</div>`,
+              ">${labelText}</div>`,
               iconSize: [0, 0], iconAnchor: [0, 0],
             }),
           }).addTo(map)
@@ -327,11 +385,14 @@ export default function LeafletMap({ routes, drivers = [], trail = null, playbac
     if (trail && trail.points.length > 0) {
       trail.points.forEach(p => allLatLngs.push([p.lat, p.lng]))
     }
+    if (stopRoutePlan?.polyline) {
+      decodePolyline(stopRoutePlan.polyline).forEach(p => allLatLngs.push(p))
+    }
     if (allLatLngs.length > 1) {
       const bounds = L.latLngBounds(allLatLngs)
       map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 })
     }
-  }, [routes, drivers, trail, playbackIndex, showStopRoute])
+  }, [routes, drivers, trail, playbackIndex, showStopRoute, stopRoutePlan])
 
   return <div ref={containerRef} style={{ height: '100%', width: '100%' }} />
 }
