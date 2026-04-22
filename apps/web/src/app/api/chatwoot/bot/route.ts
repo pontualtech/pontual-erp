@@ -1181,25 +1181,56 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
     if (parsed.action === 'ABRIR_OS' && parsed.vhsysData) {
       // Ana already confirmed with client — create OS immediately
       try {
+        // Helper pra ler varios aliases do VHSYS_DATA retornado pelo Dify.
+        // Bug historico: Dify as vezes retorna "cpf" ou "cnpj" (em vez de
+        // "cpf_cnpj"), e as vezes nao retorna telefone esperando que o bot
+        // use o do Chatwoot. Aceitamos tudo e preferimos o primeiro nao-vazio.
+        const vd = parsed.vhsysData as Record<string, any>
+        const pick = (...keys: string[]): string => {
+          for (const k of keys) {
+            const v = vd[k]
+            if (v !== undefined && v !== null && String(v).trim()) return String(v).trim()
+          }
+          return ''
+        }
+
+        // Documento: aceita cpf/cnpj/cpf_cnpj/document/documento. Mesmo se o
+        // Dify esqueceu, o abrir-os endpoint faz find-or-create so por telefone
+        // — melhor que nada.
+        const documento = pick('cpf_cnpj', 'cpf', 'cnpj', 'document', 'documento', 'cpfcnpj')
+
+        // Telefone: prioriza o que o Dify extraiu, depois o da mensagem
+        // (sender.phone_number do webhook Chatwoot — sempre populado pra
+        // canais WhatsApp). Fallback crucial pro cadastro nao ficar vazio.
+        const telefone = pick('telefone', 'phone', 'phone_number', 'mobile', 'celular', 'whatsapp') || phone || ''
+
+        const nome = pick('nome', 'cliente', 'nome_cliente', 'customer_name', 'name') || sender.name || 'Cliente WhatsApp'
+        const email = pick('email', 'email_cliente', 'customer_email')
+
+        // Log do payload pra auditoria (nao vaza dados sensiveis em prod, so length)
+        console.log(`[Bot/ABRIR_OS] conv=${conversationId} cliente="${nome}" doc_len=${documento.length} tel_len=${telefone.length} cep_len=${(vd.cep || '').length}`)
+        if (!documento) console.warn(`[Bot/ABRIR_OS] ⚠️ sem CPF/CNPJ — vhsysData keys: ${Object.keys(vd).join(',')}`)
+        if (!telefone) console.warn(`[Bot/ABRIR_OS] ⚠️ sem telefone — sender.phone_number=${sender.phone_number} sender.phone=${sender.phone}`)
+
         const erpResp = await fetch(`${ERP_BASE_URL}/api/bot/abrir-os`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-Bot-Key': cfg.botApiKey },
           body: JSON.stringify({
-            nome: parsed.vhsysData.nome || parsed.vhsysData.cliente || sender.name || 'Cliente WhatsApp',
-            documento: parsed.vhsysData.cpf_cnpj || '',
-            telefone: parsed.vhsysData.telefone || phone || '',
-            email: parsed.vhsysData.email || '',
-            cep: parsed.vhsysData.cep || '',
-            endereco: parsed.vhsysData.endereco || '',
-            numero: parsed.vhsysData.numero || '',
-            complemento: parsed.vhsysData.complemento || '',
-            bairro: parsed.vhsysData.bairro || '',
-            cidade: parsed.vhsysData.cidade || '',
-            uf: parsed.vhsysData.uf || parsed.vhsysData.estado || '',
-            equipamento: parsed.vhsysData.equipamento || 'Impressora',
-            marca: parsed.vhsysData.marca || '',
-            modelo: parsed.vhsysData.modelo || '',
-            defeito: parsed.vhsysData.defeito || 'Sem descricao',
+            nome,
+            documento,
+            telefone,
+            email,
+            cep: pick('cep', 'endereco_cep', 'zip'),
+            endereco: pick('endereco', 'logradouro', 'rua', 'street'),
+            numero: pick('numero', 'endereco_numero', 'number'),
+            complemento: pick('complemento', 'endereco_complemento'),
+            bairro: pick('bairro', 'endereco_bairro', 'neighborhood'),
+            cidade: pick('cidade', 'endereco_cidade', 'localidade', 'municipio', 'city'),
+            uf: pick('uf', 'estado', 'endereco_uf', 'state'),
+            equipamento: pick('equipamento', 'equipment', 'tipo_equipamento') || 'Impressora',
+            marca: pick('marca', 'brand'),
+            modelo: pick('modelo', 'model'),
+            defeito: pick('defeito', 'problema', 'reported_issue', 'issue') || 'Sem descricao',
             origem: cfg.botOrigin,
           }),
         })
@@ -1250,11 +1281,20 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
 
           // Private note with all links for agents (always visible in conversation)
           const vdNote = parsed.vhsysData as Record<string, any>
+          const pickNote = (...keys: string[]) => {
+            for (const k of keys) {
+              const v = vdNote[k]
+              if (v !== undefined && v !== null && String(v).trim()) return String(v).trim()
+            }
+            return ''
+          }
+          const docNote = pickNote('cpf_cnpj', 'cpf', 'cnpj', 'document', 'documento') || 'N/I'
+          const telNote = pickNote('telefone', 'phone', 'phone_number', 'mobile') || phone || 'N/I'
           const noteLines = [
             `📋 *OS #${osNum}* — ${clienteNome}${erpData.cliente_novo ? ' (NOVO)' : ''}`,
             `🖨️ ${String(vdNote.marca || '')} ${String(vdNote.modelo || '')} — ${String(vdNote.defeito || '')}`,
-            `📄 CPF: ${String(vdNote.cpf_cnpj || 'N/I')} | 📞 ${String(vdNote.telefone || phone || 'N/I')}`,
-            `📧 ${String(vdNote.email || 'N/I')} | 📍 ${String(vdNote.endereco || 'N/I')}`,
+            `📄 Doc: ${docNote} | 📞 ${telNote}`,
+            `📧 ${pickNote('email') || 'N/I'} | 📍 ${pickNote('endereco', 'logradouro') || 'N/I'}`,
             ``,
             `🔗 ERP: ${ERP_BASE_URL}/os/${osNum}`,
             `🔗 Portal (magic-link): ${magicPortalUrl}`,
@@ -1265,16 +1305,26 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
           // Sync contact data to Chatwoot (keep CRM in sync with ERP)
           if (contactId) {
             const vd = parsed.vhsysData as Record<string, any>
+            const pickVd = (...keys: string[]) => {
+              for (const k of keys) {
+                const v = vd[k]
+                if (v !== undefined && v !== null && String(v).trim()) return String(v).trim()
+              }
+              return ''
+            }
             const contactUpdate: Record<string, unknown> = {}
-            if (vd.nome) contactUpdate.name = String(vd.nome)
-            if (vd.email) contactUpdate.email = String(vd.email)
-            if (vd.telefone) contactUpdate.phone_number = '+55' + String(vd.telefone).replace(/\D/g, '')
+            const nameVal = pickVd('nome', 'cliente', 'nome_cliente', 'customer_name', 'name')
+            if (nameVal) contactUpdate.name = nameVal
+            const emailVal = pickVd('email', 'email_cliente')
+            if (emailVal) contactUpdate.email = emailVal
+            const phoneVal = pickVd('telefone', 'phone', 'phone_number', 'mobile', 'celular')
+            if (phoneVal) contactUpdate.phone_number = '+55' + phoneVal.replace(/\D/g, '')
             contactUpdate.custom_attributes = {
-              cpf_cnpj: String(vd.cpf_cnpj || ''),
-              endereco: String(vd.endereco || ''),
-              cep: String(vd.cep || ''),
-              marca: String(vd.marca || ''),
-              modelo: String(vd.modelo || ''),
+              cpf_cnpj: pickVd('cpf_cnpj', 'cpf', 'cnpj', 'document', 'documento'),
+              endereco: pickVd('endereco', 'logradouro', 'rua'),
+              cep: pickVd('cep', 'zip'),
+              marca: pickVd('marca', 'brand'),
+              modelo: pickVd('modelo', 'model'),
               ultima_os: String(osNum),
               erp_os_link: `${ERP_BASE_URL}/os/${osNum}`,
               portal_link: `${portalBase(cfg)}/login`,
