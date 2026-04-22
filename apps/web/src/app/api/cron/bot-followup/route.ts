@@ -157,7 +157,15 @@ export async function GET(request: NextRequest) {
           continue
         }
 
-        // Skip if conversation is resolved in Chatwoot (double-check)
+        // ── Guards: skip se o caso ja esta sendo resolvido/atendido ──
+        // Sinais de "nao precisa chamar de novo":
+        //   1. Conversa resolved no Chatwoot (cliente fechou ou atendente fechou)
+        //   2. Atendente humano atribuido (assignee_id != null)
+        //   3. Cliente tem OS recente aberta (foi atendido, tecnico vai ligar)
+        //   4. Cliente respondeu apos ultimo bot message (conversa ativa)
+        let shouldSkip = false
+        let skipReason = ''
+
         try {
           const convRes = await fetch(
             `${cwCfg.cwUrl}/api/v1/accounts/${cwCfg.cwAccountId}/conversations/${conv.chatwoot_conv_id}`,
@@ -165,13 +173,81 @@ export async function GET(request: NextRequest) {
           )
           if (convRes.ok) {
             const convData = await convRes.json()
+            // Guard 1: conversa resolved
             if (convData.status === 'resolved') {
-              await clearFollowUp(conv.id)
-              skipped++
-              continue
+              shouldSkip = true
+              skipReason = 'Chatwoot resolved'
+            }
+            // Guard 2: atendente humano assumiu (cuida manualmente)
+            if (!shouldSkip && convData.meta?.assignee?.id) {
+              shouldSkip = true
+              skipReason = `atendente ${convData.meta.assignee.name || convData.meta.assignee.id} assumiu`
             }
           }
-        } catch {} // If Chatwoot is down, proceed with follow-up anyway
+        } catch {} // Chatwoot down — prossegue com outros guards
+
+        // Guard 3: Cliente tem OS aberta (status nao-final) criada nas ultimas
+        // 72h. Se sim, o caso ja esta sendo resolvido — nao faz sentido o bot
+        // ficar chamando. customer_id pode vir de dois lugares: direto na
+        // botConv ou por phone match.
+        if (!shouldSkip && (conv.customer_id || conv.customer_phone)) {
+          const customerWhere: any = { company_id: conv.company_id, deleted_at: null }
+          if (conv.customer_id) customerWhere.id = conv.customer_id
+          else customerWhere.OR = [{ mobile: conv.customer_phone }, { phone: conv.customer_phone }]
+
+          const customer = conv.customer_id
+            ? { id: conv.customer_id }
+            : await prisma.customer.findFirst({ where: customerWhere, select: { id: true } })
+
+          if (customer) {
+            const recentCutoff = new Date(Date.now() - 72 * 60 * 60 * 1000) // 72h
+            const recentActiveOs = await prisma.serviceOrder.findFirst({
+              where: {
+                company_id: conv.company_id,
+                customer_id: customer.id,
+                deleted_at: null,
+                created_at: { gte: recentCutoff },
+                // Status nao-final: queremos pular se tem OS em andamento.
+                // Se OS ja foi entregue/cancelada ha mais de 72h, nao bloqueia.
+                module_statuses: { is_final: false },
+              },
+              select: { id: true, os_number: true },
+            })
+            if (recentActiveOs) {
+              shouldSkip = true
+              skipReason = `OS #${recentActiveOs.os_number} ja aberta/em andamento`
+            }
+          }
+        }
+
+        // Guard 4: Cliente respondeu apos o ultimo follow-up do bot. Olha a
+        // message_history (JSON com ate 20 mensagens) e checa se a ULTIMA
+        // mensagem e do cliente (role=user/customer). Se sim, conversa esta
+        // ativa — nao precisa de lembrete automatico.
+        if (!shouldSkip && Array.isArray(conv.message_history)) {
+          const history = conv.message_history as any[]
+          const last = history[history.length - 1]
+          const lastRole = (last?.role || last?.sender || '').toString().toLowerCase()
+          if (lastRole === 'user' || lastRole === 'customer') {
+            // Verifica tambem quao recente — se faz muitas horas, talvez ja seja
+            // hora de followup mesmo. Mas se e das ultimas 2h, respeita.
+            const lastTs = last?.timestamp || last?.ts || last?.created_at
+            if (lastTs) {
+              const lastDate = new Date(lastTs)
+              if (!isNaN(lastDate.getTime()) && (Date.now() - lastDate.getTime()) < 2 * 60 * 60 * 1000) {
+                shouldSkip = true
+                skipReason = 'cliente respondeu ha menos de 2h'
+              }
+            }
+          }
+        }
+
+        if (shouldSkip) {
+          await clearFollowUp(conv.id)
+          console.log(`[Cron/BotFollowUp] Skip conv ${conv.chatwoot_conv_id}: ${skipReason}`)
+          skipped++
+          continue
+        }
 
         const maxAttempts = parseInt(cfg['bot.followup.max_attempts'] || '3')
         const nextCount = conv.follow_up_count + 1
