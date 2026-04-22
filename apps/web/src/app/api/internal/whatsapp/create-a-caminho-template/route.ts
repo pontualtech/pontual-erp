@@ -61,12 +61,15 @@ export async function POST(req: NextRequest) {
     components: [
       {
         type: 'BODY',
-        text: 'Ola {{1}}! Seu tecnico {{2}} esta a caminho{{3}}.\n\nConfirme sua disponibilidade ou solicite remarcar:\n{{4}}',
+        // Meta nao aceita variavel no inicio nem no fim do texto. Por isso:
+        // - Inicio: 'Ola ' antes de {{1}}
+        // - Fim: 'Em caso de duvida, responda esta mensagem.' depois de {{4}}
+        text: 'Ola {{1}}! Seu tecnico {{2}} esta a caminho{{3}}.\n\nConfirme sua disponibilidade ou solicite remarcar no link: {{4}}\n\nEm caso de duvida, responda esta mensagem.',
         example: {
           body_text: [[
             'Maria',
             'Emerson',
-            ' — previsao: 15 min',
+            ' - previsao: 15 min',
             'https://portal.pontualtech.com.br/portal/pontualtech/visita/abc123',
           ]],
         },
