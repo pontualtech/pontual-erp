@@ -50,6 +50,10 @@ export async function POST(req: NextRequest) {
   const where: any = {
     company_id: auth.companyId,
     deleted_at: null,
+    // Rota e apenas pra OS com atendimento externo (motorista vai buscar).
+    // OS de LOJA (cliente trouxe no balcao) nao precisam. Passe
+    // include_internal=true pra sobrescrever em casos especiais.
+    ...(body.include_internal ? {} : { os_location: 'EXTERNO' }),
   }
   const orClauses: any[] = []
   if (numbers.length > 0) orClauses.push({ os_number: { in: numbers } })
@@ -78,6 +82,23 @@ export async function POST(req: NextRequest) {
   // Also identify which requested numbers weren't found (pra UI avisar)
   const foundNumbers = new Set(orders.map(o => o.os_number))
   const missing = numbers.filter(n => !foundNumbers.has(n))
+
+  // Se o user digitou numeros e algumas foram filtradas por serem LOJA
+  // (atendimento no balcao), buscar esses separado pra devolver aviso
+  // util na UI: 'OS 60123 e de LOJA — motorista nao vai buscar'.
+  let filteredInternal: { os_number: number; location: string | null }[] = []
+  if (numbers.length > 0 && missing.length > 0 && !body.include_internal) {
+    const internalHits = await prisma.serviceOrder.findMany({
+      where: {
+        company_id: auth.companyId,
+        deleted_at: null,
+        os_number: { in: missing },
+        os_location: { not: 'EXTERNO' },
+      },
+      select: { os_number: true, os_location: true },
+    })
+    filteredInternal = internalHits.map(o => ({ os_number: o.os_number, location: o.os_location }))
+  }
 
   // Geocoda customers que ainda não têm lat/lng (cache infinito no DB).
   // Só faz network call na primeira vez que o cliente aparece numa rota.
@@ -120,6 +141,7 @@ export async function POST(req: NextRequest) {
     return {
       os_id: os.id,
       os_number: os.os_number,
+      os_location: os.os_location || null,
       status: statusName,
       suggested_type: suggestedType,
       customer_id: c?.id || null,
@@ -163,10 +185,15 @@ export async function POST(req: NextRequest) {
   // Remove campos internos antes de retornar
   const cleanItems = sortedItems.map(({ _city, _neighborhood, _zip, ...rest }) => rest)
 
+  // Missing real = nao encontradas OU filtradas por localizacao interna
+  const filteredInternalSet = new Set(filteredInternal.map(f => f.os_number))
+  const missingReal = missing.filter(n => !filteredInternalSet.has(n))
+
   return NextResponse.json({
     data: {
       items: cleanItems,
-      missing,
+      missing: missingReal,
+      filtered_internal: filteredInternal, // [{ os_number, location }]
       total: cleanItems.length,
       ordered: wantsSort,
       sort_method: sortMethod,

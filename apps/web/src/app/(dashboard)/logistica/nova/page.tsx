@@ -86,6 +86,7 @@ export default function NovaRotaPage() {
   }
   const [bulkResults, setBulkResults] = useState<BulkItem[]>([])
   const [bulkMissing, setBulkMissing] = useState<number[]>([])
+  const [bulkFilteredInternal, setBulkFilteredInternal] = useState<{ os_number: number; location: string | null }[]>([])
 
   // Load drivers
   useEffect(() => {
@@ -195,6 +196,7 @@ export default function NovaRotaPage() {
       }))
       setBulkResults(items)
       setBulkMissing(data.data.missing || [])
+      setBulkFilteredInternal(data.data.filtered_internal || [])
       if (items.length === 0) toast.info('Nenhuma OS encontrada')
     } catch { toast.error('Falha de rede') }
     finally { setBulkLoading(false) }
@@ -669,6 +671,12 @@ export default function NovaRotaPage() {
                 </div>
               )}
 
+              {bulkFilteredInternal.length > 0 && (
+                <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800 mb-2">
+                  <strong>Ignoradas (atendimento interno — cliente trouxe na loja):</strong>{' '}
+                  {bulkFilteredInternal.map(f => `#${f.os_number}${f.location ? ` (${f.location})` : ''}`).join(', ')}
+                </div>
+              )}
               {bulkMissing.length > 0 && (
                 <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
                   <strong>Não encontradas:</strong> {bulkMissing.join(', ')}
