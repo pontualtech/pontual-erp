@@ -116,31 +116,58 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       `Confirme sua disponibilidade ou solicite remarcar:\n${link}\n\n` +
       `— ${company.name}`
 
-    // Tenta template primeiro (4 parametros: cliente, motorista, eta, link)
+    // v3 APPROVED: template tem BUTTONS com URL dinamica /visita/{{1}}.
+    // 3 body params (nome, motorista, eta) + 1 button param (token).
+    // Tenta v3 primeiro; se falhar (template removido/bloqueado), cai
+    // no v2 (body com link inline) como fallback.
     const templateResult = await sendWhatsAppTemplate(
-      auth.companyId, normalizedPhone, 'pt_a_caminho_v2', 'pt_BR',
-      [{
-        type: 'body',
-        parameters: [
-          { type: 'text', text: firstName },
-          { type: 'text', text: motoristaFirstName },
-          { type: 'text', text: etaParam },
-          { type: 'text', text: link },
-        ],
-      }],
-      freeText,  // fallback text pra Evolution se Cloud nao configurado
+      auth.companyId, normalizedPhone, 'pt_a_caminho_v3', 'pt_BR',
+      [
+        {
+          type: 'body',
+          parameters: [
+            { type: 'text', text: firstName },
+            { type: 'text', text: motoristaFirstName },
+            { type: 'text', text: etaParam },
+          ],
+        },
+        {
+          type: 'button',
+          sub_type: 'url',
+          index: '0',
+          parameters: [{ type: 'text', text: token }],
+        },
+      ],
+      freeText,
     )
+    // Se v3 falhar por qualquer razao, tenta v2 (sem botao, link inline)
+    let waResultFinal = templateResult
+    if (!templateResult.success) {
+      waResultFinal = await sendWhatsAppTemplate(
+        auth.companyId, normalizedPhone, 'pt_a_caminho_v2', 'pt_BR',
+        [{
+          type: 'body',
+          parameters: [
+            { type: 'text', text: firstName },
+            { type: 'text', text: motoristaFirstName },
+            { type: 'text', text: etaParam },
+            { type: 'text', text: link },
+          ],
+        }],
+        freeText,
+      )
+    }
 
-    if (templateResult.success) {
+    if (waResultFinal.success) {
       waStatus = 'sent'
       waMethod = 'template'
     } else {
-      // Template falhou — tenta free text (funciona na janela 24h + Evolution)
+      // Templates v3 e v2 falharam — tenta free text (funciona na janela 24h + Evolution)
       const freeTextResult = await sendWhatsAppCloud(auth.companyId, normalizedPhone, freeText)
       waStatus = freeTextResult.success ? 'sent' : 'failed'
       waMethod = freeTextResult.success ? 'free_text' : null
       waError = freeTextResult.success ? null : (
-        `template: ${templateResult.error || 'falha'} | free_text: ${freeTextResult.error || 'falha'}`
+        `template: ${waResultFinal.error || 'falha'} | free_text: ${freeTextResult.error || 'falha'}`
       )
     }
   }

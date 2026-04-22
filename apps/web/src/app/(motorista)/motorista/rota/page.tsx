@@ -63,6 +63,7 @@ export default function RotaHojePage() {
   const [postponeModal, setPostponeModal] = useState<{ stopId: string; customerName: string } | null>(null)
   const [postponeReason, setPostponeReason] = useState('')
   const [postponing, setPostponing] = useState(false)
+  const [routeTotals, setRouteTotals] = useState<{ distance_m: number; duration_s: number; source: 'google' | 'haversine' } | null>(null)
 
   // Fetch rota
   const load = useCallback(async (silent = false) => {
@@ -80,6 +81,25 @@ export default function RotaHojePage() {
   }, [router])
 
   useEffect(() => { load() }, [load])
+
+  // Busca totais reais da rota (Google Routes) — mesma API que a tela
+  // do atendente. Motorista ve "52 km - 1h 40min" no topo da rota.
+  useEffect(() => {
+    if (!route?.id) return
+    let cancelled = false
+    fetch(`/api/logistics/routes/${route.id}/plan`, { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => {
+        if (cancelled || !j?.data) return
+        setRouteTotals({
+          distance_m: Number(j.data.total_distance_m) || 0,
+          duration_s: Number(j.data.total_duration_s) || 0,
+          source: j.data.source || 'haversine',
+        })
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [route?.id])
 
   // Live GPS — inicia watchPosition e POSTa a cada posição nova (throttle server)
   useEffect(() => {
@@ -247,6 +267,19 @@ export default function RotaHojePage() {
                 <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">A receber</div>
               </div>
             </div>
+            {/* Totais da rota (Google Routes) — aparece so se conseguiu calcular */}
+            {routeTotals && (routeTotals.distance_m > 0 || routeTotals.duration_s > 0) && (
+              <div className="mt-2 flex items-center justify-center gap-3 text-[11px] text-indigo-800 bg-indigo-50 rounded-lg py-1.5 px-3">
+                <span>📍 <strong>{(routeTotals.distance_m / 1000).toFixed(1)} km</strong> totais</span>
+                <span className="text-indigo-300">·</span>
+                <span>⏱️ <strong>
+                  {routeTotals.duration_s >= 3600
+                    ? `${Math.floor(routeTotals.duration_s / 3600)}h${String(Math.round((routeTotals.duration_s % 3600) / 60)).padStart(2, '0')}`
+                    : `${Math.round(routeTotals.duration_s / 60)} min`}
+                </strong></span>
+                {routeTotals.source === 'google' && <span className="text-indigo-400">· trafego real</span>}
+              </div>
+            )}
           </section>
 
           {/* PRÓXIMA PARADA — hero card gigante */}
