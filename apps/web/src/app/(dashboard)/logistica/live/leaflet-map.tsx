@@ -134,6 +134,10 @@ export default function LeafletMap({ routes, drivers = [], trail = null, playbac
   const trailLayerRef = useRef<any>(null)
   const playbackMarkerRef = useRef<any>(null)
   const routeLayersRef = useRef<any[]>([]) // polyline + distance labels entre stops
+  // Guarda assinatura pra saber quando "a rota mudou" (novas paradas ou
+  // plan atualizado). Usado pra decidir se reajusta o zoom — se o user
+  // manualmente fez zoom/pan, nao queremos resetar a cada tick de GPS.
+  const fitSignatureRef = useRef<string>('')
 
   // Init map
   useEffect(() => {
@@ -420,9 +424,19 @@ export default function LeafletMap({ routes, drivers = [], trail = null, playbac
     for (const p of boundsPolys) {
       if (p) decodePolyline(p).forEach(pt => allLatLngs.push(pt))
     }
-    if (allLatLngs.length > 1) {
+    // Assinatura do que pode justificar um re-fit: ids e sequencias das
+    // stops + id das rotas + polyline plan (primeiro char e length).
+    // Posicao GPS do motorista muda o tempo todo, entao NAO entra na
+    // assinatura — evita resetar zoom a cada update de localizacao.
+    const sig = [
+      routes.map(r => `${r.id}:${r.stops.map(s => `${s.id}/${s.sequence}/${s.status}`).join(',')}`).join('|'),
+      stopRoutePlan?.polylines?.join('')?.length || 0,
+      stopRoutePlan?.polyline?.length || 0,
+    ].join('#')
+    if (allLatLngs.length > 1 && fitSignatureRef.current !== sig) {
       const bounds = L.latLngBounds(allLatLngs)
       map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 })
+      fitSignatureRef.current = sig
     }
   }, [routes, drivers, trail, playbackIndex, showStopRoute, stopRoutePlan])
 
