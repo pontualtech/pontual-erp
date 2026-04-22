@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requireDriver } from '@/lib/driver-auth'
+import { findStatusByName } from '@/lib/module-status'
 
 type Body = {
   event_id: string
@@ -87,16 +88,19 @@ export async function POST(
   if (isApproved) targetStatusName = 'Entregue'
   else targetStatusName = 'Negociar' // recusa — backoffice decide próximo passo
 
-  let targetStatus = stop.os_id ? await prisma.moduleStatus.findFirst({
-    where: { company_id: auth.companyId, module: 'os', name: targetStatusName },
-    select: { id: true },
-  }) : null
-  // fallback pra "Cancelada" se "Negociar" não existir na empresa
+  // Match tolerante: Imprimitech usa "Entregue Reparado"/"Entregue Recusado"
+  // (order-specific) enquanto PontualTech pode usar so "Entregue"/"Negociar".
+  // Tenta nomes especificos primeiro, depois generico.
+  let targetStatus = stop.os_id
+    ? await findStatusByName(
+        auth.companyId, 'os',
+        ...(isApproved
+          ? ['Entregue', 'Entregue Reparado', 'Entregar Reparado']
+          : ['Negociar', 'Entregue Recusado', 'Entregar Recusado']),
+      )
+    : null
   if (!targetStatus && isRefused && stop.os_id) {
-    targetStatus = await prisma.moduleStatus.findFirst({
-      where: { company_id: auth.companyId, module: 'os', name: 'Cancelada' },
-      select: { id: true },
-    })
+    targetStatus = await findStatusByName(auth.companyId, 'os', 'Cancelada', 'Cancelado')
   }
 
   // Atualiza stop

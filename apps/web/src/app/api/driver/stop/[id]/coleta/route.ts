@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requireDriver } from '@/lib/driver-auth'
+import { findStatusByName } from '@/lib/module-status'
 
 type Body = {
   event_id: string
@@ -95,10 +96,9 @@ export async function POST(
   // Transition the OS → "Orcar", and update serial on the ServiceOrder too.
   if (stop.os_id) {
     try {
-      const orcarStatus = await prisma.moduleStatus.findFirst({
-        where: { company_id: auth.companyId, module: 'os', name: 'Orcar' },
-        select: { id: true },
-      })
+      // Imprimitech usa "Orcar" com cedilha, PontualTech sem — helper
+      // normaliza acentos/cedilha pra funcionar em ambas.
+      const orcarStatus = await findStatusByName(auth.companyId, 'os', 'Orcar')
       if (orcarStatus) {
         await prisma.serviceOrder.update({
           where: { id: stop.os_id },
