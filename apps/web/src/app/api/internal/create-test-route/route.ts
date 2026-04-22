@@ -28,11 +28,21 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json().catch(() => ({}))
-  const driverId = body.driver_id as string
+  let driverId = body.driver_id as string
   const companyId = body.company_id as string
-  if (!driverId || !companyId) {
-    return NextResponse.json({ error: 'driver_id e company_id obrigatorios' }, { status: 400 })
+  const driverEmail = body.driver_email as string
+
+  if (!companyId) return NextResponse.json({ error: 'company_id obrigatorio' }, { status: 400 })
+  // Aceita driver_email como alternativa ao driver_id
+  if (!driverId && driverEmail) {
+    const driver = await prisma.userProfile.findFirst({
+      where: { company_id: companyId, email: driverEmail.toLowerCase() },
+      select: { id: true },
+    })
+    if (!driver) return NextResponse.json({ error: 'Motorista nao encontrado pelo email' }, { status: 404 })
+    driverId = driver.id
   }
+  if (!driverId) return NextResponse.json({ error: 'driver_id ou driver_email obrigatorio' }, { status: 400 })
 
   // Apaga rota de teste anterior do mesmo motorista pra reexecucao
   // idempotente (se rodar de novo, nao cria duplicada).
@@ -55,11 +65,21 @@ export async function POST(req: NextRequest) {
     ])
   }
 
-  const testStops = [
+  // Auto-detecta coords de teste baseado na empresa — cada uma usa coords
+  // proximas da sua sede. Pontualtech fica em Vila Mariana/Paulista,
+  // Imprimitech em Vila California/Mooca. Permite testar geofencing com
+  // trajetos realistas pra cada ecossistema.
+  const PONTUALTECH_STOPS = [
     { type: 'COLETA', customer_name: 'TESTE Cliente A (ficticio)', customer_phone: '11999999991', address: 'Rua Afonso Celso, 123, Vila Mariana', lat: -23.5930, lng: -46.6340 },
     { type: 'ENTREGA', customer_name: 'TESTE Cliente B (ficticio)', customer_phone: '11999999992', address: 'Rua Joaquim Tavora, 456, Vila Mariana', lat: -23.5950, lng: -46.6400 },
     { type: 'COLETA', customer_name: 'TESTE Cliente C (ficticio)', customer_phone: '11999999993', address: 'Avenida Paulista, 900, Bela Vista', lat: -23.5640, lng: -46.6530 },
   ]
+  const IMPRIMITECH_STOPS = [
+    { type: 'COLETA', customer_name: 'TESTE Cliente A (ficticio)', customer_phone: '11999999991', address: 'Rua Flaminio Cavarciolo, 200, Vila California', lat: -23.6102, lng: -46.5520 },
+    { type: 'ENTREGA', customer_name: 'TESTE Cliente B (ficticio)', customer_phone: '11999999992', address: 'Rua Nevada, 150, Vila California', lat: -23.6130, lng: -46.5495 },
+    { type: 'COLETA', customer_name: 'TESTE Cliente C (ficticio)', customer_phone: '11999999993', address: 'Avenida Sapopemba, 2500, Sapopemba', lat: -23.6065, lng: -46.5290 },
+  ]
+  const testStops = companyId === 'pontualtech-001' ? PONTUALTECH_STOPS : IMPRIMITECH_STOPS
 
   const route = await prisma.$transaction(async (tx) => {
     const r = await tx.logisticsRoute.create({
