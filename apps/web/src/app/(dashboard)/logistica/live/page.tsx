@@ -228,7 +228,7 @@ export default function LogisticaLivePage() {
               <h2 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">
                 Planejadas ({plannedRoutes.length})
               </h2>
-              {plannedRoutes.map(r => <RouteCard key={r.id} route={r} />)}
+              {plannedRoutes.map(r => <RouteCard key={r.id} route={r} onViewTrail={loadTrail} />)}
             </section>
           )}
           {completedRoutes.length > 0 && (
@@ -236,7 +236,7 @@ export default function LogisticaLivePage() {
               <h2 className="text-xs font-bold uppercase tracking-wider text-green-700 mb-2">
                 Finalizadas ({completedRoutes.length})
               </h2>
-              {completedRoutes.map(r => <RouteCard key={r.id} route={r} />)}
+              {completedRoutes.map(r => <RouteCard key={r.id} route={r} onViewTrail={loadTrail} />)}
             </section>
           )}
         </aside>
