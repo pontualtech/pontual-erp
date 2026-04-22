@@ -88,6 +88,14 @@ export async function GET() {
     }
   })
 
+  // Company info pra tema do app — motorista ve cores diferentes
+  // entre PontualTech (indigo) e Imprimitech (laranja) sem precisar
+  // configurar nada.
+  const company = await prisma.company.findUnique({
+    where: { id: auth.companyId },
+    select: { slug: true, name: true, logo: true },
+  })
+
   return NextResponse.json({
     data: {
       route: {
@@ -99,6 +107,9 @@ export async function GET() {
         started_at: route.started_at,
       },
       stops,
+      company: company
+        ? { slug: company.slug, name: company.name, logo: company.logo }
+        : null,
     },
   })
 }

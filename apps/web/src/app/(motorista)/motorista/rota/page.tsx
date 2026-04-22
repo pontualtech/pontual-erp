@@ -10,6 +10,7 @@ import SyncBadge from '../../components/sync-badge'
 import InstallPrompt from '../../components/install-prompt'
 import PushPermission from '../../components/push-permission'
 import StopChat from '../_components/StopChat'
+import { getCompanyTheme, type CompanyTheme } from '../_components/company-theme'
 
 // Leaflet precisa de DOM — dynamic client-side only.
 const LeafletMap = dynamic(() => import('../../../(dashboard)/logistica/live/leaflet-map'), {
@@ -72,6 +73,8 @@ export default function RotaHojePage() {
   const [postponing, setPostponing] = useState(false)
   const [routeTotals, setRouteTotals] = useState<{ distance_m: number; duration_s: number; source: 'google' | 'haversine' } | null>(null)
   const [routePlanFull, setRoutePlanFull] = useState<any>(null) // passado pro LeafletMap pra desenhar polyline real
+  const [company, setCompany] = useState<{ slug: string; name: string; logo: string | null } | null>(null)
+  const theme: CompanyTheme = getCompanyTheme(company?.slug)
 
   // Fetch rota
   const load = useCallback(async (silent = false) => {
@@ -84,6 +87,7 @@ export default function RotaHojePage() {
       const { data } = await res.json()
       setRoute(data.route)
       setStops(data.stops || [])
+      if (data.company) setCompany(data.company)
     } catch { toast.error('Falha ao carregar rota') }
     finally { setLoading(false); setRefreshing(false) }
   }, [router])
@@ -109,6 +113,29 @@ export default function RotaHojePage() {
       .catch(() => {})
     return () => { cancelled = true }
   }, [route?.id])
+
+  // Wake Lock: mantem tela acesa enquanto motorista esta na pagina da rota.
+  // Sem isso, celular entra em lock screen e GPS deixa de atualizar — gestor
+  // perde o rastreamento. A lock e re-adquirida se o usuario volta a pagina.
+  useEffect(() => {
+    let lock: any = null
+    async function acquire() {
+      try {
+        // @ts-ignore — wakeLock nao esta nos typings DOM por default
+        if ('wakeLock' in navigator) {
+          // @ts-ignore
+          lock = await navigator.wakeLock.request('screen')
+        }
+      } catch { /* ignora; alguns iOS antigos nao suportam */ }
+    }
+    const onVisibility = () => { if (!document.hidden) acquire() }
+    acquire()
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      try { lock?.release?.() } catch {}
+    }
+  }, [])
 
   // Live GPS — inicia watchPosition e POSTa a cada posição nova (throttle server)
   useEffect(() => {
@@ -217,11 +244,14 @@ export default function RotaHojePage() {
     <div className="min-h-[100dvh]">
       <InstallPrompt />
       <PushPermission />
-      {/* Header */}
-      <header className="sticky top-0 bg-blue-700 text-white px-4 py-3 flex items-center justify-between z-10 shadow">
+      {/* Header — tema por empresa (cor da brand) */}
+      <header className={`sticky top-0 px-4 py-3 flex items-center justify-between z-10 shadow ${theme.headerBg}`}>
         <div>
-          <h1 className="font-bold text-lg leading-tight">Rota de Hoje</h1>
-          <p className="text-xs opacity-80">
+          <h1 className="font-bold text-lg leading-tight flex items-center gap-2">
+            {theme.brandName}
+            <span className="opacity-70 font-normal text-sm">· Rota</span>
+          </h1>
+          <p className={`text-xs ${theme.headerAccent}`}>
             {route ? `${route.completed_stops}/${route.total_stops} finalizadas` : 'Sem rota atribuída'}
           </p>
         </div>
@@ -324,10 +354,10 @@ export default function RotaHojePage() {
           {/* PRÓXIMA PARADA — hero card gigante */}
           {sortedPending.length > 0 && (
             <section className="px-4 pt-4 pb-2">
-              <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-blue-600 mb-2">
+              <p className={`text-[10px] font-bold uppercase tracking-[0.15em] mb-2 ${theme.nextLabel}`}>
                 👉 Próxima parada
               </p>
-              <StopCard stop={sortedPending[0]} myLocation={myLocation}
+              <StopCard stop={sortedPending[0]} myLocation={myLocation} theme={theme}
                 onNotifyCustomer={notifyCustomer}
                 onMove={handleMove}
                 onAskPostpone={s => { setPostponeModal({ stopId: s.id, customerName: s.customer_name }); setPostponeReason('') }}
@@ -342,7 +372,7 @@ export default function RotaHojePage() {
                 Depois ({sortedPending.length - 1})
               </p>
               {sortedPending.slice(1).map(stop => (
-                <StopCard key={stop.id} stop={stop} myLocation={myLocation}
+                <StopCard key={stop.id} stop={stop} myLocation={myLocation} theme={theme}
                   onNotifyCustomer={notifyCustomer}
                   onMove={handleMove}
                   onAskPostpone={s => { setPostponeModal({ stopId: s.id, customerName: s.customer_name }); setPostponeReason('') }} />
@@ -464,22 +494,23 @@ export default function RotaHojePage() {
   )
 }
 
-function StopCard({ stop, myLocation, onNotifyCustomer, onMove, onAskPostpone, featured = false }: {
+function StopCard({ stop, myLocation, onNotifyCustomer, onMove, onAskPostpone, featured = false, theme }: {
   stop: Stop
   myLocation: { lat: number; lng: number } | null
   onNotifyCustomer: (stopId: string, distKm: number | null) => Promise<void>
   onMove: (stopId: string, direction: 'up' | 'down' | 'bottom') => Promise<void>
   onAskPostpone: (stop: Stop) => void
   featured?: boolean
+  theme: CompanyTheme
 }) {
   const isColeta = stop.type === 'COLETA'
   const href = isColeta ? `/motorista/coleta/${stop.id}` : `/motorista/entrega/${stop.id}`
-  // Hero (featured) usa a cor tematica FORTE; compact usa tom clarinho
+  // Hero (featured) usa a cor FORTE da brand; compact usa tom clarinho
   const accent = featured
-    ? (isColeta ? 'bg-purple-600 text-white' : 'bg-emerald-600 text-white')
-    : (isColeta ? 'bg-purple-100 text-purple-700' : 'bg-emerald-100 text-emerald-700')
+    ? (isColeta ? theme.coletaBgHero : theme.entregaBgHero)
+    : (isColeta ? theme.coletaBg : theme.entregaBg)
   const heroBorder = featured
-    ? (isColeta ? 'border-purple-300 shadow-purple-100' : 'border-emerald-300 shadow-emerald-100')
+    ? theme.nextRing + ' shadow-lg'
     : 'border-gray-200'
   const Icon = isColeta ? Package : Truck
   const dist = myLocation && stop.lat && stop.lng
@@ -652,7 +683,7 @@ function StopCard({ stop, myLocation, onNotifyCustomer, onMove, onAskPostpone, f
 
         {!notified && !confirmed && stop.status !== 'COMPLETED' && stop.status !== 'FAILED' && (
           <button type="button" onClick={handleNotify} disabled={notifying}
-            className={`w-full py-3 text-sm font-bold text-white active:scale-[0.99] disabled:opacity-60 flex items-center justify-center gap-2 transition ${isColeta ? 'bg-purple-600 hover:bg-purple-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
+            className={`w-full py-3 text-sm font-bold text-white active:scale-[0.99] disabled:opacity-60 flex items-center justify-center gap-2 transition ${theme.primaryBg} ${theme.primaryHover}`}>
             {notifying ? (
               <><RefreshCw className="w-4 h-4 animate-spin" /> Enviando…</>
             ) : (
@@ -661,7 +692,7 @@ function StopCard({ stop, myLocation, onNotifyCustomer, onMove, onAskPostpone, f
           </button>
         )}
 
-        <Link href={href} className={`block w-full py-3 text-sm font-bold text-center text-white active:scale-[0.99] transition ${isColeta ? 'bg-purple-700' : 'bg-emerald-700'}`}>
+        <Link href={href} className={`block w-full py-3 text-sm font-bold text-center text-white active:scale-[0.99] transition ${theme.primaryBg} brightness-90`}>
           {isColeta ? 'Iniciar Coleta →' : 'Iniciar Entrega →'}
         </Link>
 
