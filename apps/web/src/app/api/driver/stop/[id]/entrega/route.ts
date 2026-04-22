@@ -62,6 +62,7 @@ type Body = {
   payment?: {
     method: 'pix' | 'dinheiro' | 'cartao_credito' | 'cartao_debito' | 'boleto'
     amount_cents: number
+    installments?: number | null  // parcelas (so cartao_credito)
     receipt_photo_base64?: string | null
     notes?: string | null
   } | null
