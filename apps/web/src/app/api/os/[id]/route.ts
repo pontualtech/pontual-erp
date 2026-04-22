@@ -71,6 +71,23 @@ export async function GET(req: NextRequest, { params }: Params) {
     const twelveMonthsAgo = new Date()
     twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12)
 
+    // Coleta/entrega feitas pelo motorista (LogisticsStop) — ServiceOrder
+    // nao tem relation declarada no schema Prisma, entao busca em query
+    // separada. Uma OS pode ter ate 2 stops: COLETA e ENTREGA.
+    const logisticsStops = await prisma.logisticsStop.findMany({
+      where: { os_id: os.id, company_id: user.companyId },
+      orderBy: { created_at: 'asc' },
+      include: {
+        route: {
+          select: {
+            id: true,
+            date: true,
+            driver: { select: { id: true, name: true } },
+          },
+        },
+      },
+    })
+
     const [installments, userProfiles, recentOsCount] = await Promise.all([
       receivableIds.length > 0
         ? prisma.installment.findMany({
@@ -113,7 +130,7 @@ export async function GET(req: NextRequest, { params }: Params) {
       changed_by_name: h.changed_by ? userNameMap[h.changed_by] || null : null,
     }))
 
-    return success({ ...os, service_order_history: enrichedHistory, accounts_receivable: enrichedReceivables, _recentOsCount: recentOsCount })
+    return success({ ...os, service_order_history: enrichedHistory, accounts_receivable: enrichedReceivables, _recentOsCount: recentOsCount, logistics_stops: logisticsStops })
   } catch (err) {
     return handleError(err)
   }

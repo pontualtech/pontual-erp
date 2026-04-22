@@ -20,6 +20,28 @@ interface OSItem {
   quantity: number; unit_price: number; total_price: number; item_type: string
 }
 interface OSPhoto { id: string; photo_url: string; description: string | null; created_at: string }
+interface ChecklistItem { key: string; label: string; checked: boolean }
+interface LogisticsStopSummary {
+  id: string
+  type: 'COLETA' | 'ENTREGA'
+  status: string | null
+  signer_name: string | null
+  signature_url: string | null
+  photo_urls: string[] | null
+  checklist: ChecklistItem[] | null
+  serial_number: string | null
+  serial_source: string | null
+  notes: string | null
+  completed_at: string | null
+  failure_reason: string | null
+  completed_lat: number | null
+  completed_lng: number | null
+  route: {
+    id: string
+    date: string
+    driver: { id: string; name: string } | null
+  } | null
+}
 interface OSHistoryEntry {
   id: string; from_status_id: string | null; to_status_id: string | null
   changed_by: string | null; changed_by_name: string | null; notes: string | null; created_at: string
@@ -45,6 +67,7 @@ interface OSDetail {
   accounts_receivable?: AccountReceivable[]
   custom_data?: Record<string, any> | null
   _recentOsCount?: number
+  logistics_stops?: LogisticsStopSummary[]
 }
 interface AccountReceivableInstallment {
   id: string
@@ -2245,6 +2268,124 @@ export default function OSDetailPage() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* ========== COLETA / ENTREGA DO MOTORISTA ========== */}
+      {(os.logistics_stops ?? []).length > 0 && (
+        <div className="rounded-xl border bg-white p-4 shadow-sm">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-indigo-100">
+              <Truck className="h-4 w-4 text-indigo-600" />
+            </div>
+            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+              Coleta & Entrega ({(os.logistics_stops ?? []).length})
+            </h2>
+          </div>
+          <div className="space-y-4">
+            {(os.logistics_stops ?? []).map(stop => {
+              // photo_urls[0] e duplicata da assinatura (vide api/driver/stop/[id]/coleta:67-70)
+              // — exibir assinatura em bloco proprio e pular do array de fotos.
+              const allPhotos = (stop.photo_urls ?? []).filter(u => typeof u === 'string' && u.length > 0)
+              const extraPhotos = stop.signature_url ? allPhotos.filter(u => u !== stop.signature_url) : allPhotos
+              const statusLabel: Record<string, { label: string; cls: string }> = {
+                COMPLETED: { label: 'Concluida', cls: 'bg-green-100 text-green-700' },
+                FAILED:    { label: 'Falhou',    cls: 'bg-red-100 text-red-700' },
+                EN_ROUTE:  { label: 'A caminho', cls: 'bg-amber-100 text-amber-700' },
+                ARRIVED:   { label: 'No local',  cls: 'bg-blue-100 text-blue-700' },
+                PENDING:   { label: 'Pendente',  cls: 'bg-gray-100 text-gray-600' },
+              }
+              const s = statusLabel[stop.status || 'PENDING'] || statusLabel.PENDING
+              const isColeta = stop.type === 'COLETA'
+              return (
+                <div key={stop.id} className="rounded-lg border border-gray-200 p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className={cn('rounded px-2 py-0.5 text-xs font-medium',
+                        isColeta ? 'bg-orange-100 text-orange-700' : 'bg-emerald-100 text-emerald-700')}>
+                        {isColeta ? 'Coleta' : 'Entrega'}
+                      </span>
+                      <span className={cn('rounded px-2 py-0.5 text-xs font-medium', s.cls)}>{s.label}</span>
+                      {stop.route?.driver?.name && (
+                        <span className="text-xs text-gray-500">Motorista: <span className="font-medium text-gray-700">{tc(stop.route.driver.name)}</span></span>
+                      )}
+                    </div>
+                    {stop.completed_at && (
+                      <span className="text-xs text-gray-500">
+                        {new Date(stop.completed_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-700">
+                    {stop.signer_name && (
+                      <div><span className="text-gray-500">Recebedor:</span> <span className="font-medium">{tc(stop.signer_name)}</span></div>
+                    )}
+                    {stop.serial_number && (
+                      <div><span className="text-gray-500">N/S:</span> <span className="font-mono font-medium">{stop.serial_number}</span>{stop.serial_source === 'ocr' && ' (OCR)'}{stop.serial_source === 'ocr_corrected' && ' (OCR editado)'}</div>
+                    )}
+                  </div>
+
+                  {stop.notes && (
+                    <div className="mt-2 rounded bg-gray-50 px-2 py-1.5 text-xs text-gray-700">
+                      <span className="text-gray-500">Obs:</span> {stop.notes}
+                    </div>
+                  )}
+
+                  {stop.failure_reason && (
+                    <div className="mt-2 rounded bg-red-50 px-2 py-1.5 text-xs text-red-700">
+                      <span className="font-medium">Motivo da falha:</span> {stop.failure_reason}
+                    </div>
+                  )}
+
+                  {Array.isArray(stop.checklist) && stop.checklist.length > 0 && (
+                    <div className="mt-2">
+                      <p className="text-xs font-medium text-gray-500 mb-1">Checklist</p>
+                      <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-xs">
+                        {stop.checklist.map(c => (
+                          <li key={c.key} className={cn('flex items-center gap-1.5', c.checked ? 'text-gray-700' : 'text-gray-400 line-through')}>
+                            <Check className={cn('h-3 w-3', c.checked ? 'text-green-600' : 'text-gray-300')} />
+                            {c.label}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {extraPhotos.length > 0 && (
+                    <div className="mt-3">
+                      <p className="text-xs font-medium text-gray-500 mb-1">Fotos ({extraPhotos.length})</p>
+                      <div className="flex flex-wrap gap-2">
+                        {extraPhotos.map((url, idx) => (
+                          <a key={idx} href={url} target="_blank" rel="noopener noreferrer"
+                            className="block h-20 w-20 overflow-hidden rounded border border-gray-200 hover:opacity-80">
+                            <img src={url} alt={`Foto ${idx + 1}`} className="h-full w-full object-cover" />
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {stop.signature_url && (
+                    <div className="mt-3">
+                      <p className="text-xs font-medium text-gray-500 mb-1">Assinatura de {stop.signer_name ? tc(stop.signer_name) : 'recebimento'}</p>
+                      <a href={stop.signature_url} target="_blank" rel="noopener noreferrer"
+                        className="inline-block rounded border border-gray-200 bg-gray-50 p-2 hover:bg-gray-100">
+                        <img src={stop.signature_url} alt="Assinatura" className="h-20 object-contain" />
+                      </a>
+                    </div>
+                  )}
+
+                  {stop.completed_lat != null && stop.completed_lng != null && (
+                    <a href={`https://www.google.com/maps?q=${stop.completed_lat},${stop.completed_lng}`} target="_blank" rel="noopener noreferrer"
+                      className="mt-2 inline-flex items-center gap-1 text-xs text-blue-600 hover:underline">
+                      <ExternalLink className="h-3 w-3" /> Ver local no mapa
+                    </a>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
