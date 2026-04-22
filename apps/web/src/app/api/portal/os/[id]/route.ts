@@ -103,15 +103,20 @@ export async function GET(
         return true
       })
 
-    // Mapear status atual da OS para o nome do portal
+    // Mapear status atual da OS para o nome do portal.
+    // IMPORTANTE: quando o status atual for um branch nao mapeado (Renegociar,
+    // Entregar Recusado, Entregue Recusado, Laudo, etc), NAO mascarar como
+    // "Em Reparo" — o cliente precisa saber que algo esta fora do fluxo.
+    // Preservamos o nome original (em Title Case) para o frontend exibir no banner.
     const currentStatusName = os.module_statuses?.name || ''
+    const { toTitleCase: tcStatus } = await import('@/lib/format-text')
     const currentKey = PORTAL_VISIBLE.find(v => currentStatusName.toLowerCase().includes(v))
-    // Se status não está nos visíveis, mapear: Em Execução/Aguardando Peça/etc → "Em Reparo"
-    // For non-visible statuses, try matching PORTAL_LABEL keys as partial match
-    const fallbackKey = Object.keys(PORTAL_LABEL).find(k => currentStatusName.toLowerCase().includes(k))
+    const fallbackKey = currentKey ? undefined : Object.keys(PORTAL_LABEL).find(k => currentStatusName.toLowerCase().includes(k))
     const portalStatus = currentKey
       ? { ...os.module_statuses, name: PORTAL_LABEL[currentKey] || currentStatusName, color: PORTAL_COLOR[currentKey] || os.module_statuses?.color }
-      : { ...os.module_statuses, name: PORTAL_LABEL[fallbackKey || ''] || 'Em Reparo', color: PORTAL_COLOR[fallbackKey || ''] || '#3B82F6' }
+      : fallbackKey
+        ? { ...os.module_statuses, name: PORTAL_LABEL[fallbackKey], color: PORTAL_COLOR[fallbackKey] }
+        : { ...os.module_statuses, name: tcStatus(currentStatusName), color: os.module_statuses?.color || '#F59E0B' }
 
     const { toTitleCase } = await import('@/lib/format-text')
     return NextResponse.json({

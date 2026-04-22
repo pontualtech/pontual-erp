@@ -449,20 +449,18 @@ export default function PortalOSDetailPage() {
             // ambos "orcar" — evita divergir por causa de acento.
             const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
 
-            // Fluxo principal do reparo (7 passos do caminho feliz). Qualquer
-            // outro status do cadastro e considerado "branch" (negociacao,
-            // espera de peca, recusa, cancelamento, renegociacao, laudo) e
-            // nao aparece no stepper — em vez disso, um banner destacado
-            // comunica o estado atual quando o cliente esta num branch.
+            // Fluxo principal do reparo (caminho feliz, em nomes amigaveis
+            // do portal — a API /api/portal/os/[id] ja mapeia internos para
+            // esses nomes via PORTAL_LABEL). Qualquer status fora desse set
+            // (Renegociar, Entregar Recusado, Cancelada, Laudo etc) e branch
+            // e dispara o banner de alerta.
             const MAIN_FLOW = new Set([
-              'coletar',
-              'orcar',
+              'recebido',
+              'em analise',
               'aguardando aprovacao',
-              'aprovado',
-              'em execucao',
-              'entregar reparado',
+              'em reparo',
+              'pronto para retirada',
               'entregue',
-              'entregue reparado',
             ])
             const isMainFlow = (name: string) => MAIN_FLOW.has(norm(name))
 
