@@ -4,6 +4,7 @@ import { requireDriver } from '@/lib/driver-auth'
 import { createVisitToken } from '@/lib/visit-token'
 import { sendWhatsAppCloud, sendWhatsAppTemplate } from '@/lib/whatsapp/cloud-api'
 import { rateLimit } from '@/lib/rate-limit'
+import { pauseBotForLogistics } from '@/lib/bot/pause-for-logistics'
 
 /**
  * POST /api/driver/stop/[id]/a-caminho
@@ -170,6 +171,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         `template: ${waResultFinal.error || 'falha'} | free_text: ${freeTextResult.error || 'falha'}`
       )
     }
+  }
+
+  // Pausa bot nessa conversa — cliente responde? humano atende, bot nao.
+  // Fire-and-forget: NUNCA bloqueia nem quebra o retorno.
+  if (waStatus === 'sent' && phone) {
+    void pauseBotForLogistics(auth.companyId, phone, 'a-caminho').catch(() => {})
   }
 
   return NextResponse.json({
