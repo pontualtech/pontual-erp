@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
+import { formatName, formatSentenceCase } from '@/lib/format-text'
 
 const PROXY_URL = 'https://vhsys-proxy.vercel.app/api/migracao-os'
 
@@ -189,10 +190,10 @@ export async function POST(req: NextRequest) {
         equipment_brand: parts.length >= 2 ? parts[0] : null,
         equipment_model: parts.length >= 2 ? parts.slice(1).join(' ') : null,
         reference: (vos.referencia_ordem || '').trim() || null,
-        reported_issue: (vos.problema_ordem || 'Sem descricao').trim(),
-        diagnosis: (vos.laudo_ordem || '').trim() || null,
-        reception_notes: (vos.recebimento_ordem || '').trim() || null,
-        internal_notes: (vos.obs_interno_pedido || '').trim() || null,
+        reported_issue: formatSentenceCase((vos.problema_ordem || 'Sem descricao').trim()),
+        diagnosis: (vos.laudo_ordem || '').trim() ? formatSentenceCase((vos.laudo_ordem || '').trim()) : null,
+        reception_notes: (vos.recebimento_ordem || '').trim() ? formatSentenceCase((vos.recebimento_ordem || '').trim()) : null,
+        internal_notes: (vos.obs_interno_pedido || '').trim() ? formatSentenceCase((vos.obs_interno_pedido || '').trim()) : null,
         estimated_cost: totalOS || (totalServ + totalPecas),
         approved_cost: (vos.status_pedido === 'Finalizado' || vos.status_pedido === 'Faturado') ? totalOS : 0,
         total_parts: totalPecas,
@@ -227,7 +228,7 @@ export async function POST(req: NextRequest) {
             for (const s of (vItems.servicos || [])) {
               await prisma.serviceOrderItem.create({ data: {
                 company_id: companyId, service_order_id: existingId, item_type: 'SERVICO',
-                description: (s.desc_servico || 'Servico').trim(),
+                description: formatName((s.desc_servico || 'Servico').trim()),
                 quantity: parseInt(s.horas_servico || '1') || 1,
                 unit_price: parseDecimalToCents(s.valor_unit_servico),
                 total_price: parseDecimalToCents(s.valor_total_servico),
@@ -237,7 +238,7 @@ export async function POST(req: NextRequest) {
             for (const p of (vItems.produtos || [])) {
               await prisma.serviceOrderItem.create({ data: {
                 company_id: companyId, service_order_id: existingId, item_type: 'PECA',
-                description: (p.desc_produto || 'Peca').trim(),
+                description: formatName((p.desc_produto || 'Peca').trim()),
                 quantity: parseInt(p.quantidade || '1') || 1,
                 unit_price: parseDecimalToCents(p.valor_unit_produto),
                 total_price: parseDecimalToCents(p.valor_total_produto),
