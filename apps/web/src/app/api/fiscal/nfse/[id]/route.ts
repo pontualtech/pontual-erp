@@ -153,7 +153,12 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       try {
         if (isSP && invoice.invoice_number) {
           // Cancelar via Prefeitura de SP
-          const certPassword = settings.certificate_password ? decrypt(settings.certificate_password) : ''
+          let certPassword = ''
+          if (settings.certificate_password) {
+            certPassword = decrypt(settings.certificate_password)
+          } else if (config.certificate_password) {
+            certPassword = config.certificate_password
+          }
           const spConfig: PrefeituraSPConfig = {
             environment: (config.environment as 'homologacao' | 'producao') || 'producao',
             cnpj: settings.cnpj,
