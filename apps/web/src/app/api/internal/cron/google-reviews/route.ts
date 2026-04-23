@@ -162,15 +162,14 @@ export async function POST(req: NextRequest) {
       const link = `${getBaseUrl(stop.company_id)}/avaliar/${token}`
       const freeText = `Ola, ${firstName}! Gostariamos muito de ouvir sua opiniao sobre o atendimento. Toque no link para deixar seu feedback:\n\n${link}`
 
-      // Estrategia: FREE TEXT primeiro (chega direto se janela 24h aberta —
-      // normalmente esta, pois cliente interagiu com bot recentemente).
-      // So cai pro template se free text falhar (fora da janela 24h).
+      // Estrategia: FREE TEXT primeiro (chega direto se janela 24h aberta).
+      // Fallback = pt_feedback_v1 (categoria MARKETING — permite oferta
+      // de desconto; templates UTILITY eram filtrados).
       let r = await sendWhatsAppCloud(stop.company_id, normalizedPhone, freeText)
 
       if (!r.success) {
-        // Fora da janela 24h — tenta templates com botao (sem palavras filtradas)
         r = await sendWhatsAppTemplate(
-          stop.company_id, normalizedPhone, 'pt_avaliacao_google_v3', 'pt_BR',
+          stop.company_id, normalizedPhone, 'pt_feedback_v1', 'pt_BR',
           [
             { type: 'body', parameters: [{ type: 'text', text: firstName }] },
             { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: token }] },
@@ -179,8 +178,9 @@ export async function POST(req: NextRequest) {
         )
       }
       if (!r.success) {
+        // Ultimo fallback: v3 UTILITY (se aprovar um dia)
         r = await sendWhatsAppTemplate(
-          stop.company_id, normalizedPhone, 'pt_avaliacao_google_v2', 'pt_BR',
+          stop.company_id, normalizedPhone, 'pt_avaliacao_google_v3', 'pt_BR',
           [
             { type: 'body', parameters: [{ type: 'text', text: firstName }] },
             { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: token }] },

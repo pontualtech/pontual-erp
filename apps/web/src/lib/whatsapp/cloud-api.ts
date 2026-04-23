@@ -429,6 +429,11 @@ function buildFallbackText(templateName: string, components?: any[]): string | n
       // v3: body neutro, sem palavras 'cupom/desconto/Google' (antispam Meta)
       return `Ola ${params[0] || ''}, gostariamos muito de ouvir sua opiniao sobre o atendimento recebido. Toque no botao abaixo para deixar seu feedback. Leva menos de 1 minuto.\n\nEm caso de duvida, responda esta mensagem.`
 
+    case 'pt_feedback_v1':
+      // params: nome_cliente (body); token (button url)
+      // Categoria MARKETING — permite mencao a desconto/recompensa.
+      return `Ola ${params[0] || ''}! Esperamos que tenha gostado do atendimento da PontualTech. Que tal deixar uma avaliacao rapida? Leva menos de 1 minuto e voce ainda ganha 10% de desconto no proximo servico como forma de agradecimento.\n\nEm caso de duvida, responda esta mensagem.`
+
     case 'pt_suporte_v1':
       // no params
       return `Estamos transferindo voce para nosso suporte humano. Em breve um atendente vai te ajudar!\n\nAcompanhe pelo portal do cliente.`
