@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { sendWhatsAppTemplate, sendWhatsAppCloud } from '@/lib/whatsapp/cloud-api'
 import { findStatusByName } from '@/lib/module-status'
+import { sendCompanyEmail } from '@/lib/send-email'
+import { getFeedbackEmail } from '@/lib/email-templates/feedback'
 import crypto from 'crypto'
 
 /**
@@ -188,6 +190,37 @@ export async function POST(req: NextRequest) {
           freeText,
         )
       }
+      // E-mail de avaliacao em PARALELO (fire-and-forget) — independente
+      // do resultado do WhatsApp. Multi-canal: WA + Email cobre os dois
+      // canais mais comuns.
+      const customerEmail = await (async () => {
+        if (!stop.os_id) return null
+        const oo = await prisma.serviceOrder.findUnique({
+          where: { id: stop.os_id },
+          select: { customers: { select: { email: true } } },
+        })
+        return oo?.customers?.email || null
+      })()
+      if (customerEmail) {
+        void (async () => {
+          try {
+            const company = await prisma.company.findUnique({
+              where: { id: stop.company_id },
+              select: { name: true },
+            })
+            const tpl = await getFeedbackEmail(stop.company_id, {
+              cliente: customerName,
+              empresa: company?.name || 'PontualTech',
+              os_number: os.os_number,
+              link,
+            })
+            await sendCompanyEmail(stop.company_id, customerEmail, tpl.subject, tpl.html)
+          } catch (err) {
+            console.warn('[reviews] email falhou:', err instanceof Error ? err.message : String(err))
+          }
+        })()
+      }
+
       if (r.success) {
         await prisma.logisticsStop.update({
           where: { id: stop.id },
