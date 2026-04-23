@@ -37,6 +37,12 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     if (!kitData.items || kitData.items.length === 0) return error('Kit sem itens')
 
+    // Normalizacao de texto vinda do kit (pode ter sido salvo em CAPS em configs
+    // antigos). formatName para descricao de item (curto, Title Case preservando
+    // siglas), formatSentenceCase para o laudo (longo, "TROCA DO LASER SCAN" →
+    // "Troca do laser scan"). Garante que mesmo kits legados aplicam texto limpo.
+    const { formatName: fmtName, formatSentenceCase: fmtSentence } = await import('@/lib/format-text')
+
     // Atomic: insert items + recalc totals + auto-fill diagnosis
     const createdItems = await prisma.$transaction(async (tx) => {
       const items = []
@@ -44,6 +50,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         const qty = kitItem.quantity || 1
         const unitPrice = kitItem.unit_price || 0
         const totalPrice = Math.round(qty * unitPrice)
+        const normDesc = kitItem.description ? fmtName(kitItem.description) : kitItem.description
 
         const item = await tx.serviceOrderItem.create({
           data: {
@@ -51,7 +58,7 @@ export async function POST(req: NextRequest, { params }: Params) {
             service_order_id: params.id,
             item_type: kitItem.item_type || 'SERVICO',
             product_id: kitItem.product_id || null,
-            description: kitItem.description,
+            description: normDesc,
             quantity: qty,
             unit_price: unitPrice,
             total_price: totalPrice,
@@ -71,10 +78,12 @@ export async function POST(req: NextRequest, { params }: Params) {
       // Update OS totals + auto-fill diagnosis from kit laudo (if provided and OS diagnosis is empty)
       const updateData: Record<string, any> = { total_parts, total_services, total_cost }
       if (kitData.laudo) {
-        // Append kit laudo to existing diagnosis (don't overwrite)
+        // Append kit laudo to existing diagnosis (don't overwrite).
+        // Normaliza o laudo do kit (legado em CAPS) pra Sentence Case antes
+        // de concatenar — evita "Troca do fusor\n\n---\n\nTROCA DO LASER SCAN".
         const currentDiagnosis = os.diagnosis || ''
         const separator = currentDiagnosis ? '\n\n---\n\n' : ''
-        updateData.diagnosis = currentDiagnosis + separator + kitData.laudo
+        updateData.diagnosis = currentDiagnosis + separator + fmtSentence(kitData.laudo)
       }
 
       await tx.serviceOrder.update({
