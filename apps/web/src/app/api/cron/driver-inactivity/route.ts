@@ -65,20 +65,23 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    // Busca admins por empresa de uma vez (cache por company pra evitar N queries)
-    const adminsByCompany = new Map<string, Array<{ id: string; name: string; phone: string | null }>>()
-    async function getAdminsForCompany(companyId: string) {
-      if (adminsByCompany.has(companyId)) return adminsByCompany.get(companyId)!
-      const admins = await prisma.userProfile.findMany({
-        where: {
-          company_id: companyId, is_active: true,
-          phone: { not: null },  // so admins com telefone recebem
-          roles: { name: { contains: 'admin', mode: 'insensitive' } },
-        },
-        select: { id: true, name: true, phone: true },
+    // Lista opt-in de numeros autorizados a receber alerta, por empresa.
+    // Config em Settings.key = 'logistics.inactivity_alert.phones' (valor =
+    // numeros separados por virgula, ex: "11999998888, 11988887777").
+    // Se estiver vazio, NAO envia WhatsApp — so grava audit log. Isso
+    // impede que o alerta vaze pra cliente caso algum UserProfile
+    // tenha role com "admin" no nome por engano.
+    const numbersByCompany = new Map<string, string[]>()
+    async function getNumbersForCompany(companyId: string): Promise<string[]> {
+      if (numbersByCompany.has(companyId)) return numbersByCompany.get(companyId)!
+      const setting = await prisma.setting.findFirst({
+        where: { company_id: companyId, key: 'logistics.inactivity_alert.phones' },
+        select: { value: true },
       })
-      adminsByCompany.set(companyId, admins)
-      return admins
+      const raw = setting?.value || ''
+      const numbers = raw.split(/[,;\n]/).map(s => s.replace(/\D/g, '')).filter(n => n.length >= 10)
+      numbersByCompany.set(companyId, numbers)
+      return numbers
     }
 
     const alerted: { id: string; name: string; last_gps_min_ago: number; whatsapp_sent: number }[] = []
@@ -109,19 +112,21 @@ export async function GET(request: NextRequest) {
         },
       }).catch(e => console.warn('[driver-inactivity] audit log failed:', e?.message))
 
-      // WhatsApp pros admins da empresa (free text — requer janela 24h aberta
-      // com o admin). Se nao tiver, o envio falha silenciosamente e fica so
-      // o audit log.
-      const admins = await getAdminsForCompany(drv.company_id)
-      const msg = `⚠️ *Alerta de inatividade*\n\nO motorista *${drv.name}* está há *${minAgo} minutos* sem enviar localização (GPS).\n\nÚltimo sinal: ${drv.last_location_at?.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }) || '—'}\n\nVerifique se está tudo bem com ele.`
+      // WhatsApp so pra numeros configurados em setting (opt-in explicito).
+      // Se vazio, alerta fica apenas no audit log — nao manda WhatsApp pra
+      // ninguem. Isso evita spam de admin com role loose E garante que
+      // cliente NUNCA recebe.
+      const phones = await getNumbersForCompany(drv.company_id)
       let whatsappSent = 0
-      for (const adm of admins) {
-        if (!adm.phone) continue
-        try {
-          const res = await sendWhatsAppCloud(drv.company_id, adm.phone, msg)
-          if (res.success) whatsappSent++
-        } catch (e) {
-          console.warn(`[driver-inactivity] WhatsApp to ${adm.name} failed:`, (e as Error).message)
+      if (phones.length > 0) {
+        const msg = `⚠️ *Alerta interno*\n\nO motorista *${drv.name}* está há *${minAgo} minutos* sem enviar localização (GPS).\n\nÚltimo sinal: ${drv.last_location_at?.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }) || '—'}\n\nVerifique se está tudo bem com ele.`
+        for (const phone of phones) {
+          try {
+            const res = await sendWhatsAppCloud(drv.company_id, phone, msg)
+            if (res.success) whatsappSent++
+          } catch (e) {
+            console.warn(`[driver-inactivity] WhatsApp to ${phone} failed:`, (e as Error).message)
+          }
         }
       }
 

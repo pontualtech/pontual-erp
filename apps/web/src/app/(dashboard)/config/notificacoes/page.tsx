@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import Link from 'next/link'
-import { ArrowLeft, Bell, Mail, MessageSquare, Loader2, Save, ChevronDown, ChevronUp, Zap, Hand, XCircle } from 'lucide-react'
+import { ArrowLeft, Bell, Mail, MessageSquare, Loader2, Save, ChevronDown, ChevronUp, Zap, Hand, XCircle, ShieldAlert } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface NotifRule {
@@ -47,6 +47,11 @@ export default function NotificacoesPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [permissionRequired, setPermissionRequired] = useState('os:edit')
 
+  // Alerta interno — numeros autorizados a receber avisos operacionais
+  // (motorista sem GPS, etc). Separados por virgula.
+  const [internalPhones, setInternalPhones] = useState('')
+  const [savingPhones, setSavingPhones] = useState(false)
+
   useEffect(() => {
     fetch('/api/settings/notificacoes')
       .then(r => r.json())
@@ -59,7 +64,37 @@ export default function NotificacoesPage() {
       })
       .catch(() => toast.error('Erro ao carregar'))
       .finally(() => setLoading(false))
+
+    // Carrega numeros do alerta interno (setting generica)
+    fetch('/api/settings')
+      .then(r => r.json())
+      .then(d => {
+        const phones = d?.data?.logistics?.['logistics.inactivity_alert.phones']?.value || ''
+        setInternalPhones(phones)
+      })
+      .catch(() => {})
   }, [])
+
+  async function saveInternalPhones() {
+    setSavingPhones(true)
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          settings: [{
+            key: 'logistics.inactivity_alert.phones',
+            value: internalPhones.trim(),
+            type: 'string',
+            group: 'logistics',
+          }],
+        }),
+      })
+      if (!res.ok) throw new Error()
+      toast.success('Numeros do alerta interno salvos')
+    } catch { toast.error('Falha ao salvar numeros') }
+    finally { setSavingPhones(false) }
+  }
 
   function getRule(statusId: string): NotifRule {
     return rules[statusId] || { ...DEFAULT_RULE }
@@ -115,6 +150,44 @@ export default function NotificacoesPage() {
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           {saving ? 'Salvando...' : 'Salvar'}
         </button>
+      </div>
+
+      {/* Alertas internos — NAO vao pro cliente */}
+      <div className="rounded-xl border-2 border-amber-200 bg-amber-50 p-5">
+        <div className="flex items-start gap-3 mb-3">
+          <ShieldAlert className="h-5 w-5 text-amber-700 mt-0.5 shrink-0" />
+          <div>
+            <h2 className="font-semibold text-amber-900">Alertas internos (so equipe)</h2>
+            <p className="text-sm text-amber-800 mt-0.5">
+              Numeros autorizados a receber avisos operacionais — motorista sem GPS, etc.
+              Se deixar vazio, o sistema NAO envia WhatsApp — fica so no log interno.
+              <strong className="block mt-1">Cliente NUNCA recebe estes alertas.</strong>
+            </p>
+          </div>
+        </div>
+        <div className="space-y-2">
+          <label htmlFor="internal-phones" className="text-xs font-medium text-amber-900">
+            Numeros (separados por virgula, com DDD)
+          </label>
+          <textarea
+            id="internal-phones"
+            value={internalPhones}
+            onChange={e => setInternalPhones(e.target.value)}
+            rows={2}
+            placeholder="11999998888, 11988887777"
+            className="w-full rounded-lg border border-amber-300 px-3 py-2 text-sm bg-white focus:border-amber-500 focus:ring-1 focus:ring-amber-200 resize-none font-mono"
+          />
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] text-amber-700">
+              Deixe vazio pra NAO receber WhatsApp (so log interno).
+            </p>
+            <button type="button" onClick={saveInternalPhones} disabled={savingPhones}
+              className="flex items-center gap-1.5 rounded-lg bg-amber-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50">
+              {savingPhones ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+              Salvar numeros
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Legenda */}
