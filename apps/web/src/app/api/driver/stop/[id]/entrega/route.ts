@@ -3,14 +3,36 @@ import { prisma } from '@pontual/db'
 import { requireDriver } from '@/lib/driver-auth'
 import { findStatusByName } from '@/lib/module-status'
 import { sendCompanyEmail } from '@/lib/send-email'
+import { getReciboEmail } from '@/lib/email-templates/recibo'
 
 function fmtBRL(cents: number): string {
   return (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
+const METHOD_LABEL: Record<string, string> = {
+  pix: 'PIX',
+  dinheiro: 'Dinheiro',
+  cartao_credito: 'Cartao de credito',
+  cartao_debito: 'Cartao de debito',
+  boleto: 'Boleto',
+}
+
+function portalUrl(companyId: string): string {
+  if (companyId === 'pontualtech-001') return 'https://portal.pontualtech.com.br/portal/pontualtech'
+  if (companyId === '86c829cf-32ed-4e40-80cd-59ce4178aa1a') return 'https://portal.imprimitech.com.br/portal/imprimitech'
+  return 'https://portal.pontualtech.com.br/portal/pontualtech'
+}
+
+function supportWa(companyId: string): string {
+  if (companyId === 'pontualtech-001') return 'https://wa.me/551126263841'
+  if (companyId === '86c829cf-32ed-4e40-80cd-59ce4178aa1a') return 'https://wa.me/551150439869'
+  return 'https://wa.me/551126263841'
+}
+
 /**
- * Envia recibo do pagamento por e-mail pro cliente.
- * Fire-and-forget — falhas de SMTP nao quebram a entrega.
+ * Envia recibo do pagamento por e-mail pro cliente — template editavel
+ * em /config/email-templates, com garantia 3m, equipamento + serial,
+ * link portal + suporte. Fire-and-forget.
  */
 async function sendReceiptEmail(
   companyId: string,
@@ -18,36 +40,46 @@ async function sendReceiptEmail(
   amountCents: number,
   method: string,
   signerName: string,
+  installments: number,
 ): Promise<void> {
   const os = await prisma.serviceOrder.findFirst({
     where: { id: osId, company_id: companyId },
-    select: { os_number: true, customers: { select: { legal_name: true, email: true } } },
+    select: {
+      os_number: true,
+      equipment_type: true,
+      equipment_brand: true,
+      equipment_model: true,
+      serial_number: true,
+      customers: { select: { legal_name: true, email: true } },
+    },
   })
   const email = os?.customers?.email
-  if (!email) return
+  if (!os || !email) return
   const company = await prisma.company.findUnique({ where: { id: companyId }, select: { name: true } })
-  const name = os.customers?.legal_name || 'Cliente'
-  const html = `
-    <div style="font-family:Arial,sans-serif;max-width:540px;margin:0 auto;padding:20px">
-      <div style="border-bottom:3px solid #4f46e5;padding-bottom:8px;margin-bottom:20px">
-        <h2 style="margin:0;color:#111">Recibo de pagamento</h2>
-        <p style="margin:0;color:#6b7280;font-size:12px">${company?.name || 'ERP'}</p>
-      </div>
-      <p>Ola, <strong>${name}</strong>,</p>
-      <p>Confirmamos o pagamento recebido na entrega da OS <strong>#${os.os_number}</strong>:</p>
-      <table style="width:100%;border-collapse:collapse;margin:16px 0">
-        <tr><td style="padding:6px 0;color:#6b7280">Valor pago</td><td style="padding:6px 0;text-align:right;font-weight:700;font-size:18px">${fmtBRL(amountCents)}</td></tr>
-        <tr><td style="padding:6px 0;color:#6b7280">Forma</td><td style="padding:6px 0;text-align:right">${method}</td></tr>
-        <tr><td style="padding:6px 0;color:#6b7280">Recebido por</td><td style="padding:6px 0;text-align:right">${signerName}</td></tr>
-        <tr><td style="padding:6px 0;color:#6b7280">Data</td><td style="padding:6px 0;text-align:right">${new Date().toLocaleString('pt-BR')}</td></tr>
-      </table>
-      <p style="color:#6b7280;font-size:12px;margin-top:24px">
-        Este e-mail serve como comprovante de recebimento. Dúvidas? Responda esta mensagem.
-      </p>
-    </div>
-  `
+
+  const equipmentCompleto = [os.equipment_type, os.equipment_brand, os.equipment_model]
+    .filter(Boolean).join(' ') || 'Equipamento'
+  const formaPagamento = METHOD_LABEL[method] || method
+  const formaCompleta = installments > 1 ? `${formaPagamento} (${installments}x)` : formaPagamento
+  const garantiaAte = new Date()
+  garantiaAte.setMonth(garantiaAte.getMonth() + 3)
+
   try {
-    await sendCompanyEmail(companyId, email, `Recibo de pagamento — OS #${os.os_number}`, html)
+    const tpl = await getReciboEmail(companyId, {
+      cliente: os.customers?.legal_name || 'Cliente',
+      empresa: company?.name || 'PontualTech',
+      os_number: os.os_number,
+      valor: fmtBRL(amountCents),
+      forma_pagamento: formaCompleta,
+      recebido_por: signerName,
+      data_hora: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
+      equipamento_completo: equipmentCompleto,
+      serial_number: os.serial_number || 's/n',
+      garantia_ate: garantiaAte.toLocaleDateString('pt-BR'),
+      link_portal: portalUrl(companyId),
+      link_suporte: supportWa(companyId),
+    })
+    await sendCompanyEmail(companyId, email, tpl.subject, tpl.html)
   } catch (err) {
     console.warn('[driver/entrega] Recibo email falhou:', err instanceof Error ? err.message : String(err))
   }
@@ -400,7 +432,7 @@ export async function POST(
             console.warn('[driver/entrega] AR create falhou:', err)
           }
 
-          void sendReceiptEmail(auth.companyId, os.id, amount, body.payment!.method, body.signer_name!).catch(() => {})
+          void sendReceiptEmail(auth.companyId, os.id, amount, body.payment!.method, body.signer_name!, installmentCount).catch(() => {})
         }
       }
     } catch (err) {

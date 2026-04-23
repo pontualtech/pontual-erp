@@ -4,8 +4,50 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { ArrowLeft, Loader2, RotateCcw, Save, Eye, Code } from 'lucide-react'
+import { cn } from '@/lib/utils'
+
+type TemplateKind = 'feedback' | 'recibo'
+
+const FEEDBACK_PREVIEW_VARS: Record<string, string> = {
+  cliente: 'Maria Silva',
+  primeiro_nome: 'Maria',
+  empresa: 'PontualTech',
+  os_number: '60123',
+  link: 'https://portal.pontualtech.com.br/avaliar/exemplo',
+}
+
+const RECIBO_PREVIEW_VARS: Record<string, string> = {
+  cliente: 'Maria Silva',
+  primeiro_nome: 'Maria',
+  empresa: 'PontualTech',
+  os_number: '60123',
+  valor: 'R$ 450,00',
+  forma_pagamento: 'Cartao de credito (3x)',
+  recebido_por: 'Maria Silva',
+  data_hora: '23/04/2026 15:42',
+  equipamento_completo: 'Impressora Epson L3250',
+  serial_number: 'X3Y-987654',
+  garantia_ate: '23/07/2026',
+  link_portal: 'https://portal.pontualtech.com.br/portal/pontualtech',
+  link_suporte: 'https://wa.me/551126263841',
+}
+
+const PREVIEW_VARS: Record<TemplateKind, Record<string, string>> = {
+  feedback: FEEDBACK_PREVIEW_VARS,
+  recibo: RECIBO_PREVIEW_VARS,
+}
+
+const VAR_LIST: Record<TemplateKind, string[]> = {
+  feedback: ['cliente', 'primeiro_nome', 'empresa', 'os_number', 'link'],
+  recibo: [
+    'cliente', 'primeiro_nome', 'empresa', 'os_number', 'valor',
+    'forma_pagamento', 'recebido_por', 'data_hora', 'equipamento_completo',
+    'serial_number', 'garantia_ate', 'link_portal', 'link_suporte',
+  ],
+}
 
 export default function EmailTemplatesPage() {
+  const [kind, setKind] = useState<TemplateKind>('feedback')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [html, setHtml] = useState('')
@@ -15,10 +57,10 @@ export default function EmailTemplatesPage() {
   const [defaultSubject, setDefaultSubject] = useState('')
   const [tab, setTab] = useState<'preview' | 'code'>('preview')
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (k: TemplateKind) => {
     setLoading(true)
     try {
-      const res = await fetch('/api/settings/email-templates/feedback', { cache: 'no-store' })
+      const res = await fetch(`/api/settings/email-templates/${k}`, { cache: 'no-store' })
       if (!res.ok) { toast.error('Falha ao carregar'); return }
       const j = await res.json()
       setHtml(j.data.html || '')
@@ -30,12 +72,12 @@ export default function EmailTemplatesPage() {
     finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { load(kind) }, [kind, load])
 
   async function save() {
     setSaving(true)
     try {
-      const res = await fetch('/api/settings/email-templates/feedback', {
+      const res = await fetch(`/api/settings/email-templates/${kind}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ html, subject }),
@@ -43,15 +85,14 @@ export default function EmailTemplatesPage() {
       if (!res.ok) { toast.error('Falha ao salvar'); return }
       toast.success('Template salvo')
       setIsCustom(true)
-    } catch { toast.error('Falha de rede') }
-    finally { setSaving(false) }
+    } finally { setSaving(false) }
   }
 
   async function reset() {
     if (!window.confirm('Restaurar template padrao? Suas edicoes serao perdidas.')) return
     setSaving(true)
     try {
-      const res = await fetch('/api/settings/email-templates/feedback', { method: 'DELETE' })
+      const res = await fetch(`/api/settings/email-templates/${kind}`, { method: 'DELETE' })
       if (!res.ok) { toast.error('Falha ao restaurar'); return }
       toast.success('Template restaurado')
       setHtml(defaultHtml)
@@ -60,13 +101,11 @@ export default function EmailTemplatesPage() {
     } finally { setSaving(false) }
   }
 
-  // Preview com variaveis de exemplo
-  const previewHtml = html
-    .replace(/\{\{cliente\}\}/g, 'Maria Silva')
-    .replace(/\{\{primeiro_nome\}\}/g, 'Maria')
-    .replace(/\{\{empresa\}\}/g, 'PontualTech')
-    .replace(/\{\{os_number\}\}/g, '60123')
-    .replace(/\{\{link\}\}/g, 'https://portal.pontualtech.com.br/avaliar/exemplo')
+  const vars = PREVIEW_VARS[kind]
+  let previewHtml = html
+  for (const [k, v] of Object.entries(vars)) {
+    previewHtml = previewHtml.replace(new RegExp(`\\{\\{${k}\\}\\}`, 'g'), v)
+  }
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
@@ -76,13 +115,11 @@ export default function EmailTemplatesPage() {
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <div>
-            <h1 className="text-xl font-semibold text-gray-900">Template de E-mail · Avaliação</h1>
+            <h1 className="text-xl font-semibold text-gray-900">Templates de E-mail</h1>
             <p className="text-xs text-gray-500">
-              Enviado automaticamente 10 min apos entrega aprovada.
-              {isCustom ? ' — ' : ' — '}
-              <span className={isCustom ? 'text-indigo-600 font-medium' : 'text-gray-400'}>
-                {isCustom ? 'Customizado' : 'Padrao'}
-              </span>
+              {isCustom
+                ? <span className="text-indigo-600 font-medium">Customizado pela empresa</span>
+                : <span className="text-gray-400">Usando template padrao</span>}
             </p>
           </div>
         </div>
@@ -100,19 +137,26 @@ export default function EmailTemplatesPage() {
         </div>
       </div>
 
+      {/* Tabs de tipo */}
+      <div className="flex gap-2 border-b">
+        {(['feedback', 'recibo'] as const).map(k => (
+          <button key={k} onClick={() => setKind(k)}
+            className={cn('px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+              kind === k ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700')}>
+            {k === 'feedback' ? '⭐ Avaliacao (apos entrega)' : '🧾 Recibo de pagamento'}
+          </button>
+        ))}
+      </div>
+
       {loading ? (
         <div className="flex items-center justify-center py-16"><Loader2 className="w-8 h-8 animate-spin text-gray-400" /></div>
       ) : (
         <>
           <div className="rounded-xl border bg-white p-4 shadow-sm space-y-2">
-            <label className="text-xs font-medium text-gray-600">Assunto do e-mail</label>
-            <input value={subject} onChange={e => setSubject(e.target.value)}
+            <label className="text-xs font-medium text-gray-600" htmlFor="tpl-subject">Assunto do e-mail</label>
+            <input id="tpl-subject" value={subject} onChange={e => setSubject(e.target.value)}
+              placeholder="Assunto do e-mail"
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-            <p className="text-[11px] text-gray-400">
-              Variaveis: <code className="bg-gray-100 px-1 rounded">{'{{empresa}}'}</code>{' '}
-              <code className="bg-gray-100 px-1 rounded">{'{{os_number}}'}</code>{' '}
-              <code className="bg-gray-100 px-1 rounded">{'{{cliente}}'}</code>
-            </p>
           </div>
 
           <div className="rounded-xl border bg-white shadow-sm">
@@ -131,28 +175,24 @@ export default function EmailTemplatesPage() {
             </div>
             {tab === 'preview' ? (
               <div className="p-0 h-[600px] overflow-auto bg-gray-50">
-                <iframe
-                  title="Preview"
-                  srcDoc={previewHtml}
-                  sandbox="allow-same-origin"
-                  className="w-full h-full bg-white border-0"
-                />
+                <iframe title="Preview" srcDoc={previewHtml} sandbox="allow-same-origin"
+                  className="w-full h-full bg-white border-0" />
               </div>
             ) : (
               <textarea
                 value={html}
                 onChange={e => setHtml(e.target.value)}
+                placeholder="HTML do corpo do e-mail"
+                aria-label="HTML do corpo do e-mail"
                 className="w-full h-[600px] border-0 p-4 font-mono text-xs focus:outline-none resize-none"
                 spellCheck={false}
               />
             )}
             <div className="border-t px-4 py-2 text-[11px] text-gray-500 bg-gray-50">
-              Variaveis disponiveis:{' '}
-              <code className="bg-white border px-1 rounded mr-1">{'{{cliente}}'}</code>
-              <code className="bg-white border px-1 rounded mr-1">{'{{primeiro_nome}}'}</code>
-              <code className="bg-white border px-1 rounded mr-1">{'{{empresa}}'}</code>
-              <code className="bg-white border px-1 rounded mr-1">{'{{os_number}}'}</code>
-              <code className="bg-white border px-1 rounded">{'{{link}}'}</code>
+              Variaveis:{' '}
+              {VAR_LIST[kind].map(v => (
+                <code key={v} className="bg-white border px-1 rounded mr-1">{`{{${v}}}`}</code>
+              ))}
             </div>
           </div>
         </>
