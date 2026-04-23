@@ -120,10 +120,15 @@ export async function GET(request: NextRequest) {
     const settingsMap = new Map<string, Record<string, string>>()
 
     for (const companyId of companyIds) {
+      // Carrega bot.followup.* (msgs, intervalos) + bot.config.bot_agent_id
+      // (usado no Guard 2 pra distinguir bot-assigned vs humano-assigned).
       const settings = await prisma.setting.findMany({
         where: {
           company_id: companyId,
-          key: { startsWith: 'bot.followup.' },
+          OR: [
+            { key: { startsWith: 'bot.followup.' } },
+            { key: 'bot.config.bot_agent_id' },
+          ],
         },
       })
       const cfg = { ...DEFAULTS }
@@ -185,9 +190,16 @@ export async function GET(request: NextRequest) {
               skipReason = 'Chatwoot resolved'
             }
             // Guard 2: atendente humano assumiu (cuida manualmente)
+            // IMPORTANTE: o proprio bot (Ana/Grazi/Marta/Aline) aparece como
+            // "assignee" na conv — isso NAO e humano assumindo. So pula se o
+            // assignee for DIFERENTE do bot_agent_id configurado pra empresa.
+            const botAgentId = parseInt(cfg['bot.config.bot_agent_id'] || '0')
             if (!shouldSkip && convData.meta?.assignee?.id) {
-              shouldSkip = true
-              skipReason = `atendente ${convData.meta.assignee.name || convData.meta.assignee.id} assumiu`
+              const assigneeId = Number(convData.meta.assignee.id)
+              if (!botAgentId || assigneeId !== botAgentId) {
+                shouldSkip = true
+                skipReason = `atendente ${convData.meta.assignee.name || assigneeId} assumiu`
+              }
             }
           }
         } catch {} // Chatwoot down — prossegue com outros guards
