@@ -127,6 +127,10 @@ export default function RouteDetailPage() {
   const [postponeModal, setPostponeModal] = useState<{ stopId: string } | null>(null)
   const [postponeReason, setPostponeReason] = useState('')
 
+  // Labels modal (etiquetas de coletas)
+  const [labelsModal, setLabelsModal] = useState(false)
+  const [labelsTamanho, setLabelsTamanho] = useState<'a4-6' | '6081' | '6082' | '50x30' | '70x30' | '40x60'>('a4-6')
+
   // Add stop modal
   const [addStopModal, setAddStopModal] = useState(false)
   const [addStopForm, setAddStopForm] = useState({
@@ -505,6 +509,15 @@ export default function RouteDetailPage() {
               <Printer className="h-4 w-4" />
               Imprimir
             </Link>
+            <button
+              type="button"
+              onClick={() => setLabelsModal(true)}
+              className="flex items-center gap-2 rounded-lg border border-indigo-300 bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100 transition-colors"
+              title="Imprimir etiquetas das coletas pra colar no equipamento"
+            >
+              <Printer className="h-4 w-4" />
+              Etiquetas
+            </button>
             {route.status === 'PLANNED' && (
               <button
                 type="button"
@@ -823,6 +836,60 @@ export default function RouteDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Labels Modal — escolhe formato de impressao das etiquetas de coleta */}
+      {labelsModal && (
+        <div className="fixed inset-0 z-[1001] flex items-center justify-center bg-black/40 p-4 overflow-y-auto" onClick={() => setLabelsModal(false)}>
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl my-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                <Printer className="h-5 w-5 text-indigo-600" />
+                Imprimir etiquetas das coletas
+              </h3>
+              <button type="button" onClick={() => setLabelsModal(false)} aria-label="Fechar" className="text-gray-400 hover:text-gray-600">
+                <XCircle className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mb-4">
+              Gera etiquetas com <strong>OS</strong> em destaque e <strong>nome do cliente</strong> abaixo. O motorista cola no equipamento pra facilitar identificacao no laboratorio.
+            </p>
+            <div className="space-y-2 mb-4">
+              <label className="block text-xs font-medium text-gray-700">Formato</label>
+              {([
+                { value: 'a4-6', label: 'A4 comum (recortar)', desc: '6 etiquetas por folha. Papel A4 normal em qualquer impressora. Recortar com tesoura e colar com durex.' },
+                { value: '6081', label: 'A4 Pimaco 6081 (adesivo)', desc: '14 etiquetas por folha (2x7). Folha sticker, cola direto sem recortar.' },
+                { value: '6082', label: 'A4 Pimaco 6082 (adesivo)', desc: '24 etiquetas por folha (3x8). Etiquetas menores.' },
+                { value: '50x30', label: 'Termica 50x30mm', desc: 'Impressora termica Zebra/Argox. Pequena.' },
+                { value: '70x30', label: 'Termica 70x30mm', desc: 'Impressora termica. Recomendada.' },
+                { value: '40x60', label: 'Termica 40x60mm (vertical)', desc: 'Impressora termica vertical.' },
+              ] as const).map(opt => (
+                <label key={opt.value}
+                  className={cn('flex items-start gap-2 rounded-lg border p-3 cursor-pointer hover:bg-gray-50',
+                    labelsTamanho === opt.value ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200')}>
+                  <input type="radio" name="labels-formato" value={opt.value} checked={labelsTamanho === opt.value}
+                    onChange={() => setLabelsTamanho(opt.value)} className="mt-0.5" />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-gray-900">{opt.label}</div>
+                    <div className="text-xs text-gray-500 mt-0.5">{opt.desc}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setLabelsModal(false)}
+                className="flex-1 rounded-lg border px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
+              <a
+                href={`/logistica/${routeId}/etiquetas?formato=${labelsTamanho.startsWith('a4') ? 'a4' : labelsTamanho.startsWith('6') ? 'pimaco' : 'termica'}&tamanho=${labelsTamanho}`}
+                target="_blank" rel="noopener"
+                onClick={() => setLabelsModal(false)}
+                className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+              >
+                <Printer className="h-4 w-4" /> Gerar etiquetas
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add Stop Modal — z-[1001] pra ficar acima das tiles do Leaflet (z~600) */}
       {addStopModal && (
