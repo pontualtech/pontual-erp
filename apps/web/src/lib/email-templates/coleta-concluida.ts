@@ -102,8 +102,8 @@ const DEFAULT_HTML = `<!DOCTYPE html>
                 </tr>
                 <tr><td colspan="2" style="border-top:1px solid #f3f4f6;"></td></tr>
                 <tr>
-                  <td style="padding:6px 0;color:#6b7280;">Coletado de</td>
-                  <td style="padding:6px 0;font-weight:500;text-align:right;">{{recebido_por}}</td>
+                  <td style="padding:6px 0;color:#6b7280;">Recebido por</td>
+                  <td style="padding:6px 0;font-weight:700;text-align:right;color:#111827;">{{recebido_por}}</td>
                 </tr>
                 <tr><td colspan="2" style="border-top:1px solid #f3f4f6;"></td></tr>
                 <tr>
@@ -203,14 +203,19 @@ function render(html: string, vars: ColetaConcluidaVars): string {
 
   const assinaturaBlock = vars.signature_url
     ? `<tr><td style="padding:24px 32px 0 32px;">
-         <p style="margin:0 0 10px 0;font-size:11px;color:#6b7280;font-weight:600;letter-spacing:1px;text-transform:uppercase;">Assinatura de quem entregou</p>
+         <p style="margin:0 0 10px 0;font-size:11px;color:#6b7280;font-weight:600;letter-spacing:1px;text-transform:uppercase;">Assinatura digital</p>
          <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;padding:8px;">
            <img src="${vars.signature_url}" alt="Assinatura"
-                style="width:100%;max-width:520px;display:block;" />
+                style="width:100%;max-width:520px;display:block;margin:0 auto;" />
+           <div style="border-top:1px dashed #d1d5db;margin-top:8px;padding-top:10px;text-align:center;">
+             <p style="margin:0;font-size:15px;font-weight:700;color:#111827;">
+               ${escapeHtml(vars.recebido_por)}
+             </p>
+             <p style="margin:2px 0 0 0;font-size:11px;color:#9ca3af;letter-spacing:0.5px;text-transform:uppercase;">
+               Assinatura de recebimento
+             </p>
+           </div>
          </div>
-         <p style="margin:8px 0 0 0;font-size:12px;color:#6b7280;text-align:right;">
-           Assinado por <strong>${escapeHtml(vars.recebido_por)}</strong>
-         </p>
        </td></tr>`
     : ''
 
