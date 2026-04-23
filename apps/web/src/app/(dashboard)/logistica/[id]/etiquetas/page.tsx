@@ -25,7 +25,7 @@ type Stop = {
   type: 'COLETA' | 'ENTREGA' | 'AVULSA'
   sequence: number
   customer_name: string | null
-  os: { number: number } | null
+  os_number: number | null
 }
 
 type RouteData = {
@@ -231,7 +231,7 @@ export default function EtiquetasPage() {
             {sheet.map(stop => (
               <div key={stop.id} className="label">
                 <div className="os-num">
-                  #{stop.os?.number ?? '—'}
+                  #{stop.os_number ?? '—'}
                 </div>
                 <div className="name">
                   {(stop.customer_name || 'Cliente').substring(0, 40)}
