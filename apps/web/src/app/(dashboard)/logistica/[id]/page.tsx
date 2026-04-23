@@ -11,6 +11,7 @@ import {
   AlertTriangle, Image, Map, Eye, ArrowUp, ArrowDown, Printer, CalendarClock,
   Wand2, Plus, ClipboardList,
 } from 'lucide-react'
+import CepAddressForm, { buildFullAddress, EMPTY_ADDRESS, type AddressParts } from '../../../(motorista)/motorista/_components/CepAddressForm'
 import { toast } from 'sonner'
 
 // Leaflet precisa de DOM real — carrega so no client. Reusa o mesmo
@@ -133,6 +134,8 @@ export default function RouteDetailPage() {
     customer_name: '', customer_phone: '', address: '', os_id: null as string | null,
     notes: '',
   })
+  // CEP form usado quando tipo = AVULSA (ou manualmente em COLETA/ENTREGA)
+  const [addStopCep, setAddStopCep] = useState<AddressParts>(EMPTY_ADDRESS)
   const [addingStop, setAddingStop] = useState(false)
   const [recalculating, setRecalculating] = useState(false)
   // Busca de OS/cliente pro autofill no modal de adicionar parada
@@ -265,6 +268,7 @@ export default function RouteDetailPage() {
 
   const resetAddStopForm = () => {
     setAddStopForm({ type: 'COLETA', customer_name: '', customer_phone: '', address: '', os_id: null, notes: '' })
+    setAddStopCep(EMPTY_ADDRESS)
     setAddStopSearchInput('')
     setAddStopSearchResults([])
     setAddStopSearchMode('os')
@@ -304,8 +308,13 @@ export default function RouteDetailPage() {
   }
 
   const handleAddStop = async () => {
-    if (!addStopForm.address.trim()) { toast.error('Endereco obrigatorio'); return }
     const isAvulsa = addStopForm.type === 'AVULSA'
+    // AVULSA usa o CEP form; outros tipos usam o textarea classico
+    const address = isAvulsa ? buildFullAddress(addStopCep) : addStopForm.address.trim()
+    if (!address) { toast.error('Endereco obrigatorio'); return }
+    if (isAvulsa && (!addStopCep.street.trim() || !addStopCep.number.trim())) {
+      toast.error('Preencha rua e numero'); return
+    }
     if (!addStopForm.customer_name.trim()) {
       toast.error(isAvulsa ? 'Titulo obrigatorio (ex: Buscar peca no fornecedor)' : 'Nome do cliente obrigatorio')
       return
@@ -317,7 +326,7 @@ export default function RouteDetailPage() {
         ? {
           type: 'AVULSA',
           customer_name: addStopForm.customer_name,
-          address: addStopForm.address,
+          address,
           notes: addStopForm.notes || undefined,
         }
         : addStopForm
@@ -932,14 +941,20 @@ export default function RouteDetailPage() {
                 </div>
               )}
 
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Endereco *</label>
-                <input type="text" value={addStopForm.address}
-                  onChange={e => setAddStopForm(f => ({ ...f, address: e.target.value }))}
-                  placeholder="Rua X, 123, bairro, cidade, UF, CEP"
-                  className="w-full rounded-lg border px-3 py-2 text-sm" />
-                <p className="text-[10px] text-gray-400 mt-1">Quanto mais completo, melhor o geocoding — inclua cidade/UF/CEP</p>
-              </div>
+              {addStopForm.type === 'AVULSA' ? (
+                <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3">
+                  <CepAddressForm value={addStopCep} onChange={setAddStopCep} compact />
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Endereco *</label>
+                  <input type="text" value={addStopForm.address}
+                    onChange={e => setAddStopForm(f => ({ ...f, address: e.target.value }))}
+                    placeholder="Rua X, 123, bairro, cidade, UF, CEP"
+                    className="w-full rounded-lg border px-3 py-2 text-sm" />
+                  <p className="text-[10px] text-gray-400 mt-1">Quanto mais completo, melhor o geocoding — inclua cidade/UF/CEP</p>
+                </div>
+              )}
 
               {addStopForm.type === 'AVULSA' && (
                 <div>

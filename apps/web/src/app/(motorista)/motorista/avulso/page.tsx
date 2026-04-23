@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { ArrowLeft, Search, Package, Truck, Loader2, User, MapPin, Phone, ClipboardList, Plus, X } from 'lucide-react'
+import CepAddressForm, { buildFullAddress, EMPTY_ADDRESS, type AddressParts } from '../_components/CepAddressForm'
 
 type LookupItem = {
   os_id: string
@@ -36,21 +37,23 @@ export default function AvulsoPage() {
   // Parada sem OS (AVULSA) — ex: fornecedor, mecanico, banco
   const [freeOpen, setFreeOpen] = useState(false)
   const [freeTitle, setFreeTitle] = useState('')
-  const [freeAddress, setFreeAddress] = useState('')
+  const [freeAddr, setFreeAddr] = useState<AddressParts>(EMPTY_ADDRESS)
   const [freeNotes, setFreeNotes] = useState('')
   const [freeSaving, setFreeSaving] = useState(false)
 
   async function createFreeStop() {
     const t = freeTitle.trim()
-    const a = freeAddress.trim()
     if (!t) return toast.error('De um titulo (ex: Buscar peca no fornecedor)')
-    if (!a) return toast.error('Informe o endereco')
+    if (!freeAddr.street.trim() || !freeAddr.number.trim()) {
+      return toast.error('Preencha rua e numero')
+    }
+    const address = buildFullAddress(freeAddr)
     setFreeSaving(true)
     try {
       const res = await fetch('/api/driver/stop/avulsa', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: t, address: a, notes: freeNotes.trim() || undefined }),
+        body: JSON.stringify({ title: t, address, notes: freeNotes.trim() || undefined }),
       })
       const j = await res.json().catch(() => ({}))
       if (!res.ok) { toast.error(j?.error || 'Falha ao criar parada'); return }
@@ -149,13 +152,7 @@ export default function AvulsoPage() {
                   placeholder="Ex: Buscar peca no fornecedor Fulano"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm" />
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Endereco *</label>
-                <input type="text" value={freeAddress} onChange={e => setFreeAddress(e.target.value)}
-                  placeholder="Rua X, 123, bairro, cidade/UF"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm" />
-                <p className="text-[10px] text-gray-400 mt-1">Quanto mais completo, melhor o mapa.</p>
-              </div>
+              <CepAddressForm value={freeAddr} onChange={setFreeAddr} />
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">
                   Observacao <span className="text-gray-400 font-normal">(opcional)</span>
