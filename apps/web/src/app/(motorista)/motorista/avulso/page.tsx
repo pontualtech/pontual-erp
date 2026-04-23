@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { ArrowLeft, Search, Package, Truck, Loader2, User, MapPin, Phone } from 'lucide-react'
+import { ArrowLeft, Search, Package, Truck, Loader2, User, MapPin, Phone, ClipboardList, Plus, X } from 'lucide-react'
 
 type LookupItem = {
   os_id: string
@@ -32,6 +32,36 @@ export default function AvulsoPage() {
   const [items, setItems] = useState<LookupItem[]>([])
   const [searched, setSearched] = useState(false)
   const [creating, setCreating] = useState<string | null>(null)
+
+  // Parada sem OS (AVULSA) — ex: fornecedor, mecanico, banco
+  const [freeOpen, setFreeOpen] = useState(false)
+  const [freeTitle, setFreeTitle] = useState('')
+  const [freeAddress, setFreeAddress] = useState('')
+  const [freeNotes, setFreeNotes] = useState('')
+  const [freeSaving, setFreeSaving] = useState(false)
+
+  async function createFreeStop() {
+    const t = freeTitle.trim()
+    const a = freeAddress.trim()
+    if (!t) return toast.error('De um titulo (ex: Buscar peca no fornecedor)')
+    if (!a) return toast.error('Informe o endereco')
+    setFreeSaving(true)
+    try {
+      const res = await fetch('/api/driver/stop/avulsa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: t, address: a, notes: freeNotes.trim() || undefined }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(j?.error || 'Falha ao criar parada'); return }
+      toast.success(j.data?.geocoded ? 'Parada adicionada a rota' : 'Parada adicionada (sem coordenadas)')
+      router.push('/motorista/rota')
+    } catch {
+      toast.error('Falha de rede')
+    } finally {
+      setFreeSaving(false)
+    }
+  }
 
   async function search() {
     const trimmed = input.trim()
@@ -89,12 +119,60 @@ export default function AvulsoPage() {
           <ArrowLeft className="w-5 h-5" />
         </Link>
         <div>
-          <h1 className="font-bold text-lg leading-tight">Coleta / Entrega Avulsa</h1>
-          <p className="text-xs opacity-80">Fora de rota planejada</p>
+          <h1 className="font-bold text-lg leading-tight">Adicionar Parada</h1>
+          <p className="text-xs opacity-80">OS, cliente ou parada livre</p>
         </div>
       </header>
 
       <main className="p-4 space-y-4 pb-24">
+        {/* Parada sem OS — fornecedor, mecanico, banco, etc */}
+        <section className="bg-white rounded-xl border p-3 space-y-3">
+          {!freeOpen ? (
+            <button type="button" onClick={() => setFreeOpen(true)}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-lg border-2 border-dashed border-amber-300 bg-amber-50 text-amber-800 font-semibold text-sm active:scale-[0.98]">
+              <Plus className="w-4 h-4" />
+              Parada sem OS (fornecedor, mecanico...)
+            </button>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-amber-800 font-semibold text-sm">
+                  <ClipboardList className="w-4 h-4" />
+                  Parada sem OS
+                </div>
+                <button type="button" onClick={() => setFreeOpen(false)} aria-label="Fechar"
+                  className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">O que vai fazer?</label>
+                <input type="text" value={freeTitle} onChange={e => setFreeTitle(e.target.value)}
+                  placeholder="Ex: Buscar peca no fornecedor Fulano"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Endereco *</label>
+                <input type="text" value={freeAddress} onChange={e => setFreeAddress(e.target.value)}
+                  placeholder="Rua X, 123, bairro, cidade/UF"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm" />
+                <p className="text-[10px] text-gray-400 mt-1">Quanto mais completo, melhor o mapa.</p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Observacao <span className="text-gray-400 font-normal">(opcional)</span>
+                </label>
+                <textarea value={freeNotes} onChange={e => setFreeNotes(e.target.value)} rows={2}
+                  placeholder="Ex: perguntar pelo Marcio, pagar R$ 40"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none" />
+              </div>
+              <button type="button" onClick={createFreeStop} disabled={freeSaving}
+                className="w-full py-3 bg-amber-600 text-white rounded-lg font-semibold text-sm active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2">
+                {freeSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                Adicionar a rota
+              </button>
+            </div>
+          )}
+        </section>
+
         {/* Modo de busca */}
         <section className="bg-white rounded-xl border p-3 space-y-3">
           <div className="grid grid-cols-2 gap-2">

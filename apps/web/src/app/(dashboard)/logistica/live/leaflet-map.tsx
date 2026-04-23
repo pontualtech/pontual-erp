@@ -258,7 +258,7 @@ export default function LeafletMap({ routes, drivers = [], trail = null, playbac
         const isFailed = stop.status === 'FAILED'
         if (!showStopRoute && (isDone || isFailed)) continue
 
-        const baseColor = stop.type === 'COLETA' ? '#9333ea' : '#059669'
+        const baseColor = stop.type === 'COLETA' ? '#9333ea' : stop.type === 'AVULSA' ? '#d97706' : '#059669'
         const color = isFailed ? '#dc2626' : isDone ? '#6b7280' : baseColor
         const label = isDone ? '✓' : isFailed ? '✕' : String(stop.sequence)
         const icon = L.divIcon({
@@ -277,7 +277,7 @@ export default function LeafletMap({ routes, drivers = [], trail = null, playbac
         marker.bindPopup(`
           <div style="font-size:12px;max-width:220px">
             <strong>${escapeHtml(stop.customer_name || 'Cliente')}</strong><br/>
-            <span style="color:${color};font-weight:600">${stop.type === 'COLETA' ? 'Coleta' : 'Entrega'} #${stop.sequence}${statusLabel}</span><br/>
+            <span style="color:${color};font-weight:600">${stop.type === 'COLETA' ? 'Coleta' : stop.type === 'AVULSA' ? 'Avulsa' : 'Entrega'} #${stop.sequence}${statusLabel}</span><br/>
             <span style="color:#6b7280">${escapeHtml(stop.address)}</span>
           </div>
         `)

@@ -15,12 +15,16 @@ type Params = { params: { id: string } }
  * novo sem recriar a rota inteira.
  *
  * Body: {
- *   type: 'COLETA'|'ENTREGA',
- *   customer_name: string,
- *   address: string,           // pode ser avulso (sem OS)
- *   customer_phone?, complement?, os_id?, lat?, lng?,
+ *   type: 'COLETA'|'ENTREGA'|'AVULSA',
+ *   customer_name?: string,    // obrigatorio exceto para AVULSA (serve como titulo da tarefa)
+ *   address: string,
+ *   customer_phone?, complement?, os_id?, lat?, lng?, notes?,
  *   insert_at_end?: boolean    // true (default) = fim da lista
  * }
+ *
+ * AVULSA = parada operacional sem OS (ex: retirar peca em fornecedor,
+ * passar no mecanico). Usa `customer_name` como titulo e `notes` como
+ * descricao. Fluxo simplificado no motorista: so Cheguei + Concluido.
  *
  * Geocoda endereco automaticamente se lat/lng nao fornecidos.
  * Nova parada entra PENDING, sequence = max + 1.
@@ -40,7 +44,11 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     const body = await req.json()
     if (!body.address) return error('address e obrigatorio', 400)
-    if (!body.type || !['COLETA', 'ENTREGA'].includes(body.type)) return error('type deve ser COLETA ou ENTREGA', 400)
+    if (!body.type || !['COLETA', 'ENTREGA', 'AVULSA'].includes(body.type)) return error('type deve ser COLETA, ENTREGA ou AVULSA', 400)
+    // AVULSA nao precisa de OS nem cliente real — usa customer_name como titulo.
+    if (body.type === 'AVULSA') {
+      if (body.os_id) return error('Parada AVULSA nao deve estar vinculada a OS', 400)
+    }
 
     // Geocoda se necessario
     let lat = body.lat ?? null

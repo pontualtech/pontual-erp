@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Package, Truck, MapPin, Phone, CheckCircle2, AlertTriangle, RefreshCw, LogOut, MessageCircle, ArrowUp, ArrowDown, CalendarClock, Printer, X, Navigation, Plus } from 'lucide-react'
+import { Package, Truck, MapPin, Phone, CheckCircle2, AlertTriangle, RefreshCw, LogOut, MessageCircle, ArrowUp, ArrowDown, CalendarClock, Printer, X, Navigation, Plus, ClipboardList, Check } from 'lucide-react'
 import SyncBadge from '../../components/sync-badge'
 import InstallPrompt from '../../components/install-prompt'
 import PushPermission from '../../components/push-permission'
@@ -20,7 +20,7 @@ const LeafletMap = dynamic(() => import('../../../(dashboard)/logistica/live/lea
 
 type Stop = {
   id: string
-  type: 'COLETA' | 'ENTREGA'
+  type: 'COLETA' | 'ENTREGA' | 'AVULSA'
   status: 'PENDING' | 'EN_ROUTE' | 'ARRIVED' | 'COMPLETED' | 'FAILED'
   sequence: number
   customer_name: string
@@ -28,6 +28,7 @@ type Stop = {
   address: string
   lat: number | null
   lng: number | null
+  notes?: string | null
   completed_at: string | null
   failure_reason: string | null
   os: { id: string; number: number; equipment: string; total_cost_cents: number } | null
@@ -200,6 +201,21 @@ export default function RotaHojePage() {
     finally { setPostponing(false) }
   }
 
+  // AVULSA: motorista toca "Cheguei" ou "Concluido" inline, sem sair da rota.
+  async function avulsaAction(stopId: string, action: 'arrive' | 'complete') {
+    try {
+      const res = await fetch(`/api/driver/stop/${stopId}/avulsa`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(j?.error || 'Falha'); return }
+      toast.success(action === 'arrive' ? 'Chegada registrada' : 'Parada concluida')
+      await load(true)
+    } catch { toast.error('Erro de conexao') }
+  }
+
   // Handler invocado pelo StopCard ao tocar "Avisar cliente que estou a caminho".
   // Calcula ETA aproximado via distância / 20km/h (SP urbano médio).
   async function notifyCustomer(stopId: string, distKm: number | null) {
@@ -366,6 +382,7 @@ export default function RotaHojePage() {
                 onNotifyCustomer={notifyCustomer}
                 onMove={handleMove}
                 onAskPostpone={s => { setPostponeModal({ stopId: s.id, customerName: s.customer_name }); setPostponeReason('') }}
+                onAvulsaAction={avulsaAction}
                 featured />
             </section>
           )}
@@ -380,7 +397,8 @@ export default function RotaHojePage() {
                 <StopCard key={stop.id} stop={stop} myLocation={myLocation} theme={theme}
                   onNotifyCustomer={notifyCustomer}
                   onMove={handleMove}
-                  onAskPostpone={s => { setPostponeModal({ stopId: s.id, customerName: s.customer_name }); setPostponeReason('') }} />
+                  onAskPostpone={s => { setPostponeModal({ stopId: s.id, customerName: s.customer_name }); setPostponeReason('') }}
+                  onAvulsaAction={avulsaAction} />
               ))}
             </section>
           )}
@@ -402,10 +420,13 @@ export default function RotaHojePage() {
                 Finalizadas ({doneStops.length})
               </h2>
               {doneStops.map(stop => {
-                const editable = stop.status === 'COMPLETED'
+                const isAvulsa = stop.type === 'AVULSA'
+                // AVULSA nao tem form de edicao — so leitura
+                const editable = stop.status === 'COMPLETED' && !isAvulsa
                 const editHref = editable
                   ? (stop.type === 'COLETA' ? `/motorista/coleta/${stop.id}` : `/motorista/entrega/${stop.id}`)
                   : null
+                const typeLabel = isAvulsa ? 'Parada avulsa' : (stop.type === 'COLETA' ? 'Coleta' : 'Entrega')
                 const content = (
                   <div className="flex items-center gap-3 w-full">
                     {stop.status === 'COMPLETED'
@@ -413,7 +434,7 @@ export default function RotaHojePage() {
                       : <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />}
                     <div className="flex-1 min-w-0">
                       <p className="font-medium truncate">
-                        {stop.type === 'COLETA' ? 'Coleta' : 'Entrega'} — {stop.customer_name}
+                        {typeLabel} — {stop.customer_name}
                       </p>
                       <p className="text-xs text-gray-500 truncate">
                         {stop.os ? `OS #${stop.os.number}` : ''} {stop.failure_reason && `— ${stop.failure_reason}`}
@@ -499,15 +520,19 @@ export default function RotaHojePage() {
   )
 }
 
-function StopCard({ stop, myLocation, onNotifyCustomer, onMove, onAskPostpone, featured = false, theme }: {
+function StopCard({ stop, myLocation, onNotifyCustomer, onMove, onAskPostpone, onAvulsaAction, featured = false, theme }: {
   stop: Stop
   myLocation: { lat: number; lng: number } | null
   onNotifyCustomer: (stopId: string, distKm: number | null) => Promise<void>
   onMove: (stopId: string, direction: 'up' | 'down' | 'bottom') => Promise<void>
   onAskPostpone: (stop: Stop) => void
+  onAvulsaAction: (stopId: string, action: 'arrive' | 'complete') => Promise<void>
   featured?: boolean
   theme: CompanyTheme
 }) {
+  if (stop.type === 'AVULSA') {
+    return <AvulsaCard stop={stop} myLocation={myLocation} onAvulsaAction={onAvulsaAction} featured={featured} />
+  }
   const isColeta = stop.type === 'COLETA'
   const href = isColeta ? `/motorista/coleta/${stop.id}` : `/motorista/entrega/${stop.id}`
   // Hero (featured) usa a cor FORTE da brand; compact usa tom clarinho
@@ -771,6 +796,87 @@ function StopCard({ stop, myLocation, onNotifyCustomer, onMove, onAskPostpone, f
           className="flex-1 flex items-center justify-center gap-1 py-2 text-[11px] font-semibold text-amber-700 hover:bg-amber-50 active:scale-95"
           aria-label="Adiar">
           <CalendarClock className="w-3 h-3" /> Adiar
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * AvulsaCard — parada sem OS (fornecedor, mecanico, banco).
+ * UI minima: titulo, endereco, notas; acoes inline "Cheguei" e "Concluido".
+ * Nao tem: telefone, OS, chat, notificacao ao cliente, pagamento, assinatura.
+ */
+function AvulsaCard({ stop, myLocation, onAvulsaAction, featured }: {
+  stop: Stop
+  myLocation: { lat: number; lng: number } | null
+  onAvulsaAction: (stopId: string, action: 'arrive' | 'complete') => Promise<void>
+  featured?: boolean
+}) {
+  const [busy, setBusy] = useState<'arrive' | 'complete' | null>(null)
+  const dist = myLocation && stop.lat && stop.lng
+    ? distanceKm(myLocation, { lat: stop.lat, lng: stop.lng })
+    : null
+  const arrived = stop.status === 'ARRIVED'
+
+  async function click(action: 'arrive' | 'complete') {
+    setBusy(action)
+    try { await onAvulsaAction(stop.id, action) }
+    finally { setBusy(null) }
+  }
+
+  const headerTone = featured ? 'border-2 border-amber-400 shadow-lg' : 'border border-amber-200'
+
+  return (
+    <div className={`bg-white ${headerTone} rounded-2xl overflow-hidden`}>
+      <div className={`${featured ? 'p-5' : 'p-3'}`}>
+        <div className="flex items-center gap-3 mb-2">
+          <div className={`${featured ? 'w-12 h-12' : 'w-8 h-8'} rounded-xl flex items-center justify-center bg-amber-100 text-amber-700 shrink-0`}>
+            <ClipboardList className={featured ? 'w-6 h-6' : 'w-4 h-4'} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700">
+              Parada avulsa (sem OS)
+            </p>
+            <h3 className={`${featured ? 'text-lg' : 'text-sm'} font-bold text-gray-900 truncate leading-tight`}>
+              {stop.customer_name || 'Parada'}
+            </h3>
+          </div>
+          {dist !== null && (
+            <span className="text-xs font-bold px-2 py-1 rounded-full bg-amber-50 text-amber-800 shrink-0">
+              {dist < 1 ? `${Math.round(dist * 1000)}m` : `${dist.toFixed(1)}km`}
+            </span>
+          )}
+        </div>
+        <div className="flex items-start gap-2 text-sm text-gray-700 mb-1">
+          <MapPin className="w-4 h-4 mt-0.5 shrink-0 text-gray-400" />
+          <span className="leading-snug">{stop.address}</span>
+        </div>
+        {stop.notes ? (
+          <p className="text-xs text-gray-500 italic mt-1">&quot;{stop.notes}&quot;</p>
+        ) : null}
+        {stop.lat != null && stop.lng != null && (
+          <div className="mt-3">
+            <a href={`https://www.google.com/maps/dir/?api=1&destination=${stop.lat},${stop.lng}&travelmode=driving`}
+              target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm bg-green-50 text-green-700 px-3 py-1.5 rounded-full font-medium active:scale-95">
+              <Navigation className="w-3.5 h-3.5" /> Navegar
+            </a>
+          </div>
+        )}
+      </div>
+      <div className="flex items-center border-t border-amber-200">
+        {!arrived && (
+          <button type="button" onClick={() => click('arrive')} disabled={busy !== null}
+            className="flex-1 py-3 text-sm font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-60 active:scale-[0.99] flex items-center justify-center gap-2">
+            {busy === 'arrive' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
+            Cheguei
+          </button>
+        )}
+        <button type="button" onClick={() => click('complete')} disabled={busy !== null}
+          className="flex-1 py-3 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 active:scale-[0.99] flex items-center justify-center gap-2">
+          {busy === 'complete' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+          Concluir
         </button>
       </div>
     </div>

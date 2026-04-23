@@ -9,7 +9,7 @@ import {
   ArrowLeft, Loader2, Play, CheckCircle2, XCircle, MapPin,
   Clock, Package, Truck as TruckIcon, Camera, FileSignature,
   AlertTriangle, Image, Map, Eye, ArrowUp, ArrowDown, Printer, CalendarClock,
-  Wand2, Plus,
+  Wand2, Plus, ClipboardList,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -35,7 +35,7 @@ interface StopPhoto {
 interface RouteStop {
   id: string
   sequence: number
-  type: 'COLETA' | 'ENTREGA'
+  type: 'COLETA' | 'ENTREGA' | 'AVULSA'
   status: 'PENDING' | 'ARRIVED' | 'COMPLETED' | 'FAILED'
   customer_name: string
   address: string
@@ -97,6 +97,7 @@ const stopStatusConfig: Record<string, { label: string; bg: string; text: string
 const stopTypeConfig = {
   COLETA: { label: 'Coleta', bg: 'bg-orange-100', text: 'text-orange-700', icon: Package },
   ENTREGA: { label: 'Entrega', bg: 'bg-green-100', text: 'text-green-700', icon: TruckIcon },
+  AVULSA: { label: 'Avulsa', bg: 'bg-amber-100', text: 'text-amber-800', icon: ClipboardList },
 }
 
 /* ---------- Component ---------- */
@@ -128,8 +129,9 @@ export default function RouteDetailPage() {
   // Add stop modal
   const [addStopModal, setAddStopModal] = useState(false)
   const [addStopForm, setAddStopForm] = useState({
-    type: 'COLETA' as 'COLETA' | 'ENTREGA',
+    type: 'COLETA' as 'COLETA' | 'ENTREGA' | 'AVULSA',
     customer_name: '', customer_phone: '', address: '', os_id: null as string | null,
+    notes: '',
   })
   const [addingStop, setAddingStop] = useState(false)
   const [recalculating, setRecalculating] = useState(false)
@@ -262,7 +264,7 @@ export default function RouteDetailPage() {
   }
 
   const resetAddStopForm = () => {
-    setAddStopForm({ type: 'COLETA', customer_name: '', customer_phone: '', address: '', os_id: null })
+    setAddStopForm({ type: 'COLETA', customer_name: '', customer_phone: '', address: '', os_id: null, notes: '' })
     setAddStopSearchInput('')
     setAddStopSearchResults([])
     setAddStopSearchMode('os')
@@ -303,17 +305,30 @@ export default function RouteDetailPage() {
 
   const handleAddStop = async () => {
     if (!addStopForm.address.trim()) { toast.error('Endereco obrigatorio'); return }
-    if (!addStopForm.customer_name.trim()) { toast.error('Nome do cliente obrigatorio'); return }
+    const isAvulsa = addStopForm.type === 'AVULSA'
+    if (!addStopForm.customer_name.trim()) {
+      toast.error(isAvulsa ? 'Titulo obrigatorio (ex: Buscar peca no fornecedor)' : 'Nome do cliente obrigatorio')
+      return
+    }
     setAddingStop(true)
     try {
+      // AVULSA nao envia os_id nem customer_phone
+      const payload = isAvulsa
+        ? {
+          type: 'AVULSA',
+          customer_name: addStopForm.customer_name,
+          address: addStopForm.address,
+          notes: addStopForm.notes || undefined,
+        }
+        : addStopForm
       const res = await fetch(`/api/logistics/routes/${routeId}/stops`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(addStopForm),
+        body: JSON.stringify(payload),
       })
       const data = await res.json()
       if (!res.ok) { toast.error(data?.error || 'Erro ao adicionar'); return }
-      toast.success(`Parada adicionada${data.data?.geocoded ? ' (endereco geocodado)' : ' sem coords'} — considere recalcular pra otimizar`)
+      toast.success(`Parada adicionada${data.data?.geocoded ? ' (endereco geocodado)' : ' sem coords'}`)
       setAddStopModal(false)
       resetAddStopForm()
       loadRoute()
@@ -816,7 +831,8 @@ export default function RouteDetailPage() {
               </button>
             </div>
             <div className="space-y-3">
-              {/* Busca por OS ou CPF/CNPJ — autofill os campos abaixo */}
+              {/* Busca por OS ou CPF/CNPJ — autofill os campos abaixo (oculta em AVULSA) */}
+              {addStopForm.type !== 'AVULSA' && (
               <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
                 <div className="flex gap-1">
                   {(['os', 'doc', 'manual'] as const).map(m => (
@@ -864,43 +880,57 @@ export default function RouteDetailPage() {
                   </>
                 )}
               </div>
+              )}
 
-              <p className="text-xs text-gray-500">
-                Pode ser uma OS existente ou endereco avulso. Se informar endereco sem lat/lng, o sistema geocoda automaticamente.
-              </p>
+              {addStopForm.type !== 'AVULSA' && (
+                <p className="text-xs text-gray-500">
+                  Pode ser uma OS existente ou endereco avulso. Se informar endereco sem lat/lng, o sistema geocoda automaticamente.
+                </p>
+              )}
 
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Tipo</label>
                 <div className="flex gap-2">
-                  {(['COLETA', 'ENTREGA'] as const).map(t => (
+                  {(['COLETA', 'ENTREGA', 'AVULSA'] as const).map(t => (
                     <button key={t} type="button"
-                      onClick={() => setAddStopForm(f => ({ ...f, type: t }))}
-                      className={cn('flex-1 rounded-lg border px-3 py-2 text-sm font-medium',
+                      onClick={() => setAddStopForm(f => ({ ...f, type: t, os_id: t === 'AVULSA' ? null : f.os_id }))}
+                      className={cn('flex-1 rounded-lg border px-3 py-2 text-xs font-medium',
                         addStopForm.type === t
-                          ? t === 'COLETA' ? 'bg-purple-100 border-purple-300 text-purple-700' : 'bg-emerald-100 border-emerald-300 text-emerald-700'
+                          ? t === 'COLETA' ? 'bg-purple-100 border-purple-300 text-purple-700'
+                          : t === 'ENTREGA' ? 'bg-emerald-100 border-emerald-300 text-emerald-700'
+                          : 'bg-amber-100 border-amber-300 text-amber-800'
                           : 'border-gray-200 text-gray-600 hover:bg-gray-50'
                       )}>
-                      {t}
+                      {t === 'AVULSA' ? 'AVULSA (sem OS)' : t}
                     </button>
                   ))}
                 </div>
+                {addStopForm.type === 'AVULSA' && (
+                  <p className="text-[10px] text-amber-700 mt-1">Parada operacional sem cliente (ex: fornecedor, mecanico, banco). Motorista so marca Chegada e Conclusao.</p>
+                )}
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Nome do Cliente *</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  {addStopForm.type === 'AVULSA' ? 'Titulo da parada *' : 'Nome do Cliente *'}
+                </label>
                 <input type="text" value={addStopForm.customer_name}
                   onChange={e => setAddStopForm(f => ({ ...f, customer_name: e.target.value }))}
-                  placeholder="Nome completo ou razao social"
+                  placeholder={addStopForm.type === 'AVULSA'
+                    ? 'Ex: Buscar peca no fornecedor Fulano'
+                    : 'Nome completo ou razao social'}
                   className="w-full rounded-lg border px-3 py-2 text-sm" />
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Telefone <span className="text-gray-400 font-normal">(opcional)</span></label>
-                <input type="text" value={addStopForm.customer_phone}
-                  onChange={e => setAddStopForm(f => ({ ...f, customer_phone: e.target.value }))}
-                  placeholder="11999998888"
-                  className="w-full rounded-lg border px-3 py-2 text-sm" />
-              </div>
+              {addStopForm.type !== 'AVULSA' && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Telefone <span className="text-gray-400 font-normal">(opcional)</span></label>
+                  <input type="text" value={addStopForm.customer_phone}
+                    onChange={e => setAddStopForm(f => ({ ...f, customer_phone: e.target.value }))}
+                    placeholder="11999998888"
+                    className="w-full rounded-lg border px-3 py-2 text-sm" />
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Endereco *</label>
@@ -910,6 +940,17 @@ export default function RouteDetailPage() {
                   className="w-full rounded-lg border px-3 py-2 text-sm" />
                 <p className="text-[10px] text-gray-400 mt-1">Quanto mais completo, melhor o geocoding — inclua cidade/UF/CEP</p>
               </div>
+
+              {addStopForm.type === 'AVULSA' && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Observacao <span className="text-gray-400 font-normal">(opcional)</span></label>
+                  <textarea value={addStopForm.notes}
+                    onChange={e => setAddStopForm(f => ({ ...f, notes: e.target.value }))}
+                    rows={2}
+                    placeholder="Ex: perguntar pelo Marcio, pagar R$ 40"
+                    className="w-full rounded-lg border px-3 py-2 text-sm resize-none" />
+                </div>
+              )}
 
               <div className="flex gap-2 pt-2">
                 <button type="button" onClick={handleAddStop} disabled={addingStop}

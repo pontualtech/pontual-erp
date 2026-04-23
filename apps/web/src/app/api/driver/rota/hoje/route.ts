@@ -60,7 +60,7 @@ export async function GET() {
     const os = s.os_id ? osById.get(s.os_id) : null
     return {
       id: s.id,
-      type: s.type,                      // COLETA | ENTREGA
+      type: s.type,                      // COLETA | ENTREGA | AVULSA
       status: s.status,                  // PENDING | EN_ROUTE | ARRIVED | COMPLETED | FAILED
       sequence: s.sequence,
       customer_name: s.customer_name || os?.customers?.legal_name || '',
@@ -68,6 +68,7 @@ export async function GET() {
       address: [s.address, s.address_complement].filter(Boolean).join(' — '),
       lat: s.lat ? Number(s.lat) : null,
       lng: s.lng ? Number(s.lng) : null,
+      notes: s.notes,                    // descricao livre (AVULSA usa como titulo de tarefa)
       window_start: s.scheduled_window_start,
       window_end: s.scheduled_window_end,
       completed_at: s.completed_at,
