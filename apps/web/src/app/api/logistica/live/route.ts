@@ -14,7 +14,7 @@ import { requirePermission } from '@/lib/auth'
  * Pollado a cada ~15s pelo frontend. Permissao: logistica.view.
  */
 export async function GET() {
-  const auth = await requirePermission('logistica', 'view')
+  const auth = await requirePermission('logistics', 'view')
   if (auth instanceof NextResponse) return auth
 
   const today = new Date()

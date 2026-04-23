@@ -17,7 +17,7 @@ import { requirePermission } from '@/lib/auth'
  * Permissao: logistica.view (admin/atendente do ERP).
  */
 export async function GET(req: NextRequest, { params }: { params: { driverId: string } }) {
-  const auth = await requirePermission('logistica', 'view')
+  const auth = await requirePermission('logistics', 'view')
   if (auth instanceof NextResponse) return auth
 
   const url = req.nextUrl.searchParams

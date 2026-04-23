@@ -20,7 +20,7 @@ function channelFor(driverId: string) {
 }
 
 export async function GET(req: NextRequest) {
-  const auth = await requirePermission('logistica', 'view')
+  const auth = await requirePermission('logistics', 'view')
   if (auth instanceof NextResponse) return auth
 
   const driverId = req.nextUrl.searchParams.get('driver_id')
@@ -101,7 +101,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await requirePermission('logistica', 'edit')
+  const auth = await requirePermission('logistics', 'edit')
   if (auth instanceof NextResponse) return auth
 
   const { driver_id, message } = await req.json().catch(() => ({}))

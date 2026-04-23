@@ -18,7 +18,7 @@ const routePermissions: { prefix: string; module: string; action: string; adminO
   { prefix: '/contratos', module: 'config', action: 'view', adminOnly: true },
   { prefix: '/chat', module: 'os', action: 'create' },
   { prefix: '/integracoes/chatwoot', module: 'os', action: 'create' },
-  { prefix: '/logistica', module: 'config', action: 'view', adminOnly: true },
+  { prefix: '/logistica', module: 'logistics', action: 'view' },
   { prefix: '/tickets', module: 'os', action: 'create' },
   { prefix: '/produtos', module: 'estoque', action: 'read' },
 ]

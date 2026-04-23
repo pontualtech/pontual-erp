@@ -15,6 +15,7 @@ type PermMap = Record<string, PermItem[]>
 const MODULE_LABELS: Record<string, string> = {
   core: 'Sistema', dashboard: 'Dashboard', os: 'Ordens de Serviço', clientes: 'Clientes',
   estoque: 'Produtos/Estoque', financeiro: 'Financeiro', fiscal: 'Fiscal', config: 'Configurações',
+  logistics: 'Logística', chat: 'Chat', tickets: 'Tickets',
 }
 const ACTION_LABELS: Record<string, string> = {
   view: 'Visualizar', read: 'Visualizar', create: 'Criar', edit: 'Editar', delete: 'Excluir',
