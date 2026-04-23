@@ -185,6 +185,18 @@ export async function PUT(req: NextRequest, { params }: Params) {
     if (data.actual_delivery) data.actual_delivery = new Date(data.actual_delivery)
     if (data.warranty_until) data.warranty_until = new Date(data.warranty_until)
 
+    // Normalizacao de texto: campos de texto livre (laudo, defeito, obs) vem
+    // em CAPS do habito antigo de alguns atendentes + legado do VHSys. Antes
+    // de gravar, aplica Sentence Case via formatDescription — capitaliza so
+    // a primeira letra de cada frase e preserva o que o atendente digitou.
+    // Isso impede que novas OS tenham "TROCA DO LASER SCAN" mesmo quando o
+    // atendente digitou em minusculo.
+    const { formatSentenceCase } = await import('@/lib/format-text')
+    if (typeof data.diagnosis === 'string' && data.diagnosis) data.diagnosis = formatSentenceCase(data.diagnosis)
+    if (typeof data.reported_issue === 'string' && data.reported_issue) data.reported_issue = formatSentenceCase(data.reported_issue)
+    if (typeof data.reception_notes === 'string' && data.reception_notes) data.reception_notes = formatSentenceCase(data.reception_notes)
+    if (typeof data.internal_notes === 'string' && data.internal_notes) data.internal_notes = formatSentenceCase(data.internal_notes)
+
     const os = await prisma.serviceOrder.update({
       where: { id: existing.id, company_id: user.companyId },
       data,

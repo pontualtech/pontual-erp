@@ -103,6 +103,33 @@ export function formatDescription(input: string): string {
 }
 
 /**
+ * Formata texto longo (laudo, defeito, observações) em Sentence Case:
+ * "TROCA DO LASER SCAN,PLACA SECUNDARIA." → "Troca do laser scan,placa secundaria."
+ * "Estou com problema"                    → "Estou com problema" (mantém)
+ * Diferente de formatDescription, LOWERCASE primeiro se o input é ALL CAPS —
+ * resolve o caso de legado VHSys + atendentes que digitavam em CAPS.
+ * Preserva input misto (se o atendente digitou "Estou com HP LaserJet", mantém).
+ */
+export function formatSentenceCase(input: string): string {
+  if (!input) return input
+
+  const cleaned = input.trim().replace(/\s+/g, ' ')
+
+  // Detecta ALL CAPS: >=5 letras e todas upper. Evita falso positivo em
+  // strings curtas tipo "N/A" ou siglas isoladas.
+  const letters = cleaned.replace(/[^A-Za-zÀ-ÿ]/g, '')
+  const upperLetters = letters.replace(/[^A-ZÀ-Ý]/g, '')
+  const isAllCaps = letters.length >= 5 && upperLetters.length === letters.length
+
+  const normalized = isAllCaps ? cleaned.toLowerCase() : cleaned
+
+  // Capitaliza início de cada frase (após . ! ? e no início)
+  return normalized.replace(/(^|[.!?]\s+)(\w)/g, (_, prefix, char) =>
+    prefix + char.toUpperCase()
+  )
+}
+
+/**
  * Formata email (sempre lowercase, trim):
  */
 export function formatEmail(input: string): string {

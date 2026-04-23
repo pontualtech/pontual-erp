@@ -48,6 +48,12 @@ export async function POST(req: NextRequest, { params }: Params) {
     const body = await req.json()
     const totalPrice = Math.round(Number(body.quantity || 1) * (body.unit_price || body.unitPrice || 0))
 
+    // Normalizar description (nomes curtos: "CONJUNTO SENSORES" → "Conjunto Sensores").
+    // Title Case preserva siglas (HP, CPF) e trata preposicoes (de, da, do).
+    const { formatName } = await import('@/lib/format-text')
+    const rawDesc = typeof body.description === 'string' ? body.description : ''
+    const normalizedDesc = rawDesc ? formatName(rawDesc) : rawDesc
+
     // Wrap item creation + total recalculation in a transaction for atomicity
     const item = await prisma.$transaction(async (tx) => {
       const created = await tx.serviceOrderItem.create({
@@ -56,7 +62,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           service_order_id: params.id,
           item_type: body.item_type || body.itemType || 'PECA',
           product_id: body.product_id || body.productId || null,
-          description: body.description,
+          description: normalizedDesc,
           quantity: body.quantity || 1,
           unit_price: body.unit_price || body.unitPrice || 0,
           total_price: totalPrice,
@@ -124,7 +130,11 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     // Guard against NaN (browser may send empty string for number inputs with step validation)
     const newQty = rawQty != null && !isNaN(rawQty) ? Math.max(1, rawQty) : item.quantity
     const newPrice = rawPrice != null && !isNaN(rawPrice) ? Math.max(0, rawPrice) : item.unit_price
-    const newDesc = description != null ? String(description).trim() : item.description
+    // Normaliza description (Title Case) antes de gravar
+    const { formatName: fmtName } = await import('@/lib/format-text')
+    const newDesc = description != null
+      ? (String(description).trim() ? fmtName(String(description).trim()) : item.description)
+      : item.description
     const newTotal = newQty * newPrice
 
     console.log(`[Items PATCH] itemId=${itemId} qty=${newQty} price=${newPrice} total=${newTotal} desc=${newDesc.slice(0, 30)}`)
