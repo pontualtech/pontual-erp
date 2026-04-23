@@ -260,7 +260,7 @@ export async function emitirNfseSP(
       logradouro: input.tomador_logradouro,
       numero: input.tomador_numero,
       bairro: input.tomador_bairro,
-      cidade: input.tomador_cidade || '3550308', // São Paulo
+      cidade: input.tomador_cidade, // se undefined, builder omite EnderecoTomador (evita erro 636 pra clientes de outros municipios)
       uf: input.tomador_uf || 'SP',
       cep: input.tomador_cep,
     },
