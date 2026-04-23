@@ -55,23 +55,29 @@ export async function POST(req: NextRequest, { params }: Params) {
     const latestQuote = os.quotes[0] // already sorted desc by version
     let itemsToCreate: { description: string; quantity: number; unit_price: number; total_price: number }[]
 
+    // Normaliza description (Title Case) antes de gravar — items do orcamento
+    // tambem aparecem no laudo da OS se forem aprovados. Kits legados ou input
+    // manual em CAPS eram reproduzidos na cotacao sem tratamento.
+    const { formatName: fmtNameQ } = await import('@/lib/format-text')
+    const normDesc = (d: string | undefined | null) => d ? fmtNameQ(String(d).trim()) : d
+
     if (customItems && customItems.length > 0) {
       itemsToCreate = customItems.map(i => ({
-        description: i.description,
+        description: normDesc(i.description) || '',
         quantity: i.quantity || 1,
         unit_price: i.unit_price || 0,
         total_price: i.total_price || Math.round((i.quantity || 1) * (i.unit_price || 0)),
       }))
     } else if (latestQuote) {
       itemsToCreate = latestQuote.quote_items.map(i => ({
-        description: i.description,
+        description: normDesc(i.description) || '',
         quantity: i.quantity,
         unit_price: i.unit_price,
         total_price: i.total_price,
       }))
     } else {
       itemsToCreate = os.service_order_items.map(i => ({
-        description: i.description,
+        description: normDesc(i.description) || '',
         quantity: i.quantity,
         unit_price: i.unit_price,
         total_price: i.total_price,

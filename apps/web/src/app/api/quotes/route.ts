@@ -86,12 +86,17 @@ export async function POST(req: NextRequest) {
           valid_until: validUntil ? new Date(validUntil) : null,
           notes: notes || null,
           quote_items: {
-            create: os.service_order_items.map(item => ({
-              description: item.description,
-              quantity: item.quantity,
-              unit_price: item.unit_price,
-              total_price: item.total_price,
-            })),
+            // Normaliza description — items podem vir em CAPS (legado VHSys, kits
+            // antigos). formatName faz Title Case preservando siglas.
+            create: await (async () => {
+              const { formatName } = await import('@/lib/format-text')
+              return os.service_order_items.map(item => ({
+                description: item.description ? formatName(item.description) : item.description,
+                quantity: item.quantity,
+                unit_price: item.unit_price,
+                total_price: item.total_price,
+              }))
+            })(),
           },
         },
         include: { quote_items: true },
