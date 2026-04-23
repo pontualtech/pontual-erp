@@ -229,19 +229,21 @@ export async function GET(request: NextRequest) {
         // Guard 4: Cliente respondeu apos o ultimo follow-up do bot. Olha a
         // message_history (JSON com ate 20 mensagens) e checa se a ULTIMA
         // mensagem e do cliente (role=user/customer). Se sim, conversa esta
-        // ativa — nao precisa de lembrete automatico.
+        // ativa — nao precisa de lembrete automatico AGORA, mas pode precisar
+        // mais tarde se o cliente ficar silente. Diferente dos Guards 0-3 que
+        // sao motivos PERMANENTES para nao fazer follow-up, esse e TEMPORARIO.
+        let isTemporarySkip = false
         if (!shouldSkip && Array.isArray(conv.message_history)) {
           const history = conv.message_history as any[]
           const last = history[history.length - 1]
           const lastRole = (last?.role || last?.sender || '').toString().toLowerCase()
           if (lastRole === 'user' || lastRole === 'customer') {
-            // Verifica tambem quao recente — se faz muitas horas, talvez ja seja
-            // hora de followup mesmo. Mas se e das ultimas 2h, respeita.
             const lastTs = last?.timestamp || last?.ts || last?.created_at
             if (lastTs) {
               const lastDate = new Date(lastTs)
               if (!isNaN(lastDate.getTime()) && (Date.now() - lastDate.getTime()) < 2 * 60 * 60 * 1000) {
                 shouldSkip = true
+                isTemporarySkip = true
                 skipReason = 'cliente respondeu ha menos de 2h'
               }
             }
@@ -249,8 +251,18 @@ export async function GET(request: NextRequest) {
         }
 
         if (shouldSkip) {
-          await clearFollowUp(conv.id)
-          console.log(`[Cron/BotFollowUp] Skip conv ${conv.chatwoot_conv_id}: ${skipReason}`)
+          if (isTemporarySkip) {
+            // Reagendar +2h em vez de limpar — senao a conv nunca mais recebe followup
+            const rescheduleAt = new Date(Date.now() + 2 * 60 * 60 * 1000)
+            await prisma.botConversation.update({
+              where: { id: conv.id },
+              data: { follow_up_next_at: rescheduleAt },
+            })
+            console.log(`[Cron/BotFollowUp] Reschedule conv ${conv.chatwoot_conv_id} → ${rescheduleAt.toISOString()} (${skipReason})`)
+          } else {
+            await clearFollowUp(conv.id)
+            console.log(`[Cron/BotFollowUp] Skip conv ${conv.chatwoot_conv_id}: ${skipReason}`)
+          }
           skipped++
           continue
         }
