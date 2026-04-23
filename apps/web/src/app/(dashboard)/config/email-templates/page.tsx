@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { ArrowLeft, Loader2, RotateCcw, Save, Eye, Code } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-type TemplateKind = 'feedback' | 'recibo'
+type TemplateKind = 'feedback' | 'recibo' | 'coleta_concluida'
 
 const FEEDBACK_PREVIEW_VARS: Record<string, string> = {
   cliente: 'Maria Silva',
@@ -32,9 +32,28 @@ const RECIBO_PREVIEW_VARS: Record<string, string> = {
   link_suporte: 'https://wa.me/551126263841',
 }
 
+const COLETA_PREVIEW_VARS: Record<string, string> = {
+  cliente: 'Maria Silva',
+  primeiro_nome: 'Maria',
+  empresa: 'PontualTech',
+  os_number: '60123',
+  equipamento_completo: 'Impressora Epson L3250',
+  serial_number: 'X3Y-987654',
+  defeito_reportado: 'Nao liga, led amarelo piscando',
+  recebido_por: 'Maria Silva',
+  data_hora: '23/04/2026 15:42',
+  link_portal: 'https://portal.pontualtech.com.br/portal/pontualtech',
+  link_suporte: 'https://wa.me/551126263841',
+  // Blocos condicionais ficam vazios no preview (a menos que o default use-os)
+  checklist_block: '',
+  foto_block: '',
+  assinatura_block: '',
+}
+
 const PREVIEW_VARS: Record<TemplateKind, Record<string, string>> = {
   feedback: FEEDBACK_PREVIEW_VARS,
   recibo: RECIBO_PREVIEW_VARS,
+  coleta_concluida: COLETA_PREVIEW_VARS,
 }
 
 const VAR_LIST: Record<TemplateKind, string[]> = {
@@ -43,6 +62,11 @@ const VAR_LIST: Record<TemplateKind, string[]> = {
     'cliente', 'primeiro_nome', 'empresa', 'os_number', 'valor',
     'forma_pagamento', 'recebido_por', 'data_hora', 'equipamento_completo',
     'serial_number', 'garantia_ate', 'link_portal', 'link_suporte',
+  ],
+  coleta_concluida: [
+    'cliente', 'primeiro_nome', 'empresa', 'os_number', 'equipamento_completo',
+    'serial_number', 'defeito_reportado', 'recebido_por', 'data_hora',
+    'link_portal', 'link_suporte',
   ],
 }
 
@@ -60,7 +84,7 @@ export default function EmailTemplatesPage() {
   const load = useCallback(async (k: TemplateKind) => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/settings/email-templates/${k}`, { cache: 'no-store' })
+      const res = await fetch(`/api/settings/email-templates/${k.replace(/_/g, '-')}`, { cache: 'no-store' })
       if (!res.ok) { toast.error('Falha ao carregar'); return }
       const j = await res.json()
       setHtml(j.data.html || '')
@@ -77,7 +101,7 @@ export default function EmailTemplatesPage() {
   async function save() {
     setSaving(true)
     try {
-      const res = await fetch(`/api/settings/email-templates/${kind}`, {
+      const res = await fetch(`/api/settings/email-templates/${kind.replace(/_/g, '-')}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ html, subject }),
@@ -92,7 +116,7 @@ export default function EmailTemplatesPage() {
     if (!window.confirm('Restaurar template padrao? Suas edicoes serao perdidas.')) return
     setSaving(true)
     try {
-      const res = await fetch(`/api/settings/email-templates/${kind}`, { method: 'DELETE' })
+      const res = await fetch(`/api/settings/email-templates/${kind.replace(/_/g, '-')}`, { method: 'DELETE' })
       if (!res.ok) { toast.error('Falha ao restaurar'); return }
       toast.success('Template restaurado')
       setHtml(defaultHtml)
@@ -138,12 +162,14 @@ export default function EmailTemplatesPage() {
       </div>
 
       {/* Tabs de tipo */}
-      <div className="flex gap-2 border-b">
-        {(['feedback', 'recibo'] as const).map(k => (
+      <div className="flex gap-2 border-b overflow-x-auto">
+        {(['feedback', 'recibo', 'coleta_concluida'] as const).map(k => (
           <button key={k} onClick={() => setKind(k)}
-            className={cn('px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+            className={cn('px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
               kind === k ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700')}>
-            {k === 'feedback' ? '⭐ Avaliacao (apos entrega)' : '🧾 Recibo de pagamento'}
+            {k === 'feedback' ? '⭐ Avaliacao (apos entrega)'
+              : k === 'recibo' ? '🧾 Recibo de pagamento'
+              : '📦 Coleta concluida'}
           </button>
         ))}
       </div>
