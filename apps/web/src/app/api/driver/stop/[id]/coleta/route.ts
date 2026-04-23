@@ -5,6 +5,7 @@ import { findStatusByName } from '@/lib/module-status'
 import { sendCompanyEmail } from '@/lib/send-email'
 import { getColetaConcluidaEmail } from '@/lib/email-templates/coleta-concluida'
 import { sendWhatsAppCloud } from '@/lib/whatsapp/cloud-api'
+import { pauseBotForLogistics } from '@/lib/bot/pause-for-logistics'
 
 function portalUrl(companyId: string): string {
   if (companyId === 'pontualtech-001') return 'https://portal.pontualtech.com.br/portal/pontualtech'
@@ -102,6 +103,8 @@ Suporte: ${supportWa(companyId)}
 _Equipe ${company?.name || 'PontualTech'}_`
       try {
         await sendWhatsAppCloud(companyId, phone, msg)
+        // Pausa bot nessa conversa — cliente responde? humano atende.
+        void pauseBotForLogistics(companyId, phone, 'coleta-concluida').catch(() => {})
       } catch (err) {
         console.warn('[driver/coleta] whatsapp falhou:', err instanceof Error ? err.message : String(err))
       }

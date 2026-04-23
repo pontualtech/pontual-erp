@@ -5,6 +5,7 @@ import { requireDriver } from '@/lib/driver-auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { sendWhatsAppTemplate } from '@/lib/whatsapp/cloud-api'
+import { pauseBotForLogistics } from '@/lib/bot/pause-for-logistics'
 
 type Params = { params: { id: string } }
 
@@ -141,8 +142,11 @@ export async function POST(req: NextRequest, { params }: Params) {
             }],
             fallback,
           ).then(r => {
-            if (r.success) notifiedCount++
-            else notifyFailed++
+            if (r.success) {
+              notifiedCount++
+              // Pausa bot nessa conversa — cliente responde? humano atende.
+              void pauseBotForLogistics(companyId!, rawPhone, 'route-start').catch(() => {})
+            } else notifyFailed++
           }).catch(() => { notifyFailed++ })
         )
       }

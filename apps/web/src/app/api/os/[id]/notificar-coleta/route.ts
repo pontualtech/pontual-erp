@@ -6,6 +6,7 @@ import { sendCompanyEmail } from '@/lib/send-email'
 import { sendWhatsAppTemplate } from '@/lib/whatsapp/cloud-api'
 import { escapeHtml } from '@/lib/escape-html'
 import { getCompanyContact } from '@/lib/company-contact'
+import { pauseBotForLogistics } from '@/lib/bot/pause-for-logistics'
 
 type Params = { params: { id: string } }
 
@@ -270,6 +271,8 @@ Equipe ${companyName}
         )
         if (waResult.success) {
           results.push({ channel: 'whatsapp', status: 'enviado' })
+          // Pausa bot nessa conversa — cliente responde? humano atende.
+          void pauseBotForLogistics(user.companyId, phone, 'notificar-coleta').catch(() => {})
         } else {
           console.error('[Coleta] WhatsApp send failed:', waResult.error)
           results.push({ channel: 'whatsapp', status: 'erro', error: waResult.error } as any)
