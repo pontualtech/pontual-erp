@@ -456,6 +456,7 @@ export default function PortalOSDetailPage() {
             // e dispara o banner de alerta.
             const MAIN_FLOW = new Set([
               'recebido',
+              'coletar',
               'em analise',
               'aguardando aprovacao',
               'em reparo',

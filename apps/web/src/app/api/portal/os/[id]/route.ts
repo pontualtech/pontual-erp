@@ -57,9 +57,16 @@ export async function GET(
     // Apenas estes status aparecem no progresso do portal
     // Status visíveis no progresso do portal (timeline do cliente)
     const PORTAL_VISIBLE = ['coletar', 'orcar', 'aguardando aprov', 'aprovado', 'entregar reparado', 'entregue']
+
+    // OS com coleta agendada ve "Coletar" (aguardando motorista buscar).
+    // OS de balcao (cliente traz) ve "Recebido" (ja chegou no laboratorio).
+    // Internamente o status e o mesmo ('Coletar' — order=1), so muda o rotulo.
+    const isColeta = os.os_type === 'COLETA'
+    const firstStepLabel = isColeta ? 'Coletar' : 'Recebido'
+
     // Mapeamento: status interno (lowercase) → nome que o cliente vê
     const PORTAL_LABEL: Record<string, string> = {
-      'coletar': 'Recebido',
+      'coletar': firstStepLabel,
       'orcar': 'Em Analise',
       'aguardando aprov': 'Aguardando Aprovacao',
       'aprovado': 'Em Reparo',
