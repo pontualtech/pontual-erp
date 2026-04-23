@@ -43,7 +43,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
       { label: 'Tickets', href: '/tickets', icon: MessageSquare, requiredAnyPermission: [{ module: 'os', action: 'create' }] },
       { label: 'Chat', href: '/chat', icon: MessageCircle, requiredAnyPermission: [{ module: 'os', action: 'create' }] },
       { label: 'WhatsApp', href: '/integracoes/chatwoot', icon: Phone, requiredAnyPermission: [{ module: 'os', action: 'create' }] },
-      { label: 'Logistica', href: '/logistica', icon: Truck, adminOnly: true },
+      { label: 'Logistica', href: '/logistica', icon: Truck, module: 'logistics', action: 'view' },
       { label: 'Contratos', href: '/contratos', icon: FileText, adminOnly: true },
     ],
   },
