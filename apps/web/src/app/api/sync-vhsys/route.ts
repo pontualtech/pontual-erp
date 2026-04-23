@@ -273,7 +273,7 @@ export async function POST(req: NextRequest) {
           for (const s of (vItems.servicos || [])) {
             await prisma.serviceOrderItem.create({ data: {
               company_id: companyId, service_order_id: created.id, item_type: 'SERVICO',
-              description: (s.desc_servico || 'Servico').trim(),
+              description: formatName((s.desc_servico || 'Servico').trim()),
               quantity: parseInt(s.horas_servico || '1') || 1,
               unit_price: parseDecimalToCents(s.valor_unit_servico),
               total_price: parseDecimalToCents(s.valor_total_servico),
@@ -283,7 +283,7 @@ export async function POST(req: NextRequest) {
           for (const p of (vItems.produtos || [])) {
             await prisma.serviceOrderItem.create({ data: {
               company_id: companyId, service_order_id: created.id, item_type: 'PECA',
-              description: (p.desc_produto || 'Peca').trim(),
+              description: formatName((p.desc_produto || 'Peca').trim()),
               quantity: parseInt(p.quantidade || '1') || 1,
               unit_price: parseDecimalToCents(p.valor_unit_produto),
               total_price: parseDecimalToCents(p.valor_total_produto),
