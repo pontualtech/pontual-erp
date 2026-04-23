@@ -65,7 +65,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'CNPJ e Inscrição Municipal são obrigatórios na configuração fiscal' }, { status: 400 })
     }
 
-    const certPassword = settings.certificate_password ? decrypt(settings.certificate_password) : ''
+    let certPassword = ''
+    if (settings.certificate_password) {
+      certPassword = decrypt(settings.certificate_password)
+    } else if (config.certificate_password) {
+      certPassword = config.certificate_password
+    }
 
     // 2. Buscar cliente
     const customer = await prisma.customer.findFirst({ where: { id: customer_id, company_id: user.companyId } })
