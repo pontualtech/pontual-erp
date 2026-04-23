@@ -15,7 +15,7 @@
  * Escopo: /motorista/ apenas. Tudo fora desse path passa reto (networkOnly).
  */
 
-const VERSION = 'v1'
+const VERSION = 'v2-avulsa'
 const APP_CACHE = `pontualrota-app-${VERSION}`
 const STATIC_CACHE = `pontualrota-static-${VERSION}`
 
