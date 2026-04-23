@@ -51,11 +51,12 @@ type Layout = {
 }
 
 const LAYOUTS: Record<string, Layout> = {
-  // A4 comum pra recortar com tesoura — 6 etiquetas grandes (2x3)
+  // A4 comum pra recortar com tesoura — 4 etiquetas grandes (2x2)
+  // Espaço folgado pra cortar sem estragar o conteudo, e OS# gigante.
   'a4-6': {
-    pageSize: 'A4', cols: 2, rows: 3, labelW: '95mm', labelH: '90mm',
-    gap: '0mm', margin: '5mm',
-    osFontSize: '72pt', nameFontSize: '18pt', dashed: true,
+    pageSize: 'A4', cols: 2, rows: 2, labelW: '92mm', labelH: '135mm',
+    gap: '4mm', margin: '8mm',
+    osFontSize: '96pt', nameFontSize: '22pt', dashed: true,
   },
   // Pimaco 6081 — 14 etiquetas 99x38mm (2x7)
   '6081': {
@@ -171,30 +172,54 @@ export default function EtiquetasPage() {
           height: ${layout.labelH};
           display: flex; flex-direction: column;
           align-items: center; justify-content: center;
-          padding: 2mm;
+          padding: ${layout.dashed ? '6mm' : '2mm'};
           box-sizing: border-box;
-          ${layout.dashed ? 'border: 1.5px dashed #9ca3af;' : ''}
+          ${layout.dashed ? 'border: 2px dashed #6b7280; border-radius: 3mm; position: relative;' : ''}
           overflow: hidden;
           background: white;
         }
+        ${layout.dashed ? `
+        .label::before {
+          content: "\\2702";
+          position: absolute;
+          top: -3mm; left: 3mm;
+          background: white;
+          padding: 0 2mm;
+          font-size: 11pt;
+          color: #6b7280;
+          line-height: 1;
+        }
+        .label::after {
+          content: "RECORTE E COLE";
+          position: absolute;
+          bottom: 2mm; left: 50%;
+          transform: translateX(-50%);
+          font-size: 7pt;
+          font-weight: 600;
+          color: #9ca3af;
+          letter-spacing: 0.2em;
+        }
+        ` : ''}
         .os-num {
           font-size: ${layout.osFontSize};
           font-weight: 900;
-          line-height: 1;
-          letter-spacing: -0.02em;
+          line-height: 0.9;
+          letter-spacing: -0.04em;
           color: #000;
           margin: 0;
+          text-align: center;
         }
         .name {
           font-size: ${layout.nameFontSize};
-          font-weight: 500;
-          color: #111;
-          margin-top: 0.4em;
+          font-weight: 600;
+          color: #1f2937;
+          margin-top: ${layout.dashed ? '6mm' : '0.4em'};
           text-align: center;
           max-width: 100%;
           word-break: break-word;
           text-transform: uppercase;
-          letter-spacing: 0.02em;
+          letter-spacing: 0.04em;
+          line-height: 1.2;
         }
         .controls {
           padding: 16px;
