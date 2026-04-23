@@ -67,6 +67,11 @@ export async function middleware(request: NextRequest) {
   if (pathname.startsWith('/api/chatwoot/') || pathname.startsWith('/api/webhook/') || pathname.startsWith('/api/webhooks/')) {
     return NextResponse.next()
   }
+  // OAuth callback do Google Business — recebido externamente (browser
+  // do user apos autorizar). Valida state no handler.
+  if (pathname === '/api/integracoes/google-business/callback') {
+    return NextResponse.next()
+  }
   // Redirect publico do cupom: cliente clica no link WhatsApp, endpoint
   // cria o cupom e devolve 302 pro Google Reviews. Requer ser publico.
   // /avaliar/ = alias mais neutro de /cupom-avaliacao/ (Meta filtra
