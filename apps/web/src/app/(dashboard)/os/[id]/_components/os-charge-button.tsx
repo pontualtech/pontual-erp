@@ -149,16 +149,24 @@ export function OsChargeModal({ osId, osNumber, totalCost, open, onClose }: {
   if (!open) return null
   if (typeof document === 'undefined') return null
 
+  // DEBUG: adiciona borda vermelha gritante no overlay pra confirmar visualmente
+  // se o Portal esta funcionando. Se aparecer borda vermelha cobrindo a tela
+  // toda, Portal OK — problema seria outro. Remover depois de diagnosticar.
   return createPortal(
     <div
+      data-charge-modal-overlay="v5"
       style={{
         position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-        zIndex: 9999, background: 'rgba(0,0,0,0.5)',
+        width: '100vw', height: '100vh',
+        zIndex: 99999, background: 'rgba(0,0,0,0.5)',
         display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
         padding: '16px', overflowY: 'auto',
+        border: '6px solid red', // DEBUG — remover depois
+        boxSizing: 'border-box',
       }}
       onClick={() => !submitting && reset()}>
       <div
+        data-charge-modal-card="v5"
         style={{
           width: '100%', maxWidth: '760px', marginTop: '32px', marginBottom: '32px',
           background: 'white', borderRadius: '16px',
