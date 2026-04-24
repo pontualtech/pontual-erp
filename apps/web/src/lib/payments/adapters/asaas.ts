@@ -1,20 +1,40 @@
 import { timingSafeEqual } from 'crypto'
 import type { PaymentProvider, PixCharge, PaymentStatus, WebhookPayload, Charge, CreateChargeParams } from '../types'
 
-const ASAAS_API_URL = () => process.env.ASAAS_API_URL || 'https://api-sandbox.asaas.com/v3'
-const ASAAS_API_KEY = () => process.env.ASAAS_API_KEY || ''
-const ASAAS_WEBHOOK_TOKEN = () => process.env.ASAAS_WEBHOOK_TOKEN || ''
+const ENV_API_URL = () => process.env.ASAAS_API_URL || 'https://api-sandbox.asaas.com/v3'
+const ENV_API_KEY = () => process.env.ASAAS_API_KEY || ''
+const ENV_WEBHOOK_TOKEN = () => process.env.ASAAS_WEBHOOK_TOKEN || ''
+
+/**
+ * Config opcional por conta bancaria — permite multiplas contas Asaas
+ * rodando em paralelo (ex: Asaas PontualTech + Asaas Imprimitech).
+ * Quando nao informada, usa o env global (retrocompativel).
+ */
+export type AsaasConfig = {
+  apiKey?: string
+  apiUrl?: string
+  webhookToken?: string
+}
 
 export class AsaasProvider implements PaymentProvider {
   name = 'asaas'
+  private readonly config: AsaasConfig
+
+  constructor(config?: AsaasConfig) {
+    this.config = config || {}
+  }
+
+  private apiKey(): string { return this.config.apiKey || ENV_API_KEY() }
+  private apiUrl(): string { return this.config.apiUrl || ENV_API_URL() }
+  private webhookToken(): string { return this.config.webhookToken || ENV_WEBHOOK_TOKEN() }
 
   private async request(method: string, path: string, body?: unknown) {
-    const url = `${ASAAS_API_URL()}${path}`
+    const url = `${this.apiUrl()}${path}`
     const res = await fetch(url, {
       method,
       headers: {
         'Content-Type': 'application/json',
-        'access_token': ASAAS_API_KEY(),
+        'access_token': this.apiKey(),
       },
       body: body ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(10000),
@@ -165,9 +185,9 @@ export class AsaasProvider implements PaymentProvider {
   }
 
   validateWebhook(headers: Record<string, string>, body: string): boolean {
-    const token = ASAAS_WEBHOOK_TOKEN()
+    const token = this.webhookToken()
     if (!token) {
-      console.error('[Asaas] ASAAS_WEBHOOK_TOKEN not configured — rejecting webhook for security')
+      console.error('[Asaas] webhook token not configured — rejecting webhook for security')
       return false
     }
 
