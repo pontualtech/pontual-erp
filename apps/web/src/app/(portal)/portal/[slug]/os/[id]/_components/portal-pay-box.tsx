@@ -44,7 +44,23 @@ export default function PortalPayBox({ osId, totalCost, alreadyPaid }: {
   const [paid, setPaid] = useState(false)
   const [copied, setCopied] = useState(false)
   const [verifying, setVerifying] = useState(false)
+  const [mountChecked, setMountChecked] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // No mount: checa se OS ja foi quitada (AR RECEBIDO). Se sim, bloqueia
+  // geracao de nova cobranca pra evitar duplicata (bug OS 60222).
+  useEffect(() => {
+    let cancelled = false
+    fetch(`/api/portal/os/${osId}/pay-status`, { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => {
+        if (cancelled) return
+        if (j?.data?.is_paid) setPaid(true)
+        setMountChecked(true)
+      })
+      .catch(() => { if (!cancelled) setMountChecked(true) })
+    return () => { cancelled = true }
+  }, [osId])
 
   async function createPix() {
     setLoading('pix')
