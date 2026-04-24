@@ -129,22 +129,28 @@ export async function POST(req: NextRequest, { params }: Params) {
       return error(`OS já foi finalizada (${currentStatus.name}). Apenas o administrador pode reverter o status.`, 422)
     }
 
-    // If target is a final status (Entregue) and OS has a total, require payment_method
-    // Skip payment requirement for cancel/refuse statuses (no payment expected)
+    // Final status (Entregue) com valor: precisa controlar geração de AR.
+    // Cancel/recusa não tem cobrança esperada.
     const isCancelOrRefuse = /cancel|recusad/i.test(toStatus.name)
     const isFinalDelivery = toStatus.is_final && !isCancelOrRefuse && (os.total_cost ?? 0) > 0
-    if (isFinalDelivery && !payment_method) {
-      return error('Forma de pagamento é obrigatória para finalizar a OS', 400)
-    }
 
-    // Bloquear duplicação de conta a receber — se já tem, não gerar outra
-    if (isFinalDelivery) {
-      const existingAR = await prisma.accountReceivable.findFirst({
-        where: { service_order_id: os.id, company_id: user.companyId, deleted_at: null },
-      })
-      if (existingAR) {
-        return error('Esta OS já possui uma conta a receber gerada. Não é possível gerar duplicata.', 422)
-      }
+    // Se cliente já pagou antecipado via portal, a AR foi criada lá. Nesse caso
+    // não recria (evita duplicata) e não exige o atendente escolher forma de
+    // pagamento (a AR original já tem método definido).
+    // CANCELADO é tratado como "não existe" — admin pode ter invalidado uma AR
+    // errada e querer gerar outra via fluxo normal.
+    const existingActiveAR = isFinalDelivery ? await prisma.accountReceivable.findFirst({
+      where: {
+        service_order_id: os.id,
+        company_id: user.companyId,
+        deleted_at: null,
+        status: { not: 'CANCELADO' },
+      },
+    }) : null
+    const needsNewReceivable = isFinalDelivery && !existingActiveAR
+
+    if (needsNewReceivable && !payment_method) {
+      return error('Forma de pagamento é obrigatória para finalizar a OS', 400)
     }
 
     const effectiveTechnicianId = os.technician_id || bodyTechnicianId || null
@@ -230,8 +236,9 @@ export async function POST(req: NextRequest, { params }: Params) {
         },
       })
 
-      // 3. Auto-criar AccountReceivable quando é entrega final
-      if (isFinalDelivery) {
+      // 3. Auto-criar AccountReceivable quando é entrega final E ainda não existe
+      //    (portal pode ter criado previamente via pagamento antecipado)
+      if (needsNewReceivable) {
         const category = await tx.category.findFirst({
           where: { company_id: user.companyId, module: 'financeiro_receita' },
           orderBy: { name: 'asc' },

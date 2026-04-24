@@ -783,7 +783,15 @@ export default function OSDetailPage() {
     }
     const isCancelOrRefuse = /cancel|recusad/i.test(target.name)
     const isDelivery = (target.is_final && !isCancelOrRefuse)
-    if (isDelivery && (os.total_cost ?? 0) > 0) {
+
+    // Se cliente ja pagou antecipado via portal (ou ha outra AR ativa), pula
+    // modal de pagamento — backend nao recria AR nem exige payment_method
+    // nesse caso. CANCELADO conta como inexistente.
+    const hasActiveReceivable = (os.accounts_receivable || []).some(
+      ar => ar.status !== 'CANCELADO'
+    )
+
+    if (isDelivery && (os.total_cost ?? 0) > 0 && !hasActiveReceivable) {
       setPaymentMethod('')
       setPaymentNotes('')
       setInstallmentCount(1)
