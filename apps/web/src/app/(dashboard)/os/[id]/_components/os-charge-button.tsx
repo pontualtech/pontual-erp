@@ -150,9 +150,21 @@ export function OsChargeModal({ osId, osNumber, totalCost, open, onClose }: {
   if (typeof document === 'undefined') return null
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-start justify-center bg-black/50 p-4 overflow-y-auto"
+    <div
+      style={{
+        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+        zIndex: 9999, background: 'rgba(0,0,0,0.5)',
+        display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+        padding: '16px', overflowY: 'auto',
+      }}
       onClick={() => !submitting && reset()}>
-      <div className="w-full max-w-3xl rounded-2xl bg-white shadow-2xl my-8 overflow-hidden"
+      <div
+        style={{
+          width: '100%', maxWidth: '760px', marginTop: '32px', marginBottom: '32px',
+          background: 'white', borderRadius: '16px',
+          boxShadow: '0 25px 50px -12px rgba(0,0,0,0.4)',
+          overflow: 'hidden',
+        }}
         onClick={e => e.stopPropagation()}>
 
             {/* HEADER */}
