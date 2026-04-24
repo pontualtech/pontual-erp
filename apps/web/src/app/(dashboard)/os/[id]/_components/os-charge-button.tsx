@@ -154,7 +154,7 @@ export function OsChargeModal({ osId, osNumber, totalCost, open, onClose }: {
             {/* HEADER */}
             <div className="bg-gradient-to-r from-emerald-600 to-emerald-700 px-6 py-4 flex items-center justify-between">
               <div className="text-white">
-                <p className="text-xs font-semibold uppercase tracking-wider text-emerald-100">Cobrança</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-emerald-100">Cobrança — v4</p>
                 <h3 className="text-lg font-bold">OS #{String(osNumber).padStart(4, '0')}</h3>
               </div>
               <button type="button" onClick={reset} aria-label="Fechar"
