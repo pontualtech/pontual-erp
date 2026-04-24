@@ -48,6 +48,8 @@ export default function EntregaPage() {
   const [paymentNotes, setPaymentNotes] = useState('')
   // Parcelas — so aparece quando cartao_credito. Cliente escolhe 1-12x.
   const [installments, setInstallments] = useState<number>(1)
+  // Dias ate vencimento do boleto — so aparece quando payment=boleto. Default 7, editavel 1-60.
+  const [boletoDueDays, setBoletoDueDays] = useState<number>(7)
   const [receiptPhoto, setReceiptPhoto] = useState<string | null>(null)
   const [cameraOpen, setCameraOpen] = useState(false)
   const [signerName, setSignerName] = useState('')
@@ -109,6 +111,7 @@ export default function EntregaPage() {
           method: paymentMethod,
           amount_cents: amountCents,
           installments: paymentMethod === 'cartao_credito' ? installments : 1,
+          due_days: paymentMethod === 'boleto' ? boletoDueDays : null,
           receipt_photo_base64: receiptPhoto,
           notes: paymentNotes.trim() || null,
         }
@@ -212,6 +215,37 @@ export default function EntregaPage() {
                 ))}
               </div>
             </section>
+
+            {/* Vencimento do boleto — so pra boleto. Default 7 dias, editavel 1-60. */}
+            {paymentMethod === 'boleto' && amountCents > 0 && (
+              <section>
+                <h2 className="font-semibold text-gray-900 mb-2">Vencimento do boleto</h2>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => setBoletoDueDays(d => Math.max(1, d - 1))}
+                    className="w-12 h-12 rounded-lg border-2 border-gray-300 text-xl font-bold text-gray-700 active:scale-95">-</button>
+                  <input
+                    type="number"
+                    value={boletoDueDays}
+                    onChange={e => {
+                      const v = parseInt(e.target.value || '0', 10)
+                      if (Number.isFinite(v)) setBoletoDueDays(Math.max(1, Math.min(60, v)))
+                    }}
+                    className="flex-1 h-12 text-center text-2xl font-bold border-2 border-emerald-500 rounded-lg"
+                    min={1} max={60}
+                    inputMode="numeric"
+                    aria-label="Dias ate vencimento do boleto"
+                    title="Dias ate vencimento do boleto"
+                    placeholder="7"
+                  />
+                  <button type="button" onClick={() => setBoletoDueDays(d => Math.min(60, d + 1))}
+                    className="w-12 h-12 rounded-lg border-2 border-gray-300 text-xl font-bold text-gray-700 active:scale-95">+</button>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  Cliente pagara o boleto em <strong>{boletoDueDays} dia{boletoDueDays === 1 ? '' : 's'}</strong>.
+                  O boleto sera enviado pelo escritorio depois da entrega.
+                </p>
+              </section>
+            )}
 
             {/* Parcelas — so pra cartao de credito. Cliente escolhe 1x-12x. */}
             {paymentMethod === 'cartao_credito' && amountCents > 0 && (

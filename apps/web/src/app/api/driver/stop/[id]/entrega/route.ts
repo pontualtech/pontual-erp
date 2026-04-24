@@ -95,6 +95,7 @@ type Body = {
     method: 'pix' | 'dinheiro' | 'cartao_credito' | 'cartao_debito' | 'boleto'
     amount_cents: number
     installments?: number | null  // parcelas (so cartao_credito)
+    due_days?: number | null      // dias ate vencimento (so boleto, default 7)
     receipt_photo_base64?: string | null
     notes?: string | null
   } | null
@@ -277,8 +278,17 @@ export async function POST(
           }),
         ]
 
+        // Classifica metodo: card | boleto | onsite (pix/dinheiro — recebido no ato)
+        const pmLowerForClassify = (body.payment?.method || '').toLowerCase()
+        const isCardPayment = pmLowerForClassify.includes('cart')
+        const isBoletoPayment = pmLowerForClassify.includes('boleto')
+        const isReceivedOnSite = !isCardPayment && !isBoletoPayment
+
         if (shouldCreateFinancial) {
           // Payment tem idempotency_key unique — retry seguro
+          // CONFIRMED + paid_at=now so pra PIX/dinheiro (dinheiro na mao do
+          // motorista, PIX caiu na conta). Cartao e boleto = PENDING —
+          // dinheiro ainda nao caiu, AR fica pendente ate liquidar.
           txOps.push(prisma.payment.upsert({
             where: { idempotency_key: `driver-${body.event_id}` },
             update: {},
@@ -289,10 +299,10 @@ export async function POST(
               provider: 'driver_app',
               idempotency_key: `driver-${body.event_id}`,
               amount,
-              status: 'CONFIRMED',
+              status: isReceivedOnSite ? 'CONFIRMED' : 'PENDING',
               method: paymentMethodMapped,
               billing_type: paymentMethodMapped,
-              paid_at: new Date(),
+              paid_at: isReceivedOnSite ? new Date() : null,
             },
           }))
         }
@@ -305,12 +315,15 @@ export async function POST(
         }
 
         if (shouldCreateFinancial) {
-          // AR: pix/dinheiro/boleto = PAGO (recebido no ato).
-          //     cartao_credito/debito = PENDENTE + installments + card_fee
-          //     (valor so liquida apos D+N da operadora).
+          // AR status:
+          //   pix/dinheiro       = PAGO (recebido no ato)
+          //   cartao (cred/deb)  = PENDENTE (operadora paga D+N)
+          //   boleto             = PENDENTE (cliente paga no banco ate o vencimento)
           // Igual ao que o atendente faz em /api/os/[id]/transition.
           const pmLower = (body.payment!.method || '').toLowerCase()
           const isCard = pmLower.includes('cart')
+          const isBoleto = pmLower.includes('boleto')
+          const isOnSite = !isCard && !isBoleto
           try {
             const existingAR = await prisma.accountReceivable.findFirst({
               where: {
@@ -355,9 +368,17 @@ export async function POST(
                 }
               }
 
-              // Data de vencimento: hoje pra a vista, +D dias uteis pra cartao
+              // Data de vencimento:
+              //   PIX/dinheiro → hoje (vencimento = data recebida)
+              //   cartao       → hoje + D dias uteis (D+N da operadora)
+              //   boleto       → hoje + due_days (default 7, configuravel por entrega)
               const dueDate = new Date()
-              if (daysToReceive > 0) {
+              if (isBoleto) {
+                const dueDays = Math.max(1, Math.min(60,
+                  Number.isFinite(body.payment?.due_days) ? Number(body.payment!.due_days) : 7,
+                ))
+                dueDate.setDate(dueDate.getDate() + dueDays)
+              } else if (daysToReceive > 0) {
                 let dias = 0
                 while (dias < daysToReceive) {
                   dueDate.setDate(dueDate.getDate() + 1)
@@ -373,16 +394,18 @@ export async function POST(
                   service_order_id: os.id,
                   description: arDescription,
                   total_amount: amount,
-                  received_amount: isCard ? 0 : amount,
+                  received_amount: isOnSite ? amount : 0,
                   due_date: dueDate,
-                  status: isCard ? 'PENDENTE' : 'PAGO',
+                  status: isOnSite ? 'PAGO' : 'PENDENTE',
                   payment_method: paymentMethodMapped,
                   installment_count: installmentCount,
                   card_fee_total: cardFeeTotal,
                   net_amount: netAmount,
-                  notes: isCard
-                    ? `Cartao ${installmentCount}x via motorista ${auth.name}. Taxa R$ ${(cardFeeTotal / 100).toFixed(2)}, Liquido R$ ${(netAmount / 100).toFixed(2)}, Recebe D+${daysToReceive}`
-                    : `Recebido via motorista ${auth.name}`,
+                  notes: isBoleto
+                    ? `Boleto a ser enviado ao cliente. Vencimento em ${Math.round((dueDate.getTime() - Date.now()) / 86400000)} dias. Motorista: ${auth.name}`
+                    : isCard
+                      ? `Cartao ${installmentCount}x via motorista ${auth.name}. Taxa R$ ${(cardFeeTotal / 100).toFixed(2)}, Liquido R$ ${(netAmount / 100).toFixed(2)}, Recebe D+${daysToReceive}`
+                      : `Recebido via motorista ${auth.name}`,
                 },
               })
 
