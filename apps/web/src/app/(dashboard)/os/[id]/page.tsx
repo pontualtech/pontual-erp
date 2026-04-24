@@ -9,6 +9,7 @@ import { toast } from 'sonner'
 import { useAuth } from '@/lib/use-auth'
 import { ArrowLeft, Edit, Camera, History, Info, Package, Plus, Trash2, Loader2, Search, Wrench, CreditCard, X, Printer, Mail, Send, Copy, FilePlus, User, Monitor, FileText, Clock, ChevronDown, ChevronUp, AlertTriangle, Save, Check, Layers, DollarSign, ExternalLink, Receipt, Truck, MessageCircle } from 'lucide-react'
 import { MoneyInput } from '@/app/(dashboard)/components/money-input'
+import OsChargeButton from './_components/os-charge-button'
 
 interface Customer {
   id: string; legal_name: string; trade_name: string | null; person_type: string
@@ -122,6 +123,7 @@ export default function OSDetailPage() {
   const canCreateOs = hasPermission('os', 'create')
   const canCreateFiscal = hasPermission('fiscal', 'create')
   const canViewFinanceiro = hasPermission('financeiro', 'view')
+  const canCharge = !!user && (isAdmin || hasPermission('os', 'charge'))
   const [os, setOs] = useState<OSDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [statusMap, setStatusMap] = useState<Record<string, StatusDef>>({})
@@ -1201,6 +1203,13 @@ export default function OSDetailPage() {
               title="Gera link de acesso direto ao portal (sem senha) e envia pro cliente">
               <ExternalLink className="h-4 w-4" /> Enviar Acesso
             </button>
+          )}
+          {canCharge && (
+            <OsChargeButton
+              osId={os.id}
+              osNumber={os.os_number}
+              totalCost={os.total_cost || 0}
+            />
           )}
           {canCreateFiscal && (
             <button type="button" onClick={openNfseModal}
