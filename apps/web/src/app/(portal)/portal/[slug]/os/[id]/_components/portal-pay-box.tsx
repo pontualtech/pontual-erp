@@ -1,0 +1,238 @@
+'use client'
+
+import { useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
+import { CreditCard, Zap, FileText, Loader2, X, Copy, Check, ExternalLink, Clock } from 'lucide-react'
+
+type PixPayment = {
+  id: string
+  receivable_id: string
+  qr_code: string | null
+  qr_code_image: string | null
+  amount: number
+  status: string
+  expires_at: string | null
+}
+
+type BoletoPayment = {
+  id: string
+  receivable_id: string
+  invoice_url: string | null
+  bank_slip_url: string | null
+  amount: number
+  status: string
+  due_date: string | null
+}
+
+function fmtBRL(cents: number) {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cents / 100)
+}
+
+/**
+ * Bloco "Pagar esta OS" na tela do portal do cliente.
+ * Mostra 2 opcoes (PIX / Boleto). Cliente clica, backend gera cobranca
+ * Asaas, UI mostra QR code + polling. Webhook Asaas confirma → UI avisa.
+ */
+export default function PortalPayBox({ osId, totalCost, alreadyPaid }: {
+  osId: string
+  totalCost: number
+  alreadyPaid: boolean
+}) {
+  const [loading, setLoading] = useState<'pix' | 'boleto' | null>(null)
+  const [pix, setPix] = useState<PixPayment | null>(null)
+  const [boleto, setBoleto] = useState<BoletoPayment | null>(null)
+  const [paid, setPaid] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  async function createPix() {
+    setLoading('pix')
+    try {
+      const res = await fetch('/api/portal/payments/pix', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ service_order_id: osId }),
+      })
+      const j = await res.json()
+      if (!res.ok) { toast.error(j.error || 'Falha ao gerar PIX'); return }
+      setPix(j.data)
+      startPolling(j.data.id)
+    } catch {
+      toast.error('Erro de rede')
+    } finally { setLoading(null) }
+  }
+
+  async function createBoleto() {
+    setLoading('boleto')
+    try {
+      const res = await fetch('/api/portal/payments/boleto', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ service_order_id: osId }),
+      })
+      const j = await res.json()
+      if (!res.ok) { toast.error(j.error || 'Falha ao gerar boleto'); return }
+      setBoleto(j.data)
+      if (j.data.invoice_url) window.open(j.data.invoice_url, '_blank')
+      startPolling(j.data.id)
+    } catch {
+      toast.error('Erro de rede')
+    } finally { setLoading(null) }
+  }
+
+  function startPolling(paymentId: string) {
+    if (pollRef.current) clearInterval(pollRef.current)
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/portal/payments/${paymentId}/status`, { cache: 'no-store' })
+        if (!res.ok) return
+        const { data } = await res.json()
+        if (data.is_paid) {
+          setPaid(true)
+          toast.success('Pagamento confirmado!')
+          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
+        } else if (data.status === 'EXPIRED' || data.status === 'CANCELLED') {
+          toast.error('Pagamento expirou. Gere um novo.')
+          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
+          setPix(null); setBoleto(null)
+        }
+      } catch { /* retry next tick */ }
+    }, 5000)
+  }
+
+  useEffect(() => () => {
+    if (pollRef.current) clearInterval(pollRef.current)
+  }, [])
+
+  function copyPix() {
+    if (!pix?.qr_code) return
+    navigator.clipboard.writeText(pix.qr_code).then(() => {
+      setCopied(true)
+      toast.success('Codigo PIX copiado')
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  function closePix() { setPix(null); if (pollRef.current) clearInterval(pollRef.current) }
+
+  if (alreadyPaid || paid) {
+    return (
+      <div className="rounded-2xl border-2 border-green-300 bg-green-50 dark:bg-green-950/30 dark:border-green-800 p-5">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-full bg-green-200 flex items-center justify-center">
+            <Check className="h-7 w-7 text-green-700" />
+          </div>
+          <div>
+            <h3 className="font-bold text-green-900 dark:text-green-200">Pagamento confirmado!</h3>
+            <p className="text-sm text-green-700 dark:text-green-300">Obrigado. Sua OS esta quitada.</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <div className="rounded-2xl border-2 border-emerald-300 dark:border-emerald-800 bg-gradient-to-br from-emerald-50 to-white dark:from-emerald-950/30 dark:to-gray-900 p-5 shadow-sm">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-full bg-emerald-600 flex items-center justify-center">
+            <CreditCard className="h-5 w-5 text-white" />
+          </div>
+          <div>
+            <h3 className="font-bold text-gray-900 dark:text-gray-100">Pague esta OS agora</h3>
+            <p className="text-xs text-gray-600 dark:text-gray-400">Antecipado pelo portal, seguro via Asaas</p>
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 mb-4 text-center border border-gray-200 dark:border-gray-700">
+          <p className="text-xs text-gray-500 uppercase tracking-wide">Valor a pagar</p>
+          <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{fmtBRL(totalCost)}</p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <button type="button" onClick={createPix} disabled={loading !== null}
+            className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-emerald-500 bg-white hover:bg-emerald-50 dark:bg-gray-800 dark:hover:bg-emerald-950/30 transition-all disabled:opacity-50">
+            {loading === 'pix' ? <Loader2 className="h-6 w-6 animate-spin text-emerald-600" /> : <Zap className="h-6 w-6 text-emerald-600" />}
+            <span className="font-bold text-sm text-emerald-700 dark:text-emerald-400">PIX</span>
+            <span className="text-[11px] text-gray-500 text-center">Pague agora, confirmação instantânea</span>
+          </button>
+
+          <button type="button" onClick={createBoleto} disabled={loading !== null}
+            className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-amber-500 bg-white hover:bg-amber-50 dark:bg-gray-800 dark:hover:bg-amber-950/30 transition-all disabled:opacity-50">
+            {loading === 'boleto' ? <Loader2 className="h-6 w-6 animate-spin text-amber-600" /> : <FileText className="h-6 w-6 text-amber-600" />}
+            <span className="font-bold text-sm text-amber-700 dark:text-amber-400">Boleto</span>
+            <span className="text-[11px] text-gray-500 text-center">7 dias pra pagar no banco</span>
+          </button>
+        </div>
+
+        {boleto && !paid && (
+          <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-amber-600" />
+              <p className="text-xs text-amber-800 dark:text-amber-300">Boleto gerado. Aguardando pagamento...</p>
+            </div>
+            {boleto.invoice_url && (
+              <a href={boleto.invoice_url} target="_blank" rel="noopener noreferrer"
+                className="text-xs font-semibold text-amber-700 hover:underline flex items-center gap-1">
+                <ExternalLink className="h-3 w-3" /> abrir
+              </a>
+            )}
+          </div>
+        )}
+      </div>
+
+      {pix && !paid && (
+        <dialog
+          ref={(el) => { if (el && !el.open) el.showModal() }}
+          onClick={e => { if (e.target === e.currentTarget) closePix() }}
+          style={{
+            padding: 0, border: 'none', borderRadius: 16,
+            maxWidth: 420, width: '90vw',
+            background: 'white',
+            boxShadow: '0 25px 50px -12px rgba(0,0,0,0.4)',
+          }}
+        >
+          <div style={{ width: '100%' }} onClick={e => e.stopPropagation()}>
+            <div className="bg-emerald-600 px-5 py-3 flex items-center justify-between">
+              <h3 className="text-white font-bold flex items-center gap-2"><Zap className="h-5 w-5" /> Pagamento PIX</h3>
+              <button type="button" onClick={closePix} aria-label="Fechar" className="text-white/80 hover:text-white">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-5 text-center">
+              <p className="text-sm text-gray-600 mb-3">Escaneie o QR code com o app do seu banco</p>
+              {pix.qr_code_image ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img src={pix.qr_code_image} alt="QR Code PIX"
+                  className="w-64 h-64 mx-auto border-4 border-emerald-500 rounded-xl" />
+              ) : (
+                <div className="w-64 h-64 mx-auto flex items-center justify-center border-2 border-gray-200 rounded-xl">
+                  <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+                </div>
+              )}
+
+              <p className="text-xs text-gray-500 mt-3 mb-1">OU copie e cole no seu banco:</p>
+              <div className="flex gap-2 mb-4">
+                <input type="text" readOnly value={pix.qr_code || ''}
+                  aria-label="Codigo PIX copia e cola"
+                  className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-xs font-mono bg-gray-50"
+                  onFocus={e => e.target.select()} />
+                <button type="button" onClick={copyPix}
+                  className="px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold">
+                  {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                </button>
+              </div>
+
+              <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 flex items-center gap-2 justify-center">
+                <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                <span className="text-sm text-blue-800">Aguardando pagamento...</span>
+              </div>
+              <p className="text-[10px] text-gray-400 mt-2">A confirmacao chega automaticamente em segundos.</p>
+            </div>
+          </div>
+        </dialog>
+      )}
+    </>
+  )
+}

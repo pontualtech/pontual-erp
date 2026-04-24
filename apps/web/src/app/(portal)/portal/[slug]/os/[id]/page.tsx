@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import { Printer, Mail, X } from 'lucide-react'
 import { PhotoGallery } from '../../../../components/photo-gallery'
+import PortalPayBox from './_components/portal-pay-box'
 
 interface OSDetail {
   id: string
@@ -660,6 +661,17 @@ export default function PortalOSDetailPage() {
                   </ul>
                 </div>
               </div>
+
+              {/* Pagar esta OS agora (online) — PIX / Boleto via Asaas */}
+              {os && (os.total_cost || 0) > 0 && (
+                <div className="mb-4">
+                  <PortalPayBox
+                    osId={os.id}
+                    totalCost={os.total_cost || 0}
+                    alreadyPaid={false}
+                  />
+                </div>
+              )}
 
               {/* Pagamento */}
               <div className="flex gap-3">
