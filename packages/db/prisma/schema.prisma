@@ -767,6 +767,7 @@ model AccountReceivable {
   customer_id      String?
   service_order_id String?
   category_id      String?
+  account_id       String?       // Conta bancaria que gerou a cobranca (Asaas, Inter, etc)
   description      String
   total_amount     Int
   received_amount  Int?          @default(0)
