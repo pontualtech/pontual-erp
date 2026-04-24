@@ -148,13 +148,13 @@ export function OsChargeModal({ osId, osNumber, totalCost, open, onClose }: {
       {open && (
         <div className="fixed inset-0 z-[1000] flex items-start justify-center bg-black/50 p-4 overflow-y-auto"
           onClick={() => !submitting && reset()}>
-          <div className="w-full max-w-xl rounded-2xl bg-white shadow-2xl my-8 overflow-hidden"
+          <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl my-8 overflow-hidden"
             onClick={e => e.stopPropagation()}>
 
             {/* HEADER */}
             <div className="bg-gradient-to-r from-emerald-600 to-emerald-700 px-6 py-4 flex items-center justify-between">
               <div className="text-white">
-                <p className="text-xs font-semibold uppercase tracking-wider text-emerald-100">Cobrança — v4</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-emerald-100">Cobrança</p>
                 <h3 className="text-lg font-bold">OS #{String(osNumber).padStart(4, '0')}</h3>
               </div>
               <button type="button" onClick={reset} aria-label="Fechar"
