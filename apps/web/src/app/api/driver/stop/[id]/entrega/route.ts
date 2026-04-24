@@ -387,17 +387,41 @@ export async function POST(
                 }
               }
 
+              // Lookup categoria "Venda de Servicos" da empresa — usa como
+              // categoria padrao de receita pra ARs criados via motorista.
+              // Normaliza (case-insensitive, sem acento) pra tolerar variacoes
+              // como "Venda de Serviços" vs "Venda de Servicos".
+              let serviceRevenueCategoryId: string | null = null
+              try {
+                const cat = await prisma.category.findFirst({
+                  where: {
+                    company_id: auth.companyId,
+                    module: 'financeiro_receita',
+                    name: { mode: 'insensitive', contains: 'Venda de Servi' },
+                  },
+                  select: { id: true },
+                })
+                serviceRevenueCategoryId = cat?.id || null
+              } catch { /* silent — AR fica sem categoria */ }
+
+              // Comprovante capturado pelo motorista (PIX screenshot, foto maquininha)
+              const receiptUrl = body.payment?.receipt_photo_base64
+                ? `data:image/jpeg;base64,${body.payment.receipt_photo_base64}`
+                : null
+
               const ar = await prisma.accountReceivable.create({
                 data: {
                   company_id: auth.companyId,
                   customer_id: os.customer_id,
                   service_order_id: os.id,
+                  category_id: serviceRevenueCategoryId,
                   description: arDescription,
                   total_amount: amount,
                   received_amount: isOnSite ? amount : 0,
                   due_date: dueDate,
                   status: isOnSite ? 'PAGO' : 'PENDENTE',
                   payment_method: paymentMethodMapped,
+                  receipt_url: receiptUrl,
                   installment_count: installmentCount,
                   card_fee_total: cardFeeTotal,
                   net_amount: netAmount,

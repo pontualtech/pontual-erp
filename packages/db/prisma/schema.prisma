@@ -776,6 +776,7 @@ model AccountReceivable {
   payment_method   String?
   boleto_url       String?
   pix_code         String?
+  receipt_url      String?       // Comprovante do pagamento (PIX screenshot, recibo maquininha, etc)
   notes              String?
   installment_count  Int?          @default(1)
   card_fee_total     Int?          @default(0)
