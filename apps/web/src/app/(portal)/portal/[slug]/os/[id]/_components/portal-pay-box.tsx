@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { CreditCard, Zap, FileText, Loader2, X, Copy, Check, ExternalLink, Clock } from 'lucide-react'
+import { CreditCard, Zap, FileText, Loader2, X, Copy, Check, ExternalLink, Clock, RefreshCw } from 'lucide-react'
 
 type PixPayment = {
   id: string
@@ -43,6 +43,7 @@ export default function PortalPayBox({ osId, totalCost, alreadyPaid }: {
   const [boleto, setBoleto] = useState<BoletoPayment | null>(null)
   const [paid, setPaid] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [verifying, setVerifying] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   async function createPix() {
@@ -115,6 +116,30 @@ export default function PortalPayBox({ osId, totalCost, alreadyPaid }: {
 
   function closePix() { setPix(null); if (pollRef.current) clearInterval(pollRef.current) }
 
+  /**
+   * Fallback: cliente ja pagou no banco mas webhook Asaas nao chegou —
+   * botao "Ja paguei?" dispara GET direto no Asaas pra conferir status.
+   */
+  async function verifyPayment() {
+    const paymentId = pix?.id || boleto?.id
+    if (!paymentId) return
+    setVerifying(true)
+    try {
+      const res = await fetch(`/api/portal/payments/${paymentId}/verify`, { method: 'POST' })
+      const j = await res.json()
+      if (!res.ok) { toast.error(j.error || 'Falha ao verificar'); return }
+      if (j.data?.is_paid) {
+        setPaid(true)
+        toast.success('Pagamento confirmado!')
+        if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
+      } else {
+        toast.info('Ainda nao identificamos seu pagamento. Aguarde alguns segundos e tente de novo.')
+      }
+    } catch {
+      toast.error('Erro de rede')
+    } finally { setVerifying(false) }
+  }
+
   if (alreadyPaid || paid) {
     return (
       <div className="rounded-2xl border-2 border-green-300 bg-green-50 dark:bg-green-950/30 dark:border-green-800 p-5">
@@ -166,17 +191,24 @@ export default function PortalPayBox({ osId, totalCost, alreadyPaid }: {
         </div>
 
         {boleto && !paid && (
-          <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-3 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4 text-amber-600" />
-              <p className="text-xs text-amber-800 dark:text-amber-300">Boleto gerado. Aguardando pagamento...</p>
+          <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4 text-amber-600" />
+                <p className="text-xs text-amber-800 dark:text-amber-300">Boleto gerado. Aguardando pagamento...</p>
+              </div>
+              {boleto.invoice_url && (
+                <a href={boleto.invoice_url} target="_blank" rel="noopener noreferrer"
+                  className="text-xs font-semibold text-amber-700 hover:underline flex items-center gap-1">
+                  <ExternalLink className="h-3 w-3" /> abrir
+                </a>
+              )}
             </div>
-            {boleto.invoice_url && (
-              <a href={boleto.invoice_url} target="_blank" rel="noopener noreferrer"
-                className="text-xs font-semibold text-amber-700 hover:underline flex items-center gap-1">
-                <ExternalLink className="h-3 w-3" /> abrir
-              </a>
-            )}
+            <button type="button" onClick={verifyPayment} disabled={verifying}
+              className="w-full rounded-lg border-2 border-emerald-500 bg-white text-emerald-700 hover:bg-emerald-50 py-2 text-xs font-semibold flex items-center justify-center gap-2 disabled:opacity-50">
+              {verifying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              Ja paguei — verificar agora
+            </button>
           </div>
         )}
       </div>
@@ -229,6 +261,12 @@ export default function PortalPayBox({ osId, totalCost, alreadyPaid }: {
                 <span className="text-sm text-blue-800">Aguardando pagamento...</span>
               </div>
               <p className="text-[10px] text-gray-400 mt-2">A confirmacao chega automaticamente em segundos.</p>
+
+              <button type="button" onClick={verifyPayment} disabled={verifying}
+                className="mt-3 w-full rounded-lg border-2 border-emerald-500 bg-white text-emerald-700 hover:bg-emerald-50 py-2.5 text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50">
+                {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                Ja paguei — verificar agora
+              </button>
             </div>
           </div>
         </dialog>
