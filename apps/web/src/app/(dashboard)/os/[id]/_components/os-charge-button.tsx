@@ -1,7 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { CreditCard, Loader2, X, Copy, ExternalLink, Check, Zap, FileText, Wallet, Mail, MessageSquare, Clock, History } from 'lucide-react'
 
@@ -144,36 +143,35 @@ export function OsChargeModal({ osId, osNumber, totalCost, open, onClose }: {
   const hasValue = totalCost > 0
   const canSubmit = !submitting && hasValue && !!accountId
 
-  // Portal: renderiza direto no body, fora de qualquer container pai com
-  // transform/overflow que bagunce o fixed inset-0.
-  if (!open) return null
-  if (typeof document === 'undefined') return null
+  // NATIVE <dialog>: browser gerencia overlay + focus lock + ESC sem
+  // dependencia de portal/stacking context. Impossivel de quebrar por
+  // CSS do container pai.
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  useEffect(() => {
+    const el = dialogRef.current
+    if (!el) return
+    if (open && !el.open) {
+      try { el.showModal() } catch { /* ja aberto */ }
+    } else if (!open && el.open) {
+      try { el.close() } catch { /* ja fechado */ }
+    }
+  }, [open])
 
-  // DEBUG: adiciona borda vermelha gritante no overlay pra confirmar visualmente
-  // se o Portal esta funcionando. Se aparecer borda vermelha cobrindo a tela
-  // toda, Portal OK — problema seria outro. Remover depois de diagnosticar.
-  return createPortal(
-    <div
-      data-charge-modal-overlay="v5"
-      style={{
-        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-        width: '100vw', height: '100vh',
-        zIndex: 99999, background: 'rgba(0,0,0,0.5)',
-        display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-        padding: '16px', overflowY: 'auto',
-        border: '6px solid red', // DEBUG — remover depois
-        boxSizing: 'border-box',
+  return (
+    <dialog
+      ref={dialogRef}
+      onClose={onClose}
+      onClick={e => {
+        if (e.target === dialogRef.current && !submitting) reset()
       }}
-      onClick={() => !submitting && reset()}>
-      <div
-        data-charge-modal-card="v5"
-        style={{
-          width: '100%', maxWidth: '760px', marginTop: '32px', marginBottom: '32px',
-          background: 'white', borderRadius: '16px',
-          boxShadow: '0 25px 50px -12px rgba(0,0,0,0.4)',
-          overflow: 'hidden',
-        }}
-        onClick={e => e.stopPropagation()}>
+      style={{
+        padding: 0, border: 'none', borderRadius: '16px',
+        maxWidth: '760px', width: '90vw',
+        background: 'white',
+        boxShadow: '0 25px 50px -12px rgba(0,0,0,0.4)',
+      }}
+    >
+      <div style={{ width: '100%' }} onClick={e => e.stopPropagation()}>
 
             {/* HEADER */}
             <div className="bg-gradient-to-r from-emerald-600 to-emerald-700 px-6 py-4 flex items-center justify-between">
@@ -420,8 +418,7 @@ export function OsChargeModal({ osId, osNumber, totalCost, open, onClose }: {
               </div>
             )}
       </div>
-    </div>,
-    document.body,
+    </dialog>
   )
 }
 
