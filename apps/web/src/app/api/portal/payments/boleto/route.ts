@@ -5,31 +5,22 @@ import { getPaymentProviderForAccount } from '@/lib/payments/factory'
 import { resolveDefaultProviderAccount } from '@/lib/payments/resolve-account'
 
 /**
- * POST /api/portal/payments/pix
- * Body: { service_order_id: string }
+ * POST /api/portal/payments/boleto
+ * Body: { service_order_id: string, due_days?: number }
  *
- * Gera PIX no Asaas (ou outro provider da conta) pra cliente pagar a OS
- * via portal, antes mesmo do motorista finalizar a entrega.
- *
- * Fluxo:
- *  1. Autentica cliente no portal (cookie)
- *  2. Valida OS existe e pertence ao cliente
- *  3. Busca ou CRIA AccountReceivable PENDENTE vinculado a OS
- *  4. Cria Payment PIX com receivable_id (pra webhook auto-baixar)
- *  5. Idempotency: se existe PIX pendente nao-expirado, reusa
- *
- * Webhook `/api/webhooks/payment` trata o PAYMENT_RECEIVED e faz a
- * baixa automatica no AR quando Asaas confirma.
+ * Gera boleto Asaas pra cliente pagar OS pelo portal. Mesmo fluxo do
+ * PIX (cria/reusa AR + Payment vinculado), so o billing_type muda.
+ * due_days default 7, max 30.
  */
 export async function POST(req: NextRequest) {
   try {
     const portalUser = getPortalUserFromRequest(req)
     if (!portalUser) return NextResponse.json({ error: 'Nao autenticado' }, { status: 401 })
 
-    const { service_order_id } = await req.json().catch(() => ({}))
+    const { service_order_id, due_days } = await req.json().catch(() => ({}))
     if (!service_order_id) return NextResponse.json({ error: 'service_order_id obrigatorio' }, { status: 400 })
+    const dueDays = Math.max(1, Math.min(30, Number.isFinite(due_days) ? Number(due_days) : 7))
 
-    // 1. Autoriza + carrega OS
     const os = await prisma.serviceOrder.findFirst({
       where: {
         id: service_order_id,
@@ -44,19 +35,18 @@ export async function POST(req: NextRequest) {
     })
     if (!os) return NextResponse.json({ error: 'OS nao encontrada' }, { status: 404 })
     if (!os.total_cost || os.total_cost <= 0) {
-      return NextResponse.json({ error: 'OS sem valor definido — aguarde o orçamento' }, { status: 400 })
+      return NextResponse.json({ error: 'OS sem valor definido' }, { status: 400 })
     }
     if (!os.customers?.document_number) {
-      return NextResponse.json({ error: 'Cadastro sem CPF/CNPJ — complete o cadastro pra emitir cobrança' }, { status: 400 })
+      return NextResponse.json({ error: 'Cadastro sem CPF/CNPJ — complete o cadastro' }, { status: 400 })
     }
 
-    // 2. Busca conta bancaria com provider Asaas configurado
     const resolved = await resolveDefaultProviderAccount(portalUser.company_id)
     if (!resolved) {
       return NextResponse.json({ error: 'Empresa sem conta de pagamento configurada' }, { status: 503 })
     }
 
-    // 3. Busca ou cria AR pendente pra essa OS
+    // AR: busca ou cria pendente
     let receivable = await prisma.accountReceivable.findFirst({
       where: {
         service_order_id: os.id,
@@ -67,8 +57,10 @@ export async function POST(req: NextRequest) {
       orderBy: { created_at: 'desc' },
     })
 
+    const dueDate = new Date()
+    dueDate.setDate(dueDate.getDate() + dueDays)
+
     if (!receivable) {
-      // Categoria padrao de receita ("Venda de Servicos")
       const cat = await prisma.category.findFirst({
         where: {
           company_id: portalUser.company_id,
@@ -85,27 +77,26 @@ export async function POST(req: NextRequest) {
           service_order_id: os.id,
           account_id: resolved.accountId,
           category_id: cat?.id || null,
-          description: `Cobranca OS #${os.os_number} (gerado pelo cliente no portal)`,
+          description: `Cobranca OS #${os.os_number} (boleto via portal)`,
           total_amount: os.total_cost,
           received_amount: 0,
-          due_date: new Date(),
+          due_date: dueDate,
           status: 'PENDENTE',
-          payment_method: 'PIX',
-          notes: 'Cliente gerou PIX via portal',
+          payment_method: 'BOLETO',
+          notes: 'Cliente gerou boleto via portal',
         },
       })
     }
 
-    // 4. Idempotency: PIX ativo nao-expirado? reusa
     const remaining = receivable.total_amount - (receivable.received_amount || 0)
     if (remaining <= 0) return NextResponse.json({ error: 'Esta OS ja foi paga' }, { status: 400 })
 
+    // Idempotency: boleto ativo ja existe?
     const existing = await prisma.payment.findFirst({
       where: {
         receivable_id: receivable.id,
-        method: 'PIX',
+        method: 'BOLETO',
         status: 'PENDING',
-        expires_at: { gte: new Date() },
       },
       orderBy: { created_at: 'desc' },
     })
@@ -114,27 +105,26 @@ export async function POST(req: NextRequest) {
         data: {
           id: existing.id,
           receivable_id: receivable.id,
-          qr_code: existing.qr_code,
-          qr_code_image: existing.qr_code_image,
+          invoice_url: existing.invoice_url,
+          bank_slip_url: existing.bank_slip_url,
           amount: existing.amount,
           status: existing.status,
-          expires_at: existing.expires_at,
         },
       })
     }
 
-    // 5. Cria PIX no provider
     const provider = await getPaymentProviderForAccount(resolved.accountId, portalUser.company_id)
     if (!provider) return NextResponse.json({ error: 'Provider indisponivel' }, { status: 503 })
 
-    const idempotencyKey = `portal_pix_${receivable.id}_${Date.now()}`
-    const charge = await provider.createPixCharge({
+    const idempotencyKey = `portal_boleto_${receivable.id}_${Date.now()}`
+    const charge = await provider.createCharge({
+      billingType: 'BOLETO',
       amount: remaining,
       customerName: os.customers.legal_name,
       customerDocument: os.customers.document_number,
+      customerEmail: os.customers.email || undefined,
       description: `OS #${os.os_number} - ${os.companies?.name || 'PontualERP'}`,
-      idempotencyKey,
-      expiresInMinutes: 30,
+      dueDate: dueDate.toISOString().split('T')[0],
     })
 
     const payment = await prisma.payment.create({
@@ -148,22 +138,21 @@ export async function POST(req: NextRequest) {
         idempotency_key: idempotencyKey,
         amount: remaining,
         status: 'PENDING',
-        method: 'PIX',
-        billing_type: 'PIX',
-        qr_code: charge.qrCode,
-        qr_code_image: charge.qrCodeImage || null,
-        expires_at: charge.expiresAt,
-        metadata: { source: 'portal', account_id: resolved.accountId },
+        method: 'BOLETO',
+        billing_type: 'BOLETO',
+        invoice_url: charge.invoiceUrl,
+        bank_slip_url: charge.bankSlipUrl || null,
+        metadata: { source: 'portal', account_id: resolved.accountId, due_days: dueDays },
       },
     })
 
-    // Vincula charge no AR
     await prisma.accountReceivable.update({
       where: { id: receivable.id },
       data: {
         charge_id: payment.id,
         charge_status: 'PENDING',
-        payment_method: 'PIX',
+        charge_url: charge.invoiceUrl,
+        due_date: dueDate,
         account_id: resolved.accountId,
       },
     })
@@ -172,16 +161,16 @@ export async function POST(req: NextRequest) {
       data: {
         id: payment.id,
         receivable_id: receivable.id,
-        qr_code: payment.qr_code,
-        qr_code_image: payment.qr_code_image,
+        invoice_url: charge.invoiceUrl,
+        bank_slip_url: charge.bankSlipUrl,
         amount: payment.amount,
         status: payment.status,
-        expires_at: payment.expires_at,
+        due_date: dueDate,
       },
     })
   } catch (err) {
-    console.error('[Portal PIX Create Error]', err)
-    const msg = err instanceof Error ? err.message : 'Erro ao gerar PIX'
+    console.error('[Portal Boleto Create Error]', err)
+    const msg = err instanceof Error ? err.message : 'Erro ao gerar boleto'
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
