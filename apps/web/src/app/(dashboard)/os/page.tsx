@@ -5,10 +5,11 @@ import Link from 'next/link'
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { cn, formatDocument } from '@/lib/utils'
 import { toTitleCase as tc } from '@/lib/format-text'
-import { Plus, Search, List, LayoutGrid, Settings2, Eye, EyeOff, Trash2, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Clock, AlertTriangle, Printer, FileSpreadsheet, Mail, Columns3, MoreVertical, Copy, Receipt, ChevronDown, RefreshCw, SearchX, Send, UserPlus, Download, Bell, Truck, MessageSquare } from 'lucide-react'
+import { Plus, Search, List, LayoutGrid, Settings2, Eye, EyeOff, Trash2, Loader2, ArrowUpDown, ArrowUp, ArrowDown, Clock, AlertTriangle, Printer, FileSpreadsheet, Mail, Columns3, MoreVertical, Copy, Receipt, ChevronDown, RefreshCw, SearchX, Send, UserPlus, Download, Bell, Truck, MessageSquare, CreditCard } from 'lucide-react'
 import { toast } from 'sonner'
 import { exportToExcel, exportToCSV, exportToPDF } from '@/lib/export-data'
 import { useAuth } from '@/lib/use-auth'
+import { OsChargeModal } from './[id]/_components/os-charge-button'
 
 interface KanbanColumn {
   id: string
@@ -222,6 +223,9 @@ export default function OSListPage() {
   const [showColToggle, setShowColToggle] = useState(false)
   const [showStatusFilter, setShowStatusFilter] = useState(false)
   const [actionMenuId, setActionMenuId] = useState<string | null>(null)
+  // Modal de cobranca acionado pelo menu 3-pontos
+  const [chargeOs, setChargeOs] = useState<{ id: string; number: number; total: number } | null>(null)
+  const canCharge = isAdmin || hasPermission('os', 'charge')
   const [showBulkStatus, setShowBulkStatus] = useState(false)
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [nfseModalOS, setNfseModalOS] = useState<any>(null)
@@ -1328,6 +1332,16 @@ export default function OSListPage() {
                                   </button>
                                 ) : null}
                                 <div className="border-t my-1" />
+                                {canCharge && (os.total_cost || 0) > 0 && (
+                                  <button type="button"
+                                    onClick={() => {
+                                      setChargeOs({ id: os.id, number: os.os_number, total: os.total_cost || 0 })
+                                      setActionMenuId(null)
+                                    }}
+                                    className="flex items-center gap-2.5 px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-50 w-full">
+                                    <CreditCard className="h-4 w-4 text-emerald-500" /> Cobrar
+                                  </button>
+                                )}
                                 <Link href={`/financeiro/contas-receber?search=${encodeURIComponent(os.customers?.legal_name || '')}`} onClick={() => setActionMenuId(null)}
                                   className="flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 w-full">
                                   <Receipt className="h-4 w-4 text-gray-400" /> Financeiro
@@ -1730,6 +1744,17 @@ export default function OSListPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal de cobranca disparado pelo menu 3-pontos da listagem */}
+      {chargeOs && (
+        <OsChargeModal
+          osId={chargeOs.id}
+          osNumber={chargeOs.number}
+          totalCost={chargeOs.total}
+          open={true}
+          onClose={() => setChargeOs(null)}
+        />
       )}
     </div>
   )

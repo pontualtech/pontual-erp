@@ -43,12 +43,19 @@ const BILLING_OPTIONS: { value: BillingType; label: string; icon: typeof Zap; co
   { value: 'CREDIT_CARD', label: 'Cartão', icon: Wallet, color: 'indigo', desc: 'Crédito em ate 12x' },
 ]
 
-export default function OsChargeButton({ osId, osNumber, totalCost }: {
+/**
+ * Modal de cobranca — controlavel externamente via props open/onClose.
+ * Use esse componente quando quer acionar de outro lugar (ex: menu de
+ * 3 pontos na listagem). Pra uso com botao integrado, use o componente
+ * default `OsChargeButton`.
+ */
+export function OsChargeModal({ osId, osNumber, totalCost, open, onClose }: {
   osId: string
   osNumber: number
   totalCost: number
+  open: boolean
+  onClose: () => void
 }) {
-  const [open, setOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [accounts, setAccounts] = useState<Account[]>([])
   const [loadingAccounts, setLoadingAccounts] = useState(false)
@@ -129,7 +136,7 @@ export default function OsChargeButton({ osId, osNumber, totalCost }: {
 
   function reset() {
     setResult(null)
-    setOpen(false)
+    onClose()
   }
 
   const selectedAccount = accounts.find(a => a.id === accountId)
@@ -138,12 +145,6 @@ export default function OsChargeButton({ osId, osNumber, totalCost }: {
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)}
-        className="flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-100 transition-colors"
-        title="Enviar link de pagamento ao cliente (PIX, boleto ou cartão)">
-        <CreditCard className="h-4 w-4" /> Cobrar
-      </button>
-
       {open && (
         <div className="fixed inset-0 z-[1000] flex items-start justify-center bg-black/50 p-4 overflow-y-auto"
           onClick={() => !submitting && reset()}>
@@ -397,6 +398,30 @@ export default function OsChargeButton({ osId, osNumber, totalCost }: {
           </div>
         </div>
       )}
+    </>
+  )
+}
+
+/**
+ * Botao + Modal integrados. Use esse componente quando quer o botao verde
+ * "Cobrar" direto na tela (ex: cabecalho da OS). Pra trigger customizado
+ * (ex: item de menu), importe `OsChargeModal` e controle o open externamente.
+ */
+export default function OsChargeButton({ osId, osNumber, totalCost }: {
+  osId: string
+  osNumber: number
+  totalCost: number
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}
+        className="flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-100 transition-colors"
+        title="Enviar link de pagamento ao cliente (PIX, boleto ou cartao)">
+        <CreditCard className="h-4 w-4" /> Cobrar
+      </button>
+      <OsChargeModal osId={osId} osNumber={osNumber} totalCost={totalCost}
+        open={open} onClose={() => setOpen(false)} />
     </>
   )
 }
