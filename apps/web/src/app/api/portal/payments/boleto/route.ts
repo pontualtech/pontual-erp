@@ -17,9 +17,13 @@ export async function POST(req: NextRequest) {
     const portalUser = getPortalUserFromRequest(req)
     if (!portalUser) return NextResponse.json({ error: 'Nao autenticado' }, { status: 401 })
 
-    const { service_order_id, due_days } = await req.json().catch(() => ({}))
+    const { service_order_id } = await req.json().catch(() => ({}))
     if (!service_order_id) return NextResponse.json({ error: 'service_order_id obrigatorio' }, { status: 400 })
-    const dueDays = Math.max(1, Math.min(30, Number.isFinite(due_days) ? Number(due_days) : 7))
+    // Portal SEMPRE gera boleto a vista (vence hoje). Boleto com prazo
+    // estendido so e emitido pelo atendente via /os/[id]/charge ou
+    // /financeiro/cobranca. Assim clientes nao pegam 7 dias pra pagar
+    // como 'atalho' do fluxo comercial.
+    const dueDays = 1
 
     const os = await prisma.serviceOrder.findFirst({
       where: {

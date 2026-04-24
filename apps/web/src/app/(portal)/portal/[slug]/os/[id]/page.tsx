@@ -617,6 +617,17 @@ export default function PortalOSDetailPage() {
           </div>
         </div>
 
+        {/* Pagar esta OS agora — sempre visivel se tem valor, independente do status */}
+        {os && (os.total_cost || 0) > 0 && (
+          <div className="mb-6">
+            <PortalPayBox
+              osId={os.id}
+              totalCost={os.total_cost || 0}
+              alreadyPaid={false}
+            />
+          </div>
+        )}
+
         {/* Laudo e Observações */}
         {(os.diagnosis || os.reported_issue) && (
           <div className="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-700 mb-6 overflow-hidden">
@@ -661,17 +672,6 @@ export default function PortalOSDetailPage() {
                   </ul>
                 </div>
               </div>
-
-              {/* Pagar esta OS agora (online) — PIX / Boleto via Asaas */}
-              {os && (os.total_cost || 0) > 0 && (
-                <div className="mb-4">
-                  <PortalPayBox
-                    osId={os.id}
-                    totalCost={os.total_cost || 0}
-                    alreadyPaid={false}
-                  />
-                </div>
-              )}
 
               {/* Pagamento */}
               <div className="flex gap-3">

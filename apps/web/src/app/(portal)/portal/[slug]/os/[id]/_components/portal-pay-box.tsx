@@ -161,7 +161,7 @@ export default function PortalPayBox({ osId, totalCost, alreadyPaid }: {
             className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-amber-500 bg-white hover:bg-amber-50 dark:bg-gray-800 dark:hover:bg-amber-950/30 transition-all disabled:opacity-50">
             {loading === 'boleto' ? <Loader2 className="h-6 w-6 animate-spin text-amber-600" /> : <FileText className="h-6 w-6 text-amber-600" />}
             <span className="font-bold text-sm text-amber-700 dark:text-amber-400">Boleto</span>
-            <span className="text-[11px] text-gray-500 text-center">7 dias pra pagar no banco</span>
+            <span className="text-[11px] text-gray-500 text-center">À vista (vence hoje)</span>
           </button>
         </div>
 
