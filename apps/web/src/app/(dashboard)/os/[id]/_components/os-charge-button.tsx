@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { toast } from 'sonner'
 import { CreditCard, Loader2, X, Copy, ExternalLink, Check, Zap, FileText, Wallet, Mail, MessageSquare, Clock, History } from 'lucide-react'
 
@@ -143,13 +144,16 @@ export function OsChargeModal({ osId, osNumber, totalCost, open, onClose }: {
   const hasValue = totalCost > 0
   const canSubmit = !submitting && hasValue && !!accountId
 
-  return (
-    <>
-      {open && (
-        <div className="fixed inset-0 z-[1000] flex items-start justify-center bg-black/50 p-4 overflow-y-auto"
-          onClick={() => !submitting && reset()}>
-          <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl my-8 overflow-hidden"
-            onClick={e => e.stopPropagation()}>
+  // Portal: renderiza direto no body, fora de qualquer container pai com
+  // transform/overflow que bagunce o fixed inset-0.
+  if (!open) return null
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-start justify-center bg-black/50 p-4 overflow-y-auto"
+      onClick={() => !submitting && reset()}>
+      <div className="w-full max-w-3xl rounded-2xl bg-white shadow-2xl my-8 overflow-hidden"
+        onClick={e => e.stopPropagation()}>
 
             {/* HEADER */}
             <div className="bg-gradient-to-r from-emerald-600 to-emerald-700 px-6 py-4 flex items-center justify-between">
@@ -395,10 +399,9 @@ export function OsChargeModal({ osId, osNumber, totalCost, open, onClose }: {
                 </div>
               </div>
             )}
-          </div>
-        </div>
-      )}
-    </>
+      </div>
+    </div>,
+    document.body,
   )
 }
 
