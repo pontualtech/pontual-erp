@@ -20,7 +20,7 @@ interface ContaReceber {
   id: string; description: string; total_amount: number; received_amount: number
   due_date: string; status: string; payment_method: string | null; notes: string | null
   installment_count: number | null
-  boleto_url: string | null; pix_code: string | null
+  boleto_url: string | null; pix_code: string | null; receipt_url: string | null
   anticipated_at: string | null; anticipation_fee: number | null; anticipated_amount: number | null
   group_id: string | null; grouped_into_id: string | null
   charge_id: string | null; charge_status: string | null; charge_url: string | null
@@ -499,6 +499,23 @@ export default function ContaReceberDetalhePage() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* ─── Comprovante (recibo/PIX screenshot) — capturado pelo motorista na entrega */}
+      {conta.receipt_url && (
+        <div className="rounded-2xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/30 p-5 shadow-sm">
+          <h3 className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider mb-3">
+            <Receipt className="h-3.5 w-3.5" /> Comprovante de Pagamento
+          </h3>
+          <a href={conta.receipt_url} target="_blank" rel="noopener noreferrer"
+            className="block rounded-lg border border-emerald-300 bg-white p-2 hover:border-emerald-500 transition-colors"
+            title="Clique pra ampliar em nova aba">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={conta.receipt_url} alt="Comprovante de pagamento"
+              className="max-h-96 w-auto mx-auto object-contain" />
+          </a>
+          <p className="text-[11px] text-gray-500 mt-2 text-center">Capturado pelo motorista no momento da entrega · clique pra ampliar</p>
         </div>
       )}
 
