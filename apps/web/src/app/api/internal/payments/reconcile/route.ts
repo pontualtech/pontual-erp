@@ -1,12 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { prisma } from '@pontual/db'
-import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { getPaymentProviderForAccount, getPaymentProvider } from '@/lib/payments/factory'
 import { logAudit } from '@/lib/audit'
 
 /**
- * POST /api/admin/payments/reconcile
+ * POST /api/internal/payments/reconcile
  *
  * Reconciliacao manual de pagamentos quando webhook do Asaas nao chega
  * (problema de infra/config). Consulta status real direto no Asaas e faz
@@ -14,11 +13,15 @@ import { logAudit } from '@/lib/audit'
  * sistema nao foi notificado.
  *
  * Body:
- *   { payment_id: string }              → reconcilia 1 pagamento especifico
- *   { reconcile_all_pending: true,      → reconcilia todos PENDING dos
- *     days?: number (default 30) }         ultimos N dias da empresa
+ *   {
+ *     company_id: string,                 → obrigatorio (multi-tenant)
+ *     payment_id?: string,                → reconcilia 1 pagamento
+ *     reconcile_all_pending?: boolean,    → reconcilia todos PENDING dos
+ *     days?: number (default 30)            ultimos N dias
+ *   }
  *
- * Permission: financeiro.edit
+ * Auth: header X-Internal-Key (deve bater com env INTERNAL_API_KEY).
+ * Endpoint em /api/internal/* — middleware skipa auth de cookie/Bearer.
  *
  * Response:
  *   { processed: number, paid: number, still_pending: number, errors: number,
@@ -26,27 +29,19 @@ import { logAudit } from '@/lib/audit'
  */
 export async function POST(req: NextRequest) {
   try {
-    // Auth: fallback via X-Internal-Key (pra reconciliacao agendada/cron)
-    // Se nao tiver, exige permission financeiro.edit do user logado
-    const internalKey = process.env.INTERNAL_API_KEY || process.env.BOT_WEBHOOK_SECRET || ''
+    // Auth via X-Internal-Key obrigatoria
+    const internalKey = process.env.INTERNAL_API_KEY || ''
     const providedKey = req.headers.get('x-internal-key') || ''
-    let user: { id: string; companyId: string }
-
-    if (internalKey && providedKey && providedKey === internalKey) {
-      // Autenticado como sistema — precisa company_id no body
-      const earlyBody = await req.clone().json().catch(() => ({}))
-      const cid = earlyBody.company_id
-      if (!cid || typeof cid !== 'string') {
-        return error('Auth interno requer company_id no body', 400)
-      }
-      user = { id: 'system:reconcile', companyId: cid }
-    } else {
-      const result = await requirePermission('financeiro', 'edit')
-      if (result instanceof NextResponse) return result
-      user = result
+    if (!internalKey || providedKey !== internalKey) {
+      return error('Unauthorized', 401)
     }
 
     const body = await req.json().catch(() => ({}))
+    const cid = body.company_id
+    if (!cid || typeof cid !== 'string') {
+      return error('company_id obrigatorio no body', 400)
+    }
+    const user = { id: 'system:reconcile', companyId: cid }
     const { payment_id, reconcile_all_pending, days } = body
 
     let payments: Array<{ id: string; external_id: string | null; amount: number; status: string; receivable_id: string | null; service_order_id: string | null; company_id: string; method: string | null; billing_type: string | null; metadata: any }> = []
