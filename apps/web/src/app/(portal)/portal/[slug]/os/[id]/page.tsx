@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { Printer, Mail, X, CreditCard, Truck, Clock, Banknote, Zap } from 'lucide-react'
+import { Printer, Mail, X, CreditCard, Truck, Clock, Banknote, Zap, CheckCircle2, MessageSquare } from 'lucide-react'
 import { PhotoGallery } from '../../../../components/photo-gallery'
 import PortalPayBox from './_components/portal-pay-box'
 import { canCustomerPayOS } from '@/lib/os-payment-rules'
@@ -618,10 +618,143 @@ export default function PortalOSDetailPage() {
           </div>
         </div>
 
+        {/* APROVACAO DO ORCAMENTO — TOPO DA AREA DE ACAO
+            Quando OS esta em "Aguardando Aprovacao", esse card aparece
+            ACIMA de tudo (so depois de Equipment Info) pra cliente nao
+            precisar scrollar pra achar o botao verde. Substitui o card
+            de pagamento (que vira redundante — ja mostra formas aqui). */}
+        {isAguardandoAprovacao && (() => {
+          const fmt = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v / 100)
+          const paymentOptions = [
+            { value: 'PIX', label: 'PIX', icon: '⚡', desc: 'A vista na entrega' },
+            { value: 'Dinheiro', label: 'Dinheiro', icon: '💵', desc: 'A vista na entrega' },
+            { value: 'Cartao Credito', label: 'Cartao de Credito', icon: '💳', desc: 'Ate 3x sem juros' },
+            { value: 'Cartao Debito', label: 'Cartao de Debito', icon: '💳', desc: 'A vista na entrega' },
+            { value: 'Boleto', label: 'Boleto Bancario', icon: '📄', desc: 'Somente PJ (7 dias)' },
+          ]
+          const maxParcelas = isRecalculado ? 5 : 3
+          const parcelaValor = fmt(Math.ceil((os.total_cost || 0) / maxParcelas))
+          const hasDesconto = (os.discount_amount ?? 0) > 0 || (isRecalculado && (os.custom_data as any)?.original_cost > 0)
+          const originalVal = (os.custom_data as any)?.original_cost || ((os.total_services || 0) + (os.total_parts || 0))
+          return (
+            <div className="relative mb-6" data-print-hide>
+              {/* Glow pulse atras do card pra chamar atencao sem ser agressivo */}
+              <div className="absolute -inset-1 rounded-2xl bg-gradient-to-r from-green-500 to-emerald-500 opacity-20 blur-xl [animation:pulse_3s_cubic-bezier(0.4,0,0.6,1)_infinite]" aria-hidden="true"></div>
+
+              <div className={`relative rounded-2xl p-5 sm:p-6 border-2 shadow-lg ${isRecalculado ? 'bg-gradient-to-br from-amber-50 via-orange-50 to-white dark:from-amber-950 dark:via-orange-950 dark:to-gray-900 border-amber-400 dark:border-amber-700' : 'bg-gradient-to-br from-amber-50 to-white dark:from-amber-950/40 dark:to-gray-900 border-amber-300 dark:border-amber-800'}`}>
+                {/* Badge topo: AGUARDANDO SUA APROVACAO (ou Nova Proposta se recalculado) */}
+                {isRecalculado ? (
+                  <div className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-amber-500 text-white px-3 py-1 text-[11px] font-bold uppercase tracking-wider">
+                    <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                    Nova Proposta Especial
+                  </div>
+                ) : (
+                  <div className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-amber-500 text-white px-3 py-1 text-[11px] font-bold uppercase tracking-wider">
+                    <Clock className="h-3.5 w-3.5" />
+                    Aguardando sua aprovacao
+                  </div>
+                )}
+
+                <h3 className="font-extrabold text-gray-900 dark:text-gray-50 text-xl sm:text-2xl mb-1">{isRecalculado ? 'Preparamos uma condicao especial pra voce' : 'Seu orcamento esta pronto!'}</h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">Aprove abaixo para iniciarmos o reparo do seu equipamento.</p>
+
+                {/* Discount comparison */}
+                {hasDesconto && originalVal > (os.total_cost || 0) && (
+                  <div className="mb-4 rounded-xl bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 p-4 text-center">
+                    <p className="text-xs font-bold uppercase tracking-wider text-green-700 dark:text-green-400 mb-2">Desconto Aplicado</p>
+                    <div className="flex items-center justify-center gap-3">
+                      <span className="text-lg text-gray-400 line-through">{fmt(originalVal)}</span>
+                      <span className="text-2xl font-extrabold text-green-700 dark:text-green-300">{fmt(os.total_cost || 0)}</span>
+                    </div>
+                    <span className="inline-block mt-2 rounded-full bg-green-600 px-3 py-1 text-xs font-bold text-white">
+                      {Math.round(((originalVal - (os.total_cost || 0)) / originalVal) * 100)}% OFF
+                    </span>
+                  </div>
+                )}
+
+                {/* Value + installments — destaque do valor */}
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 mb-4 border border-amber-200 dark:border-amber-900/50 text-center">
+                  <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 font-semibold">Valor total</p>
+                  <p className="text-3xl sm:text-4xl font-extrabold text-gray-900 dark:text-gray-50 mt-1">{fmt(os.total_cost || 0)}</p>
+                  <p className="text-sm text-emerald-700 dark:text-emerald-400 font-semibold mt-2">ou {maxParcelas}x de {parcelaValor} sem juros</p>
+                </div>
+
+                {!approvePayment ? (
+                  <div className="space-y-3">
+                    {/* CTA principal: APROVAR — botao gigante com icone */}
+                    <button
+                      type="button"
+                      onClick={() => setApprovePayment('selecting')}
+                      disabled={actionLoading}
+                      className="w-full py-4 px-6 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-base sm:text-lg rounded-xl shadow-lg shadow-green-600/40 hover:shadow-xl hover:shadow-green-600/50 transition-all flex items-center justify-center gap-2.5 cursor-pointer"
+                    >
+                      <CheckCircle2 className="h-5 w-5 sm:h-6 sm:w-6" />
+                      Aprovar e iniciar reparo agora
+                    </button>
+
+                    {/* CTA secundario: Negociar — visualmente menor */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const reason = prompt('Conta pra gente o que voce gostaria de negociar (opcional):')
+                        handleAction('reject', reason || 'Cliente solicitou negociacao')
+                      }}
+                      disabled={actionLoading}
+                      className="w-full py-2.5 px-4 bg-transparent border-2 border-amber-400 dark:border-amber-700 hover:bg-amber-100/50 dark:hover:bg-amber-900/30 disabled:opacity-50 text-amber-800 dark:text-amber-300 font-semibold text-sm rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <MessageSquare className="h-4 w-4" />
+                      Quero negociar este orcamento
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">Como voce prefere pagar?</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {paymentOptions.map(pm => (
+                        <button
+                          key={pm.value}
+                          type="button"
+                          onClick={() => setApprovePayment(pm.value)}
+                          className={`text-left rounded-xl border-2 p-3 transition-all cursor-pointer ${approvePayment === pm.value ? 'border-green-500 bg-green-50 dark:bg-green-950 shadow-md' : 'border-gray-200 dark:border-zinc-700 hover:border-green-300 dark:hover:border-green-700 bg-white dark:bg-gray-800'}`}
+                        >
+                          <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{pm.icon} {pm.label}</span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400 block">{pm.desc}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-900 rounded-xl p-3">
+                      <p className="text-xs text-blue-700 dark:text-blue-400">📅 Previsao de entrega: ate <strong>10 dias uteis</strong>. Sempre tentamos entregar o quanto antes!</p>
+                    </div>
+                    <div className="flex gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (approvePayment === 'selecting') { toast.error('Selecione a forma de pagamento'); return }
+                          handleAction('approve', `Aprovado pelo cliente — Pagamento: ${approvePayment}`)
+                        }}
+                        disabled={actionLoading || approvePayment === 'selecting'}
+                        className="flex-1 py-3.5 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-base rounded-xl shadow-md shadow-green-600/30 hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        {actionLoading ? 'Processando...' : <><CheckCircle2 className="h-5 w-5" /> Confirmar aprovacao</>}
+                      </button>
+                      <button type="button" onClick={() => setApprovePayment(null)}
+                        className="px-4 py-3.5 border-2 border-gray-300 dark:border-zinc-700 rounded-xl text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-800 font-semibold cursor-pointer">
+                        Voltar
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })()}
+
         {/* Pagar esta OS agora — so visivel apos cliente aprovar o reparo.
             Antes da aprovacao mostra mensagem explicativa pra evitar PIX
-            antecipado por curiosidade (gera confusao quando orcamento muda) */}
-        {os && (os.total_cost || 0) > 0 && canCustomerPayOS(os.status?.name) && (
+            antecipado por curiosidade (gera confusao quando orcamento muda).
+            Quando aguardando aprovacao, esconde TUDO — o card de aprovacao
+            (renderizado antes) ja explica formas de pagamento. */}
+        {os && (os.total_cost || 0) > 0 && !isAguardandoAprovacao && canCustomerPayOS(os.status?.name) && (
           <div className="mb-6">
             <PortalPayBox
               osId={os.id}
@@ -630,7 +763,7 @@ export default function PortalOSDetailPage() {
             />
           </div>
         )}
-        {os && (os.total_cost || 0) > 0 && !canCustomerPayOS(os.status?.name) && (
+        {os && (os.total_cost || 0) > 0 && !isAguardandoAprovacao && !canCustomerPayOS(os.status?.name) && (
           <div className="mb-6 rounded-2xl border-2 border-sky-200 dark:border-sky-900 bg-gradient-to-br from-sky-50 to-white dark:from-sky-950/30 dark:to-gray-900 p-5 shadow-sm">
             {/* Header */}
             <div className="flex items-center gap-3 mb-4">
@@ -795,115 +928,6 @@ export default function PortalOSDetailPage() {
             </div>
           </div>
         )}
-
-        {/* Action buttons for approval */}
-        {isAguardandoAprovacao && (() => {
-          const fmt = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v / 100)
-          const paymentOptions = [
-            { value: 'PIX', label: 'PIX', icon: '⚡', desc: 'A vista na entrega' },
-            { value: 'Dinheiro', label: 'Dinheiro', icon: '💵', desc: 'A vista na entrega' },
-            { value: 'Cartao Credito', label: 'Cartao de Credito', icon: '💳', desc: 'Ate 3x sem juros' },
-            { value: 'Cartao Debito', label: 'Cartao de Debito', icon: '💳', desc: 'A vista na entrega' },
-            { value: 'Boleto', label: 'Boleto Bancario', icon: '📄', desc: 'Somente PJ (7 dias)' },
-          ]
-          const maxParcelas = isRecalculado ? 5 : 3
-          const parcelaValor = fmt(Math.ceil((os.total_cost || 0) / maxParcelas))
-          const hasDesconto = (os.discount_amount ?? 0) > 0 || (isRecalculado && (os.custom_data as any)?.original_cost > 0)
-          const originalVal = (os.custom_data as any)?.original_cost || ((os.total_services || 0) + (os.total_parts || 0))
-          return (
-            <div className={`rounded-xl p-6 mb-6 border ${isRecalculado ? 'bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950 dark:to-orange-950 border-amber-300 dark:border-amber-800' : 'bg-amber-50 dark:bg-amber-950 border-amber-200 dark:border-amber-900'}`} data-print-hide>
-              {isRecalculado && (
-                <div className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-amber-500 text-white px-4 py-1.5 text-xs font-bold uppercase tracking-wider">
-                  <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
-                  Nova Proposta Especial
-                </div>
-              )}
-              <h3 className="font-semibold text-amber-900 dark:text-amber-300 text-lg mb-2">{isRecalculado ? 'Preparamos uma condicao diferenciada para voce' : 'Orcamento aguardando aprovacao'}</h3>
-
-              {/* Discount comparison */}
-              {hasDesconto && originalVal > (os.total_cost || 0) && (
-                <div className="mb-3 rounded-lg bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 p-4 text-center">
-                  <p className="text-xs font-bold uppercase tracking-wider text-green-700 dark:text-green-400 mb-2">Desconto Aplicado</p>
-                  <div className="flex items-center justify-center gap-3">
-                    <span className="text-lg text-gray-400 line-through">{fmt(originalVal)}</span>
-                    <span className="text-2xl font-extrabold text-green-700 dark:text-green-300">{fmt(os.total_cost || 0)}</span>
-                  </div>
-                  <span className="inline-block mt-2 rounded-full bg-green-600 px-3 py-1 text-xs font-bold text-white">
-                    {Math.round(((originalVal - (os.total_cost || 0)) / originalVal) * 100)}% OFF
-                  </span>
-                </div>
-              )}
-
-              {/* Value + installments */}
-              <div className="text-amber-700 dark:text-amber-400 mb-4">
-                <p className="text-2xl font-extrabold">{maxParcelas}x de {parcelaValor}</p>
-                <p className="text-sm opacity-80">sem juros no cartao de credito</p>
-                <p className="text-xs mt-1 opacity-60">Valor total: {fmt(os.total_cost || 0)}</p>
-              </div>
-
-              {!approvePayment ? (
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setApprovePayment('selecting')}
-                    disabled={actionLoading}
-                    className="flex-1 py-3 px-6 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white font-semibold rounded-xl transition-colors"
-                  >
-                    Aprovar Orcamento
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const reason = prompt('Motivo da negociacao (opcional):')
-                      handleAction('reject', reason || 'Cliente solicitou negociacao')
-                    }}
-                    disabled={actionLoading}
-                    className="flex-1 py-3 px-6 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white font-semibold rounded-xl transition-colors"
-                  >
-                    Negociar
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Selecione a forma de pagamento:</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {paymentOptions.map(pm => (
-                      <button
-                        key={pm.value}
-                        type="button"
-                        onClick={() => setApprovePayment(pm.value)}
-                        className={`text-left rounded-lg border-2 p-3 transition-all ${approvePayment === pm.value ? 'border-green-500 bg-green-50 dark:bg-green-950' : 'border-gray-200 dark:border-zinc-700 hover:border-green-300 dark:hover:border-green-700'}`}
-                      >
-                        <span className="text-sm font-semibold">{pm.icon} {pm.label}</span>
-                        <span className="text-xs text-gray-500 dark:text-gray-400 block">{pm.desc}</span>
-                      </button>
-                    ))}
-                  </div>
-                  <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-900 rounded-lg p-3 mt-2">
-                    <p className="text-xs text-blue-700 dark:text-blue-400">📅 Previsao de entrega: ate <strong>10 dias uteis</strong>. Sempre tentamos entregar o quanto antes!</p>
-                  </div>
-                  <div className="flex gap-3 mt-3">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (approvePayment === 'selecting') { toast.error('Selecione a forma de pagamento'); return }
-                        handleAction('approve', `Aprovado pelo cliente — Pagamento: ${approvePayment}`)
-                      }}
-                      disabled={actionLoading || approvePayment === 'selecting'}
-                      className="flex-1 py-3 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white font-semibold rounded-xl transition-colors"
-                    >
-                      {actionLoading ? 'Processando...' : 'Confirmar Aprovacao'}
-                    </button>
-                    <button type="button" onClick={() => setApprovePayment(null)}
-                      className="px-4 py-3 border border-gray-300 dark:border-zinc-700 rounded-xl text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-zinc-800">
-                      Voltar
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )
-        })()}
 
         {/* Photo Gallery */}
         <div className="mb-6">
