@@ -176,13 +176,16 @@ export async function sendWhatsAppTemplate(
     const data = await res.json()
 
     if (!res.ok) {
-      console.error('[WhatsApp Cloud Template] Error:', data.error)
+      console.error('[WhatsApp Cloud Template] Error:', { template: templateName, phone: formattedPhone, status: res.status, error: data.error })
       return { success: false, error: data.error?.message || `HTTP ${res.status}` }
     }
 
-    return { success: true, messageId: data.messages?.[0]?.id }
+    const messageId = data.messages?.[0]?.id
+    const messageStatus = data.messages?.[0]?.message_status
+    console.log('[WhatsApp Cloud Template] OK:', { template: templateName, phone: formattedPhone, messageId, messageStatus, contacts: data.contacts })
+    return { success: true, messageId }
   } catch (err) {
-    console.error('[WhatsApp Cloud Template] Failed:', err)
+    console.error('[WhatsApp Cloud Template] Failed:', { template: templateName, phone, err: String(err) })
     return { success: false, error: String(err) }
   }
 }
