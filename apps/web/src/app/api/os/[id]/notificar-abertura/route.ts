@@ -205,7 +205,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     <div style="background:#fefce8;border:1px solid #fde68a;border-radius:10px;padding:16px;margin:0 0 24px">
       <p style="font-size:13px;font-weight:600;color:#854d0e;margin:0 0 8px">💡 Como acessar o Portal do Cliente:</p>
       <ol style="font-size:12px;color:#713f12;margin:0;padding-left:18px;line-height:1.8">
-        <li>Acesse <a href="${portalUrl}" style="color:#1e40af;font-weight:600">${portalHost}</a></li>
+        <li>Acesse <a href="${osDetailUrl}" style="color:#1e40af;font-weight:600">${portalHost}</a></li>
         <li>Login: seu <strong>CPF ou CNPJ</strong></li>
         <li>Senha: <strong>os 5 primeiros digitos</strong> do seu CPF/CNPJ</li>
         <li>Pronto! Acompanhe suas OS, aprove orcamentos e mais</li>
@@ -232,7 +232,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       <p style="margin:0 0 8px;font-size:14px;font-weight:700;color:#0369a1;">📱 Acompanhe sua OS</p>
       <p style="margin:0 0 12px;font-size:13px;color:#0c4a6e;">Acesse o Portal do Cliente ou consulte pelo nosso site:</p>
       <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr>
-        <td style="padding:0 6px;"><a href="${portalUrl}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Portal do Cliente</a></td>
+        <td style="padding:0 6px;"><a href="${osDetailUrl}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Portal do Cliente</a></td>
         ${companyWebsite ? `<td style="padding:0 6px;"><a href="${companyWebsite}/#consulta-os" style="display:inline-block;padding:10px 20px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Consultar no Site</a></td>` : ''}
       </tr></table>
       <p style="margin:12px 0 0;font-size:13px;color:#0c4a6e;">Duvidas? Fale com nosso suporte:</p>
