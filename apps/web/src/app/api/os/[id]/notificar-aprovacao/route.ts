@@ -82,14 +82,24 @@ export async function POST(req: NextRequest, { params }: Params) {
       } else {
         try {
           const phone = customerPhone.replace(/\D/g, '')
-          const fallback = `*Orcamento pronto — OS #${osNum}*\n\nValor: ${fmtValue}\nEquipamento: ${equipment || 'Equipamento'}\n\nAcesse o portal para aprovar ou recusar o orcamento.`
-          // v2 com magic-link esta PENDING — usar approved sem sufixo.
-          const waResult = await sendWhatsAppTemplate(user.companyId, phone, 'pontualtech_orcamento', 'pt_BR', [
+          // pontualtech_orcamento_v2: template com botao URL contendo magic-link.
+          // Cloud API (PT) → renderiza "Aprovar ou Recusar" clicavel; Evolution (IM) → texto plano com URL.
+          const { createAccessToken } = await import('@/lib/portal-auth')
+          const magicToken = createAccessToken(os.customer_id, user.companyId)
+          const company = await prisma.company.findUnique({ where: { id: user.companyId }, select: { slug: true } })
+          const slug = company?.slug || 'pontualtech'
+          const isImpri = slug.includes('imprimitech')
+          const portalDomain = isImpri ? 'portal.imprimitech.com.br' : 'portal.pontualtech.com.br'
+          const magicRedirect = encodeURIComponent(`/portal/${slug}/os/${os.id}`)
+          const magicLink = `https://${portalDomain}/portal/${slug}/entrar?t=${magicToken}&r=${magicRedirect}`
+          const fallback = `*Orcamento pronto — OS #${osNum}*\n\nValor: ${fmtValue}\nEquipamento: ${equipment || 'Equipamento'}\n\nAcesse o portal para aprovar ou recusar:\n${magicLink}`
+          const waResult = await sendWhatsAppTemplate(user.companyId, phone, 'pontualtech_orcamento_v2', 'pt_BR', [
             { type: 'body', parameters: [
               { type: 'text', text: osNum },
               { type: 'text', text: fmtValue },
               { type: 'text', text: equipment || 'Equipamento' },
             ] },
+            { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: magicToken }] },
           ], fallback)
           results.push({ channel: 'whatsapp', status: waResult.success ? 'enviado' : 'erro' })
         } catch {

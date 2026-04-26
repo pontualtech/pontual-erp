@@ -185,6 +185,7 @@ export default function OSDetailPage() {
   const [showAprovacaoModal, setShowAprovacaoModal] = useState(false)
   const [aprovacaoChannels, setAprovacaoChannels] = useState<Set<string>>(new Set(['email', 'whatsapp']))
   const [sendingAprovacao, setSendingAprovacao] = useState(false)
+  const [sendingAbertura, setSendingAbertura] = useState(false)
   // Magic link modal — generate one-click access URL for the customer
   const [showMagicLinkModal, setShowMagicLinkModal] = useState(false)
   const [magicLinkUrl, setMagicLinkUrl] = useState<string | null>(null)
@@ -1181,6 +1182,28 @@ export default function OSDetailPage() {
           ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {(currentStatus?.name?.toLowerCase().includes('oletar') || /^orcar$/i.test(currentStatus?.name || '')) && (
+            <button type="button" disabled={sendingAbertura} onClick={async () => {
+              setSendingAbertura(true)
+              try {
+                const res = await fetch(`/api/os/${id}/notificar-abertura`, {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+                })
+                const data = await res.json()
+                if (!res.ok) throw new Error(data.error || 'Erro ao enviar')
+                const sent = data.data || {}
+                const enviados: string[] = []
+                if (sent.email) enviados.push(`email (${sent.email})`)
+                if (sent.whatsapp) enviados.push(`WhatsApp`)
+                toast.success(enviados.length > 0 ? `Notificacao enviada via ${enviados.join(' + ')}` : 'Cliente sem email/telefone')
+              } catch (e: any) {
+                toast.error(e.message || 'Erro ao enviar notificacao')
+              } finally { setSendingAbertura(false) }
+            }}
+              className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50 transition-colors">
+              <Mail className="h-4 w-4" /> Notificar Abertura
+            </button>
+          )}
           {currentStatus?.name?.toLowerCase().includes('oletar') && (
             <button type="button" onClick={() => setShowColetaModal(true)}
               className="flex items-center gap-1.5 rounded-lg border border-sky-300 bg-sky-50 px-3 py-1.5 text-sm font-medium text-sky-700 hover:bg-sky-100 transition-colors">

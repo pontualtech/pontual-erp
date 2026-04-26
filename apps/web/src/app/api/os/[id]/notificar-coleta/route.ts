@@ -50,7 +50,13 @@ export async function POST(req: NextRequest, { params }: Params) {
     const isImpri = portalSlug.includes('imprimitech')
     const portalDomain = cfg['portal.domain'] || (isImpri ? 'portal.imprimitech.com.br' : 'portal.pontualtech.com.br')
     const portalBase = `https://${portalDomain}/portal/${portalSlug}`
-    const portalUrl = `${portalBase}/os/${os.id}`
+    // Magic-link com auto-login: cliente clica → entra no portal sem senha,
+    // ja redirecionado pra OS especifica. Usado tanto no template Cloud API
+    // (botao URL) quanto no fallback Evolution (texto plano).
+    const { createAccessToken: _createAccessTokenColeta } = await import('@/lib/portal-auth')
+    const magicTokenColeta = _createAccessTokenColeta(os.customer_id, user.companyId)
+    const magicRedirect = encodeURIComponent(`/portal/${portalSlug}/os/${os.id}`)
+    const portalUrl = `${portalBase}/entrar?t=${magicTokenColeta}&r=${magicRedirect}`
     const companyName = os.companies?.name || cc.name
     const companyPhone = cc.phone
     const companyWebsite = cc.website
@@ -258,14 +264,14 @@ Equipe ${companyName}
     if (channels.includes('whatsapp') && customerPhone) {
       try {
         const phone = customerPhone.replace(/\D/g, '')
-        // v3 com magic-link no botao esta PENDING no Meta — usamos v2
-        // approved ate v3 ser aprovado. Cliente chega no portal via
-        // login estatico. Quando v3 for aprovado, trocar de volta +
-        // reintroduzir o button component com createAccessToken.
+        // pt_coleta_v3: template com botao URL contendo magic-link.
+        // Cloud API (PontualTech) → renderiza botao "Acompanhar OS" clicavel.
+        // Evolution (Imprimitech) → fallback texto puro com magic-link inline (portalUrl ja e auto-login).
         const waResult = await sendWhatsAppTemplate(
-          user.companyId, phone, 'pt_coleta_v2', 'pt_BR',
+          user.companyId, phone, 'pt_coleta_v3', 'pt_BR',
           [
             { type: 'body', parameters: [{ type: 'text', text: osNum }] },
+            { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: magicTokenColeta }] },
           ],
           whatsappMsg // fallback text for Evolution API
         )

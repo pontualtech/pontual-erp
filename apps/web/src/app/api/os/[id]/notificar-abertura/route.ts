@@ -6,6 +6,7 @@ import { sendCompanyEmail } from '@/lib/send-email'
 import { sendWhatsAppCloud, sendWhatsAppTemplate } from '@/lib/whatsapp/cloud-api'
 import { rateLimit } from '@/lib/rate-limit'
 import { escapeHtml } from '@/lib/escape-html'
+import { requirePermission } from '@/lib/auth'
 
 type Params = { params: { id: string } }
 
@@ -19,25 +20,34 @@ type Params = { params: { id: string } }
  */
 export async function POST(req: NextRequest, { params }: Params) {
   try {
-    // Validate internal secret — prevents external abuse
+    // Two auth paths:
+    //  (1) Bot/webhook: x-internal-key header com INTERNAL_API_KEY
+    //  (2) Operador via dashboard: sessao + permission os.edit
+    // Qualquer um valido autoriza; rejeitamos so se ambos falharem.
+    let companyId: string | undefined
     const internalKey = req.headers.get('x-internal-key') || ''
     const expectedKey = process.env.INTERNAL_API_KEY || process.env.BOT_ANA_API_KEY || ''
-    if (!expectedKey || !internalKey || internalKey.length !== expectedKey.length || !timingSafeEqual(Buffer.from(internalKey), Buffer.from(expectedKey))) {
-      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+    const hasInternalKey = !!expectedKey && !!internalKey && internalKey.length === expectedKey.length &&
+      timingSafeEqual(Buffer.from(internalKey), Buffer.from(expectedKey))
+
+    const body = await req.json().catch(() => ({}))
+
+    if (hasInternalKey) {
+      companyId = body.companyId || body.company_id
+      if (!companyId) {
+        return NextResponse.json({ error: 'companyId obrigatório' }, { status: 400 })
+      }
+    } else {
+      // Sessao de operador
+      const auth = await requirePermission('os', 'edit')
+      if (auth instanceof NextResponse) return auth
+      companyId = auth.companyId
     }
 
     // Rate limit: max 3 notifications per OS per hour (prevents spam)
     const rl = rateLimit(`notif-abertura:${params.id}`, 3, 60 * 60 * 1000)
     if (!rl.allowed) {
       return NextResponse.json({ error: 'Notificação já enviada recentemente' }, { status: 429 })
-    }
-
-    const body = await req.json().catch(() => ({}))
-
-    // Extract companyId from body (bot/webhook context)
-    const companyId = body.companyId || body.company_id
-    if (!companyId) {
-      return NextResponse.json({ error: 'companyId obrigatório' }, { status: 400 })
     }
 
     const os = await prisma.serviceOrder.findFirst({
@@ -51,7 +61,8 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!os) return error('OS não encontrada', 404)
 
     const customer = os.customers
-    if (!customer?.email) return error('Cliente sem email cadastrado', 400)
+    const customerPhone = customer?.mobile || customer?.phone || ''
+    if (!customer?.email && !customerPhone) return error('Cliente sem email nem telefone cadastrados', 400)
 
     const company = os.companies
     const companySettings = (company?.settings || {}) as Record<string, string>
@@ -242,22 +253,29 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     const subject = `OS-${osNum} aberta — ${equipment || 'Seu equipamento'} | ${companyName}`
 
-    // Send email
+    // Send email (apenas se cliente tem email cadastrado)
     let emailSent = false
-    try {
-      await sendCompanyEmail(os.company_id, customer.email, subject, html)
-      emailSent = true
-    } catch (emailErr: any) {
-      console.error('[notificar-abertura] Email falhou:', emailErr.message)
+    if (customer.email) {
+      try {
+        await sendCompanyEmail(os.company_id, customer.email, subject, html)
+        emailSent = true
+      } catch (emailErr: any) {
+        console.error('[notificar-abertura] Email falhou:', emailErr.message)
+      }
     }
 
-    // Send WhatsApp (fire-and-forget)
+    // Send WhatsApp com magic-link (Cloud API botao + Evolution texto)
     let whatsappSent = false
     const phone = customer.mobile || customer.phone
+    const { createAccessToken } = await import('@/lib/portal-auth')
+    const magicToken = createAccessToken(os.customer_id, companyId)
     if (phone) {
-      const fallback = `*OS #${osNum} aberta!*\n\nEquipamento: ${equipment || 'Equipamento'}\nProblema: ${os.reported_issue || 'A diagnosticar'}\n\nAcompanhe pelo portal do cliente.`
-      const { createAccessToken } = await import('@/lib/portal-auth')
-      const magicToken = createAccessToken(os.customer_id, companyId)
+      const slugForMagic = company?.slug || 'pontualtech'
+      const isImpriMagic = slugForMagic.includes('imprimitech')
+      const portalDomainMagic = isImpriMagic ? 'portal.imprimitech.com.br' : 'portal.pontualtech.com.br'
+      const magicRedirectMagic = encodeURIComponent(`/portal/${slugForMagic}/os/${os.id}`)
+      const magicLinkUrl = `https://${portalDomainMagic}/portal/${slugForMagic}/entrar?t=${magicToken}&r=${magicRedirectMagic}`
+      const fallback = `*OS #${osNum} aberta!*\n\nEquipamento: ${equipment || 'Equipamento'}\nProblema: ${os.reported_issue || 'A diagnosticar'}\n\nAcompanhe pelo portal:\n${magicLinkUrl}`
       const result = await sendWhatsAppTemplate(companyId, phone, 'pt_os_aberta_v3', 'pt_BR', [
         { type: 'body', parameters: [
           { type: 'text', text: osNum },
