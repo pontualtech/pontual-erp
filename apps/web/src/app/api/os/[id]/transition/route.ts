@@ -592,30 +592,9 @@ export async function POST(req: NextRequest, { params }: Params) {
       }
     }
 
-    // WhatsApp notification via Evolution API (fire-and-forget) — respects notification rules
-    const customerPhone = os.customers?.mobile || os.customers?.phone
-    if (shouldSendWhatsApp && customerPhone) {
-      const { toTitleCase: toTitleCaseWa } = await import('@/lib/format-text')
-      const customerFirstName = toTitleCaseWa((os.customers?.legal_name || 'Cliente').split(' ')[0])
-      const osNum = String(os.os_number).padStart(4, '0')
-      const equipment = toTitleCaseWa([os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ') || 'Equipamento')
-
-      // Always use Meta Cloud API template with magic-link for WhatsApp (works outside 24h window)
-      void (async () => {
-        const { createAccessToken: cat3 } = await import('@/lib/portal-auth')
-        const magicToken3 = cat3(os.customer_id, user.companyId)
-        return sendWhatsAppTemplate(user.companyId, customerPhone, 'pontualtech_status_os_v2', 'pt_BR', [
-          { type: 'body', parameters: [
-            { type: 'text', text: osNum },
-            { type: 'text', text: toStatus.name },
-            { type: 'text', text: equipment },
-          ] },
-          { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: magicToken3 }] },
-        ])
-      })().catch(e =>
-        console.log('[Transition] WhatsApp template notification failed (ignored):', e)
-      )
-    }
+    // NOTA: Bloco WhatsApp duplicado removido. A linha ~528 acima ja envia
+    // pontualtech_status_os_v2 com mesmos params — manter este bloco causava
+    // o cliente receber 2 mensagens identicas em cada transicao.
 
     return success({ ...updated, receivable_created: receivableCreated })
   } catch (err) {

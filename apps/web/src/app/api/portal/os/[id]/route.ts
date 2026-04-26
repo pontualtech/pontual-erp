@@ -280,6 +280,61 @@ export async function POST(
         }),
       ])
 
+      // Email + WhatsApp "Aprovacao Confirmada" pro cliente (fire-and-forget)
+      ;(async () => {
+        try {
+          const { sendCompanyEmail } = await import('@/lib/send-email')
+          const { sendWhatsAppCloud } = await import('@/lib/whatsapp/cloud-api')
+          const { buildMagicLink: bml } = await import('@/lib/portal-magic-url')
+          const company = await prisma.company.findUnique({
+            where: { id: portalUser.company_id },
+            select: { name: true, slug: true },
+          })
+          const customer = await prisma.customer.findUnique({
+            where: { id: portalUser.customer_id },
+            select: { id: true, legal_name: true, email: true, mobile: true, phone: true },
+          })
+          if (!company || !customer) return
+          const ml = bml({ customerId: customer.id, companyId: portalUser.company_id, slug: company.slug, osId: os.id })
+          const osNum = String(os.os_number).padStart(4, '0')
+          const equipment = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ') || 'Equipamento'
+          const valorBRL = (Number(os.total_cost || os.estimated_cost || 0) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+          const previsaoStr = estimatedDelivery.toLocaleDateString('pt-BR')
+          const firstName = (customer.legal_name || 'Cliente').split(' ')[0]
+          // WhatsApp texto livre (cliente acabou de interagir com portal — janela 24h)
+          const phone = customer.mobile || customer.phone
+          if (phone) {
+            const msg = `Ola, ${firstName}! Recebemos sua aprovacao do orcamento.\n\n*OS #${osNum} aprovada*\nEquipamento: ${equipment}\nValor: ${valorBRL}\nPrevisao entrega: ${previsaoStr}\n\nVamos iniciar o reparo imediatamente. Acompanhar:\n${ml.url}\n\n_Equipe ${company.name}_`
+            sendWhatsAppCloud(portalUser.company_id, phone, msg).catch(() => {})
+          }
+          // Email simples
+          if (customer.email) {
+            const html = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;background:#f4f4f5;padding:20px;">
+              <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;">
+                <div style="background:#15803d;padding:24px 32px;color:#fff;">
+                  <h1 style="margin:0;font-size:20px;">${company.name}</h1>
+                  <p style="margin:4px 0 0;font-size:14px;">Aprovacao Confirmada — OS #${osNum}</p>
+                </div>
+                <div style="padding:32px;">
+                  <p>Ola, <strong>${customer.legal_name || 'Cliente'}</strong>!</p>
+                  <p>Recebemos sua aprovacao do orcamento. Iniciaremos o reparo imediatamente.</p>
+                  <table width="100%" cellpadding="8" style="background:#f9fafb;border-radius:6px;margin:16px 0;">
+                    <tr><td>OS</td><td style="text-align:right;font-weight:bold;">#${osNum}</td></tr>
+                    <tr><td>Equipamento</td><td style="text-align:right;">${equipment}</td></tr>
+                    <tr><td>Valor aprovado</td><td style="text-align:right;font-weight:bold;color:#15803d;">${valorBRL}</td></tr>
+                    <tr><td>Previsao entrega</td><td style="text-align:right;">${previsaoStr}</td></tr>
+                  </table>
+                  <a href="${ml.url}" style="display:block;text-align:center;background:#2563eb;color:#fff;padding:14px;border-radius:6px;text-decoration:none;font-weight:bold;">Acompanhar OS no portal</a>
+                </div>
+              </div>
+            </body></html>`
+            sendCompanyEmail(portalUser.company_id, customer.email, `Aprovacao confirmada — OS #${osNum} — ${company.name}`, html).catch(() => {})
+          }
+        } catch (e: any) {
+          console.error('[portal/os approve notify]', e?.message)
+        }
+      })()
+
       return NextResponse.json({ data: { success: true, message: 'Orcamento aprovado!' } })
     }
 
