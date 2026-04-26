@@ -26,9 +26,25 @@ import { logAudit } from '@/lib/audit'
  */
 export async function POST(req: NextRequest) {
   try {
-    const result = await requirePermission('financeiro', 'edit')
-    if (result instanceof NextResponse) return result
-    const user = result
+    // Auth: fallback via X-Internal-Key (pra reconciliacao agendada/cron)
+    // Se nao tiver, exige permission financeiro.edit do user logado
+    const internalKey = process.env.INTERNAL_API_KEY || process.env.BOT_WEBHOOK_SECRET || ''
+    const providedKey = req.headers.get('x-internal-key') || ''
+    let user: { id: string; companyId: string }
+
+    if (internalKey && providedKey && providedKey === internalKey) {
+      // Autenticado como sistema — precisa company_id no body
+      const earlyBody = await req.clone().json().catch(() => ({}))
+      const cid = earlyBody.company_id
+      if (!cid || typeof cid !== 'string') {
+        return error('Auth interno requer company_id no body', 400)
+      }
+      user = { id: 'system:reconcile', companyId: cid }
+    } else {
+      const result = await requirePermission('financeiro', 'edit')
+      if (result instanceof NextResponse) return result
+      user = result
+    }
 
     const body = await req.json().catch(() => ({}))
     const { payment_id, reconcile_all_pending, days } = body
