@@ -185,6 +185,8 @@ export default function OSDetailPage() {
   const [showAprovacaoModal, setShowAprovacaoModal] = useState(false)
   const [aprovacaoChannels, setAprovacaoChannels] = useState<Set<string>>(new Set(['email', 'whatsapp']))
   const [sendingAprovacao, setSendingAprovacao] = useState(false)
+  const [showAberturaModal, setShowAberturaModal] = useState(false)
+  const [aberturaChannels, setAberturaChannels] = useState<Set<string>>(new Set(['email', 'whatsapp']))
   const [sendingAbertura, setSendingAbertura] = useState(false)
   // Magic link modal — generate one-click access URL for the customer
   const [showMagicLinkModal, setShowMagicLinkModal] = useState(false)
@@ -1183,24 +1185,8 @@ export default function OSDetailPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {(currentStatus?.name?.toLowerCase().includes('oletar') || /^orcar$/i.test(currentStatus?.name || '')) && (
-            <button type="button" disabled={sendingAbertura} onClick={async () => {
-              setSendingAbertura(true)
-              try {
-                const res = await fetch(`/api/os/${id}/notificar-abertura`, {
-                  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
-                })
-                const data = await res.json()
-                if (!res.ok) throw new Error(data.error || 'Erro ao enviar')
-                const sent = data.data || {}
-                const enviados: string[] = []
-                if (sent.email) enviados.push(`email (${sent.email})`)
-                if (sent.whatsapp) enviados.push(`WhatsApp`)
-                toast.success(enviados.length > 0 ? `Notificacao enviada via ${enviados.join(' + ')}` : 'Cliente sem email/telefone')
-              } catch (e: any) {
-                toast.error(e.message || 'Erro ao enviar notificacao')
-              } finally { setSendingAbertura(false) }
-            }}
-              className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50 transition-colors">
+            <button type="button" onClick={() => setShowAberturaModal(true)}
+              className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-100 transition-colors">
               <Mail className="h-4 w-4" /> Notificar Abertura
             </button>
           )}
@@ -2741,6 +2727,96 @@ export default function OSDetailPage() {
               }}
                 className="flex-1 px-4 py-2.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 font-medium">
                 {transitioning ? 'Cancelando...' : 'Confirmar Cancelamento'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========== ABERTURA NOTIFICATION MODAL ========== */}
+      {showAberturaModal && os && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => !sendingAbertura && setShowAberturaModal(false)}>
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <Mail className="h-5 w-5 text-amber-600" />
+                Notificar Abertura
+              </h2>
+              <button type="button" onClick={() => setShowAberturaModal(false)} disabled={sendingAbertura}
+                title="Fechar" className="p-1 rounded-lg hover:bg-gray-100 text-gray-400">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-lg bg-amber-50 border border-amber-200 p-4">
+                <p className="text-sm font-medium text-amber-900">
+                  OS-{String(os.os_number).padStart(4, '0')} — {[os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ')}
+                </p>
+                <p className="text-sm text-amber-700 mt-1">{tc(os.customers?.legal_name || '')}</p>
+                <p className="text-xs text-amber-600 mt-2">Mensagem inclui link magico para o cliente acessar o portal sem senha.</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Enviar por:</label>
+                <div className="flex gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={aberturaChannels.has('email')}
+                      onChange={e => setAberturaChannels(prev => { const n = new Set(prev); e.target.checked ? n.add('email') : n.delete('email'); return n })}
+                      className="rounded border-gray-300 h-4 w-4 text-amber-600" />
+                    <Mail className="h-4 w-4 text-gray-500" />
+                    <span className="text-sm text-gray-700">Email</span>
+                    {os.customers?.email ? (
+                      <span className="text-xs text-gray-400">{os.customers.email}</span>
+                    ) : (
+                      <span className="text-xs text-red-400">Sem email</span>
+                    )}
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={aberturaChannels.has('whatsapp')}
+                      onChange={e => setAberturaChannels(prev => { const n = new Set(prev); e.target.checked ? n.add('whatsapp') : n.delete('whatsapp'); return n })}
+                      className="rounded border-gray-300 h-4 w-4 text-green-600" />
+                    <MessageCircle className="h-4 w-4 text-gray-500" />
+                    <span className="text-sm text-gray-700">WhatsApp</span>
+                    {(os.customers?.mobile || os.customers?.phone) ? (
+                      <span className="text-xs text-gray-400">{os.customers.mobile || os.customers.phone}</span>
+                    ) : (
+                      <span className="text-xs text-red-400">Sem telefone</span>
+                    )}
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-5">
+              <button type="button" onClick={() => setShowAberturaModal(false)} disabled={sendingAbertura}
+                className="flex-1 px-4 py-2.5 text-sm border rounded-lg hover:bg-gray-50">Cancelar</button>
+              <button type="button" disabled={sendingAbertura || aberturaChannels.size === 0} onClick={async () => {
+                setSendingAbertura(true)
+                try {
+                  const res = await fetch(`/api/os/${id}/notificar-abertura`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ channels: Array.from(aberturaChannels) }),
+                  })
+                  const data = await res.json()
+                  if (!res.ok) throw new Error(data.error || 'Erro ao enviar')
+                  const sent = data.data || {}
+                  const enviados: string[] = []
+                  if (sent.email) enviados.push('email')
+                  if (sent.whatsapp) enviados.push('WhatsApp')
+                  if (enviados.length > 0) {
+                    toast.success(`Notificacao enviada via ${enviados.join(' + ')}!`)
+                  } else {
+                    toast.error('Nenhuma notificacao foi enviada (cliente sem email/telefone?)')
+                  }
+                  setShowAberturaModal(false)
+                } catch (err: any) { toast.error(err.message) }
+                finally { setSendingAbertura(false) }
+              }}
+                className="flex-1 px-4 py-2.5 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 font-medium flex items-center justify-center gap-2">
+                {sendingAbertura ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                {sendingAbertura ? 'Enviando...' : 'Enviar Notificacao'}
               </button>
             </div>
           </div>

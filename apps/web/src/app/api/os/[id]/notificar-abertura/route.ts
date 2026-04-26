@@ -253,9 +253,17 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     const subject = `OS-${osNum} aberta — ${equipment || 'Seu equipamento'} | ${companyName}`
 
-    // Send email (apenas se cliente tem email cadastrado)
+    // Channels: operador pode optar por email-apenas, whatsapp-apenas, ou ambos.
+    // Bot/webhook (sem body.channels) envia ambos por default — comportamento legado.
+    const requestedChannels: string[] = Array.isArray(body.channels) && body.channels.length > 0
+      ? body.channels.map((c: any) => String(c).toLowerCase())
+      : ['email', 'whatsapp']
+    const wantEmail = requestedChannels.includes('email')
+    const wantWhatsApp = requestedChannels.includes('whatsapp')
+
+    // Send email (apenas se cliente tem email cadastrado e canal selecionado)
     let emailSent = false
-    if (customer.email) {
+    if (wantEmail && customer.email) {
       try {
         await sendCompanyEmail(os.company_id, customer.email, subject, html)
         emailSent = true
@@ -269,7 +277,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const phone = customer.mobile || customer.phone
     const { createAccessToken } = await import('@/lib/portal-auth')
     const magicToken = createAccessToken(os.customer_id, companyId)
-    if (phone) {
+    if (wantWhatsApp && phone) {
       const slugForMagic = company?.slug || 'pontualtech'
       const isImpriMagic = slugForMagic.includes('imprimitech')
       const portalDomainMagic = isImpriMagic ? 'portal.imprimitech.com.br' : 'portal.pontualtech.com.br'
