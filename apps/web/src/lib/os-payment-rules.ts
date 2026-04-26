@@ -8,20 +8,12 @@
  *  - Cliente pode pagar achando que e o orcamento final
  *  - PIX expirado/duplicado polui o financeiro
  *
- * Status INTERNOS (banco) que liberam pagamento:
+ * Status INTERNOS (do banco) que liberam pagamento:
  *  - Aprovado / Aprovada       (cliente concordou com o orcamento)
  *  - Em Execucao               (reparo em andamento)
  *  - Aguardando Peca / Peça   (reparo pausado por peca)
  *  - Entregar Reparado         (pronto pra retirada/entrega)
  *  - Entregue                  (motorista entregou — cliente pode pagar depois)
- *
- * Labels do PORTAL (que vem mapeados de /api/portal/os/[id]):
- *  - "Em Reparo"               (cobre Aprovado/Em Execucao/Aguardando Peca)
- *  - "Pronto para Retirada"    (cobre Entregar Reparado/Entregar Recusado)
- *  - "Entregue"
- *
- * Por isso a regex precisa cobrir AMBOS — backend recebe nome interno
- * (PIX/Boleto routes), frontend portal recebe label mapeado.
  *
  * NAO liberam: Coletar, Orcar, LAUDO, Negociar, Aguardando Aprovacao,
  * Cancelada, Recusado, Em Analise.
@@ -29,8 +21,16 @@
  * Atencao: este helper so decide se o botao APARECE. Se o AR ja esta
  * RECEBIDO, o componente PortalPayBox mostra "Pagamento confirmado"
  * via /api/portal/os/[id]/pay-status independentemente do status.
+ *
+ * Onde e usado:
+ *  - /api/portal/os/[id]   → computa can_pay no DTO (frontend so consome)
+ *  - /api/portal/payments/pix     → valida antes de gerar PIX
+ *  - /api/portal/payments/boleto  → valida antes de gerar boleto
+ *
+ * Os 3 lugares recebem o nome INTERNO direto do banco — nao precisa
+ * cobrir labels mapeados do portal (Em Reparo, Pronto para Retirada).
  */
-const ALLOWED_PATTERN = /^(aprovad|em execu|em reparo|aguardando pe[çc]a|entregar reparad|pronto|entregue)/i
+const ALLOWED_PATTERN = /^(aprovad|em execu|aguardando pe[çc]a|entregar reparad|entregue)/i
 
 export function canCustomerPayOS(statusName: string | null | undefined): boolean {
   if (!statusName) return false

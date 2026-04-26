@@ -7,7 +7,6 @@ import { toast } from 'sonner'
 import { Printer, Mail, X, CreditCard, Truck, Clock, Banknote, Zap, CheckCircle2, MessageSquare } from 'lucide-react'
 import { PhotoGallery } from '../../../../components/photo-gallery'
 import PortalPayBox from './_components/portal-pay-box'
-import { canCustomerPayOS } from '@/lib/os-payment-rules'
 
 interface OSDetail {
   id: string
@@ -34,6 +33,7 @@ interface OSDetail {
   created_at: string
   updated_at: string
   status: { id: string; name: string; color: string; order?: number }
+  can_pay?: boolean
   items: Array<{
     id: string
     item_type: string
@@ -754,7 +754,7 @@ export default function PortalOSDetailPage() {
             antecipado por curiosidade (gera confusao quando orcamento muda).
             Quando aguardando aprovacao, esconde TUDO — o card de aprovacao
             (renderizado antes) ja explica formas de pagamento. */}
-        {os && (os.total_cost || 0) > 0 && !isAguardandoAprovacao && canCustomerPayOS(os.status?.name) && (
+        {os && (os.total_cost || 0) > 0 && !isAguardandoAprovacao && os.can_pay && (
           <div className="mb-6">
             <PortalPayBox
               osId={os.id}
@@ -763,7 +763,7 @@ export default function PortalOSDetailPage() {
             />
           </div>
         )}
-        {os && (os.total_cost || 0) > 0 && !isAguardandoAprovacao && !canCustomerPayOS(os.status?.name) && (
+        {os && (os.total_cost || 0) > 0 && !isAguardandoAprovacao && !os.can_pay && (
           <div className="mb-6 rounded-2xl border-2 border-sky-200 dark:border-sky-900 bg-gradient-to-br from-sky-50 to-white dark:from-sky-950/30 dark:to-gray-900 p-5 shadow-sm">
             {/* Header */}
             <div className="flex items-center gap-3 mb-4">

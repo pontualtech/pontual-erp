@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { getPortalUserFromRequest } from '@/lib/portal-auth'
 import { isAllowedOrigin } from '@/lib/csrf-origin'
+import { canCustomerPayOS } from '@/lib/os-payment-rules'
 
 export async function GET(
   req: NextRequest,
@@ -152,6 +153,10 @@ export async function GET(
         created_at: os.created_at,
         updated_at: os.updated_at,
         status: portalStatus,
+        // can_pay: regra de negocio computada no backend usando o nome
+        // INTERNO do status (currentStatusName), nao o label do portal.
+        // Frontend apenas consome — single source of truth.
+        can_pay: canCustomerPayOS(currentStatusName),
         items: os.service_order_items,
         history: os.service_order_history.map(h => {
           const rawStatus = h.module_statuses_service_order_history_to_status_idTomodule_statuses
