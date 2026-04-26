@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
         deleted_at: null,
       },
       include: {
-        customers: { select: { id: true, legal_name: true, document_number: true, email: true } },
+        customers: { select: { id: true, legal_name: true, document_number: true, email: true, mobile: true, phone: true } },
         companies: { select: { name: true } },
         module_statuses: { select: { name: true } },
       },
@@ -134,6 +134,7 @@ export async function POST(req: NextRequest) {
       customerName: os.customers.legal_name,
       customerDocument: os.customers.document_number,
       customerEmail: os.customers.email || undefined,
+      customerPhone: os.customers.mobile || os.customers.phone || undefined,
       description: `OS #${os.os_number} - ${os.companies?.name || 'PontualERP'}`,
       dueDate: dueDate.toISOString().split('T')[0],
     })

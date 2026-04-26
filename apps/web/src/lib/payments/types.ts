@@ -39,6 +39,7 @@ export interface CreateChargeParams {
   customerName: string
   customerDocument: string
   customerEmail?: string
+  customerPhone?: string  // celular E.164 (5511999999999) — Asaas usa pra notificar
   description: string
   dueDate?: string        // YYYY-MM-DD (default: tomorrow)
   installmentCount?: number // só CREDIT_CARD (2-12)
@@ -51,6 +52,8 @@ export interface PaymentProvider {
     amount: number          // centavos
     customerName: string
     customerDocument: string
+    customerEmail?: string  // pra Asaas notificar
+    customerPhone?: string  // celular E.164 (5511999999999)
     description: string
     idempotencyKey: string
     expiresInMinutes?: number

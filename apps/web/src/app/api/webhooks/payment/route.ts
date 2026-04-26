@@ -194,6 +194,23 @@ export async function POST(req: NextRequest) {
               updated_at: new Date(),
             },
           })
+
+          // Append nas obs internas da OS — historico visivel pro atendente
+          if (fresh.service_order_id) {
+            const so = await tx.serviceOrder.findUnique({
+              where: { id: fresh.service_order_id },
+              select: { internal_notes: true },
+            })
+            const valorBRL = (fresh.amount / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+            const dataStr = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+            const metodo = fresh.billing_type || fresh.method || 'PIX'
+            const novaNota = `[${dataStr}] ✓ Pagamento confirmado: ${metodo} ${valorBRL} — Asaas ${asaasPayment.id}`
+            const notesAtual = so?.internal_notes ? so.internal_notes + '\n' : ''
+            await tx.serviceOrder.update({
+              where: { id: fresh.service_order_id },
+              data: { internal_notes: notesAtual + novaNota },
+            })
+          }
         }
       }
 

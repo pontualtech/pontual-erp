@@ -54,14 +54,18 @@ export class AsaasProvider implements PaymentProvider {
     amount: number
     customerName: string
     customerDocument: string
+    customerEmail?: string
+    customerPhone?: string
     description: string
     idempotencyKey: string
     expiresInMinutes?: number
   }): Promise<PixCharge> {
-    // First, find or create customer in Asaas
+    // First, find or create customer in Asaas (com email/phone pra Asaas notificar)
     const customerData = await this.findOrCreateCustomer(
       params.customerName,
-      params.customerDocument
+      params.customerDocument,
+      params.customerEmail,
+      params.customerPhone,
     )
 
     // Create PIX charge
@@ -95,7 +99,8 @@ export class AsaasProvider implements PaymentProvider {
     const customerData = await this.findOrCreateCustomer(
       params.customerName,
       params.customerDocument,
-      params.customerEmail
+      params.customerEmail,
+      params.customerPhone,
     )
 
     // Asaas rejects past due dates — use tomorrow as minimum
@@ -151,17 +156,54 @@ export class AsaasProvider implements PaymentProvider {
     return result
   }
 
-  private async findOrCreateCustomer(name: string, document: string, email?: string) {
-    // Try to find existing
+  /**
+   * Sanitiza telefone pra formato esperado pelo Asaas:
+   *  - mobilePhone: 11 digitos sem nada (51986123456 / 5511986123456)
+   *  - aceita string com mascara, devolve so digitos
+   * Retorna null se for vazio/invalido.
+   */
+  private sanitizePhone(raw: string | undefined | null): string | null {
+    if (!raw) return null
+    const digits = raw.replace(/\D/g, '')
+    // Asaas BR: aceita 10 (fixo) ou 11 (celular) digitos. Com 12-13 (DDI 55), tira o 55.
+    if (digits.length === 12 || digits.length === 13) {
+      return digits.slice(-11)
+    }
+    if (digits.length >= 10 && digits.length <= 11) return digits
+    return null
+  }
+
+  private async findOrCreateCustomer(name: string, document: string, email?: string, phone?: string) {
+    const cleanPhone = this.sanitizePhone(phone)
+    const desired: Record<string, string> = { name, cpfCnpj: document }
+    if (email) desired.email = email
+    if (cleanPhone) desired.mobilePhone = cleanPhone
+
+    // Try to find existing by CPF/CNPJ
     const search = await this.request('GET', `/customers?cpfCnpj=${document}`)
-    if (search.data?.length > 0) {
-      return search.data[0]
+    const existing = search.data?.[0]
+
+    if (existing) {
+      // Atualiza se algum dado mudou (email/phone) — customers antigos
+      // criados sem email/phone passam a receber notificacoes do Asaas
+      const needsUpdate = (
+        (email && existing.email !== email) ||
+        (cleanPhone && existing.mobilePhone !== cleanPhone) ||
+        (name && existing.name !== name)
+      )
+      if (needsUpdate) {
+        try {
+          return await this.request('POST', `/customers/${existing.id}`, desired)
+        } catch (e) {
+          console.warn('[Asaas] customer update failed, using existing', e)
+          return existing
+        }
+      }
+      return existing
     }
 
     // Create new
-    const body: Record<string, string> = { name, cpfCnpj: document }
-    if (email) body.email = email
-    return this.request('POST', '/customers', body)
+    return this.request('POST', '/customers', desired)
   }
 
   async getStatus(externalId: string): Promise<PaymentStatus> {
