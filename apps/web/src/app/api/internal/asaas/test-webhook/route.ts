@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
     trace.push({ step: 'charge_created', id: chargeId, status: crBody.status })
 
     // 4. Aguarda ate 30s o webhook chegar (poll a cada 1s)
-    const targetChargeId: string = chargeId
+    const targetChargeId: string = chargeId as string
     let webhookArrived = false
     let arrivedLog: any = null
     for (let i = 0; i < 30; i++) {
