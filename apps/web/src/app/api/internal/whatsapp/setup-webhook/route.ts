@@ -89,6 +89,19 @@ export async function POST(req: NextRequest) {
     results.waba_overview = { error: e.message }
   }
 
+  // 4.5) Optional: atualiza qual phone_number_id o ERP usa pra enviar.
+  //   Util quando WABA tem multiplos numeros e queremos rotear por um especifico
+  //   (ex: PT tem vendas e suporte; suporte tem quality alta, vendas baixa).
+  if (body.set_phone_number_id) {
+    await prisma.setting.upsert({
+      where: { company_id_key: { company_id, key: 'whatsapp.cloud.phone_number_id' } },
+      create: { company_id, key: 'whatsapp.cloud.phone_number_id', value: String(body.set_phone_number_id), type: 'string' },
+      update: { value: String(body.set_phone_number_id) },
+    })
+    cfg['whatsapp.cloud.phone_number_id'] = String(body.set_phone_number_id)
+    results.set_phone_number_id = { applied: true, new_value: body.set_phone_number_id }
+  }
+
   // 5) Diagnose phone_number used by sendWhatsAppTemplate path
   const phoneNumberId = cfg['whatsapp.cloud.phone_number_id']
   let phoneNumberInfo: any = { id: phoneNumberId }
