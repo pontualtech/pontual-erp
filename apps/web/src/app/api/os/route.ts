@@ -263,6 +263,49 @@ export async function POST(req: NextRequest) {
       newValue: body,
     })
 
+    // Auto-notificacao de abertura: dispara email + WhatsApp com magic-link
+    // quando OS e criada em status inicial (Coletar/Orcar). Bot Ana e webhook
+    // nova-os ja fazem isso; agora dashboard manual tambem.
+    // Honra a config notif.rule.{statusId} — so auto-fire se mode === 'auto'.
+    // Fire-and-forget: nao bloqueia a resposta.
+    const initialStatusName = (initialStatus.name || '').toLowerCase()
+    const isInicial = initialStatusName.includes('oletar') || /^orcar$/i.test(initialStatus.name || '')
+    if (isInicial) {
+      const ruleSetting = await prisma.setting.findUnique({
+        where: { company_id_key: { company_id: user.companyId, key: `notif.rule.${initialStatus.id}` } },
+      }).catch(() => null)
+      let ruleMode = 'auto'  // default 'auto' para Coletar/Orcar — auto-notify on create
+      let ruleEmail = true
+      let ruleWhatsApp = true
+      if (ruleSetting?.value) {
+        try {
+          const parsed = JSON.parse(ruleSetting.value)
+          ruleMode = parsed.mode || ruleMode
+          if (parsed.email === false) ruleEmail = false
+          if (parsed.whatsapp === false) ruleWhatsApp = false
+        } catch {}
+      }
+      if (ruleMode === 'auto') {
+        const channels: string[] = []
+        if (ruleEmail) channels.push('email')
+        if (ruleWhatsApp) channels.push('whatsapp')
+        if (channels.length > 0) {
+          const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://erp.pontualtech.work'
+          const internalKey = process.env.INTERNAL_API_KEY || process.env.BOT_ANA_API_KEY || ''
+          if (internalKey) {
+            fetch(`${baseUrl}/api/os/${os.id}/notificar-abertura`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'X-Internal-Key': internalKey },
+              body: JSON.stringify({ companyId: user.companyId, channels }),
+              signal: AbortSignal.timeout(15000),
+            }).catch(e => console.log('[OS create] auto notificar-abertura falhou (silenciado):', e.message))
+          } else {
+            console.warn('[OS create] INTERNAL_API_KEY ausente — auto-notificacao de abertura pulada')
+          }
+        }
+      }
+    }
+
     return success(os, 201)
   } catch (err) {
     return handleError(err)
