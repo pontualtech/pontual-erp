@@ -4,6 +4,7 @@ import { requireDriver } from '@/lib/driver-auth'
 import { findStatusByName } from '@/lib/module-status'
 import { sendCompanyEmail } from '@/lib/send-email'
 import { getReciboEmail } from '@/lib/email-templates/recibo'
+import { buildMagicLink } from '@/lib/portal-magic-url'
 
 function fmtBRL(cents: number): string {
   return (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -45,17 +46,27 @@ async function sendReceiptEmail(
   const os = await prisma.serviceOrder.findFirst({
     where: { id: osId, company_id: companyId },
     select: {
+      id: true,
+      customer_id: true,
       os_number: true,
       equipment_type: true,
       equipment_brand: true,
       equipment_model: true,
       serial_number: true,
-      customers: { select: { legal_name: true, email: true } },
+      customers: { select: { id: true, legal_name: true, email: true } },
     },
   })
   const email = os?.customers?.email
   if (!os || !email) return
-  const company = await prisma.company.findUnique({ where: { id: companyId }, select: { name: true } })
+  const company = await prisma.company.findUnique({ where: { id: companyId }, select: { name: true, slug: true } })
+
+  // Magic-link auto-login pra essa OS
+  const magicLink = os.customers?.id ? buildMagicLink({
+    customerId: os.customers.id,
+    companyId,
+    slug: company?.slug || 'pontualtech',
+    osId: os.id,
+  }).url : portalUrl(companyId)
 
   const equipmentCompleto = [os.equipment_type, os.equipment_brand, os.equipment_model]
     .filter(Boolean).join(' ') || 'Equipamento'
@@ -76,7 +87,7 @@ async function sendReceiptEmail(
       equipamento_completo: equipmentCompleto,
       serial_number: os.serial_number || 's/n',
       garantia_ate: garantiaAte.toLocaleDateString('pt-BR'),
-      link_portal: portalUrl(companyId),
+      link_portal: magicLink,
       link_suporte: supportWa(companyId),
     })
     await sendCompanyEmail(companyId, email, tpl.subject, tpl.html)

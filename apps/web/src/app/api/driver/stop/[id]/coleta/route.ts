@@ -6,6 +6,7 @@ import { sendCompanyEmail } from '@/lib/send-email'
 import { getColetaConcluidaEmail } from '@/lib/email-templates/coleta-concluida'
 import { sendWhatsAppCloud } from '@/lib/whatsapp/cloud-api'
 import { pauseBotForLogistics } from '@/lib/bot/pause-for-logistics'
+import { buildMagicLink } from '@/lib/portal-magic-url'
 
 function portalUrl(companyId: string): string {
   if (companyId === 'pontualtech-001') return 'https://portal.pontualtech.com.br/portal/pontualtech'
@@ -42,19 +43,29 @@ async function sendColetaDoneNotifications(
     const os = await prisma.serviceOrder.findFirst({
       where: { id: stop.os_id, company_id: companyId, deleted_at: null },
       select: {
+        id: true,
+        customer_id: true,
         os_number: true,
         equipment_type: true,
         equipment_brand: true,
         equipment_model: true,
         reported_issue: true,
-        customers: { select: { legal_name: true, email: true, mobile: true, phone: true } },
+        customers: { select: { id: true, legal_name: true, email: true, mobile: true, phone: true } },
       },
     })
     if (!os) return
 
     const company = await prisma.company.findUnique({
-      where: { id: companyId }, select: { name: true },
+      where: { id: companyId }, select: { name: true, slug: true },
     })
+
+    // Magic-link auto-login pra essa OS — usado em email e WhatsApp do cliente.
+    const magicLink = os.customers?.id ? buildMagicLink({
+      customerId: os.customers.id,
+      companyId,
+      slug: company?.slug || 'pontualtech',
+      osId: os.id,
+    }).url : portalUrl(companyId)
 
     const equipmentCompleto = [os.equipment_type, os.equipment_brand, os.equipment_model]
       .filter(Boolean).join(' ') || 'Equipamento'
@@ -70,7 +81,7 @@ async function sendColetaDoneNotifications(
       checklist,
       signature_url: signatureDataUrl,
       photo_url: photoDataUrl,
-      link_portal: portalUrl(companyId),
+      link_portal: magicLink,
       link_suporte: supportWa(companyId),
     }
 
@@ -97,7 +108,7 @@ OS #${os.os_number}
 
 Em breve voce recebera o *orcamento por e-mail*. Basta aprovar pelo portal pra iniciarmos o reparo.
 
-Acompanhar: ${portalUrl(companyId)}
+Acompanhar: ${magicLink}
 Suporte: ${supportWa(companyId)}
 
 _Equipe ${company?.name || 'PontualTech'}_`
