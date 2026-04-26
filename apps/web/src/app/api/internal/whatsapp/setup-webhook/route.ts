@@ -89,11 +89,24 @@ export async function POST(req: NextRequest) {
     results.waba_overview = { error: e.message }
   }
 
+  // 5) Diagnose phone_number used by sendWhatsAppTemplate path
+  const phoneNumberId = cfg['whatsapp.cloud.phone_number_id']
+  let phoneNumberInfo: any = { id: phoneNumberId }
+  try {
+    const phRes = await fetch(`https://graph.facebook.com/v21.0/${phoneNumberId}?fields=display_phone_number,verified_name,quality_rating,status,messaging_limit_tier,name_status,code_verification_status`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    phoneNumberInfo = { id: phoneNumberId, ...(await phRes.json()) }
+  } catch (e: any) {
+    phoneNumberInfo.error = e.message
+  }
+
   return NextResponse.json({
     waba_id: wabaId,
     company_id,
     webhook_target_url: 'https://erp.pontualtech.work/api/webhook/meta-status',
     verify_token_env: process.env.META_WEBHOOK_VERIFY_TOKEN ? 'configured' : 'NOT_CONFIGURED',
+    phone_number_used_by_erp: phoneNumberInfo,
     results,
     note: 'Se subscribe.data.success=true, o WABA esta inscrito ao app. A URL do webhook em si precisa estar configurada no painel do APP do Meta Business — esse endpoint nao pode setar isso (exige app_id+app_secret).',
   })
