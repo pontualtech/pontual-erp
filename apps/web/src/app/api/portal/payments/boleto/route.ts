@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { getPortalUserFromRequest } from '@/lib/portal-auth'
 import { getPaymentProviderForAccount } from '@/lib/payments/factory'
 import { resolveDefaultProviderAccount } from '@/lib/payments/resolve-account'
+import { canCustomerPayOS, PAYMENT_BLOCKED_MESSAGE } from '@/lib/os-payment-rules'
 
 /**
  * POST /api/portal/payments/boleto
@@ -35,6 +36,7 @@ export async function POST(req: NextRequest) {
       include: {
         customers: { select: { id: true, legal_name: true, document_number: true, email: true } },
         companies: { select: { name: true } },
+        module_statuses: { select: { name: true } },
       },
     })
     if (!os) return NextResponse.json({ error: 'OS nao encontrada' }, { status: 404 })
@@ -43,6 +45,11 @@ export async function POST(req: NextRequest) {
     }
     if (!os.customers?.document_number) {
       return NextResponse.json({ error: 'Cadastro sem CPF/CNPJ — complete o cadastro' }, { status: 400 })
+    }
+
+    // Status atual permite pagamento? (so libera apos cliente aprovar reparo)
+    if (!canCustomerPayOS(os.module_statuses?.name)) {
+      return NextResponse.json({ error: PAYMENT_BLOCKED_MESSAGE }, { status: 422 })
     }
 
     const resolved = await resolveDefaultProviderAccount(portalUser.company_id)

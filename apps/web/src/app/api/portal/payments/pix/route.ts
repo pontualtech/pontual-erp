@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { getPortalUserFromRequest } from '@/lib/portal-auth'
 import { getPaymentProviderForAccount } from '@/lib/payments/factory'
 import { resolveDefaultProviderAccount } from '@/lib/payments/resolve-account'
+import { canCustomerPayOS, PAYMENT_BLOCKED_MESSAGE } from '@/lib/os-payment-rules'
 
 /**
  * POST /api/portal/payments/pix
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest) {
     const { service_order_id } = await req.json().catch(() => ({}))
     if (!service_order_id) return NextResponse.json({ error: 'service_order_id obrigatorio' }, { status: 400 })
 
-    // 1. Autoriza + carrega OS
+    // 1. Autoriza + carrega OS (inclui status pra checar se pagamento esta liberado)
     const os = await prisma.serviceOrder.findFirst({
       where: {
         id: service_order_id,
@@ -40,6 +41,7 @@ export async function POST(req: NextRequest) {
       include: {
         customers: { select: { id: true, legal_name: true, document_number: true, email: true } },
         companies: { select: { name: true } },
+        module_statuses: { select: { name: true } },
       },
     })
     if (!os) return NextResponse.json({ error: 'OS nao encontrada' }, { status: 404 })
@@ -48,6 +50,11 @@ export async function POST(req: NextRequest) {
     }
     if (!os.customers?.document_number) {
       return NextResponse.json({ error: 'Cadastro sem CPF/CNPJ — complete o cadastro pra emitir cobrança' }, { status: 400 })
+    }
+
+    // Status atual permite pagamento? (so libera apos cliente aprovar reparo)
+    if (!canCustomerPayOS(os.module_statuses?.name)) {
+      return NextResponse.json({ error: PAYMENT_BLOCKED_MESSAGE }, { status: 422 })
     }
 
     // 2. Busca conta bancaria com provider Asaas configurado

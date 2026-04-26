@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { Printer, Mail, X } from 'lucide-react'
 import { PhotoGallery } from '../../../../components/photo-gallery'
 import PortalPayBox from './_components/portal-pay-box'
+import { canCustomerPayOS } from '@/lib/os-payment-rules'
 
 interface OSDetail {
   id: string
@@ -617,14 +618,29 @@ export default function PortalOSDetailPage() {
           </div>
         </div>
 
-        {/* Pagar esta OS agora — sempre visivel se tem valor, independente do status */}
-        {os && (os.total_cost || 0) > 0 && (
+        {/* Pagar esta OS agora — so visivel apos cliente aprovar o reparo.
+            Antes da aprovacao mostra mensagem explicativa pra evitar PIX
+            antecipado por curiosidade (gera confusao quando orcamento muda) */}
+        {os && (os.total_cost || 0) > 0 && canCustomerPayOS(os.status?.name) && (
           <div className="mb-6">
             <PortalPayBox
               osId={os.id}
               totalCost={os.total_cost || 0}
               alreadyPaid={false}
             />
+          </div>
+        )}
+        {os && (os.total_cost || 0) > 0 && !canCustomerPayOS(os.status?.name) && (
+          <div className="mb-6 rounded-2xl border-2 border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 p-5">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-amber-200 flex items-center justify-center flex-shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-amber-800" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              </div>
+              <div>
+                <h3 className="font-bold text-amber-900 dark:text-amber-200">Pagamento ainda nao liberado</h3>
+                <p className="text-sm text-amber-800 dark:text-amber-300 mt-1">A opcao de pagar PIX/Boleto fica disponivel apos voce aprovar o orcamento do reparo. Aguarde o orcamento ou aprove para liberar o pagamento.</p>
+              </div>
+            </div>
           </div>
         )}
 
