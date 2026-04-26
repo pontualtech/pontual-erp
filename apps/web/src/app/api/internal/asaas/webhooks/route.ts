@@ -45,6 +45,18 @@ export async function GET(req: NextRequest) {
   const authErr = checkAuth(req)
   if (authErr) return authErr
   try {
+    // ?info=account → retorna dados da conta autenticada (pra confirmar conta certa)
+    const info = req.nextUrl.searchParams.get('info')
+    if (info === 'account') {
+      const [r1, r2] = await Promise.all([
+        asaasFetch('/myAccount'),
+        asaasFetch('/myAccount/bankAccount').catch(() => null),
+      ])
+      const account = await r1.json().catch(() => ({}))
+      const bank = r2 ? await r2.json().catch(() => ({})) : null
+      return success({ account, bank })
+    }
+
     const r = await asaasFetch('/webhooks')
     const status = r.status
     const body = await r.json().catch(() => ({}))
