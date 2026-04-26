@@ -311,6 +311,89 @@ export async function POST(req: NextRequest) {
     }
 
     console.log(`[Webhook] ${event}: Payment ${payment.id} → ${result.action} (${result.reason})`)
+
+    // Notificar cliente que pagamento foi recebido (fire-and-forget).
+    // Dispara em RECEIVED (auto-baixa, fundos disponiveis) — nao em CONFIRMED.
+    if (result.action === 'processed' && result.reason && /→ RECEIVED$/.test(result.reason)) {
+      ;(async () => {
+        try {
+          const paymentFresh = await prisma.payment.findUnique({
+            where: { id: payment.id },
+            select: {
+              amount: true,
+              billing_type: true,
+              method: true,
+              service_order_id: true,
+              company_id: true,
+              service_orders: {
+                select: {
+                  id: true,
+                  os_number: true,
+                  customer_id: true,
+                  equipment_type: true,
+                  equipment_brand: true,
+                  equipment_model: true,
+                  customers: { select: { id: true, legal_name: true, email: true, mobile: true, phone: true } },
+                  companies: { select: { name: true, slug: true } },
+                },
+              },
+            },
+          })
+          const so = paymentFresh?.service_orders
+          if (!so || !paymentFresh) return
+          const customer = so.customers
+          if (!customer) return
+
+          const valorBRL = (paymentFresh.amount / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+          const osNum = String(so.os_number).padStart(4, '0')
+          const equipment = [so.equipment_type, so.equipment_brand, so.equipment_model].filter(Boolean).join(' ') || 'Equipamento'
+          const metodo = paymentFresh.billing_type || paymentFresh.method || 'PIX'
+          const companyName = so.companies?.name || 'PontualTech'
+          const slug = so.companies?.slug || 'pontualtech'
+
+          const { buildMagicLink: bmlPay } = await import('@/lib/portal-magic-url')
+          const ml = bmlPay({ customerId: customer.id, companyId: paymentFresh.company_id, slug, osId: so.id })
+
+          // WhatsApp (texto livre — pagamento confirmado e dentro de janela 24h
+          // ou via Evolution fallback se Cloud nao disponivel)
+          const phone = customer.mobile || customer.phone
+          if (phone) {
+            const firstName = (customer.legal_name || 'Cliente').split(' ')[0]
+            const msg = `Ola, ${firstName}! Confirmamos o recebimento do pagamento.\n\n*Pagamento confirmado*\nValor: ${valorBRL}\nForma: ${metodo}\nOS #${osNum} — ${equipment}\n\nAcompanhar OS:\n${ml.url}\n\n_Equipe ${companyName}_`
+            const { sendWhatsAppCloud } = await import('@/lib/whatsapp/cloud-api')
+            sendWhatsAppCloud(paymentFresh.company_id, phone, msg).catch(() => {})
+          }
+
+          // Email
+          if (customer.email) {
+            const html = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;background:#f4f4f5;padding:20px;">
+              <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;">
+                <div style="background:#059669;padding:24px 32px;color:#fff;">
+                  <h1 style="margin:0;font-size:20px;">${companyName}</h1>
+                  <p style="margin:4px 0 0;font-size:14px;">Pagamento confirmado — OS #${osNum}</p>
+                </div>
+                <div style="padding:32px;">
+                  <p>Ola, <strong>${customer.legal_name || 'Cliente'}</strong>!</p>
+                  <p>Confirmamos o recebimento do seu pagamento. Obrigado pela confianca!</p>
+                  <table width="100%" cellpadding="8" style="background:#f9fafb;border-radius:6px;margin:16px 0;">
+                    <tr><td>Valor</td><td style="text-align:right;font-weight:bold;">${valorBRL}</td></tr>
+                    <tr><td>Forma</td><td style="text-align:right;">${metodo}</td></tr>
+                    <tr><td>OS</td><td style="text-align:right;">#${osNum}</td></tr>
+                    <tr><td>Equipamento</td><td style="text-align:right;">${equipment}</td></tr>
+                  </table>
+                  <a href="${ml.url}" style="display:block;text-align:center;background:#2563eb;color:#fff;padding:14px;border-radius:6px;text-decoration:none;font-weight:bold;">Acompanhar OS no portal</a>
+                </div>
+              </div>
+            </body></html>`
+            const { sendCompanyEmail } = await import('@/lib/send-email')
+            sendCompanyEmail(paymentFresh.company_id, customer.email, `Pagamento confirmado — OS #${osNum} — ${companyName}`, html).catch(() => {})
+          }
+        } catch (e: any) {
+          console.error('[Webhook payment notify] falhou:', e?.message)
+        }
+      })()
+    }
+
     return NextResponse.json({ ok: true })
   } catch (err) {
     console.error('[Webhook] Transaction error:', err)

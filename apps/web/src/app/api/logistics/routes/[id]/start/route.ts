@@ -110,10 +110,18 @@ export async function POST(req: NextRequest, { params }: Params) {
       const osList = osIds.length
         ? await prisma.serviceOrder.findMany({
             where: { id: { in: osIds }, company_id: companyId },
-            select: { id: true, customers: { select: { legal_name: true, mobile: true, phone: true } } },
+            select: { id: true, customer_id: true, customers: { select: { id: true, legal_name: true, mobile: true, phone: true } } },
           })
         : []
       const osById = new Map(osList.map(o => [o.id, o]))
+
+      // Slug pra magic-link
+      const companyForLink = await prisma.company.findUnique({
+        where: { id: companyId! },
+        select: { slug: true },
+      })
+      const linkSlug = companyForLink?.slug || 'pontualtech'
+      const { buildMagicLink: bmlRota } = await import('@/lib/portal-magic-url')
 
       // Deduplicar por telefone (cliente com 2+ stops recebe so 1 msg)
       const sent = new Set<string>()
@@ -128,7 +136,14 @@ export async function POST(req: NextRequest, { params }: Params) {
         const name = stop.customer_name || os?.customers?.legal_name || 'Cliente'
         const firstName = name.split(' ')[0]
         const normalizedPhone = rawPhone.startsWith('55') ? rawPhone : `55${rawPhone}`
-        const fallback = `Ola, ${firstName}! Nosso motorista ${motoristaFirstName} acabou de sair da base e esta em rota. Em breve avisaremos quando estiver chegando.`
+        // Magic-link pra essa OS (acompanhamento sem senha)
+        const magicForStop = (os?.customers?.id && os?.id) ? bmlRota({
+          customerId: os.customers.id,
+          companyId: companyId!,
+          slug: linkSlug,
+          osId: os.id,
+        }).url : ''
+        const fallback = `Ola, ${firstName}! Nosso motorista ${motoristaFirstName} acabou de sair da base e esta em rota. Em breve avisaremos quando estiver chegando.${magicForStop ? `\n\nAcompanhar OS:\n${magicForStop}` : ''}`
 
         sendPromises.push(
           sendWhatsAppTemplate(

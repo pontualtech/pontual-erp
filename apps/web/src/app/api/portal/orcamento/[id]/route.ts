@@ -7,6 +7,7 @@ import { createHmac } from 'crypto'
 import { rateLimit, getClientIp } from '@/lib/rate-limit'
 import { escapeHtml } from '@/lib/escape-html'
 import { getCompanyContact } from '@/lib/company-contact'
+import { buildMagicLink } from '@/lib/portal-magic-url'
 
 type Params = { params: { id: string } }
 
@@ -342,13 +343,19 @@ export async function POST(request: NextRequest, { params }: Params) {
             .replace(/\{\{pix_banco\}\}/g, escapeHtml(pixBanco))
             .replace(/\{\{horario\}\}/g, escapeHtml(horario))
         } else {
-          // Built-in professional template
+          // Built-in professional template — magic-link auto-login pra OS
+          const aprovMagic = buildMagicLink({
+            customerId: os.customer_id,
+            companyId: os.company_id,
+            slug: os.companies.slug,
+            osId: os.id,
+          })
           emailHtml = buildApprovalEmailHtml({
             customerFirstName, osNum: String(osNum), equipment, fmtValue, previsaoStr,
             companyName, companyAddress, companyCep, companyCnpj, companyPhone,
             companyEmailAddr, whatsappUrl, pixKey, pixBanco, horario,
             companyWebsite: cc.website,
-            portalUrl: (process.env.PORTAL_URL || 'https://portal.pontualtech.com.br') + '/portal/' + os.companies.slug,
+            portalUrl: aprovMagic.url,
           })
         }
 
