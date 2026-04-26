@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { Printer, Mail, X } from 'lucide-react'
+import { Printer, Mail, X, CreditCard, Truck, Clock, Banknote, Zap } from 'lucide-react'
 import { PhotoGallery } from '../../../../components/photo-gallery'
 import PortalPayBox from './_components/portal-pay-box'
 import { canCustomerPayOS } from '@/lib/os-payment-rules'
@@ -631,14 +631,56 @@ export default function PortalOSDetailPage() {
           </div>
         )}
         {os && (os.total_cost || 0) > 0 && !canCustomerPayOS(os.status?.name) && (
-          <div className="mb-6 rounded-2xl border-2 border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 p-5">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-full bg-amber-200 flex items-center justify-center flex-shrink-0">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-amber-800" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          <div className="mb-6 rounded-2xl border-2 border-sky-200 dark:border-sky-900 bg-gradient-to-br from-sky-50 to-white dark:from-sky-950/30 dark:to-gray-900 p-5 shadow-sm">
+            {/* Header */}
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-sky-600 flex items-center justify-center flex-shrink-0">
+                <CreditCard className="h-5 w-5 text-white" />
               </div>
               <div>
-                <h3 className="font-bold text-amber-900 dark:text-amber-200">Pagamento ainda nao liberado</h3>
-                <p className="text-sm text-amber-800 dark:text-amber-300 mt-1">A opcao de pagar PIX/Boleto fica disponivel apos voce aprovar o orcamento do reparo. Aguarde o orcamento ou aprove para liberar o pagamento.</p>
+                <h3 className="font-bold text-gray-900 dark:text-gray-100">Como pagar esta OS</h3>
+                <p className="text-xs text-gray-600 dark:text-gray-400">Voce tem duas opcoes</p>
+              </div>
+            </div>
+
+            {/* Opcao destaque: Na entrega (disponivel agora) */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-4 mb-3 border-2 border-emerald-300 dark:border-emerald-800 relative">
+              <div className="absolute -top-2 left-3 bg-emerald-600 text-white text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full">Disponivel agora</div>
+              <div className="flex items-start gap-3 pt-1">
+                <div className="w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center flex-shrink-0">
+                  <Truck className="h-5 w-5 text-emerald-700 dark:text-emerald-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="font-bold text-gray-900 dark:text-gray-100 text-sm">Pague na entrega</h4>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 mb-3">Quando o motorista entregar seu equipamento, voce paga direto a ele:</p>
+                  <ul className="text-sm text-gray-800 dark:text-gray-200 space-y-1.5">
+                    <li className="flex items-center gap-2">
+                      <Banknote className="h-4 w-4 text-emerald-600 flex-shrink-0" />
+                      <span>Dinheiro</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <Zap className="h-4 w-4 text-emerald-600 flex-shrink-0" />
+                      <span>PIX na hora</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <CreditCard className="h-4 w-4 text-emerald-600 flex-shrink-0" />
+                      <span>Cartao de credito <strong className="text-emerald-700 dark:text-emerald-400">em ate 3x</strong></span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            {/* Opcao secundaria: Antecipado (sera liberada) */}
+            <div className="bg-amber-50/60 dark:bg-amber-950/20 rounded-xl p-4 border border-amber-200 dark:border-amber-900/50">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center flex-shrink-0">
+                  <Clock className="h-5 w-5 text-amber-700 dark:text-amber-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">Pagar antecipado pelo portal</h4>
+                  <p className="text-xs text-gray-700 dark:text-gray-300 mt-1 leading-relaxed">Os botoes de <strong>PIX</strong> e <strong>Boleto</strong> serao liberados aqui assim que voce <strong className="text-amber-800 dark:text-amber-300">aprovar o orcamento</strong> do reparo.</p>
+                </div>
               </div>
             </div>
           </div>
