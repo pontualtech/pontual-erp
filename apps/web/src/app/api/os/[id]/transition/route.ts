@@ -7,6 +7,7 @@ import { sendCompanyEmail } from '@/lib/send-email'
 import { sendWhatsAppCloud, sendWhatsAppTemplate } from '@/lib/whatsapp/cloud-api'
 import { whatsappTemplates, getTemplateForStatus } from '@/lib/whatsapp/templates'
 import { createAccessToken } from '@/lib/portal-auth'
+import { buildMagicLink } from '@/lib/portal-magic-url'
 
 type Params = { params: { id: string } }
 
@@ -66,13 +67,13 @@ export async function POST(req: NextRequest, { params }: Params) {
         const companyEmail = cfg['company.email'] || ''
         if (companyData?.slug) {
           const portalSlug = companyData.slug
-          const PORTAL_DOMAIN_BY_SLUG: Record<string, string> = {
-            pontualtech: 'portal.pontualtech.com.br',
-            imprimitech: 'portal.imprimitech.com.br',
-          }
-          const portalBase = process.env.PORTAL_URL
-            || `https://${PORTAL_DOMAIN_BY_SLUG[portalSlug] || `portal.${portalSlug}.com.br`}`
-          const portalUrl = `${portalBase}/portal/${portalSlug}/os/${os.id}`
+          // Magic-link auto-login: cliente clica e entra na OS sem senha.
+          const portalUrl = buildMagicLink({
+            customerId: os.customer_id,
+            companyId: user.companyId,
+            slug: portalSlug,
+            osId: os.id,
+          }).url
 
           const emailHtml = buildOsStatusEmailHtml({
             customerFirstName, osNum, equipment, friendlyFrom, friendlyTo,
@@ -568,13 +569,12 @@ export async function POST(req: NextRequest, { params }: Params) {
       const company = await prisma.company.findFirst({ where: { id: user.companyId }, select: { slug: true } })
       if (company?.slug) {
         const portalSlug = company.slug
-        const PORTAL_DOMAIN_BY_SLUG: Record<string, string> = {
-          pontualtech: 'portal.pontualtech.com.br',
-          imprimitech: 'portal.imprimitech.com.br',
-        }
-        const portalBase = process.env.PORTAL_URL
-          || `https://${PORTAL_DOMAIN_BY_SLUG[portalSlug] || `portal.${portalSlug}.com.br`}`
-        const portalUrl = `${portalBase}/portal/${portalSlug}/os/${os.id}`
+        const portalUrl = buildMagicLink({
+          customerId: os.customer_id,
+          companyId: user.companyId,
+          slug: portalSlug,
+          osId: os.id,
+        }).url
 
         const emailHtml = buildOsStatusEmailHtml({
           customerFirstName, osNum, equipment, friendlyFrom, friendlyTo,

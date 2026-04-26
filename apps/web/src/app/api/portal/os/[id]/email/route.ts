@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { getPortalUserFromRequest } from '@/lib/portal-auth'
 import { sendCompanyEmail } from '@/lib/send-email'
 import { escapeHtml } from '@/lib/escape-html'
+import { buildMagicLink } from '@/lib/portal-magic-url'
 
 export async function POST(
   req: NextRequest,
@@ -62,7 +63,13 @@ export async function POST(
     const companyName = os.companies?.name || 'Empresa'
     const companySlug = os.companies?.slug || ''
     const customerName = os.customers?.legal_name || 'Cliente'
-    const portalUrl = `${process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'}/portal/${companySlug}/os/${os.id}`
+    // Magic-link auto-login: cliente clica e entra na OS sem senha
+    const portalUrl = buildMagicLink({
+      customerId: portalUser.customer_id,
+      companyId: portalUser.company_id,
+      slug: companySlug,
+      osId: os.id,
+    }).url
 
     // Build items table rows
     const itemsRows = os.service_order_items
