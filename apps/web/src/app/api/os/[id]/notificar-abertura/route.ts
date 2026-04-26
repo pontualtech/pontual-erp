@@ -89,7 +89,14 @@ export async function POST(req: NextRequest, { params }: Params) {
     const portalHost = PORTAL_DOMAIN_BY_SLUG[slug] || cfg['company.portal_host'] || `portal.${slug}.com.br`
     const portalBase = process.env.PORTAL_URL || `https://${portalHost}`
     const portalUrl = `${portalBase}/portal/${slug}`
-    const osDetailUrl = `${portalUrl}/os/${os.id}`
+    // Magic-link no email tambem: cliente clica e entra no portal sem senha,
+    // ja redirecionado pra OS especifica. Antes usava osDetailUrl (sem token)
+    // que forcava o cliente a cadastrar senha — UX ruim e contraria o pedido
+    // de "acesso sem senha" via link magico.
+    const { createAccessToken: _emailMagicToken } = await import('@/lib/portal-auth')
+    const _magicTokenEmail = _emailMagicToken(os.customer_id, companyId)
+    const _magicRedirectEmail = encodeURIComponent(`/portal/${slug}/os/${os.id}`)
+    const osDetailUrl = `${portalUrl}/entrar?t=${_magicTokenEmail}&r=${_magicRedirectEmail}`
     const osNum = String(os.os_number).padStart(4, '0')
     const { toTitleCase } = await import('@/lib/format-text')
     const customerName = toTitleCase(customer.legal_name?.split(' ')[0] || 'Cliente')
@@ -190,7 +197,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         ACESSAR MINHA OS
       </a>
       <p style="font-size:11px;color:#94a3b8;margin:12px 0 0">
-        Primeiro acesso? <a href="${portalUrl}/registrar" style="color:#3b82f6;text-decoration:underline">Crie sua senha aqui</a>
+        Acesso direto, sem senha. O link e pessoal e exclusivo desta OS.
       </p>
     </div>
 

@@ -46,9 +46,16 @@ export async function POST(req: NextRequest, { params }: Params) {
     const companyName = os.companies?.name || cc.name
     const companyPhone = cc.phone
     const whatsappUrl = cc.whatsappUrl
-    const portalBase = process.env.PORTAL_URL || 'https://portal.pontualtech.com.br'
     const portalSlug = os.companies?.slug || 'default'
-    const portalUrl = `${portalBase}/portal/${portalSlug}/os/${os.id}`
+    const isImpriProntoMagic = portalSlug.includes('imprimitech')
+    const portalDomainProntoMagic = isImpriProntoMagic ? 'portal.imprimitech.com.br' : 'portal.pontualtech.com.br'
+    const portalBase = process.env.PORTAL_URL || `https://${portalDomainProntoMagic}`
+    // Magic-link no email + WhatsApp fallback: cliente entra sem senha,
+    // ja redirecionado pra OS especifica.
+    const { createAccessToken: _emailMagicTokenPronto } = await import('@/lib/portal-auth')
+    const _magicTokenEmailPronto = _emailMagicTokenPronto(os.customer_id, user.companyId)
+    const _magicRedirectEmailPronto = encodeURIComponent(`/portal/${portalSlug}/os/${os.id}`)
+    const portalUrl = `${portalBase}/portal/${portalSlug}/entrar?t=${_magicTokenEmailPronto}&r=${_magicRedirectEmailPronto}`
     const osLocation = ((os as any).os_location || '').toUpperCase()
     const isLoja = osLocation === 'LOJA' || osLocation === 'BALCAO'
 

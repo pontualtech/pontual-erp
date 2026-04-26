@@ -198,7 +198,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     <p style="margin:0 0 8px;font-size:14px;font-weight:700;color:#0369a1;">📱 Acompanhe sua OS</p>
     <p style="margin:0 0 12px;font-size:13px;color:#0c4a6e;">Acesse o Portal do Cliente ou consulte pelo nosso site:</p>
     <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr>
-      <td style="padding:0 6px;"><a href="${(() => {
+      <td style="padding:0 6px;"><a href="${await (async () => {
         const PORTAL_DOMAIN_BY_SLUG: Record<string, string> = {
           pontualtech: 'portal.pontualtech.com.br',
           imprimitech: 'portal.imprimitech.com.br',
@@ -206,7 +206,12 @@ export async function POST(req: NextRequest, { params }: Params) {
         const sl = os.companies?.slug || ''
         const pb = process.env.PORTAL_URL
           || (sl ? `https://${PORTAL_DOMAIN_BY_SLUG[sl] || `portal.${sl}.com.br`}` : 'https://portal.pontualtech.com.br')
-        return sl ? `${pb}/portal/${sl}` : pb
+        // Magic-link: cliente clica no email e entra no portal sem senha,
+        // ja redirecionado pra OS especifica.
+        const { createAccessToken: catEmailAprov } = await import('@/lib/portal-auth')
+        const tokenEmailAprov = catEmailAprov(os.customer_id, user.companyId)
+        const redirEmailAprov = encodeURIComponent(`/portal/${sl}/os/${os.id}`)
+        return sl ? `${pb}/portal/${sl}/entrar?t=${tokenEmailAprov}&r=${redirEmailAprov}` : pb
       })()}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Portal do Cliente</a></td>
       ${cc.website ? `<td style="padding:0 6px;"><a href="${cc.website}/#consulta-os" style="display:inline-block;padding:10px 20px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Consultar no Site</a></td>` : ''}
     </tr></table>
