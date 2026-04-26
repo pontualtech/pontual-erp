@@ -83,6 +83,7 @@ export async function POST(req: NextRequest) {
     trace.push({ step: 'charge_created', id: chargeId, status: crBody.status })
 
     // 4. Aguarda ate 30s o webhook chegar (poll a cada 1s)
+    const targetChargeId: string = chargeId
     let webhookArrived = false
     let arrivedLog: any = null
     for (let i = 0; i < 30; i++) {
@@ -91,7 +92,7 @@ export async function POST(req: NextRequest) {
         where: {
           company_id: companyId,
           created_at: { gt: new Date(startedAt) },
-          payload: { path: ['payment', 'id'], equals: chargeId },
+          payload: { path: ['payment', 'id'], equals: targetChargeId },
         },
         orderBy: { created_at: 'desc' },
         take: 1,
