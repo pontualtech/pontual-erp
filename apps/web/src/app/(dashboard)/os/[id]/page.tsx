@@ -1187,7 +1187,7 @@ export default function OSDetailPage() {
               <Truck className="h-4 w-4" /> Notificar Coleta
             </button>
           )}
-          {currentStatus?.name?.toLowerCase().includes('aprovad') && (
+          {currentStatus?.name?.toLowerCase().includes('aprovac') && (
             <button type="button" onClick={() => setShowAprovacaoModal(true)}
               className="flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-100 transition-colors">
               <Mail className="h-4 w-4" /> Notificar Aprovacao
