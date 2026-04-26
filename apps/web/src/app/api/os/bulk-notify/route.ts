@@ -64,6 +64,18 @@ export async function POST(req: NextRequest) {
       const statusName = os.module_statuses?.name || 'Atualizado'
       const customerName = os.customers.legal_name || 'Cliente'
 
+      // Magic-link auto-login pra essa OS — usado em todas as variantes
+      // (default, custom whatsapp, default email, custom email).
+      const { buildMagicLink: bml } = await import('@/lib/portal-magic-url')
+      const ml = bml({
+        customerId: os.customer_id!,
+        companyId: user.companyId,
+        slug: company?.slug || 'pontualtech',
+        osId: os.id,
+      })
+      const magicUrl = ml.url
+      const magicToken = ml.token
+
       // Load notification rule for this OS's status
       let notifRule = { email_subject: '', email_message: '', whatsapp_message: '' }
       if (os.module_statuses?.id) {
@@ -76,13 +88,13 @@ export async function POST(req: NextRequest) {
       }
 
       // Build messages
-      const defaultWhatsApp = `Olá ${customerName}! Sua OS-${osNum} está no status: *${statusName}*.\n\nAcompanhe pelo portal: ${portalUrl}/portal/${company?.slug || 'default'}/login`
+      const defaultWhatsApp = `Olá ${customerName}! Sua OS-${osNum} está no status: *${statusName}*.\n\nAcompanhe pelo portal: ${magicUrl}`
       const whatsappMsg = customMessage || notifRule.whatsapp_message
         ?.replace(/\{\{cliente_nome\}\}/g, customerName)
         .replace(/\{\{os_numero\}\}/g, osNum)
         .replace(/\{\{status\}\}/g, statusName)
         .replace(/\{\{empresa\}\}/g, company?.name || '')
-        .replace(/\{\{portal_url\}\}/g, `${portalUrl}/portal/${company?.slug || 'default'}/login`)
+        .replace(/\{\{portal_url\}\}/g, `${magicUrl}`)
         || defaultWhatsApp
 
       const defaultSubject = `${company?.name || 'ERP'} — OS-${osNum} — ${statusName}`
@@ -98,7 +110,7 @@ export async function POST(req: NextRequest) {
           <p>Olá <strong>${customerName}</strong>,</p>
           <p>Sua Ordem de Serviço <strong>OS-${osNum}</strong> está no status: <strong>${statusName}</strong>.</p>
           <p>Acompanhe pelo portal:</p>
-          <p><a href="${portalUrl}/portal/${company?.slug || 'default'}/login" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px">Acessar Portal</a></p>
+          <p><a href="${magicUrl}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px">Acessar Portal</a></p>
           <p style="color:#6b7280;font-size:12px;margin-top:20px">— ${company?.name || 'ERP'}</p>
         </div>`
 
@@ -107,7 +119,7 @@ export async function POST(req: NextRequest) {
         .replace(/\{\{os_numero\}\}/g, osNum)
         .replace(/\{\{status\}\}/g, statusName)
         .replace(/\{\{empresa\}\}/g, company?.name || '')
-        .replace(/\{\{portal_url\}\}/g, `${portalUrl}/portal/${company?.slug || 'default'}/login`)
+        .replace(/\{\{portal_url\}\}/g, `${magicUrl}`)
         || defaultEmailBody
 
       // Send WhatsApp via Meta Cloud API template
@@ -116,13 +128,16 @@ export async function POST(req: NextRequest) {
         if (phone) {
           try {
             const equipment = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ') || 'Equipamento'
-            const waResult = await sendWhatsAppTemplate(user.companyId, phone, 'pontualtech_status_os', 'pt_BR', [
+            // pontualtech_status_os_v2: BODY 3 params + URL button magic-link
+            const fallbackTxt = whatsappMsg
+            const waResult = await sendWhatsAppTemplate(user.companyId, phone, 'pontualtech_status_os_v2', 'pt_BR', [
               { type: 'body', parameters: [
                 { type: 'text', text: osNum },
                 { type: 'text', text: statusName },
                 { type: 'text', text: equipment },
-              ] }
-            ])
+              ] },
+              { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: magicToken }] },
+            ], fallbackTxt)
             entry.whatsapp_sent = waResult.success
           } catch {
             entry.whatsapp_sent = false

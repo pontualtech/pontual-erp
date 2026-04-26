@@ -186,15 +186,17 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     if (data.send_whatsapp && os.customers.mobile) {
       const osNum = String(os.os_number).padStart(4, '0')
-      sendWhatsAppTemplate(auth.companyId, os.customers.mobile, 'pt_cobranca_v2', 'pt_BR', [
-        {
-          type: 'body',
-          parameters: [
-            { type: 'text', text: valueStr },
-            { type: 'text', text: osNum },
-          ],
-        },
-      ]).catch(() => {})
+      // pt_cobranca_v3: BODY {{1}}=valor, {{2}}=os_num. URL button {{1}}=magic_token.
+      const { buildMagicLink: bml } = await import('@/lib/portal-magic-url')
+      const ml = bml({ customerId: os.customer_id, companyId: auth.companyId, slug: os.companies?.slug || 'pontualtech', osId: os.id })
+      const fallback = `*Cobranca PontualTech — OS #${osNum}*\n\nValor: ${valueStr}\nForma: ${billingLabel[data.billing_type]}\n\nPagar:\n${charge.invoiceUrl}\n\nAcompanhar OS:\n${ml.url}`
+      sendWhatsAppTemplate(auth.companyId, os.customers.mobile, 'pt_cobranca_v3', 'pt_BR', [
+        { type: 'body', parameters: [
+          { type: 'text', text: valueStr },
+          { type: 'text', text: osNum },
+        ] },
+        { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: ml.token }] },
+      ], fallback).catch(() => {})
       sentVia.push('whatsapp')
     }
 

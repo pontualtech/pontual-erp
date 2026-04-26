@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { sendCompanyEmail } from '@/lib/send-email'
+import { buildMagicLink } from '@/lib/portal-magic-url'
 
 type Params = { params: { id: string } }
 
@@ -201,7 +202,13 @@ export async function POST(req: NextRequest, { params }: Params) {
       company_email: settingsMap['company.email'] || settingsMap['email'] || '—',
       company_address: companyAddress,
       company_cnpj: settingsMap['company.cnpj'] || settingsMap['cnpj'] || '—',
-      company_portal: settingsMap['company.portal'] || settingsMap['portal'] || '',
+      // Magic-link: substitui o link estatico do portal por auto-login direto na OS.
+      company_portal: c?.id ? buildMagicLink({
+        customerId: c.id,
+        companyId: user.companyId,
+        slug: company?.slug || 'pontualtech',
+        osId: os.id,
+      }).url : (settingsMap['company.portal'] || settingsMap['portal'] || ''),
       company_website: settingsMap['company.website'] || settingsMap['website'] || '',
       company_whatsapp: (settingsMap['company.whatsapp'] || settingsMap['whatsapp'] || settingsMap['company.phone'] || settingsMap['telefone'] || '').replace(/\D/g, ''),
     }
