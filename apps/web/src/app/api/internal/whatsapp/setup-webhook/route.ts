@@ -50,14 +50,19 @@ export async function POST(req: NextRequest) {
     results.before = { error: e.message }
   }
 
-  // 2) POST subscribed_apps (idempotente — se ja inscrito, retorna success)
+  // 2) POST subscribed_apps — pode incluir override_callback_uri + verify_token
+  // pra direcionar eventos do WABA pra uma URL especifica (ex: Chatwoot precisa
+  // ser preservado, senao a integracao de chat quebra).
   try {
-    const subRes = await fetch(`https://graph.facebook.com/v21.0/${wabaId}/subscribed_apps`, {
+    const url = new URL(`https://graph.facebook.com/v21.0/${wabaId}/subscribed_apps`)
+    if (body.override_callback_uri) url.searchParams.set('override_callback_uri', body.override_callback_uri)
+    if (body.verify_token) url.searchParams.set('verify_token', body.verify_token)
+    const subRes = await fetch(url.toString(), {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     })
     const subData = await subRes.json()
-    results.subscribe = { http: subRes.status, data: subData }
+    results.subscribe = { http: subRes.status, data: subData, override: body.override_callback_uri || null }
   } catch (e: any) {
     results.subscribe = { error: e.message }
   }
