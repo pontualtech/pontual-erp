@@ -121,7 +121,23 @@ export async function POST(req: NextRequest) {
     let customer: any = null
     let isNewCustomer = false
 
-    if (docDigits.length >= 11) {
+    // PRIORIDADE 0: customer_id explicito enviado pelo bot/route ja identificou
+    // o cliente correto via auto-identify (incluindo logica de "qual customer
+    // tem mais OS ativas"). Quando o phone e compartilhado entre PF+PJ do mesmo
+    // dono, find-or-create por doc/phone aqui pode escolher errado.
+    const explicitCustomerId = body.customer_id as string | undefined
+    if (explicitCustomerId) {
+      customer = await prisma.customer.findFirst({
+        where: { id: explicitCustomerId, company_id: companyId, deleted_at: null },
+      })
+      if (customer) {
+        console.log(`[Bot/abrir-os] Usando customer_id explicito: ${customer.legal_name}`)
+      } else {
+        console.warn(`[Bot/abrir-os] customer_id ${explicitCustomerId} nao encontrado, caindo em find-or-create`)
+      }
+    }
+
+    if (!customer && docDigits.length >= 11) {
       const byDoc = await prisma.customer.findFirst({
         where: { company_id: companyId, document_number: docDigits, deleted_at: null },
       })
@@ -161,7 +177,7 @@ export async function POST(req: NextRequest) {
         customer = byDoc
       }
       // If CPF/CNPJ provided but not found → new customer (do NOT fallback to phone)
-    } else if (telefone && !docDigits) {
+    } else if (!customer && telefone && !docDigits) {
       // Only search by phone when NO document was provided (e.g. WhatsApp bot without CPF)
       if (telefone.length >= 10) {
         customer = await prisma.customer.findFirst({

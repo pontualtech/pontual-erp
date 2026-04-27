@@ -939,6 +939,10 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       }
     }
 
+    // Customer-id identificado via auto-identify; passado pra /api/bot/abrir-os
+    // pra evitar lookup ambiguo quando phone tem multiplos clientes (PF+PJ).
+    let identifiedCustomerId: string | undefined
+
     // ── AUTO-ENRICH: inject OS data when message mentions an OS number ──
     //   Antes: somente bots de SUPORTE (marta/aline) — vendas (ana/grazi) nao
     //   recebia [CONTEXTO DO CLIENTE], entao tratava cliente recorrente como
@@ -1043,6 +1047,9 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
           const docMatch = query.match(/\b(\d{11})\b/) || query.match(/\b(\d{14})\b/) || query.match(/\b(\d{2})\.?(\d{3})\.?(\d{3})\/?(\d{4})-?(\d{2})\b/)
           let customer: any = null
           let activeOS: OsInfo[] = []
+          // Variavel "identifiedCustomerId" e setada via global wrapper logo abaixo,
+          // pra que o handler ABRIR_OS la em baixo possa passar customer_id explicito
+          // ao endpoint /api/bot/abrir-os e evitar re-lookup ambiguo.
 
           // 1. Try CPF/CNPJ first (most specific)
           if (docMatch) {
@@ -1088,6 +1095,11 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
           }
 
           if (customer) {
+            // Eleva o ID identificado pro escopo externo — usado quando ABRIR_OS
+            // chama /api/bot/abrir-os, evitando que o endpoint re-lookup e
+            // potencialmente escolha cliente errado quando phone e compartilhado.
+            identifiedCustomerId = customer.id
+
             if (activeOS.length > 0) {
               // Check for legacy OS using per-company config range
               const legacyOS = cfg.legacyOsMin > 0
@@ -1277,6 +1289,11 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-Bot-Key': cfg.botApiKey },
           body: JSON.stringify({
+            // Quando o auto-identify ja escolheu o customer correto (priorizando
+            // quem tem mais OS ativas), passa o ID explicito pra evitar que o
+            // endpoint re-lookup e caia em cliente errado quando phone e
+            // compartilhado entre PF e PJ do mesmo dono.
+            customer_id: identifiedCustomerId,
             nome,
             documento,
             telefone,
