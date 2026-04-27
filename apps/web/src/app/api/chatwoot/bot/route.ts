@@ -1319,20 +1319,23 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
 
         if (osNum > 0) {
           await cwSendMessage(cfg, conversationId, `✅ *OS #${osNum}* aberta para ${clienteNome}!`)
-          // Send professional template with button via Cloud API
+          // Send professional template with magic-link button via Cloud API.
+          // Antes usava pt_os_aberta_v2 (sem botao). Agora usa v3 com botao
+          // URL contendo magic-token — cliente clica e entra no portal sem senha.
           try {
             const { sendWhatsAppTemplate } = await import('@/lib/whatsapp/cloud-api')
+            const { createAccessToken: catTpl } = await import('@/lib/portal-auth')
             const osEquip = [parsed.vhsysData?.marca, parsed.vhsysData?.modelo].filter(Boolean).join(' ') || parsed.vhsysData?.equipamento || 'Equipamento'
-            const osDefect = parsed.vhsysData?.defeito || 'A diagnosticar'
-            await sendWhatsAppTemplate(cfg.companyId, phone, 'pt_os_aberta_v2', 'pt_BR', [
+            const tplToken = customerId ? catTpl(customerId, cfg.companyId) : ''
+            await sendWhatsAppTemplate(cfg.companyId, phone, 'pt_os_aberta_v3', 'pt_BR', [
               { type: 'body', parameters: [
                 { type: 'text', text: String(osNum).padStart(4, '0') },
                 { type: 'text', text: osEquip },
-                { type: 'text', text: osDefect },
-              ] }
+              ] },
+              ...(tplToken ? [{ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: tplToken }] }] : []),
             ])
           } catch (e) {
-            console.warn('[Bot] template pt_os_aberta_v2 send failed for OS', osNum, e instanceof Error ? e.message : String(e))
+            console.warn('[Bot] template pt_os_aberta_v3 send failed for OS', osNum, e instanceof Error ? e.message : String(e))
           }
 
           // Send the magic-link directly in the conversation so the customer always
