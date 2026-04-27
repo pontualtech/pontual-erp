@@ -945,7 +945,12 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
     //   novo. Agora roda pra TODOS os bots; quem decide se usa o contexto e
     //   o prompt do bot (Marta lista OSes; Ana usa apenas o nome).
     if (true) {
-      const osMatch = query.match(/(?:os|OS|O\.S\.?|ordem)\s*#?\s*(\d{4,6})/i) || query.match(/\b([4-6]\d{3,4})\b/)
+      // Fix: exigir contexto explicito de OS (palavra "os|ordem|#") antes do
+      // numero. Antes tinha um fallback `\b([4-6]\d{3,4})\b` que pegava
+      // QUALQUER numero 4-5 digitos comecando com 4-6 — incluindo numeros de
+      // rua ("Rua Mooca 4179"), CEPs, etc. Isso fazia Ana classificar
+      // erroneamente como OS legada e oferecer transferencia.
+      const osMatch = query.match(/(?:os|OS|O\.S\.?|ordem)\s*#?\s*(\d{4,6})/i) || query.match(/#\s*(\d{4,6})\b/)
       if (osMatch) {
         const osNum = parseInt(osMatch[1], 10)
         try {
