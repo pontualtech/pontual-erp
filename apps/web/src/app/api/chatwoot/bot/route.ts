@@ -939,8 +939,12 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       }
     }
 
-    // ── AUTO-ENRICH: inject OS data when message mentions an OS number (suporte bots) ──
-    if (cfg.slug.includes('suporte') || cfg.botOrigin?.includes('marta') || cfg.botOrigin?.includes('aline')) {
+    // ── AUTO-ENRICH: inject OS data when message mentions an OS number ──
+    //   Antes: somente bots de SUPORTE (marta/aline) — vendas (ana/grazi) nao
+    //   recebia [CONTEXTO DO CLIENTE], entao tratava cliente recorrente como
+    //   novo. Agora roda pra TODOS os bots; quem decide se usa o contexto e
+    //   o prompt do bot (Marta lista OSes; Ana usa apenas o nome).
+    if (true) {
       const osMatch = query.match(/(?:os|OS|O\.S\.?|ordem)\s*#?\s*(\d{4,6})/i) || query.match(/\b([4-6]\d{3,4})\b/)
       if (osMatch) {
         const osNum = parseInt(osMatch[1], 10)
