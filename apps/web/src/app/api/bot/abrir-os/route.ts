@@ -122,9 +122,44 @@ export async function POST(req: NextRequest) {
     let isNewCustomer = false
 
     if (docDigits.length >= 11) {
-      customer = await prisma.customer.findFirst({
+      const byDoc = await prisma.customer.findFirst({
         where: { company_id: companyId, document_number: docDigits, deleted_at: null },
       })
+
+      // Identity resolution: quando documento + telefone ambos fornecidos,
+      // VALIDAR que o customer achado pelo doc tambem bate com o telefone.
+      // Caso contrario, e situacao onde 2 clientes diferentes (PF+PJ do mesmo
+      // dono) compartilham o telefone — Ana pode ter mandado doc errado
+      // (ex: CNPJ de outra entidade que nao bate com o phone da conversa).
+      // Nesse caso, preferir o customer que TEM o telefone como fonte de verdade.
+      if (byDoc && telefone && telefone.length >= 10) {
+        const docCustomerPhones = [byDoc.mobile, byDoc.phone].filter(Boolean).map(p => String(p).replace(/\D/g, ''))
+        const telDigits = telefone.replace(/\D/g, '').slice(-10)
+        const phoneMatchesDoc = docCustomerPhones.some(p => p.endsWith(telDigits))
+        if (!phoneMatchesDoc) {
+          // Doc aponta pra customer A, mas phone pertence a customer B.
+          // Buscar pelo phone — se achar, prefere esse (mais confiavel).
+          const byPhone = await prisma.customer.findFirst({
+            where: {
+              company_id: companyId, deleted_at: null,
+              OR: [
+                { mobile: { endsWith: telDigits } },
+                { phone: { endsWith: telDigits } },
+              ],
+            },
+          })
+          if (byPhone) {
+            customer = byPhone
+            console.log(`[Bot/abrir-os] Doc ${docDigits} aponta pra "${byDoc.legal_name}" mas phone pertence a "${byPhone.legal_name}" — preferindo o do phone.`)
+          } else {
+            customer = byDoc
+          }
+        } else {
+          customer = byDoc
+        }
+      } else {
+        customer = byDoc
+      }
       // If CPF/CNPJ provided but not found → new customer (do NOT fallback to phone)
     } else if (telefone && !docDigits) {
       // Only search by phone when NO document was provided (e.g. WhatsApp bot without CPF)
