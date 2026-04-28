@@ -56,6 +56,14 @@ export async function GET(req: NextRequest) {
       const bank = r2 ? await r2.json().catch(() => ({})) : null
       return success({ account, bank })
     }
+    // ?info=transactions → diag de financialTransactions (pra ver shape do JSON)
+    if (info === 'transactions') {
+      const paymentParam = req.nextUrl.searchParams.get('payment') || ''
+      const path = paymentParam ? `/financialTransactions?payment=${paymentParam}&limit=5` : '/financialTransactions?limit=5'
+      const r = await asaasFetch(path)
+      const body = await r.json().catch(() => ({}))
+      return success({ asaas_status: r.status, body, sent_path: path })
+    }
 
     const r = await asaasFetch('/webhooks')
     const status = r.status
