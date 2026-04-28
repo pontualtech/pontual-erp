@@ -268,10 +268,11 @@ export class AsaasProvider implements PaymentProvider {
    * transferencias — devolve so as taxas (negativas no Asaas).
    *
    * Ref: https://docs.asaas.com/reference/listar-extrato (financialTransactions)
+   * Param correto: `payment={id}` (NAO paymentId — sem filtro retorna tudo da conta)
    */
   async getFeesForPayment(externalId: string): Promise<PaymentFee[]> {
     try {
-      const data = await this.request('GET', `/financialTransactions?paymentId=${externalId}&limit=100`)
+      const data = await this.request('GET', `/financialTransactions?payment=${externalId}&limit=100`)
       const items = (data?.data || []) as any[]
       const fees: PaymentFee[] = []
       for (const t of items) {
@@ -314,13 +315,14 @@ function mapAsaasTransactionToFee(t: any): PaymentFee | null {
   const amount = Math.round(value * 100) // centavos
   const occurredAt = new Date(t.date || t.createdAt || Date.now())
 
-  // Notificacoes — SMS/email cobrados pelo gateway
-  if (type === 'NOTIFICATION_FEE' || /notif/i.test(desc) || /sms|email/i.test(desc)) {
-    return { type: 'NOTIFICATION', description: desc || 'Notificacao SMS/email', amount, occurredAt }
+  // Notificacoes — SMS/email/whatsapp cobrados pelo gateway.
+  // PT-BR Asaas usa "mensageria" pra agregar SMS/email/notificacoes.
+  if (type === 'NOTIFICATION_FEE' || /notif|mensag|sms|email|whatsapp/i.test(desc)) {
+    return { type: 'NOTIFICATION', description: desc || 'Notificacao/Mensageria', amount, occurredAt }
   }
 
   // Taxa principal (transacao)
-  if (type === 'PAYMENT_FEE' || type === 'BANK_SLIP_FEE' || type === 'PIX_FEE' || /fee/i.test(type)) {
+  if (type === 'PAYMENT_FEE' || type === 'BANK_SLIP_FEE' || type === 'PIX_FEE' || /fee/i.test(type) || /taxa/i.test(desc)) {
     let billingType: BillingType | undefined
     const lower = desc.toLowerCase()
     if (lower.includes('pix')) billingType = 'PIX'

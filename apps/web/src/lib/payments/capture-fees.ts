@@ -62,12 +62,25 @@ export async function captureFeesForPayment(payment: {
     select: { id: true },
   }).catch(() => null)
 
-  // Description discriminada (escolha B): mostra cada fee na linha
+  // Description discriminada (escolha B) — agrupa por tipo pra ficar legivel
+  // mesmo com muitos fees: "PIX 9x R$8.91 + Mensageria 9x R$8.91 = R$17.82"
   const total = fees.reduce((s, f) => s + f.amount, 0)
-  const detailParts = fees.map(f => {
-    const v = (f.amount / 100).toFixed(2)
-    const label = f.type === 'NOTIFICATION' ? 'Notif' : (f.billingType || 'Taxa')
-    return `${label} R$${v}`
+  const groups = new Map<string, { count: number; total: number }>()
+  for (const f of fees) {
+    const label = f.type === 'NOTIFICATION'
+      ? 'Mensageria'
+      : (f.billingType === 'PIX' ? 'PIX'
+        : f.billingType === 'BOLETO' ? 'Boleto'
+        : f.billingType === 'CREDIT_CARD' ? 'Cartao'
+        : 'Taxa')
+    const cur = groups.get(label) || { count: 0, total: 0 }
+    cur.count++
+    cur.total += f.amount
+    groups.set(label, cur)
+  }
+  const detailParts = Array.from(groups.entries()).map(([label, g]) => {
+    const v = (g.total / 100).toFixed(2)
+    return g.count > 1 ? `${label} ${g.count}x R$${v}` : `${label} R$${v}`
   })
   const description = `Taxas ${payment.external_id}: ${detailParts.join(' + ')} = R$${(total / 100).toFixed(2)}`
 
