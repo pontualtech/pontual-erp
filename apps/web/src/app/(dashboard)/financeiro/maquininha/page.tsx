@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { Upload, CheckCircle2, AlertCircle, RefreshCw, Loader2, FileText, Users, ListChecks } from 'lucide-react'
+import { Upload, CheckCircle2, AlertCircle, RefreshCw, Loader2, FileText, Users, ListChecks, Zap, BarChart3 } from 'lucide-react'
 
 interface AcquirerTxn {
   id: string
@@ -47,6 +47,7 @@ export default function MaquininhaHubPage() {
   const [txns, setTxns] = useState<AcquirerTxn[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
+  const [autoMatching, setAutoMatching] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const [matchingTxn, setMatchingTxn] = useState<AcquirerTxn | null>(null)
 
@@ -62,6 +63,26 @@ export default function MaquininhaHubPage() {
   }
 
   useEffect(() => { load() }, [tab])
+
+  async function runAutoMatch() {
+    setAutoMatching(true)
+    try {
+      const res = await fetch('/api/financeiro/maquininha/match-auto', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      const j = await res.json()
+      if (!res.ok) { toast.error(j.error || 'Falha no match auto'); return }
+      const r = j.data
+      if (r.auto_linked > 0) {
+        toast.success(`${r.auto_linked} vinculadas automaticamente! ${r.suggestions} com sugestao manual.`)
+      } else if (r.suggestions > 0) {
+        toast.info(`${r.suggestions} candidatas encontradas — revisar manualmente. Nenhuma com confianca >= 95%.`)
+      } else {
+        toast.info(`Nenhum match automatico encontrado em ${r.processed} transacoes.`)
+      }
+      load()
+    } catch {
+      toast.error('Erro de rede')
+    } finally { setAutoMatching(false) }
+  }
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -94,11 +115,23 @@ export default function MaquininhaHubPage() {
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Maquininha — Conciliacao</h1>
           <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Importe extrato Rede e vincule vendas a OSes</p>
         </div>
-        <div className="flex items-center gap-3">
-          <Link href="/financeiro/maquininha/configurar"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-gray-300 dark:border-zinc-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-800 text-sm font-semibold">
-            <Users className="h-4 w-4" /> Configurar maquininhas
+        <div className="flex items-center gap-2 flex-wrap">
+          <Link href="/financeiro/maquininha/relatorios"
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-gray-300 dark:border-zinc-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-800 text-sm font-semibold cursor-pointer">
+            <BarChart3 className="h-4 w-4" /> Relatorios
           </Link>
+          <Link href="/financeiro/maquininha/configurar"
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-gray-300 dark:border-zinc-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-800 text-sm font-semibold cursor-pointer">
+            <Users className="h-4 w-4" /> Configurar
+          </Link>
+          <button type="button"
+            onClick={runAutoMatch}
+            disabled={autoMatching}
+            title="Vincula automaticamente quando confianca >= 95%"
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-blue-300 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 dark:border-blue-800 disabled:opacity-50 text-blue-800 dark:text-blue-300 text-sm font-bold cursor-pointer">
+            {autoMatching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+            {autoMatching ? 'Buscando...' : 'Match automatico'}
+          </button>
           <input ref={fileRef} type="file" accept=".csv,.txt" hidden onChange={handleUpload} />
           <button type="button"
             onClick={() => fileRef.current?.click()}
