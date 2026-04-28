@@ -9,6 +9,14 @@ import { haversineKm } from '@/lib/geocoding'
 // podem ter 50-100m de extensao. 200m da margem sem ser absurdo.
 const ARRIVED_RADIUS_M = 200
 
+// Sanity checks pra detectar GPS spoofado (motorista mal-intencionado
+// que finge estar perto do cliente pra triggar geofence/auto-arrive).
+// Numeros baseados em fisica + GPS comercial:
+//   - accuracy_m > 1000: GPS muito ruim, provavel manipulado
+//   - velocidade > 200km/h entre pontos consecutivos: impossivel pra carro
+const MAX_ACCURACY_M = 1000
+const MAX_SPEED_KMH = 200
+
 /**
  * POST /api/driver/location
  * Body: { lat: number, lng: number, accuracy_m?: number }
@@ -38,6 +46,38 @@ export async function POST(req: NextRequest) {
 
   const accuracy = Number.isFinite(body.accuracy_m) ? Math.round(body.accuracy_m) : null
   const now = new Date()
+
+  // Sanity check 1: accuracy absurda — GPS comercial moderno raramente
+  // ultrapassa 100m em ambiente urbano. Se chegar com >1000m, ou e dispositivo
+  // com problema sério ou alguem manipulando. Loga e pula update.
+  if (accuracy !== null && accuracy > MAX_ACCURACY_M) {
+    console.warn(`[driver/location] accuracy fora da faixa: ${accuracy}m (driver=${auth.id.slice(0,8)})`)
+    return NextResponse.json({ ok: false, rejected: 'accuracy_out_of_range', accuracy_m: accuracy }, { status: 400 })
+  }
+
+  // Sanity check 2: velocidade entre o ponto anterior e o novo. Se ficar
+  // acima de 200km/h, nao e fisicamente possivel pra carro/moto urbano.
+  // Provavelmente GPS spoof — loga e pula. Comparamos com last_lat/lng do
+  // user_profile (set no update anterior).
+  const prev = await prisma.userProfile.findUnique({
+    where: { id: auth.id },
+    select: { last_lat: true, last_lng: true, last_location_at: true },
+  })
+  if (prev?.last_lat && prev?.last_lng && prev?.last_location_at) {
+    const prevLat = Number(prev.last_lat)
+    const prevLng = Number(prev.last_lng)
+    const distKm = haversineKm({ lat: prevLat, lng: prevLng }, { lat, lng })
+    const elapsedHours = (now.getTime() - prev.last_location_at.getTime()) / (1000 * 60 * 60)
+    if (elapsedHours > 0 && elapsedHours < 0.5) {
+      // So checa se intervalo e <30min. Se motorista voltou apos almoco,
+      // teleporte de 50km e legitimo.
+      const speedKmh = distKm / elapsedHours
+      if (speedKmh > MAX_SPEED_KMH) {
+        console.warn(`[driver/location] velocidade impossivel: ${speedKmh.toFixed(0)}km/h (driver=${auth.id.slice(0,8)}, ${distKm.toFixed(1)}km em ${(elapsedHours*60).toFixed(1)}min)`)
+        return NextResponse.json({ ok: false, rejected: 'impossible_speed', speed_kmh: Math.round(speedKmh) }, { status: 400 })
+      }
+    }
+  }
 
   // Sempre atualiza a posicao do motorista no user_profile — isso permite
   // que /logistica/live mostre o motorista no mapa mesmo SEM rota ativa
