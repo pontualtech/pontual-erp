@@ -56,6 +56,8 @@ model Company {
   nps_surveys         NpsSurvey[]
   payments            Payment[]
   coupons             Coupon[]
+  acquirer_terminal_assignments AcquirerTerminalAssignment[]
+  acquirer_transactions         AcquirerTransaction[]
 
   @@map("companies")
 }
@@ -88,6 +90,7 @@ model UserProfile {
   service_orders    ServiceOrder[]
   logistics_routes  LogisticsRoute[]
   location_history  DriverLocationHistory[]
+  acquirer_terminal_assignments AcquirerTerminalAssignment[]
   companies      Company        @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   roles          Role           @relation(fields: [role_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
@@ -1023,6 +1026,7 @@ model Payment {
   companies        Company       @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   service_orders   ServiceOrder? @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   customers        Customer      @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  acquirer_transaction AcquirerTransaction?
 
   @@index([company_id, service_order_id], map: "idx_payments_company_os")
   @@index([external_id], map: "idx_payments_external")
@@ -1583,4 +1587,88 @@ model Coupon {
   @@index([company_id, customer_id])
   @@index([company_id, used_at]) // query rapida: 'cupons disponiveis desse cliente'
   @@map("coupons")
+}
+
+// ============================================================
+// MODULO MAQUININHA — conciliacao de cartao presencial (Rede etc)
+// ============================================================
+
+// Atribuicao de uma maquininha a um motorista OU a loja, com vigencia.
+// Permite trocar atribuicao no tempo sem perder match historico —
+// pra venda de 28/04 olha quem estava atribuido naquele dia.
+//
+// `assignment_type` define o caminho de match:
+//  - DRIVER: candidatos sao OSes com logistics_stop daquele user_id na data
+//  - STORE: candidatos sao OSes com os_location='LOJA' na data
+model AcquirerTerminalAssignment {
+  id              String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id      String
+  acquirer        String    @default("rede") // rede | cielo | stone | ...
+  terminal_code   String    // 'SD130361', 'SD261883', etc.
+  assignment_type String    // 'DRIVER' | 'STORE'
+  user_id         String?   // FK pro user_profile (null se STORE)
+  valid_from      DateTime  @db.Date
+  valid_to        DateTime? @db.Date // null = vigente
+  notes           String?
+  created_at      DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime? @default(now()) @db.Timestamptz(6)
+  companies       Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user_profiles   UserProfile? @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([company_id, terminal_code, valid_from])
+  @@index([company_id, user_id])
+  @@map("acquirer_terminal_assignments")
+}
+
+// Transacao importada do extrato/API da adquirente. Cada linha corresponde
+// a 1 venda na maquininha. NSU/CV (external_id) e unico por adquirente.
+//
+// Pode estar:
+//  - matched_payment_id=null    → ainda nao conciliada (revisar manual)
+//  - match_method='AUTO'        → vinculada por algoritmo de scoring
+//  - match_method='MANUAL'      → operador escolheu a OS na UI
+//
+// Quando matched, os AccountPayables de taxa (MDR + RA) ja foram criados.
+model AcquirerTransaction {
+  id                          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id                  String
+  acquirer                    String    @default("rede")
+  external_id                 String    // NSU/CV — unico por adquirente
+  authorization_code          String?
+  card_brand                  String?   // mastercard | visa | elo | ...
+  card_last_4                 String?   // 4 ultimos digitos
+  card_masked                 String?   // 522840******9163
+  holder_name                 String?   // raramente disponivel em maquininha
+  modality                    String?   // credit | debit
+  installments                Int       @default(1)
+  gross_amount                Int       // centavos
+  net_amount                  Int       // centavos
+  mdr_fee_amount              Int       @default(0)  // taxa do meio de pagto
+  mdr_fee_percent             Float     @default(0)
+  anticipation_fee_amount     Int       @default(0)  // recebimento automatico (RA)
+  anticipation_fee_percent    Float     @default(0)
+  total_fee_amount            Int       @default(0)
+  transaction_date            DateTime  @db.Date
+  transaction_time            String?   // HH:MM:SS
+  expected_credit_date        DateTime? @db.Date
+  terminal_code               String?   // SD130361 etc — usa pra resolver assignment
+  status                      String    @default("APPROVED") // APPROVED | CANCELLED | CHARGEBACK | EXPIRED
+  matched_payment_id          String?   @unique
+  matched_at                  DateTime?
+  match_method                String?   // 'AUTO' | 'MANUAL' | null
+  match_confidence            Float?    // 0.0-1.0 (so AUTO)
+  raw_data                    Json      @default("{}")
+  imported_at                 DateTime? @default(now()) @db.Timestamptz(6)
+  imported_by                 String?
+  created_at                  DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at                  DateTime? @default(now()) @db.Timestamptz(6)
+  companies                   Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  payments                    Payment?  @relation(fields: [matched_payment_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([company_id, acquirer, external_id])
+  @@index([company_id, transaction_date])
+  @@index([company_id, status])
+  @@index([company_id, matched_payment_id])
+  @@index([company_id, terminal_code, transaction_date])
+  @@map("acquirer_transactions")
 }
