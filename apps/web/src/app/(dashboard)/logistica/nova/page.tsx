@@ -88,9 +88,11 @@ export default function NovaRotaPage() {
   const [bulkMissing, setBulkMissing] = useState<number[]>([])
   const [bulkFilteredInternal, setBulkFilteredInternal] = useState<{ os_number: number; location: string | null }[]>([])
 
-  // Load drivers
+  // Load drivers — usa modo simple (so id+name) que aceita qualquer
+  // usuario com os:view (atendente, admin, etc). Antes usava modo
+  // completo que exigia role=admin, bloqueando atendentes.
   useEffect(() => {
-    fetch('/api/users')
+    fetch('/api/users?simple=true')
       .then(r => r.json())
       .then(d => setDrivers(d.data ?? []))
       .catch(() => toast.error('Erro ao carregar motoristas'))

@@ -60,7 +60,8 @@ export default function DistribuirRotasPage() {
   const [fetching, setFetching] = useState(false)
 
   useEffect(() => {
-    fetch('/api/users')
+    // ?simple=true: aceita atendente (so requer os:view), nao so admin.
+    fetch('/api/users?simple=true')
       .then(r => r.json())
       .then(d => setDrivers(d.data ?? []))
       .catch(() => toast.error('Erro ao carregar motoristas'))
