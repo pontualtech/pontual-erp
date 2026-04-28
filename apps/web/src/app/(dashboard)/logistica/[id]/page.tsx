@@ -369,6 +369,33 @@ export default function RouteDetailPage() {
     }
   }
 
+  const handleNotifyCustomer = async (stopId: string, customerName: string | null) => {
+    if (!confirm(`Enviar mensagem WhatsApp pro ${customerName || 'cliente'} dizendo que o motorista esta a caminho?\n\nO sistema usa a posicao atual do motorista pra calcular o ETA.`)) return
+    setActionLoading(stopId)
+    try {
+      const res = await fetch(`/api/logistics/stops/${stopId}/notify-customer`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+      })
+      const { data, error: msg } = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        toast.error(msg || 'Erro ao notificar cliente')
+        return
+      }
+      if (data?.whatsapp === 'sent') {
+        toast.success(data.eta_minutes
+          ? `Cliente avisado! ETA enviado: ${data.eta_minutes} min`
+          : 'Cliente avisado!')
+      } else if (data?.whatsapp === 'skipped_no_phone') {
+        toast.warning('Cliente sem telefone cadastrado')
+      } else {
+        toast.error('WhatsApp falhou. Use o link manualmente.')
+      }
+      loadRoute()
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
   const handlePostponeStop = async (stopId: string, reason: string) => {
     setActionLoading(stopId)
     try {
@@ -772,6 +799,20 @@ export default function RouteDetailPage() {
                             >
                               <CalendarClock className="h-3 w-3" />
                               Adiar
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isLoadingStop}
+                              onClick={() => handleNotifyCustomer(stop.id, stop.customer_name)}
+                              title={(stop as any).visit_notified_at ? 'Cliente ja foi avisado — clicar reenvia' : 'Enviar WhatsApp avisando que motorista esta a caminho'}
+                              className={`flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium disabled:opacity-50 transition-colors ${
+                                (stop as any).visit_notified_at
+                                  ? 'border-blue-200 text-blue-600 hover:bg-blue-50'
+                                  : 'border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                              }`}
+                            >
+                              {isLoadingStop ? <Loader2 className="h-3 w-3 animate-spin" /> : <span>📞</span>}
+                              {(stop as any).visit_notified_at ? 'Reavisar' : 'Avisar cliente'}
                             </button>
 
                             {/* Acoes de execucao — so rota IN_PROGRESS */}
