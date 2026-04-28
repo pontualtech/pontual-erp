@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
+import { getDistanceAndDuration } from '@/lib/distance-matrix'
 
 /**
  * GET /api/logistica/live
@@ -71,6 +72,34 @@ export async function GET() {
     routes.map(r => r.driver_id).filter(Boolean) as string[]
   )
 
+  // Calcula ETA pra proxima parada PENDING de cada rota IN_PROGRESS.
+  // Usa Distance Matrix (Routes API) com cache 5min compartilhado com
+  // o ETA do app motorista. Custo controlado: rotas planejadas/finalizadas
+  // nao chamam o Google. So as ativas com GPS recente.
+  const etaByRoute = new Map<string, { distance_m: number; duration_s: number; eta_minutes: number; source: string; stop_id: string; customer_name: string | null } | null>()
+  await Promise.all(routes.map(async (r) => {
+    if (r.status !== 'IN_PROGRESS') return
+    if (!r.last_lat || !r.last_lng) return
+    const nextPending = r.stops.find(s => s.status === 'PENDING' && s.lat && s.lng)
+    if (!nextPending || !nextPending.lat || !nextPending.lng) return
+    try {
+      const eta = await getDistanceAndDuration(
+        { lat: Number(r.last_lat), lng: Number(r.last_lng) },
+        { lat: Number(nextPending.lat), lng: Number(nextPending.lng) },
+      )
+      etaByRoute.set(r.id, {
+        distance_m: eta.distance_m,
+        duration_s: eta.duration_s,
+        eta_minutes: Math.ceil(eta.duration_s / 60),
+        source: eta.source,
+        stop_id: nextPending.id,
+        customer_name: nextPending.customer_name,
+      })
+    } catch {
+      etaByRoute.set(r.id, null)
+    }
+  }))
+
   return NextResponse.json({
     data: {
       routes: routes.map(r => ({
@@ -86,6 +115,7 @@ export async function GET() {
           lng: Number(r.last_lng),
           at: r.last_location_at,
         } : null,
+        next_stop_eta: etaByRoute.get(r.id) || null,
         stops: r.stops.map(s => ({
           id: s.id,
           sequence: s.sequence,

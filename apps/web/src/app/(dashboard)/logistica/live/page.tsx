@@ -23,6 +23,7 @@ type LiveRoute = {
   completed_stops: number | null
   total_stops: number | null
   started_at: string | null
+  next_stop_eta: { distance_m: number; duration_s: number; eta_minutes: number; source: string; stop_id: string; customer_name: string | null } | null
   stops: Array<{
     id: string; sequence: number; type: string
     status: string | null; customer_name: string | null; address: string
@@ -307,6 +308,17 @@ function RouteCard({ route, onViewTrail }: { route: LiveRoute; onViewTrail?: (id
       <div className="bg-gray-200 rounded-full h-1.5 overflow-hidden">
         <div className="bg-blue-600 h-full transition-all" style={{ width: `${pct}%` }} />
       </div>
+      {/* ETA pra proxima parada — so aparece em rotas IN_PROGRESS com GPS */}
+      {route.next_stop_eta && (
+        <div className={`mt-2 px-2 py-1.5 rounded-md border text-[11px] flex items-start gap-1.5 ${route.next_stop_eta.source === 'google' ? 'bg-blue-50 border-blue-200 text-blue-800' : 'bg-gray-50 border-gray-200 text-gray-700'}`}>
+          <span className="font-bold shrink-0">⏱️ ~{route.next_stop_eta.eta_minutes}min</span>
+          <span className="truncate">→ {route.next_stop_eta.customer_name || 'proxima'}</span>
+          <span className="text-[9px] ml-auto shrink-0">
+            {(route.next_stop_eta.distance_m / 1000).toFixed(1)}km
+            {route.next_stop_eta.source === 'google' ? ' · trafego real' : ' · estimativa'}
+          </span>
+        </div>
+      )}
       <div className="flex items-center justify-between mt-2">
         {agoMin !== null && (
           <p className="text-[10px] text-gray-400">
