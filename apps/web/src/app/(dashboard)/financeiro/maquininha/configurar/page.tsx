@@ -31,14 +31,14 @@ export default function ConfigurarMaquininhasPage() {
     try {
       const [r1, r2] = await Promise.all([
         fetch(`/api/financeiro/maquininha/terminals${showHistory ? '?include_history=1' : ''}`),
-        fetch('/api/usuarios?active=1'),
+        fetch('/api/users?simple=true'),
       ])
       const j1 = await r1.json()
       const j2 = await r2.json()
       setItems(j1.data || [])
       // Filtra so motoristas
       const allUsers: UserProfile[] = j2.data || j2 || []
-      setUsers(allUsers.filter(u => /motorista|driver/i.test(u.role_id)))
+      setUsers(allUsers.filter(u => /motorista|driver/i.test(u.role_id || '')))
     } catch {
       toast.error('Erro ao carregar')
     } finally { setLoading(false) }
@@ -215,6 +215,7 @@ function CreateModal({ users, presetCode, onClose, onSaved }: {
             <div>
               <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Motorista</label>
               <select value={userId} onChange={e => setUserId(e.target.value)}
+                aria-label="Selecionar motorista"
                 className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800">
                 <option value="">Selecione...</option>
                 {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
