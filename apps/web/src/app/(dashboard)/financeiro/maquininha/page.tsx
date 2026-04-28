@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { Upload, CheckCircle2, AlertCircle, RefreshCw, Loader2, FileText, Users, ListChecks, Zap, BarChart3 } from 'lucide-react'
+import { Upload, CheckCircle2, AlertCircle, RefreshCw, Loader2, FileText, Users, ListChecks, Zap, BarChart3, Cloud } from 'lucide-react'
 
 interface AcquirerTxn {
   id: string
@@ -48,6 +48,7 @@ export default function MaquininhaHubPage() {
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [autoMatching, setAutoMatching] = useState(false)
+  const [syncingRede, setSyncingRede] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const [matchingTxn, setMatchingTxn] = useState<AcquirerTxn | null>(null)
 
@@ -63,6 +64,27 @@ export default function MaquininhaHubPage() {
   }
 
   useEffect(() => { load() }, [tab])
+
+  async function runSyncRede() {
+    setSyncingRede(true)
+    try {
+      const res = await fetch('/api/financeiro/maquininha/sync-rede', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      const j = await res.json()
+      if (!res.ok) {
+        if (res.status === 503) {
+          toast.warning(j.error || 'Configure REDE_CLIENT_ID/SECRET no Coolify primeiro', { duration: 6000 })
+        } else {
+          toast.error(j.error || 'Falha no sync')
+        }
+        return
+      }
+      const r = j.data
+      toast.success(`Sync Rede: ${r.fetched} vendas (${r.inserted} novas, ${r.duplicates} ja existiam) — periodo ${r.period.from} a ${r.period.to}`)
+      load()
+    } catch {
+      toast.error('Erro de rede')
+    } finally { setSyncingRede(false) }
+  }
 
   async function runAutoMatch() {
     setAutoMatching(true)
@@ -131,6 +153,14 @@ export default function MaquininhaHubPage() {
             className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-blue-300 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 dark:border-blue-800 disabled:opacity-50 text-blue-800 dark:text-blue-300 text-sm font-bold cursor-pointer">
             {autoMatching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
             {autoMatching ? 'Buscando...' : 'Match automatico'}
+          </button>
+          <button type="button"
+            onClick={runSyncRede}
+            disabled={syncingRede}
+            title="Puxa vendas direto da API Rede (requer credenciais configuradas)"
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-orange-300 bg-orange-50 hover:bg-orange-100 dark:bg-orange-950/40 dark:border-orange-800 disabled:opacity-50 text-orange-800 dark:text-orange-300 text-sm font-bold cursor-pointer">
+            {syncingRede ? <Loader2 className="h-4 w-4 animate-spin" /> : <Cloud className="h-4 w-4" />}
+            {syncingRede ? 'Sync...' : 'Sync API Rede'}
           </button>
           <input ref={fileRef} type="file" accept=".csv,.txt" hidden onChange={handleUpload} />
           <button type="button"
