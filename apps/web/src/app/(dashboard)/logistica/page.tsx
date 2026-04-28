@@ -67,6 +67,22 @@ export default function LogisticaPage() {
   const [summary, setSummary] = useState<RouteSummary>({ planned: 0, in_progress: 0, completed: 0, pending_stops: 0 })
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [metrics, setMetrics] = useState<{
+    period_days: number
+    totals: { routes: number; stops: number; completed: number; failed: number; postponed: number }
+    rates: { completion_pct: number; failed_pct: number; postponed_pct: number }
+    timing: { avg_minutes_per_stop: number | null; sample_size: number }
+    top_drivers: Array<{ name: string; routes: number; completed: number; total: number; completion_rate: number }>
+  } | null>(null)
+
+  // Carrega metricas dos ultimos 30 dias — independente de "date"
+  // (e historico, nao varia conforme filtro de dia)
+  useEffect(() => {
+    fetch('/api/logistica/metrics?days=30', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.data) setMetrics(d.data) })
+      .catch(() => {})
+  }, [])
 
   const loadRoutes = useCallback(async () => {
     setLoading(true)
@@ -275,6 +291,60 @@ export default function LogisticaPage() {
           )
         })}
       </div>
+
+      {/* Metricas dos ultimos 30 dias */}
+      {metrics && metrics.totals.routes > 0 && (
+        <div className="rounded-xl border bg-white shadow-sm">
+          <div className="border-b px-5 py-3 flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-blue-600" />
+            <h2 className="font-semibold text-gray-900">KPIs — ultimos {metrics.period_days} dias</h2>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-5 divide-y md:divide-y-0 md:divide-x">
+            <div className="p-4 text-center">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Rotas</p>
+              <p className="mt-1 text-2xl font-bold text-gray-900">{metrics.totals.routes}</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">{metrics.totals.stops} paradas total</p>
+            </div>
+            <div className="p-4 text-center">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Conclusao</p>
+              <p className="mt-1 text-2xl font-bold text-green-600">{metrics.rates.completion_pct}%</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">{metrics.totals.completed} concluidas</p>
+            </div>
+            <div className="p-4 text-center">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Adiadas</p>
+              <p className="mt-1 text-2xl font-bold text-amber-600">{metrics.rates.postponed_pct}%</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">{metrics.totals.postponed} paradas</p>
+            </div>
+            <div className="p-4 text-center">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Falhas</p>
+              <p className="mt-1 text-2xl font-bold text-red-600">{metrics.rates.failed_pct}%</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">{metrics.totals.failed} paradas</p>
+            </div>
+            <div className="p-4 text-center">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Tempo medio</p>
+              <p className="mt-1 text-2xl font-bold text-blue-600">
+                {metrics.timing.avg_minutes_per_stop !== null ? `${metrics.timing.avg_minutes_per_stop}min` : '—'}
+              </p>
+              <p className="text-[10px] text-gray-400 mt-0.5">por parada (n={metrics.timing.sample_size})</p>
+            </div>
+          </div>
+          {metrics.top_drivers.length > 0 && (
+            <div className="border-t px-5 py-3">
+              <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Top motoristas</p>
+              <div className="space-y-1.5">
+                {metrics.top_drivers.map((d, i) => (
+                  <div key={d.name} className="flex items-center gap-2 text-sm">
+                    <span className="text-xs text-gray-400 w-5">{i + 1}.</span>
+                    <span className="font-medium text-gray-900 flex-1 truncate">{d.name}</span>
+                    <span className="text-xs text-gray-500">{d.completed}/{d.total} paradas</span>
+                    <span className="text-xs font-bold text-green-600 w-12 text-right">{d.completion_rate}%</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Route List */}
       <div className="rounded-xl border bg-white shadow-sm">
