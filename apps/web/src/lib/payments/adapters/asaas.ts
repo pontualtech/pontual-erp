@@ -263,19 +263,36 @@ export class AsaasProvider implements PaymentProvider {
   }
 
   /**
-   * Busca todas as movimentacoes financeiras vinculadas ao pagamento e
-   * mapeia pra PaymentFee[]. Filtra entradas (PAYMENT_RECEIVED) e
-   * transferencias — devolve so as taxas (negativas no Asaas).
+   * Busca taxas vinculadas a 1 payment. O endpoint /financialTransactions
+   * do Asaas v3 NAO respeita filtro `?paymentId=` ou `?payment=` no query
+   * (testado: retorna toda a conta independente). Solucao: buscar pagina
+   * por pagina e filtrar local pelo campo `paymentId` retornado em cada
+   * item. Cada item tem: { paymentId, type, value, date, description }.
    *
-   * Ref: https://docs.asaas.com/reference/listar-extrato (financialTransactions)
-   * Param correto: `payment={id}` (NAO paymentId — sem filtro retorna tudo da conta)
+   * Limite: ate 5 paginas (500 transacoes recentes). Webhook chega logo
+   * apos pagamento, entao as fees relevantes ficam no topo do extrato.
+   *
+   * Ref: https://docs.asaas.com/reference/listar-extrato
    */
   async getFeesForPayment(externalId: string): Promise<PaymentFee[]> {
+    const matches: any[] = []
     try {
-      const data = await this.request('GET', `/financialTransactions?payment=${externalId}&limit=100`)
-      const items = (data?.data || []) as any[]
+      const pageSize = 100
+      for (let page = 0; page < 5; page++) {
+        const offset = page * pageSize
+        const data = await this.request('GET', `/financialTransactions?limit=${pageSize}&offset=${offset}`)
+        const items = (data?.data || []) as any[]
+        if (items.length === 0) break
+        for (const t of items) {
+          if (t.paymentId === externalId) matches.push(t)
+        }
+        // Otimizacao: se ja achei e a pagina seguinte e mais antiga que
+        // a transacao mais recente vinculada, posso parar
+        if (matches.length > 0 && items.length < pageSize) break
+        if (!data?.hasMore) break
+      }
       const fees: PaymentFee[] = []
-      for (const t of items) {
+      for (const t of matches) {
         const fee = mapAsaasTransactionToFee(t)
         if (fee && fee.amount > 0) fees.push(fee)
       }
@@ -317,7 +334,15 @@ function mapAsaasTransactionToFee(t: any): PaymentFee | null {
 
   // Notificacoes — SMS/email/whatsapp cobrados pelo gateway.
   // PT-BR Asaas usa "mensageria" pra agregar SMS/email/notificacoes.
-  if (type === 'NOTIFICATION_FEE' || /notif|mensag|sms|email|whatsapp/i.test(desc)) {
+  // Tipos especificos descobertos:
+  //   - PAYMENT_MESSAGING_NOTIFICATION_FEE (Asaas v3)
+  //   - NOTIFICATION_FEE (legacy)
+  if (
+    type === 'NOTIFICATION_FEE' ||
+    type === 'PAYMENT_MESSAGING_NOTIFICATION_FEE' ||
+    /messag|notif/i.test(type) ||
+    /notif|mensag|sms|email|whatsapp/i.test(desc)
+  ) {
     return { type: 'NOTIFICATION', description: desc || 'Notificacao/Mensageria', amount, occurredAt }
   }
 
