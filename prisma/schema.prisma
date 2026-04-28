@@ -1,0 +1,153 @@
+// =============================================================================
+// VOIP — Telefonia Fase 1 (PBX + ramal-ramal)
+// =============================================================================
+// Migration: 0050_telefonia_f1
+// Multi-tenant: TODAS as tabelas têm companyId NOT NULL + RLS
+// Encryption: secrets via AES-256-GCM (lib/voip/encryption.ts wrap em lib/encryption.ts)
+// Audit: voip_audit_log para LGPD + debugging
+// =============================================================================
+
+enum VoipAuthMethod {
+  IP_BASED      // Sonax autoriza IP público da VPS (recomendado)
+  USER_SECRET   // Registration outbound com user/pass
+
+  @@map("voip_auth_method")
+}
+
+enum VoipExtensionStatus {
+  ACTIVE        // Ramal habilitado, pode registrar
+  DISABLED      // Ramal desativado (ex: funcionário desligado)
+  PROVISIONING  // Cadastrado mas config Asterisk ainda não gerada
+
+  @@map("voip_extension_status")
+}
+
+// -----------------------------------------------------------------------------
+// 1) voip_providers — config trunk SIP por empresa
+// -----------------------------------------------------------------------------
+model VoipProvider {
+  id                String              @id @default(uuid())
+  companyId         String              @map("company_id")
+  name              String              // ex: "Sonax PontualTech"
+  hostOutbound      String              @map("host_outbound")     // proxy.sonavoip.com.br
+  hostInbound       String?             @map("host_inbound")      // did.sonavoip.com.br
+  port              Int                 @default(5060)
+  transport         String              @default("udp")           // udp | tcp | tls
+  authMethod        VoipAuthMethod      @map("auth_method")
+  username          String?                                       // só se authMethod=USER_SECRET
+  secretEncrypted   String?             @map("secret_encrypted")  // AES-256-GCM (lib/encryption)
+  matchIp           String?             @map("match_ip")          // só se authMethod=IP_BASED (CIDR ou IP)
+  codecs            String[]            @default(["ulaw", "alaw"])
+  dtmfMode          String              @default("rfc4733") @map("dtmf_mode")
+  qualifyFrequency  Int                 @default(60) @map("qualify_frequency")
+  contextOutbound   String              @default("from-internal") @map("context_outbound")
+  contextInbound    String              @map("context_inbound")   // ex: from-sonax-pontualtech
+  isActive          Boolean             @default(true) @map("is_active")
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+  deletedAt         DateTime?           @map("deleted_at")
+  createdBy         String?             @map("created_by")
+  updatedBy         String?             @map("updated_by")
+
+  company           Company             @relation(fields: [companyId], references: [id])
+  inboundNumbers    VoipInboundNumber[]
+
+  @@index([companyId, isActive])
+  @@index([companyId, deletedAt])
+  @@map("voip_providers")
+}
+
+// -----------------------------------------------------------------------------
+// 2) voip_extensions — ramais SIP (100-109)
+// -----------------------------------------------------------------------------
+model VoipExtension {
+  id                String                @id @default(uuid())
+  companyId         String                @map("company_id")
+  number            String                // "100", "101", ..., "109"
+  displayName       String                @map("display_name") // "João Atendimento"
+  userId            String?               @map("user_id")      // FK opcional pra users
+  secretEncrypted   String                @map("secret_encrypted") // AES-256-GCM
+  context           String                @default("from-pontualtech")
+  tenantTag         String                @map("tenant_tag")   // = companyId slug, vai pro pjsip tenantid=
+  codecs            String[]              @default(["ulaw", "alaw"])
+  dtmfMode          String                @default("rfc4733") @map("dtmf_mode")
+  maxContacts       Int                   @default(2) @map("max_contacts")
+  status            VoipExtensionStatus   @default(PROVISIONING)
+  callLimit         Int?                  @map("call_limit")
+  createdAt         DateTime              @default(now()) @map("created_at")
+  updatedAt         DateTime              @updatedAt @map("updated_at")
+  deletedAt         DateTime?             @map("deleted_at")
+  createdBy         String?               @map("created_by")
+  updatedBy         String?               @map("updated_by")
+
+  company           Company               @relation(fields: [companyId], references: [id])
+  presence          VoipPresence?
+
+  @@unique([companyId, number])  // 100 só uma vez por empresa
+  @@index([companyId, status])
+  @@index([companyId, userId])
+  @@index([companyId, deletedAt])
+  @@map("voip_extensions")
+}
+
+// -----------------------------------------------------------------------------
+// 3) voip_inbound_numbers — DIDs (números recebidos), F1 cadastra mas não roteia
+// -----------------------------------------------------------------------------
+model VoipInboundNumber {
+  id                String           @id @default(uuid())
+  companyId         String           @map("company_id")
+  providerId        String           @map("provider_id")
+  ddd               String           @db.Char(2)            // "11"
+  number            String                                  // "26263841" (sem DDD)
+  e164              String                                  // "+551126263841" — normalizado, indexável
+  label             String           // "Suporte" | "Vendas"
+  isActive          Boolean          @default(true) @map("is_active")
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+  createdBy         String?          @map("created_by")
+
+  company           Company          @relation(fields: [companyId], references: [id])
+  provider          VoipProvider     @relation(fields: [providerId], references: [id])
+
+  @@unique([e164])  // E.164 é global unique (mesmo DID não pode ser de 2 empresas)
+  @@index([companyId])
+  @@index([providerId])
+  @@map("voip_inbound_numbers")
+}
+
+// -----------------------------------------------------------------------------
+// 4) voip_presence — status de cada ramal (livre/em-chamada)
+// -----------------------------------------------------------------------------
+model VoipPresence {
+  extensionId       String           @id @map("extension_id")  // 1-1 com extension
+  companyId         String           @map("company_id")
+  status            String           @default("offline")       // offline | available | in_call | unavailable
+  contactUri        String?          @map("contact_uri")
+  lastSeenAt        DateTime?        @map("last_seen_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+
+  extension         VoipExtension    @relation(fields: [extensionId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, status])
+  @@map("voip_presence")
+}
+
+// -----------------------------------------------------------------------------
+// 5) voip_audit_log — LGPD + debugging
+// -----------------------------------------------------------------------------
+model VoipAuditLog {
+  id                String           @id @default(uuid())
+  companyId         String           @map("company_id")
+  userId            String?          @map("user_id")
+  action            String           // "provider.created", "extension.updated", "config.regenerated"
+  entityType        String           @map("entity_type")
+  entityId          String?          @map("entity_id")
+  diff              Json?            // { before: {...}, after: {...} } — sem secrets em claro
+  ipAddress         String?          @map("ip_address")
+  userAgent         String?          @map("user_agent")
+  createdAt         DateTime         @default(now()) @map("created_at")
+
+  @@index([companyId, createdAt(sort: Desc)])
+  @@index([entityType, entityId])
+  @@map("voip_audit_log")
+}
