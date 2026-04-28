@@ -33,6 +33,22 @@ export interface WebhookPayload {
   [key: string]: unknown
 }
 
+/**
+ * Taxa cobrada pelo gateway de pagamento sobre uma cobranca.
+ * Pode ser taxa de transacao (PIX/Boleto/Cartao) ou taxa de
+ * notificacao (SMS/email enviado pelo gateway ao cliente).
+ *
+ * Provider-agnostic: cada adapter mapeia seus eventos especificos
+ * (Asaas FinancialTransaction, Inter Tarifa, etc.) pra essa shape.
+ */
+export interface PaymentFee {
+  type: 'TRANSACTION' | 'NOTIFICATION' | 'OTHER'
+  billingType?: BillingType  // null pra notificacoes ou outros
+  description: string         // ja em portugues, pra entrar direto em AccountPayable.description
+  amount: number              // centavos (sempre positivo)
+  occurredAt: Date
+}
+
 export interface CreateChargeParams {
   billingType: BillingType
   amount: number          // centavos
@@ -66,4 +82,11 @@ export interface PaymentProvider {
   validateWebhook(headers: Record<string, string>, body: string): boolean
 
   parseWebhook(body: string): WebhookPayload
+
+  /**
+   * Retorna taxas cobradas sobre 1 pagamento (transacao + notificacoes).
+   * Opcional: providers que nao expoem isso retornam [].
+   * Geralmente chamado apos webhook PAYMENT_RECEIVED.
+   */
+  getFeesForPayment?(externalId: string): Promise<PaymentFee[]>
 }

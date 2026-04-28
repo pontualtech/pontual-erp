@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { prisma } from '@pontual/db'
 import { success, error, handleError } from '@/lib/api-response'
 import { getPaymentProviderForAccount, getPaymentProvider } from '@/lib/payments/factory'
+import { captureFeesForPayment } from '@/lib/payments/capture-fees'
 import { logAudit } from '@/lib/audit'
 
 /**
@@ -157,6 +158,17 @@ export async function POST(req: NextRequest) {
             },
           })
         })
+
+        // Capturar taxas do gateway (fora da transacao — fetch externo)
+        try {
+          const r = await captureFeesForPayment(p)
+          if (r.ok && r.fees_count > 0) {
+            const last = details[details.length - 1]
+            if (last) last.fees = { count: r.fees_count, ap_id: r.ap_id }
+          }
+        } catch (e) {
+          console.warn('[Reconcile-Fees] payment', p.id, e instanceof Error ? e.message : e)
+        }
 
         paid++
       } catch (e) {

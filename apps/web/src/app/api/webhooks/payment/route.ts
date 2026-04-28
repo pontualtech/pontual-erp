@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { getPaymentProvider } from '@/lib/payments/factory'
+import { captureFeesForPayment } from '@/lib/payments/capture-fees'
 
 // Valid status transitions — reject anything not in this map
 const VALID_TRANSITIONS: Record<string, string[]> = {
@@ -311,6 +312,24 @@ export async function POST(req: NextRequest) {
     }
 
     console.log(`[Webhook] ${event}: Payment ${payment.id} → ${result.action} (${result.reason})`)
+
+    // Capturar taxas do gateway (transacao + notificacoes) e gravar 1
+    // AccountPayable consolidado. Fora da transacao Prisma — fetch externo.
+    // Fire-and-forget: erros nao revertem a baixa.
+    if (result.action === 'processed' && newStatus === 'RECEIVED' && payment.receivable_id) {
+      ;(async () => {
+        try {
+          const r = await captureFeesForPayment(payment)
+          if (r.ok && r.fees_count > 0) {
+            console.log(`[Fees] payment ${payment.id} capturado: ${r.fees_count} fees → AP ${r.ap_id}`)
+          } else if (!r.ok) {
+            console.warn(`[Fees] payment ${payment.id} falhou: ${r.error}`)
+          }
+        } catch (e) {
+          console.error('[Fees] erro inesperado:', e)
+        }
+      })()
+    }
 
     // Notificar cliente que pagamento foi recebido (fire-and-forget).
     // Dispara em RECEIVED (auto-baixa, fundos disponiveis) — nao em CONFIRMED.

@@ -1,5 +1,5 @@
 import { timingSafeEqual } from 'crypto'
-import type { PaymentProvider, PixCharge, PaymentStatus, WebhookPayload, Charge, CreateChargeParams } from '../types'
+import type { PaymentProvider, PixCharge, PaymentStatus, WebhookPayload, Charge, CreateChargeParams, PaymentFee, BillingType } from '../types'
 
 const ENV_API_URL = () => process.env.ASAAS_API_URL || 'https://api-sandbox.asaas.com/v3'
 const ENV_API_KEY = () => process.env.ASAAS_API_KEY || ''
@@ -261,4 +261,74 @@ export class AsaasProvider implements PaymentProvider {
       paidAt: payment.paymentDate || payment.confirmedDate || payment.clientPaymentDate || undefined,
     }
   }
+
+  /**
+   * Busca todas as movimentacoes financeiras vinculadas ao pagamento e
+   * mapeia pra PaymentFee[]. Filtra entradas (PAYMENT_RECEIVED) e
+   * transferencias — devolve so as taxas (negativas no Asaas).
+   *
+   * Ref: https://docs.asaas.com/reference/listar-extrato (financialTransactions)
+   */
+  async getFeesForPayment(externalId: string): Promise<PaymentFee[]> {
+    try {
+      const data = await this.request('GET', `/financialTransactions?paymentId=${externalId}&limit=100`)
+      const items = (data?.data || []) as any[]
+      const fees: PaymentFee[] = []
+      for (const t of items) {
+        const fee = mapAsaasTransactionToFee(t)
+        if (fee && fee.amount > 0) fees.push(fee)
+      }
+      return fees
+    } catch (err) {
+      console.error('[Asaas] getFeesForPayment failed', { externalId, err: err instanceof Error ? err.message : err })
+      return []
+    }
+  }
+}
+
+/**
+ * Mapeia 1 entrada de FinancialTransaction do Asaas pra PaymentFee.
+ * Retorna null pra entradas que nao sao taxa (ex: PAYMENT_RECEIVED).
+ *
+ * Tipos comuns Asaas:
+ *  - PAYMENT_FEE             → taxa do meio de pagamento (PIX/Boleto/Cartao)
+ *  - PAYMENT_DUNNING_RECEIVED → recebimento (entrada, ignorar)
+ *  - ASAAS_FEE_REVERSAL      → estorno de taxa (ignorar — vira saldo positivo)
+ *  - NOTIFICATION_FEE        → notificacao SMS/email
+ *  - PAYMENT_FEE_REVERSAL    → estorno (ignorar)
+ *  - ANTICIPATION_FEE        → taxa de antecipacao
+ *  - CHARGEBACK_FEE          → taxa de chargeback
+ */
+function mapAsaasTransactionToFee(t: any): PaymentFee | null {
+  const type = String(t.type || '').toUpperCase()
+  const desc = String(t.description || '')
+  const value = Math.abs(Number(t.value || 0))
+  if (value === 0) return null
+
+  // Ignora entradas e estornos (nao sao despesa)
+  if (type === 'PAYMENT_RECEIVED' || type === 'PAYMENT_DUNNING_RECEIVED' || type === 'TRANSFER') return null
+  if (type.includes('REVERSAL') || type.includes('REFUND')) return null
+  // Asaas as vezes manda value positivo pra entrada — confere se a transacao e despesa
+  if (Number(t.value) > 0 && !type.includes('FEE')) return null
+
+  const amount = Math.round(value * 100) // centavos
+  const occurredAt = new Date(t.date || t.createdAt || Date.now())
+
+  // Notificacoes — SMS/email cobrados pelo gateway
+  if (type === 'NOTIFICATION_FEE' || /notif/i.test(desc) || /sms|email/i.test(desc)) {
+    return { type: 'NOTIFICATION', description: desc || 'Notificacao SMS/email', amount, occurredAt }
+  }
+
+  // Taxa principal (transacao)
+  if (type === 'PAYMENT_FEE' || type === 'BANK_SLIP_FEE' || type === 'PIX_FEE' || /fee/i.test(type)) {
+    let billingType: BillingType | undefined
+    const lower = desc.toLowerCase()
+    if (lower.includes('pix')) billingType = 'PIX'
+    else if (lower.includes('boleto') || lower.includes('bank slip')) billingType = 'BOLETO'
+    else if (lower.includes('cart') || lower.includes('credit')) billingType = 'CREDIT_CARD'
+    return { type: 'TRANSACTION', billingType, description: desc || 'Taxa de transacao', amount, occurredAt }
+  }
+
+  // Outras taxas
+  return { type: 'OTHER', description: desc || type, amount, occurredAt }
 }
