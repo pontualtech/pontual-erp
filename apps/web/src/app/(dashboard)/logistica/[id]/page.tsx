@@ -125,6 +125,7 @@ export default function RouteDetailPage() {
 
   // Postpone modal
   const [postponeModal, setPostponeModal] = useState<{ stopId: string } | null>(null)
+  const [signatureModal, setSignatureModal] = useState<{ url: string; signerName: string | null } | null>(null)
   const [postponeReason, setPostponeReason] = useState('')
 
   // Labels modal (etiquetas de coletas)
@@ -189,6 +190,7 @@ export default function RouteDetailPage() {
       if (e.key === 'Escape') {
         setFailureModal(null)
         setPostponeModal(null)
+        setSignatureModal(null)
       }
     }
     document.addEventListener('keydown', handleEsc)
@@ -730,14 +732,13 @@ export default function RouteDetailPage() {
                         {stop.signature_url && (
                           <div className="mt-2 flex items-center gap-2">
                             <FileSignature className="h-3.5 w-3.5 text-gray-400" />
-                            <a
-                              href={stop.signature_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
+                            <button
+                              type="button"
+                              onClick={() => setSignatureModal({ url: stop.signature_url!, signerName: (stop as any).signer_name || null })}
                               className="text-xs text-blue-600 hover:underline"
                             >
                               Ver assinatura
-                            </a>
+                            </button>
                           </div>
                         )}
 
@@ -1045,6 +1046,43 @@ export default function RouteDetailPage() {
                   Cancelar
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Signature Modal — exibe a assinatura inline (data URL grande nao
+          abre em nova aba; modal mostra direto no <img>) */}
+      {signatureModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={() => setSignatureModal(null)}>
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                <FileSignature className="h-5 w-5 text-gray-500" />
+                Assinatura
+              </h3>
+              <button type="button" onClick={() => setSignatureModal(null)}
+                aria-label="Fechar" className="text-gray-400 hover:text-gray-700">
+                <XCircle className="h-5 w-5" />
+              </button>
+            </div>
+            {signatureModal.signerName && (
+              <p className="text-sm text-gray-600 mb-2">
+                Assinada por: <strong>{signatureModal.signerName}</strong>
+              </p>
+            )}
+            <div className="border rounded-lg bg-gray-50 p-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={signatureModal.url} alt="Assinatura"
+                className="w-full h-auto" />
+            </div>
+            <div className="flex justify-end mt-3">
+              <a href={signatureModal.url} download="assinatura.png"
+                className="text-xs text-blue-600 hover:underline">
+                Baixar PNG
+              </a>
             </div>
           </div>
         </div>
