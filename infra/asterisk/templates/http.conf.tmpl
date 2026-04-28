@@ -1,0 +1,12 @@
+;==============================================================================
+; http.conf — gerado em {{generatedAt}}
+; Bind 127.0.0.1 — só Next.js do mesmo host (network_mode: host) acessa ARI.
+; Externamente o ARI fica fechado. SSL/TLS público vem na F2 se necessário.
+;==============================================================================
+
+[general]
+enabled=yes
+bindaddr=127.0.0.1
+bindport=8088
+prefix=
+sessionlimit=100

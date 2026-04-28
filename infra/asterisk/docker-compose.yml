@@ -1,0 +1,47 @@
+# ============================================================================
+# Asterisk 20 — PontualERP Telefonia Fase 1
+# Deploy: Coolify Raw Compose Deployment
+# Network: host mode (RTP precisa de UDP livre 10000-20000 sem docker-proxy)
+# ============================================================================
+services:
+  asterisk:
+    image: andrius/asterisk:20-cert
+    container_name: pontualtech-asterisk
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - asterisk-config:/etc/asterisk
+      - asterisk-recordings:/var/spool/asterisk/monitor   # F2 vai gravar aqui
+      - asterisk-logs:/var/log/asterisk
+      - asterisk-lib:/var/lib/asterisk
+    environment:
+      - TZ=America/Sao_Paulo
+      - ARI_USER=erp
+      - ARI_PASSWORD=${ARI_PASSWORD}
+    healthcheck:
+      test: ["CMD", "asterisk", "-rx", "core ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M       # 10 ramais idle ~50MB; teto previne OOM-kill da VPS
+        reservations:
+          memory: 128M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  asterisk-config:
+    name: pontualtech-asterisk-config
+  asterisk-recordings:
+    name: pontualtech-asterisk-recordings
+  asterisk-logs:
+    name: pontualtech-asterisk-logs
+  asterisk-lib:
+    name: pontualtech-asterisk-lib

@@ -1,0 +1,42 @@
+;==============================================================================
+; extensions.conf — gerado em {{generatedAt}}
+;==============================================================================
+
+[globals]
+RINGTIME=20
+
+;==============================================================================
+; CONTEXT INTERNO (ramal-ramal por tenant)
+;==============================================================================
+{{#tenants}}
+[from-{{tenantTag}}]
+exten => _1XX,1,NoOp(Internal call from ${CALLERID(num)} to ${EXTEN})
+ same => n,Set(__TENANT={{tenantTag}})
+ same => n,Dial(PJSIP/${EXTEN},${RINGTIME})
+ same => n,Hangup()
+
+; Echo test (validação de áudio bidirecional)
+exten => *43,1,Answer()
+ same => n,Echo()
+ same => n,Hangup()
+
+; Hangup test
+exten => *60,1,Hangup()
+
+; Catch-all — F1 não roteia números fora do range 1XX
+exten => _X.,1,NoOp(F1: numero ${EXTEN} nao roteado pra tenant {{tenantTag}})
+ same => n,Playback(invalid)
+ same => n,Hangup()
+
+{{/tenants}}
+
+;==============================================================================
+; CONTEXT INBOUND TRUNK (Sonax) — F1 stub: derruba chamadas externas
+;==============================================================================
+{{#providers}}
+[{{contextInbound}}]
+; F1: chamadas externas NÃO são tratadas. Vão pra F2.
+exten => _X.,1,NoOp(F1: inbound trunk {{name}} - chamada externa ignorada)
+ same => n,Hangup()
+
+{{/providers}}
