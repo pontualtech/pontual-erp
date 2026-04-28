@@ -131,6 +131,7 @@ export default function FinanceiroPage() {
             { label: 'Conciliação', href: '/financeiro/conciliacao', icon: Receipt, desc: 'Importar OFX', color: 'text-teal-600 bg-teal-50' },
             { label: 'Boletos', href: '/financeiro/boletos', icon: Receipt, desc: 'Emitir e gerenciar', color: 'text-orange-600 bg-orange-50' },
             { label: 'CNAB Inter', href: '/financeiro/cnab', icon: FileSpreadsheet, desc: 'Remessa e retorno CNAB 400', color: 'text-amber-600 bg-amber-50' },
+            { label: 'Maquininha', href: '/financeiro/maquininha', icon: CreditCard, desc: 'Conciliacao cartao Rede', color: 'text-rose-600 bg-rose-50' },
           ].map(item => {
             const Icon = item.icon
             return (
