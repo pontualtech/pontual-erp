@@ -7,6 +7,7 @@ import {
   Truck, Plus, Loader2, ArrowLeft, MapPin, Clock,
   Play, CheckCircle2, Eye, Route, CircleDot, Calendar,
   MessageCircle, Trash2, Users, BarChart3, ArrowRightLeft,
+  AlertTriangle,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -218,6 +219,14 @@ export default function LogisticaPage() {
           >
             <MapPin className="h-4 w-4" />
             Ao Vivo
+          </Link>
+          <Link
+            href="/logistica/alertas"
+            className="flex items-center gap-2 rounded-lg border border-amber-300 bg-white px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50 transition-colors"
+            title="Historico de alertas de inatividade dos motoristas"
+          >
+            <AlertTriangle className="h-4 w-4" />
+            Alertas
           </Link>
           <Link
             href="/logistica/distribuir"
