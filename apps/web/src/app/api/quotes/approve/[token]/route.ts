@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { prisma } from '@pontual/db'
 import { success, error, handleError } from '@/lib/api-response'
+import { propagateQuoteApprovalToOS } from '@/lib/quote-os-sync'
 
 // PUBLIC ROUTE — no auth required, token-based access
 
@@ -80,12 +81,18 @@ export async function POST(req: NextRequest, { params }: Params) {
     const { action } = await req.json()
 
     if (action === 'approve') {
-      await prisma.quote.update({
-        where: { id: quote.id },
-        data: {
-          status: 'APPROVED',
-          approved_at: new Date(),
-        },
+      // Atomico: aprova quote + propaga total_amount pra os.total_cost.
+      // Sem essa propagacao, conciliacao da maquininha (match-engine) nao
+      // acha a OS quando o cliente paga, pois compara por os.total_cost.
+      await prisma.$transaction(async (tx) => {
+        await tx.quote.update({
+          where: { id: quote.id },
+          data: {
+            status: 'APPROVED',
+            approved_at: new Date(),
+          },
+        })
+        await propagateQuoteApprovalToOS(tx, quote.id)
       })
 
       // Notify via n8n webhook (fire-and-forget)

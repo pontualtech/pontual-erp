@@ -104,13 +104,30 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const dateFrom = url.get('dateFrom')
-    const dateTo = url.get('dateTo')
+    // Filtro de data: aceita ambos `dateFrom`/`dateTo` (UI antiga) e
+    // `from`/`to` (modal de match maquininha). Faz parse YYYY-MM-DD.
+    const dateFrom = url.get('dateFrom') || url.get('from')
+    const dateTo = url.get('dateTo') || url.get('to')
     if (dateFrom || dateTo) {
       where.created_at = {}
       if (dateFrom) where.created_at.gte = new Date(dateFrom + 'T00:00:00.000Z')
       if (dateTo) where.created_at.lte = new Date(dateTo + 'T23:59:59.999Z')
     }
+
+    // Filtro por valor exato (em centavos). Usado pelo modal "Vincular
+    // transacao a uma OS" pra auto-listar candidatas pelo valor da venda
+    // de cartao. Aceita float (R$) ou int (centavos).
+    const totalCostRaw = url.get('total_cost')
+    if (totalCostRaw) {
+      const n = Number(totalCostRaw)
+      if (Number.isFinite(n) && n > 0) {
+        // Heuristica: se vier como float (ex 795.6), converte pra centavos.
+        // Se vier inteiro >= 100, assume centavos. Threshold conservador.
+        const cents = Number.isInteger(n) && n >= 100 ? n : Math.round(n * 100)
+        where.total_cost = cents
+      }
+    }
+
     if (technicianId) where.technician_id = technicianId
     if (priority) where.priority = priority
     if (osType) where.os_type = osType
