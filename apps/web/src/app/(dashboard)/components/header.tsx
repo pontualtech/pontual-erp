@@ -7,6 +7,7 @@ import type { AuthUser } from '@/lib/auth'
 import { Search, ChevronRight, LogOut, User, Settings, Wrench, Users, Package, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 import { NotificationBell } from './notification-bell'
+import { MissedCallsBell } from '@/components/voip/MissedCallsBell'
 
 interface SearchResults {
   os: { id: string; os_number: number; equipment_type: string; status_name: string; customer_name: string }[]
@@ -159,6 +160,9 @@ export function Header({ user }: { user: AuthUser }) {
             Ctrl+K
           </kbd>
         </button>
+
+        {/* Missed calls (24h) */}
+        <MissedCallsBell />
 
         {/* Notifications */}
         <NotificationBell />

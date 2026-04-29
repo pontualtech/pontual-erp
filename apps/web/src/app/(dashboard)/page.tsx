@@ -10,6 +10,7 @@ import {
   ArrowRight, Loader2, Settings, Eye, EyeOff,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { VoipDashboardCard } from '@/components/voip/VoipDashboardCard'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
@@ -459,6 +460,9 @@ export default function DashboardPage() {
           )
         })}
       </div>}
+
+      {/* ===== Voip stats ===== */}
+      <VoipDashboardCard />
 
       {/* ===== Charts Row ===== */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
