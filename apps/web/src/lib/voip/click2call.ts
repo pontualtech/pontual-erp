@@ -60,9 +60,13 @@ export async function sonaxClick2Call(params: Click2CallParams): Promise<Click2C
   url.searchParams.set('resposta', 'json')
 
   try {
+    // Sonax API e' sincrona: discа o ramal do agente, espera 200 OK do
+    // INVITE SIP, e SO entao retorna o protocolo da chamada. Em prod,
+    // mediдo ~10s com a curl. 25s da margem confortavel sem deixar o
+    // cliente travado eternamente em rede ruim.
     const res = await fetch(url.toString(), {
       method: 'GET',
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(25_000),
       headers: { Accept: 'application/json' },
     })
 
