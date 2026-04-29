@@ -5,7 +5,7 @@ import { success, error, handleError } from '@/lib/api-response'
 
 const ALL_COLUMNS = [
   'os_number', 'created_at', 'customer', 'equipment_type', 'equipment_brand', 'equipment_model',
-  'os_type', 'status', 'total_cost', 'financeiro', 'technician', 'priority',
+  'os_type', 'os_location', 'status', 'total_cost', 'financeiro', 'technician', 'priority',
 ]
 
 const DEFAULT_HIDDEN: Record<string, string[]> = {
