@@ -28,6 +28,7 @@ export async function GET(req: NextRequest) {
     const status = url.get('status') || undefined
     const customerId = url.get('customerId') || undefined
     const agentUserId = url.get('agentUserId') || undefined
+    const serviceOrderId = url.get('serviceOrderId') || undefined
     const startedFrom = url.get('startedFrom')
     const startedTo = url.get('startedTo')
     const search = url.get('search')?.trim() || ''
@@ -39,6 +40,7 @@ export async function GET(req: NextRequest) {
     if (status) where.status = status
     if (customerId) where.customer_id = customerId
     if (agentUserId) where.agent_user_id = agentUserId
+    if (serviceOrderId) where.service_order_id = serviceOrderId
     if (startedFrom || startedTo) {
       where.started_at = {}
       if (startedFrom) where.started_at.gte = new Date(startedFrom)

@@ -11,6 +11,7 @@ import { ArrowLeft, Edit, Camera, History, Info, Package, Plus, Trash2, Loader2,
 import { MoneyInput } from '@/app/(dashboard)/components/money-input'
 import OsChargeButton from './_components/os-charge-button'
 import { CallButton } from '@/components/voip/CallButton'
+import { RelatedVoipCalls } from '@/components/voip/RelatedVoipCalls'
 
 interface Customer {
   id: string; legal_name: string; trade_name: string | null; person_type: string
@@ -2250,6 +2251,17 @@ export default function OSDetailPage() {
             })}
           </div>
         </div>
+      </div>
+
+      {/* ========== CHAMADAS VINCULADAS ========== */}
+      <div className="rounded-xl border bg-white p-4 shadow-sm">
+        <div className="flex items-center gap-2 mb-3">
+          <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-blue-100">
+            <MessageCircle className="h-4 w-4 text-blue-600" />
+          </div>
+          <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Chamadas vinculadas</h2>
+        </div>
+        <RelatedVoipCalls osId={os.id} />
       </div>
 
       {/* ========== NFS-e VINCULADAS ========== */}

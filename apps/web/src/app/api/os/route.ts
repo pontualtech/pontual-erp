@@ -71,6 +71,9 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    const filterCustomerId = url.get('customerId')
+    if (filterCustomerId) where.customer_id = filterCustomerId
+
     const filterOsType = url.get('osType')
     if (filterOsType) where.os_type = filterOsType
     const filterOsLocation = url.get('osLocation')

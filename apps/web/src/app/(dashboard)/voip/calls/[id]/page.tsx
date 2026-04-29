@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, PhoneIncoming, PhoneOutgoing, PhoneMissed, User, Clock, Phone, FileAudio } from 'lucide-react'
+import { ArrowLeft, PhoneIncoming, PhoneOutgoing, PhoneMissed, User, Clock, Phone, FileAudio, Wrench, Link2 } from 'lucide-react'
 import { RecordingPlayer } from '@/components/voip/RecordingPlayer'
+import { LinkOsToCall } from '@/components/voip/LinkOsToCall'
 
 interface Call {
   id: string
@@ -25,6 +26,8 @@ interface Call {
   notes: string | null
   customers?: { id: string; legal_name: string; trade_name: string | null; mobile: string | null; phone: string | null; document_number: string | null } | null
   user_profiles?: { id: string; name: string; email: string } | null
+  service_order_id?: string | null
+  service_orders?: { id: string; os_number: number; equipment_type: string; equipment_brand: string | null; equipment_model: string | null } | null
 }
 
 function formatDateTime(iso: string | null) {
@@ -162,6 +165,42 @@ export default function VoipCallDetailPage() {
             <div className="text-sm text-gray-400 italic">Sem atendente identificado</div>
           )}
         </div>
+      </div>
+
+      <div className="rounded-lg border bg-white p-5 space-y-3">
+        <h2 className="font-semibold text-gray-900 flex items-center gap-2">
+          <Wrench className="h-4 w-4 text-orange-600" /> Ordem de Serviço vinculada
+        </h2>
+        {call.service_orders ? (
+          <div className="flex items-center justify-between gap-2">
+            <Link href={`/os/${call.service_orders.id}`} className="flex-1 text-sm text-blue-600 hover:underline">
+              <span className="font-mono font-semibold">#{call.service_orders.os_number}</span>
+              <span className="ml-2 text-gray-700">{call.service_orders.equipment_type}</span>
+              {call.service_orders.equipment_brand && (
+                <span className="text-gray-500"> · {call.service_orders.equipment_brand} {call.service_orders.equipment_model || ''}</span>
+              )}
+            </Link>
+            <LinkOsToCall
+              callId={call.id}
+              customerId={call.customers?.id || null}
+              currentOsId={call.service_order_id || null}
+              onChange={() => window.location.reload()}
+              mode="change"
+            />
+          </div>
+        ) : call.customers?.id ? (
+          <LinkOsToCall
+            callId={call.id}
+            customerId={call.customers.id}
+            currentOsId={null}
+            onChange={() => window.location.reload()}
+            mode="link"
+          />
+        ) : (
+          <p className="text-sm text-gray-400 italic">
+            Vincular OS exige cliente identificado nesta chamada.
+          </p>
+        )}
       </div>
 
       {call.recording_url && (
