@@ -104,6 +104,57 @@ export async function readRecording(localPath: string): Promise<Buffer | null> {
 }
 
 /**
+ * Puxa gravação via API server-to-server Sonax (mais robusta que recording_url
+ * direta do CDN, que pode retornar "404 not found" em body 200 quando ainda
+ * nao processada).
+ *
+ * Doc Sonax KB 159253:
+ *   GET https://api.sonax.net.br/a2billing_v2/admin/Public/dbdial_webapi.php
+ *     ?acao=pega_gravacao
+ *     &id_cliente=<ID>
+ *     &token=<TOKEN>
+ *     &id_chamada=<ID_CHAMADA>
+ *     &recordmp3=1
+ *   → arquivo MP3 (ou ZIP se multiple gravações de transferência)
+ */
+export async function fetchRecordingViaSonaxApi(idChamada: string): Promise<{
+  ok: boolean
+  buffer?: Buffer
+  contentType?: string
+  error?: string
+}> {
+  const token = process.env.SONAX_API_TOKEN
+  const clientId = process.env.SONAX_WEBPHONE_CLIENT_ID
+  if (!token || !clientId) {
+    return { ok: false, error: 'SONAX_API_TOKEN ou CLIENT_ID nao configurado' }
+  }
+  const url = new URL('https://api.sonax.net.br/a2billing_v2/admin/Public/dbdial_webapi.php')
+  url.searchParams.set('acao', 'pega_gravacao')
+  url.searchParams.set('id_cliente', clientId)
+  url.searchParams.set('token', token)
+  url.searchParams.set('id_chamada', idChamada)
+  url.searchParams.set('recordmp3', '1')
+
+  try {
+    const res = await fetch(url.toString(), { signal: AbortSignal.timeout(60_000) })
+    if (!res.ok) return { ok: false, error: `Sonax API HTTP ${res.status}` }
+    const buffer = Buffer.from(await res.arrayBuffer())
+    if (buffer.length < 100) {
+      // Provavel "404 not found" em body texto
+      const text = buffer.toString('utf-8').trim()
+      return { ok: false, error: `Sonax respondeu: ${text || 'arquivo vazio'}` }
+    }
+    return {
+      ok: true,
+      buffer,
+      contentType: res.headers.get('content-type') || 'audio/mpeg',
+    }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'erro desconhecido' }
+  }
+}
+
+/**
  * Apaga gravação local (LGPD direito ao esquecimento).
  */
 export async function deleteRecording(localPath: string): Promise<boolean> {

@@ -11,7 +11,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requireAuth } from '@/lib/auth'
 import { error, handleError } from '@/lib/api-response'
-import { downloadRecording, readRecording } from '@/lib/voip/recording'
+import { downloadRecording, readRecording, fetchRecordingViaSonaxApi } from '@/lib/voip/recording'
 
 export async function GET(
   req: NextRequest,
@@ -92,26 +92,52 @@ export async function GET(
       // segue pro proxy direto
     }
 
-    // 3) Proxy stream direto do Sonax CDN (sem cache local). URL e' publica.
+    // 3) Tenta CDN Sonax direto (URL com token assinado)
     try {
       const cdnRes = await fetch(call.recording_url, {
         signal: AbortSignal.timeout(30_000),
       })
-      if (!cdnRes.ok || !cdnRes.body) {
-        return error(`Sonax CDN HTTP ${cdnRes.status}`, 502)
+      const buf = Buffer.from(await cdnRes.arrayBuffer())
+      // Sonax responde HTTP 200 com body texto "404 not found" quando grava
+      // ainda nao processada — detecta e cai pro fallback API
+      const looksLikeAudio = buf.length > 100 && (
+        (buf[0] === 0x49 && buf[1] === 0x44 && buf[2] === 0x33) || // "ID3" tag MP3
+        (buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0)              // MP3 frame sync
+      )
+      if (cdnRes.ok && looksLikeAudio) {
+        return new NextResponse(buf as any, {
+          status: 200,
+          headers: {
+            'Content-Type': 'audio/mpeg',
+            'Content-Length': String(buf.length),
+            'Content-Disposition': `inline; filename="call-${call.call_id}.mp3"`,
+            'Cache-Control': 'private, max-age=3600',
+          },
+        })
       }
-      return new NextResponse(cdnRes.body as any, {
-        status: 200,
-        headers: {
-          'Content-Type': cdnRes.headers.get('content-type') || 'audio/mpeg',
-          'Content-Length': cdnRes.headers.get('content-length') || '',
-          'Content-Disposition': `inline; filename="call-${call.call_id}.mp3"`,
-          'Cache-Control': 'private, max-age=3600',
-        },
-      })
+      console.warn('[voip-recording] CDN Sonax retornou nao-audio:', buf.toString('utf-8').slice(0, 100))
     } catch (e) {
-      console.error('[voip-recording] proxy CDN Sonax falhou:', e)
-      return error('Falha ao buscar gravação no CDN', 502)
+      console.error('[voip-recording] CDN Sonax falhou:', e)
+    }
+
+    // 4) Fallback: API server-to-server Sonax (pega_gravacao por id_chamada)
+    try {
+      const apiRes = await fetchRecordingViaSonaxApi(call.call_id)
+      if (apiRes.ok && apiRes.buffer) {
+        return new NextResponse(apiRes.buffer as any, {
+          status: 200,
+          headers: {
+            'Content-Type': apiRes.contentType || 'audio/mpeg',
+            'Content-Length': String(apiRes.buffer.length),
+            'Content-Disposition': `inline; filename="call-${call.call_id}.mp3"`,
+            'Cache-Control': 'private, max-age=3600',
+          },
+        })
+      }
+      return error(`Gravação não disponível ainda (${apiRes.error || 'sem detalhe'}). Tente em alguns minutos.`, 503)
+    } catch (e) {
+      console.error('[voip-recording] API Sonax falhou:', e)
+      return error('Falha ao buscar gravação', 502)
     }
   } catch (e) {
     return handleError(e)
