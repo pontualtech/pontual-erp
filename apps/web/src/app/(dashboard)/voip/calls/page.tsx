@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, PlayCircle, RefreshCw, Loader2 } from 'lucide-react'
+import { Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, PlayCircle, PauseCircle, RefreshCw, Loader2 } from 'lucide-react'
 
 interface Call {
   id: string
@@ -43,6 +43,52 @@ function StatusBadge({ status }: { status: string }) {
   }
   const m = map[status] || { color: 'bg-gray-100 text-gray-700', label: status }
   return <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${m.color}`}>{m.label}</span>
+}
+
+function InlinePlayer({ callId }: { callId: string }) {
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const [playing, setPlaying] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(false)
+
+  function toggle(e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    let audio = audioRef.current
+    if (!audio) {
+      audio = new Audio(`/api/voip/calls/${callId}/recording`)
+      audioRef.current = audio
+      audio.addEventListener('play', () => setPlaying(true))
+      audio.addEventListener('pause', () => setPlaying(false))
+      audio.addEventListener('ended', () => setPlaying(false))
+      audio.addEventListener('loadstart', () => { setLoading(true); setError(false) })
+      audio.addEventListener('canplay', () => setLoading(false))
+      audio.addEventListener('error', () => { setError(true); setLoading(false) })
+    }
+    if (audio.paused) audio.play().catch(() => setError(true))
+    else audio.pause()
+  }
+
+  if (error) return <span className="text-xs text-red-500" title="Falha">⚠</span>
+
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      disabled={loading}
+      className="inline-flex items-center justify-center hover:scale-110 transition-transform disabled:opacity-50"
+      title={playing ? 'Pausar' : 'Reproduzir gravação'}
+      aria-label={playing ? 'Pausar gravação' : 'Reproduzir gravação'}
+    >
+      {loading ? (
+        <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+      ) : playing ? (
+        <PauseCircle className="h-5 w-5 text-blue-700" />
+      ) : (
+        <PlayCircle className="h-5 w-5 text-blue-600" />
+      )}
+    </button>
+  )
 }
 
 function DirectionIcon({ direction, status }: { direction: string; status: string }) {
@@ -188,7 +234,7 @@ export default function VoipCallsPage() {
                     <td className="px-4 py-3 text-gray-700">{formatDuration(c.duration_sec)}</td>
                     <td className="px-4 py-3"><StatusBadge status={c.status} /></td>
                     <td className="px-4 py-3 text-center">
-                      {c.recording_url ? <PlayCircle className="h-5 w-5 text-blue-600 inline" /> : <span className="text-gray-300">—</span>}
+                      {c.recording_url ? <InlinePlayer callId={c.id} /> : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-4 py-3">
                       <Link href={`/voip/calls/${c.id}`} className="text-xs text-blue-600 hover:underline">Detalhes</Link>
