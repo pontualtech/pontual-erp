@@ -73,7 +73,7 @@ export async function GET(req: NextRequest) {
       prisma.voipCall.count({ where }),
     ])
 
-    return paginated(items, { page, limit, total })
+    return paginated(items, total, page, limit)
   } catch (e) {
     return handleError(e)
   }

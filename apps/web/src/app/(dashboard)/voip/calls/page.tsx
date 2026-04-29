@@ -76,7 +76,7 @@ export default function VoipCallsPage() {
       .then(d => {
         if (d.error) { setError(typeof d.error === 'string' ? d.error : (d.error?.message || 'Erro')); return }
         setCalls(d.data ?? [])
-        setTotal(d.pagination?.total ?? 0)
+        setTotal(d.total ?? 0)
       })
       .catch(() => setError('Erro ao carregar chamadas'))
       .finally(() => setLoading(false))
