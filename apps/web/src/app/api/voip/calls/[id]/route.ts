@@ -49,12 +49,16 @@ export async function PUT(
 ) {
   try {
     const user = await requireAuth()
-    const body = await req.json().catch(() => ({})) as { service_order_id?: string | null; notes?: string }
+    const body = await req.json().catch(() => ({})) as {
+      service_order_id?: string | null
+      notes?: string
+      direction?: 'inbound' | 'outbound'
+    }
 
     // Confirma que a chamada existe + pertence ao tenant (anti-IDOR)
     const existing = await prisma.voipCall.findFirst({
       where: { id: params.id, company_id: user.companyId },
-      select: { id: true, customer_id: true },
+      select: { id: true, customer_id: true, from_number: true, to_number: true, did_number: true, direction: true },
     })
     if (!existing) return error('Chamada não encontrada', 404)
 
@@ -71,11 +75,26 @@ export async function PUT(
       }
     }
 
+    // Toggle de direção (correção manual quando webhook Sonax classificou errado).
+    // Inverte from/to porque a semantica muda: em inbound from=cliente,to=DID;
+    // em outbound from=DID,to=cliente.
+    let directionUpdate: any = {}
+    if (body.direction && (body.direction === 'inbound' || body.direction === 'outbound')) {
+      if (body.direction !== existing.direction) {
+        directionUpdate = {
+          direction: body.direction,
+          from_number: existing.to_number,
+          to_number: existing.from_number,
+        }
+      }
+    }
+
     const updated = await prisma.voipCall.update({
       where: { id: params.id },
       data: {
         service_order_id: body.service_order_id === null ? null : body.service_order_id ?? undefined,
         notes: body.notes !== undefined ? body.notes : undefined,
+        ...directionUpdate,
         updated_at: new Date(),
       },
       include: {

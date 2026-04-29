@@ -94,7 +94,30 @@ export default function VoipCallDetailPage() {
             <Phone className="h-4 w-4 text-blue-600" /> Detalhes da chamada
           </h2>
           <div className="space-y-2 text-sm">
-            <div className="flex justify-between"><span className="text-gray-500">Direção</span><span className="text-gray-900">{call.direction === 'inbound' ? 'Recebida' : 'Realizada'}</span></div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-500">Direção</span>
+              <div className="flex items-center gap-2">
+                <span className="text-gray-900">{call.direction === 'inbound' ? 'Recebida' : 'Realizada'}</span>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const newDir = call.direction === 'inbound' ? 'outbound' : 'inbound'
+                    if (!confirm(`Marcar esta chamada como "${newDir === 'inbound' ? 'Recebida' : 'Realizada'}"? Os campos De/Para serão invertidos.`)) return
+                    const r = await fetch(`/api/voip/calls/${call.id}`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ direction: newDir }),
+                    })
+                    if (r.ok) window.location.reload()
+                    else alert('Falha ao atualizar direção')
+                  }}
+                  title="Inverter direção (caso webhook Sonax tenha classificado errado)"
+                  className="text-xs text-blue-600 hover:underline"
+                >
+                  inverter
+                </button>
+              </div>
+            </div>
             <div className="flex justify-between"><span className="text-gray-500">De</span><span className="font-mono text-gray-900">{call.from_number || '—'}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Para</span><span className="font-mono text-gray-900">{call.to_number || '—'}</span></div>
             {call.did_number && (
