@@ -64,16 +64,16 @@ export async function GET(req: NextRequest) {
     if (authErr) return authErr
 
     const sp = req.nextUrl.searchParams
-    const parentCompanyNumber = sp.get('parent_company_number') || process.env.REDE_PARENT_COMPANY_NUMBER || ''
-    if (!parentCompanyNumber) return error('parent_company_number obrigatorio', 400)
+    const requestId = sp.get('request_id') || ''
+    if (!requestId) return error('request_id obrigatorio (UUID retornado pelo POST)', 400)
 
     const client = new RedeApiClient()
     if (!client.isConfigured()) return error('REDE_CLIENT_ID/SECRET nao configurado', 503)
 
-    const r = await client.getOptInStatus(parentCompanyNumber)
+    const r = await client.getOptInStatus(requestId)
     return success({
       ok: r.ok,
-      parent_company_number: parentCompanyNumber,
+      request_id: requestId,
       api_status: r.status,
       api_path: r.path,
       response: r.body,

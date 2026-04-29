@@ -135,21 +135,38 @@ export class RedeApiClient {
   /**
    * Solicita Opt-in (autorizacao do estabelecimento) pra consumir suas
    * vendas via API. A Rede exige esse passo formal mesmo quando o
-   * integrador e o proprio estabelecimento — protecao multi-tenant.
+   * integrador e o proprio estabelecimento.
    *
-   * Apos POST com sucesso (200/201/202), Karlao precisa logar no portal
-   * meu.userede.com.br > Minha Rede > PV {parentCompanyNumber} >
-   * Conciliacao > Compartilhar pra aprovar (delay ate 1h aparecer).
+   * Endpoint:
+   *   POST /partner/v1/organizations/requests/features/merchant-statement
    *
-   * @param parentCompanyNumber PV do estabelecimento (PontualTech: 80361242)
-   * @returns response da Rede (formato exato depende do endpoint real)
+   * Body:
+   *   { requestCompanyNumber: number,    // PV (matriz/filial/autonomo)
+   *     companyNumbers: number[],         // filiais (vazio se Individual)
+   *     requestType: 'I'|'P'|'T',          // I=Individual, P=Parcial, T=Total
+   *     permissions: 'R' }                  // R=Leitura
+   *
+   * Response 201:
+   *   { requestId, status:'PENDENTE', createdDate, requestCompanyNumber, companyNumbers }
+   *
+   * Response 409: ja existe solicitacao pendente — usar o requestId retornado.
+   *
+   * Apos sucesso, Karlao precisa aprovar em meu.userede.com.br >
+   * minha Rede > Conciliacao > Compartilhar (delay ate 1h pra aparecer).
    */
-  async requestOptIn(parentCompanyNumber: string): Promise<{ ok: boolean; status: number; body: any; path: string }> {
+  async requestOptIn(parentCompanyNumber: string | number, opts?: {
+    companyNumbers?: number[]
+    requestType?: 'I' | 'P' | 'T'
+    permissions?: 'R'
+  }): Promise<{ ok: boolean; status: number; body: any; path: string }> {
     const token = await this.getToken()
-    const path = process.env.REDE_OPTIN_PATH || '/gestao-acessos/v1/optin'
-    // Body baseado em padroes Rede — campo `parentCompanyNumber` ja foi visto
-    // em /sales. Pode precisar ajuste se a API real exigir outros campos.
-    const payload = { parentCompanyNumber }
+    const path = process.env.REDE_OPTIN_PATH || '/partner/v1/organizations/requests/features/merchant-statement'
+    const payload = {
+      requestCompanyNumber: typeof parentCompanyNumber === 'string' ? parseInt(parentCompanyNumber) : parentCompanyNumber,
+      companyNumbers: opts?.companyNumbers || [],
+      requestType: opts?.requestType || 'I',
+      permissions: opts?.permissions || 'R',
+    }
 
     const r = await fetch(`${this.apiUrl}${path}`, {
       method: 'POST',
@@ -168,16 +185,43 @@ export class RedeApiClient {
   }
 
   /**
-   * Consulta status de uma solicitacao de opt-in. Util pra ver se Karlao
-   * ja aprovou no portal Rede.
+   * Consulta status de uma solicitacao de opt-in pelo requestId.
+   * GET /partner/v1/organizations/requests/{requestId}/features/merchant-statement
+   *
+   * Response 200:
+   *   { requestId, status, createdDate, requestCompanyNumber, companyNumbers,
+   *     partnerName, feature, requestType, permission, updateDate }
+   *
+   * Status: A=Aprovado, C=Cancelado, E=Expirado, P=Pendente, R=Reprovado
    */
-  async getOptInStatus(parentCompanyNumber: string): Promise<{ ok: boolean; status: number; body: any; path: string }> {
+  async getOptInStatus(requestId: string): Promise<{ ok: boolean; status: number; body: any; path: string }> {
     const token = await this.getToken()
-    const basePath = process.env.REDE_OPTIN_STATUS_PATH || '/gestao-acessos/v1/optin'
-    const path = `${basePath}/${parentCompanyNumber}`
+    const path = `/partner/v1/organizations/requests/${requestId}/features/merchant-statement`
 
     const r = await fetch(`${this.apiUrl}${path}`, {
       method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/json',
+      },
+      signal: AbortSignal.timeout(15000),
+    })
+    const text = await r.text()
+    let body: any = text
+    try { body = JSON.parse(text) } catch {}
+    return { ok: r.ok, status: r.status, body, path }
+  }
+
+  /**
+   * Cancela uma solicitacao de opt-in pendente.
+   * PUT /partner/v1/organizations/requests/{requestId}/features/merchant-statement/cancel
+   */
+  async cancelOptIn(requestId: string): Promise<{ ok: boolean; status: number; body: any; path: string }> {
+    const token = await this.getToken()
+    const path = `/partner/v1/organizations/requests/${requestId}/features/merchant-statement/cancel`
+
+    const r = await fetch(`${this.apiUrl}${path}`, {
+      method: 'PUT',
       headers: {
         'Authorization': `Bearer ${token}`,
         'Accept': 'application/json',
@@ -208,6 +252,9 @@ export class RedeApiClient {
     for (let page = 0; page < maxPages; page++) {
       const sp = new URLSearchParams({
         parentCompanyNumber,
+        // API v1 prod exige `subsidiaries` (descoberto via 422 sem ele).
+        // Quando integrador tem so a matriz, passa o proprio PV como subsidiary.
+        subsidiaries: parentCompanyNumber,
         startDate,
         endDate,
         size: String(pageSize),
