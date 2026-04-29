@@ -38,44 +38,81 @@ export async function GET(
     if (!call) return error('Chamada não encontrada', 404)
     if (!call.recording_url) return error('Sem gravação disponível', 404)
 
-    // Se ainda não baixou, baixa agora (síncrono — pode levar alguns segundos)
-    let localPath = call.recording_path
-    if (!localPath) {
+    // Estrategia: tenta servir do cache local. Se nao tem (Persistent Storage
+    // pode nao estar montado, ou download falhou), faz proxy do MP3 do CDN
+    // Sonax direto. URL Sonax e' publica (testado, retorna 200 + audio/mpeg).
+
+    // 1) Cache local
+    if (call.recording_path) {
+      const buffer = await readRecording(call.recording_path).catch(() => null)
+      if (buffer && buffer.length > 0) {
+        return new NextResponse(buffer as any, {
+          status: 200,
+          headers: {
+            'Content-Type': 'audio/mpeg',
+            'Content-Length': String(buffer.length),
+            'Content-Disposition': `inline; filename="call-${call.call_id}.mp3"`,
+            'Cache-Control': 'private, max-age=3600',
+          },
+        })
+      }
+    }
+
+    // 2) Tenta baixar e cachear (best-effort, nao bloqueia se falhar)
+    try {
       const result = await downloadRecording({
         recordingUrl: call.recording_url,
         companyId: call.company_id,
         callId: call.call_id,
         startedAt: call.started_at,
       })
-
-      if (!result.ok || !result.localPath) {
-        // Fallback: redireciona pro CDN Sonax (pode estar protegido por token mas vale tentar)
-        return NextResponse.redirect(call.recording_url)
+      if (result.ok && result.localPath) {
+        await prisma.voipCall.update({
+          where: { id: call.id },
+          data: {
+            recording_path: result.localPath,
+            recording_size_kb: result.sizeBytes ? Math.round(result.sizeBytes / 1024) : undefined,
+          },
+        }).catch(() => {})
+        const buffer = await readRecording(result.localPath).catch(() => null)
+        if (buffer && buffer.length > 0) {
+          return new NextResponse(buffer as any, {
+            status: 200,
+            headers: {
+              'Content-Type': 'audio/mpeg',
+              'Content-Length': String(buffer.length),
+              'Content-Disposition': `inline; filename="call-${call.call_id}.mp3"`,
+              'Cache-Control': 'private, max-age=3600',
+            },
+          })
+        }
       }
-
-      localPath = result.localPath
-      // Persiste o path no DB pra próximas requests
-      await prisma.voipCall.update({
-        where: { id: call.id },
-        data: {
-          recording_path: result.localPath,
-          recording_size_kb: result.sizeBytes ? Math.round(result.sizeBytes / 1024) : undefined,
-        },
-      }).catch(() => {})
+    } catch (e) {
+      console.error('[voip-recording] download local falhou:', e)
+      // segue pro proxy direto
     }
 
-    const buffer = await readRecording(localPath)
-    if (!buffer) return error('Arquivo de gravação não encontrado', 404)
-
-    return new NextResponse(buffer as any, {
-      status: 200,
-      headers: {
-        'Content-Type': 'audio/mpeg',
-        'Content-Length': String(buffer.length),
-        'Content-Disposition': `inline; filename="call-${call.call_id}.mp3"`,
-        'Cache-Control': 'private, max-age=3600',
-      },
-    })
+    // 3) Proxy stream direto do Sonax CDN (sem cache local). URL e' publica.
+    try {
+      const cdnRes = await fetch(call.recording_url, {
+        signal: AbortSignal.timeout(30_000),
+      })
+      if (!cdnRes.ok || !cdnRes.body) {
+        return error(`Sonax CDN HTTP ${cdnRes.status}`, 502)
+      }
+      return new NextResponse(cdnRes.body as any, {
+        status: 200,
+        headers: {
+          'Content-Type': cdnRes.headers.get('content-type') || 'audio/mpeg',
+          'Content-Length': cdnRes.headers.get('content-length') || '',
+          'Content-Disposition': `inline; filename="call-${call.call_id}.mp3"`,
+          'Cache-Control': 'private, max-age=3600',
+        },
+      })
+    } catch (e) {
+      console.error('[voip-recording] proxy CDN Sonax falhou:', e)
+      return error('Falha ao buscar gravação no CDN', 502)
+    }
   } catch (e) {
     return handleError(e)
   }

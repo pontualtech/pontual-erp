@@ -58,11 +58,11 @@ export async function downloadRecording(params: {
     // não existe — continua download
   }
 
-  // Cria dir
-  await fs.mkdir(dir, { recursive: true })
-
-  // Download
+  // Download — TUDO dentro do try (mkdir pode falhar se Persistent Storage
+  // nao montado e dir nao tem write permission)
   try {
+    await fs.mkdir(dir, { recursive: true })
+
     const res = await fetch(recordingUrl, {
       signal: AbortSignal.timeout(60_000),  // 1 min — gravação grande pode demorar
     })
