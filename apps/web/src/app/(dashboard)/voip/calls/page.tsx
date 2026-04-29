@@ -10,6 +10,7 @@ interface Call {
   direction: string
   from_number: string
   to_number: string
+  did_number: string | null
   status: string
   started_at: string
   duration_sec: number | null
@@ -17,6 +18,26 @@ interface Call {
   agent_extension: string | null
   customers?: { id: string; legal_name: string; trade_name: string | null; mobile: string | null; phone: string | null } | null
   user_profiles?: { id: string; name: string; email: string } | null
+}
+
+// PontualTech DIDs → label amigavel pra atendente identificar a linha.
+// Multi-tenant: deveria vir de voip_inbound_numbers.label, mas MVP usa env var.
+function didLabel(did: string | null | undefined): { num: string; label: string } | null {
+  if (!did) return null
+  const d = String(did).replace(/\D/g, '')
+  if (!d) return null
+  const trimmed = d.replace(/^0+/, '')
+  // Mapping configuravel via env futuramente — por agora hardcode PontualTech
+  if (trimmed.endsWith('1131360415')) return { num: '(11) 3136-0415', label: 'Vendas' }
+  if (trimmed.endsWith('1126263841')) return { num: '(11) 2626-3841', label: 'Suporte' }
+  // Generic pra outros DIDs: formata mas sem label
+  if (trimmed.length >= 10) {
+    const ddd = trimmed.slice(-10, -8)
+    const a = trimmed.slice(-8, -4)
+    const b = trimmed.slice(-4)
+    return { num: `(${ddd}) ${a}-${b}`, label: '' }
+  }
+  return { num: trimmed, label: '' }
 }
 
 function formatDateTime(iso: string) {
@@ -204,6 +225,7 @@ export default function VoipCallsPage() {
                 <tr className="border-b bg-gray-50 text-left text-xs uppercase text-gray-500">
                   <th className="px-4 py-3 w-8"></th>
                   <th className="px-4 py-3">Quando</th>
+                  <th className="px-4 py-3">Linha</th>
                   <th className="px-4 py-3">De</th>
                   <th className="px-4 py-3">Para</th>
                   <th className="px-4 py-3">Cliente</th>
@@ -215,12 +237,24 @@ export default function VoipCallsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {calls.map(c => (
+                {calls.map(c => {
+                  const linha = didLabel(c.did_number)
+                  return (
                   <tr key={c.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
                       <DirectionIcon direction={c.direction} status={c.status} />
                     </td>
                     <td className="px-4 py-3 text-gray-700">{formatDateTime(c.started_at)}</td>
+                    <td className="px-4 py-3">
+                      {linha ? (
+                        <div className="flex flex-col leading-tight">
+                          <span className="font-mono text-xs text-gray-700">{linha.num}</span>
+                          {linha.label && (
+                            <span className="text-[10px] uppercase tracking-wide font-semibold text-blue-600">{linha.label}</span>
+                          )}
+                        </div>
+                      ) : <span className="text-gray-300">—</span>}
+                    </td>
                     <td className="px-4 py-3 text-gray-700 font-mono text-xs">{c.from_number || '—'}</td>
                     <td className="px-4 py-3 text-gray-700 font-mono text-xs">{c.to_number || '—'}</td>
                     <td className="px-4 py-3 text-gray-700">
@@ -240,7 +274,8 @@ export default function VoipCallsPage() {
                       <Link href={`/voip/calls/${c.id}`} className="text-xs text-blue-600 hover:underline">Detalhes</Link>
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>

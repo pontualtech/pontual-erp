@@ -116,7 +116,9 @@ async function handleDisconnect(req: NextRequest) {
     const numeroDID = String(body.numero_rec || body.NUMERO_REC || '')
     const fromNumber = normalizePhone(String(body.from || body.from_number || (isInbound ? numeroPessoa : numeroDID) || ''))
     const toNumber = normalizePhone(String(body.to || body.to_number || (isInbound ? numeroDID : numeroPessoa) || ''))
-    const didNumber = body.did ? normalizePhone(String(body.did)) : null
+    // did_number = nosso numero (numero_rec). Em inbound = linha que cliente discou.
+    // Em outbound = caller ID. Cai no body.did se Sonax mandar explicito.
+    const didNumber = numeroDID ? normalizePhone(numeroDID) : (body.did ? normalizePhone(String(body.did)) : null)
     const agentExtension = body.ramal ? String(body.ramal).replace(/\D/g, '') : null
 
     // Sonax envia DATA_INICIO/DATA_FIM como "yyyy-mm-dd hh:mm:ss" em BRT sem TZ.

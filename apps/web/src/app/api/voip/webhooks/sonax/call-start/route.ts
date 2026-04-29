@@ -116,7 +116,9 @@ async function handleCallStart(req: NextRequest) {
     const toRaw = String(body.to || body.to_number || (isInbound ? numeroDID : numeroPessoa) || '')
     const fromNumber = normalizePhone(fromRaw)
     const toNumber = normalizePhone(toRaw)
-    const didNumber = body.did ? normalizePhone(String(body.did)) : null
+    // did_number = nosso numero (numero_rec). Em inbound = linha que cliente discou.
+    // Em outbound = caller ID. Cai no body.did se Sonax mandar explicito.
+    const didNumber = numeroDID ? normalizePhone(numeroDID) : (body.did ? normalizePhone(String(body.did)) : null)
     const agentExtension = String(body.ramal || body.aliasramal || body.ALIASRAMAL || '').replace(/\D/g, '') || null
 
     // Sonax envia "yyyy-mm-dd hh:mm:ss" em BRT sem TZ. Sem fix, JS parseia
