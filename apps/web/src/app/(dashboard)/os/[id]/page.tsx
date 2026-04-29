@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/use-auth'
 import { ArrowLeft, Edit, Camera, History, Info, Package, Plus, Trash2, Loader2, Search, Wrench, CreditCard, X, Printer, Mail, Send, Copy, FilePlus, User, Monitor, FileText, Clock, ChevronDown, ChevronUp, AlertTriangle, Save, Check, Layers, DollarSign, ExternalLink, Receipt, Truck, MessageCircle } from 'lucide-react'
 import { MoneyInput } from '@/app/(dashboard)/components/money-input'
 import OsChargeButton from './_components/os-charge-button'
+import { CallButton } from '@/components/voip/CallButton'
 
 interface Customer {
   id: string; legal_name: string; trade_name: string | null; person_type: string
@@ -1330,6 +1331,7 @@ export default function OSDetailPage() {
                     <MessageCircle className="h-3 w-3 text-white" />
                   </a>
                 )}
+                <CallButton phoneNumber={os.customers?.mobile || os.customers?.phone} customerId={os.customer_id} serviceOrderId={os.id} variant="icon" />
               </div>
             </div>
             <div className="flex items-baseline justify-between">
