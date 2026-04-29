@@ -28,29 +28,32 @@ export interface CallButtonProps {
  * Renderiza nada (null) se phoneNumber inválido ou ausente.
  */
 
-// Funções globais que o widget Sonax expõe (window.*)
-declare global {
-  interface Window {
-    startCall?: () => void
-  }
-}
-
 function dialViaSonaxWidget(rawNumber: string): boolean {
   if (typeof window === 'undefined') return false
-  const startCall = window.startCall
+  // O widget Sonax declara startCall/finishCall como `const` (escopo do script);
+  // não estao em window. Acionamos via click no #callBtn que tem onclick="startCall()" inline.
   const input = document.getElementById('phoneNumber') as HTMLInputElement | null
-  if (typeof startCall !== 'function' || !input) return false
+  const callBtn = document.getElementById('callBtn') as HTMLButtonElement | null
+  if (!input || !callBtn) return false
+
   const digits = rawNumber.replace(/\D/g, '')
-  input.value = digits
-  input.dispatchEvent(new Event('input', { bubbles: true }))
-  input.dispatchEvent(new Event('change', { bubbles: true }))
-  // Abre o widget se estiver minimizado
+  if (!digits) return false
+
+  // Abre o widget se estiver minimizado (precisa estar visivel pro callBtn ser clickable)
   const icon = document.querySelector<HTMLElement>('.SonaxWidget #icon')
   const content = document.querySelector<HTMLElement>('.SonaxWidget #content')
   if (icon && content && getComputedStyle(content).display === 'none') {
     icon.click()
   }
-  startCall()
+
+  input.value = digits
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  input.dispatchEvent(new Event('change', { bubbles: true }))
+
+  // Limpa flag stale do widget — sem isso `finishCall` quebra com "hangup of undefined"
+  try { localStorage.removeItem('webphone-incall') } catch {}
+
+  callBtn.click()
   return true
 }
 
