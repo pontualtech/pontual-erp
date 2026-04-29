@@ -133,6 +133,64 @@ export class RedeApiClient {
   }
 
   /**
+   * Solicita Opt-in (autorizacao do estabelecimento) pra consumir suas
+   * vendas via API. A Rede exige esse passo formal mesmo quando o
+   * integrador e o proprio estabelecimento — protecao multi-tenant.
+   *
+   * Apos POST com sucesso (200/201/202), Karlao precisa logar no portal
+   * meu.userede.com.br > Minha Rede > PV {parentCompanyNumber} >
+   * Conciliacao > Compartilhar pra aprovar (delay ate 1h aparecer).
+   *
+   * @param parentCompanyNumber PV do estabelecimento (PontualTech: 80361242)
+   * @returns response da Rede (formato exato depende do endpoint real)
+   */
+  async requestOptIn(parentCompanyNumber: string): Promise<{ ok: boolean; status: number; body: any; path: string }> {
+    const token = await this.getToken()
+    const path = process.env.REDE_OPTIN_PATH || '/gestao-acessos/v1/optin'
+    // Body baseado em padroes Rede — campo `parentCompanyNumber` ja foi visto
+    // em /sales. Pode precisar ajuste se a API real exigir outros campos.
+    const payload = { parentCompanyNumber }
+
+    const r = await fetch(`${this.apiUrl}${path}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(20000),
+    })
+    const text = await r.text()
+    let body: any = text
+    try { body = JSON.parse(text) } catch {}
+    return { ok: r.ok, status: r.status, body, path }
+  }
+
+  /**
+   * Consulta status de uma solicitacao de opt-in. Util pra ver se Karlao
+   * ja aprovou no portal Rede.
+   */
+  async getOptInStatus(parentCompanyNumber: string): Promise<{ ok: boolean; status: number; body: any; path: string }> {
+    const token = await this.getToken()
+    const basePath = process.env.REDE_OPTIN_STATUS_PATH || '/gestao-acessos/v1/optin'
+    const path = `${basePath}/${parentCompanyNumber}`
+
+    const r = await fetch(`${this.apiUrl}${path}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/json',
+      },
+      signal: AbortSignal.timeout(15000),
+    })
+    const text = await r.text()
+    let body: any = text
+    try { body = JSON.parse(text) } catch {}
+    return { ok: r.ok, status: r.status, body, path }
+  }
+
+  /**
    * Lista vendas paginando ate cobrir todo o intervalo.
    * Retorna ja em ParsedAcquirerTransaction[] pra cair no pipeline.
    *
