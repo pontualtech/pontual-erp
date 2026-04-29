@@ -57,17 +57,21 @@ export default function CepAddressForm({ value, onChange, compact }: Props) {
     setLooking(true)
     setCepError(null)
     try {
-      const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`)
+      // Usa endpoint interno /api/consulta/cep — o CSP do app bloqueia
+      // chamadas diretas pra viacep.com.br no browser. O endpoint interno
+      // faz proxy server-side com cache 24h.
+      const res = await fetch(`/api/consulta/cep/${digits}`)
+      if (res.status === 404) { setCepError('CEP nao encontrado'); return }
       if (!res.ok) { setCepError('CEP invalido'); return }
       const j = await res.json()
-      if (j.erro) { setCepError('CEP nao encontrado'); return }
+      const data = j.data || {}
       onChange({
         ...value,
         cep: maskCep(digits),
-        street: j.logradouro || value.street,
-        neighborhood: j.bairro || value.neighborhood,
-        city: j.localidade || value.city,
-        state: (j.uf || value.state).toUpperCase(),
+        street: data.address_street || value.street,
+        neighborhood: data.address_neighborhood || value.neighborhood,
+        city: data.address_city || value.city,
+        state: (data.address_state || value.state).toUpperCase(),
       })
     } catch {
       setCepError('Falha na busca do CEP')
