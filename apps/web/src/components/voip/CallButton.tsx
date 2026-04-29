@@ -19,19 +19,41 @@ export interface CallButtonProps {
 }
 
 /**
- * Botão "Ligar" que dispara Click2Call via API ERP.
+ * Botão "Ligar".
  *
- * Fluxo UX:
- *   1. Agente clica no botão
- *   2. POST /api/voip/click-to-call com phoneNumber
- *   3. Sonax disca PRIMEIRO o ramal do agente (Linphone toca)
- *   4. Quando agente atende, Sonax disca o cliente
- *   5. Áudio bidirecional entre os dois
- *
- * Pré-requisito: agente precisa ter Linphone aberto + ramal cadastrado em SONAX_RAMAL_MAPPING.
+ * Disca direto pelo widget Sonax embedded no navegador (WebRTC). Se o widget
+ * ainda não carregou (token ausente, CSP, etc.), faz fallback pra Click2Call
+ * server-to-server, que toca um softphone/aparelho registrado no PABX.
  *
  * Renderiza nada (null) se phoneNumber inválido ou ausente.
  */
+
+// Funções globais que o widget Sonax expõe (window.*)
+declare global {
+  interface Window {
+    startCall?: () => void
+  }
+}
+
+function dialViaSonaxWidget(rawNumber: string): boolean {
+  if (typeof window === 'undefined') return false
+  const startCall = window.startCall
+  const input = document.getElementById('phoneNumber') as HTMLInputElement | null
+  if (typeof startCall !== 'function' || !input) return false
+  const digits = rawNumber.replace(/\D/g, '')
+  input.value = digits
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  input.dispatchEvent(new Event('change', { bubbles: true }))
+  // Abre o widget se estiver minimizado
+  const icon = document.querySelector<HTMLElement>('.SonaxWidget #icon')
+  const content = document.querySelector<HTMLElement>('.SonaxWidget #content')
+  if (icon && content && getComputedStyle(content).display === 'none') {
+    icon.click()
+  }
+  startCall()
+  return true
+}
+
 export function CallButton({
   phoneNumber,
   customerId,
@@ -51,6 +73,12 @@ export function CallButton({
     if (loading) return
     setLoading(true)
     try {
+      // Tentativa 1: widget Sonax embedded (WebRTC no próprio browser)
+      if (dialViaSonaxWidget(phoneNumber!)) {
+        return
+      }
+
+      // Fallback: Click2Call server-to-server (toca aparelho/softphone registrado)
       const res = await fetch('/api/voip/click-to-call', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -66,7 +94,7 @@ export function CallButton({
 
       const ramal = data?.data?.ramal || data?.ramal || '?'
       alert(
-        `🔔 O Linphone do ramal ${ramal} vai tocar agora.\n\nAtenda para falar com o cliente — o sistema disca o número automaticamente quando você atender.`
+        `🔔 O ramal ${ramal} vai tocar agora.\n\nAtenda no seu telefone para falar com o cliente.`
       )
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'erro de rede desconhecido'

@@ -16,8 +16,8 @@ const nextConfig = {
         { key: 'X-XSS-Protection', value: '1; mode=block' },
         { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
         // Camera + geolocation liberados para o app do motorista (same-origin).
-        // Microphone continua bloqueado — não é usado em nenhum lugar hoje.
-        { key: 'Permissions-Policy', value: 'camera=(self), microphone=(), geolocation=(self)' },
+        // Microphone liberado same-origin pro widget Sonax Webphone (WebRTC).
+        { key: 'Permissions-Policy', value: 'camera=(self), microphone=(self), geolocation=(self)' },
         // CSP:
         //  - script-src: Leaflet via unpkg.com (mapa do dashboard de logistica)
         //  - style-src: idem
