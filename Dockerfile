@@ -21,6 +21,9 @@ COPY . .
 RUN npx prisma generate --schema=packages/db/prisma/schema.prisma
 
 # Build Next.js (standalone mode)
+# Bump V8 heap from default ~1.7GB para 4GB — Next.js + Prisma + 200+ routes
+# estouravam o limite default em 13s (OOM-kill silencioso do docker exec).
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN npm run build
 
 # --- Runner ---
