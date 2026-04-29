@@ -58,6 +58,7 @@ model Company {
   coupons             Coupon[]
   acquirer_terminal_assignments AcquirerTerminalAssignment[]
   acquirer_transactions         AcquirerTransaction[]
+  voip_calls                    VoipCall[]
 
   @@map("companies")
 }
@@ -91,6 +92,7 @@ model UserProfile {
   logistics_routes  LogisticsRoute[]
   location_history  DriverLocationHistory[]
   acquirer_terminal_assignments AcquirerTerminalAssignment[]
+  voip_calls        VoipCall[]
   companies      Company        @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   roles          Role           @relation(fields: [role_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
@@ -431,6 +433,7 @@ model Customer {
   nps_surveys          NpsSurvey[]
   payments             Payment[]
   coupons              Coupon[]
+  voip_calls           VoipCall[]
 
   @@unique([company_id, vhsys_id])
   // Partial unique index on (company_id, document_number) WHERE document_number IS NOT NULL AND document_number != ''
@@ -1671,4 +1674,69 @@ model AcquirerTransaction {
   @@index([company_id, matched_payment_id])
   @@index([company_id, terminal_code, transaction_date])
   @@map("acquirer_transactions")
+}
+
+// =============================================================================
+// VOIP — Telefonia F2.3 (CDR + Webhooks + Gravações)
+// =============================================================================
+// Schema multi-tenant: company_id NOT NULL em toda chamada
+// Lookup por phone normalizado (E.164 sem +55) pra customer matching
+// recording_url: URL do CDN Sonax (gravação remota)
+// recording_path: path local após download (volume Docker /var/recordings)
+// =============================================================================
+model VoipCall {
+  id                String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id        String
+
+  // Sonax call identifier (do webhook)
+  call_id           String    @unique
+
+  // Direção e números (E.164 sem +55, só dígitos: "12997361519")
+  direction         String    // "inbound" | "outbound"
+  from_number       String    @db.VarChar(20)
+  to_number         String    @db.VarChar(20)
+  did_number        String?   @db.VarChar(20)  // pra inbound: qual DID PontualTech foi chamado
+
+  // Cliente (lookup por phone normalizado)
+  customer_id       String?
+  agent_user_id     String?   // user que pegou (UserProfile)
+  agent_extension   String?   @db.VarChar(10)  // ramal SIP que atendeu (101..105)
+
+  // Tempos (UTC)
+  started_at        DateTime  @db.Timestamptz(6)
+  answered_at       DateTime? @db.Timestamptz(6)
+  ended_at          DateTime? @db.Timestamptz(6)
+  duration_sec      Int?
+
+  // Status: ringing | answered | missed | busy | failed | completed
+  status            String    @default("ringing") @db.VarChar(20)
+  hangup_cause      String?   @db.VarChar(50)
+
+  // Gravação
+  recording_url     String?   // URL CDN Sonax (download depois)
+  recording_path    String?   // path local após download (volume /var/recordings)
+  recording_size_kb Int?
+
+  // Anotações pós-call
+  notes             String?
+  tags              String[]  @default([])
+
+  // Audit
+  raw_webhook       Json?     @default("{}")  // payload original do webhook (debug)
+  created_at        DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime? @default(now()) @db.Timestamptz(6)
+
+  // Relations
+  companies         Company       @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customers         Customer?     @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user_profiles     UserProfile?  @relation(fields: [agent_user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  // Indexes pra queries comuns
+  @@index([company_id, customer_id, started_at(sort: Desc)], map: "idx_voip_calls_customer_recent")
+  @@index([company_id, agent_user_id, started_at(sort: Desc)], map: "idx_voip_calls_agent_recent")
+  @@index([company_id, started_at(sort: Desc)], map: "idx_voip_calls_recent")
+  @@index([company_id, from_number], map: "idx_voip_calls_from")
+  @@index([company_id, to_number], map: "idx_voip_calls_to")
+  @@index([company_id, status], map: "idx_voip_calls_status")
+  @@map("voip_calls")
 }
