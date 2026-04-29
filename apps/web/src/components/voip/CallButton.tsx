@@ -78,6 +78,14 @@ export function CallButton({
     try {
       // Tentativa 1: widget Sonax embedded (WebRTC no próprio browser)
       if (dialViaSonaxWidget(phoneNumber!)) {
+        // Sonax NAO dispara webhook pra outbound do widget — registramos
+        // a chamada server-side em paralelo. Fire-and-forget: se falhar,
+        // a discagem ja foi disparada e o usuario nao precisa esperar.
+        fetch('/api/voip/calls/widget-dial', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phoneNumber, customerId, serviceOrderId }),
+        }).catch(() => {})
         return
       }
 
