@@ -55,13 +55,25 @@ function isAllowedSource(req: NextRequest): boolean {
   return SONAX_ALLOWED_IPS.has(ip)
 }
 
-export async function POST(req: NextRequest) {
-  // Captura raw hit ANTES de validar
+// Extrai payload tanto de body JSON (POST/JSON) quanto de query string (GET com
+// placeholders Sonax). Sonax docs: api-de-integracao-de-voz — manda GET com
+// vars tipo id_chamada, numero, ramal, status_chamada, url_gravacao etc.
+function extractSonaxPayload(req: NextRequest, parsedBody: any): any {
+  const isObj = parsedBody && typeof parsedBody === 'object'
+  const fromBody = isObj ? parsedBody : {}
+  const sp = req.nextUrl.searchParams
+  const fromQuery: any = {}
+  sp.forEach((v, k) => { fromQuery[k] = v })
+  // body tem prioridade — mas filas Sonax mandam tudo via query
+  return { ...fromQuery, ...fromBody }
+}
+
+async function handleDisconnect(req: NextRequest) {
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
     || req.headers.get('x-real-ip') || ''
   const headers: Record<string, string> = {}
   req.headers.forEach((v, k) => { headers[k] = v })
-  const rawBody = await req.text().catch(() => '')
+  const rawBody = req.method === 'POST' ? (await req.text().catch(() => '')) : ''
   let parsedBody: unknown = rawBody
   try { parsedBody = JSON.parse(rawBody) } catch {}
 
@@ -71,39 +83,60 @@ export async function POST(req: NextRequest) {
       return error('Forbidden', 403)
     }
 
-    const body = parsedBody as any
-    if (!body || typeof body !== 'object') {
+    const body = extractSonaxPayload(req, parsedBody)
+    if (!body || typeof body !== 'object' || Object.keys(body).length === 0) {
       logWebhookHit({ ts: new Date().toISOString(), endpoint: 'disconnect', ip, headers, query: req.nextUrl.search, body: parsedBody, outcome: 'invalid_body' })
       return success({ ok: false, reason: 'invalid_body' })
     }
 
-    const callId = String(body.call_id || body.callId || body.protocolo || '').trim()
+    // Mapping Sonax placeholders <VAR> → campos internos
+    const callId = String(body.call_id || body.callId || body.protocolo || body.id_chamada || body.id_chamada_originador || '').trim()
     if (!callId) {
       logWebhookHit({ ts: new Date().toISOString(), endpoint: 'disconnect', ip, headers, query: req.nextUrl.search, body: parsedBody, outcome: 'no_call_id' })
       return success({ ok: false, reason: 'no_call_id' })
     }
     logWebhookHit({ ts: new Date().toISOString(), endpoint: 'disconnect', ip, headers, query: req.nextUrl.search, body: parsedBody, outcome: 'allowed' })
 
-    const direction = body.direction === 'outbound' ? 'outbound' : 'inbound'
-    const fromNumber = normalizePhone(String(body.from || body.from_number || ''))
-    const toNumber = normalizePhone(String(body.to || body.to_number || ''))
+    // Sonax: status_atendimento "S" = atendida, qualquer outra = perdida
+    // Direction: receptiva (inbound) usa <NUMERO_REC>, ativa (outbound) usa <NUMERO>
+    const isInbound = !!(body.numero_rec || body.NUMERO_REC || body.id_chamada_originador)
+    const direction = body.direction === 'outbound' ? 'outbound' : (isInbound ? 'inbound' : 'inbound')
+    const fromNumber = normalizePhone(String(body.from || body.from_number || body.numero_rec || (isInbound ? body.numero : '') || ''))
+    const toNumber = normalizePhone(String(body.to || body.to_number || (!isInbound ? body.numero : '') || ''))
     const didNumber = body.did ? normalizePhone(String(body.did)) : null
     const agentExtension = body.ramal ? String(body.ramal).replace(/\D/g, '') : null
 
-    const startedAt = body.started_at ? new Date(body.started_at) : new Date()
-    const answeredAt = body.answered_at ? new Date(body.answered_at) : null
-    const endedAt = body.ended_at ? new Date(body.ended_at) : new Date()
+    // Sonax envia DATA_INICIO/DATA_FIM como "yyyy-mm-dd hh:mm:ss" ou epoch — try both
+    const parseTs = (v: any): Date | null => {
+      if (!v) return null
+      const s = String(v)
+      const d = new Date(s.includes('T') ? s : s.replace(' ', 'T'))
+      return isNaN(d.getTime()) ? null : d
+    }
+    const startedAt = parseTs(body.started_at || body.data_inicio || body.DATA_INICIO) || new Date()
+    const answeredAt = parseTs(body.answered_at || body.data_atendimento)
+    const endedAt = parseTs(body.ended_at || body.data_fim || body.DATA_FIM) || new Date()
 
-    const durationSec = body.duration != null ? Number(body.duration)
-      : (answeredAt ? Math.round((endedAt.getTime() - answeredAt.getTime()) / 1000) : null)
+    const durationSec = body.duration != null
+      ? Number(body.duration)
+      : (body.duracao != null ? Number(body.duracao) : (body.duracao_chamada != null ? Number(body.duracao_chamada) : null))
 
-    const rawStatus = String(body.status || '').toLowerCase()
-    const status = ['answered','missed','busy','no_answer','failed','completed'].includes(rawStatus)
-      ? rawStatus
-      : (answeredAt ? 'completed' : 'missed')
+    // status_atendimento: "S" = atendida, "N" = não atendida (Sonax)
+    const statusAtendimento = String(body.status_atendimento || body.STATUS_ATENDIMENTO || '').toUpperCase()
+    const statusChamada = String(body.status_chamada || body.STATUS_CHAMADA || body.status || '').toLowerCase()
+    let status = 'missed'
+    if (statusAtendimento === 'S') status = 'answered'
+    else if (statusAtendimento === 'N') status = 'missed'
+    else if (['answered','missed','busy','no_answer','failed','completed'].includes(statusChamada)) {
+      status = statusChamada
+    } else if (statusChamada.includes('ramal atendeu') || statusChamada.includes('falando') || statusChamada === 'desligada') {
+      status = 'answered'
+    } else if (statusChamada.includes('ocupado')) status = 'busy'
+    else if (statusChamada.includes('falhou') || statusChamada.includes('indispon')) status = 'no_answer'
 
     const hangupCause = body.hangup_cause ? String(body.hangup_cause).slice(0, 50) : null
-    const recordingUrl = body.recording_url ? String(body.recording_url) : null
+    // Sonax: <URL_GRAVACAO> chega como url_gravacao (placeholder substituído)
+    const recordingUrl = String(body.recording_url || body.url_gravacao || body.URL_GRAVACAO || '').trim() || null
 
     const companyId = PONTUALTECH_COMPANY_ID
     if (!companyId) {
@@ -244,3 +277,6 @@ export async function POST(req: NextRequest) {
     return success({ ok: false, reason: 'internal_error' })
   }
 }
+
+export async function POST(req: NextRequest) { return handleDisconnect(req) }
+export async function GET(req: NextRequest) { return handleDisconnect(req) }

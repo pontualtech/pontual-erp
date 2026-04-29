@@ -59,13 +59,25 @@ function isAllowedSource(req: NextRequest): boolean {
   return SONAX_ALLOWED_IPS.has(ip)
 }
 
-export async function POST(req: NextRequest) {
+// Sonax envia webhook como GET com placeholders <VAR> substituídos na query.
+// Em modo "Manual" + URL com placeholders, Sonax chama GET (não POST/JSON).
+// Suportamos ambos pra compatibilidade futura.
+function extractSonaxPayloadCS(req: NextRequest, parsedBody: any): any {
+  const isObj = parsedBody && typeof parsedBody === 'object'
+  const fromBody = isObj ? parsedBody : {}
+  const sp = req.nextUrl.searchParams
+  const fromQuery: any = {}
+  sp.forEach((v, k) => { fromQuery[k] = v })
+  return { ...fromQuery, ...fromBody }
+}
+
+async function handleCallStart(req: NextRequest) {
   // Captura raw hit ANTES da validação pra debug do que Sonax envia
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
     || req.headers.get('x-real-ip') || ''
   const headers: Record<string, string> = {}
   req.headers.forEach((v, k) => { headers[k] = v })
-  const rawBody = await req.text().catch(() => '')
+  const rawBody = req.method === 'POST' ? (await req.text().catch(() => '')) : ''
   let parsedBody: unknown = rawBody
   try { parsedBody = JSON.parse(rawBody) } catch {}
 
@@ -75,27 +87,36 @@ export async function POST(req: NextRequest) {
       return error('Forbidden — IP não autorizado', 403)
     }
 
-    const body = parsedBody as any
-    if (!body || typeof body !== 'object') {
+    const body = extractSonaxPayloadCS(req, parsedBody)
+    if (!body || typeof body !== 'object' || Object.keys(body).length === 0) {
       logWebhookHit({ ts: new Date().toISOString(), endpoint: 'call-start', ip, headers, query: req.nextUrl.search, body: parsedBody, outcome: 'invalid_body' })
       return error('Body inválido', 400)
     }
 
-    const callId = String(body.call_id || body.callId || body.protocolo || '').trim()
+    // Sonax placeholder mapping
+    const callId = String(body.call_id || body.callId || body.protocolo || body.id_chamada || body.id_chamada_originador || '').trim()
     if (!callId) {
       logWebhookHit({ ts: new Date().toISOString(), endpoint: 'call-start', ip, headers, query: req.nextUrl.search, body: parsedBody, outcome: 'no_call_id' })
       return error('call_id obrigatório', 400)
     }
 
-    const direction = (body.direction === 'outbound' ? 'outbound' : 'inbound')
-    const fromRaw = String(body.from || body.from_number || '')
-    const toRaw = String(body.to || body.to_number || '')
+    // Sonax: <NUMERO_REC> = origem inbound; <NUMERO> = destino outbound
+    const isInbound = !!(body.numero_rec || body.NUMERO_REC || body.id_chamada_originador)
+    const direction = body.direction === 'outbound' ? 'outbound' : (isInbound ? 'inbound' : 'inbound')
+    const fromRaw = String(body.from || body.from_number || body.numero_rec || (isInbound ? body.numero : '') || '')
+    const toRaw = String(body.to || body.to_number || (!isInbound ? body.numero : '') || '')
     const fromNumber = normalizePhone(fromRaw)
     const toNumber = normalizePhone(toRaw)
     const didNumber = body.did ? normalizePhone(String(body.did)) : null
-    const agentExtension = body.ramal ? String(body.ramal).replace(/\D/g, '') : null
+    const agentExtension = String(body.ramal || body.aliasramal || body.ALIASRAMAL || '').replace(/\D/g, '') || null
 
-    const startedAt = body.started_at ? new Date(body.started_at) : new Date()
+    const parseTs = (v: any): Date | null => {
+      if (!v) return null
+      const s = String(v)
+      const d = new Date(s.includes('T') ? s : s.replace(' ', 'T'))
+      return isNaN(d.getTime()) ? null : d
+    }
+    const startedAt = parseTs(body.started_at || body.data_inicio || body.DATA_INICIO) || new Date()
     const companyId = PONTUALTECH_COMPANY_ID
 
     if (!companyId) {
@@ -179,3 +200,6 @@ export async function POST(req: NextRequest) {
     return handleError(e)
   }
 }
+
+export async function POST(req: NextRequest) { return handleCallStart(req) }
+export async function GET(req: NextRequest) { return handleCallStart(req) }
