@@ -103,21 +103,31 @@ async function handleCallStart(req: NextRequest) {
     // Sonax doc KB 159253:
     //   <NUMERO>     = pessoa (origem em receptivas, destino em campanhas)
     //   <NUMERO_REC> = nosso DID (so em receptivas; quem RECEBEU)
-    const isInbound = !!(body.numero_rec || body.NUMERO_REC)
-    const direction = body.direction === 'outbound' ? 'outbound' : (isInbound ? 'inbound' : 'inbound')
+    // Direction: query param `?direction=outbound|inbound` override (configurado
+    // no URL do webhook Sonax). Senao, default heuristica antiga.
+    const directionOverride = String(body.direction || body.DIRECTION || '').toLowerCase()
+    const isOutboundOverride = directionOverride === 'outbound'
+    const isInboundOverride = directionOverride === 'inbound'
+    const isInbound = isInboundOverride || (!isOutboundOverride && !!(body.numero_rec || body.NUMERO_REC))
+    const direction: 'inbound' | 'outbound' = isInbound ? 'inbound' : 'outbound'
     const numeroPessoa = String(body.numero || '')
     const numeroDID = String(body.numero_rec || body.NUMERO_REC || '')
-    const fromRaw = String(body.from || body.from_number || (isInbound ? numeroPessoa : '') || '')
+    const fromRaw = String(body.from || body.from_number || (isInbound ? numeroPessoa : numeroDID) || '')
     const toRaw = String(body.to || body.to_number || (isInbound ? numeroDID : numeroPessoa) || '')
     const fromNumber = normalizePhone(fromRaw)
     const toNumber = normalizePhone(toRaw)
     const didNumber = body.did ? normalizePhone(String(body.did)) : null
     const agentExtension = String(body.ramal || body.aliasramal || body.ALIASRAMAL || '').replace(/\D/g, '') || null
 
+    // Sonax envia "yyyy-mm-dd hh:mm:ss" em BRT sem TZ. Sem fix, JS parseia
+    // como horario local do server (UTC) e a chamada aparece 3h no passado.
     const parseTs = (v: any): Date | null => {
       if (!v) return null
-      const s = String(v)
-      const d = new Date(s.includes('T') ? s : s.replace(' ', 'T'))
+      const s = String(v).trim()
+      if (!s) return null
+      const hasTz = /[zZ]|[+-]\d{2}:?\d{2}$/.test(s)
+      const iso = s.includes('T') ? s : s.replace(' ', 'T')
+      const d = new Date(hasTz ? iso : iso + '-03:00')
       return isNaN(d.getTime()) ? null : d
     }
     const startedAt = parseTs(body.started_at || body.data_inicio || body.DATA_INICIO) || new Date()

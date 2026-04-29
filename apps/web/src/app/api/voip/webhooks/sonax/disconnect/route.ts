@@ -102,22 +102,33 @@ async function handleDisconnect(req: NextRequest) {
     //   <NUMERO_REC> = numero do DID (somente em receptivas; quem RECEBEU)
     //   Status atendimento: "S" = atendida, "N" = perdida
     // Receptiva: tem numero_rec preenchido. Ativa: nao tem.
-    const isInbound = !!(body.numero_rec || body.NUMERO_REC)
-    const direction = body.direction === 'outbound' ? 'outbound' : (isInbound ? 'inbound' : 'inbound')
+    // Direction: query param `?direction=outbound|inbound` override (configurado
+    // no URL do webhook Sonax) — necessario quando a fila inbound tambem captura
+    // chamadas outbound do mesmo ramal logado.
+    const directionOverride = String(body.direction || body.DIRECTION || '').toLowerCase()
+    const isOutboundOverride = directionOverride === 'outbound'
+    const isInboundOverride = directionOverride === 'inbound'
+    const isInbound = isInboundOverride || (!isOutboundOverride && !!(body.numero_rec || body.NUMERO_REC))
+    const direction: 'inbound' | 'outbound' = isInbound ? 'inbound' : 'outbound'
     // Em INBOUND: from = numero (cliente que ligou), to = numero_rec (nosso DID)
-    // Em OUTBOUND: from = ramal (nosso), to = numero (destino)
+    // Em OUTBOUND: from = nosso DID, to = numero (destino externo)
     const numeroPessoa = String(body.numero || '')
     const numeroDID = String(body.numero_rec || body.NUMERO_REC || '')
-    const fromNumber = normalizePhone(String(body.from || body.from_number || (isInbound ? numeroPessoa : '') || ''))
+    const fromNumber = normalizePhone(String(body.from || body.from_number || (isInbound ? numeroPessoa : numeroDID) || ''))
     const toNumber = normalizePhone(String(body.to || body.to_number || (isInbound ? numeroDID : numeroPessoa) || ''))
     const didNumber = body.did ? normalizePhone(String(body.did)) : null
     const agentExtension = body.ramal ? String(body.ramal).replace(/\D/g, '') : null
 
-    // Sonax envia DATA_INICIO/DATA_FIM como "yyyy-mm-dd hh:mm:ss" ou epoch — try both
+    // Sonax envia DATA_INICIO/DATA_FIM como "yyyy-mm-dd hh:mm:ss" em BRT sem TZ.
+    // Sem fix, JS parseia como horario local do server (UTC) e o registro fica 3h
+    // no passado, sumindo do topo do listing.
     const parseTs = (v: any): Date | null => {
       if (!v) return null
-      const s = String(v)
-      const d = new Date(s.includes('T') ? s : s.replace(' ', 'T'))
+      const s = String(v).trim()
+      if (!s) return null
+      const hasTz = /[zZ]|[+-]\d{2}:?\d{2}$/.test(s)
+      const iso = s.includes('T') ? s : s.replace(' ', 'T')
+      const d = new Date(hasTz ? iso : iso + '-03:00')
       return isNaN(d.getTime()) ? null : d
     }
     const startedAt = parseTs(body.started_at || body.data_inicio || body.DATA_INICIO) || new Date()
