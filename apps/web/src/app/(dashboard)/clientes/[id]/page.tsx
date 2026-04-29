@@ -7,6 +7,7 @@ import { ArrowLeft, Pencil, Trash2, DollarSign, Download, Printer, Loader2, Refr
 import { formatDocument } from '@/lib/utils'
 import { toTitleCase as tc } from '@/lib/format-text'
 import { toast } from 'sonner'
+import { CallButton } from '@/components/voip/CallButton'
 
 interface Cliente {
   id: string
@@ -207,6 +208,7 @@ export default function ClienteDetalhePage() {
                     <MessageCircle className="h-3 w-3 text-white" />
                   </a>
                 )}
+                <CallButton phoneNumber={cliente.mobile} customerId={cliente.id} variant="icon" />
               </div>
             </div>
             <div className="flex justify-between">
@@ -220,6 +222,7 @@ export default function ClienteDetalhePage() {
                     <MessageCircle className="h-3 w-3 text-white" />
                   </a>
                 )}
+                <CallButton phoneNumber={cliente.phone} customerId={cliente.id} variant="icon" />
               </div>
             </div>
           </div>
