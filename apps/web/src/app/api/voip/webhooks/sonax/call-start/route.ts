@@ -100,11 +100,15 @@ async function handleCallStart(req: NextRequest) {
       return error('call_id obrigatório', 400)
     }
 
-    // Sonax: <NUMERO_REC> = origem inbound; <NUMERO> = destino outbound
-    const isInbound = !!(body.numero_rec || body.NUMERO_REC || body.id_chamada_originador)
+    // Sonax doc KB 159253:
+    //   <NUMERO>     = pessoa (origem em receptivas, destino em campanhas)
+    //   <NUMERO_REC> = nosso DID (so em receptivas; quem RECEBEU)
+    const isInbound = !!(body.numero_rec || body.NUMERO_REC)
     const direction = body.direction === 'outbound' ? 'outbound' : (isInbound ? 'inbound' : 'inbound')
-    const fromRaw = String(body.from || body.from_number || body.numero_rec || (isInbound ? body.numero : '') || '')
-    const toRaw = String(body.to || body.to_number || (!isInbound ? body.numero : '') || '')
+    const numeroPessoa = String(body.numero || '')
+    const numeroDID = String(body.numero_rec || body.NUMERO_REC || '')
+    const fromRaw = String(body.from || body.from_number || (isInbound ? numeroPessoa : '') || '')
+    const toRaw = String(body.to || body.to_number || (isInbound ? numeroDID : numeroPessoa) || '')
     const fromNumber = normalizePhone(fromRaw)
     const toNumber = normalizePhone(toRaw)
     const didNumber = body.did ? normalizePhone(String(body.did)) : null

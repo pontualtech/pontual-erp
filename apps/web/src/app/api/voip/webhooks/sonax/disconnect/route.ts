@@ -97,12 +97,19 @@ async function handleDisconnect(req: NextRequest) {
     }
     logWebhookHit({ ts: new Date().toISOString(), endpoint: 'disconnect', ip, headers, query: req.nextUrl.search, body: parsedBody, outcome: 'allowed' })
 
-    // Sonax: status_atendimento "S" = atendida, qualquer outra = perdida
-    // Direction: receptiva (inbound) usa <NUMERO_REC>, ativa (outbound) usa <NUMERO>
-    const isInbound = !!(body.numero_rec || body.NUMERO_REC || body.id_chamada_originador)
+    // Sonax doc KB 159253:
+    //   <NUMERO>     = numero da pessoa (origem em receptivas, destino em campanhas)
+    //   <NUMERO_REC> = numero do DID (somente em receptivas; quem RECEBEU)
+    //   Status atendimento: "S" = atendida, "N" = perdida
+    // Receptiva: tem numero_rec preenchido. Ativa: nao tem.
+    const isInbound = !!(body.numero_rec || body.NUMERO_REC)
     const direction = body.direction === 'outbound' ? 'outbound' : (isInbound ? 'inbound' : 'inbound')
-    const fromNumber = normalizePhone(String(body.from || body.from_number || body.numero_rec || (isInbound ? body.numero : '') || ''))
-    const toNumber = normalizePhone(String(body.to || body.to_number || (!isInbound ? body.numero : '') || ''))
+    // Em INBOUND: from = numero (cliente que ligou), to = numero_rec (nosso DID)
+    // Em OUTBOUND: from = ramal (nosso), to = numero (destino)
+    const numeroPessoa = String(body.numero || '')
+    const numeroDID = String(body.numero_rec || body.NUMERO_REC || '')
+    const fromNumber = normalizePhone(String(body.from || body.from_number || (isInbound ? numeroPessoa : '') || ''))
+    const toNumber = normalizePhone(String(body.to || body.to_number || (isInbound ? numeroDID : numeroPessoa) || ''))
     const didNumber = body.did ? normalizePhone(String(body.did)) : null
     const agentExtension = body.ramal ? String(body.ramal).replace(/\D/g, '') : null
 
