@@ -135,7 +135,7 @@ export function CallToast() {
   if (toasts.length === 0) return null
 
   return (
-    <div className="fixed bottom-4 right-4 z-[9999] space-y-2 max-w-sm">
+    <div className="fixed bottom-4 right-4 z-[9999] space-y-2 max-w-sm pointer-events-none">
       {toasts.map(t => {
         const isMissed = t.kind === 'missed'
         const isRinging = t.kind === 'ringing'
@@ -160,7 +160,7 @@ export function CallToast() {
         return (
           <div
             key={t.uid}
-            className={`rounded-lg border-2 shadow-lg p-3 animate-in slide-in-from-right-4 duration-300 ${colors} ${isRinging ? 'animate-pulse' : ''}`}
+            className={`pointer-events-auto rounded-lg border-2 shadow-lg p-3 animate-in slide-in-from-right-4 duration-300 ${colors} ${isRinging ? 'animate-pulse' : ''}`}
           >
             <div className="flex items-start gap-2">
               <Icon className={`h-5 w-5 mt-0.5 ${isRinging ? 'animate-bounce' : ''}`} />
