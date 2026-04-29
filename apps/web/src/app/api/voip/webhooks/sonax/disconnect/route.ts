@@ -29,6 +29,7 @@ import { prisma } from '@pontual/db'
 import { error, success } from '@/lib/api-response'
 import { normalizePhone, getPhoneSearchVariants } from '@/lib/voip/phone'
 import { downloadRecording } from '@/lib/voip/recording'
+import { emitVoipEvent, type VoipEvent } from '@/lib/voip/eventBus'
 
 const SONAX_ALLOWED_IPS = new Set([
   '200.201.193.85',
@@ -98,6 +99,7 @@ export async function POST(req: NextRequest) {
     // Lookup customer
     const externalNumber = direction === 'inbound' ? fromNumber : toNumber
     let customerId: string | null = null
+    let customerName: string | null = null
     if (externalNumber && externalNumber.length >= 8) {
       const variants = getPhoneSearchVariants(externalNumber)
       const customer = await prisma.customer.findFirst({
@@ -109,9 +111,10 @@ export async function POST(req: NextRequest) {
             { mobile: { in: variants } },
           ],
         },
-        select: { id: true },
+        select: { id: true, legal_name: true, trade_name: true },
       })
       customerId = customer?.id || null
+      customerName = customer?.trade_name || customer?.legal_name || null
     }
 
     // Lookup user pelo ramal (via SONAX_RAMAL_MAPPING)
@@ -192,6 +195,27 @@ export async function POST(req: NextRequest) {
         })
         .catch(e => console.error('[voip-recording-download] exception:', e))
     }
+
+    // Empurra evento real-time pro CRM Pop:
+    //   - answered/completed → toast verde curto "atendida"
+    //   - missed/no_answer/busy/failed → toast vermelho "perdida" com botão Retornar
+    const eventType: VoipEvent['type'] = (status === 'answered' || status === 'completed')
+      ? 'call.answered'
+      : 'call.missed'
+    emitVoipEvent({
+      type: eventType,
+      companyId,
+      voipCallId: call.id,
+      callId: call.call_id,
+      direction: call.direction as 'inbound' | 'outbound',
+      fromNumber: call.from_number,
+      toNumber: call.to_number,
+      customerId: call.customer_id,
+      customerName,
+      agentExtension: call.agent_extension,
+      status: call.status,
+      startedAt: call.started_at.toISOString(),
+    })
 
     return success({
       callId: call.call_id,

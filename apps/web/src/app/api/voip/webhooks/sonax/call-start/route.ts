@@ -28,6 +28,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { error, handleError, success } from '@/lib/api-response'
 import { normalizePhone, getPhoneSearchVariants } from '@/lib/voip/phone'
+import { emitVoipEvent } from '@/lib/voip/eventBus'
 
 // IPs autorizados Sonax (ver tag deploy-2026-04-29-telefonia-f2-OK)
 const SONAX_ALLOWED_IPS = new Set([
@@ -91,6 +92,7 @@ export async function POST(req: NextRequest) {
     // Lookup customer por phone (do quem ligou OU pra quem ligou)
     const externalNumber = direction === 'inbound' ? fromNumber : toNumber
     let customerId: string | null = null
+    let customerName: string | null = null
     if (externalNumber && externalNumber.length >= 8) {
       const variants = getPhoneSearchVariants(externalNumber)
       const customer = await prisma.customer.findFirst({
@@ -102,9 +104,10 @@ export async function POST(req: NextRequest) {
             { mobile: { in: variants } },
           ],
         },
-        select: { id: true },
+        select: { id: true, legal_name: true, trade_name: true },
       })
       customerId = customer?.id || null
+      customerName = customer?.trade_name || customer?.legal_name || null
     }
 
     // Upsert: idempotente, mesmo call_id atualiza
@@ -129,6 +132,22 @@ export async function POST(req: NextRequest) {
         raw_webhook: body as object,
         updated_at: new Date(),
       },
+    })
+
+    // Empurra evento real-time pro CRM Pop (toast no ERP)
+    emitVoipEvent({
+      type: 'call.start',
+      companyId,
+      voipCallId: call.id,
+      callId: call.call_id,
+      direction: call.direction as 'inbound' | 'outbound',
+      fromNumber: call.from_number,
+      toNumber: call.to_number,
+      customerId: call.customer_id,
+      customerName,
+      agentExtension: call.agent_extension,
+      status: call.status,
+      startedAt: call.started_at.toISOString(),
     })
 
     return success({

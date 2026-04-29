@@ -5,6 +5,7 @@ import { Header } from './components/header'
 import { ThemeProvider } from './components/theme-provider'
 import { AnnouncementModal } from './components/announcement-modal'
 import { RouteGuard } from './components/route-guard'
+import { CallToast } from '@/components/voip/CallToast'
 
 export default async function DashboardLayout({
   children,
@@ -30,6 +31,7 @@ export default async function DashboardLayout({
           </main>
         </div>
         <AnnouncementModal />
+        <CallToast />
       </div>
     </ThemeProvider>
   )
