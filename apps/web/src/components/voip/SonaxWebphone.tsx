@@ -10,10 +10,14 @@ import { useEffect, useState } from 'react'
  * nada manual aqui, so colocar o <script> com o data/dataClient certo.
  *
  * Mounted no dashboard layout, so carrega se user tem ramal mapeado.
+ *
+ * Tambem observa localStorage['webphone-incall'] pra fechar registro outbound
+ * (criado por widget-dial) quando o user encerra a chamada — Sonax nao manda
+ * webhook pra outbound do widget, entao precisamos detectar fim client-side.
  */
 export function SonaxWebphone() {
-  const [loaded, setLoaded] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [, setLoaded] = useState(false)
+  const [, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -21,12 +25,10 @@ export function SonaxWebphone() {
 
     async function load() {
       try {
-        // Evita carregar 2x (HMR no dev / multi-render)
         if (document.getElementById('widget-script')) {
           setLoaded(true)
           return
         }
-
         const r = await fetch('/api/voip/webphone-token', { cache: 'no-store' })
         if (!r.ok) {
           if (r.status !== 404) {
@@ -55,6 +57,37 @@ export function SonaxWebphone() {
     return () => { cancelled = true }
   }, [])
 
-  // Componente nao renderiza nada — widget Sonax cria sua propria UI flutuante
+  // Observer: detecta transicao 'TRUE' -> null no localStorage['webphone-incall']
+  // (widget Sonax limpa essa flag quando a chamada encerra). Ao detectar, dispara
+  // POST /api/voip/calls/widget-end pra fechar o registro outbound criado por
+  // widget-dial. Sem isso, a chamada fica pendurada em "Tocando" ate o cron de
+  // 30min marcar como failed.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    let prev = localStorage.getItem('webphone-incall')
+    let lastEnded = 0
+
+    const interval = setInterval(() => {
+      const cur = localStorage.getItem('webphone-incall')
+      if (prev === 'TRUE' && cur !== 'TRUE') {
+        // Transicao "em chamada" -> "idle": chamada acabou
+        const now = Date.now()
+        if (now - lastEnded < 5000) {
+          // debounce — evita disparar 2x se localStorage flicker
+        } else {
+          lastEnded = now
+          fetch('/api/voip/calls/widget-end', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: '{}',
+          }).catch(() => {})
+        }
+      }
+      prev = cur
+    }, 1500)
+
+    return () => clearInterval(interval)
+  }, [])
+
   return null
 }
