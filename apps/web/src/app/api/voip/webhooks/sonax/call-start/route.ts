@@ -1,0 +1,144 @@
+/**
+ * Webhook Sonax — Call Start
+ *
+ * Recebe notificação no início de uma chamada (inbound ou outbound).
+ * Cria ou atualiza registro VoipCall com status "ringing".
+ *
+ * NÃO autentica via session — Sonax não tem session. Validação por:
+ * - IP origem (Sonax: 200.201.193.85, .212.100, .212.68)
+ * - Shared secret opcional (env SONAX_WEBHOOK_SECRET)
+ *
+ * Payload esperado (Sonax v1):
+ *   {
+ *     "event": "call.start",
+ *     "call_id": "abc-123",
+ *     "direction": "inbound" | "outbound",
+ *     "from": "11988889999",        // E.164 sem +55 ou com formatação BR
+ *     "to": "1131360415",           // mesmo
+ *     "did": "1131360415",          // só inbound: qual DID PontualTech foi chamado
+ *     "ramal": "101",               // ramal SIP (se identificado)
+ *     "started_at": "2026-04-29T11:30:00-03:00"
+ *   }
+ *
+ * Multi-tenant: por enquanto, todos os webhooks são do tenant PontualTech.
+ * Quando vier multi-cliente Sonax, identificar via DID/ramal → company_id.
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@pontual/db'
+import { error, handleError, success } from '@/lib/api-response'
+import { normalizePhone, getPhoneSearchVariants } from '@/lib/voip/phone'
+
+// IPs autorizados Sonax (ver tag deploy-2026-04-29-telefonia-f2-OK)
+const SONAX_ALLOWED_IPS = new Set([
+  '200.201.193.85',
+  '200.201.212.100',
+  '200.201.212.68',
+])
+
+// Hardcoded por enquanto (PontualTech é o único tenant com VOIP em prod)
+// Quando multi-tenant, descobrir via DID → voip_inbound_numbers.company_id
+const PONTUALTECH_COMPANY_ID = process.env.SONAX_DEFAULT_COMPANY_ID || ''
+
+function isAllowedSource(req: NextRequest): boolean {
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    || req.headers.get('x-real-ip')
+    || ''
+
+  // Em desenvolvimento permite tudo
+  if (process.env.NODE_ENV !== 'production') return true
+
+  // Se ALLOWED_IPS configurada via env, usar
+  const allowedEnv = process.env.SONAX_WEBHOOK_ALLOWED_IPS
+  if (allowedEnv) {
+    const allowed = new Set(allowedEnv.split(',').map(s => s.trim()).filter(Boolean))
+    return allowed.has(ip)
+  }
+
+  return SONAX_ALLOWED_IPS.has(ip)
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    if (!isAllowedSource(req)) {
+      return error('Forbidden — IP não autorizado', 403)
+    }
+
+    const body = await req.json().catch(() => null)
+    if (!body || typeof body !== 'object') {
+      return error('Body inválido', 400)
+    }
+
+    const callId = String(body.call_id || body.callId || '').trim()
+    if (!callId) return error('call_id obrigatório', 400)
+
+    const direction = (body.direction === 'outbound' ? 'outbound' : 'inbound')
+    const fromRaw = String(body.from || body.from_number || '')
+    const toRaw = String(body.to || body.to_number || '')
+    const fromNumber = normalizePhone(fromRaw)
+    const toNumber = normalizePhone(toRaw)
+    const didNumber = body.did ? normalizePhone(String(body.did)) : null
+    const agentExtension = body.ramal ? String(body.ramal).replace(/\D/g, '') : null
+
+    const startedAt = body.started_at ? new Date(body.started_at) : new Date()
+    const companyId = PONTUALTECH_COMPANY_ID
+
+    if (!companyId) {
+      console.error('[voip-webhook] SONAX_DEFAULT_COMPANY_ID env não configurado')
+      return error('Configuração faltando', 500)
+    }
+
+    // Lookup customer por phone (do quem ligou OU pra quem ligou)
+    const externalNumber = direction === 'inbound' ? fromNumber : toNumber
+    let customerId: string | null = null
+    if (externalNumber && externalNumber.length >= 8) {
+      const variants = getPhoneSearchVariants(externalNumber)
+      const customer = await prisma.customer.findFirst({
+        where: {
+          company_id: companyId,
+          deleted_at: null,
+          OR: [
+            { phone: { in: variants } },
+            { mobile: { in: variants } },
+          ],
+        },
+        select: { id: true },
+      })
+      customerId = customer?.id || null
+    }
+
+    // Upsert: idempotente, mesmo call_id atualiza
+    const call = await prisma.voipCall.upsert({
+      where: { call_id: callId },
+      create: {
+        company_id: companyId,
+        call_id: callId,
+        direction,
+        from_number: fromNumber,
+        to_number: toNumber,
+        did_number: didNumber,
+        customer_id: customerId,
+        agent_extension: agentExtension,
+        started_at: startedAt,
+        status: 'ringing',
+        raw_webhook: body as object,
+      },
+      update: {
+        // Se webhook duplicado, mantém estado mas atualiza timestamp/raw
+        agent_extension: agentExtension,
+        raw_webhook: body as object,
+        updated_at: new Date(),
+      },
+    })
+
+    return success({
+      callId: call.call_id,
+      voipCallId: call.id,
+      customerId: call.customer_id,
+      direction: call.direction,
+      status: call.status,
+    })
+  } catch (e) {
+    return handleError(e)
+  }
+}
