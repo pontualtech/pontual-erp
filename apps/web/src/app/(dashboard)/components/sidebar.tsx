@@ -9,7 +9,7 @@ import type { AuthUser } from '@/lib/auth'
 import {
   ClipboardList, Users, Package, DollarSign, FileText,
   Settings, LayoutDashboard, Menu, X, ChevronDown, ChevronLeft, ChevronRight, MessageSquare, MessageCircle, Phone, Truck,
-  Building2, ShoppingCart, BarChart3, Activity, Wrench, Shield,
+  Building2, ShoppingCart, BarChart3, Activity, Wrench, Shield, PhoneCall, Server,
 } from 'lucide-react'
 
 interface NavItem {
@@ -84,6 +84,18 @@ const navGroups: { title: string; items: NavItem[] }[] = [
     title: 'Plataforma',
     items: [
       { label: 'Super Admin', href: '/admin', icon: Shield, superAdminOnly: true },
+      {
+        label: 'Telefonia',
+        href: '/super-admin/voip',
+        icon: PhoneCall,
+        superAdminOnly: true,
+        children: [
+          { label: 'Providers', href: '/super-admin/voip/providers', icon: Phone },
+          { label: 'Ramais', href: '/super-admin/voip/extensions', icon: Phone },
+          { label: 'Numeros', href: '/super-admin/voip/inbound-numbers', icon: Phone },
+          { label: 'Asterisk', href: '/super-admin/voip/asterisk', icon: Server },
+        ],
+      },
     ],
   },
 ]
