@@ -6,7 +6,6 @@ import { ThemeProvider } from './components/theme-provider'
 import { AnnouncementModal } from './components/announcement-modal'
 import { RouteGuard } from './components/route-guard'
 import { CallToast } from '@/components/voip/CallToast'
-import { Dialpad } from '@/components/voip/Dialpad'
 import { SonaxWebphone } from '@/components/voip/SonaxWebphone'
 
 export default async function DashboardLayout({
@@ -34,7 +33,6 @@ export default async function DashboardLayout({
         </div>
         <AnnouncementModal />
         <CallToast />
-        <Dialpad />
         <SonaxWebphone />
       </div>
     </ThemeProvider>
