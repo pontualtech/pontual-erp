@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { ArrowLeft, PhoneIncoming, PhoneOutgoing, PhoneMissed, User, Clock, Phone, FileAudio, Wrench, Link2 } from 'lucide-react'
 import { RecordingPlayer } from '@/components/voip/RecordingPlayer'
 import { LinkOsToCall } from '@/components/voip/LinkOsToCall'
+import { RecordingShareMenu } from '@/components/voip/RecordingShareMenu'
 
 interface Call {
   id: string
@@ -205,12 +206,19 @@ export default function VoipCallDetailPage() {
 
       {call.recording_url && (
         <div className="rounded-lg border bg-white p-5 space-y-3">
-          <h2 className="font-semibold text-gray-900 flex items-center gap-2">
-            <FileAudio className="h-4 w-4 text-purple-600" /> Gravação
-          </h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-semibold text-gray-900 flex items-center gap-2">
+              <FileAudio className="h-4 w-4 text-purple-600" /> Gravação
+            </h2>
+            <RecordingShareMenu
+              callId={call.id}
+              customerName={call.customers?.legal_name}
+              startedAt={call.started_at}
+            />
+          </div>
           <RecordingPlayer callId={call.id} durationSec={call.duration_sec} />
           <p className="text-xs text-gray-500">
-            ⚠️ Gravação contém dados pessoais. Acesso restrito por LGPD.
+            ⚠️ Gravação contém dados pessoais. Acesso restrito por LGPD. Links compartilhados expiram em 7 dias.
           </p>
         </div>
       )}

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, PlayCircle, PauseCircle, RefreshCw, Loader2 } from 'lucide-react'
+import { CallButton } from '@/components/voip/CallButton'
 
 interface Call {
   id: string
@@ -271,7 +272,20 @@ export default function VoipCallsPage() {
                       {c.recording_url ? <InlinePlayer callId={c.id} /> : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-4 py-3">
-                      <Link href={`/voip/calls/${c.id}`} className="text-xs text-blue-600 hover:underline">Detalhes</Link>
+                      <div className="flex items-center gap-2">
+                        {(() => {
+                          const externalNum = c.direction === 'inbound' ? c.from_number : c.to_number
+                          if (!externalNum || externalNum.replace(/\D/g, '').length < 8) return null
+                          return (
+                            <CallButton
+                              phoneNumber={externalNum}
+                              customerId={c.customers?.id}
+                              variant="icon"
+                            />
+                          )
+                        })()}
+                        <Link href={`/voip/calls/${c.id}`} className="text-xs text-blue-600 hover:underline">Detalhes</Link>
+                      </div>
                     </td>
                   </tr>
                   )

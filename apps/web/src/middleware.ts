@@ -67,6 +67,10 @@ export async function middleware(request: NextRequest) {
   if (pathname.startsWith('/api/chatwoot/') || pathname.startsWith('/api/webhook/') || pathname.startsWith('/api/webhooks/') || pathname.startsWith('/api/voip/webhooks/')) {
     return NextResponse.next()
   }
+  // Public share links (recording downloads via signed token)
+  if (pathname.startsWith('/api/voip/share/')) {
+    return NextResponse.next()
+  }
   // OAuth callback do Google Business — recebido externamente (browser
   // do user apos autorizar). Valida state no handler.
   if (pathname === '/api/integracoes/google-business/callback') {
