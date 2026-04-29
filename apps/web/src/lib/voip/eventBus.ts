@@ -11,6 +11,31 @@ import { EventEmitter } from 'events'
 declare global {
   // eslint-disable-next-line no-var
   var __voipEventBus__: EventEmitter | undefined
+  // eslint-disable-next-line no-var
+  var __voipWebhookHits__: WebhookHit[] | undefined
+}
+
+export interface WebhookHit {
+  ts: string
+  endpoint: string
+  ip: string
+  headers: Record<string, string>
+  query: string
+  body: unknown
+  outcome: 'allowed' | 'forbidden_ip' | 'invalid_body' | 'no_call_id' | 'company_not_configured' | 'created' | 'updated' | 'error'
+  error?: string
+}
+
+export function logWebhookHit(hit: WebhookHit): void {
+  if (!globalThis.__voipWebhookHits__) globalThis.__voipWebhookHits__ = []
+  globalThis.__voipWebhookHits__.unshift(hit)
+  if (globalThis.__voipWebhookHits__.length > 50) {
+    globalThis.__voipWebhookHits__.length = 50
+  }
+}
+
+export function getRecentWebhookHits(): WebhookHit[] {
+  return globalThis.__voipWebhookHits__ || []
 }
 
 function getBus(): EventEmitter {

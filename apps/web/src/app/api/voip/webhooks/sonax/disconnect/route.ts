@@ -29,7 +29,7 @@ import { prisma } from '@pontual/db'
 import { error, success } from '@/lib/api-response'
 import { normalizePhone, getPhoneSearchVariants } from '@/lib/voip/phone'
 import { downloadRecording } from '@/lib/voip/recording'
-import { emitVoipEvent, type VoipEvent } from '@/lib/voip/eventBus'
+import { emitVoipEvent, logWebhookHit, type VoipEvent } from '@/lib/voip/eventBus'
 
 const SONAX_ALLOWED_IPS = new Set([
   '200.201.193.85',
@@ -56,18 +56,33 @@ function isAllowedSource(req: NextRequest): boolean {
 }
 
 export async function POST(req: NextRequest) {
+  // Captura raw hit ANTES de validar
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    || req.headers.get('x-real-ip') || ''
+  const headers: Record<string, string> = {}
+  req.headers.forEach((v, k) => { headers[k] = v })
+  const rawBody = await req.text().catch(() => '')
+  let parsedBody: unknown = rawBody
+  try { parsedBody = JSON.parse(rawBody) } catch {}
+
   try {
     if (!isAllowedSource(req)) {
+      logWebhookHit({ ts: new Date().toISOString(), endpoint: 'disconnect', ip, headers, query: req.nextUrl.search, body: parsedBody, outcome: 'forbidden_ip' })
       return error('Forbidden', 403)
     }
 
-    const body = await req.json().catch(() => null)
+    const body = parsedBody
     if (!body || typeof body !== 'object') {
+      logWebhookHit({ ts: new Date().toISOString(), endpoint: 'disconnect', ip, headers, query: req.nextUrl.search, body: parsedBody, outcome: 'invalid_body' })
       return success({ ok: false, reason: 'invalid_body' })
     }
 
-    const callId = String(body.call_id || body.callId || '').trim()
-    if (!callId) return success({ ok: false, reason: 'no_call_id' })
+    const callId = String(body.call_id || body.callId || body.protocolo || '').trim()
+    if (!callId) {
+      logWebhookHit({ ts: new Date().toISOString(), endpoint: 'disconnect', ip, headers, query: req.nextUrl.search, body: parsedBody, outcome: 'no_call_id' })
+      return success({ ok: false, reason: 'no_call_id' })
+    }
+    logWebhookHit({ ts: new Date().toISOString(), endpoint: 'disconnect', ip, headers, query: req.nextUrl.search, body: parsedBody, outcome: 'allowed' })
 
     const direction = body.direction === 'outbound' ? 'outbound' : 'inbound'
     const fromNumber = normalizePhone(String(body.from || body.from_number || ''))

@@ -28,7 +28,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { error, handleError, success } from '@/lib/api-response'
 import { normalizePhone, getPhoneSearchVariants } from '@/lib/voip/phone'
-import { emitVoipEvent } from '@/lib/voip/eventBus'
+import { emitVoipEvent, logWebhookHit } from '@/lib/voip/eventBus'
 
 // IPs autorizados Sonax (ver tag deploy-2026-04-29-telefonia-f2-OK)
 const SONAX_ALLOWED_IPS = new Set([
@@ -60,18 +60,32 @@ function isAllowedSource(req: NextRequest): boolean {
 }
 
 export async function POST(req: NextRequest) {
+  // Captura raw hit ANTES da validação pra debug do que Sonax envia
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    || req.headers.get('x-real-ip') || ''
+  const headers: Record<string, string> = {}
+  req.headers.forEach((v, k) => { headers[k] = v })
+  const rawBody = await req.text().catch(() => '')
+  let parsedBody: unknown = rawBody
+  try { parsedBody = JSON.parse(rawBody) } catch {}
+
   try {
     if (!isAllowedSource(req)) {
+      logWebhookHit({ ts: new Date().toISOString(), endpoint: 'call-start', ip, headers, query: req.nextUrl.search, body: parsedBody, outcome: 'forbidden_ip' })
       return error('Forbidden — IP não autorizado', 403)
     }
 
-    const body = await req.json().catch(() => null)
+    const body = parsedBody
     if (!body || typeof body !== 'object') {
+      logWebhookHit({ ts: new Date().toISOString(), endpoint: 'call-start', ip, headers, query: req.nextUrl.search, body: parsedBody, outcome: 'invalid_body' })
       return error('Body inválido', 400)
     }
 
-    const callId = String(body.call_id || body.callId || '').trim()
-    if (!callId) return error('call_id obrigatório', 400)
+    const callId = String(body.call_id || body.callId || body.protocolo || '').trim()
+    if (!callId) {
+      logWebhookHit({ ts: new Date().toISOString(), endpoint: 'call-start', ip, headers, query: req.nextUrl.search, body: parsedBody, outcome: 'no_call_id' })
+      return error('call_id obrigatório', 400)
+    }
 
     const direction = (body.direction === 'outbound' ? 'outbound' : 'inbound')
     const fromRaw = String(body.from || body.from_number || '')
@@ -86,8 +100,11 @@ export async function POST(req: NextRequest) {
 
     if (!companyId) {
       console.error('[voip-webhook] SONAX_DEFAULT_COMPANY_ID env não configurado')
+      logWebhookHit({ ts: new Date().toISOString(), endpoint: 'call-start', ip, headers, query: req.nextUrl.search, body: parsedBody, outcome: 'company_not_configured' })
       return error('Configuração faltando', 500)
     }
+    // Marca como aceito — vai criar/atualizar
+    logWebhookHit({ ts: new Date().toISOString(), endpoint: 'call-start', ip, headers, query: req.nextUrl.search, body: parsedBody, outcome: 'allowed' })
 
     // Lookup customer por phone (do quem ligou OU pra quem ligou)
     const externalNumber = direction === 'inbound' ? fromNumber : toNumber
@@ -158,6 +175,7 @@ export async function POST(req: NextRequest) {
       status: call.status,
     })
   } catch (e) {
+    logWebhookHit({ ts: new Date().toISOString(), endpoint: 'call-start', ip, headers, query: req.nextUrl.search, body: parsedBody, outcome: 'error', error: e instanceof Error ? e.message : String(e) })
     return handleError(e)
   }
 }
