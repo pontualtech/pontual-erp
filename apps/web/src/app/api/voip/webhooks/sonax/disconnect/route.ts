@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
       return error('Forbidden', 403)
     }
 
-    const body = parsedBody
+    const body = parsedBody as any
     if (!body || typeof body !== 'object') {
       logWebhookHit({ ts: new Date().toISOString(), endpoint: 'disconnect', ip, headers, query: req.nextUrl.search, body: parsedBody, outcome: 'invalid_body' })
       return success({ ok: false, reason: 'invalid_body' })
