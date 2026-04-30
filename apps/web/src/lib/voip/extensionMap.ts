@@ -58,6 +58,20 @@ export function listExtensionMappings(): Array<{ email: string; ramal: string }>
 }
 
 /**
+ * Lookup reverso: ramal -> email. Util pra enriquecer logs/CDR onde so vem ramal.
+ */
+export function getEmailByExtension(ramal: string | null | undefined): string | null {
+  if (!ramal) return null
+  const target = String(ramal).replace(/\D/g, '')
+  if (!target) return null
+  const map = loadMap()
+  for (const [email, r] of Object.entries(map)) {
+    if (r === target) return email
+  }
+  return null
+}
+
+/**
  * Reset cache - útil em testes ou após mudança de env.
  * Em produção, basta restart do container pra recarregar.
  */
