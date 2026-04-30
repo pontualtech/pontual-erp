@@ -55,7 +55,7 @@ async function loadTemplate(name: string): Promise<string> {
 export async function POST(_req: NextRequest) {
   try {
     const user = await requireAuth()
-    if (!isAdmin(user.role)) return error('Permissao admin requerida', 403)
+    if (!user.isSuperAdmin && !isAdmin(user.roleId)) return error('Permissao admin requerida', 403)
 
     // Carrega ramais ativos
     const extensions = await prisma.$queryRawUnsafe<Array<any>>(

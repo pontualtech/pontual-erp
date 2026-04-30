@@ -42,7 +42,7 @@ export async function PUT(
 ) {
   try {
     const user = await requireAuth()
-    if (!isAdmin(user.role)) return error('Permissao admin requerida', 403)
+    if (!user.isSuperAdmin && !isAdmin(user.roleId)) return error('Permissao admin requerida', 403)
 
     if (!(await ownsExtension(params.id, user.companyId))) {
       return error('Ramal nao encontrado', 404)
@@ -91,7 +91,7 @@ export async function DELETE(
 ) {
   try {
     const user = await requireAuth()
-    if (!isAdmin(user.role)) return error('Permissao admin requerida', 403)
+    if (!user.isSuperAdmin && !isAdmin(user.roleId)) return error('Permissao admin requerida', 403)
 
     if (!(await ownsExtension(params.id, user.companyId))) {
       return error('Ramal nao encontrado', 404)

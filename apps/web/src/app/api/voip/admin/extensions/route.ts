@@ -37,7 +37,7 @@ const CreateBody = z.object({
 export async function GET(_req: NextRequest) {
   try {
     const user = await requireAuth()
-    if (!isAdmin(user.role)) return error('Permissao admin requerida', 403)
+    if (!user.isSuperAdmin && !isAdmin(user.roleId)) return error('Permissao admin requerida', 403)
 
     const items = await prisma.$queryRawUnsafe<Array<any>>(
       `SELECT e.id, e.number, e.description, e.caller_id_internal, e.webrtc, e.max_contacts,
@@ -59,7 +59,7 @@ export async function GET(_req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const user = await requireAuth()
-    if (!isAdmin(user.role)) return error('Permissao admin requerida', 403)
+    if (!user.isSuperAdmin && !isAdmin(user.roleId)) return error('Permissao admin requerida', 403)
 
     const json = await req.json().catch(() => null)
     if (!json) return error('Body invalido', 400)
