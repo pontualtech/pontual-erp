@@ -227,7 +227,7 @@ export default function VoipCallDetailPage() {
         )}
       </div>
 
-      {call.recording_url && (
+      {call.recording_url && (call.duration_sec ?? 0) > 0 && (
         <div className="rounded-lg border bg-white p-5 space-y-3">
           <div className="flex items-center justify-between gap-3">
             <h2 className="font-semibold text-gray-900 flex items-center gap-2">
