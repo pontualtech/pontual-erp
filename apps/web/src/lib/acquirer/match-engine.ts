@@ -82,13 +82,16 @@ async function scoreOS(
   score += 40
   reasons.push('valor exato (+40)')
 
-  // 2. Data
+  // 2. Data — janela tolerante a parcelamento (ate 30 dias)
   const osDate = os.created_at ? new Date(os.created_at) : new Date()
   const txnDate = new Date(txn.transaction_date)
   const dayDiff = Math.abs(Math.round((txnDate.getTime() - osDate.getTime()) / (1000 * 60 * 60 * 24)))
   if (dayDiff === 0) { score += 25; reasons.push('mesmo dia (+25)') }
-  else if (dayDiff <= 1) { score += 18; reasons.push(`±1 dia (+18)`) }
-  else if (dayDiff <= 3) { score += 10; reasons.push(`±${dayDiff} dias (+10)`) }
+  else if (dayDiff <= 1) { score += 22; reasons.push(`±1 dia (+22)`) }
+  else if (dayDiff <= 3) { score += 18; reasons.push(`±${dayDiff} dias (+18)`) }
+  else if (dayDiff <= 7) { score += 14; reasons.push(`±${dayDiff} dias (+14)`) }
+  else if (dayDiff <= 15) { score += 10; reasons.push(`±${dayDiff} dias (+10)`) }
+  else if (dayDiff <= 30) { score += 6;  reasons.push(`±${dayDiff} dias (+6)`) }
   else { reasons.push(`${dayDiff} dias afastado (+0)`) }
 
   // 3. Atribuicao da maquininha
@@ -189,9 +192,12 @@ export async function findMatch(txnId: string): Promise<MatchResult> {
 
   const { driverId, asStore } = await resolveAssignment(txn.company_id, txn.terminal_code, txn.transaction_date)
 
-  // Busca OSes candidatas (mesmo valor, ±7 dias)
+  // Busca OSes candidatas (mesmo valor, -30 / +1 dias).
+  // Janela ampla pra cobrir parcelamento — cliente pode ter feito a OS
+  // semanas antes da 1a parcela cair na maquininha (ex: 4x sem juros
+  // entre data da venda e 1a captura pode ter ~30 dias de gap).
   const startDate = new Date(txn.transaction_date)
-  startDate.setDate(startDate.getDate() - 7)
+  startDate.setDate(startDate.getDate() - 30)
   const endDate = new Date(txn.transaction_date)
   endDate.setDate(endDate.getDate() + 1)
 

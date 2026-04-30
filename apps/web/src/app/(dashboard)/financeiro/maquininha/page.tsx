@@ -279,10 +279,12 @@ function MatchModal({ txn, onClose, onMatched }: { txn: AcquirerTxn; onClose: ()
   const [searching, setSearching] = useState(false)
   const [matching, setMatching] = useState(false)
 
-  // Auto-busca: OSes com mesmo valor + janela de data
+  // Auto-busca: OSes com mesmo valor + janela de data (-15/+3 dias).
+  // Janela assimetrica pra cobrir parcelamento — cliente paga semanas
+  // depois da OS (1a parcela tipica ate 15-30 dias depois).
   useEffect(() => {
     const startDate = new Date(txn.transaction_date)
-    startDate.setDate(startDate.getDate() - 3)
+    startDate.setDate(startDate.getDate() - 15)
     const endDate = new Date(txn.transaction_date)
     endDate.setDate(endDate.getDate() + 3)
     setSearching(true)
@@ -347,7 +349,7 @@ function MatchModal({ txn, onClose, onMatched }: { txn: AcquirerTxn; onClose: ()
               {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Buscar'}
             </button>
           </div>
-          <p className="text-[11px] text-gray-500 mt-2">Auto-listadas: OSes com valor exato em ±3 dias da venda.</p>
+          <p className="text-[11px] text-gray-500 mt-2">Auto-listadas: OSes com valor exato entre 15 dias antes e 3 dias depois da venda (cobre parcelamento).</p>
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-2">
