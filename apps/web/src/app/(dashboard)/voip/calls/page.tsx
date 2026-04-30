@@ -269,7 +269,11 @@ export default function VoipCallsPage() {
                     <td className="px-4 py-3 text-gray-700">{formatDuration(c.duration_sec)}</td>
                     <td className="px-4 py-3"><StatusBadge status={c.status} /></td>
                     <td className="px-4 py-3 text-center">
-                      {c.recording_url ? <InlinePlayer callId={c.id} /> : <span className="text-gray-300">—</span>}
+                      {/* Esconde player em chamadas perdidas (duration=0): Sonax salva
+                          recording_url no webhook mesmo sem MP3 real, e o stream falha 503. */}
+                      {c.recording_url && (c.duration_sec ?? 0) > 0
+                        ? <InlinePlayer callId={c.id} />
+                        : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
