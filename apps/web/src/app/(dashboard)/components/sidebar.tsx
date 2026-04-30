@@ -9,7 +9,7 @@ import type { AuthUser } from '@/lib/auth'
 import {
   ClipboardList, Users, Package, DollarSign, FileText,
   Settings, LayoutDashboard, Menu, X, ChevronDown, ChevronLeft, ChevronRight, MessageSquare, MessageCircle, Phone, Truck,
-  Building2, ShoppingCart, BarChart3, Activity, Wrench, Shield, PhoneCall, Server,
+  Building2, ShoppingCart, BarChart3, Activity, Wrench, Shield, PhoneCall, Server, Hash,
 } from 'lucide-react'
 
 interface NavItem {
