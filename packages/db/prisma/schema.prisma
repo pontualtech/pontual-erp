@@ -59,6 +59,7 @@ model Company {
   acquirer_terminal_assignments AcquirerTerminalAssignment[]
   acquirer_transactions         AcquirerTransaction[]
   voip_calls                    VoipCall[]
+  voip_extensions               VoipExtension[]
 
   @@map("companies")
 }
@@ -93,6 +94,7 @@ model UserProfile {
   location_history  DriverLocationHistory[]
   acquirer_terminal_assignments AcquirerTerminalAssignment[]
   voip_calls        VoipCall[]
+  voip_extensions   VoipExtension[]
   companies      Company        @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   roles          Role           @relation(fields: [role_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
@@ -1743,4 +1745,56 @@ model VoipCall {
   @@index([company_id, status], map: "idx_voip_calls_status")
   @@index([service_order_id], map: "idx_voip_calls_service_order")
   @@map("voip_calls")
+}
+
+// =============================================================================
+// VOIP — Ramais SIP (PontualPABX migration)
+// =============================================================================
+// Substitui SONAX_RAMAL_MAPPING env. Cada ramal:
+// - Pertence a um tenant (company_id)
+// - Pode estar atribuido a um user (user_id) — atendente faz login no ERP e
+//   o widget pega o ramal dele automaticamente
+// - webrtc=true: usa SIP-WS (browser, DTLS-SRTP) — template ramal-webrtc-template
+// - webrtc=false: usa SIP/UDP tradicional (Linphone Desktop, IP phone)
+// - secret_plain guarda senha SIP em plain (Asterisk pjsip.conf precisa)
+//   Secret rotacionado via UI gera nova senha automaticamente.
+// =============================================================================
+model VoipExtension {
+  id                  String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id          String
+
+  // Numero do ramal (3 digitos: "101"..."115"). Unico por tenant.
+  number              String    @db.VarChar(10)
+  description         String    @db.VarChar(120)        // "Roberto - Ramal 101"
+  caller_id_internal  String?   @db.VarChar(120)        // exibido em chamadas internas
+
+  // Vinculo com user_profile (opcional — ramal pode ser standalone ex: aparelho de fax)
+  user_id             String?
+
+  // Tipo de cliente que vai registrar
+  webrtc              Boolean   @default(true)          // browser via SIP-WS
+  max_contacts        Int       @default(1)             // 1 pra browser, 3 pra desk phone multi-device
+  call_limit          Int       @default(1)             // chamadas simultaneas
+
+  // Credenciais SIP
+  secret_plain        String    @db.VarChar(64)         // password SIP (rotacionavel via UI)
+
+  // Dialplan
+  context_tag         String    @default("from-pontualtech") @db.VarChar(60)
+
+  // Estado
+  is_active           Boolean   @default(true)
+
+  // Audit
+  created_at          DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime? @default(now()) @db.Timestamptz(6)
+
+  // Relations
+  companies           Company       @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user_profiles       UserProfile?  @relation(fields: [user_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([company_id, number])
+  @@index([company_id, is_active], map: "idx_voip_extensions_active")
+  @@index([user_id], map: "idx_voip_extensions_user")
+  @@map("voip_extensions")
 }

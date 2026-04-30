@@ -45,6 +45,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
       { label: 'WhatsApp', href: '/integracoes/chatwoot', icon: Phone, requiredAnyPermission: [{ module: 'os', action: 'create' }] },
       { label: 'Chamadas', href: '/voip/calls', icon: PhoneCall, requiredAnyPermission: [{ module: 'os', action: 'create' }] },
       { label: 'Ramais', href: '/voip/ramais', icon: Phone, requiredAnyPermission: [{ module: 'os', action: 'create' }] },
+      { label: 'Ramais (Admin)', href: '/voip/admin/ramais', icon: Hash, adminOnly: true },
       { label: 'Logistica', href: '/logistica', icon: Truck, module: 'logistics', action: 'view' },
       { label: 'Contratos', href: '/contratos', icon: FileText, adminOnly: true },
     ],

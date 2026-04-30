@@ -1,0 +1,168 @@
+;==============================================================================
+; pjsip.conf — gerado em {{generatedAt}} por PontualERP
+; NÃO editar manualmente — mudanças são sobrescritas em todo regenerate-config
+;==============================================================================
+
+;-- Transports ----------------------------------------------------------------
+[transport-udp]
+type=transport
+protocol=udp
+bind=0.0.0.0:5060
+; external_media_address e external_signaling_address NÃO necessários em host net
+
+; SIP-over-WebSocket (terminacao TLS no Caddy upstream)
+; Browser -> wss://pabx.pontualtech.work/ws (Caddy:443)
+;        -> ws://127.0.0.1:8088/ws (Asterisk same-host via network_mode=host)
+[transport-ws]
+type=transport
+protocol=ws
+bind=0.0.0.0
+
+;-- Templates DRY pra ramais (UDP tradicional / Linphone Desktop / IP fones) --
+[ramal-template](!)
+type=endpoint
+transport=transport-udp
+disallow=all
+allow=ulaw,alaw
+dtmf_mode=rfc4733
+direct_media=no
+rtp_symmetric=yes
+force_rport=yes
+rewrite_contact=yes
+
+;-- Template ramal WebRTC (browser via SIP-WS + DTLS-SRTP) --------------------
+; Requer cert SSL em /etc/asterisk/keys/ (volume bind do Caddy/certbot).
+; Usar este template em pelo menos os ramais com login no ERP (101-115).
+[ramal-webrtc-template](!)
+type=endpoint
+transport=transport-ws
+disallow=all
+; Opus pra qualidade superior em browser. Fallback ulaw pra compat.
+allow=opus,ulaw,alaw,vp8,vp9
+dtmf_mode=rfc4733
+direct_media=no
+rtp_symmetric=yes
+force_rport=yes
+rewrite_contact=yes
+; WebRTC essentials
+webrtc=yes
+use_avpf=yes
+ice_support=yes
+media_use_received_transport=yes
+rtcp_mux=yes
+media_encryption=dtls
+dtls_verify=fingerprint
+dtls_setup=actpass
+dtls_cert_file=/etc/asterisk/keys/asterisk.crt
+dtls_private_key=/etc/asterisk/keys/asterisk.key
+
+[aor-template](!)
+type=aor
+qualify_frequency=60
+
+[aor-webrtc-template](!)
+type=aor
+qualify_frequency=30
+remove_existing=yes
+max_contacts=1
+
+;==============================================================================
+; PROVIDERS (trunks SIP por empresa)
+;==============================================================================
+{{#providers}}
+;-- {{name}} ({{companyName}}) --
+[trunk-{{tenantTag}}-out]
+type=endpoint
+transport=transport-{{transport}}
+context={{contextInbound}}
+tenantid={{tenantTag}}
+disallow=all
+{{#codecs}}allow={{.}}
+{{/codecs}}dtmf_mode={{dtmfMode}}
+direct_media=no
+from_domain={{hostOutbound}}
+{{#isIpBased}}
+identify_by=ip
+{{/isIpBased}}
+aors=trunk-{{tenantTag}}-aor
+{{#isUserSecret}}
+outbound_auth=trunk-{{tenantTag}}-auth
+{{/isUserSecret}}
+
+[trunk-{{tenantTag}}-aor]
+type=aor
+contact=sip:{{hostOutbound}}:{{port}}
+qualify_frequency={{qualifyFrequency}}
+
+{{#isIpBased}}
+[trunk-{{tenantTag}}-identify]
+type=identify
+endpoint=trunk-{{tenantTag}}-out
+match={{matchIp}}
+{{/isIpBased}}
+
+{{#isUserSecret}}
+[trunk-{{tenantTag}}-auth]
+type=auth
+auth_type=userpass
+username={{username}}
+password={{secretPlain}}
+
+[trunk-{{tenantTag}}-reg]
+type=registration
+server_uri=sip:{{hostOutbound}}:{{port}}
+client_uri=sip:{{username}}@{{hostOutbound}}:{{port}}
+outbound_auth=trunk-{{tenantTag}}-auth
+{{/isUserSecret}}
+
+{{/providers}}
+
+;==============================================================================
+; EXTENSIONS (ramais SIP por empresa)
+; Cada ramal usa um dos 2 templates conforme webrtc=true|false:
+;   - ramal-template       : UDP tradicional (Linphone Desktop, IP phone)
+;   - ramal-webrtc-template: SIP-WS + DTLS-SRTP (browser, webphone embedded)
+;==============================================================================
+{{#extensions}}
+{{#webrtc}}
+;-- WebRTC ramal (browser via webphone) --
+[{{number}}](ramal-webrtc-template)
+context={{context}}
+tenantid={{tenantTag}}
+auth=auth-{{number}}
+aors={{number}}
+{{#callLimit}}
+call_limit={{callLimit}}
+{{/callLimit}}
+
+[{{number}}](aor-webrtc-template)
+
+[auth-{{number}}]
+type=auth
+auth_type=userpass
+username={{number}}
+password={{secretPlain}}
+{{/webrtc}}
+{{^webrtc}}
+;-- UDP ramal tradicional --
+[{{number}}](ramal-template)
+context={{context}}
+tenantid={{tenantTag}}
+auth=auth-{{number}}
+aors={{number}}
+{{#callLimit}}
+call_limit={{callLimit}}
+{{/callLimit}}
+
+[{{number}}](aor-template)
+type=aor
+max_contacts={{maxContacts}}
+
+[auth-{{number}}]
+type=auth
+auth_type=userpass
+username={{number}}
+password={{secretPlain}}
+{{/webrtc}}
+
+{{/extensions}}
