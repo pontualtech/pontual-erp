@@ -49,6 +49,7 @@
     "react-hook-form": "^7.53.0",
     "recharts": "^2.12.0",
     "serwist": "^9.5.7",
+    "sip.js": "^0.21.2",
     "sonner": "^1.5.0",
     "tailwind-merge": "^2.4.0",
     "tailwindcss-animate": "^1.0.7",

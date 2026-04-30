@@ -8,6 +8,7 @@ import { RouteGuard } from './components/route-guard'
 import { CallToast } from '@/components/voip/CallToast'
 import { SonaxWebphone } from '@/components/voip/SonaxWebphone'
 import { SonaxCallControls } from '@/components/voip/SonaxCallControls'
+import { PontualWebphone } from '@/components/voip/PontualWebphone'
 
 export default async function DashboardLayout({
   children,
@@ -36,6 +37,8 @@ export default async function DashboardLayout({
         <CallToast />
         <SonaxWebphone />
         <SonaxCallControls />
+        {/* PontualWebphone roda em paralelo. Esconde sozinho se user nao tem ramal cadastrado em voip_extensions. */}
+        <PontualWebphone />
       </div>
     </ThemeProvider>
   )
