@@ -1,12 +1,22 @@
 ;==============================================================================
 ; http.conf — gerado em {{generatedAt}}
-; Bind 127.0.0.1 — só Next.js do mesmo host (network_mode: host) acessa ARI.
-; Externamente o ARI fica fechado. SSL/TLS público vem na F2 se necessário.
+;
+; F1: ARI bind 127.0.0.1:8088 (so localhost / Next.js da mesma VPS).
+; F-WSS (PontualPABX migracao): bind 0.0.0.0:8088 pra aceitar SIP-WS.
+;   - Caddy reverse proxy faz wss://pabx.pontualtech.work -> ws://127.0.0.1:8088
+;   - TLS terminado no Caddy. Asterisk so escuta HTTP plain (mesma VPS).
+;   - DTLS-SRTP pra audio configurado no pjsip endpoint (precisa cert in container).
 ;==============================================================================
 
 [general]
 enabled=yes
+; bind=0.0.0.0 porque Caddy proxy local liga em 127.0.0.1:8088
+; (mesma VPS via network_mode=host). Externamente porta 8088 fica fechada
+; por firewall do Hetzner — somente Caddy (porta 443 publica) acessa.
 bindaddr=127.0.0.1
 bindport=8088
 prefix=
 sessionlimit=100
+enable_static=yes
+websocket_enabled=yes
+websocket_write_timeout=200
