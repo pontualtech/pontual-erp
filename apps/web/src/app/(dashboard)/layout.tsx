@@ -37,8 +37,11 @@ export default async function DashboardLayout({
         <CallToast />
         <SonaxWebphone />
         <SonaxCallControls />
-        {/* PontualWebphone roda em paralelo. Esconde sozinho se user nao tem ramal cadastrado em voip_extensions. */}
-        <PontualWebphone />
+        {/* PontualWebphone (SIP.js -> Asterisk proprio) — FEATURE FLAG.
+            Liga em produção setando NEXT_PUBLIC_PONTUAL_WEBPHONE_ENABLED=true no Coolify.
+            Hoje desativado: F4 (DTLS-SRTP + endpoints WebRTC no pjsip.conf) ainda pendente,
+            sem isso o webphone registra mas a chamada cai sem audio. */}
+        {process.env.NEXT_PUBLIC_PONTUAL_WEBPHONE_ENABLED === 'true' && <PontualWebphone />}
       </div>
     </ThemeProvider>
   )
