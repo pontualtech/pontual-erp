@@ -28,6 +28,52 @@ const { PrismaClient } = require('@prisma/client');
 const p = new PrismaClient();
 
 (async () => {
+  // Cria tabela de diagnóstico ANTES de qualquer outra coisa pra
+  // sempre conseguir registrar o estado mesmo em falha precoce.
+  try {
+    await p.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS _ensure_financeiro_log (
+        id serial primary key,
+        ran_at timestamptz default now(),
+        chart_count int default 0,
+        seeded int default 0,
+        fiscal_pipeline_ok boolean default false,
+        backfill_count int default 0,
+        m012_enabled boolean default false,
+        m012_ar int default 0,
+        m012_ap int default 0,
+        rls_strict boolean default false,
+        notes text,
+        last_error text
+      );
+    `);
+  } catch (e) {
+    console.error('[ensure-financeiro] FATAL: diag table creation:', e.message);
+  }
+
+  let diagState = {
+    chartCount: 0, seeded: 0, fiscalPipelineOk: false,
+    backfillCount: 0, m012Ar: 0, m012Ap: 0,
+    rlsStrict: process.env.PONTUAL_RLS_STRICT === '1',
+    m012Enabled: process.env.PONTUAL_BACKFILL_M012 === '1',
+    notes: '', lastError: null,
+  };
+
+  async function writeDiag() {
+    try {
+      await p.$executeRawUnsafe(`
+        INSERT INTO _ensure_financeiro_log (
+          chart_count, seeded, fiscal_pipeline_ok, backfill_count,
+          m012_enabled, m012_ar, m012_ap, rls_strict, notes, last_error
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `, diagState.chartCount, diagState.seeded, diagState.fiscalPipelineOk,
+        diagState.backfillCount, diagState.m012Enabled, diagState.m012Ar,
+        diagState.m012Ap, diagState.rlsStrict, diagState.notes, diagState.lastError);
+    } catch (e) {
+      console.warn('[ensure-financeiro] diag insert: ' + e.message);
+    }
+  }
+
   try {
     // 1. Função genérica trg_set_updated_at
     await p.$executeRawUnsafe(`
@@ -386,6 +432,10 @@ const p = new PrismaClient();
         'pontualtech-001'
       );
       chartCount = cnt[0].c;
+      diagState.chartCount = chartCount;
+      diagState.seeded = seeded;
+      diagState.notes = 'reached §8 seed';
+      await writeDiag();
     }
 
     // 9. M-013: Dual-write trigger AR/AP → payments unified.
@@ -547,7 +597,10 @@ const p = new PrismaClient();
     //     Falha do trigger NÃO bloqueia o UPDATE da AR/AP (BEGIN..EXCEPTION).
     let fiscalPipelineOk = false;
     let backfillCount = 0;
+    diagState.notes = 'reached §11 fiscal pipeline gate';
+    await writeDiag();
     if (feExists.length > 0 && acExists.length > 0 && arExists.length > 0) {
+      try {
       // 11.1 Função heurística: dado company_id + categoria_module + categoria_name + tipo (AR|AP),
       //      retorna o melhor chart_account_id ou NULL se nenhum match.
       await p.$executeRawUnsafe(`
@@ -789,6 +842,16 @@ const p = new PrismaClient();
         try { await p.$executeRawUnsafe(`REFRESH MATERIALIZED VIEW dre_monthly;`); } catch {}
       }
       fiscalPipelineOk = true;
+      diagState.fiscalPipelineOk = true;
+      diagState.backfillCount = backfillCount;
+      diagState.notes = 'reached §11.5 refresh MV';
+      await writeDiag();
+      } catch (e) {
+        diagState.lastError = '§11: ' + (e.message || String(e)).slice(0, 500);
+        diagState.notes = 'crashed in §11 fiscal pipeline';
+        await writeDiag();
+        console.error('[ensure-financeiro] §11 ERROR:', e.message);
+      }
     }
 
     // 12. M-012: Backfill AR/AP → payments unified (gated por PONTUAL_BACKFILL_M012=1).
@@ -894,39 +957,18 @@ const p = new PrismaClient();
       }
     }
 
-    // Diagnostic: registra última execução em tabela queryable via REST.
-    // Permite verificar se ensure script rodou sem precisar de log access.
-    try {
-      await p.$executeRawUnsafe(`
-        CREATE TABLE IF NOT EXISTS _ensure_financeiro_log (
-          id serial primary key,
-          ran_at timestamptz default now(),
-          chart_count int,
-          seeded int,
-          fiscal_pipeline_ok boolean,
-          backfill_count int,
-          m012_enabled boolean,
-          m012_ar int,
-          m012_ap int,
-          rls_strict boolean,
-          notes text
-        );
-      `);
-      await p.$executeRawUnsafe(`
-        INSERT INTO _ensure_financeiro_log (
-          chart_count, seeded, fiscal_pipeline_ok, backfill_count,
-          m012_enabled, m012_ar, m012_ap, rls_strict, notes
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-      `, chartCount, seeded, fiscalPipelineOk, backfillCount,
-        process.env.PONTUAL_BACKFILL_M012 === '1', m012BackfillAr, m012BackfillAp,
-        process.env.PONTUAL_RLS_STRICT === '1', 'OK');
-    } catch (e) {
-      console.warn(`[ensure-financeiro] WARN diag log: ${e.message}`);
-    }
+    // Diag final
+    diagState.m012Ar = m012BackfillAr;
+    diagState.m012Ap = m012BackfillAp;
+    diagState.notes = 'OK final';
+    await writeDiag();
 
     console.log(`[ensure-financeiro] OK chart_accounts=${chartCount} seeded=${seeded} fiscalPipeline=${fiscalPipelineOk} backfill=${backfillCount} m012Ar=${m012BackfillAr} m012Ap=${m012BackfillAp}`);
     process.exit(0);
   } catch (e) {
+    diagState.lastError = (e.message || String(e)).slice(0, 500);
+    diagState.notes = 'CRASHED in main try';
+    await writeDiag();
     console.error('[ensure-financeiro] FAILED:', e.message);
     process.exit(0);
   } finally {
