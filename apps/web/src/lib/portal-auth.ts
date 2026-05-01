@@ -101,15 +101,27 @@ interface AccessPayload {
   exp: number
 }
 
-// TTL de magic link = 5 anos (praticamente "nunca expira" pro uso do cliente).
-// Mantemos um exp fisico pra permitir rotacao da chave HMAC no futuro, se precisar.
-// Revogacao imediata: setar customer.deleted_at — o auto-login ja nega tokens de
+// A8 fix (audit): TTL reduzido de 5 anos pra 30 dias.
+// Antes: token na URL (query string ?t=) com TTL 5 anos = credencial
+// permanente — vazava em logs proxy/browser/screenshots/encaminhamentos.
+// Cliente reclamava de spam, encaminhava email, atacante ganhava 5 anos
+// de acesso ao portal daquele customer.
+// Agora: 30 dias é UX aceitável (mesmo cliente reaberto após 30d gera novo
+// link), e janela de exposição muito menor.
+//
+// Roadmap futuro (não fechado nesta auditoria):
+//   - Endpoint /portal/refresh pra rotação silenciosa via cookie de sessão
+//   - jti (token id) persistido em magic_link_revocations pra logout dispositivo
+//   - Token em POST body em vez de query string (alguns flows)
+//
+// Revogação imediata hoje: customer.deleted_at — auto-login nega tokens de
 // clientes deletados (ver /api/portal/auth/auto-login).
-export const ACCESS_TOKEN_TTL_MS = 5 * 365 * 24 * 60 * 60 * 1000 // 5 anos
+export const ACCESS_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000 // 30 dias
 
 /**
  * Gera token de acesso direto (magic link) para o portal.
- * Valido por 5 anos — cliente clica e entra sem login.
+ * Valido por 30 dias — cliente clica e entra sem login.
+ * Após expirar, novo link é gerado pelo emisor (cobrança/notificação/etc).
  */
 export function createAccessToken(customerId: string, companyId: string): string {
   const payload: AccessPayload = {
