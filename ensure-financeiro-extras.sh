@@ -53,6 +53,12 @@ const p = new PrismaClient();
       'payment_reminders',
       // M-010: feature flags (apenas tenant override tem company_id)
       'tenant_feature_flags',
+      // M-009: configurações per-tenant
+      'payment_method_configs',
+      'payment_terms',
+      // M-011: conciliação
+      'reconciliation_batches',
+      'reconciliation_entries',
     ];
 
     for (const t of rlsTables) {
@@ -83,8 +89,10 @@ const p = new PrismaClient();
       `);
     }
 
-    // 3. Triggers updated_at em payments, accounts_chart e cobranca_rules
-    for (const t of ['payments', 'accounts_chart', 'cobranca_rules']) {
+    // 3. Triggers updated_at em payments, accounts_chart, cobranca_rules,
+    //    payment_method_configs, payment_terms (M-009)
+    for (const t of ['payments', 'accounts_chart', 'cobranca_rules',
+                      'payment_method_configs', 'payment_terms']) {
       const exists = await p.$queryRawUnsafe(
         `SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=$1`,
         t
@@ -186,6 +194,20 @@ const p = new PrismaClient();
       // M-010: feature_flags rollout_pct entre 0-100
       { table: 'feature_flags', name: 'chk_rollout_pct_range',
         check: `rollout_pct >= 0 AND rollout_pct <= 100` },
+      // M-009: payment_method_configs.is_default_in valid values
+      { table: 'payment_method_configs', name: 'chk_default_in_valid',
+        check: `is_default_in IN ('RECEIVABLE','PAYABLE','BOTH','NONE')` },
+      // M-009: payment_terms.installments 1-36
+      { table: 'payment_terms', name: 'chk_installments_range',
+        check: `installments BETWEEN 1 AND 36` },
+      { table: 'payment_terms', name: 'chk_interval_days_nonneg',
+        check: `interval_days >= 0` },
+      // M-011: reconciliation_batches.source valid values
+      { table: 'reconciliation_batches', name: 'chk_recon_source',
+        check: `source IN ('OFX','CSV','CNAB_RETURN','ASAAS_API','REDE_API','MANUAL')` },
+      // M-011: reconciliation_entries.match_score 0-100 (nullable)
+      { table: 'reconciliation_entries', name: 'chk_match_score_range',
+        check: `match_score IS NULL OR (match_score BETWEEN 0 AND 100)` },
     ];
 
     for (const c of checkConstraints) {
@@ -347,6 +369,34 @@ const p = new PrismaClient();
         'pontualtech-001'
       );
       chartCount = cnt[0].c;
+    }
+
+    // 9. M-009: índices auxiliares em tabelas legadas (accounts_receivable/payable)
+    //    Acelera queries até a v2 ramp 100%. CREATE INDEX (sem CONCURRENTLY pra
+    //    evitar IDX_INVALID em caso de timeout — tabelas têm < 1k rows em prod).
+    //    IF NOT EXISTS torna idempotente.
+    for (const [tbl, idxName, cols, where] of [
+      ['accounts_receivable', 'idx_ar_company_status_due',
+        '(company_id, status, due_date)', `WHERE deleted_at IS NULL`],
+      ['accounts_receivable', 'idx_ar_overdue_scan',
+        '(company_id, due_date)', `WHERE status='PENDENTE' AND deleted_at IS NULL`],
+      ['accounts_payable', 'idx_ap_company_status_due',
+        '(company_id, status, due_date)', `WHERE deleted_at IS NULL`],
+      ['accounts_payable', 'idx_ap_overdue_scan',
+        '(company_id, due_date)', `WHERE status='PENDENTE' AND deleted_at IS NULL`],
+    ]) {
+      const tblExists = await p.$queryRawUnsafe(
+        `SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=$1`,
+        tbl
+      );
+      if (!tblExists || tblExists.length === 0) continue;
+      try {
+        await p.$executeRawUnsafe(
+          `CREATE INDEX IF NOT EXISTS ${idxName} ON ${tbl} ${cols} ${where}`
+        );
+      } catch (e) {
+        console.warn(`[ensure-financeiro] WARN index ${idxName}: ${e.message}`);
+      }
     }
 
     console.log(`[ensure-financeiro] OK chart_accounts=${chartCount} seeded=${seeded}`);
