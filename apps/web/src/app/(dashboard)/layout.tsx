@@ -35,12 +35,15 @@ export default async function DashboardLayout({
         </div>
         <AnnouncementModal />
         <CallToast />
-        <SonaxWebphone />
-        <SonaxCallControls />
-        {/* PontualWebphone (SIP.js -> Asterisk proprio) — FEATURE FLAG.
-            Liga em produção setando NEXT_PUBLIC_PONTUAL_WEBPHONE_ENABLED=true no Coolify.
-            Hoje desativado: F4 (DTLS-SRTP + endpoints WebRTC no pjsip.conf) ainda pendente,
-            sem isso o webphone registra mas a chamada cai sem audio. */}
+        {/* SonaxWebphone — FEATURE FLAG.
+            Default true (compat retroativo). Setar NEXT_PUBLIC_SONAX_WEBPHONE_ENABLED=false
+            no Coolify pra esconder e usar SOMENTE PontualPABX.
+            Motivo da flag: microfone do browser é exclusivo. Quando ambos webphones
+            disputam getUserMedia, o segundo recebe stream tainted/vazia, RTP não
+            sai, Asterisk derruba a chamada por timeout. */}
+        {process.env.NEXT_PUBLIC_SONAX_WEBPHONE_ENABLED !== 'false' && <SonaxWebphone />}
+        {process.env.NEXT_PUBLIC_SONAX_WEBPHONE_ENABLED !== 'false' && <SonaxCallControls />}
+        {/* PontualWebphone (SIP.js -> Asterisk proprio) — FEATURE FLAG. */}
         {process.env.NEXT_PUBLIC_PONTUAL_WEBPHONE_ENABLED === 'true' && <PontualWebphone />}
       </div>
     </ThemeProvider>
