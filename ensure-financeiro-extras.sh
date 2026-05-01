@@ -565,12 +565,12 @@ const p = new PrismaClient();
           IF p_kind = 'AR' THEN
             v_target_type := 'REVENUE';
             v_default_code := '1';   -- Receitas root
-            -- Match por categoria.name normalizada vs accounts_chart.name
+            -- Match por categoria.name (lower ILIKE) — sem unaccent pra não exigir extensão
             SELECT id INTO v_account_id FROM accounts_chart
              WHERE company_id = p_company_id
                AND account_type = 'REVENUE'::chart_account_type
                AND is_active = true
-               AND lower(unaccent(name)) ILIKE '%' || lower(unaccent(coalesce(p_cat_name, ''))) || '%'
+               AND lower(name) ILIKE '%' || lower(coalesce(p_cat_name, '')) || '%'
              ORDER BY is_synthetic ASC, display_order ASC LIMIT 1;
           ELSE -- AP
             IF p_cat_module = 'custo' OR
@@ -606,10 +606,7 @@ const p = new PrismaClient();
         $fn$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
       `);
 
-      // unaccent extension pode não estar disponível; protege com guard
-      try {
-        await p.$executeRawUnsafe(`CREATE EXTENSION IF NOT EXISTS unaccent;`);
-      } catch {} // se não tiver permissão, fn_resolve_chart_account vai falhar — substituímos.
+      // (unaccent removido — fn_resolve_chart_account usa lower() ILIKE direto)
 
       // 11.2 Trigger AR PAGO → fiscal_entries
       await p.$executeRawUnsafe(`
@@ -635,7 +632,7 @@ const p = new PrismaClient();
 
             v_amount    := COALESCE(NEW.received_amount, NEW.total_amount, 0);
             v_entry_date := COALESCE(NEW.due_date::date, CURRENT_DATE);
-            v_cash_date  := COALESCE(NEW.received_at::date, NEW.due_date::date);
+            v_cash_date  := COALESCE(NEW.paid_at::date, NEW.due_date::date);
 
             INSERT INTO fiscal_entries (
               id, company_id, entry_date, cash_date, chart_account_id,
@@ -664,7 +661,7 @@ const p = new PrismaClient();
       await p.$executeRawUnsafe(`DROP TRIGGER IF EXISTS trg_ar_fiscal_entry ON accounts_receivable;`);
       await p.$executeRawUnsafe(`
         CREATE TRIGGER trg_ar_fiscal_entry
-          AFTER INSERT OR UPDATE OF status, received_amount, received_at ON accounts_receivable
+          AFTER INSERT OR UPDATE OF status, received_amount, paid_at ON accounts_receivable
           FOR EACH ROW EXECUTE FUNCTION fn_ar_to_fiscal_entry();
       `);
 
@@ -691,7 +688,7 @@ const p = new PrismaClient();
 
             v_amount    := COALESCE(NEW.paid_amount, NEW.total_amount, 0);
             v_entry_date := COALESCE(NEW.due_date::date, CURRENT_DATE);
-            v_cash_date  := COALESCE(NEW.paid_at::date, NEW.due_date::date);
+            v_cash_date  := COALESCE(NEW.due_date::date, CURRENT_DATE);  -- AP não tem paid_at
 
             INSERT INTO fiscal_entries (
               id, company_id, entry_date, cash_date, chart_account_id,
@@ -719,7 +716,7 @@ const p = new PrismaClient();
       await p.$executeRawUnsafe(`DROP TRIGGER IF EXISTS trg_ap_fiscal_entry ON accounts_payable;`);
       await p.$executeRawUnsafe(`
         CREATE TRIGGER trg_ap_fiscal_entry
-          AFTER INSERT OR UPDATE OF status, paid_amount, paid_at ON accounts_payable
+          AFTER INSERT OR UPDATE OF status, paid_amount ON accounts_payable
           FOR EACH ROW EXECUTE FUNCTION fn_ap_to_fiscal_entry();
       `);
 
@@ -732,7 +729,7 @@ const p = new PrismaClient();
         SELECT
           gen_random_uuid()::text, ar.company_id,
           COALESCE(ar.due_date::date, CURRENT_DATE),
-          COALESCE(ar.received_at::date, ar.due_date::date),
+          COALESCE(ar.paid_at::date, ar.due_date::date),
           fn_resolve_chart_account(ar.company_id, 'AR', cat.module, cat.name),
           COALESCE(ar.received_amount, ar.total_amount, 0),
           COALESCE(ar.description, 'AR ' || ar.id),
@@ -759,7 +756,7 @@ const p = new PrismaClient();
         SELECT
           gen_random_uuid()::text, ap.company_id,
           COALESCE(ap.due_date::date, CURRENT_DATE),
-          COALESCE(ap.paid_at::date, ap.due_date::date),
+          COALESCE(ap.due_date::date, CURRENT_DATE),
           fn_resolve_chart_account(ap.company_id, 'AP', cat.module, cat.name),
           COALESCE(ap.paid_amount, ap.total_amount, 0),
           COALESCE(ap.description, 'AP ' || ap.id),
@@ -829,7 +826,7 @@ const p = new PrismaClient();
             'ar:' || ar.id,
             COALESCE(ar.total_amount, 0),
             COALESCE(ar.received_amount, 0),
-            COALESCE(ar.issue_date, ar.created_at::date, CURRENT_DATE),
+            COALESCE(ar.created_at::date, CURRENT_DATE),
             COALESCE(ar.due_date, CURRENT_DATE),
             COALESCE(ar.description, 'AR ' || ar.id),
             COALESCE(ar.created_at, now()),
@@ -874,7 +871,7 @@ const p = new PrismaClient();
               'ap:' || ap.id,
               COALESCE(ap.total_amount, 0),
               COALESCE(ap.paid_amount, 0),
-              COALESCE(ap.issue_date, ap.created_at::date, CURRENT_DATE),
+              COALESCE(ap.created_at::date, CURRENT_DATE),
               COALESCE(ap.due_date, CURRENT_DATE),
               COALESCE(ap.description, 'AP ' || ap.id),
               COALESCE(ap.created_at, now()),
