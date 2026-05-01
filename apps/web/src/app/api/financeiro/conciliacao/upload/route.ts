@@ -178,19 +178,44 @@ export async function POST(request: NextRequest) {
     const newTransactions = ofxTransactions.filter(t => !existingSet.has(t.fitId))
     const skipped = ofxTransactions.length - newTransactions.length
 
-    // Batch create new transactions
+    // M1 fix (audit): OFX upload agora atualiza Account.current_balance
+    // junto com a criação das transactions, dentro de $transaction.
+    // Antes: createMany sem touch em balance → drift silencioso entre
+    // /baixa (que cria tx + balance) vs /conciliacao/match (que linka tx
+    // existente sem balance) — saldo final dependia do path usado.
+    // Agora: balance reflete extrato (bank truth) imediatamente no upload;
+    // /conciliacao/match continua correto em não tocar balance (tx já
+    // contada). Net effect: balance é consistente independente do path.
+    let netBalanceDelta = 0
     if (newTransactions.length > 0) {
-      await prisma.transaction.createMany({
-        data: newTransactions.map(t => ({
-          company_id: user.companyId,
-          account_id: accountId,
-          transaction_type: t.amount >= 0 ? 'CREDIT' : 'DEBIT',
-          amount: Math.abs(t.amount),
-          description: t.memo || `${t.trnType}`,
-          bank_ref: t.fitId,
-          reconciled: false,
-          transaction_date: t.dtPosted,
-        })),
+      // CREDIT soma, DEBIT subtrai — net delta no saldo
+      netBalanceDelta = newTransactions.reduce((acc, t) => {
+        return acc + (t.amount >= 0 ? Math.abs(t.amount) : -Math.abs(t.amount))
+      }, 0)
+
+      await prisma.$transaction(async (tx) => {
+        await tx.transaction.createMany({
+          data: newTransactions.map(t => ({
+            company_id: user.companyId,
+            account_id: accountId,
+            transaction_type: t.amount >= 0 ? 'CREDIT' : 'DEBIT',
+            amount: Math.abs(t.amount),
+            description: t.memo || `${t.trnType}`,
+            bank_ref: t.fitId,
+            reconciled: false,
+            transaction_date: t.dtPosted,
+          })),
+        })
+
+        if (netBalanceDelta !== 0) {
+          await tx.account.update({
+            where: { id: accountId, company_id: user.companyId },
+            data: {
+              current_balance: { increment: netBalanceDelta },
+              updated_at: new Date(),
+            },
+          })
+        }
       })
     }
 

@@ -82,6 +82,11 @@ export async function POST(request: NextRequest) {
     // segundo crashasse (network/timeout/FK), AR ficaria com received_amount
     // aumentado mas transaction não viraria reconciled, abrindo dupla
     // contagem na próxima rodada.
+    //
+    // M1 nota (audit): este endpoint corretamente NÃO toca em
+    // Account.current_balance. Transaction veio do OFX upload (que agora
+    // increment'a balance — fix M1) ou de CNAB (que já incrementa). Tocar
+    // aqui também causaria DOUBLE-COUNT do mesmo dinheiro.
     if (data.type === 'payable') {
       const payable = await prisma.accountPayable.findFirst({
         where: {
