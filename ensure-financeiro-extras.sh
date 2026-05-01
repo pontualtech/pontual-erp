@@ -46,6 +46,10 @@ const p = new PrismaClient();
       'webhook_events_log',
       'accounts_chart',
       'fiscal_entries',
+      // M-008: régua de cobrança
+      'cobranca_rules',
+      'cobranca_rule_steps',
+      'payment_reminders',
     ];
 
     for (const t of rlsTables) {
@@ -76,8 +80,8 @@ const p = new PrismaClient();
       `);
     }
 
-    // 3. Triggers updated_at em payments e accounts_chart
-    for (const t of ['payments', 'accounts_chart']) {
+    // 3. Triggers updated_at em payments, accounts_chart e cobranca_rules
+    for (const t of ['payments', 'accounts_chart', 'cobranca_rules']) {
       const exists = await p.$queryRawUnsafe(
         `SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=$1`,
         t
@@ -171,6 +175,11 @@ const p = new PrismaClient();
       { table: 'fiscal_entries',  name: 'chk_fiscal_amount_nonzero', check: `amount <> 0` },
       { table: 'accounts_chart',  name: 'chk_chart_no_self_parent',
         check: `parent_id IS NULL OR parent_id <> id` },
+      // M-008: régua de cobrança constraints
+      { table: 'cobranca_rule_steps', name: 'chk_step_order_positive',
+        check: `step_order > 0` },
+      { table: 'payment_reminders',   name: 'chk_attempts_lt_5',
+        check: `attempts < 5` },
     ];
 
     for (const c of checkConstraints) {
@@ -191,30 +200,64 @@ const p = new PrismaClient();
       `);
     }
 
-    // 6. Generated column fiscal_period em fiscal_entries
-    //    PostgreSQL exige expressão IMMUTABLE em GENERATED — to_char() é só STABLE.
-    //    Solução: concatenação de EXTRACT (immutable) com LPAD pra padding 2-dig.
-    //    Resultado: '2026-04' (igual ao to_char) mas com expressão imutável.
+    // 6. Coluna fiscal_period em fiscal_entries — populada via trigger.
+    //    Antes era GENERATED ALWAYS, mas Prisma 5.x não tem syntax declarativa
+    //    e db push entrava em conflito com MV. Solução: coluna text + trigger
+    //    BEFORE INSERT/UPDATE que computa o valor (semântica equivalente).
+    //
+    //    Idempotência:
+    //    - Se coluna não existe (Prisma db push criou String?): cria trigger.
+    //    - Se coluna era GENERATED de versão anterior: drop expression + trigger.
+    //    - Se coluna existe + trigger existe: no-op.
     const feExists = await p.$queryRawUnsafe(
       `SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='fiscal_entries'`
     );
     if (feExists.length > 0) {
+      // Detecta se fiscal_period é GENERATED legacy
+      // (no heredoc é JS plain — sem generics TS)
+      const isGenerated = await p.$queryRawUnsafe(`
+        SELECT is_generated FROM information_schema.columns
+         WHERE table_name='fiscal_entries' AND column_name='fiscal_period'
+      `);
+
+      if (isGenerated.length > 0 && isGenerated[0].is_generated === 'ALWAYS') {
+        // Legacy GENERATED column — drop expression pra virar coluna normal.
+        // Postgres permite ALTER ... DROP EXPRESSION (mantém valores existentes).
+        await p.$executeRawUnsafe(`ALTER TABLE fiscal_entries ALTER COLUMN fiscal_period DROP EXPRESSION;`);
+      }
+
+      // Função trigger que computa fiscal_period a partir de entry_date.
+      // IMMUTABLE-safe: concatenação de EXTRACT (sem to_char STABLE).
       await p.$executeRawUnsafe(`
-        DO $$ BEGIN
-          IF NOT EXISTS (
-            SELECT 1 FROM information_schema.columns
-             WHERE table_name='fiscal_entries' AND column_name='fiscal_period'
-          ) THEN
-            ALTER TABLE fiscal_entries
-              ADD COLUMN fiscal_period text GENERATED ALWAYS AS (
-                EXTRACT(YEAR FROM entry_date)::text
-                || '-' ||
-                LPAD(EXTRACT(MONTH FROM entry_date)::text, 2, '0')
-              ) STORED;
-            CREATE INDEX idx_fiscal_company_period_account
-              ON fiscal_entries (company_id, fiscal_period, chart_account_id);
-          END IF;
-        END $$;
+        CREATE OR REPLACE FUNCTION trg_set_fiscal_period() RETURNS trigger AS $fn$
+        BEGIN
+          NEW.fiscal_period := EXTRACT(YEAR FROM NEW.entry_date)::text
+            || '-' ||
+            LPAD(EXTRACT(MONTH FROM NEW.entry_date)::text, 2, '0');
+          RETURN NEW;
+        END;
+        $fn$ LANGUAGE plpgsql;
+      `);
+
+      await p.$executeRawUnsafe(`DROP TRIGGER IF EXISTS trg_fiscal_entries_period ON fiscal_entries;`);
+      await p.$executeRawUnsafe(`
+        CREATE TRIGGER trg_fiscal_entries_period
+          BEFORE INSERT OR UPDATE OF entry_date ON fiscal_entries
+          FOR EACH ROW EXECUTE FUNCTION trg_set_fiscal_period();
+      `);
+
+      // Backfill rows existentes que tenham fiscal_period NULL (raras pré-trigger)
+      await p.$executeRawUnsafe(`
+        UPDATE fiscal_entries
+           SET fiscal_period = EXTRACT(YEAR FROM entry_date)::text || '-' ||
+                               LPAD(EXTRACT(MONTH FROM entry_date)::text, 2, '0')
+         WHERE fiscal_period IS NULL
+      `);
+
+      // Índice composto pra queries de DRE
+      await p.$executeRawUnsafe(`
+        CREATE INDEX IF NOT EXISTS idx_fiscal_company_period_account
+          ON fiscal_entries (company_id, fiscal_period, chart_account_id);
       `);
     }
 

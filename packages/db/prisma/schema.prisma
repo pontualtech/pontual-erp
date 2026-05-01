@@ -1198,6 +1198,7 @@ model Payment {
   history              PaymentHistory[]
   webhook_events       WebhookEventLog[] @relation("PaymentWebhookEvents")
   fiscal_entries       FiscalEntry[]
+  reminders            PaymentReminder[]
 
   // ────────────────────────────────────────────────────────────────────────────
 
@@ -2042,8 +2043,11 @@ model FiscalEntry {
   description       String
   source            String  // PAYMENT, MANUAL_ADJUSTMENT, TAX_CALC, PROVISIONING
   is_provisional    Boolean @default(false)
-  // fiscal_period é GENERATED ALWAYS AS (to_char(entry_date,'YYYY-MM'))
-  // Adicionada via apply-financeiro-extras.sh (Prisma não suporta GENERATED)
+  // fiscal_period: derivado de entry_date via trigger BEFORE INSERT/UPDATE.
+  // Antes era GENERATED ALWAYS, mas Prisma 5.x não tem syntax declarativa pra
+  // GENERATED — db push entrava em conflito com MV dre_monthly. Trigger é
+  // equivalente em semântica (sempre derivado), compatível com Prisma.
+  fiscal_period     String?
   metadata          Json? @default("{}")
   created_by        String?
   created_at        DateTime @default(now()) @db.Timestamptz(6)
@@ -2058,6 +2062,87 @@ model FiscalEntry {
   // Índice composto company_id+chart_account_id (sem fiscal_period que é generated)
   @@index([company_id, chart_account_id], map: "idx_fiscal_company_account")
   @@map("fiscal_entries")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// RÉGUA DE COBRANÇA (M-008 / P-011)
+// Spec: squads/financeiro-restructure-spec/output/architecture-spec.md §1.8
+//
+// Régua configurável por tenant: define passos de comunicação ao cliente
+// inadimplente. Step com offset negativo = lembrete pré-vencimento; positivo =
+// cobrança pós-vencimento. Cada Payment elegível gera N PaymentReminder rows
+// (fila de envio executada por job background).
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// Regra de cobrança — define UM workflow de comunicação aplicado a payments.
+/// Multi-tenant: cada empresa pode ter várias regras (ex: "cliente premium",
+/// "B2B grandes valores", "default consumidor final"). Tenant escolhe via
+/// applies_to_segment qual regra se aplica a cada payment.
+model CobrancaRule {
+  id                  String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id          String
+  name                String
+  is_active           Boolean  @default(true)
+  applies_to_segment  String?  // 'ALL' | 'CUSTOMER_TAG:premium' | 'AMOUNT_GT:100000' | etc.
+  created_at          DateTime @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime @default(now()) @db.Timestamptz(6)
+
+  steps               CobrancaRuleStep[]
+
+  @@index([company_id, is_active], map: "idx_cobranca_rules_active")
+  @@map("cobranca_rules")
+}
+
+/// Passo individual de uma régua. Ex:
+///   step 1: -3 dias (WHATSAPP) lembrete pré-vencimento
+///   step 2:  0 dias (EMAIL) "vence hoje"
+///   step 3: +1 dia  (WHATSAPP) "1 dia de atraso"
+///   step 4: +7 dias (SMS + email) "7 dias de atraso, +2% juros mensal"
+///   step 5: +15 dias (telefone — interno) "escalada — falar com gerente"
+model CobrancaRuleStep {
+  id                          String           @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id                  String
+  rule_id                     String
+  step_order                  Int              @db.SmallInt
+  trigger_days_offset         Int              @db.SmallInt  // <0 = pré-vencimento, >=0 = pós
+  channel                     reminder_channel
+  template_id                 String?          // FK lógica pra message_templates
+  apply_fee_pct               Decimal?         @default(0) @db.Decimal(5, 2)
+  apply_interest_pct_monthly  Decimal?         @default(0) @db.Decimal(5, 2)
+
+  rule      CobrancaRule       @relation(fields: [rule_id], references: [id], onDelete: Cascade)
+  reminders PaymentReminder[]
+
+  @@unique([rule_id, step_order], map: "uniq_rule_step")
+  @@index([company_id], map: "idx_cobranca_rule_steps_company")
+  @@map("cobranca_rule_steps")
+}
+
+/// Instância agendada de envio — populada por job que escaneia payments
+/// pending/overdue e gera reminders conforme régua aplicável. Status PENDING
+/// é fila; SENT/FAILED é histórico. CHECK attempts < 5 evita loop infinito.
+model PaymentReminder {
+  id              String          @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id      String
+  payment_id      String
+  rule_step_id    String?
+  scheduled_for   DateTime        @db.Timestamptz(6)
+  channel         reminder_channel
+  status          reminder_status @default(PENDING)
+  sent_at         DateTime?       @db.Timestamptz(6)
+  delivery_meta   Json?           @default("{}")
+  error_message   String?
+  attempts        Int             @default(0) @db.SmallInt
+  created_at      DateTime        @default(now()) @db.Timestamptz(6)
+
+  payment   Payment           @relation(fields: [payment_id], references: [id], onDelete: Cascade)
+  rule_step CobrancaRuleStep? @relation(fields: [rule_step_id], references: [id], onDelete: SetNull)
+
+  // Índice crítico pro job que pega "PENDING + scheduled_for <= NOW"
+  @@index([status, scheduled_for], map: "idx_payment_reminders_due")
+  @@index([payment_id, status], map: "idx_payment_reminders_payment_status")
+  @@index([company_id, scheduled_for(sort: Desc)], map: "idx_payment_reminders_company_recent")
+  @@map("payment_reminders")
 }
 
 // =============================================================================
