@@ -1,0 +1,312 @@
+#!/bin/sh
+# ensure-financeiro-extras.sh
+# Garante extras do refactor financeiro v2 que Prisma db push NÃO suporta:
+#   - RLS policies (multi-tenant + service_role bypass)
+#   - Triggers (audit log automático em payments + updated_at)
+#   - Materialized View (DRE mensal)
+#   - Generated columns (fiscal_period em fiscal_entries)
+#   - CHECK constraints adicionais
+#   - Seed plano de contas PontualTech
+#
+# Roda DEPOIS de prisma db push no start.sh.
+# Idempotente: IF NOT EXISTS / DO blocks / ON CONFLICT DO NOTHING.
+# Falha não-fatal: log + continua boot do Next.js (financeiro core funciona sem).
+#
+# Padrão herdado de ensure-voip-extensions.sh (incidente 2026-05-01).
+# Spec: squads/financeiro-restructure-spec/output/architecture-spec.md
+
+set -u
+
+DB_URL="${DATABASE_URL:-}"
+if [ -z "$DB_URL" ]; then
+  echo "[ensure-financeiro] WARN: DATABASE_URL not set, skipping" >&2
+  exit 0
+fi
+
+node <<'JS'
+const { PrismaClient } = require('@prisma/client');
+const p = new PrismaClient();
+
+(async () => {
+  try {
+    // 1. Função genérica trg_set_updated_at
+    await p.$executeRawUnsafe(`
+      CREATE OR REPLACE FUNCTION trg_set_updated_at() RETURNS trigger AS $func$
+      BEGIN
+        NEW.updated_at = NOW();
+        RETURN NEW;
+      END;
+      $func$ LANGUAGE plpgsql;
+    `);
+
+    // 2. RLS em tabelas tenant-scoped (lazy mode: NULL setting bypass)
+    const rlsTables = [
+      'payments',
+      'payment_history',
+      'webhook_events_log',
+      'accounts_chart',
+      'fiscal_entries',
+    ];
+
+    for (const t of rlsTables) {
+      // Pula tabela inexistente — Prisma db push pode ter falhado em criar.
+      const exists = await p.$queryRawUnsafe(
+        `SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=$1`,
+        t
+      );
+      if (!exists || exists.length === 0) {
+        console.warn(`[ensure-financeiro] table ${t} not found, skipping RLS`);
+        continue;
+      }
+      await p.$executeRawUnsafe(`ALTER TABLE ${t} ENABLE ROW LEVEL SECURITY;`);
+      await p.$executeRawUnsafe(`DROP POLICY IF EXISTS ${t}_tenant_isolation ON ${t};`);
+      await p.$executeRawUnsafe(`DROP POLICY IF EXISTS ${t}_service_role ON ${t};`);
+      await p.$executeRawUnsafe(`
+        CREATE POLICY ${t}_tenant_isolation ON ${t}
+          USING (
+            company_id = current_setting('app.company_id', true)
+            OR current_setting('app.company_id', true) IS NULL
+            OR current_setting('app.company_id', true) = ''
+          );
+      `);
+      await p.$executeRawUnsafe(`
+        CREATE POLICY ${t}_service_role ON ${t}
+          TO service_role
+          USING (true) WITH CHECK (true);
+      `);
+    }
+
+    // 3. Triggers updated_at em payments e accounts_chart
+    for (const t of ['payments', 'accounts_chart']) {
+      const exists = await p.$queryRawUnsafe(
+        `SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=$1`,
+        t
+      );
+      if (!exists || exists.length === 0) continue;
+      await p.$executeRawUnsafe(`DROP TRIGGER IF EXISTS trg_${t}_updated_at ON ${t};`);
+      await p.$executeRawUnsafe(`
+        CREATE TRIGGER trg_${t}_updated_at
+          BEFORE UPDATE ON ${t}
+          FOR EACH ROW EXECUTE FUNCTION trg_set_updated_at();
+      `);
+    }
+
+    // 4. Trigger payment_history_trigger (audit log) — EXCEPTION-safe
+    const paymentsExists = await p.$queryRawUnsafe(
+      `SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='payments'`
+    );
+    const phExists = await p.$queryRawUnsafe(
+      `SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='payment_history'`
+    );
+
+    if (paymentsExists.length > 0 && phExists.length > 0) {
+      await p.$executeRawUnsafe(`
+        CREATE OR REPLACE FUNCTION payment_history_trigger() RETURNS trigger AS $fn$
+        DECLARE
+          v_event       text;
+          v_old_status  text;
+          v_new_status  text;
+          v_amount_delta bigint;
+        BEGIN
+          IF TG_OP = 'INSERT' THEN
+            v_event := 'CREATED';
+            v_new_status := NEW.status;
+          ELSIF TG_OP = 'UPDATE' THEN
+            IF OLD.status IS DISTINCT FROM NEW.status THEN
+              v_event := 'STATUS_CHANGED';
+            ELSE
+              v_event := 'UPDATED';
+            END IF;
+            v_old_status := OLD.status;
+            v_new_status := NEW.status;
+            IF OLD.paid_amount IS DISTINCT FROM NEW.paid_amount THEN
+              v_amount_delta := COALESCE(NEW.paid_amount, 0) - COALESCE(OLD.paid_amount, 0);
+            END IF;
+          ELSIF TG_OP = 'DELETE' THEN
+            v_event := 'DELETED';
+            v_old_status := OLD.status;
+          END IF;
+
+          BEGIN
+            INSERT INTO payment_history(
+              company_id, payment_id, event_type,
+              old_status, new_status, old_value, new_value, amount_delta,
+              source, user_id
+            ) VALUES (
+              COALESCE(NEW.company_id, OLD.company_id),
+              COALESCE(NEW.id, OLD.id),
+              v_event,
+              v_old_status, v_new_status,
+              CASE WHEN TG_OP <> 'INSERT' THEN to_jsonb(OLD) ELSE NULL END,
+              CASE WHEN TG_OP <> 'DELETE' THEN to_jsonb(NEW) ELSE NULL END,
+              v_amount_delta,
+              COALESCE(NULLIF(current_setting('app.audit_source', true), ''), 'TRIGGER'),
+              NULLIF(current_setting('app.user_id', true), '')
+            );
+          EXCEPTION
+            WHEN OTHERS THEN
+              RAISE WARNING 'payment_history_trigger failed: % (%)', SQLERRM, SQLSTATE;
+          END;
+
+          RETURN COALESCE(NEW, OLD);
+        END $fn$ LANGUAGE plpgsql SECURITY DEFINER;
+      `);
+
+      await p.$executeRawUnsafe(`DROP TRIGGER IF EXISTS trg_payments_audit ON payments;`);
+      await p.$executeRawUnsafe(`
+        CREATE TRIGGER trg_payments_audit
+          AFTER INSERT OR UPDATE OR DELETE ON payments
+          FOR EACH ROW EXECUTE FUNCTION payment_history_trigger();
+      `);
+    }
+
+    // 5. CHECK constraints adicionais (idempotente via DO blocks)
+    const checkConstraints = [
+      { table: 'payment_history', name: 'chk_payment_history_event_type',
+        check: `event_type IN ('CREATED','UPDATED','STATUS_CHANGED','PAYMENT_RECEIVED','PAYMENT_REFUNDED','RECONCILED','CANCELLED','DELETED')` },
+      { table: 'payment_history', name: 'chk_payment_history_source',
+        check: `source IN ('USER','WEBHOOK','CRON','RECONCILIATION','API','TRIGGER')` },
+      { table: 'fiscal_entries',  name: 'chk_fiscal_source',
+        check: `source IN ('PAYMENT','MANUAL_ADJUSTMENT','TAX_CALC','PROVISIONING')` },
+      { table: 'fiscal_entries',  name: 'chk_fiscal_amount_nonzero', check: `amount <> 0` },
+      { table: 'accounts_chart',  name: 'chk_chart_no_self_parent',
+        check: `parent_id IS NULL OR parent_id <> id` },
+    ];
+
+    for (const c of checkConstraints) {
+      const tblExists = await p.$queryRawUnsafe(
+        `SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=$1`,
+        c.table
+      );
+      if (!tblExists || tblExists.length === 0) continue;
+      await p.$executeRawUnsafe(`
+        DO $$ BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+             WHERE conname = '${c.name}' AND conrelid = '${c.table}'::regclass
+          ) THEN
+            ALTER TABLE ${c.table} ADD CONSTRAINT ${c.name} CHECK (${c.check});
+          END IF;
+        END $$;
+      `);
+    }
+
+    // 6. Generated column fiscal_period em fiscal_entries
+    //    PostgreSQL exige expressão IMMUTABLE em GENERATED — to_char() é só STABLE.
+    //    Solução: concatenação de EXTRACT (immutable) com LPAD pra padding 2-dig.
+    //    Resultado: '2026-04' (igual ao to_char) mas com expressão imutável.
+    const feExists = await p.$queryRawUnsafe(
+      `SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='fiscal_entries'`
+    );
+    if (feExists.length > 0) {
+      await p.$executeRawUnsafe(`
+        DO $$ BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+             WHERE table_name='fiscal_entries' AND column_name='fiscal_period'
+          ) THEN
+            ALTER TABLE fiscal_entries
+              ADD COLUMN fiscal_period text GENERATED ALWAYS AS (
+                EXTRACT(YEAR FROM entry_date)::text
+                || '-' ||
+                LPAD(EXTRACT(MONTH FROM entry_date)::text, 2, '0')
+              ) STORED;
+            CREATE INDEX idx_fiscal_company_period_account
+              ON fiscal_entries (company_id, fiscal_period, chart_account_id);
+          END IF;
+        END $$;
+      `);
+    }
+
+    // 7. Materialized View dre_monthly
+    const acExists = await p.$queryRawUnsafe(
+      `SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='accounts_chart'`
+    );
+    if (feExists.length > 0 && acExists.length > 0) {
+      await p.$executeRawUnsafe(`DROP MATERIALIZED VIEW IF EXISTS dre_monthly;`);
+      await p.$executeRawUnsafe(`
+        CREATE MATERIALIZED VIEW dre_monthly AS
+        SELECT
+          fe.company_id,
+          fe.fiscal_period,
+          ac.account_type,
+          ac.code,
+          ac.name,
+          SUM(fe.amount)::bigint AS total_cents
+        FROM fiscal_entries fe
+        JOIN accounts_chart ac ON ac.id = fe.chart_account_id
+        WHERE fe.is_provisional = false
+        GROUP BY fe.company_id, fe.fiscal_period, ac.account_type, ac.code, ac.name;
+      `);
+      await p.$executeRawUnsafe(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_dre_monthly_pk
+          ON dre_monthly (company_id, fiscal_period, code);
+      `);
+    }
+
+    // 8. Seed PontualTech (plano de contas) — idempotente via ON CONFLICT
+    let seeded = 0;
+    let chartCount = 0;
+    if (acExists.length > 0) {
+      const chartSeed = [
+        ['1',     'Receitas',                       'REVENUE',           true,  10],
+        ['1.1',   'Receita de Servicos',            'REVENUE',           true,  11],
+        ['1.1.01','Reparo de Impressoras',          'REVENUE',           false, 12],
+        ['1.1.02','Manutencao Preventiva',          'REVENUE',           false, 13],
+        ['1.1.03','Coleta e Entrega',               'REVENUE',           false, 14],
+        ['1.2',   'Receita de Vendas',              'REVENUE',           true,  15],
+        ['1.2.01','Venda de Pecas',                 'REVENUE',           false, 16],
+        ['1.2.02','Venda de Insumos',               'REVENUE',           false, 17],
+        ['2',     'Deducoes da Receita',            'DEDUCTION',         true,  20],
+        ['2.1',   'Cancelamentos / Devolucoes',     'DEDUCTION',         false, 21],
+        ['3',     'Custo dos Servicos Vendidos',    'COGS',              true,  30],
+        ['3.1',   'Pecas e Insumos',                'COGS',              false, 31],
+        ['3.2',   'Mao de Obra Direta',             'COGS',              false, 32],
+        ['4',     'Despesas Operacionais',          'OPERATING_EXPENSE', true,  40],
+        ['4.1',   'Aluguel',                        'OPERATING_EXPENSE', false, 41],
+        ['4.2',   'Salarios e Encargos',            'OPERATING_EXPENSE', false, 42],
+        ['4.3',   'Energia / Agua / Internet',      'OPERATING_EXPENSE', false, 43],
+        ['4.4',   'Marketing e Publicidade',        'OPERATING_EXPENSE', false, 44],
+        ['4.5',   'Software / SaaS',                'OPERATING_EXPENSE', false, 45],
+        ['4.6',   'Combustivel / Veiculos',         'OPERATING_EXPENSE', false, 46],
+        ['5',     'Impostos',                       'TAX',               true,  50],
+        ['5.1',   'ISS',                            'TAX',               false, 51],
+        ['5.2',   'PIS / COFINS',                   'TAX',               false, 52],
+        ['5.3',   'IRPJ / CSLL',                    'TAX',               false, 53],
+        ['5.4',   'Taxas Bancarias',                'TAX',               false, 54],
+        ['6',     'Receitas / Despesas Financeiras','FINANCIAL',         true,  60],
+        ['6.1',   'Juros Recebidos',                'FINANCIAL',         false, 61],
+        ['6.2',   'Juros Pagos',                    'FINANCIAL',         false, 62],
+        ['6.3',   'Taxas de Cartao / Gateway',      'FINANCIAL',         false, 63],
+        ['7',     'Nao-Operacionais',               'NON_OPERATING',     true,  70],
+        ['7.1',   'Venda de Ativo Imobilizado',     'NON_OPERATING',     false, 71],
+      ];
+
+      for (const [code, name, type, syn, ord] of chartSeed) {
+        const result = await p.$executeRawUnsafe(`
+          INSERT INTO accounts_chart
+            (company_id, code, name, account_type, is_synthetic, display_order)
+          VALUES
+            ($1, $2, $3, $4::chart_account_type, $5, $6)
+          ON CONFLICT (company_id, code) DO NOTHING
+        `, 'pontualtech-001', code, name, type, syn, ord);
+        if (result > 0) seeded++;
+      }
+
+      const cnt = await p.$queryRawUnsafe(
+        `SELECT count(*)::int AS c FROM accounts_chart WHERE company_id = $1`,
+        'pontualtech-001'
+      );
+      chartCount = cnt[0].c;
+    }
+
+    console.log(`[ensure-financeiro] OK chart_accounts=${chartCount} seeded=${seeded}`);
+    process.exit(0);
+  } catch (e) {
+    console.error('[ensure-financeiro] FAILED:', e.message);
+    process.exit(0);
+  } finally {
+    await p.$disconnect();
+  }
+})();
+JS

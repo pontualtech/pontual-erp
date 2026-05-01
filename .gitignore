@@ -12,3 +12,6 @@ migration-*.json
 BACKUP_v5_PRODUCTION.md
 BACKUP_REPLICACAO_COMPLETA.md
 *.sql
+!packages/db/prisma/migrations/**/*.sql
+!prisma/migrations/**/*.sql
+!scripts/*.sql
