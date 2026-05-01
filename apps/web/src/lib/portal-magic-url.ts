@@ -1,8 +1,46 @@
 import { createAccessToken } from '@/lib/portal-auth'
 
-const PORTAL_DOMAIN_BY_SLUG: Record<string, string> = {
-  pontualtech: 'portal.pontualtech.com.br',
-  imprimitech: 'portal.imprimitech.com.br',
+/**
+ * M5 fix (audit): mapa centralizado slug → portal domain.
+ * Antes existiam 3 cópias (este arquivo, lib/ai/handlers.ts,
+ * api/chatwoot/bot/route.ts). Agora todos importam dessa fonte única.
+ *
+ * Onboarding de novo tenant: adicionar 1 linha aqui (até migração futura
+ * pra companies.portal_url no DB, que requer schema change e codemod async).
+ *
+ * Override per-deploy via env `PORTAL_URL_BY_SLUG` JSON:
+ *   PORTAL_URL_BY_SLUG='{"pontualtech":"portal.pontualtech.com.br",...}'
+ */
+function loadPortalDomainMap(): Record<string, string> {
+  const base: Record<string, string> = {
+    pontualtech: 'portal.pontualtech.com.br',
+    imprimitech: 'portal.imprimitech.com.br',
+  }
+  const envOverride = process.env.PORTAL_URL_BY_SLUG
+  if (envOverride) {
+    try {
+      const parsed = JSON.parse(envOverride)
+      if (parsed && typeof parsed === 'object') {
+        Object.assign(base, parsed)
+      }
+    } catch {
+      console.warn('[portal-magic-url] PORTAL_URL_BY_SLUG inválido — ignorando')
+    }
+  }
+  return base
+}
+
+export const PORTAL_DOMAIN_BY_SLUG: Record<string, string> = loadPortalDomainMap()
+
+/**
+ * Resolve domínio do portal pra um slug. Use isso em vez de hardcode.
+ * Fallback: deriva `portal.${slug}.com.br` se slug desconhecido + warning.
+ */
+export function resolvePortalDomain(slug: string): string {
+  const explicit = PORTAL_DOMAIN_BY_SLUG[slug]
+  if (explicit) return explicit
+  console.warn(`[portal-magic-url] slug "${slug}" não está em PORTAL_DOMAIN_BY_SLUG; derivando portal.${slug}.com.br. Adicionar em PORTAL_URL_BY_SLUG env ou no map base.`)
+  return `portal.${slug}.com.br`
 }
 
 /**
@@ -23,8 +61,7 @@ export function buildMagicLink(opts: {
   portalUrlOverride?: string
 }): { url: string; token: string } {
   const { customerId, companyId, slug, osId, portalUrlOverride } = opts
-  const isImpri = slug.includes('imprimitech')
-  const domain = PORTAL_DOMAIN_BY_SLUG[slug] || (isImpri ? 'portal.imprimitech.com.br' : 'portal.pontualtech.com.br')
+  const domain = resolvePortalDomain(slug)
   const portalBase = portalUrlOverride || process.env.PORTAL_URL || `https://${domain}`
   const token = createAccessToken(customerId, companyId)
   const redirectPath = osId ? `/portal/${slug}/os/${osId}` : `/portal/${slug}`

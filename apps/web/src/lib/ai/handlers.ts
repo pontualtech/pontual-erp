@@ -22,12 +22,8 @@ function formatBRL(cents: number | null | undefined): string {
   return `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`
 }
 
-// Portal domain per tenant slug — keep aligned with middleware.ts PORTAL_HOST_SLUG
-// and the Google OAuth callback helper.
-const PORTAL_DOMAIN_BY_SLUG: Record<string, string> = {
-  pontualtech: 'portal.pontualtech.com.br',
-  imprimitech: 'portal.imprimitech.com.br',
-}
+// M5 fix (audit): import central. Map vivia em 3 lugares duplicados antes.
+import { resolvePortalDomain } from '@/lib/portal-magic-url'
 
 type CompanyContact = {
   portalUrl: string
@@ -47,7 +43,7 @@ async function getCompanyContact(companyId: string): Promise<CompanyContact> {
     select: { name: true, slug: true },
   })
   const slug = company?.slug || ''
-  const domain = PORTAL_DOMAIN_BY_SLUG[slug] || (slug ? `portal.${slug}.com.br` : '')
+  const domain = slug ? resolvePortalDomain(slug) : ''
 
   const settings = await prisma.setting.findMany({
     where: {

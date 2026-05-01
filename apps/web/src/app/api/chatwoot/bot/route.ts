@@ -16,6 +16,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
+import { resolvePortalDomain } from '@/lib/portal-magic-url'
 import {
   sendWhatsAppButtons,
   sendWhatsAppList,
@@ -173,9 +174,9 @@ function portalBase(cfg: BotCompanyConfig): string {
   // Strip trailing slash and legacy /login suffix from DB config — older bot.config.portal_url
   // values included /login at the end, which breaks new magic-link URLs (/entrar?t=...).
   if (cfg.portalUrl) return cfg.portalUrl.replace(/\/+$/, '').replace(/\/login$/, '')
-  const isImpri = cfg.slug.includes('imprimitech')
-  const domain = isImpri ? 'portal.imprimitech.com.br' : 'portal.pontualtech.com.br'
-  const tenant = isImpri ? 'imprimitech' : 'pontualtech'
+  // M5 fix (audit): usa resolvePortalDomain centralizado em vez de hardcode
+  const tenant = cfg.slug.includes('imprimitech') ? 'imprimitech' : cfg.slug.includes('pontualtech') ? 'pontualtech' : cfg.slug
+  const domain = resolvePortalDomain(tenant)
   return `https://${domain}/portal/${tenant}`
 }
 
