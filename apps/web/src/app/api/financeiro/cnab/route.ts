@@ -221,8 +221,9 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    let pagos = 0, rejeitados = 0, outros = 0
+    let pagos = 0, rejeitados = 0, outros = 0, unmatched = 0
     let totalRecebido = 0
+    const unmatchedDetails: Array<{ seuNumero: string; nossoNumero: string; valorPago: number; dataCredito: string | null; status: string; ocorrencia: string | null }> = []
 
     for (const ret of retornos) {
       // Buscar conta a receber pelo seuNumero (ID parcial) ou nossoNumero
@@ -236,7 +237,36 @@ export async function POST(req: NextRequest) {
         },
       })
 
-      if (!receivable) continue
+      if (!receivable) {
+        // C3 fix (audit): retorno CNAB sem AR matching antes era silenciosamente
+        // ignorado (continue). Boleto pago no banco com seuNumero/nossoNumero
+        // truncado/divergente virava dinheiro órfão sem que o ERP soubesse.
+        // Agora: grava em webhook_logs como CNAB_UNMATCHED + adiciona em
+        // detalhes da response pra revisão manual pelo atendente.
+        unmatched++
+        unmatchedDetails.push({
+          seuNumero: ret.seuNumero || '',
+          nossoNumero: ret.nossoNumero || '',
+          valorPago: ret.valorPago || 0,
+          dataCredito: ret.dataCredito ? new Date(ret.dataCredito).toISOString() : null,
+          status: ret.status || 'UNKNOWN',
+          ocorrencia: ret.ocorrencia || null,
+        })
+        try {
+          await prisma.webhookLog.create({
+            data: {
+              company_id: user.companyId,
+              event: 'CNAB_UNMATCHED',
+              payload: ret as any,
+              status: 'FAILED',
+              error: `Retorno CNAB sem AR correspondente — seuNumero=${ret.seuNumero}, nossoNumero=${ret.nossoNumero}`,
+            },
+          })
+        } catch (e: any) {
+          console.warn('[CNAB] webhookLog UNMATCHED insert failed:', e?.message)
+        }
+        continue
+      }
 
       if (ret.status === 'PAGO') {
         const valorRecebido = ret.valorPago || receivable.total_amount
@@ -337,6 +367,10 @@ export async function POST(req: NextRequest) {
       pagos,
       rejeitados,
       outros,
+      // C3: retornos sem match — atendente DEVE revisar manualmente. Cada
+      // entrada virou WebhookLog 'CNAB_UNMATCHED' pra rastreamento.
+      unmatched,
+      unmatched_details: unmatchedDetails,
       totalRecebido,
       contaBancaria: interAccountId || null,
       detalhes: retornos.map(r => ({
