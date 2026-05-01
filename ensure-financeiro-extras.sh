@@ -85,6 +85,41 @@ const p = new PrismaClient();
       $func$ LANGUAGE plpgsql;
     `);
 
+    // A6 fix (audit): tabela _trigger_failures registra falhas dos triggers
+    // EXCEPTION-safe (audit, dual-write AR/AP, fiscal_entries pipeline).
+    // Antes: RAISE WARNING vai pra log PostgreSQL mas não é visível na app
+    // (depende de client_min_messages) — falhas silenciadas mascarvam dual-
+    // write quebrado, audit log incompleto, etc.
+    // Agora: cada EXCEPTION grava em _trigger_failures + ainda RAISE WARNING
+    // pra compat. Cron pode consultar a tabela diariamente e alertar.
+    await p.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS _trigger_failures (
+        id serial primary key,
+        trigger_name text NOT NULL,
+        payload jsonb,
+        error_msg text,
+        error_state text,
+        created_at timestamptz DEFAULT NOW()
+      );
+    `);
+    await p.$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS idx_trigger_failures_recent
+        ON _trigger_failures (created_at DESC);
+    `);
+    await p.$executeRawUnsafe(`
+      CREATE OR REPLACE FUNCTION fn_record_trigger_failure(
+        p_trigger text, p_payload jsonb, p_msg text, p_state text
+      ) RETURNS void AS $rec$
+      BEGIN
+        INSERT INTO _trigger_failures (trigger_name, payload, error_msg, error_state)
+        VALUES (p_trigger, p_payload, p_msg, p_state);
+      EXCEPTION WHEN OTHERS THEN
+        -- Ultimate fallback: se até o registro de falha falhar, só loga
+        RAISE WARNING 'fn_record_trigger_failure ITSELF failed for %: % (%)', p_trigger, SQLERRM, SQLSTATE;
+      END;
+      $rec$ LANGUAGE plpgsql SECURITY DEFINER;
+    `);
+
     // 2. RLS em tabelas tenant-scoped (lazy mode: NULL setting bypass)
     // feature_flags NÃO entra aqui — é global (sem company_id).
     const rlsTables = [
@@ -223,6 +258,7 @@ const p = new PrismaClient();
             );
           EXCEPTION
             WHEN OTHERS THEN
+              PERFORM fn_record_trigger_failure('payment_history_trigger', to_jsonb(NEW), SQLERRM, SQLSTATE);
               RAISE WARNING 'payment_history_trigger failed: % (%)', SQLERRM, SQLSTATE;
           END;
 
@@ -252,8 +288,14 @@ const p = new PrismaClient();
       // M-008: régua de cobrança constraints
       { table: 'cobranca_rule_steps', name: 'chk_step_order_positive',
         check: `step_order > 0` },
-      { table: 'payment_reminders',   name: 'chk_attempts_lt_5',
-        check: `attempts < 5` },
+      // A1 fix (audit): trocado de `< 5` pra `<= 5`. Dispatcher precisa
+      // gravar attempts=5 quando reminder atinge max retries (status=FAILED).
+      // Constraint anterior bloqueava isso → exception silenciosa, reminder
+      // ficava preso em PENDING infinitamente. Nome mudou pra refletir nova
+      // semântica; old constraint dropada junto.
+      { table: 'payment_reminders',   name: 'chk_attempts_le_5',
+        check: `attempts BETWEEN 0 AND 5`,
+        dropOld: 'chk_attempts_lt_5' },
       // M-010: feature_flags rollout_pct entre 0-100
       { table: 'feature_flags', name: 'chk_rollout_pct_range',
         check: `rollout_pct >= 0 AND rollout_pct <= 100` },
@@ -279,6 +321,16 @@ const p = new PrismaClient();
         c.table
       );
       if (!tblExists || tblExists.length === 0) continue;
+      // A1: drop old constraint name se renomeada (graceful migration)
+      if ((c as any).dropOld) {
+        try {
+          await p.$executeRawUnsafe(
+            `ALTER TABLE ${c.table} DROP CONSTRAINT IF EXISTS ${(c as any).dropOld};`
+          );
+        } catch (e: any) {
+          console.warn(`[ensure-financeiro] dropOld ${(c as any).dropOld}: ${e.message}`);
+        }
+      }
       await p.$executeRawUnsafe(`
         DO $$ BEGIN
           IF NOT EXISTS (
@@ -353,29 +405,59 @@ const p = new PrismaClient();
     }
 
     // 7. Materialized View dre_monthly
+    // A2 fix (audit): non-destructive boot. Antes DROP MV em todo boot
+    // dropava todos os dados — se §11 falhasse depois, MV ficava vazia e
+    // /api/financeiro/v2/dre retornava array vazio sem erro. Agora só
+    // recria se MV NÃO existe; mudanças de definição requerem DROP manual.
     const acExists = await p.$queryRawUnsafe(
       `SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='accounts_chart'`
     );
     if (feExists.length > 0 && acExists.length > 0) {
-      await p.$executeRawUnsafe(`DROP MATERIALIZED VIEW IF EXISTS dre_monthly;`);
-      await p.$executeRawUnsafe(`
-        CREATE MATERIALIZED VIEW dre_monthly AS
-        SELECT
-          fe.company_id,
-          fe.fiscal_period,
-          ac.account_type,
-          ac.code,
-          ac.name,
-          SUM(fe.amount)::bigint AS total_cents
-        FROM fiscal_entries fe
-        JOIN accounts_chart ac ON ac.id = fe.chart_account_id
-        WHERE fe.is_provisional = false
-        GROUP BY fe.company_id, fe.fiscal_period, ac.account_type, ac.code, ac.name;
-      `);
+      const mvExists = await p.$queryRawUnsafe(
+        `SELECT 1 FROM pg_matviews WHERE schemaname='public' AND matviewname='dre_monthly'`
+      ) as any[];
+      if (!mvExists || mvExists.length === 0) {
+        // MV não existe — cria
+        await p.$executeRawUnsafe(`
+          CREATE MATERIALIZED VIEW dre_monthly AS
+          SELECT
+            fe.company_id,
+            fe.fiscal_period,
+            ac.account_type,
+            ac.code,
+            ac.name,
+            SUM(fe.amount)::bigint AS total_cents
+          FROM fiscal_entries fe
+          JOIN accounts_chart ac ON ac.id = fe.chart_account_id
+          WHERE fe.is_provisional = false
+          GROUP BY fe.company_id, fe.fiscal_period, ac.account_type, ac.code, ac.name;
+        `);
+        console.log('[ensure-financeiro] dre_monthly MV criada (não existia)');
+      }
+      // Index é idempotente
       await p.$executeRawUnsafe(`
         CREATE UNIQUE INDEX IF NOT EXISTS idx_dre_monthly_pk
           ON dre_monthly (company_id, fiscal_period, code);
       `);
+      // Pra forçar recriação após mudança de definição: DROP manual via psql
+      // ou setar PONTUAL_DRE_MV_FORCE_RECREATE=1 (drop ANTES desse bloco)
+      if (process.env.PONTUAL_DRE_MV_FORCE_RECREATE === '1') {
+        console.warn('[ensure-financeiro] PONTUAL_DRE_MV_FORCE_RECREATE=1 — recriando MV');
+        await p.$executeRawUnsafe(`DROP MATERIALIZED VIEW IF EXISTS dre_monthly;`);
+        await p.$executeRawUnsafe(`
+          CREATE MATERIALIZED VIEW dre_monthly AS
+          SELECT fe.company_id, fe.fiscal_period, ac.account_type, ac.code, ac.name,
+                 SUM(fe.amount)::bigint AS total_cents
+          FROM fiscal_entries fe
+          JOIN accounts_chart ac ON ac.id = fe.chart_account_id
+          WHERE fe.is_provisional = false
+          GROUP BY fe.company_id, fe.fiscal_period, ac.account_type, ac.code, ac.name;
+        `);
+        await p.$executeRawUnsafe(`
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_dre_monthly_pk
+            ON dre_monthly (company_id, fiscal_period, code);
+        `);
+      }
     }
 
     // 8. Seed PontualTech (plano de contas) — idempotente via ON CONFLICT
@@ -489,6 +571,7 @@ const p = new PrismaClient();
               WHERE id = NEW.id;
             END IF;
           EXCEPTION WHEN OTHERS THEN
+            PERFORM fn_record_trigger_failure('dual_write_ar_to_payments', to_jsonb(NEW), SQLERRM, SQLSTATE);
             RAISE WARNING 'dual_write_ar_to_payments failed for AR=%: % (%)',
               NEW.id, SQLERRM, SQLSTATE;
           END;
@@ -546,6 +629,7 @@ const p = new PrismaClient();
               WHERE id = NEW.id;
             END IF;
           EXCEPTION WHEN OTHERS THEN
+            PERFORM fn_record_trigger_failure('dual_write_ap_to_payments', to_jsonb(NEW), SQLERRM, SQLSTATE);
             RAISE WARNING 'dual_write_ap_to_payments failed for AP=%: % (%)',
               NEW.id, SQLERRM, SQLSTATE;
           END;
@@ -705,7 +789,9 @@ const p = new PrismaClient();
                  AND metadata->>'origin_id' = NEW.id
             );
           EXCEPTION WHEN OTHERS THEN
-            -- Falha não-fatal: AR não trava
+            -- Falha não-fatal: AR não trava. Registra em _trigger_failures pra
+            -- visibilidade (RAISE NOTICE não aparece em log default).
+            PERFORM fn_record_trigger_failure('fn_ar_to_fiscal_entry', to_jsonb(NEW), SQLERRM, SQLSTATE);
             RAISE NOTICE '[fn_ar_to_fiscal_entry] %', SQLERRM;
           END;
           RETURN NEW;
@@ -761,6 +847,7 @@ const p = new PrismaClient();
                  AND metadata->>'origin_id' = NEW.id
             );
           EXCEPTION WHEN OTHERS THEN
+            PERFORM fn_record_trigger_failure('fn_ap_to_fiscal_entry', to_jsonb(NEW), SQLERRM, SQLSTATE);
             RAISE NOTICE '[fn_ap_to_fiscal_entry] %', SQLERRM;
           END;
           RETURN NEW;
@@ -776,58 +863,74 @@ const p = new PrismaClient();
       `);
 
       // 11.4 Backfill idempotente: AR/AP PAGO → fiscal_entries
+      // M11 fix (audit): fn_resolve_chart_account chamada UMA vez por row via
+      // CTE em vez de duas (SELECT + WHERE). Função é STABLE — planner não
+      // dedupe automaticamente. Em backfill com 1000 rows = 2000 chamadas
+      // antes; agora 1000.
       const arBackfill = await p.$executeRawUnsafe(`
+        WITH resolved AS (
+          SELECT ar.*,
+                 cat.module AS cat_module, cat.name AS cat_name,
+                 fn_resolve_chart_account(ar.company_id, 'AR', cat.module, cat.name) AS chart_id
+            FROM accounts_receivable ar
+            LEFT JOIN categories cat ON cat.id = ar.category_id
+           WHERE ar.status IN ('RECEBIDO', 'PAGO')
+             AND ar.deleted_at IS NULL
+        )
         INSERT INTO fiscal_entries (
           id, company_id, entry_date, cash_date, chart_account_id,
           amount, description, source, metadata, created_at
         )
         SELECT
-          gen_random_uuid()::text, ar.company_id,
-          COALESCE(ar.due_date::date, CURRENT_DATE),
-          COALESCE(ar.updated_at::date, ar.due_date::date),
-          fn_resolve_chart_account(ar.company_id, 'AR', cat.module, cat.name),
-          COALESCE(ar.received_amount, ar.total_amount, 0),
-          COALESCE(ar.description, 'AR ' || ar.id),
+          gen_random_uuid()::text, r.company_id,
+          COALESCE(r.due_date::date, CURRENT_DATE),
+          COALESCE(r.updated_at::date, r.due_date::date),
+          r.chart_id,
+          COALESCE(r.received_amount, r.total_amount, 0),
+          COALESCE(r.description, 'AR ' || r.id),
           'PAYMENT',
-          jsonb_build_object('origin_type','ACCOUNT_RECEIVABLE','origin_id', ar.id),
+          jsonb_build_object('origin_type','ACCOUNT_RECEIVABLE','origin_id', r.id),
           now()
-          FROM accounts_receivable ar
-          LEFT JOIN categories cat ON cat.id = ar.category_id
-         WHERE ar.status IN ('RECEBIDO', 'PAGO')
-           AND ar.deleted_at IS NULL
-           AND fn_resolve_chart_account(ar.company_id, 'AR', cat.module, cat.name) IS NOT NULL
+          FROM resolved r
+         WHERE r.chart_id IS NOT NULL
            AND NOT EXISTS (
              SELECT 1 FROM fiscal_entries fe
-              WHERE fe.company_id = ar.company_id
+              WHERE fe.company_id = r.company_id
                 AND fe.metadata->>'origin_type' = 'ACCOUNT_RECEIVABLE'
-                AND fe.metadata->>'origin_id' = ar.id
+                AND fe.metadata->>'origin_id' = r.id
            )
       `);
       const apBackfill = await p.$executeRawUnsafe(`
+        WITH resolved AS (
+          SELECT ap.*,
+                 cat.module AS cat_module, cat.name AS cat_name,
+                 fn_resolve_chart_account(ap.company_id, 'AP', cat.module, cat.name) AS chart_id
+            FROM accounts_payable ap
+            LEFT JOIN categories cat ON cat.id = ap.category_id
+           WHERE ap.status = 'PAGO'
+             AND ap.deleted_at IS NULL
+        )
         INSERT INTO fiscal_entries (
           id, company_id, entry_date, cash_date, chart_account_id,
           amount, description, source, metadata, created_at
         )
         SELECT
-          gen_random_uuid()::text, ap.company_id,
-          COALESCE(ap.due_date::date, CURRENT_DATE),
-          COALESCE(ap.due_date::date, CURRENT_DATE),
-          fn_resolve_chart_account(ap.company_id, 'AP', cat.module, cat.name),
-          COALESCE(ap.paid_amount, ap.total_amount, 0),
-          COALESCE(ap.description, 'AP ' || ap.id),
+          gen_random_uuid()::text, r.company_id,
+          COALESCE(r.due_date::date, CURRENT_DATE),
+          COALESCE(r.due_date::date, CURRENT_DATE),
+          r.chart_id,
+          COALESCE(r.paid_amount, r.total_amount, 0),
+          COALESCE(r.description, 'AP ' || r.id),
           'PAYMENT',
-          jsonb_build_object('origin_type','ACCOUNT_PAYABLE','origin_id', ap.id),
+          jsonb_build_object('origin_type','ACCOUNT_PAYABLE','origin_id', r.id),
           now()
-          FROM accounts_payable ap
-          LEFT JOIN categories cat ON cat.id = ap.category_id
-         WHERE ap.status = 'PAGO'
-           AND ap.deleted_at IS NULL
-           AND fn_resolve_chart_account(ap.company_id, 'AP', cat.module, cat.name) IS NOT NULL
+          FROM resolved r
+         WHERE r.chart_id IS NOT NULL
            AND NOT EXISTS (
              SELECT 1 FROM fiscal_entries fe
-              WHERE fe.company_id = ap.company_id
+              WHERE fe.company_id = r.company_id
                 AND fe.metadata->>'origin_type' = 'ACCOUNT_PAYABLE'
-                AND fe.metadata->>'origin_id' = ap.id
+                AND fe.metadata->>'origin_id' = r.id
            )
       `);
       backfillCount = (Number(arBackfill) || 0) + (Number(apBackfill) || 0);
