@@ -793,7 +793,110 @@ const p = new PrismaClient();
       fiscalPipelineOk = true;
     }
 
-    console.log(`[ensure-financeiro] OK chart_accounts=${chartCount} seeded=${seeded} fiscalPipeline=${fiscalPipelineOk} backfill=${backfillCount}`);
+    // 12. M-012: Backfill AR/AP → payments unified (gated por PONTUAL_BACKFILL_M012=1).
+    //
+    // Domínio:
+    //   - accounts_receivable: lançamentos a receber (origem)
+    //   - accounts_payable: lançamentos a pagar (origem)
+    //   - payments LEGACY: pagamentos via gateway/cartão (vinculados a AR via receivable_id)
+    //   - payments UNIFIED (M-002+): row por AR/AP via dual-write trigger M-013
+    //
+    // Estratégia segura (não-duplicativa):
+    //   Para cada AR/AP que NÃO tem um payments row com (origin_type, origin_id)
+    //   correspondente, INSERT idempotente seguindo o pattern M-013.
+    //   payments LEGACY (com receivable_id mas sem origin_type) ficam intocados —
+    //   eles continuam representando "pagamentos efetivos" enquanto AR/AP são "lançamentos".
+    //   Sem colisão: M-013 usa AR.id == payments.id, então ON CONFLICT DO NOTHING.
+    //
+    // Idempotente: pode rodar N vezes, só insere o que falta.
+    let m012BackfillAr = 0;
+    let m012BackfillAp = 0;
+    if (process.env.PONTUAL_BACKFILL_M012 === '1' && arExists.length > 0) {
+      try {
+        const arResult = await p.$executeRawUnsafe(`
+          INSERT INTO payments (
+            id, company_id, kind, status, customer_id,
+            origin_type, origin_id,
+            amount, idempotency_key,
+            total_amount, paid_amount, issue_date, due_date,
+            description, created_at, updated_at
+          )
+          SELECT
+            ar.id, ar.company_id, 'RECEIVABLE'::payment_kind,
+            COALESCE(ar.status, 'PENDING'),
+            ar.customer_id, 'ACCOUNT_RECEIVABLE', ar.id,
+            COALESCE(ar.total_amount, 0),
+            'ar:' || ar.id,
+            COALESCE(ar.total_amount, 0),
+            COALESCE(ar.received_amount, 0),
+            COALESCE(ar.issue_date, ar.created_at::date, CURRENT_DATE),
+            COALESCE(ar.due_date, CURRENT_DATE),
+            COALESCE(ar.description, 'AR ' || ar.id),
+            COALESCE(ar.created_at, now()),
+            COALESCE(ar.updated_at, now())
+            FROM accounts_receivable ar
+           WHERE ar.deleted_at IS NULL
+             AND NOT EXISTS (
+               SELECT 1 FROM payments p
+                WHERE p.origin_type = 'ACCOUNT_RECEIVABLE'
+                  AND p.origin_id = ar.id
+             )
+          ON CONFLICT (id) DO NOTHING
+        `);
+        m012BackfillAr = Number(arResult) || 0;
+      } catch (e) {
+        console.warn(`[ensure-financeiro] M-012 AR backfill: ${e.message}`);
+      }
+
+      try {
+        // Verifica se accounts_payable existe antes de tentar
+        const apTbl = await p.$queryRawUnsafe(
+          `SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='accounts_payable'`
+        );
+        if (apTbl.length > 0) {
+          // AP: payments.customer_id é NOT NULL (legacy). Reusa supplier_id em ambos,
+          // mesmo padrão do trigger M-013 dual_write_ap_to_payments.
+          const apResult = await p.$executeRawUnsafe(`
+            INSERT INTO payments (
+              id, company_id, kind, status,
+              customer_id, supplier_id,
+              origin_type, origin_id,
+              amount, idempotency_key,
+              total_amount, paid_amount, issue_date, due_date,
+              description, created_at, updated_at
+            )
+            SELECT
+              ap.id, ap.company_id, 'PAYABLE'::payment_kind,
+              COALESCE(ap.status, 'PENDING'),
+              ap.supplier_id, ap.supplier_id,
+              'ACCOUNT_PAYABLE', ap.id,
+              COALESCE(ap.total_amount, 0),
+              'ap:' || ap.id,
+              COALESCE(ap.total_amount, 0),
+              COALESCE(ap.paid_amount, 0),
+              COALESCE(ap.issue_date, ap.created_at::date, CURRENT_DATE),
+              COALESCE(ap.due_date, CURRENT_DATE),
+              COALESCE(ap.description, 'AP ' || ap.id),
+              COALESCE(ap.created_at, now()),
+              COALESCE(ap.updated_at, now())
+              FROM accounts_payable ap
+             WHERE ap.deleted_at IS NULL
+               AND ap.supplier_id IS NOT NULL
+               AND NOT EXISTS (
+                 SELECT 1 FROM payments p
+                  WHERE p.origin_type = 'ACCOUNT_PAYABLE'
+                    AND p.origin_id = ap.id
+               )
+            ON CONFLICT (id) DO NOTHING
+          `);
+          m012BackfillAp = Number(apResult) || 0;
+        }
+      } catch (e) {
+        console.warn(`[ensure-financeiro] M-012 AP backfill: ${e.message}`);
+      }
+    }
+
+    console.log(`[ensure-financeiro] OK chart_accounts=${chartCount} seeded=${seeded} fiscalPipeline=${fiscalPipelineOk} backfill=${backfillCount} m012Ar=${m012BackfillAr} m012Ap=${m012BackfillAp}`);
     process.exit(0);
   } catch (e) {
     console.error('[ensure-financeiro] FAILED:', e.message);
