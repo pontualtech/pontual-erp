@@ -9,10 +9,16 @@ import { success, error, handleError } from '@/lib/api-response'
 //      cobranca_rule ativa + cada step, cria PaymentReminder (idempotente)
 //      quando due_date + trigger_days_offset <= hoje.
 //   2. DISPATCHER: pega PaymentReminders PENDING + scheduled_for<=NOW() +
-//      attempts<5; "envia" via canal (stub registra delivery_meta hoje;
-//      real dispatch pluggable via emitReminder()).
+//      attempts<5 e tenta enviar via canal real.
 //
 // Protegido por CRON_SECRET. Idempotente — pode rodar a cada 5min.
+//
+// SAFETY GATE (post-audit C1):
+//   Real dispatchers (Evolution/SMTP/SMS) ainda não implementados.
+//   Sem o gate explícito `PAYMENT_REMINDERS_V2_REAL_DISPATCH=1`, o dispatcher
+//   NÃO marca reminders como SENT — fica em PENDING. Isso evita que o ERP
+//   diga "cobrança enviada" pro atendente quando na verdade nada saiu.
+//   Pra ativar: implementar emitReminder real + setar env=1 no Coolify.
 
 interface DispatchResult {
   ok: boolean
@@ -20,25 +26,29 @@ interface DispatchResult {
   error?: string
 }
 
+const REAL_DISPATCH_ENABLED = process.env.PAYMENT_REMINDERS_V2_REAL_DISPATCH === '1'
+
 async function emitReminder(args: {
   channel: 'WHATSAPP' | 'EMAIL' | 'SMS'
   payment_id: string
   rule_step_id: string | null
   company_id: string
 }): Promise<DispatchResult> {
-  // STUB: real dispatch hooks vão aqui.
+  if (!REAL_DISPATCH_ENABLED) {
+    // Não dispara nada e sinaliza ao caller pra deixar em PENDING.
+    // Caller decide o que fazer (não marca SENT, não incrementa attempts).
+    return {
+      ok: false,
+      error: 'PAYMENT_REMINDERS_V2_REAL_DISPATCH desabilitado — dispatchers reais não implementados ainda',
+    }
+  }
+  // TODO: real dispatch hooks vão aqui:
   // - WHATSAPP: chamar Evolution API por tenant (lookup chat_token via Setting)
   // - EMAIL: nodemailer com SMTP por tenant
   // - SMS: provider TBD (twilio? zenvia?)
-  // Por enquanto loga e retorna ok=true pra validar flow end-to-end.
   return {
-    ok: true,
-    delivery_meta: {
-      stub: true,
-      ts: new Date().toISOString(),
-      channel: args.channel,
-      note: 'Real dispatcher não implementado — flow validado em modo stub',
-    },
+    ok: false,
+    error: 'Real dispatch ativado mas implementação pendente — não marcar SENT',
   }
 }
 
@@ -60,6 +70,7 @@ export async function GET(request: NextRequest) {
     let scheduledCount = 0
     let dispatchedCount = 0
     let dispatchFailures = 0
+    let dispatchHeld = 0   // bloqueado pelo safety gate (real dispatch off)
     const errors: string[] = []
 
     // ─── Phase 1: Scheduler ────────────────────────────────────────────────
@@ -137,6 +148,32 @@ export async function GET(request: NextRequest) {
     }
 
     // ─── Phase 2: Dispatcher ───────────────────────────────────────────────
+    // Safety gate: se real dispatch desabilitado, marca reminders como held.
+    // Isso permite ver o que SERIA enviado sem realmente enviar (modo dry-run
+    // explícito), e nunca diz "SENT" pra coisa que não saiu.
+    if (!REAL_DISPATCH_ENABLED) {
+      const heldDue = await prisma.paymentReminder.count({
+        where: {
+          status: 'PENDING',
+          scheduled_for: { lte: new Date() },
+          attempts: { lt: 5 },
+        },
+      })
+      dispatchHeld = heldDue
+
+      return success({
+        ok: true,
+        elapsed_ms: Date.now() - startedAt,
+        scheduled: scheduledCount,
+        dispatched: 0,
+        dispatch_failures: 0,
+        dispatch_held: dispatchHeld,
+        real_dispatch_enabled: false,
+        note: 'PAYMENT_REMINDERS_V2_REAL_DISPATCH=0 — reminders ficam em PENDING até implementação dos dispatchers reais',
+        errors,
+      })
+    }
+
     const due = await prisma.paymentReminder.findMany({
       where: {
         status: 'PENDING',
@@ -169,11 +206,14 @@ export async function GET(request: NextRequest) {
       } else {
         dispatchFailures++
         const newAttempts = rem.attempts + 1
+        // Cap em 5 tentativas: na 5ª, marca FAILED (constraint chk_attempts_lt_5
+        // será corrigida em fix A1; por enquanto deixa attempts<=4 e FAILED no 5).
+        const finalAttempts = Math.min(newAttempts, 4)
         await prisma.paymentReminder.update({
           where: { id: rem.id },
           data: {
             status: newAttempts >= 5 ? 'FAILED' : 'PENDING',
-            attempts: newAttempts,
+            attempts: finalAttempts,
             error_message: result.error?.slice(0, 500) ?? 'unknown',
           },
         })
@@ -186,6 +226,7 @@ export async function GET(request: NextRequest) {
       scheduled: scheduledCount,
       dispatched: dispatchedCount,
       dispatch_failures: dispatchFailures,
+      real_dispatch_enabled: true,
       errors,
     })
   } catch (err) {
