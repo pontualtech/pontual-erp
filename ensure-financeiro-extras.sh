@@ -620,8 +620,9 @@ const p = new PrismaClient();
           v_cash_date date;
         BEGIN
           BEGIN
-            IF NEW.status <> 'PAGO' THEN RETURN NEW; END IF;
-            IF TG_OP = 'UPDATE' AND OLD.status = 'PAGO' THEN RETURN NEW; END IF;
+            -- AR usa status='RECEBIDO' (canônico) ou ocasionalmente 'PAGO'
+            IF NEW.status NOT IN ('RECEBIDO', 'PAGO') THEN RETURN NEW; END IF;
+            IF TG_OP = 'UPDATE' AND OLD.status IN ('RECEBIDO', 'PAGO') THEN RETURN NEW; END IF;
 
             -- Categoria info (left join)
             SELECT module, name INTO v_cat_module, v_cat_name
@@ -738,7 +739,7 @@ const p = new PrismaClient();
           now()
           FROM accounts_receivable ar
           LEFT JOIN categories cat ON cat.id = ar.category_id
-         WHERE ar.status = 'PAGO'
+         WHERE ar.status IN ('RECEBIDO', 'PAGO')
            AND ar.deleted_at IS NULL
            AND fn_resolve_chart_account(ar.company_id, 'AR', cat.module, cat.name) IS NOT NULL
            AND NOT EXISTS (
@@ -891,6 +892,36 @@ const p = new PrismaClient();
       } catch (e) {
         console.warn(`[ensure-financeiro] M-012 AP backfill: ${e.message}`);
       }
+    }
+
+    // Diagnostic: registra última execução em tabela queryable via REST.
+    // Permite verificar se ensure script rodou sem precisar de log access.
+    try {
+      await p.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS _ensure_financeiro_log (
+          id serial primary key,
+          ran_at timestamptz default now(),
+          chart_count int,
+          seeded int,
+          fiscal_pipeline_ok boolean,
+          backfill_count int,
+          m012_enabled boolean,
+          m012_ar int,
+          m012_ap int,
+          rls_strict boolean,
+          notes text
+        );
+      `);
+      await p.$executeRawUnsafe(`
+        INSERT INTO _ensure_financeiro_log (
+          chart_count, seeded, fiscal_pipeline_ok, backfill_count,
+          m012_enabled, m012_ar, m012_ap, rls_strict, notes
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `, chartCount, seeded, fiscalPipelineOk, backfillCount,
+        process.env.PONTUAL_BACKFILL_M012 === '1', m012BackfillAr, m012BackfillAp,
+        process.env.PONTUAL_RLS_STRICT === '1', 'OK');
+    } catch (e) {
+      console.warn(`[ensure-financeiro] WARN diag log: ${e.message}`);
     }
 
     console.log(`[ensure-financeiro] OK chart_accounts=${chartCount} seeded=${seeded} fiscalPipeline=${fiscalPipelineOk} backfill=${backfillCount} m012Ar=${m012BackfillAr} m012Ap=${m012BackfillAp}`);
