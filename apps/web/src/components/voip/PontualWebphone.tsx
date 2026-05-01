@@ -48,8 +48,11 @@ export function PontualWebphone() {
     let cancelled = false
 
     async function init() {
+      console.log('[PontualPABX] init() iniciado')
       try {
+        console.log('[PontualPABX] fetching /api/voip/pontual-webphone/credentials')
         const credRes = await fetch('/api/voip/pontual-webphone/credentials', { cache: 'no-store' })
+        console.log('[PontualPABX] credentials HTTP', credRes.status)
         if (!credRes.ok) {
           if (credRes.status !== 404) {
             const j = await credRes.json().catch(() => ({}))
@@ -58,6 +61,7 @@ export function PontualWebphone() {
           return
         }
         const { data } = await credRes.json()
+        console.log('[PontualPABX] credentials:', { ramal: data?.ramal, domain: data?.domain, wsUrl: data?.wsUrl, displayName: data?.displayName })
         if (!data?.wsUrl || cancelled) return
 
         const sipMod: SimpleUserModule = await import('sip.js')
@@ -75,6 +79,7 @@ export function PontualWebphone() {
           aor: `sip:${data.ramal}@${data.domain}`,
           delegate: {
             onCallReceived: (session: SIPSession) => {
+              console.log('[PontualPABX] onCallReceived from', session?.remoteIdentity?.uri?.user)
               setState({
                 state: 'incoming',
                 remoteNumber: session?.remoteIdentity?.uri?.user || '?',
@@ -82,15 +87,18 @@ export function PontualWebphone() {
               })
             },
             onCallAnswered: () => {
+              console.log('[PontualPABX] onCallAnswered')
               setState(prev => ({ ...prev, state: 'connected', startedAt: Date.now() }))
               startTimer()
             },
             onCallHangup: () => {
+              console.log('[PontualPABX] onCallHangup')
               setState({ state: 'ended' })
               stopTimer()
               setTimeout(() => setState({ state: 'idle' }), 1500)
             },
             onCallCreated: () => {
+              console.log('[PontualPABX] onCallCreated')
               setState(prev => ({ ...prev, state: 'calling' }))
             },
           },
@@ -105,16 +113,22 @@ export function PontualWebphone() {
             transportOptions: {
               server: data.wsUrl,
             },
-            logLevel: 'warn',
+            // logLevel 'log' ao invés de 'warn' — muito útil pra debug.
+            // Trocar pra 'warn' depois que estabilizar.
+            logLevel: 'log',
           },
         })
 
         userRef.current = simpleUser
+        console.log('[PontualPABX] SimpleUser instanciado, conectando WSS...')
 
         await simpleUser.connect()
+        console.log('[PontualPABX] WSS conectado, REGISTER...')
         await simpleUser.register()
+        console.log('[PontualPABX] REGISTER ok, bolinha verde')
         if (!cancelled) setRegistered(true)
       } catch (e) {
+        console.error('[PontualPABX] init() error:', e)
         if (!cancelled) setError(e instanceof Error ? e.message.slice(0, 100) : 'erro')
       }
     }
@@ -139,12 +153,27 @@ export function PontualWebphone() {
   }
 
   async function call(target: string) {
+    console.log('[PontualPABX] call() chamado com target=', target)
     const num = target.replace(/\D/g, '')
-    if (!num || !userRef.current) return
+    if (!num) {
+      console.warn('[PontualPABX] call() abortado: num vazio')
+      setError('Número vazio')
+      return
+    }
+    if (!userRef.current) {
+      console.warn('[PontualPABX] call() abortado: userRef.current é null (SimpleUser não inicializado)')
+      setError('Webphone ainda não está pronto. Aguarde a bolinha verde.')
+      return
+    }
+    const host = (userRef.current as any).userAgent?.configuration?.uri?.host || 'pabx.pontualtech.work'
+    const targetUri = `sip:${num}@${host}`
+    console.log('[PontualPABX] dispatching INVITE to', targetUri)
     try {
-      await userRef.current.call(`sip:${num}@${userRef.current.userAgent.configuration.uri.host || 'pabx.pontualtech.work'}`)
+      await userRef.current.call(targetUri)
+      console.log('[PontualPABX] call() resolveu (INVITE enviado, aguardando 100/180/200)')
       setState({ state: 'calling', remoteNumber: num })
     } catch (e) {
+      console.error('[PontualPABX] call() throw:', e)
       setError(e instanceof Error ? e.message.slice(0, 100) : 'falha discar')
     }
   }
