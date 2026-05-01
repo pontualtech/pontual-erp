@@ -2146,6 +2146,112 @@ model PaymentReminder {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// CONFIGURAÇÕES PER-TENANT DE PAGAMENTO (M-009)
+// Spec: §1.9 (payment_method_configs) + §1.10 (payment_terms)
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// Config de método de pagamento por tenant. Combinações (método + provider)
+/// são únicas por company. Ex: ('PIX','ASAAS') = "PIX via Asaas". Cada tenant
+/// configura quais métodos aceita + credenciais (campo config jsonb).
+model PaymentMethodConfig {
+  id              String              @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id      String
+  method          payment_method_kind
+  provider        payment_provider
+  display_name    String
+  is_active       Boolean             @default(true)
+  is_default_in   String              @default("NONE")  // RECEIVABLE | PAYABLE | BOTH | NONE
+  config          Json                @default("{}")
+  fee_pct         Decimal             @default(0) @db.Decimal(5, 2)
+  fee_fixed_cents BigInt              @default(0)
+  display_order   Int                 @default(0)
+  created_at      DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime            @default(now()) @db.Timestamptz(6)
+
+  @@unique([company_id, method, provider], map: "uniq_company_method_provider")
+  @@map("payment_method_configs")
+}
+
+/// Termos de pagamento (parcelamento, descontos). Ex: "à vista 5% desc",
+/// "30/60/90", "entrada + 2x". Tenant define quais termos oferece.
+model PaymentTerm {
+  id                String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id        String
+  name              String
+  installments      Int      @default(1) @db.SmallInt
+  interval_days     Int      @default(30) @db.SmallInt
+  first_offset_days Int      @default(0) @db.SmallInt
+  discount_pct      Decimal? @default(0) @db.Decimal(5, 2)
+  is_active         Boolean  @default(true)
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([company_id, name], map: "uniq_company_term_name")
+  @@map("payment_terms")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// CONCILIAÇÃO BANCÁRIA (M-011)
+// Spec: §1.6
+// Para cartão Rede a conciliação JÁ EXISTE em HEAD via lib/acquirer/match-engine.ts
+// (commits 99ca5e1 + b7f2f8f + 74316cb). Esta migration cria infraestrutura
+// genérica pra extrato bancário (OFX/CSV) que reusa o engine de matching.
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// Lote de conciliação — representa upload de OFX/CSV/CNAB ou pull de API.
+/// Status fica em counters (matched_auto, matched_manual, unmatched, ignored).
+model ReconciliationBatch {
+  id                  String                 @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id          String
+  source              String                 // OFX | CSV | CNAB_RETURN | ASAAS_API | REDE_API | MANUAL
+  source_filename     String?
+  source_period_start DateTime?              @db.Date
+  source_period_end   DateTime?              @db.Date
+  total_entries       Int                    @default(0)
+  matched_auto        Int                    @default(0)
+  matched_manual      Int                    @default(0)
+  unmatched           Int                    @default(0)
+  ignored             Int                    @default(0)
+  raw_metadata        Json                   @default("{}")
+  uploaded_by         String?
+  finished_at         DateTime?              @db.Timestamptz(6)
+  created_at          DateTime               @default(now()) @db.Timestamptz(6)
+
+  entries ReconciliationEntry[]
+
+  @@index([company_id, created_at(sort: Desc)], map: "idx_recon_batch_company")
+  @@map("reconciliation_batches")
+}
+
+/// Entrada individual do lote (1 linha do OFX/CSV). match_score 0-100 calculado
+/// pelo engine: ≥95 = AUTO_MATCHED, manual + qualquer = MANUAL_MATCHED.
+model ReconciliationEntry {
+  id                   String                @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id           String
+  batch_id             String
+  external_ref         String?
+  external_date        DateTime              @db.Date
+  external_amount      BigInt
+  external_description String?
+  external_doc         String?
+  status               reconciliation_status @default(PENDING)
+  matched_payment_id   String?
+  match_score          Int?                  @db.SmallInt
+  match_rule           String?               // EXACT_AMOUNT_DATE | EXACT_AMOUNT_3DAYS | MANUAL | ...
+  matched_by           String?
+  matched_at           DateTime?             @db.Timestamptz(6)
+  raw_data             Json                  @default("{}")
+  created_at           DateTime              @default(now()) @db.Timestamptz(6)
+
+  batch ReconciliationBatch @relation(fields: [batch_id], references: [id], onDelete: Cascade)
+
+  @@index([batch_id, status], map: "idx_recon_entries_batch")
+  // Índice partial pro auto-match cron (busca pendentes)
+  @@index([company_id, external_amount, external_date], map: "idx_recon_entries_match")
+  @@map("reconciliation_entries")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // FEATURE FLAGS (M-010)
 // Spec: squads/financeiro-restructure-spec/output/architecture-spec.md §1.11
 //
