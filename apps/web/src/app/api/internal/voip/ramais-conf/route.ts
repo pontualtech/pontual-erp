@@ -1,10 +1,11 @@
 /**
- * GET /api/voip/admin/ramais-conf
+ * GET /api/internal/voip/ramais-conf
  *
- * Renderiza ramais.conf (apenas a parte dinâmica do PJSIP — os 15 endpoints WebRTC).
+ * Renderiza ramais.conf (apenas a parte dinâmica do PJSIP — endpoints WebRTC).
  * Consumido pelo script sync-pjsip.sh no host do Asterisk via systemd timer (a cada 60s).
  *
- * Auth: header X-Sync-Token === env PJSIP_SYNC_TOKEN (não usa session).
+ * Path /api/internal/* pula o auth-cookie do middleware (ver src/middleware.ts:87-89);
+ * autenticação aqui é via header X-Sync-Token === env PJSIP_SYNC_TOKEN (constant-time compare).
  *
  * Output: text/plain (config Asterisk pronto pra escrever no volume).
  *
