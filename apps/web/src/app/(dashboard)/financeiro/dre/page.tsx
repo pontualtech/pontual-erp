@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Loader2, ChevronDown, ChevronRight, Download } from 'lucide-react'
+import { ArrowLeft, Loader2, ChevronDown, ChevronRight, Download, RefreshCw, Database, Layers } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import {
@@ -184,6 +184,8 @@ export default function DREPage() {
   const currentYear = new Date().getFullYear()
   const [year, setYear] = useState(currentYear)
   const [month, setMonth] = useState<string>('')
+  const [engine, setEngine] = useState<'live' | 'mv'>('live')
+  const [refreshing, setRefreshing] = useState(false)
 
   const loadData = useCallback(() => {
     setLoading(true)
@@ -191,12 +193,31 @@ export default function DREPage() {
     params.set('year', String(year))
     if (month) params.set('month', month)
 
-    fetch(`/api/financeiro/relatorios/dre?${params}`)
+    const url = engine === 'mv'
+      ? `/api/financeiro/v2/dre?${params}`
+      : `/api/financeiro/relatorios/dre?${params}`
+
+    fetch(url)
       .then(r => r.json())
       .then(d => setData(d.data ?? null))
       .catch(() => toast.error('Erro ao carregar DRE'))
       .finally(() => setLoading(false))
-  }, [year, month])
+  }, [year, month, engine])
+
+  async function refreshMv() {
+    setRefreshing(true)
+    try {
+      const r = await fetch('/api/financeiro/v2/dre/refresh', { method: 'POST' })
+      const j = await r.json()
+      if (!r.ok) throw new Error(j?.error ?? 'Erro')
+      toast.success(`MV atualizada: ${j.data.mv_rows} linhas em ${j.data.elapsed_ms}ms`)
+      if (engine === 'mv') loadData()
+    } catch (e: any) {
+      toast.error(`Refresh falhou: ${e.message}`)
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   useEffect(() => { loadData() }, [loadData])
 
@@ -321,7 +342,45 @@ export default function DREPage() {
               ))}
             </select>
           </div>
-          <div>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center rounded-md border bg-gray-50 p-0.5">
+              <button
+                type="button"
+                onClick={() => setEngine('live')}
+                title="Recalcula AR/AP em tempo real (legacy)"
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded transition-colors',
+                  engine === 'live' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                )}
+              >
+                <Layers className="h-3.5 w-3.5" />
+                Live
+              </button>
+              <button
+                type="button"
+                onClick={() => setEngine('mv')}
+                title="Lê materialized view dre_monthly (rápida, eventualmente consistente)"
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded transition-colors',
+                  engine === 'mv' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                )}
+              >
+                <Database className="h-3.5 w-3.5" />
+                MV
+              </button>
+            </div>
+            {engine === 'mv' && (
+              <button
+                type="button"
+                onClick={refreshMv}
+                disabled={refreshing}
+                title="Forçar REFRESH MATERIALIZED VIEW dre_monthly"
+                className="flex items-center gap-2 rounded-md border bg-white py-2 px-3 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
+                Atualizar
+              </button>
+            )}
             <button
               type="button"
               onClick={exportCSV}

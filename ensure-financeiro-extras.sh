@@ -521,7 +521,262 @@ const p = new PrismaClient();
       }
     }
 
-    console.log(`[ensure-financeiro] OK chart_accounts=${chartCount} seeded=${seeded}`);
+    // 11. F-010 / RN-007: Pipeline AR/AP PAGO → fiscal_entries
+    //     Trigger AFTER UPDATE OF status (e AFTER INSERT) cria lançamento
+    //     contábil em fiscal_entries quando AR/AP transiciona pra PAGO.
+    //     Heurística de chart_account_id por categoria (fallback root '1'/'4').
+    //     Idempotente: NOT EXISTS check via metadata->>'origin_id'+origin_type.
+    //     SECURITY DEFINER pra bypass RLS dentro do trigger (runs como dono).
+    //     Falha do trigger NÃO bloqueia o UPDATE da AR/AP (BEGIN..EXCEPTION).
+    let fiscalPipelineOk = false;
+    let backfillCount = 0;
+    if (feExists.length > 0 && acExists.length > 0 && arExists.length > 0) {
+      // 11.1 Função heurística: dado company_id + categoria_module + categoria_name + tipo (AR|AP),
+      //      retorna o melhor chart_account_id ou NULL se nenhum match.
+      await p.$executeRawUnsafe(`
+        CREATE OR REPLACE FUNCTION fn_resolve_chart_account(
+          p_company_id text,
+          p_kind text,             -- 'AR' ou 'AP'
+          p_cat_module text,
+          p_cat_name text
+        ) RETURNS text AS $fn$
+        DECLARE
+          v_account_id text;
+          v_target_type text;
+          v_default_code text;
+        BEGIN
+          IF p_kind = 'AR' THEN
+            v_target_type := 'REVENUE';
+            v_default_code := '1';   -- Receitas root
+            -- Match por categoria.name normalizada vs accounts_chart.name
+            SELECT id INTO v_account_id FROM accounts_chart
+             WHERE company_id = p_company_id
+               AND account_type = 'REVENUE'::chart_account_type
+               AND is_active = true
+               AND lower(unaccent(name)) ILIKE '%' || lower(unaccent(coalesce(p_cat_name, ''))) || '%'
+             ORDER BY is_synthetic ASC, display_order ASC LIMIT 1;
+          ELSE -- AP
+            IF p_cat_module = 'custo' OR
+               coalesce(lower(p_cat_name), '') ILIKE '%custo%' OR
+               coalesce(lower(p_cat_name), '') ILIKE '%mercadoria%' OR
+               coalesce(lower(p_cat_name), '') ILIKE '%materia%' OR
+               coalesce(lower(p_cat_name), '') ILIKE '%insumo%' OR
+               coalesce(lower(p_cat_name), '') ILIKE '%peca%' THEN
+              v_target_type := 'COGS';
+              v_default_code := '3';
+            ELSE
+              v_target_type := 'OPERATING_EXPENSE';
+              v_default_code := '4';
+            END IF;
+            SELECT id INTO v_account_id FROM accounts_chart
+             WHERE company_id = p_company_id
+               AND account_type = v_target_type::chart_account_type
+               AND is_active = true
+               AND lower(coalesce(name, '')) ILIKE '%' || lower(coalesce(p_cat_name, '')) || '%'
+             ORDER BY is_synthetic ASC, display_order ASC LIMIT 1;
+          END IF;
+
+          -- Fallback: pega o synthetic root do tipo
+          IF v_account_id IS NULL THEN
+            SELECT id INTO v_account_id FROM accounts_chart
+             WHERE company_id = p_company_id
+               AND code = v_default_code
+               AND is_active = true LIMIT 1;
+          END IF;
+
+          RETURN v_account_id;
+        END;
+        $fn$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
+      `);
+
+      // unaccent extension pode não estar disponível; protege com guard
+      try {
+        await p.$executeRawUnsafe(`CREATE EXTENSION IF NOT EXISTS unaccent;`);
+      } catch {} // se não tiver permissão, fn_resolve_chart_account vai falhar — substituímos.
+
+      // 11.2 Trigger AR PAGO → fiscal_entries
+      await p.$executeRawUnsafe(`
+        CREATE OR REPLACE FUNCTION fn_ar_to_fiscal_entry() RETURNS trigger AS $fn$
+        DECLARE
+          v_chart_id text;
+          v_cat_module text;
+          v_cat_name text;
+          v_amount bigint;
+          v_entry_date date;
+          v_cash_date date;
+        BEGIN
+          BEGIN
+            IF NEW.status <> 'PAGO' THEN RETURN NEW; END IF;
+            IF TG_OP = 'UPDATE' AND OLD.status = 'PAGO' THEN RETURN NEW; END IF;
+
+            -- Categoria info (left join)
+            SELECT module, name INTO v_cat_module, v_cat_name
+              FROM categories WHERE id = NEW.category_id;
+
+            v_chart_id := fn_resolve_chart_account(NEW.company_id, 'AR', v_cat_module, v_cat_name);
+            IF v_chart_id IS NULL THEN RETURN NEW; END IF;
+
+            v_amount    := COALESCE(NEW.received_amount, NEW.total_amount, 0);
+            v_entry_date := COALESCE(NEW.due_date::date, CURRENT_DATE);
+            v_cash_date  := COALESCE(NEW.received_at::date, NEW.due_date::date);
+
+            INSERT INTO fiscal_entries (
+              id, company_id, entry_date, cash_date, chart_account_id,
+              amount, description, source, metadata, created_at
+            )
+            SELECT
+              gen_random_uuid()::text, NEW.company_id, v_entry_date, v_cash_date, v_chart_id,
+              v_amount, COALESCE(NEW.description, 'AR ' || NEW.id), 'PAYMENT',
+              jsonb_build_object('origin_type', 'ACCOUNT_RECEIVABLE', 'origin_id', NEW.id),
+              now()
+            WHERE NOT EXISTS (
+              SELECT 1 FROM fiscal_entries
+               WHERE company_id = NEW.company_id
+                 AND metadata->>'origin_type' = 'ACCOUNT_RECEIVABLE'
+                 AND metadata->>'origin_id' = NEW.id
+            );
+          EXCEPTION WHEN OTHERS THEN
+            -- Falha não-fatal: AR não trava
+            RAISE NOTICE '[fn_ar_to_fiscal_entry] %', SQLERRM;
+          END;
+          RETURN NEW;
+        END;
+        $fn$ LANGUAGE plpgsql SECURITY DEFINER;
+      `);
+
+      await p.$executeRawUnsafe(`DROP TRIGGER IF EXISTS trg_ar_fiscal_entry ON accounts_receivable;`);
+      await p.$executeRawUnsafe(`
+        CREATE TRIGGER trg_ar_fiscal_entry
+          AFTER INSERT OR UPDATE OF status, received_amount, received_at ON accounts_receivable
+          FOR EACH ROW EXECUTE FUNCTION fn_ar_to_fiscal_entry();
+      `);
+
+      // 11.3 Trigger AP PAGO → fiscal_entries
+      await p.$executeRawUnsafe(`
+        CREATE OR REPLACE FUNCTION fn_ap_to_fiscal_entry() RETURNS trigger AS $fn$
+        DECLARE
+          v_chart_id text;
+          v_cat_module text;
+          v_cat_name text;
+          v_amount bigint;
+          v_entry_date date;
+          v_cash_date date;
+        BEGIN
+          BEGIN
+            IF NEW.status <> 'PAGO' THEN RETURN NEW; END IF;
+            IF TG_OP = 'UPDATE' AND OLD.status = 'PAGO' THEN RETURN NEW; END IF;
+
+            SELECT module, name INTO v_cat_module, v_cat_name
+              FROM categories WHERE id = NEW.category_id;
+
+            v_chart_id := fn_resolve_chart_account(NEW.company_id, 'AP', v_cat_module, v_cat_name);
+            IF v_chart_id IS NULL THEN RETURN NEW; END IF;
+
+            v_amount    := COALESCE(NEW.paid_amount, NEW.total_amount, 0);
+            v_entry_date := COALESCE(NEW.due_date::date, CURRENT_DATE);
+            v_cash_date  := COALESCE(NEW.paid_at::date, NEW.due_date::date);
+
+            INSERT INTO fiscal_entries (
+              id, company_id, entry_date, cash_date, chart_account_id,
+              amount, description, source, metadata, created_at
+            )
+            SELECT
+              gen_random_uuid()::text, NEW.company_id, v_entry_date, v_cash_date, v_chart_id,
+              v_amount, COALESCE(NEW.description, 'AP ' || NEW.id), 'PAYMENT',
+              jsonb_build_object('origin_type', 'ACCOUNT_PAYABLE', 'origin_id', NEW.id),
+              now()
+            WHERE NOT EXISTS (
+              SELECT 1 FROM fiscal_entries
+               WHERE company_id = NEW.company_id
+                 AND metadata->>'origin_type' = 'ACCOUNT_PAYABLE'
+                 AND metadata->>'origin_id' = NEW.id
+            );
+          EXCEPTION WHEN OTHERS THEN
+            RAISE NOTICE '[fn_ap_to_fiscal_entry] %', SQLERRM;
+          END;
+          RETURN NEW;
+        END;
+        $fn$ LANGUAGE plpgsql SECURITY DEFINER;
+      `);
+
+      await p.$executeRawUnsafe(`DROP TRIGGER IF EXISTS trg_ap_fiscal_entry ON accounts_payable;`);
+      await p.$executeRawUnsafe(`
+        CREATE TRIGGER trg_ap_fiscal_entry
+          AFTER INSERT OR UPDATE OF status, paid_amount, paid_at ON accounts_payable
+          FOR EACH ROW EXECUTE FUNCTION fn_ap_to_fiscal_entry();
+      `);
+
+      // 11.4 Backfill idempotente: AR/AP PAGO → fiscal_entries
+      const arBackfill = await p.$executeRawUnsafe(`
+        INSERT INTO fiscal_entries (
+          id, company_id, entry_date, cash_date, chart_account_id,
+          amount, description, source, metadata, created_at
+        )
+        SELECT
+          gen_random_uuid()::text, ar.company_id,
+          COALESCE(ar.due_date::date, CURRENT_DATE),
+          COALESCE(ar.received_at::date, ar.due_date::date),
+          fn_resolve_chart_account(ar.company_id, 'AR', cat.module, cat.name),
+          COALESCE(ar.received_amount, ar.total_amount, 0),
+          COALESCE(ar.description, 'AR ' || ar.id),
+          'PAYMENT',
+          jsonb_build_object('origin_type','ACCOUNT_RECEIVABLE','origin_id', ar.id),
+          now()
+          FROM accounts_receivable ar
+          LEFT JOIN categories cat ON cat.id = ar.category_id
+         WHERE ar.status = 'PAGO'
+           AND ar.deleted_at IS NULL
+           AND fn_resolve_chart_account(ar.company_id, 'AR', cat.module, cat.name) IS NOT NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM fiscal_entries fe
+              WHERE fe.company_id = ar.company_id
+                AND fe.metadata->>'origin_type' = 'ACCOUNT_RECEIVABLE'
+                AND fe.metadata->>'origin_id' = ar.id
+           )
+      `);
+      const apBackfill = await p.$executeRawUnsafe(`
+        INSERT INTO fiscal_entries (
+          id, company_id, entry_date, cash_date, chart_account_id,
+          amount, description, source, metadata, created_at
+        )
+        SELECT
+          gen_random_uuid()::text, ap.company_id,
+          COALESCE(ap.due_date::date, CURRENT_DATE),
+          COALESCE(ap.paid_at::date, ap.due_date::date),
+          fn_resolve_chart_account(ap.company_id, 'AP', cat.module, cat.name),
+          COALESCE(ap.paid_amount, ap.total_amount, 0),
+          COALESCE(ap.description, 'AP ' || ap.id),
+          'PAYMENT',
+          jsonb_build_object('origin_type','ACCOUNT_PAYABLE','origin_id', ap.id),
+          now()
+          FROM accounts_payable ap
+          LEFT JOIN categories cat ON cat.id = ap.category_id
+         WHERE ap.status = 'PAGO'
+           AND ap.deleted_at IS NULL
+           AND fn_resolve_chart_account(ap.company_id, 'AP', cat.module, cat.name) IS NOT NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM fiscal_entries fe
+              WHERE fe.company_id = ap.company_id
+                AND fe.metadata->>'origin_type' = 'ACCOUNT_PAYABLE'
+                AND fe.metadata->>'origin_id' = ap.id
+           )
+      `);
+      backfillCount = (Number(arBackfill) || 0) + (Number(apBackfill) || 0);
+
+      // 11.5 REFRESH MV (CONCURRENTLY se houver dados; senão refresh normal)
+      try {
+        const feCount = await p.$queryRawUnsafe(`SELECT count(*)::int AS c FROM fiscal_entries`);
+        if (feCount[0].c > 0) {
+          await p.$executeRawUnsafe(`REFRESH MATERIALIZED VIEW CONCURRENTLY dre_monthly;`);
+        }
+      } catch (e) {
+        // Em primeira refresh CONCURRENTLY pode falhar; tenta normal
+        try { await p.$executeRawUnsafe(`REFRESH MATERIALIZED VIEW dre_monthly;`); } catch {}
+      }
+      fiscalPipelineOk = true;
+    }
+
+    console.log(`[ensure-financeiro] OK chart_accounts=${chartCount} seeded=${seeded} fiscalPipeline=${fiscalPipelineOk} backfill=${backfillCount}`);
     process.exit(0);
   } catch (e) {
     console.error('[ensure-financeiro] FAILED:', e.message);
