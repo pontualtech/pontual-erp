@@ -59,6 +59,9 @@ COPY --from=builder /app/node_modules/@xmldom ./node_modules/@xmldom
 # Copy startup script
 COPY --from=builder /app/start.sh ./start.sh
 
+# Copy financeiro v2 extras script (rodado por start.sh após prisma db push)
+COPY --from=builder /app/scripts/apply-financeiro-extras.sql ./scripts/apply-financeiro-extras.sql
+
 # Diretório de uploads (montado como volume persistente)
 RUN mkdir -p /app/uploads && chown nextjs:nodejs /app/uploads
 

@@ -9,6 +9,93 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Enums do refactor financeiro v2 (Sprint 1, M-001+).
+// Spec: squads/financeiro-restructure-spec/output/architecture-spec.md §1.1
+// IMPORTANTE: declarados aqui pra que `prisma db push --accept-data-loss` no
+// start.sh PRESERVE em vez de droppar. Antes desse fix, raw SQL em migrations
+// SQL não-tracked era removido em todo restart do container.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum payment_kind {
+  RECEIVABLE
+  PAYABLE
+}
+
+enum payment_status {
+  PENDING
+  OVERDUE
+  PARTIAL
+  PAID
+  CANCELLED
+  REFUNDED
+  DISPUTED
+}
+
+enum payment_method_kind {
+  PIX
+  BOLETO
+  CREDIT_CARD
+  DEBIT_CARD
+  CASH
+  BANK_TRANSFER
+  OTHER
+}
+
+enum payment_provider {
+  ASAAS
+  INTER_CNAB
+  REDE
+  MANUAL
+  INTERNAL
+}
+
+enum webhook_event_status {
+  RECEIVED
+  PROCESSING
+  PROCESSED
+  FAILED
+  IGNORED
+}
+
+enum reminder_channel {
+  EMAIL
+  WHATSAPP
+  SMS
+}
+
+enum reminder_status {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+enum chart_account_type {
+  REVENUE
+  DEDUCTION
+  COGS
+  OPERATING_EXPENSE
+  TAX
+  FINANCIAL
+  NON_OPERATING
+}
+
+enum reconciliation_status {
+  PENDING
+  AUTO_MATCHED
+  MANUAL_MATCHED
+  UNMATCHED
+  IGNORED
+}
+
+enum feature_flag_strategy {
+  OFF
+  ON
+  PERCENTAGE
+  TENANT_LIST
+}
+
 model Company {
   id                  String              @id @default(dbgenerated("(gen_random_uuid())::text"))
   name                String
@@ -432,6 +519,7 @@ model Customer {
   contracts            Contract[]
   nps_surveys          NpsSurvey[]
   payments             Payment[]
+  payments_as_supplier Payment[]           @relation("PaymentSupplier")
   coupons              Coupon[]
   voip_calls           VoipCall[]
 
@@ -735,6 +823,8 @@ model CostCenter {
   companies          Company          @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   cost_centers       CostCenter?      @relation("cost_centersTocost_centers", fields: [parent_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   other_cost_centers CostCenter[]     @relation("cost_centersTocost_centers")
+  payments           Payment[]        @relation("PaymentCostCenter")
+  fiscal_entries     FiscalEntry[]    @relation("FiscalCostCenter")
 
   @@map("cost_centers")
 }
@@ -1027,6 +1117,88 @@ model Payment {
   metadata         Json?         @default("{}")
   created_at       DateTime?     @default(now()) @db.Timestamptz(6)
   updated_at       DateTime?     @default(now()) @db.Timestamptz(6)
+
+  // ─── Refactor financeiro v2 (Sprint 1, M-002 expand) ────────────────────────
+  // Colunas novas adicionadas pra modelo unificado RECEIVABLE+PAYABLE.
+  // Todas NULLABLE em fase EXPAND — backfill em M-012 popula a partir de
+  // legacy columns. NOT NULL e CHECK constraints virão em fase CONTRACT.
+  // Spec: architecture-spec.md §1.2
+
+  // Classificação multi-origem
+  kind                 payment_kind?
+  origin_type          String?
+  origin_id            String?
+
+  // Identidade externa estruturada
+  external_provider    payment_provider?
+  external_reference   String?
+
+  // Partes
+  supplier_id          String?
+  supplier             Customer? @relation("PaymentSupplier", fields: [supplier_id], references: [id], onDelete: NoAction)
+
+  // Plano de contas (FK ativada quando AccountChart existir)
+  chart_account_id     String?
+  chart_account        AccountChart? @relation(fields: [chart_account_id], references: [id], onDelete: NoAction)
+  cost_center_id       String?
+  cost_center          CostCenter? @relation("PaymentCostCenter", fields: [cost_center_id], references: [id], onDelete: NoAction)
+
+  // Valores em centavos (bigint)
+  total_amount         BigInt?
+  paid_amount          BigInt? @default(0)
+  fee_amount           BigInt? @default(0)
+  discount_amount      BigInt? @default(0)
+  interest_amount      BigInt? @default(0)
+  // net_amount = GENERATED ALWAYS AS — adicionada em M-012 após backfill, via raw SQL
+
+  // Datas estruturadas
+  issue_date           DateTime? @db.Date
+  due_date             DateTime? @db.Date
+  expected_date        DateTime? @db.Date
+
+  // Método tipado (paralelo ao `method` text legacy)
+  payment_method       payment_method_kind?
+
+  // Asset URLs adicionais
+  pix_payload          String?
+  receipt_url          String?
+
+  // Parcelamento (P-005)
+  installment_number   Int? @default(1) @db.SmallInt
+  installment_total    Int? @default(1) @db.SmallInt
+  parent_payment_id    String?
+  parent_payment       Payment? @relation("PaymentInstallments", fields: [parent_payment_id], references: [id], onDelete: Cascade)
+  installments         Payment[] @relation("PaymentInstallments")
+
+  // Conciliação cartão Rede (preserva project_maquininha_rede_status)
+  card_fee_total       BigInt? @default(0)
+  card_brand           String?
+  card_nsu             String?
+  card_authorization   String?
+
+  // Antecipação Asaas
+  anticipated_at       DateTime? @db.Timestamptz(6)
+  anticipation_fee     BigInt? @default(0)
+  anticipated_amount   BigInt?
+
+  // Concorrência otimista (P-022)
+  version              Int @default(1)
+
+  // Metadata estruturado
+  description          String?
+  notes                String?
+  custom_data          Json? @default("{}")
+
+  // Soft delete
+  deleted_at           DateTime? @db.Timestamptz(6)
+
+  // Relations to refactor v2 tables
+  history              PaymentHistory[]
+  webhook_events       WebhookEventLog[] @relation("PaymentWebhookEvents")
+  fiscal_entries       FiscalEntry[]
+
+  // ────────────────────────────────────────────────────────────────────────────
+
   companies        Company       @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   service_orders   ServiceOrder? @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   customers        Customer      @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -1035,6 +1207,18 @@ model Payment {
   @@index([company_id, service_order_id], map: "idx_payments_company_os")
   @@index([external_id], map: "idx_payments_external")
   @@index([receivable_id], map: "idx_payments_receivable")
+
+  // Índices novos do refactor financeiro v2 (partial WHERE deleted_at IS NULL
+  // não suportado em Prisma — aplicamos via apply-financeiro-extras.sh)
+  @@index([company_id, status, due_date], map: "idx_payments_company_status_due")
+  @@index([company_id, kind, due_date(sort: Desc)], map: "idx_payments_company_kind_due")
+  @@index([origin_type, origin_id], map: "idx_payments_origin")
+  @@index([external_provider, external_id], map: "idx_payments_external_provider")
+  @@index([customer_id], map: "idx_payments_customer_v2")
+  @@index([supplier_id], map: "idx_payments_supplier")
+  @@index([company_id, due_date], map: "idx_payments_overdue_scan")
+  @@index([company_id, expected_date], map: "idx_payments_expected_cashflow")
+
   @@map("payments")
 }
 
@@ -1743,4 +1927,131 @@ model VoipCall {
   @@index([company_id, status], map: "idx_voip_calls_status")
   @@index([service_order_id], map: "idx_voip_calls_service_order")
   @@map("voip_calls")
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// REFACTOR FINANCEIRO V2 — Sprint 1 (M-003, M-004, M-005)
+// Spec: squads/financeiro-restructure-spec/output/architecture-spec.md
+//
+// Models declarados aqui pra que `prisma db push --accept-data-loss` no
+// start.sh PRESERVE em vez de droppar. RLS policies, triggers e MV são
+// aplicados via apply-financeiro-extras.sh APÓS db push (Prisma não suporta).
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// Audit log automático de payments via trigger (M-004 / P-021).
+/// Trigger `trg_payments_audit` insere row aqui em todo INSERT/UPDATE/DELETE
+/// de payments. EXCEPTION-safe — falha de audit não quebra operação principal.
+model PaymentHistory {
+  id              String  @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id      String
+  payment_id      String
+  event_type      String  // CREATED, UPDATED, STATUS_CHANGED, PAYMENT_RECEIVED, PAYMENT_REFUNDED, RECONCILED, CANCELLED, DELETED
+  // old_status/new_status TEXT (não enum) pra evitar cast issues durante M-006
+  old_status      String?
+  new_status      String?
+  old_value       Json?
+  new_value       Json?
+  amount_delta    BigInt?
+  source          String  // USER, WEBHOOK, CRON, RECONCILIATION, API, TRIGGER
+  user_id         String?
+  webhook_event_id String?
+  metadata        Json? @default("{}")
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  payment         Payment           @relation(fields: [payment_id], references: [id], onDelete: Cascade)
+  webhook_event   WebhookEventLog?  @relation(fields: [webhook_event_id], references: [id], onDelete: SetNull)
+
+  @@index([payment_id, created_at(sort: Desc)], map: "idx_payment_history_payment_created")
+  @@index([company_id, event_type, created_at(sort: Desc)], map: "idx_payment_history_company_event")
+  @@map("payment_history")
+}
+
+/// Idempotência de webhooks via UNIQUE (provider, event_id) (M-003 / P-017).
+/// Webhook handler insere aqui ANTES de processar. INSERT 2x do mesmo evento
+/// retorna constraint violation → handler ignora replay.
+model WebhookEventLog {
+  id              String  @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id      String
+  provider        payment_provider
+  event_id        String
+  event_type      String
+  status          webhook_event_status @default(RECEIVED)
+  raw_payload     Json
+  signature       String?
+  signature_valid Boolean?
+  related_payment_id      String?
+  processing_started_at   DateTime? @db.Timestamptz(6)
+  processing_finished_at  DateTime? @db.Timestamptz(6)
+  attempts        Int     @default(0) @db.SmallInt
+  last_error      String?
+  ip_address      String? @db.Inet
+  received_at     DateTime @default(now()) @db.Timestamptz(6)
+
+  related_payment Payment?         @relation("PaymentWebhookEvents", fields: [related_payment_id], references: [id], onDelete: SetNull)
+  histories       PaymentHistory[]
+
+  @@unique([provider, event_id], map: "uniq_provider_event")
+  @@index([company_id, received_at(sort: Desc)], map: "idx_webhook_company_received")
+  @@index([status, received_at], map: "idx_webhook_status")
+  @@index([related_payment_id], map: "idx_webhook_payment")
+  @@map("webhook_events_log")
+}
+
+/// Plano de contas hierárquico — base do DRE (M-005 / P-007).
+/// Seed inicial pra PontualTech aplicado via apply-financeiro-extras.sh.
+model AccountChart {
+  id              String  @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id      String
+  code            String
+  name            String
+  account_type    chart_account_type
+  parent_id       String?
+  is_synthetic    Boolean @default(false)
+  is_active       Boolean @default(true)
+  display_order   Int     @default(0)
+  notes           String?
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  parent          AccountChart?  @relation("ChartHierarchy", fields: [parent_id], references: [id], onDelete: NoAction)
+  children        AccountChart[] @relation("ChartHierarchy")
+  payments        Payment[]
+  fiscal_entries  FiscalEntry[]
+
+  @@unique([company_id, code], map: "uniq_chart_company_code")
+  @@index([company_id, account_type, display_order], map: "idx_chart_company_type")
+  @@index([parent_id], map: "idx_chart_parent")
+  @@map("accounts_chart")
+}
+
+/// Lançamentos contábeis pra DRE (M-005 / P-007).
+/// Materialized view `dre_monthly` agrega isto por mês — refresh via job.
+model FiscalEntry {
+  id                String  @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id        String
+  entry_date        DateTime @db.Date
+  cash_date         DateTime? @db.Date
+  chart_account_id  String
+  cost_center_id    String?
+  payment_id        String?
+  amount            BigInt
+  description       String
+  source            String  // PAYMENT, MANUAL_ADJUSTMENT, TAX_CALC, PROVISIONING
+  is_provisional    Boolean @default(false)
+  // fiscal_period é GENERATED ALWAYS AS (to_char(entry_date,'YYYY-MM'))
+  // Adicionada via apply-financeiro-extras.sh (Prisma não suporta GENERATED)
+  metadata          Json? @default("{}")
+  created_by        String?
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+
+  chart_account     AccountChart @relation(fields: [chart_account_id], references: [id], onDelete: NoAction)
+  cost_center       CostCenter?  @relation("FiscalCostCenter", fields: [cost_center_id], references: [id], onDelete: NoAction)
+  payment           Payment?     @relation(fields: [payment_id], references: [id], onDelete: SetNull)
+
+  @@index([company_id, entry_date(sort: Desc)], map: "idx_fiscal_company_entry_date")
+  @@index([payment_id], map: "idx_fiscal_payment")
+  @@index([cost_center_id], map: "idx_fiscal_cost_center")
+  // Índice composto company_id+chart_account_id (sem fiscal_period que é generated)
+  @@index([company_id, chart_account_id], map: "idx_fiscal_company_account")
+  @@map("fiscal_entries")
 }
