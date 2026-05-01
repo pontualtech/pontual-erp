@@ -61,6 +61,12 @@ const p = new PrismaClient();
       'reconciliation_entries',
     ];
 
+    // M-007 mode flag: PONTUAL_RLS_STRICT=1 ativa RLS strict (sem bypass).
+    // Default lazy: bypass quando app.company_id não está setado (pra
+    // compatibilidade com routes que ainda não migraram pra withTenantTx).
+    const rlsStrict = process.env.PONTUAL_RLS_STRICT === '1';
+    console.log(`[ensure-financeiro] RLS mode: ${rlsStrict ? 'STRICT (M-007)' : 'lazy (default)'}`);
+
     for (const t of rlsTables) {
       // Pula tabela inexistente — Prisma db push pode ter falhado em criar.
       const exists = await p.$queryRawUnsafe(
@@ -74,14 +80,25 @@ const p = new PrismaClient();
       await p.$executeRawUnsafe(`ALTER TABLE ${t} ENABLE ROW LEVEL SECURITY;`);
       await p.$executeRawUnsafe(`DROP POLICY IF EXISTS ${t}_tenant_isolation ON ${t};`);
       await p.$executeRawUnsafe(`DROP POLICY IF EXISTS ${t}_service_role ON ${t};`);
-      await p.$executeRawUnsafe(`
-        CREATE POLICY ${t}_tenant_isolation ON ${t}
-          USING (
-            company_id = current_setting('app.company_id', true)
-            OR current_setting('app.company_id', true) IS NULL
-            OR current_setting('app.company_id', true) = ''
-          );
-      `);
+
+      if (rlsStrict) {
+        // STRICT: bloqueia tudo se app.company_id não setado. Routes DEVEM
+        // usar withTenantTx() do @pontual/db pra setar antes de qualquer query.
+        await p.$executeRawUnsafe(`
+          CREATE POLICY ${t}_tenant_isolation ON ${t}
+            USING (company_id = current_setting('app.company_id', true));
+        `);
+      } else {
+        // LAZY (default): bypass quando app.company_id não setado.
+        await p.$executeRawUnsafe(`
+          CREATE POLICY ${t}_tenant_isolation ON ${t}
+            USING (
+              company_id = current_setting('app.company_id', true)
+              OR current_setting('app.company_id', true) IS NULL
+              OR current_setting('app.company_id', true) = ''
+            );
+        `);
+      }
       await p.$executeRawUnsafe(`
         CREATE POLICY ${t}_service_role ON ${t}
           TO service_role

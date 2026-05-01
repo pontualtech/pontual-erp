@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@pontual/db'
+import { prisma, withTenantTx } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, handleError } from '@/lib/api-response'
 
@@ -105,14 +105,16 @@ export async function GET(request: NextRequest) {
     const periodFrom = `${year}-${String(startMonth).padStart(2, '0')}`
     const periodTo = `${year}-${String(endMonth).padStart(2, '0')}`
 
-    // Aggregate (period range filter); MV pode estar vazia se backfill ainda não rodou
-    const rows = await prisma.$queryRaw<DreRow[]>`
-      SELECT fiscal_period, account_type::text AS account_type, code, name, total_cents
-        FROM dre_monthly
-       WHERE company_id = ${user.companyId}
-         AND fiscal_period BETWEEN ${periodFrom} AND ${periodTo}
-       ORDER BY fiscal_period, code
-    `
+    // M-007 canary: roda com tenant context (no-op em RLS lazy mode, ativo em strict)
+    const rows = await withTenantTx(user.companyId, async (tx) => {
+      return tx.$queryRaw<DreRow[]>`
+        SELECT fiscal_period, account_type::text AS account_type, code, name, total_cents
+          FROM dre_monthly
+         WHERE company_id = ${user.companyId}
+           AND fiscal_period BETWEEN ${periodFrom} AND ${periodTo}
+         ORDER BY fiscal_period, code
+      `
+    })
 
     const dre = buildDre(rows)
 
@@ -141,12 +143,14 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // Estatística da MV
-    const stats = await prisma.$queryRaw<{ total_entries: bigint; last_refresh: Date | null }[]>`
-      SELECT
-        (SELECT COUNT(*) FROM fiscal_entries WHERE company_id = ${user.companyId})::bigint AS total_entries,
-        (SELECT GREATEST(MAX(created_at), NULL) FROM fiscal_entries WHERE company_id = ${user.companyId}) AS last_refresh
-    `
+    // Estatística da MV (também via tenant context)
+    const stats = await withTenantTx(user.companyId, async (tx) => {
+      return tx.$queryRaw<{ total_entries: bigint; last_refresh: Date | null }[]>`
+        SELECT
+          (SELECT COUNT(*) FROM fiscal_entries WHERE company_id = ${user.companyId})::bigint AS total_entries,
+          (SELECT GREATEST(MAX(created_at), NULL) FROM fiscal_entries WHERE company_id = ${user.companyId}) AS last_refresh
+      `
+    })
 
     return success({
       year,
