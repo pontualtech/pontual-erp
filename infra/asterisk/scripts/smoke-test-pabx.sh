@@ -40,7 +40,9 @@ if ! echo "$TLS_INFO" | grep -qi "Let's Encrypt"; then
 fi
 
 # --- Check 2: WSS handshake (HTTP 101 expected)
-WSS_RESP=$(curl -sS -i --max-time 5 \
+# IMPORTANT: --http1.1 — HTTP/2 doesn't natively support WebSocket upgrade.
+# Asterisk would return 426 Upgrade Required if curl negotiates HTTP/2.
+WSS_RESP=$(curl -sS -i --max-time 5 --http1.1 \
   -H "Connection: Upgrade" -H "Upgrade: websocket" \
   -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
   -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Protocol: sip" \
