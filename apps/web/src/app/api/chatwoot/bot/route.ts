@@ -623,12 +623,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ status: 'ignored', reason: 'unknown company' })
   }
 
-  // Webhook authentication: require ?token= matching BOT_WEBHOOK_SECRET env var
+  // M9 fix (audit): autenticar via header X-Bot-Token preferido sobre ?token=
+  // URL. Token na query string vaza em logs Traefik/Coolify/Cloudflare/Sentry
+  // e em históricos de browser. Header é melhor pra secrets.
+  // Backward compat: aceita ?token= durante período de migração com warning.
   const webhookSecret = process.env.BOT_WEBHOOK_SECRET
   if (webhookSecret) {
-    const token = req.nextUrl.searchParams.get('token')
-    if (!token || token.length !== webhookSecret.length
-      || !require('crypto').timingSafeEqual(Buffer.from(token), Buffer.from(webhookSecret))) {
+    const headerToken = req.headers.get('x-bot-token')
+    const queryToken = req.nextUrl.searchParams.get('token')
+    const provided = headerToken || queryToken
+
+    if (queryToken && !headerToken) {
+      console.warn('[Bot] Token via ?token= URL (DEPRECATED — usar header X-Bot-Token). Logs proxy expõem secret.')
+    }
+
+    if (!provided || provided.length !== webhookSecret.length
+      || !require('crypto').timingSafeEqual(Buffer.from(provided), Buffer.from(webhookSecret))) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
   }
