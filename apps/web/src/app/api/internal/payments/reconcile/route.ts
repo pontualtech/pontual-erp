@@ -110,7 +110,11 @@ export async function POST(req: NextRequest) {
           })
 
           if (p.receivable_id) {
-            const ar = await tx.accountReceivable.findFirst({ where: { id: p.receivable_id } })
+            // A11 fix (audit): scope por company_id pra evitar payment de tenant A
+            // debitar AR de tenant B em caso de inconsistência ou colisão de UUID
+            const ar = await tx.accountReceivable.findFirst({
+              where: { id: p.receivable_id, company_id: p.company_id },
+            })
             if (ar && ar.status !== 'RECEBIDO') {
               const newReceived = (ar.received_amount || 0) + p.amount
               const fully = newReceived >= ar.total_amount

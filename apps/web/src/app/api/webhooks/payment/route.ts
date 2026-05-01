@@ -218,8 +218,13 @@ export async function POST(req: NextRequest) {
   // 5-7. Process INSIDE transaction for atomicity + idempotency
   try {
     const result = await prisma.$transaction(async (tx) => {
-      // Re-read payment inside transaction for atomicity (prevents double-processing)
-      const fresh = await tx.payment.findUnique({ where: { id: payment!.id } })
+      // Re-read payment inside transaction for atomicity (prevents double-processing).
+      // A11 fix (audit): defense-in-depth com company_id (payment já foi resolvido
+      // antes via external_id, mas filtro adicional protege contra futuro código
+      // que retire o lookup externo).
+      const fresh = await tx.payment.findFirst({
+        where: { id: payment!.id, company_id: payment!.company_id },
+      })
       if (!fresh) return { action: 'skip', reason: 'Payment disappeared' }
 
       // Idempotency: already at this status

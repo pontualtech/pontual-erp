@@ -44,9 +44,11 @@ export async function POST(
     }
 
     // Update payment and receivable atomically (only if Asaas succeeded)
+    // A11 fix (audit): where filter inclui company_id pra defesa em camadas
+    // contra TOCTOU + futura refatoração que retire o check externo.
     await prisma.$transaction(async (tx) => {
       await tx.payment.update({
-        where: { id: payment.id },
+        where: { id: payment.id, company_id: user.companyId },
         data: {
           status: 'CANCELLED',
           cancelled_at: new Date(),
@@ -56,7 +58,7 @@ export async function POST(
 
       if (payment.receivable_id) {
         await tx.accountReceivable.update({
-          where: { id: payment.receivable_id },
+          where: { id: payment.receivable_id, company_id: user.companyId },
           data: {
             charge_id: null,
             charge_status: null,
