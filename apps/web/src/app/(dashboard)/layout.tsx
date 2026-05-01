@@ -8,6 +8,7 @@ import { RouteGuard } from './components/route-guard'
 import { CallToast } from '@/components/voip/CallToast'
 import { SonaxWebphone } from '@/components/voip/SonaxWebphone'
 import { SonaxCallControls } from '@/components/voip/SonaxCallControls'
+import { PontualWebphone } from '@/components/voip/PontualWebphone'
 
 export default async function DashboardLayout({
   children,
@@ -34,8 +35,16 @@ export default async function DashboardLayout({
         </div>
         <AnnouncementModal />
         <CallToast />
-        <SonaxWebphone />
-        <SonaxCallControls />
+        {/* SonaxWebphone — FEATURE FLAG.
+            Default true (compat retroativo). Setar NEXT_PUBLIC_SONAX_WEBPHONE_ENABLED=false
+            no Coolify pra esconder e usar SOMENTE PontualPABX.
+            Motivo da flag: microfone do browser é exclusivo. Quando ambos webphones
+            disputam getUserMedia, o segundo recebe stream tainted/vazia, RTP não
+            sai, Asterisk derruba a chamada por timeout. */}
+        {process.env.NEXT_PUBLIC_SONAX_WEBPHONE_ENABLED !== 'false' && <SonaxWebphone />}
+        {process.env.NEXT_PUBLIC_SONAX_WEBPHONE_ENABLED !== 'false' && <SonaxCallControls />}
+        {/* PontualWebphone (SIP.js -> Asterisk proprio) — FEATURE FLAG. */}
+        {process.env.NEXT_PUBLIC_PONTUAL_WEBPHONE_ENABLED === 'true' && <PontualWebphone />}
       </div>
     </ThemeProvider>
   )

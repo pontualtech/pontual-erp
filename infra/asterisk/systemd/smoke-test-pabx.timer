@@ -1,0 +1,11 @@
+[Unit]
+Description=Run PontualPABX smoke test hourly
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=1h
+RandomizedDelaySec=5min
+Unit=smoke-test-pabx.service
+
+[Install]
+WantedBy=timers.target

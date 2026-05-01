@@ -1,0 +1,11 @@
+[Unit]
+Description=PontualPABX external smoke test (TLS, WSS, ERP endpoint, DTLS cert)
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/smoke-test-pabx.sh
+User=root
+StandardOutput=journal
+StandardError=journal

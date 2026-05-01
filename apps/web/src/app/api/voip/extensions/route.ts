@@ -20,16 +20,39 @@ export async function GET(_req: NextRequest) {
   try {
     const user = await requireAuth()
 
+    // Tenta primeiro a nova tabela voip_extensions (PontualPABX). Se vazia,
+    // fallback pro env SONAX_RAMAL_MAPPING (transição).
+    const dbExt = await prisma.$queryRawUnsafe<Array<any>>(
+      `SELECT e.number, e.description, e.is_active,
+              e.user_id, u.name AS user_name, u.email AS user_email,
+              u.phone, u.role_id, u.last_login_at
+       FROM voip_extensions e
+       LEFT JOIN user_profiles u ON u.id = e.user_id
+       WHERE e.company_id = $1 AND e.is_active = true
+       ORDER BY e.number`,
+      user.companyId,
+    ).catch(() => [])
+
+    if (dbExt.length > 0) {
+      const result = dbExt.map(e => ({
+        ramal: e.number,
+        email: e.user_email || '',
+        name: e.user_name || e.description.replace(/\s*-\s*Ramal.*$/, ''),
+        role: e.role_id?.replace('role-', '') || null,
+        phone: e.phone || null,
+        userId: e.user_id || null,
+        lastLoginAt: e.last_login_at?.toISOString?.() || null,
+      }))
+      return success(result)
+    }
+
+    // Fallback env mapping (legacy)
     const mappings = listExtensionMappings()
     if (!mappings.length) return success([])
 
     const emails = mappings.map(m => m.email)
     const users = await prisma.userProfile.findMany({
-      where: {
-        company_id: user.companyId,
-        email: { in: emails },
-        is_active: true,
-      },
+      where: { company_id: user.companyId, email: { in: emails }, is_active: true },
       select: {
         id: true, name: true, email: true, role_id: true, phone: true, last_login_at: true,
       },

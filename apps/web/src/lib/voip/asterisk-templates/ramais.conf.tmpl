@@ -1,0 +1,24 @@
+; ramais.conf — auto-generated from voip_extensions table
+; Gerado em {{generatedAt}} por PontualERP /api/voip/admin/ramais-conf
+; NÃO editar manualmente — sobrescrito a cada sync (60s)
+;
+; Incluído via #include /etc/asterisk/ramais.conf no pjsip.conf principal.
+; Cada ramal usa templates definidos no pjsip.conf:
+;   - endpoint-webrtc-template (WebRTC + DTLS-SRTP)
+;   - auth-template            (userpass)
+;   - aor-webrtc-template      (max_contacts=3, qualify=0)
+;
+; Total ramais ativos: {{extensionsCount}}
+;
+{{#extensions}}
+; Ramal {{number}} — {{callerName}}
+[{{number}}](endpoint-webrtc-template)
+auth={{number}}
+aors={{number}}
+callerid="{{callerName}}" <{{number}}>
+[{{number}}](auth-template)
+username={{number}}
+password={{secretPlain}}
+[{{number}}](aor-webrtc-template)
+
+{{/extensions}}

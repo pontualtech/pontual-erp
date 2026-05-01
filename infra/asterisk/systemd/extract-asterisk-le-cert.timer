@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily extract Asterisk LE Cert from Traefik
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

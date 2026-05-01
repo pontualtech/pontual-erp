@@ -56,11 +56,10 @@ COPY --from=builder /app/node_modules/sax ./node_modules/sax
 COPY --from=builder /app/node_modules/xpath ./node_modules/xpath
 COPY --from=builder /app/node_modules/@xmldom ./node_modules/@xmldom
 
-# Copy startup script
+# Copy startup script + ensure-* defesa-em-profundidade scripts
 COPY --from=builder /app/start.sh ./start.sh
-
-# Copy financeiro v2 extras script (rodado por start.sh após prisma db push)
-COPY --from=builder /app/scripts/apply-financeiro-extras.sql ./scripts/apply-financeiro-extras.sql
+COPY --from=builder /app/ensure-voip-extensions.sh ./ensure-voip-extensions.sh
+COPY --from=builder /app/ensure-financeiro-extras.sh ./ensure-financeiro-extras.sh
 
 # Diretório de uploads (montado como volume persistente)
 RUN mkdir -p /app/uploads && chown nextjs:nodejs /app/uploads
