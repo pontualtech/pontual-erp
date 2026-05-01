@@ -63,16 +63,42 @@ function extractCallerName(description: string | null, number: string): string {
 }
 
 export async function GET(req: NextRequest) {
-  // Token validation — fail fast with same error shape regardless of cause
+  // A9 fix (audit): suporte a graceful rotation via PJSIP_SYNC_TOKEN_PREVIOUS.
+  // Permite trocar PJSIP_SYNC_TOKEN sem quebrar o sync-pjsip.sh imediatamente:
+  //   1. Setar PJSIP_SYNC_TOKEN_PREVIOUS = valor atual
+  //   2. Setar PJSIP_SYNC_TOKEN = novo valor
+  //   3. Atualizar host Asterisk com novo
+  //   4. Remover PJSIP_SYNC_TOKEN_PREVIOUS após confirmar
+  // Recomendação: rotacionar mensalmente. SECRETS PERMANENTES = RISK PERMANENTE.
+  //
+  // Plus: audit log per access (rastreabilidade de quem sincroniza, quando).
   const expected = process.env.PJSIP_SYNC_TOKEN
+  const previous = process.env.PJSIP_SYNC_TOKEN_PREVIOUS
   if (!expected) {
-    // Server misconfigured. Don't leak detail to caller.
     return new Response('forbidden', { status: 403 })
   }
   const provided = req.headers.get('x-sync-token') || ''
-  if (!safeCompare(provided, expected)) {
+  const validated = safeCompare(provided, expected) ||
+    (previous ? safeCompare(provided, previous) : false)
+  if (!validated) {
     return new Response('forbidden', { status: 403 })
   }
+  const usedPrevious = previous && safeCompare(provided, previous) && !safeCompare(provided, expected)
+  if (usedPrevious) {
+    console.warn('[ramais-conf] sync-pjsip.sh ainda usando PJSIP_SYNC_TOKEN_PREVIOUS — atualizar o host Asterisk com o novo token')
+  }
+
+  // Audit access (fire-and-forget)
+  prisma.auditLog.create({
+    data: {
+      company_id: COMPANY_ID,
+      user_id: 'system:pjsip-sync',
+      module: 'voip',
+      action: 'ramais_conf.read',
+      ip_address: req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null,
+      new_value: { used_previous_token: !!usedPrevious },
+    },
+  }).catch(() => {})
 
   try {
     // Inclui TODOS os ramais WebRTC (mesmo inativos/vagos) pra pre-carregar no
