@@ -58,6 +58,45 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
 
+  // C6 fix (audit): Dedup por asaas_event_id usando WebhookEventLog (M-003).
+  // Asaas oficialmente retenta webhook 3x. Antes só dependíamos de
+  // VALID_TRANSITIONS pra idempotência por status — frágil em casos
+  // PARCIAL→PAGO ou quando o mesmo event_id chega 2x. Agora:
+  //   1. Check existência em WebhookEventLog (provider+event_id UNIQUE)
+  //   2. Se status=PROCESSED/IGNORED → return 200 dedup (já tratado antes)
+  //   3. Se status=FAILED/RECEIVED → permite reprocesso (retry do Asaas após
+  //      falha precisa ser permitido)
+  //   4. Se não existir → INSERT abaixo, UNIQUE constraint protege contra race
+  //   5. P2002 violation → race won por outro request → return 200 dedup
+  //
+  // WebhookLog legado continua sendo escrito pra compatibilidade/observabilidade.
+  const asaasEventId = (parsedBody.id as string) || null
+  let existingEventLogId: string | null = null
+  if (asaasEventId) {
+    try {
+      const existing = await prisma.webhookEventLog.findUnique({
+        where: { provider_event_id: { provider: 'ASAAS', event_id: asaasEventId } },
+        select: { id: true, status: true, attempts: true },
+      })
+      if (existing) {
+        // Statuses terminais: já processado ou ignorado, não reprocessa
+        if (existing.status === 'PROCESSED' || existing.status === 'IGNORED') {
+          return NextResponse.json({
+            ok: true,
+            dedup: true,
+            previous_status: existing.status,
+          })
+        }
+        // FAILED/RECEIVED: permite retry — apenas marca pra atualizar abaixo
+        existingEventLogId = existing.id
+      }
+    } catch (e: any) {
+      // Tabela WebhookEventLog não existir não deve quebrar webhook —
+      // fallback pra fluxo legacy abaixo. Loga só o erro.
+      console.warn('[Webhook] WebhookEventLog dedup check failed:', e?.message)
+    }
+  }
+
   // 2. Check if this is a handled event
   const newStatus = event ? EVENT_STATUS_MAP[event] : undefined
   if (!newStatus || !asaasPayment) {
@@ -111,7 +150,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
-  // 4. Create WebhookLog (always, before processing)
+  // 4. Create WebhookLog (legacy — preservado pra compat/observabilidade)
   let webhookLogId: string | null = null
   try {
     const log = await prisma.webhookLog.create({
@@ -119,13 +158,62 @@ export async function POST(req: NextRequest) {
         company_id: payment.company_id,
         event: event!,
         payment_id: payment.id,
-        asaas_event_id: (parsedBody.id as string) || null,
+        asaas_event_id: asaasEventId,
         payload: parsedBody,
         status: 'RECEIVED',
       },
     })
     webhookLogId = log.id
   } catch { /* non-critical */ }
+
+  // 4b. C6: INSERT/UPDATE em WebhookEventLog antes do processamento. UNIQUE
+  // (provider, event_id) protege contra race se 2 webhooks chegarem
+  // simultaneamente — o segundo bate P2002 e cai pra return dedup race.
+  // Se existingEventLogId (FAILED/RECEIVED retry), faz UPDATE incrementando
+  // attempts em vez de INSERT.
+  let eventLogId: string | null = existingEventLogId
+  if (asaasEventId) {
+    if (existingEventLogId) {
+      // Retry após FAILED/RECEIVED — atualiza pra reprocessamento
+      try {
+        await prisma.webhookEventLog.update({
+          where: { id: existingEventLogId },
+          data: {
+            status: 'RECEIVED',
+            processing_started_at: new Date(),
+            attempts: { increment: 1 },
+            last_error: null,
+          },
+        })
+      } catch (e: any) {
+        console.warn('[Webhook] WebhookEventLog retry update failed:', e?.message)
+      }
+    } else {
+      try {
+        const eventLog = await prisma.webhookEventLog.create({
+          data: {
+            company_id: payment.company_id,
+            provider: 'ASAAS',
+            event_id: asaasEventId,
+            event_type: event!,
+            status: 'RECEIVED',
+            raw_payload: parsedBody,
+            related_payment_id: payment.id,
+            processing_started_at: new Date(),
+            ip_address: req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          },
+        })
+        eventLogId = eventLog.id
+      } catch (e: any) {
+        // P2002 = race won por outro request — dedup
+        if (e?.code === 'P2002') {
+          return NextResponse.json({ ok: true, dedup: true, race: true })
+        }
+        // Outro erro: loga e segue (não bloqueia o webhook)
+        console.warn('[Webhook] WebhookEventLog insert failed:', e?.message)
+      }
+    }
+  }
 
   // 5-7. Process INSIDE transaction for atomicity + idempotency
   try {
@@ -311,6 +399,23 @@ export async function POST(req: NextRequest) {
       } catch { /* non-critical */ }
     }
 
+    // C6: marcar WebhookEventLog com resultado final
+    if (eventLogId) {
+      const eventStatus = result.action === 'processed' ? 'PROCESSED'
+        : result.action === 'conflict' ? 'FAILED'
+        : 'IGNORED'
+      try {
+        await prisma.webhookEventLog.update({
+          where: { id: eventLogId },
+          data: {
+            status: eventStatus,
+            processing_finished_at: new Date(),
+            last_error: result.action !== 'processed' ? result.reason : null,
+          },
+        })
+      } catch { /* non-critical */ }
+    }
+
     console.log(`[Webhook] ${event}: Payment ${payment.id} → ${result.action} (${result.reason})`)
 
     // Capturar taxas do gateway (transacao + notificacoes) e gravar 1
@@ -425,6 +530,20 @@ export async function POST(req: NextRequest) {
             status: 'FAILED',
             error: err instanceof Error ? err.message : 'Transaction failed',
             processed_at: new Date(),
+          },
+        })
+      } catch { /* non-critical */ }
+    }
+
+    // C6: marca WebhookEventLog como FAILED — retry do Asaas pode reprocessar
+    if (eventLogId) {
+      try {
+        await prisma.webhookEventLog.update({
+          where: { id: eventLogId },
+          data: {
+            status: 'FAILED',
+            processing_finished_at: new Date(),
+            last_error: err instanceof Error ? err.message.slice(0, 500) : 'Transaction failed',
           },
         })
       } catch { /* non-critical */ }
