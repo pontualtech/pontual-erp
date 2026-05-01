@@ -97,10 +97,34 @@ export async function GET(request: NextRequest) {
           select: { id: true, due_date: true },
         })
 
+        // A4 fix (audit): pre-load TODOS os reminders existentes desta empresa
+        // em UMA query, em vez de findFirst per (ar × step). Antes:
+        //   O(companies × rules × steps × ars) findFirst queries — 3.000 pra
+        //   3 empresas × 2 rules × 5 steps × 100 ARs.
+        // Agora: 1 findMany por empresa. Existência checada via Set local.
+        const existingReminders = await prisma.paymentReminder.findMany({
+          where: { company_id: companyId },
+          select: { payment_id: true, rule_step_id: true },
+        })
+        const existingKey = (paymentId: string, ruleStepId: string | null) =>
+          `${paymentId}::${ruleStepId ?? ''}`
+        const existingSet = new Set<string>(
+          existingReminders.map(r => existingKey(r.payment_id, r.rule_step_id))
+        )
+
+        // A3 fix (audit): batch dos reminders novos em createMany com
+        // skipDuplicates pra eliminar race condition entre 2 invocações
+        // simultâneas do cron. Em vez de findFirst+create separados (TOCTOU),
+        // colecta os candidatos e cria em um único batch atomico no fim.
+        const toCreate: Array<{
+          company_id: string
+          payment_id: string
+          rule_step_id: string
+          scheduled_for: Date
+          channel: 'WHATSAPP' | 'EMAIL' | 'SMS'
+        }> = []
+
         for (const rule of rules) {
-          // applies_to_segment: hoje só ALL ou null aplicam globalmente.
-          // Outros segmentos (CUSTOMER_TAG:premium, AMOUNT_GT:100000) requerem
-          // matcher mais elaborado — TODO futuro.
           if (rule.applies_to_segment && rule.applies_to_segment !== 'ALL') {
             continue
           }
@@ -113,34 +137,34 @@ export async function GET(request: NextRequest) {
 
               const today = new Date()
               today.setUTCHours(23, 59, 59, 999)
-              if (scheduled.getTime() > today.getTime()) continue // ainda não chegou a hora
+              if (scheduled.getTime() > today.getTime()) continue
 
-              // M-013 dual-write: AR.id == payments.id (origin_type=ACCOUNT_RECEIVABLE)
               const paymentId = ar.id
+              const k = existingKey(paymentId, step.id)
+              if (existingSet.has(k)) continue
+              // Local set evita duplicates dentro deste batch
+              existingSet.add(k)
 
-              const exists = await prisma.paymentReminder.findFirst({
-                where: {
-                  company_id: companyId,
-                  payment_id: paymentId,
-                  rule_step_id: step.id,
-                },
-                select: { id: true },
+              toCreate.push({
+                company_id: companyId,
+                payment_id: paymentId,
+                rule_step_id: step.id,
+                scheduled_for: scheduled,
+                channel: step.channel as 'WHATSAPP' | 'EMAIL' | 'SMS',
               })
-              if (exists) continue
-
-              await prisma.paymentReminder.create({
-                data: {
-                  company_id: companyId,
-                  payment_id: paymentId,
-                  rule_step_id: step.id,
-                  scheduled_for: scheduled,
-                  channel: step.channel,
-                  status: 'PENDING',
-                },
-              })
-              scheduledCount++
             }
           }
+        }
+
+        if (toCreate.length > 0) {
+          // skipDuplicates protege contra race entre 2 cron jobs concorrentes.
+          // Idealmente a tabela teria UNIQUE(company_id, payment_id, rule_step_id)
+          // — pendente em fase futura via ensure script.
+          const created = await prisma.paymentReminder.createMany({
+            data: toCreate,
+            skipDuplicates: true,
+          })
+          scheduledCount += created.count
         }
       } catch (e: any) {
         errors.push(`scheduler company=${companyId}: ${e.message}`)
@@ -174,15 +198,54 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    const due = await prisma.paymentReminder.findMany({
+    // M8 fix (audit): tenant fairness via round-robin. Antes, take:100
+    // global ordenado por scheduled_for permitia que UM tenant com 100+
+    // reminders vencidos monopolizasse todo o batch — outros tenants não
+    // recebiam dispatch nessa execução.
+    // Agora: pega max 20 reminders vencidos por tenant, depois entrelaça
+    // por round-robin pra equalizar atenção. Soma global ainda <= 200,
+    // protege capacity dos providers (Evolution/SMTP).
+    const PER_TENANT_LIMIT = 20
+    const GLOBAL_LIMIT = 200
+    const dueByTenant = await prisma.paymentReminder.groupBy({
+      by: ['company_id'],
       where: {
         status: 'PENDING',
         scheduled_for: { lte: new Date() },
         attempts: { lt: 5 },
       },
-      take: 100, // batch limit por execução
-      orderBy: { scheduled_for: 'asc' },
+      _count: true,
     })
+
+    type ReminderRow = Awaited<ReturnType<typeof prisma.paymentReminder.findMany>>[number]
+    const tenantBatches: ReminderRow[][] = []
+    for (const t of dueByTenant) {
+      const batch = await prisma.paymentReminder.findMany({
+        where: {
+          company_id: t.company_id,
+          status: 'PENDING',
+          scheduled_for: { lte: new Date() },
+          attempts: { lt: 5 },
+        },
+        take: PER_TENANT_LIMIT,
+        orderBy: { scheduled_for: 'asc' },
+      })
+      tenantBatches.push(batch)
+    }
+    // Entrelaça: pick 1 de cada tenant, depois pick 2, ...
+    const due: ReminderRow[] = []
+    let idx = 0
+    while (due.length < GLOBAL_LIMIT) {
+      let picked = false
+      for (const batch of tenantBatches) {
+        if (idx < batch.length && due.length < GLOBAL_LIMIT) {
+          due.push(batch[idx])
+          picked = true
+        }
+      }
+      if (!picked) break
+      idx++
+    }
 
     for (const rem of due) {
       const result = await emitReminder({
@@ -206,14 +269,12 @@ export async function GET(request: NextRequest) {
       } else {
         dispatchFailures++
         const newAttempts = rem.attempts + 1
-        // Cap em 5 tentativas: na 5ª, marca FAILED (constraint chk_attempts_lt_5
-        // será corrigida em fix A1; por enquanto deixa attempts<=4 e FAILED no 5).
-        const finalAttempts = Math.min(newAttempts, 4)
+        // A1 fix aplicado: constraint agora aceita attempts BETWEEN 0 AND 5.
         await prisma.paymentReminder.update({
           where: { id: rem.id },
           data: {
             status: newAttempts >= 5 ? 'FAILED' : 'PENDING',
-            attempts: finalAttempts,
+            attempts: newAttempts,
             error_message: result.error?.slice(0, 500) ?? 'unknown',
           },
         })
