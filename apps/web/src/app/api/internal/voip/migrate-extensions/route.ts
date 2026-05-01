@@ -61,7 +61,11 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json().catch(() => ({}))
     const createNew = body.create_new_106_115 !== false
-    const companyId = body.default_company_id || process.env.SONAX_DEFAULT_COMPANY_ID || 'pontualtech-001'
+    // C8 fix (audit): fail-closed sem fallback hardcoded
+    const companyId = body.default_company_id || process.env.SONAX_DEFAULT_COMPANY_ID
+    if (!companyId) {
+      return error('default_company_id ausente. Envie no body ou configure SONAX_DEFAULT_COMPANY_ID', 400)
+    }
 
     // 1) Cria tabela
     await prisma.$executeRawUnsafe(DDL)

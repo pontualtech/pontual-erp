@@ -36,11 +36,16 @@ export async function POST(req: NextRequest) {
     // Lista empresas que tem REDE configurado.
     // Por enquanto MVP: usa env globais (PontualTech). Multi-tenant
     // futuro pode usar provider_config por Account.
+    // C8 fix (audit): fail-closed se REDE_DEFAULT_COMPANY_ID não setado —
+    // evita rotear vendas REDE pra tenant errado em deploys de novo cliente.
     const parentCompanyNumber = process.env.REDE_PARENT_COMPANY_NUMBER || ''
-    const companyId = process.env.REDE_DEFAULT_COMPANY_ID || 'pontualtech-001'
+    const companyId = process.env.REDE_DEFAULT_COMPANY_ID
 
     if (!parentCompanyNumber) {
       return success({ skipped: true, reason: 'REDE_PARENT_COMPANY_NUMBER nao configurado' })
+    }
+    if (!companyId) {
+      return success({ skipped: true, reason: 'REDE_DEFAULT_COMPANY_ID nao configurado — fail-closed (sem fallback hardcoded)' })
     }
 
     const client = new RedeApiClient()

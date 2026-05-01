@@ -53,29 +53,39 @@ interface BotCompanyConfig {
   legacyCutoffDate: string // ISO date: OS created before this = legacy (even if in new range)
 }
 
+// C8 fix (audit): warning explícito se env vars de companyId faltarem.
+// Fallbacks hardcoded preservados pra não quebrar prod (bots ativos), mas
+// agora visíveis em log — qualquer deploy novo grita alto se env não setado.
+function resolveBotCompanyId(envName: string, fallback: string): string {
+  const v = process.env[envName]
+  if (v) return v
+  console.error(`[Bot] CRITICAL: env ${envName} não setada — usando fallback hardcoded "${fallback}". Configure no Coolify pra evitar cross-tenant em SaaS.`)
+  return fallback
+}
+
 // ENV-based fallbacks (API keys MUST stay in env vars for security)
 const ENV_CONFIGS: Record<string, Partial<BotCompanyConfig> & { settingsPrefix?: string }> = {
   pontualtech: {
-    companyId: process.env.BOT_ANA_COMPANY_ID || 'pontualtech-001',
+    companyId: resolveBotCompanyId('BOT_ANA_COMPANY_ID', 'pontualtech-001'),
     difyApiKey: process.env.DIFY_API_KEY || '',
     botApiKey: process.env.BOT_ANA_API_KEY || '',
     cwToken: process.env.CHATWOOT_API_TOKEN || process.env.CW_ADMIN_TOKEN || '',
   },
   'pontualtech-suporte': {
-    companyId: process.env.BOT_ANA_COMPANY_ID || 'pontualtech-001',
+    companyId: resolveBotCompanyId('BOT_ANA_COMPANY_ID', 'pontualtech-001'),
     difyApiKey: process.env.DIFY_SUPORTE_API_KEY || '',
     botApiKey: process.env.BOT_ANA_API_KEY || '',
     cwToken: process.env.CHATWOOT_API_TOKEN || process.env.CW_ADMIN_TOKEN || '',
     settingsPrefix: 'bot.marta.config.',
   },
   imprimitech: {
-    companyId: process.env.BOT_IMPRI_COMPANY_ID || '86c829cf-32ed-4e40-80cd-59ce4178aa1a',
+    companyId: resolveBotCompanyId('BOT_IMPRI_COMPANY_ID', '86c829cf-32ed-4e40-80cd-59ce4178aa1a'),
     difyApiKey: process.env.DIFY_IMPRI_API_KEY || '',
     botApiKey: process.env.BOT_IMPRI_API_KEY || '',
     cwToken: process.env.CW_IMPRI_TOKEN || '',
   },
   'imprimitech-suporte': {
-    companyId: process.env.BOT_IMPRI_COMPANY_ID || '86c829cf-32ed-4e40-80cd-59ce4178aa1a',
+    companyId: resolveBotCompanyId('BOT_IMPRI_COMPANY_ID', '86c829cf-32ed-4e40-80cd-59ce4178aa1a'),
     difyApiKey: process.env.DIFY_IMPRI_SUPORTE_API_KEY || process.env.DIFY_IMPRI_API_KEY || '',
     botApiKey: process.env.BOT_IMPRI_API_KEY || '',
     cwToken: process.env.CW_IMPRI_TOKEN || '',

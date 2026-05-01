@@ -48,8 +48,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'equipamento e defeito sao obrigatorios' }, { status: 400 })
     }
 
-    // Resolve company: from body, or from env, or default (backward compat)
-    const companyId = bodyCompanyId || process.env.WEBHOOK_DEFAULT_COMPANY_ID || 'pontualtech-001'
+    // C8 fix (audit): resolve company de body OU env. Sem fallback hardcoded —
+    // SaaS multi-tenant não pode rotear pra tenant errado silenciosamente.
+    const companyId = bodyCompanyId || process.env.WEBHOOK_DEFAULT_COMPANY_ID
+    if (!companyId) {
+      return NextResponse.json({
+        error: 'company_id ausente. Envie no body ou configure WEBHOOK_DEFAULT_COMPANY_ID',
+      }, { status: 400 })
+    }
 
     // 1. Find or create customer
     let customer: any = null
