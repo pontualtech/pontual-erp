@@ -83,9 +83,18 @@ async function scoreOS(
   reasons.push('valor exato (+40)')
 
   // 2. Data — janela tolerante a parcelamento (ate 30 dias)
+  // M2 fix (audit): comparar dia em TZ BRT consistente. Antes, comparação
+  // direta de getTime() podia errar por 1 em transações próximas da
+  // meia-noite (servidor UTC vs CSV BRT) — score caía de 25 pra 22 e
+  // auto-link não atingia threshold 95.
   const osDate = os.created_at ? new Date(os.created_at) : new Date()
   const txnDate = new Date(txn.transaction_date)
-  const dayDiff = Math.abs(Math.round((txnDate.getTime() - osDate.getTime()) / (1000 * 60 * 60 * 24)))
+  const osDayBR = osDate.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
+  const txnDayBR = txnDate.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
+  const dayDiff = Math.abs(Math.round(
+    (new Date(txnDayBR + 'T00:00:00-03:00').getTime() -
+     new Date(osDayBR + 'T00:00:00-03:00').getTime()) / (1000 * 60 * 60 * 24)
+  ))
   if (dayDiff === 0) { score += 25; reasons.push('mesmo dia (+25)') }
   else if (dayDiff <= 1) { score += 22; reasons.push(`±1 dia (+22)`) }
   else if (dayDiff <= 3) { score += 18; reasons.push(`±${dayDiff} dias (+18)`) }

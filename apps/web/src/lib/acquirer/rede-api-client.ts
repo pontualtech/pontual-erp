@@ -30,6 +30,7 @@
  */
 
 import type { ParsedAcquirerTransaction } from './types'
+import { toCents } from './rede-parser'
 
 interface OAuthToken {
   access_token: string
@@ -304,9 +305,10 @@ function mapRedeSale(s: RedeSale): ParsedAcquirerTransaction | null {
 
   const cardMasked = s.cardNumber || ''
   const cardLast4 = (cardMasked.match(/(\d{4})\s*$/) || [])[1] || undefined
-  const grossCents = Math.round((s.amount || 0) * 100)
-  const netCents = Math.round((s.netAmount || 0) * 100)
-  const mdrCents = Math.round((s.mdrAmount || 0) * 100)
+  // B4 fix (audit): toCents (importado de rede-parser) pra floating-point safety
+  const grossCents = toCents(s.amount || 0)
+  const netCents = toCents(s.netAmount || 0)
+  const mdrCents = toCents(s.mdrAmount || 0)
 
   const modalityType = (s.modality?.type || '').toUpperCase()
   const modality: 'credit' | 'debit' | undefined =
@@ -330,7 +332,8 @@ function mapRedeSale(s: RedeSale): ParsedAcquirerTransaction | null {
     anticipationFeeAmount: Math.max(0, grossCents - netCents - mdrCents), // estima por diferenca
     anticipationFeePercent: 0, // a API nao expoe; preencher via /payments depois
     totalFeeAmount: Math.max(0, grossCents - netCents),
-    transactionDate: new Date(s.saleDate + 'T00:00:00'),
+    // M2 fix (audit): timezone BRT explícito pra match-engine ter dayDiff correto
+    transactionDate: new Date(s.saleDate + 'T00:00:00-03:00'),
     transactionTime: s.saleHour,
     expectedCreditDate: undefined, // nao vem em /sales — pegar de /payments
     terminalCode: s.device,

@@ -22,11 +22,27 @@
 import type { AcquirerStatementParser, ParsedAcquirerTransaction } from './types'
 
 function parseDateBR(s: string): Date | null {
-  // 'DD/MM/YYYY' → Date local 00:00 (sem timezone shift)
+  // 'DD/MM/YYYY' → Date com timezone BRT explícito (UTC-03:00)
+  // M2 fix (audit): antes era 'T00:00:00' sem TZ → servidor Coolify (UTC)
+  // interpretava como UTC. Mas CSV vem em horário Brasil. Em transações
+  // próximas da meia-noite, dayDiff no match-engine ficava errado (1 em vez
+  // de 0) e auto-link não atingia threshold 95 → caía pra suggestion manual.
   const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s.trim())
   if (!m) return null
   const [, dd, mm, yyyy] = m
-  return new Date(`${yyyy}-${mm}-${dd}T00:00:00`)
+  return new Date(`${yyyy}-${mm}-${dd}T00:00:00-03:00`)
+}
+
+/**
+ * Converte float decimal (BRL) em centavos (Int) com correção de floating point.
+ * B4 fix (audit): Math.round(n * 100) sofre floating point edge cases —
+ * `1.005 * 100 = 100.4999...` → round retorna 100 em vez de 101.
+ * Number.EPSILON elimina o erro pra valores monetários típicos.
+ * Exporta pra uso consistente em rede-api-client + outros parsers.
+ */
+export function toCents(n: number): number {
+  if (!isFinite(n) || isNaN(n)) return 0
+  return Math.round((n + Number.EPSILON * Math.sign(n || 1)) * 100)
 }
 
 function parseAmountBR(s: string): number {
@@ -34,7 +50,7 @@ function parseAmountBR(s: string): number {
   if (!s || s === '-' || s.trim() === '') return 0
   const cleaned = s.replace(/\s/g, '').replace(/\./g, '').replace(',', '.')
   const n = parseFloat(cleaned)
-  return isNaN(n) ? 0 : Math.round(n * 100)
+  return isNaN(n) ? 0 : toCents(n)
 }
 
 function parsePercentBR(s: string): number {
