@@ -686,7 +686,8 @@ const p = new PrismaClient();
 
             v_amount    := COALESCE(NEW.received_amount, NEW.total_amount, 0);
             v_entry_date := COALESCE(NEW.due_date::date, CURRENT_DATE);
-            v_cash_date  := COALESCE(NEW.paid_at::date, NEW.due_date::date);
+            -- AR não tem paid_at — usa updated_at (proxy quando status='RECEBIDO')
+            v_cash_date  := COALESCE(NEW.updated_at::date, NEW.due_date::date);
 
             INSERT INTO fiscal_entries (
               id, company_id, entry_date, cash_date, chart_account_id,
@@ -715,7 +716,7 @@ const p = new PrismaClient();
       await p.$executeRawUnsafe(`DROP TRIGGER IF EXISTS trg_ar_fiscal_entry ON accounts_receivable;`);
       await p.$executeRawUnsafe(`
         CREATE TRIGGER trg_ar_fiscal_entry
-          AFTER INSERT OR UPDATE OF status, received_amount, paid_at ON accounts_receivable
+          AFTER INSERT OR UPDATE OF status, received_amount ON accounts_receivable
           FOR EACH ROW EXECUTE FUNCTION fn_ar_to_fiscal_entry();
       `);
 
@@ -783,7 +784,7 @@ const p = new PrismaClient();
         SELECT
           gen_random_uuid()::text, ar.company_id,
           COALESCE(ar.due_date::date, CURRENT_DATE),
-          COALESCE(ar.paid_at::date, ar.due_date::date),
+          COALESCE(ar.updated_at::date, ar.due_date::date),
           fn_resolve_chart_account(ar.company_id, 'AR', cat.module, cat.name),
           COALESCE(ar.received_amount, ar.total_amount, 0),
           COALESCE(ar.description, 'AR ' || ar.id),
