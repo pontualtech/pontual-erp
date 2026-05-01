@@ -2145,6 +2145,50 @@ model PaymentReminder {
   @@map("payment_reminders")
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// FEATURE FLAGS (M-010)
+// Spec: squads/financeiro-restructure-spec/output/architecture-spec.md §1.11
+//
+// Sistema de ramp gradual usado pra rollout controlado de features (ex:
+// `financeiro_v2_dre`, `financeiro_v2_reconciliation_auto`). Estratégias:
+//   OFF: desabilitado pra todos
+//   ON: habilitado pra todos
+//   PERCENTAGE: % de tenants (rollout_pct)
+//   TENANT_LIST: tabela tenant_feature_flags determina por tenant
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// Flag global (sem company_id). Define key e estratégia de rollout.
+/// Sem RLS — admin global gerencia.
+model FeatureFlag {
+  id          String                @id @default(dbgenerated("(gen_random_uuid())::text"))
+  key         String                @unique
+  description String?
+  strategy    feature_flag_strategy @default(OFF)
+  rollout_pct Int                   @default(0) @db.SmallInt
+  created_at  DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime              @default(now()) @db.Timestamptz(6)
+
+  tenant_overrides TenantFeatureFlag[]
+
+  @@map("feature_flags")
+}
+
+/// Override por tenant (estratégia TENANT_LIST). Composite PK (flag_key + company_id)
+/// pra permitir tenant ter override explícito ON/OFF independente do rollout global.
+/// RLS multi-tenant.
+model TenantFeatureFlag {
+  flag_key    String
+  company_id  String
+  enabled     Boolean
+  enabled_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  flag FeatureFlag @relation(fields: [flag_key], references: [key], onDelete: Cascade)
+
+  @@id([flag_key, company_id])
+  @@index([company_id], map: "idx_tenant_feature_flags_company")
+  @@map("tenant_feature_flags")
+}
+
 // =============================================================================
 // VOIP — Ramais SIP (PontualPABX migration)
 // =============================================================================

@@ -40,6 +40,7 @@ const p = new PrismaClient();
     `);
 
     // 2. RLS em tabelas tenant-scoped (lazy mode: NULL setting bypass)
+    // feature_flags NÃO entra aqui — é global (sem company_id).
     const rlsTables = [
       'payments',
       'payment_history',
@@ -50,6 +51,8 @@ const p = new PrismaClient();
       'cobranca_rules',
       'cobranca_rule_steps',
       'payment_reminders',
+      // M-010: feature flags (apenas tenant override tem company_id)
+      'tenant_feature_flags',
     ];
 
     for (const t of rlsTables) {
@@ -180,6 +183,9 @@ const p = new PrismaClient();
         check: `step_order > 0` },
       { table: 'payment_reminders',   name: 'chk_attempts_lt_5',
         check: `attempts < 5` },
+      // M-010: feature_flags rollout_pct entre 0-100
+      { table: 'feature_flags', name: 'chk_rollout_pct_range',
+        check: `rollout_pct >= 0 AND rollout_pct <= 100` },
     ];
 
     for (const c of checkConstraints) {
