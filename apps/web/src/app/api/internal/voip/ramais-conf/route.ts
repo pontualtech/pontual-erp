@@ -75,10 +75,14 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    // Inclui TODOS os ramais WebRTC (mesmo inativos/vagos) pra pre-carregar no
+    // Asterisk. Permite admin ativar um ramal só mudando is_active no DB sem
+    // precisar reload do PJSIP — endpoint já existe, só falta o REGISTER do
+    // browser. Endpoints sem REGISTER ficam "Unavailable", inofensivos.
     const extensions = await prisma.$queryRawUnsafe<Array<any>>(
       `SELECT number, description, secret_plain
        FROM voip_extensions
-       WHERE company_id=$1 AND is_active=true AND webrtc=true
+       WHERE company_id=$1 AND webrtc=true
        ORDER BY number`,
       COMPANY_ID,
     )
