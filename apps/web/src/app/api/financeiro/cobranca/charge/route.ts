@@ -169,9 +169,13 @@ export async function POST(request: NextRequest) {
       BOLETO: 'Boleto Bancario',
       CREDIT_CARD: 'Cartao de Credito',
     }
-    const sentVia: string[] = []
+    // C2 fix (audit): aguarda confirmação real de envio antes de marcar
+    // charge_sent_via. Antes era fire-and-forget com .catch(()=>{}) vazio +
+    // marcação ANTES do envio confirmar — ERP dizia "enviado" mesmo se Meta
+    // rejeitasse template / SMTP caísse. Agora usa Promise.allSettled e só
+    // grava os canais que confirmadamente entregaram.
+    const dispatchPromises: Promise<{ channel: string; ok: boolean; error?: string }>[] = []
 
-    // Send via WhatsApp template (fire-and-forget)
     if (data.send_whatsapp && customer.mobile) {
       // Load OS number for template
       let osNum = '0000'
@@ -183,23 +187,23 @@ export async function POST(request: NextRequest) {
         if (so) osNum = String(so.os_number).padStart(4, '0')
       }
 
-      sendWhatsAppTemplate(user.companyId, customer.mobile, 'pt_cobranca_v2', 'pt_BR', [
-        { type: 'body', parameters: [
-          { type: 'text', text: valueStr },
-          { type: 'text', text: osNum },
-        ] }
-      ]).then(r => {
-        if (r.success) sentVia.push('whatsapp')
-      }).catch(() => {})
+      dispatchPromises.push(
+        sendWhatsAppTemplate(user.companyId, customer.mobile, 'pt_cobranca_v2', 'pt_BR', [
+          { type: 'body', parameters: [
+            { type: 'text', text: valueStr },
+            { type: 'text', text: osNum },
+          ] }
+        ])
+        .then(r => ({ channel: 'whatsapp', ok: !!r?.success, error: r?.success ? undefined : (r as any)?.error }))
+        .catch(e => ({ channel: 'whatsapp', ok: false, error: e?.message ?? 'unknown' }))
+      )
     }
 
-    // Send via Email (fire-and-forget)
     if (data.send_email && customer.email) {
       const dueStr = receivable.due_date
         ? new Date(receivable.due_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })
         : ''
 
-      // Load company settings for dynamic links
       const settings = await prisma.setting.findMany({ where: { company_id: user.companyId } })
       const settingsMap: Record<string, string> = {}
       for (const s of settings) settingsMap[s.key] = s.value
@@ -220,32 +224,52 @@ export async function POST(request: NextRequest) {
         whatsappUrl: companyWhatsapp ? `https://wa.me/${companyWhatsapp}` : '',
       })
 
-      sendCompanyEmail(
-        user.companyId,
-        customer.email,
-        `Cobranca ${companyName} - ${valueStr}`,
-        emailHtml
-      ).then(ok => {
-        if (ok) sentVia.push('email')
-      }).catch(() => {})
+      dispatchPromises.push(
+        sendCompanyEmail(
+          user.companyId,
+          customer.email,
+          `Cobranca ${companyName} - ${valueStr}`,
+          emailHtml
+        )
+        .then(ok => ({ channel: 'email', ok: !!ok }))
+        .catch(e => ({ channel: 'email', ok: false, error: e?.message ?? 'unknown' }))
+      )
     }
 
-    // Update sent tracking immediately (channels are known at request time)
-    const via: string[] = []
-    if (data.send_whatsapp && customer.mobile) via.push('whatsapp')
-    if (data.send_email && customer.email) via.push('email')
-    if (via.length > 0) {
+    // Aguarda TODOS os envios resolverem (sucesso ou falha) antes de marcar.
+    const dispatchResults = await Promise.allSettled(dispatchPromises)
+    const sentVia: string[] = []
+    const failedDispatch: { channel: string; error: string }[] = []
+    for (const r of dispatchResults) {
+      if (r.status === 'fulfilled') {
+        if (r.value.ok) sentVia.push(r.value.channel)
+        else failedDispatch.push({ channel: r.value.channel, error: r.value.error ?? 'unknown' })
+      } else {
+        failedDispatch.push({ channel: 'unknown', error: r.reason?.message ?? String(r.reason) })
+      }
+    }
+
+    if (sentVia.length > 0) {
       await prisma.accountReceivable.update({
         where: { id: data.receivable_id },
         data: {
           charge_sent_at: new Date(),
-          charge_sent_via: via.join(','),
+          charge_sent_via: sentVia.join(','),
         },
       })
     }
+    // Se nada saiu mas o cliente tinha canal disponível, marca o payment com
+    // notes pra atendente saber que precisa reenviar manualmente.
+    if (sentVia.length === 0 && (data.send_whatsapp || data.send_email)) {
+      await prisma.payment.update({
+        where: { id: payment.id },
+        data: {
+          notes: `Cobrança criada mas envio falhou em todos os canais. Reenviar manualmente. Erros: ${failedDispatch.map(f => `${f.channel}=${f.error}`).join('; ')}`,
+        },
+      }).catch(() => {})
+    }
 
     // Audit log (fire-and-forget)
-    // Fire-and-forget audit log
     logAudit({
       companyId: user.companyId,
       userId: user.id,
@@ -257,10 +281,16 @@ export async function POST(request: NextRequest) {
         billing_type: data.billing_type,
         amount: remaining,
         invoice_url: charge.invoiceUrl,
-        sent_whatsapp: data.send_whatsapp && !!customer.mobile,
-        sent_email: data.send_email && !!customer.email,
+        // sent_* agora reflete CONFIRMAÇÃO de envio, não intenção (post-C2)
+        sent_whatsapp: sentVia.includes('whatsapp'),
+        sent_email: sentVia.includes('email'),
+        failed_dispatch: failedDispatch,
       },
     })
+
+    // 207 Multi-Status quando criou cobrança mas algum envio falhou — UI deve
+    // mostrar aviso "criada mas precisa reenviar manualmente nesses canais".
+    const responseStatus = (failedDispatch.length > 0 && sentVia.length === 0 && (data.send_whatsapp || data.send_email)) ? 207 : 200
 
     return NextResponse.json({
       success: true,
@@ -274,9 +304,12 @@ export async function POST(request: NextRequest) {
         pix_qr_code: charge.pixQrCode,
         status: 'PENDING',
       },
-      sent_whatsapp: data.send_whatsapp && !!customer.mobile,
-      sent_email: data.send_email && !!customer.email,
-    })
+      // Reflete envio CONFIRMADO (não tentativa)
+      sent_whatsapp: sentVia.includes('whatsapp'),
+      sent_email: sentVia.includes('email'),
+      sent_via: sentVia,
+      failed_dispatch: failedDispatch,
+    }, { status: responseStatus })
   } catch (err) {
     console.error('[Charge] Error:', err)
     if (err instanceof z.ZodError) {
