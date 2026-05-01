@@ -210,30 +210,43 @@ export async function sendOverdueReminders(companyId: string, userId: string, sp
       const sent = await sendCompanyEmail(companyId, customer.email, subject, html)
 
       if (sent) {
-        sentCount++
-
-        logAudit({
-          companyId,
-          userId,
-          module: 'cobranca',
-          action: 'reminder_sent',
-          entityId: rec.id,
-          newValue: {
-            to: customer.email,
-            customer_name: customer.legal_name,
-            amount: pendingAmount,
-            days_overdue: days,
-          },
-        })
-
-        // Atualizar notas do recebível
-        const today = new Date().toLocaleDateString('pt-BR')
-        const currentNotes = rec.notes || ''
-        const newNote = `Cobrança enviada em ${today}`
-        await prisma.accountReceivable.update({
-          where: { id: rec.id },
-          data: { notes: currentNotes ? `${currentNotes}\n${newNote}` : newNote },
-        })
+        // M14 fix (audit): logAudit é fire-and-forget e wasRemindedToday usa
+        // o auditLog como CHAVE DE IDEMPOTÊNCIA. Se o audit insert falhar
+        // (catch console.error silencioso), próxima rodada do cron não vê o
+        // log e RE-ENVIA o email. Aqui awaited + try/catch — se o audit
+        // falhar, NÃO marca sentCount nem atualiza notes; cron volta a tentar
+        // mas pelo menos não esconde o problema.
+        try {
+          await prisma.auditLog.create({
+            data: {
+              company_id: companyId,
+              user_id: userId,
+              module: 'cobranca',
+              action: 'reminder_sent',
+              entity_id: rec.id,
+              new_value: {
+                to: customer.email,
+                customer_name: customer.legal_name,
+                amount: pendingAmount,
+                days_overdue: days,
+              },
+            },
+          })
+          sentCount++
+          // Atualizar notas do recebível só após audit confirmar
+          const today = new Date().toLocaleDateString('pt-BR')
+          const currentNotes = rec.notes || ''
+          const newNote = `Cobrança enviada em ${today}`
+          await prisma.accountReceivable.update({
+            where: { id: rec.id },
+            data: { notes: currentNotes ? `${currentNotes}\n${newNote}` : newNote },
+          })
+        } catch (auditErr: any) {
+          // Audit falhou: email já saiu mas idempotência fica frágil. Loga
+          // erro pro atendente investigar — próxima rodada vai re-enviar.
+          console.error('[Cobranca] AUDIT FAILED (email já enviado mas idempotência quebrada):', auditErr?.message)
+          errors.push(`Email enviado para ${customer.email} mas audit falhou — possível reenvio na próxima rodada`)
+        }
       } else {
         errors.push(`Falha ao enviar para ${customer.email} (${customer.legal_name})`)
       }
