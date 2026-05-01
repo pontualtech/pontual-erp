@@ -179,7 +179,22 @@ export function PontualWebphone() {
   }
 
   async function answer() {
-    try { await userRef.current?.answer() } catch (e) { console.error(e) }
+    console.log('[PontualPABX] answer() chamado')
+    if (!userRef.current) {
+      console.warn('[PontualPABX] answer() abortado: userRef.current é null')
+      setError('Webphone não está pronto')
+      return
+    }
+    try {
+      console.log('[PontualPABX] dispatching answer() via SimpleUser')
+      await userRef.current.answer()
+      console.log('[PontualPABX] answer() resolveu (200 OK enviado)')
+    } catch (e) {
+      console.error('[PontualPABX] answer() throw:', e)
+      setError('Falha atender: ' + (e instanceof Error ? e.message.slice(0, 100) : 'erro'))
+      // Limpa estado pra não travar UI no modal de incoming.
+      setState({ state: 'idle' })
+    }
   }
 
   async function hangup() {
