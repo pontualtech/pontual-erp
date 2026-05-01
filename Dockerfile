@@ -56,8 +56,9 @@ COPY --from=builder /app/node_modules/sax ./node_modules/sax
 COPY --from=builder /app/node_modules/xpath ./node_modules/xpath
 COPY --from=builder /app/node_modules/@xmldom ./node_modules/@xmldom
 
-# Copy startup script
+# Copy startup script + ensure-voip-extensions defesa-em-profundidade
 COPY --from=builder /app/start.sh ./start.sh
+COPY --from=builder /app/ensure-voip-extensions.sh ./ensure-voip-extensions.sh
 
 # Diretório de uploads (montado como volume persistente)
 RUN mkdir -p /app/uploads && chown nextjs:nodejs /app/uploads
