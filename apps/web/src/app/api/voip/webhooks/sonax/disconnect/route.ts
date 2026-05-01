@@ -25,6 +25,7 @@
  */
 
 import { NextRequest } from 'next/server'
+import { timingSafeEqual, createHmac } from 'crypto'
 import { prisma } from '@pontual/db'
 import { error, success } from '@/lib/api-response'
 import { normalizePhone, getPhoneSearchVariants } from '@/lib/voip/phone'
@@ -39,19 +40,33 @@ const SONAX_ALLOWED_IPS = new Set([
 
 const PONTUALTECH_COMPANY_ID = process.env.SONAX_DEFAULT_COMPANY_ID || ''
 
-function isAllowedSource(req: NextRequest): boolean {
+/**
+ * A10 fix (audit): HMAC + IP allowlist + dev bypass explícito (sem NODE_ENV)
+ */
+function isAllowedSource(req: NextRequest, rawBody: string): boolean {
+  if (process.env.SONAX_WEBHOOK_DEV_BYPASS === '1') {
+    console.warn('[Sonax disconnect] SONAX_WEBHOOK_DEV_BYPASS=1 ATIVO — não usar em produção')
+    return true
+  }
+
+  const secret = process.env.SONAX_WEBHOOK_SECRET
+  const sig = req.headers.get('x-sonax-signature')
+  if (secret && sig) {
+    const expected = createHmac('sha256', secret).update(rawBody).digest('hex')
+    try {
+      if (sig.length === expected.length && timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) {
+        return true
+      }
+    } catch {}
+  }
+
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-    || req.headers.get('x-real-ip')
-    || ''
-
-  if (process.env.NODE_ENV !== 'production') return true
-
+    || req.headers.get('x-real-ip') || ''
   const allowedEnv = process.env.SONAX_WEBHOOK_ALLOWED_IPS
   if (allowedEnv) {
     const allowed = new Set(allowedEnv.split(',').map(s => s.trim()).filter(Boolean))
     return allowed.has(ip)
   }
-
   return SONAX_ALLOWED_IPS.has(ip)
 }
 
@@ -78,9 +93,9 @@ async function handleDisconnect(req: NextRequest) {
   try { parsedBody = JSON.parse(rawBody) } catch {}
 
   try {
-    if (!isAllowedSource(req)) {
+    if (!isAllowedSource(req, rawBody)) {
       logWebhookHit({ ts: new Date().toISOString(), endpoint: 'disconnect', ip, headers, query: req.nextUrl.search, body: parsedBody, outcome: 'forbidden_ip' })
-      return error('Forbidden', 403)
+      return error('Forbidden — falha de autenticação (HMAC ou IP)', 403)
     }
 
     const body = extractSonaxPayload(req, parsedBody)

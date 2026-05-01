@@ -25,6 +25,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { timingSafeEqual, createHmac } from 'crypto'
 import { prisma } from '@pontual/db'
 import { error, handleError, success } from '@/lib/api-response'
 import { normalizePhone, getPhoneSearchVariants } from '@/lib/voip/phone'
@@ -41,21 +42,43 @@ const SONAX_ALLOWED_IPS = new Set([
 // Quando multi-tenant, descobrir via DID → voip_inbound_numbers.company_id
 const PONTUALTECH_COMPANY_ID = process.env.SONAX_DEFAULT_COMPANY_ID || ''
 
-function isAllowedSource(req: NextRequest): boolean {
+/**
+ * A10 fix (audit): valida HMAC se SONAX_WEBHOOK_SECRET configurado, com
+ * fallback pra IP allowlist (preserva backward compat). Removido bypass
+ * NODE_ENV !== 'production' — usa flag explícita SONAX_WEBHOOK_DEV_BYPASS=1
+ * pra dev. Antes: se ENV quebrasse no boot e caísse em "development",
+ * endpoint ficava aberto à internet.
+ */
+function isAllowedSource(req: NextRequest, rawBody: string): boolean {
+  // 1) Dev bypass explícito (não usar em prod)
+  if (process.env.SONAX_WEBHOOK_DEV_BYPASS === '1') {
+    console.warn('[Sonax Webhook] SONAX_WEBHOOK_DEV_BYPASS=1 ATIVO — não usar em produção')
+    return true
+  }
+
+  // 2) HMAC signature (preferido — Sonax pode adicionar)
+  const secret = process.env.SONAX_WEBHOOK_SECRET
+  const sig = req.headers.get('x-sonax-signature')
+  if (secret && sig) {
+    const expected = createHmac('sha256', secret).update(rawBody).digest('hex')
+    try {
+      if (sig.length === expected.length &&
+          timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) {
+        return true
+      }
+    } catch {}
+    console.warn('[Sonax Webhook] HMAC signature inválido — fallback pra IP allowlist')
+  }
+
+  // 3) IP allowlist (fallback enquanto Sonax não suporta HMAC)
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
     || req.headers.get('x-real-ip')
     || ''
-
-  // Em desenvolvimento permite tudo
-  if (process.env.NODE_ENV !== 'production') return true
-
-  // Se ALLOWED_IPS configurada via env, usar
   const allowedEnv = process.env.SONAX_WEBHOOK_ALLOWED_IPS
   if (allowedEnv) {
     const allowed = new Set(allowedEnv.split(',').map(s => s.trim()).filter(Boolean))
     return allowed.has(ip)
   }
-
   return SONAX_ALLOWED_IPS.has(ip)
 }
 
@@ -82,9 +105,9 @@ async function handleCallStart(req: NextRequest) {
   try { parsedBody = JSON.parse(rawBody) } catch {}
 
   try {
-    if (!isAllowedSource(req)) {
+    if (!isAllowedSource(req, rawBody)) {
       logWebhookHit({ ts: new Date().toISOString(), endpoint: 'call-start', ip, headers, query: req.nextUrl.search, body: parsedBody, outcome: 'forbidden_ip' })
-      return error('Forbidden — IP não autorizado', 403)
+      return error('Forbidden — falha de autenticação (HMAC ou IP)', 403)
     }
 
     const body = extractSonaxPayloadCS(req, parsedBody)
