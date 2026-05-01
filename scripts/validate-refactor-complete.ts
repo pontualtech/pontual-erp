@@ -47,7 +47,10 @@ async function main() {
   const fp = await p.$queryRaw<{ column_name: string; is_generated: string }[]>`
     SELECT column_name, is_generated FROM information_schema.columns
      WHERE table_name='fiscal_entries' AND column_name='fiscal_period'`
-  console.log(`\n[GENERATED COLUMNS] fiscal_period: ${fp[0]?.is_generated || 'MISSING'}`)
+  // Após M-008: fiscal_period virou coluna text + trigger BEFORE INSERT/UPDATE
+  // (Prisma 5.x não suporta GENERATED ALWAYS declarativo, conflitava com db push).
+  // is_generated='NEVER' é o estado esperado; trigger trg_fiscal_entries_period popula.
+  console.log(`\n[fiscal_period] type: ${fp[0]?.is_generated || 'MISSING'} (esperado: NEVER, trigger-driven)`)
 
   // 6. Seed PontualTech
   const seed = await p.$queryRaw<{ count: bigint }[]>`
@@ -75,7 +78,7 @@ async function main() {
 
   console.log('='.repeat(70))
   const allOk = enums.length === 10 && tables.length === 6 && trigs.length === 3 && mvs.length === 1 &&
-    fp[0]?.is_generated === 'ALWAYS' && Number(seed[0].count) === 31
+    fp[0]?.is_generated === 'NEVER' && Number(seed[0].count) === 31
   console.log(allOk ? 'PASS — refactor v2 completo e persistente.' : 'FAIL — investigar')
 }
 main().catch(console.error).finally(() => p.$disconnect())
