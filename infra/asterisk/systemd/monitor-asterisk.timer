@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Asterisk health monitor every 5 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+RandomizedDelaySec=30s
+Unit=monitor-asterisk.service
+
+[Install]
+WantedBy=timers.target

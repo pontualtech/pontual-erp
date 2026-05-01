@@ -1,0 +1,11 @@
+[Unit]
+Description=Sync PJSIP ramais.conf from PontualERP to Asterisk
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/sync-pjsip.sh
+User=root
+StandardOutput=journal
+StandardError=journal

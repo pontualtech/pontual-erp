@@ -1,0 +1,11 @@
+[Unit]
+Description=Extract Asterisk LE Cert from Traefik acme.json
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/extract-asterisk-le-cert.sh
+User=root
+StandardOutput=journal
+StandardError=journal
