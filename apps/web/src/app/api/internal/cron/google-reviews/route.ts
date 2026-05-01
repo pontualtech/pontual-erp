@@ -9,9 +9,17 @@ import crypto from 'crypto'
 /**
  * Gera token HMAC pro link /cupom-avaliacao/[token]. Mesma logica do
  * endpoint publico — se o cliente clicar, ganha cupom e vai pro Google.
+ *
+ * C9 fix (audit): SEM fallback hardcoded 'fallback-dev-secret'. Atacante
+ * que conheça essa string forjava tokens de cupom de qualquer customer.
+ * Agora throw se ERP_TOKEN_SECRET ausente — boot quebra em deploy mal
+ * configurado, sysadmin sabe consertar.
  */
 function buildCouponToken(companyId: string, customerId: string): string {
-  const secret = process.env.ERP_TOKEN_SECRET || process.env.CRON_SECRET || 'fallback-dev-secret'
+  const secret = process.env.ERP_TOKEN_SECRET || process.env.CRON_SECRET
+  if (!secret) {
+    throw new Error('ERP_TOKEN_SECRET (ou CRON_SECRET fallback) ausente — configurar no Coolify')
+  }
   const payload = Buffer.from(JSON.stringify({ c: companyId, u: customerId, t: Date.now() })).toString('base64url')
   const sig = crypto.createHmac('sha256', secret).update(payload).digest('base64url')
   return `${payload}.${sig}`
@@ -46,13 +54,17 @@ const WINDOW_MIN_MS = 10 * 60 * 1000       // >= 10min depois de entregar
 const WINDOW_MAX_MS = 48 * 60 * 60 * 1000  // < 48h (stops antigos sao ignorados)
 
 export async function POST(req: NextRequest) {
+  // C9 fix (audit): aceitar APENAS INTERNAL_API_KEY. Antes aceitava 3 chaves
+  // (INTERNAL_API_KEY OR CRON_SECRET OR BOT_WEBHOOK_SECRET) — se UMA vazasse
+  // (ex: bot webhook em log do n8n), atacante disparava reviews com link
+  // customizado. A chave mais fraca define a segurança do conjunto.
   const internalKey = req.headers.get('x-internal-key')
-  const validKeys = [
-    process.env.INTERNAL_API_KEY,
-    process.env.CRON_SECRET,
-    process.env.BOT_WEBHOOK_SECRET,
-  ].filter(Boolean)
-  if (!internalKey || !validKeys.includes(internalKey)) {
+  const expectedKey = process.env.INTERNAL_API_KEY
+  if (!expectedKey) {
+    console.error('[Cron/google-reviews] INTERNAL_API_KEY não configurado')
+    return NextResponse.json({ error: 'Service unavailable' }, { status: 503 })
+  }
+  if (!internalKey || internalKey !== expectedKey) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
