@@ -3,6 +3,56 @@ import { prisma } from '@pontual/db'
 import { createHmac, timingSafeEqual } from 'crypto'
 
 /**
+ * C7 fix (audit): resolve company_id corretamente via inbox_id/account_id
+ * do payload Chatwoot, em vez de fallback `findFirst({is_active:true})` que
+ * roteava todos os contatos cross-tenant pra primeira empresa ativa.
+ *
+ * Estratégia (em ordem de prioridade):
+ *   1. Setting `chatwoot.inbox_${inbox_id}.company_id` — mapping per-inbox
+ *   2. Setting `chatwoot.account_${account_id}.company_id` — mapping per-account
+ *   3. Env var `CHATWOOT_INBOX_${inbox_id}_COMPANY_ID` — bootstrap antes do admin UI
+ *   4. Fallback `findFirst({is_active:true})` COM WARNING — preserva backward compat
+ *      mas torna o problema visível em log.
+ *
+ * Retorna null se nenhuma estratégia resolver. Caller deve abortar o processamento.
+ */
+async function resolveCompanyForChatwoot(payload: any): Promise<string | null> {
+  const inboxId = payload?.inbox?.id ?? payload?.conversation?.inbox_id ?? payload?.inbox_id
+  const accountId = payload?.account?.id ?? payload?.account_id
+
+  // 1. Setting per-inbox
+  if (inboxId) {
+    const s = await prisma.setting.findFirst({
+      where: { key: `chatwoot.inbox_${inboxId}.company_id` },
+      select: { company_id: true, value: true },
+    })
+    if (s?.value) return s.value
+  }
+
+  // 2. Setting per-account
+  if (accountId) {
+    const s = await prisma.setting.findFirst({
+      where: { key: `chatwoot.account_${accountId}.company_id` },
+      select: { company_id: true, value: true },
+    })
+    if (s?.value) return s.value
+  }
+
+  // 3. Env var fallback
+  if (inboxId) {
+    const envKey = `CHATWOOT_INBOX_${inboxId}_COMPANY_ID`
+    const envValue = process.env[envKey]
+    if (envValue) return envValue
+  }
+
+  // 4. Final fallback com warning (cross-tenant leak risk em multi-tenant)
+  const company = await prisma.company.findFirst({ where: { is_active: true }, select: { id: true } })
+  if (!company) return null
+  console.warn(`[Chatwoot Webhook] FALLBACK cross-tenant: inbox_id=${inboxId} account_id=${accountId} → ${company.id}. Configurar setting 'chatwoot.inbox_${inboxId}.company_id' pra desambiguar.`)
+  return company.id
+}
+
+/**
  * Valida assinatura do webhook Chatwoot (HMAC-SHA256)
  */
 function validateChatwootSignature(rawBody: string, signature: string | null): boolean {
@@ -65,20 +115,27 @@ async function handleMessageCreated(body: any) {
   // Only process incoming messages (from customer)
   if (messageType !== 'incoming') return
 
-  // Auto-sync contact to ERP (fire and forget)
+  // C7: resolve tenant ANTES de qualquer processamento — evita cross-tenant leak
+  const resolvedCompanyId = await resolveCompanyForChatwoot(body)
+  if (!resolvedCompanyId) {
+    console.warn('[Chatwoot Webhook] Não conseguiu resolver company_id — pulando mensagem')
+    return
+  }
+
+  // Auto-sync contact to ERP (fire and forget) — passa companyId explícito
   const sender = body.sender || body.conversation?.meta?.sender || {}
-  syncContactToERP(sender).catch(() => {})
+  syncContactToERP(sender, resolvedCompanyId).catch(() => {})
 
   // Check for OS number patterns: OS-0001, #0001, OS 1234
   const osMatch = message.match(/(?:OS[-\s]?|#)(\d{1,6})/i)
 
   if (osMatch) {
     const osNumber = parseInt(osMatch[1], 10)
-    console.log(`[Chatwoot Webhook] OS number detected: ${osNumber}`)
+    console.log(`[Chatwoot Webhook] OS number detected: ${osNumber} (company=${resolvedCompanyId})`)
 
-    // Try to find the OS in the database
+    // C7: scope por company_id pra evitar achar OS de outro tenant com mesmo número
     const os = await prisma.serviceOrder.findFirst({
-      where: { os_number: osNumber, deleted_at: null },
+      where: { os_number: osNumber, company_id: resolvedCompanyId, deleted_at: null },
       include: { customers: true, module_statuses: true },
     })
 
@@ -125,13 +182,20 @@ async function handleMessageCreated(body: any) {
 }
 
 async function handleConversationCreated(body: any) {
+  // C7: resolve tenant via inbox_id/account_id antes de sync
+  const resolvedCompanyId = await resolveCompanyForChatwoot(body)
+  if (!resolvedCompanyId) {
+    console.warn('[Chatwoot Webhook] conversation_created sem tenant resolvido — skip')
+    return
+  }
   const contact = body.contact || body.conversation?.meta?.sender || {}
-  await syncContactToERP(contact)
+  await syncContactToERP(contact, resolvedCompanyId)
 }
 
 // Auto-save Chatwoot contacts to ERP as customers
-async function syncContactToERP(contact: any) {
+async function syncContactToERP(contact: any, companyId: string) {
   if (!contact) return
+  if (!companyId) return
 
   const phone = (contact.phone_number || '').replace(/\D/g, '')
   const name = contact.name || contact.identifier || ''
@@ -142,8 +206,8 @@ async function syncContactToERP(contact: any) {
   const cleanPhone = phone.slice(-10) // Last 10 digits
   if (cleanPhone.length < 10 && !email) return
 
-  // Find the first company (for multi-tenant)
-  const company = await prisma.company.findFirst({ where: { is_active: true } })
+  // C7: usa companyId resolvido (não findFirst is_active)
+  const company = await prisma.company.findUnique({ where: { id: companyId }, select: { id: true } })
   if (!company) return
 
   // Search by phone or email
