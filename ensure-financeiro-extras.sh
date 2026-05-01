@@ -371,7 +371,129 @@ const p = new PrismaClient();
       chartCount = cnt[0].c;
     }
 
-    // 9. M-009: índices auxiliares em tabelas legadas (accounts_receivable/payable)
+    // 9. M-013: Dual-write trigger AR/AP → payments unified.
+    //    Trigger AFTER INSERT/UPDATE em accounts_receivable e accounts_payable
+    //    cria/atualiza row correspondente em payments com kind apropriado.
+    //    Permite que código novo leia da `payments` unified enquanto AR/AP
+    //    continuam funcionando. Backfill de rows existentes é decisão separada.
+    //
+    //    EXCEPTION-safe: falha no dual-write NÃO quebra operação principal.
+    //    Idempotente via origin_type + origin_id como identidade.
+    const arExists = await p.$queryRawUnsafe(
+      `SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='accounts_receivable'`
+    );
+    if (arExists.length > 0) {
+      await p.$executeRawUnsafe(`
+        CREATE OR REPLACE FUNCTION dual_write_ar_to_payments() RETURNS trigger AS $fn$
+        DECLARE
+          v_kind payment_kind := 'RECEIVABLE';
+          v_origin_type text := 'ACCOUNT_RECEIVABLE';
+        BEGIN
+          BEGIN
+            IF TG_OP = 'INSERT' THEN
+              -- Nova AR → cria row em payments (se ainda não existe pra mesmo origin)
+              -- amount (legacy NOT NULL int) recebe total_amount; idempotency_key
+              -- (NOT NULL UNIQUE legacy) recebe id pra unicidade.
+              INSERT INTO payments (
+                id, company_id, kind, status, customer_id,
+                origin_type, origin_id,
+                amount, idempotency_key,
+                total_amount, paid_amount, issue_date, due_date,
+                description, created_at, updated_at
+              ) VALUES (
+                NEW.id, NEW.company_id, v_kind, COALESCE(NEW.status, 'PENDING'),
+                NEW.customer_id, v_origin_type, NEW.id,
+                NEW.total_amount, 'ar:' || NEW.id,
+                NEW.total_amount, COALESCE(NEW.received_amount, 0),
+                CURRENT_DATE, NEW.due_date,
+                COALESCE(NEW.description, '(AR)'), COALESCE(NEW.created_at, NOW()), COALESCE(NEW.updated_at, NOW())
+              )
+              ON CONFLICT (id) DO NOTHING;
+            ELSIF TG_OP = 'UPDATE' THEN
+              -- AR atualizado → propaga campos críticos pra payments
+              UPDATE payments
+                SET status = COALESCE(NEW.status, status),
+                    total_amount = NEW.total_amount,
+                    paid_amount = COALESCE(NEW.received_amount, paid_amount),
+                    due_date = NEW.due_date,
+                    description = NEW.description,
+                    deleted_at = NEW.deleted_at,
+                    updated_at = NOW()
+              WHERE id = NEW.id;
+            END IF;
+          EXCEPTION WHEN OTHERS THEN
+            RAISE WARNING 'dual_write_ar_to_payments failed for AR=%: % (%)',
+              NEW.id, SQLERRM, SQLSTATE;
+          END;
+          RETURN NEW;
+        END $fn$ LANGUAGE plpgsql SECURITY DEFINER;
+      `);
+      await p.$executeRawUnsafe(`DROP TRIGGER IF EXISTS trg_ar_dual_write ON accounts_receivable;`);
+      await p.$executeRawUnsafe(`
+        CREATE TRIGGER trg_ar_dual_write
+          AFTER INSERT OR UPDATE ON accounts_receivable
+          FOR EACH ROW EXECUTE FUNCTION dual_write_ar_to_payments();
+      `);
+    }
+
+    const apExists = await p.$queryRawUnsafe(
+      `SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='accounts_payable'`
+    );
+    if (apExists.length > 0) {
+      await p.$executeRawUnsafe(`
+        CREATE OR REPLACE FUNCTION dual_write_ap_to_payments() RETURNS trigger AS $fn$
+        DECLARE
+          v_kind payment_kind := 'PAYABLE';
+          v_origin_type text := 'ACCOUNT_PAYABLE';
+        BEGIN
+          BEGIN
+            IF TG_OP = 'INSERT' THEN
+              -- AP precisa customer_id (NOT NULL legacy). Usa supplier_id como customer
+              -- temporariamente (em payments unified, supplier_id é a info correta).
+              -- amount + idempotency_key cobrem legacy NOT NULL.
+              INSERT INTO payments (
+                id, company_id, kind, status,
+                customer_id, supplier_id, origin_type, origin_id,
+                amount, idempotency_key,
+                total_amount, paid_amount, issue_date, due_date,
+                description, created_at, updated_at
+              ) VALUES (
+                NEW.id, NEW.company_id, v_kind, COALESCE(NEW.status, 'PENDING'),
+                NEW.supplier_id, NEW.supplier_id, v_origin_type, NEW.id,
+                NEW.total_amount, 'ap:' || NEW.id,
+                NEW.total_amount, COALESCE(NEW.paid_amount, 0),
+                CURRENT_DATE, NEW.due_date,
+                COALESCE(NEW.description, '(AP)'),
+                COALESCE(NEW.created_at, NOW()), COALESCE(NEW.updated_at, NOW())
+              )
+              ON CONFLICT (id) DO NOTHING;
+            ELSIF TG_OP = 'UPDATE' THEN
+              UPDATE payments
+                SET status = COALESCE(NEW.status, status),
+                    total_amount = NEW.total_amount,
+                    paid_amount = COALESCE(NEW.paid_amount, paid_amount),
+                    due_date = NEW.due_date,
+                    description = COALESCE(NEW.description, description),
+                    deleted_at = NEW.deleted_at,
+                    updated_at = NOW()
+              WHERE id = NEW.id;
+            END IF;
+          EXCEPTION WHEN OTHERS THEN
+            RAISE WARNING 'dual_write_ap_to_payments failed for AP=%: % (%)',
+              NEW.id, SQLERRM, SQLSTATE;
+          END;
+          RETURN NEW;
+        END $fn$ LANGUAGE plpgsql SECURITY DEFINER;
+      `);
+      await p.$executeRawUnsafe(`DROP TRIGGER IF EXISTS trg_ap_dual_write ON accounts_payable;`);
+      await p.$executeRawUnsafe(`
+        CREATE TRIGGER trg_ap_dual_write
+          AFTER INSERT OR UPDATE ON accounts_payable
+          FOR EACH ROW EXECUTE FUNCTION dual_write_ap_to_payments();
+      `);
+    }
+
+    // 10. M-009: índices auxiliares em tabelas legadas (accounts_receivable/payable)
     //    Acelera queries até a v2 ramp 100%. CREATE INDEX (sem CONCURRENTLY pra
     //    evitar IDX_INVALID em caso de timeout — tabelas têm < 1k rows em prod).
     //    IF NOT EXISTS torna idempotente.
