@@ -50,6 +50,17 @@ export async function GET(request: NextRequest) {
       due_date: { gte: startDate, lte: endDate },
     }
 
+    // M4 fix (audit): DRE classifica primeiro via accounts_chart (M-005,
+    // Sprint 1) usando match por nome+tipo. Se não houver chart_account
+    // mapeado pra categoria, cai pra heurística legacy textual. Reduz erros
+    // como "Servico de Manutencao de Mercadoria" classificado como custo
+    // por causa do "Mercadoria" no nome.
+    //
+    // Estratégia: load accounts_chart upfront + name→account_type map. Pra
+    // cada AP, tenta match exato do nome da categoria com nome do
+    // chart_account ativo. account_type='COGS' → custo, 'OPERATING_EXPENSE'
+    // → despesa. Sem match → heurística + reportado em `meta.unclassified[]`.
+
     // Fetch receivables with categories
     const receivables = await prisma.accountReceivable.findMany({
       where: baseWhere,
@@ -72,6 +83,28 @@ export async function GET(request: NextRequest) {
       },
     })
 
+    // Pre-load accounts_chart pra classificação (M4)
+    const chartAccounts = await prisma.accountChart.findMany({
+      where: { company_id: user.companyId, is_active: true },
+      select: { name: true, account_type: true, code: true, is_synthetic: true },
+    })
+    // Map: lower(category_name) → account_type. Inclui synthetic e analítico.
+    const chartByName = new Map<string, string>()
+    for (const c of chartAccounts) {
+      chartByName.set(c.name.toLowerCase().trim(), c.account_type)
+    }
+
+    function classifyViaChart(catName: string): string | null {
+      const key = catName.toLowerCase().trim()
+      // Match exato primeiro
+      if (chartByName.has(key)) return chartByName.get(key)!
+      // Match parcial (contains) — first match
+      for (const [chartName, type] of chartByName) {
+        if (key.includes(chartName) || chartName.includes(key)) return type
+      }
+      return null
+    }
+
     // Group receitas by category
     const receitasMap: Record<string, number> = {}
     let receitaBruta = 0
@@ -83,23 +116,39 @@ export async function GET(request: NextRequest) {
       receitaBruta += amount
     }
 
-    // Separate payables into custos vs despesas operacionais
-    // Categories with module "custo" or name containing "Custo" are treated as custos
+    // Separate payables into custos vs despesas operacionais.
+    // Prioridade: chart_account match (M-005) → heurística legacy → fallback despesas
     const custosMap: Record<string, number> = {}
     const despesasMap: Record<string, number> = {}
     let totalCustos = 0
     let totalDespesas = 0
+    const unclassified: Array<{ category: string; amount: number; via: 'chart' | 'heuristic' | 'fallback' }> = []
 
     for (const p of payables) {
       const amount = p.paid_amount ?? p.total_amount
       const catName = p.categories?.name ?? 'Outros'
       const module = p.categories?.module ?? ''
 
-      const isCusto = module === 'custo' ||
-        catName.toLowerCase().includes('custo') ||
-        catName.toLowerCase().includes('mercadoria') ||
-        catName.toLowerCase().includes('materia') ||
-        catName.toLowerCase().includes('insumo')
+      // 1) Tenta classificar via chart_account (autoritativo)
+      const chartType = classifyViaChart(catName)
+      let isCusto = false
+      let via: 'chart' | 'heuristic' | 'fallback' = 'fallback'
+      if (chartType) {
+        isCusto = chartType === 'COGS'
+        via = 'chart'
+      } else {
+        // 2) Fallback heurística legacy
+        isCusto = module === 'custo' ||
+          catName.toLowerCase().includes('custo') ||
+          catName.toLowerCase().includes('mercadoria') ||
+          catName.toLowerCase().includes('materia') ||
+          catName.toLowerCase().includes('insumo')
+        via = 'heuristic'
+      }
+
+      if (via !== 'chart') {
+        unclassified.push({ category: catName, amount, via })
+      }
 
       if (isCusto) {
         custosMap[catName] = (custosMap[catName] || 0) + amount
@@ -198,6 +247,17 @@ export async function GET(request: NextRequest) {
         lucro_liquido: lucroLiquido,
       },
       monthly: monthlyData,
+      // M4: meta inclui categorias classificadas via chart vs heurística vs fallback.
+      // UI pode mostrar aviso "N categorias usam classificação heurística — mapear no
+      // plano de contas pra ganhar precisão".
+      meta: {
+        classification: {
+          via_chart_count: payables.length - unclassified.length,
+          via_heuristic_count: unclassified.filter(u => u.via === 'heuristic').length,
+          via_fallback_count: unclassified.filter(u => u.via === 'fallback').length,
+          unclassified_categories: Array.from(new Set(unclassified.map(u => u.category))),
+        },
+      },
     })
   } catch (err) {
     return handleError(err)
