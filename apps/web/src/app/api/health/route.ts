@@ -66,15 +66,25 @@ export async function GET(_req: NextRequest) {
     checks.trigger_failures_unavailable = true
   }
 
-  // 4. DRE MV staleness
+  // 4. DRE MV staleness — Sprint 5: reportar idade
   try {
-    const mvCheck = await prisma.$queryRawUnsafe<{ last_entry: Date | null; mv_count: bigint }[]>(
+    const mvCheck = await prisma.$queryRawUnsafe<{ last_entry: Date | null; mv_count: bigint; mv_max_period: string | null }[]>(
       `SELECT
         (SELECT MAX(created_at) FROM fiscal_entries) AS last_entry,
-        (SELECT COUNT(*)::bigint FROM dre_monthly) AS mv_count`,
+        (SELECT COUNT(*)::bigint FROM dre_monthly) AS mv_count,
+        (SELECT MAX(fiscal_period) FROM dre_monthly) AS mv_max_period`,
     )
     checks.fiscal_entries_last = mvCheck[0]?.last_entry ?? null
     checks.dre_monthly_rows = Number(mvCheck[0]?.mv_count ?? 0)
+    checks.dre_max_period = mvCheck[0]?.mv_max_period ?? null
+    // Stale alert: se há fiscal_entries mas MV não reflete o período mais recente
+    if (mvCheck[0]?.last_entry && mvCheck[0]?.mv_max_period) {
+      const expectedPeriod = new Date(mvCheck[0].last_entry).toISOString().slice(0, 7)
+      if (expectedPeriod > mvCheck[0].mv_max_period) {
+        checks.dre_mv_stale = true
+        // Não marca critical — MV stale é warning, não bloqueador
+      }
+    }
   } catch (e: any) {
     checks.dre_mv_unavailable = true
   }

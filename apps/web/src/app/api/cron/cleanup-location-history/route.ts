@@ -17,6 +17,16 @@ import { success, error, handleError } from '@/lib/api-response'
 const RETENTION_DAYS = 7
 
 export async function GET(request: NextRequest) {
+  // N5 fix (audit pos-fix): advisory lock pra 1 instancia rodando por vez
+  try {
+    const _lock: Array<{ ok: boolean }> = await (prisma as any).$queryRaw`
+      SELECT pg_try_advisory_lock(hashtext('cron:cleanup-location-history')::bigint) AS ok
+    `
+    if (!_lock?.[0]?.ok) {
+      return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'concurrent_run' }), { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+  } catch { /* non-fatal: tabela/conexao indisponivel — segue sem lock */ }
+
   try {
     const cronSecret = process.env.CRON_SECRET
     if (!cronSecret) return error('Cron not configured', 503)

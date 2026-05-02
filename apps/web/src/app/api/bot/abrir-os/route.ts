@@ -4,6 +4,7 @@ import { authenticateBot } from '../_lib/auth'
 import { botSuccess, botError } from '../_lib/response'
 import { rateLimit } from '@/lib/rate-limit'
 import { getNextOsNumber } from '@/lib/os-number'
+import { redactName, redactDoc } from '@/lib/log-redact'
 
 /**
  * POST /api/bot/abrir-os
@@ -131,7 +132,7 @@ export async function POST(req: NextRequest) {
         where: { id: explicitCustomerId, company_id: companyId, deleted_at: null },
       })
       if (customer) {
-        console.log(`[Bot/abrir-os] Usando customer_id explicito: ${customer.legal_name}`)
+        console.log(`[Bot/abrir-os] Usando customer_id explicito: ${redactName(customer.legal_name)}`)
       } else {
         console.warn(`[Bot/abrir-os] customer_id ${explicitCustomerId} nao encontrado, caindo em find-or-create`)
       }
@@ -166,7 +167,7 @@ export async function POST(req: NextRequest) {
           })
           if (byPhone) {
             customer = byPhone
-            console.log(`[Bot/abrir-os] Doc ${docDigits} aponta pra "${byDoc.legal_name}" mas phone pertence a "${byPhone.legal_name}" — preferindo o do phone.`)
+            console.log(`[Bot/abrir-os] Doc ${redactDoc(docDigits)} aponta pra "${byDoc.legal_name}" mas phone pertence a "${byPhone.legal_name}" — preferindo o do phone.`)
           } else {
             customer = byDoc
           }
@@ -319,7 +320,7 @@ export async function POST(req: NextRequest) {
       return created
     })
 
-    console.log(`[Bot abrir-os] OS #${os.os_number} | Cliente: ${customer.legal_name} ${isNewCustomer ? '(NOVO)' : ''}`)
+    console.log(`[Bot abrir-os] OS #${os.os_number} | Cliente: ${redactName(customer.legal_name)} ${isNewCustomer ? '(NOVO)' : ''}`)
 
     // Fire-and-forget: enviar email + WhatsApp de abertura ao cliente
     if (customer.email || customer.mobile || customer.phone) {
