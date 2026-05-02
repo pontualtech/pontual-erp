@@ -17,6 +17,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { resolvePortalDomain } from '@/lib/portal-magic-url'
+import { redactDoc, redactName } from '@/lib/log-redact'
 import {
   sendWhatsAppButtons,
   sendWhatsAppList,
@@ -1081,7 +1082,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
               })
               if (customer) {
                 activeOS = await getActiveOrders(customer.id, cfg.companyId)
-                console.log(`[Bot] Customer by doc ${cleanDoc}: ${customer.legal_name} (${activeOS.length} OS)`)
+                console.log(`[Bot] Customer by doc ${redactDoc(cleanDoc)}: ${redactName(customer.legal_name)} (${activeOS.length} OS)`)
               }
             }
           }
@@ -1103,14 +1104,14 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
                 if (os.length > 0) {
                   customer = c
                   activeOS = os
-                  console.log(`[Bot] Customer by phone (with OS): ${c.legal_name} (${os.length} OS)`)
+                  console.log(`[Bot] Customer by phone (with OS): ${redactName(c.legal_name)} (${os.length} OS)`)
                   break
                 }
               }
               // If none has active OS, use first match
               if (!customer && allMatches.length > 0) {
                 customer = allMatches[0]
-                console.log(`[Bot] Customer by phone (no OS): ${customer.legal_name}`)
+                console.log(`[Bot] Customer by phone (no OS): ${redactName(customer.legal_name)}`)
               }
             }
           }
@@ -1128,7 +1129,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
                 : []
               if (legacyOS.length > 0 && activeOS.length === legacyOS.length) {
                 // ALL OS are legacy — transfer to Rafael
-                console.log(`[Bot] Cliente ${customer.legal_name} tem ${legacyOS.length} OS legadas — transferência direta para humano`)
+                console.log(`[Bot] Cliente ${redactName(customer.legal_name)} tem ${legacyOS.length} OS legadas — transferência direta para humano`)
                 await cwSendMessage(cfg, conversationId,
                   `Olá, ${customer.legal_name?.split(' ')[0] || 'tudo bem'}! Identifiquei seu cadastro. Suas ordens de serviço são do nosso sistema anterior. Vou transferir para nossa equipe que cuida pessoalmente desses casos!`)
                 await cwSendMessage(cfg, conversationId,

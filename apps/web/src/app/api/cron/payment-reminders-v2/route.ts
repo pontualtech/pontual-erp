@@ -67,6 +67,23 @@ export async function GET(request: NextRequest) {
     }
 
     const startedAt = Date.now()
+
+    // N5 fix (audit pos-fix): advisory lock pra evitar 2+ réplicas rodando
+    // scheduler/dispatcher em paralelo. Try-acquire imediato; se outro nó
+    // já tem o lock, skip silent (próxima rodada do cron tenta de novo).
+    // Lock liberado no COMMIT da tx interna — auto-release.
+    const tryLock = await prisma.$queryRaw<Array<{ ok: boolean }>>`
+      SELECT pg_try_advisory_lock(hashtext('cron:payment-reminders-v2')::bigint) AS ok
+    `
+    if (!tryLock[0]?.ok) {
+      return success({
+        ok: true,
+        skipped: true,
+        reason: 'concurrent_run — outro nó executando',
+        elapsed_ms: Date.now() - startedAt,
+      })
+    }
+
     let scheduledCount = 0
     let dispatchedCount = 0
     let dispatchFailures = 0
@@ -185,7 +202,7 @@ export async function GET(request: NextRequest) {
       })
       dispatchHeld = heldDue
 
-      return success({
+      const earlyResult = success({
         ok: true,
         elapsed_ms: Date.now() - startedAt,
         scheduled: scheduledCount,
@@ -196,6 +213,8 @@ export async function GET(request: NextRequest) {
         note: 'PAYMENT_REMINDERS_V2_REAL_DISPATCH=0 — reminders ficam em PENDING até implementação dos dispatchers reais',
         errors,
       })
+      await prisma.$executeRaw`SELECT pg_advisory_unlock(hashtext('cron:payment-reminders-v2')::bigint)`.catch(() => {})
+      return earlyResult
     }
 
     // M8 fix (audit): tenant fairness via round-robin. Antes, take:100
@@ -281,7 +300,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return success({
+    const finalResult = success({
       ok: true,
       elapsed_ms: Date.now() - startedAt,
       scheduled: scheduledCount,
@@ -290,7 +309,12 @@ export async function GET(request: NextRequest) {
       real_dispatch_enabled: true,
       errors,
     })
+    // N5: libera lock advisory (session-scoped — não é tx)
+    await prisma.$executeRaw`SELECT pg_advisory_unlock(hashtext('cron:payment-reminders-v2')::bigint)`.catch(() => {})
+    return finalResult
   } catch (err) {
+    // N5: libera lock no catch também
+    await prisma.$executeRaw`SELECT pg_advisory_unlock(hashtext('cron:payment-reminders-v2')::bigint)`.catch(() => {})
     return handleError(err)
   }
 }

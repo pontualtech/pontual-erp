@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { createHmac, timingSafeEqual } from 'crypto'
+import { redactName, redactPhone } from '@/lib/log-redact'
 
 /**
  * C7 fix (audit): resolve company_id corretamente via inbox_id/account_id
@@ -257,5 +258,5 @@ async function syncContactToERP(contact: any, companyId: string) {
       notes: 'Cadastrado automaticamente via WhatsApp/Chatwoot',
     },
   })
-  console.log(`[Chatwoot Sync] Created customer: ${name} (${phone})`)
+  console.log(`[Chatwoot Sync] Created customer: ${redactName(name)} (${redactPhone(phone)})`)
 }

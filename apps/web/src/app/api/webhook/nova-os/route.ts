@@ -155,7 +155,8 @@ export async function POST(req: NextRequest) {
       },
     }).catch(() => {})
 
-    console.log(`[Webhook nova-os] OS #${osNumber} criada | Cliente: ${customer.legal_name} ${isNewCustomer ? '(NOVO)' : ''} | ${equipamento} ${marca || ''} | ${defeito?.substring(0, 50)}`)
+    const { redactName: _redactName } = await import('@/lib/log-redact')
+    console.log(`[Webhook nova-os] OS #${osNumber} criada | Cliente: ${_redactName(customer.legal_name)} ${isNewCustomer ? '(NOVO)' : ''} | ${equipamento} ${marca || ''} | ${defeito?.substring(0, 50)}`)
 
     // Fire-and-forget: enviar email de abertura ao cliente
     if (customer.email) {
