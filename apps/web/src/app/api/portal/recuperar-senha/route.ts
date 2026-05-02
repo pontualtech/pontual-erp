@@ -55,8 +55,10 @@ export async function POST(req: NextRequest) {
 
     const cleanDoc = document.replace(/[.\-\/]/g, '')
 
-    // Rate limiting por documento
-    if (!checkRateLimit(`recuperar-senha:${cleanDoc}`)) {
+    // UX-9 #7: rate limit POR EMPRESA — antes era só por documento, criando
+    // DoS cross-tenant: atacante esgotava 5 tentativas em PontualTech e
+    // bloqueava cliente Imprimitech com mesmo CPF por 15min.
+    if (!checkRateLimit(`recuperar-senha:${company_slug}:${cleanDoc}`)) {
       return NextResponse.json(
         { error: 'Muitas tentativas. Tente novamente em 15 minutos.' },
         { status: 429 }

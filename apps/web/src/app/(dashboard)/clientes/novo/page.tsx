@@ -308,6 +308,11 @@ export default function NovoClientePage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.legal_name) { toast.error('Nome é obrigatório'); return }
+    // UX-9 #5: cliente sem contato fica inalcançável — bloqueia
+    if (!form.email && !form.mobile && !form.phone) {
+      toast.error('Informe ao menos um contato (celular, telefone ou email)')
+      return
+    }
 
     // Strip masks before sending
     const payload = {

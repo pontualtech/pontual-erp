@@ -42,8 +42,8 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Rate limit: 3 OTPs per hour per phone
-    const rl = rateLimit(`portal-wa-otp:${normalizedPhone}`, 3, 60 * 60 * 1000)
+    // UX-9 #7: rate limit POR EMPRESA — DoS cross-tenant fix
+    const rl = rateLimit(`portal-wa-otp:${company_slug}:${normalizedPhone}`, 3, 60 * 60 * 1000)
     if (!rl.allowed) {
       return NextResponse.json(
         { error: 'Muitos codigos enviados. Tente novamente em 1 hora.' },

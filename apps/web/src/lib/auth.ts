@@ -41,16 +41,28 @@ export async function getServerUser(): Promise<AuthUser | null> {
 
     if (!userData.data.user) return null
 
+    // UX-9 #1: cookie `active_company_id` permite Karlao trocar de empresa
+    // sem trocar de hostname. Cookie é validado: só funciona se user tem
+    // profile ativo na empresa indicada.
+    const { cookies } = await import('next/headers')
+    const cookieStore = cookies()
+    const activeCompanyId = cookieStore.get('active_company_id')?.value
+
     // Resolve hostname to company (subdomain or custom domain)
     const headersList = headers()
     const hostname = headersList.get('host') || ''
     const hostCompany = await resolveHostname(hostname)
 
-    // If hostname maps to a company, find the user's profile for THAT company
-    // Otherwise, find the first active profile (deterministic by oldest created)
-    const profileWhere = hostCompany
-      ? { id: userData.data.user.id, company_id: hostCompany.id, is_active: true }
-      : { id: userData.data.user.id, is_active: true }
+    // Priority order:
+    //   1. Cookie active_company_id (explicit user choice via switcher)
+    //   2. Hostname (subdomain or custom domain)
+    //   3. First active profile (oldest created — deterministic)
+    let profileWhere: any = { id: userData.data.user.id, is_active: true }
+    if (activeCompanyId) {
+      profileWhere = { ...profileWhere, company_id: activeCompanyId }
+    } else if (hostCompany) {
+      profileWhere = { ...profileWhere, company_id: hostCompany.id }
+    }
 
     const profile = await prisma.userProfile.findFirst({
       where: profileWhere,

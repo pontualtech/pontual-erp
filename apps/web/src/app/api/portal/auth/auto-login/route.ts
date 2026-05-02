@@ -98,7 +98,10 @@ export async function POST(req: NextRequest) {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60,
+      // UX-9 #12: 30 dias alinhado com expiry do magic link.
+      // Antes: cookie 7d + magic link 30d = cliente entre dia 8 e 29 perdia
+      // sessão silenciosamente apesar do magic link ainda válido.
+      maxAge: 30 * 24 * 60 * 60,
       path: '/',
     })
 

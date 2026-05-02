@@ -1345,11 +1345,8 @@ export default function PortalOSDetailPage() {
         </div>
       </main>
 
-      <footer className="border-t border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 mt-12 print:hidden">
-        <div className="max-w-5xl mx-auto px-4 py-4 text-center text-xs text-gray-400 dark:text-gray-500">
-          Powered by PontualERP
-        </div>
-      </footer>
+      {/* UX-9 #11: footer minimalista local removido — layout (portal) ja
+          monta <PortalFooter/> enriquecido com CNPJ + endereco + selo SSL. */}
     </div>
   )
 }

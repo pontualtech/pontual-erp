@@ -15,10 +15,13 @@ export async function GET(
     const doc = params.documento.replace(/\D/g, '')
     if (!doc) return error('Documento inválido', 400)
 
+    // UX-9 #4: match exato — `contains` retornava cliente errado quando
+    // outro cadastro tinha doc parcialmente similar (ex: digito verificador
+    // mascarado em CNPJ "00000000" matchava varios).
     const customer = await prisma.customer.findFirst({
       where: {
         company_id: user.companyId,
-        document_number: { contains: doc },
+        document_number: doc,
         deleted_at: null,
       },
     })

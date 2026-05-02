@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { rateLimit, getClientIp } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,6 +13,12 @@ export const dynamic = 'force-dynamic'
  */
 export async function POST(req: NextRequest) {
   try {
+    // UX-9 #8: rate limit por IP — 20 erros/min/IP é generoso pra crash real,
+    // mas barra bot spammando logs Coolify.
+    const ip = getClientIp(req)
+    const { allowed } = rateLimit(`client-error:${ip}`, 20, 60_000)
+    if (!allowed) return new NextResponse(null, { status: 429 })
+
     const data = await req.json().catch(() => null)
     if (data && typeof data === 'object') {
       console.error('[client-error]', JSON.stringify({

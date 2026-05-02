@@ -26,6 +26,13 @@ export default function SignatureCanvas({
   const drawingRef = useRef(false)
   const lastRef = useRef<{ x: number; y: number } | null>(null)
   const [hasInk, setHasInk] = useState(false)
+  // UX-9 #13: anti-fraude — count de pontos + duração total + bounding box.
+  // Assinatura "rabisco" (1 traço de 0.3s) é evidência fraca em disputa.
+  // Mínimos: 30 pontos OU duração > 800ms OU bbox >= 40×20px.
+  const pointsCountRef = useRef(0)
+  const startTimeRef = useRef<number | null>(null)
+  const bboxRef = useRef<{ minX: number; minY: number; maxX: number; maxY: number } | null>(null)
+  const [valid, setValid] = useState(false)
 
   // Resize canvas bitmap to device pixel ratio — avoids blurry lines.
   useEffect(() => {
@@ -57,6 +64,7 @@ export default function SignatureCanvas({
     canvasRef.current!.setPointerCapture(e.pointerId)
     drawingRef.current = true
     lastRef.current = getPoint(e)
+    if (startTimeRef.current == null) startTimeRef.current = Date.now()
   }
 
   function handlePointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
@@ -70,14 +78,37 @@ export default function SignatureCanvas({
     ctx.stroke()
     lastRef.current = p
     if (!hasInk) setHasInk(true)
+    // UX-9 #13: tracking pra anti-fraude
+    pointsCountRef.current += 1
+    if (!bboxRef.current) bboxRef.current = { minX: p.x, minY: p.y, maxX: p.x, maxY: p.y }
+    else {
+      const b = bboxRef.current
+      if (p.x < b.minX) b.minX = p.x
+      if (p.y < b.minY) b.minY = p.y
+      if (p.x > b.maxX) b.maxX = p.x
+      if (p.y > b.maxY) b.maxY = p.y
+    }
+  }
+
+  function isSignatureValid(): boolean {
+    const points = pointsCountRef.current
+    const elapsed = startTimeRef.current ? Date.now() - startTimeRef.current : 0
+    const bbox = bboxRef.current
+    const bboxW = bbox ? bbox.maxX - bbox.minX : 0
+    const bboxH = bbox ? bbox.maxY - bbox.minY : 0
+    // Aceita se pelo menos 1 dos 3 critérios bate (motorista rápido OK, mas
+    // rabisco trivial 1-ponto fica fora):
+    return points >= 30 || elapsed >= 800 || (bboxW >= 40 && bboxH >= 20)
   }
 
   function handlePointerUp(e: React.PointerEvent<HTMLCanvasElement>) {
     if (!drawingRef.current) return
     drawingRef.current = false
     canvasRef.current!.releasePointerCapture(e.pointerId)
-    // Emit the current PNG on every stroke-end so parent always has fresh data.
-    onChange(canvasRef.current!.toDataURL('image/png'))
+    const validNow = isSignatureValid()
+    setValid(validNow)
+    // Só emite PNG válida — anti-fraude impede rabisco trivial passar
+    onChange(validNow ? canvasRef.current!.toDataURL('image/png') : null)
   }
 
   function clear() {
@@ -86,6 +117,10 @@ export default function SignatureCanvas({
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(0, 0, canvas.width, canvas.height)
     setHasInk(false)
+    setValid(false)
+    pointsCountRef.current = 0
+    startTimeRef.current = null
+    bboxRef.current = null
     onChange(null)
   }
 
@@ -101,8 +136,10 @@ export default function SignatureCanvas({
         className="border border-gray-300 rounded-lg bg-white"
         aria-label="Área de assinatura"
       />
-      <div className="flex items-center justify-between text-xs text-gray-500">
-        <span>{hasInk ? 'Assinado' : 'Assine no quadro acima'}</span>
+      <div className="flex items-center justify-between text-xs">
+        <span className={hasInk ? (valid ? 'text-emerald-600 font-semibold' : 'text-amber-600') : 'text-gray-500'}>
+          {!hasInk ? 'Assine no quadro acima' : valid ? '✓ Assinatura válida' : '⚠ Continue assinando…'}
+        </span>
         <button type="button" onClick={clear} disabled={!hasInk || disabled}
           className="text-red-600 disabled:text-gray-300 font-medium">
           Limpar

@@ -153,12 +153,15 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       return error(`Não é possível excluir: ${existing.name} tem ${osCount} OS atribuída(s). Inative o usuário em vez de excluir.`, 422)
     }
 
-    // Delete profile from database
-    await prisma.userProfile.delete({
+    // UX-9 #6: soft-delete via is_active=false em vez de hard-delete
+    // preserva evidência forense (quem operou OS antes). Listagens já
+    // filtram is_active=true por padrão.
+    await prisma.userProfile.update({
       where: { id_company_id: { id: params.id, company_id: admin.companyId } },
+      data: { is_active: false },
     })
 
-    // Delete from Supabase Auth
+    // Delete from Supabase Auth (revoga acesso login imediato)
     try {
       const supabaseAdmin = createAdminClient()
       await supabaseAdmin.auth.admin.deleteUser(params.id)

@@ -8,6 +8,56 @@ export function normalizeDocument(doc: string): string {
 }
 
 /**
+ * UX-9 #3: validação dígito verificador CPF (11 dígitos)
+ * Rejeita sequências triviais (00000000000, 11111111111, etc.)
+ */
+export function isValidCPF(d: string): boolean {
+  if (!/^\d{11}$/.test(d)) return false
+  if (/^(\d)\1+$/.test(d)) return false  // sequência repetida
+  let s = 0
+  for (let i = 0; i < 9; i++) s += +d[i] * (10 - i)
+  let r = (s * 10) % 11
+  if (r === 10) r = 0
+  if (r !== +d[9]) return false
+  s = 0
+  for (let i = 0; i < 10; i++) s += +d[i] * (11 - i)
+  r = (s * 10) % 11
+  if (r === 10) r = 0
+  return r === +d[10]
+}
+
+/**
+ * UX-9 #3: validação dígito verificador CNPJ (14 dígitos)
+ */
+export function isValidCNPJ(d: string): boolean {
+  if (!/^\d{14}$/.test(d)) return false
+  if (/^(\d)\1+$/.test(d)) return false
+  const calc = (slice: string, weights: number[]) => {
+    const sum = slice.split('').reduce((s, c, i) => s + +c * weights[i], 0)
+    const r = sum % 11
+    return r < 2 ? 0 : 11 - r
+  }
+  const w1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+  const w2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+  const dv1 = calc(d.slice(0, 12), w1)
+  if (dv1 !== +d[12]) return false
+  const dv2 = calc(d.slice(0, 13), w2)
+  return dv2 === +d[13]
+}
+
+/**
+ * UX-9 #3: validação combinada — aceita CPF (11d) ou CNPJ (14d).
+ * Permite vazio (campo opcional).
+ */
+export function isValidDocument(raw?: string | null): boolean {
+  if (!raw) return true  // opcional
+  const d = normalizeDocument(raw)
+  if (d.length === 11) return isValidCPF(d)
+  if (d.length === 14) return isValidCNPJ(d)
+  return false
+}
+
+/**
  * Schema para criação de cliente
  */
 export const createCustomerSchema = z.object({
@@ -15,7 +65,9 @@ export const createCustomerSchema = z.object({
   trade_name: z.string().max(255).optional(),
   person_type: z.enum(['FISICA', 'JURIDICA']).default('FISICA'),
   customer_type: z.enum(['CLIENTE', 'FORNECEDOR', 'AMBOS']).default('CLIENTE'),
-  document_number: z.string().max(20).optional().transform(v => v ? normalizeDocument(v) : v),
+  document_number: z.string().max(20).optional()
+    .transform(v => v ? normalizeDocument(v) : v)
+    .refine(v => !v || isValidDocument(v), { message: 'CPF/CNPJ inválido' }),
   email: z.string().email().max(255).optional().nullable(),
   phone: z.string().max(20).optional().nullable(),
   mobile: z.string().max(20).optional().nullable(),

@@ -343,43 +343,50 @@ export default function DREPage() {
             </select>
           </div>
           <div className="flex items-center gap-2">
-            <div className="flex items-center rounded-md border bg-gray-50 p-0.5">
-              <button
-                type="button"
-                onClick={() => setEngine('live')}
-                title="Recalcula AR/AP em tempo real (legacy)"
-                className={cn(
-                  'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded transition-colors',
-                  engine === 'live' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+            {/* UX-9 #9: toggle Live/MV escondido por padrão — jargão técnico
+                que confunde Karlão (Audit 2 + Audit 5 reportaram). Aparece
+                só com flag debug (?dre_engine=debug ou env). */}
+            {(process.env.NEXT_PUBLIC_DRE_ENGINE_DEBUG === '1' || (typeof window !== 'undefined' && window.location.search.includes('dre_engine=debug'))) && (
+              <>
+                <div className="flex items-center rounded-md border bg-gray-50 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setEngine('live')}
+                    title="Recalcula AR/AP em tempo real (legacy)"
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded transition-colors',
+                      engine === 'live' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                    )}
+                  >
+                    <Layers className="h-3.5 w-3.5" />
+                    Live
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEngine('mv')}
+                    title="Lê materialized view dre_monthly (rápida, eventualmente consistente)"
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded transition-colors',
+                      engine === 'mv' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                    )}
+                  >
+                    <Database className="h-3.5 w-3.5" />
+                    MV
+                  </button>
+                </div>
+                {engine === 'mv' && (
+                  <button
+                    type="button"
+                    onClick={refreshMv}
+                    disabled={refreshing}
+                    title="Forçar REFRESH MATERIALIZED VIEW dre_monthly"
+                    className="flex items-center gap-2 rounded-md border bg-white py-2 px-3 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
+                    Atualizar
+                  </button>
                 )}
-              >
-                <Layers className="h-3.5 w-3.5" />
-                Live
-              </button>
-              <button
-                type="button"
-                onClick={() => setEngine('mv')}
-                title="Lê materialized view dre_monthly (rápida, eventualmente consistente)"
-                className={cn(
-                  'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded transition-colors',
-                  engine === 'mv' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
-                )}
-              >
-                <Database className="h-3.5 w-3.5" />
-                MV
-              </button>
-            </div>
-            {engine === 'mv' && (
-              <button
-                type="button"
-                onClick={refreshMv}
-                disabled={refreshing}
-                title="Forçar REFRESH MATERIALIZED VIEW dre_monthly"
-                className="flex items-center gap-2 rounded-md border bg-white py-2 px-3 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
-                Atualizar
-              </button>
+              </>
             )}
             <button
               type="button"

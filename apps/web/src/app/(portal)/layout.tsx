@@ -30,7 +30,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
+  // UX-9 #10: maximumScale removido — bloquear zoom é anti-a11y (idosos, baixa
+  // visão). Lightbox de fotos tem touch-action:pinch-zoom próprio.
   themeColor: '#1e40af',
 }
 
