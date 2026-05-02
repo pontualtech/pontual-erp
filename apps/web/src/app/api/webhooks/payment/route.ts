@@ -125,12 +125,41 @@ export async function POST(req: NextRequest) {
   })
 
   // Fallback: try externalReference (idempotency key)
+  // N8 fix (audit pos-fix): idempotency_key tem UNIQUE GLOBAL com pattern
+  // previsível (`charge_<receivable_id>`). Se atacante envia webhook spoofado
+  // com externalReference de outro tenant + signature válida (API key vazada),
+  // resolveria payment cross-tenant. Mitigação: depois do match, valida que
+  // payment.external_id == externalId atual OU está vazio (recém-criado).
+  // Mismatch = log warning + reject (NÃO processar).
   if (!payment) {
     const extRef = asaasPayment.externalReference as string | undefined
     if (extRef) {
-      payment = await prisma.payment.findFirst({
+      const candidate = await prisma.payment.findFirst({
         where: { idempotency_key: extRef },
       })
+      if (candidate) {
+        // Valida que external_id é nulo (payment ainda não vinculado ao Asaas)
+        // OU bate com o externalId atual. Senão é tentativa de cross-tenant
+        // poisoning via reference colidente.
+        if (!candidate.external_id || candidate.external_id === externalId) {
+          payment = candidate
+        } else {
+          console.warn(`[Webhook payment] FALLBACK MISMATCH: extRef=${extRef} resolveu candidate.external_id=${candidate.external_id} mas webhook trouxe externalId=${externalId}. Rejeitando — possível cross-tenant poisoning attempt.`)
+          try {
+            await prisma.webhookLog.create({
+              data: {
+                company_id: candidate.company_id,
+                event: event!,
+                asaas_event_id: asaasEventId,
+                payload: parsedBody,
+                status: 'IGNORED',
+                error: `Fallback mismatch: external_id ${candidate.external_id} != ${externalId}`,
+              },
+            })
+          } catch {}
+          return NextResponse.json({ ok: true, ignored: 'fallback_mismatch' })
+        }
+      }
     }
   }
 

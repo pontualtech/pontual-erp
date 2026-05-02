@@ -123,8 +123,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: 'Nenhum campo valido pra atualizar' }, { status: 400 })
   }
 
+  // N7 fix (audit pos-fix): defesa em depth contra IDOR no driver-app PWA.
+  // Stop já foi resolvido por findFirst com company_id (L86), mas where do
+  // update sem company_id permite IDOR caso o findFirst seja refatorado ou
+  // bypassado. Driver-app expõe endpoint à internet — paranoia justificada.
   const updated = await prisma.logisticsStop.update({
-    where: { id: params.id },
+    where: { id: params.id, company_id: auth.companyId },
     data,
   })
 

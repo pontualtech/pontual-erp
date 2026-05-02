@@ -218,11 +218,13 @@ export async function POST(req: NextRequest) {
         const existingId = existingVhsys.get(String(vos.id_ordem))
 
         if (existingId) {
-          // Update existing OS
-          await prisma.serviceOrder.update({ where: { id: existingId }, data: osData })
+          // N6 fix (audit pos-fix): defesa em depth — where inclui company_id
+          // (existingId já foi achado dentro de findMany scoped, mas filtro
+          // adicional protege contra futura colisão de vhsys_id cross-tenant)
+          await prisma.serviceOrder.update({ where: { id: existingId, company_id: companyId }, data: osData })
 
           // Add items if missing
-          const itemCount = await prisma.serviceOrderItem.count({ where: { service_order_id: existingId } })
+          const itemCount = await prisma.serviceOrderItem.count({ where: { service_order_id: existingId, company_id: companyId } })
           if (itemCount === 0 && allItems[String(vos.id_ordem)]) {
             const vItems = allItems[String(vos.id_ordem)]
             for (const s of (vItems.servicos || [])) {
