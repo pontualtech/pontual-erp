@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 
+// UX-3 followup: força dinâmico — Next 14 estava cacheando /api/health
+// como rota estática (X-Nextjs-Cache: HIT), mascarando incidentes em
+// tempo real. Coolify healthcheck precisa de leitura fresh sempre.
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 /**
  * N3 fix (audit pos-fix): healthcheck completo pra observabilidade real.
  * Antes Coolify só checava porta 3000 — crash silencioso de trigger,
