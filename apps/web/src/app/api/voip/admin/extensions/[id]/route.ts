@@ -14,9 +14,12 @@ import { z } from 'zod'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-function isAdmin(roleId: string | null | undefined): boolean {
-  if (!roleId) return false
-  return /admin/i.test(roleId)
+// N30 fix (audit pos-fix): testava roleId que é UUID — sempre false.
+// Resultado: ninguém exceto super_admin conseguia editar/deletar ramal.
+// Agora usa roleName (já lowercased em auth.ts).
+function isAdmin(roleName: string | null | undefined): boolean {
+  if (!roleName) return false
+  return roleName === 'admin' || roleName === 'administrador'
 }
 
 const UpdateBody = z.object({
@@ -42,7 +45,7 @@ export async function PUT(
 ) {
   try {
     const user = await requireAuth()
-    if (!user.isSuperAdmin && !isAdmin(user.roleId)) return error('Permissao admin requerida', 403)
+    if (!user.isSuperAdmin && !isAdmin(user.roleName)) return error('Permissao admin requerida', 403)
 
     if (!(await ownsExtension(params.id, user.companyId))) {
       return error('Ramal nao encontrado', 404)
@@ -91,7 +94,7 @@ export async function DELETE(
 ) {
   try {
     const user = await requireAuth()
-    if (!user.isSuperAdmin && !isAdmin(user.roleId)) return error('Permissao admin requerida', 403)
+    if (!user.isSuperAdmin && !isAdmin(user.roleName)) return error('Permissao admin requerida', 403)
 
     if (!(await ownsExtension(params.id, user.companyId))) {
       return error('Ramal nao encontrado', 404)

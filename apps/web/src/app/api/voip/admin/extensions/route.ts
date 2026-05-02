@@ -19,9 +19,10 @@ function genSecret(): string {
   return crypto.randomBytes(18).toString('base64').replace(/[+/=]/g, '').slice(0, 24)
 }
 
-function isAdmin(roleId: string | null | undefined): boolean {
-  if (!roleId) return false
-  return /admin/i.test(roleId)
+// N30 fix (audit pos-fix): testava roleId UUID — sempre false. Usa roleName.
+function isAdmin(roleName: string | null | undefined): boolean {
+  if (!roleName) return false
+  return roleName === 'admin' || roleName === 'administrador'
 }
 
 const CreateBody = z.object({
@@ -37,7 +38,7 @@ const CreateBody = z.object({
 export async function GET(_req: NextRequest) {
   try {
     const user = await requireAuth()
-    if (!user.isSuperAdmin && !isAdmin(user.roleId)) return error('Permissao admin requerida', 403)
+    if (!user.isSuperAdmin && !isAdmin(user.roleName)) return error('Permissao admin requerida', 403)
 
     const items = await prisma.$queryRawUnsafe<Array<any>>(
       `SELECT e.id, e.number, e.description, e.caller_id_internal, e.webrtc, e.max_contacts,
@@ -59,7 +60,7 @@ export async function GET(_req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const user = await requireAuth()
-    if (!user.isSuperAdmin && !isAdmin(user.roleId)) return error('Permissao admin requerida', 403)
+    if (!user.isSuperAdmin && !isAdmin(user.roleName)) return error('Permissao admin requerida', 403)
 
     const json = await req.json().catch(() => null)
     if (!json) return error('Body invalido', 400)
