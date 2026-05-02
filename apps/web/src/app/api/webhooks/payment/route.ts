@@ -195,62 +195,52 @@ export async function POST(req: NextRequest) {
     webhookLogId = log.id
   } catch { /* non-critical */ }
 
-  // 4b. C6: INSERT/UPDATE em WebhookEventLog antes do processamento. UNIQUE
-  // (provider, event_id) protege contra race se 2 webhooks chegarem
-  // simultaneamente — o segundo bate P2002 e cai pra return dedup race.
-  // Se existingEventLogId (FAILED/RECEIVED retry), faz UPDATE incrementando
-  // attempts em vez de INSERT.
+  // 4b. N9+N14 fix (audit pos-fix): WebhookEventLog INSERT/UPDATE agora
+  // DENTRO da $transaction principal. Antes 2 webhooks idênticos podiam
+  // ambos passar findUnique (não-existe), ambos chegavam no create — UM
+  // disparava P2002 (200 dedup) MAS o OUTRO já tinha aberto sua transaction
+  // e processado payment 2x. Agora P2002 aborta a tx inteira via ROLLBACK
+  // — nada processa duplicado.
   let eventLogId: string | null = existingEventLogId
-  if (asaasEventId) {
-    if (existingEventLogId) {
-      // Retry após FAILED/RECEIVED — atualiza pra reprocessamento
-      try {
-        await prisma.webhookEventLog.update({
-          where: { id: existingEventLogId },
-          data: {
-            status: 'RECEIVED',
-            processing_started_at: new Date(),
-            attempts: { increment: 1 },
-            last_error: null,
-          },
-        })
-      } catch (e: any) {
-        console.warn('[Webhook] WebhookEventLog retry update failed:', e?.message)
-      }
-    } else {
-      try {
-        const eventLog = await prisma.webhookEventLog.create({
-          data: {
-            company_id: payment.company_id,
-            provider: 'ASAAS',
-            event_id: asaasEventId,
-            event_type: event!,
-            status: 'RECEIVED',
-            raw_payload: parsedBody,
-            related_payment_id: payment.id,
-            processing_started_at: new Date(),
-            ip_address: req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null,
-          },
-        })
-        eventLogId = eventLog.id
-      } catch (e: any) {
-        // P2002 = race won por outro request — dedup
-        if (e?.code === 'P2002') {
-          return NextResponse.json({ ok: true, dedup: true, race: true })
-        }
-        // Outro erro: loga e segue (não bloqueia o webhook)
-        console.warn('[Webhook] WebhookEventLog insert failed:', e?.message)
-      }
-    }
-  }
 
   // 5-7. Process INSIDE transaction for atomicity + idempotency
   try {
     const result = await prisma.$transaction(async (tx) => {
-      // Re-read payment inside transaction for atomicity (prevents double-processing).
-      // A11 fix (audit): defense-in-depth com company_id (payment já foi resolvido
-      // antes via external_id, mas filtro adicional protege contra futuro código
-      // que retire o lookup externo).
+      // 5a. Dedup INSERT/UPDATE primeiro DENTRO da tx
+      if (asaasEventId) {
+        if (existingEventLogId) {
+          // Retry após FAILED/RECEIVED — atualiza pra reprocessamento
+          await tx.webhookEventLog.update({
+            where: { id: existingEventLogId },
+            data: {
+              status: 'RECEIVED',
+              processing_started_at: new Date(),
+              attempts: { increment: 1 },
+              last_error: null,
+            },
+          })
+        } else {
+          // Tenta INSERT — UNIQUE(provider, event_id) garante atomicidade.
+          // P2002 = outro request ganhou a race — ROLLBACK aborta tudo.
+          const eventLog = await tx.webhookEventLog.create({
+            data: {
+              company_id: payment!.company_id,
+              provider: 'ASAAS',
+              event_id: asaasEventId,
+              event_type: event!,
+              status: 'RECEIVED',
+              raw_payload: parsedBody,
+              related_payment_id: payment!.id,
+              processing_started_at: new Date(),
+              ip_address: req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null,
+            },
+          })
+          eventLogId = eventLog.id
+        }
+      }
+
+      // 5b. Re-read payment inside transaction for atomicity (prevents double-processing).
+      // A11 fix: defense-in-depth com company_id.
       const fresh = await tx.payment.findFirst({
         where: { id: payment!.id, company_id: payment!.company_id },
       })
@@ -557,7 +547,13 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ ok: true })
-  } catch (err) {
+  } catch (err: any) {
+    // N9+N14: P2002 dentro da $transaction = race won by another request.
+    // Tx aborta via ROLLBACK (nada processado), retorna 200 dedup.
+    if (err?.code === 'P2002') {
+      console.log('[Webhook] Race detected, aborted via ROLLBACK — dedup OK')
+      return NextResponse.json({ ok: true, dedup: true, race: true })
+    }
     console.error('[Webhook] Transaction error:', err)
 
     if (webhookLogId) {
