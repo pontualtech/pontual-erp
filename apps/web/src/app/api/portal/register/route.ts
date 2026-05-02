@@ -120,7 +120,7 @@ export async function POST(req: NextRequest) {
       <div style="background:#eff6ff;border:2px solid #2563eb;border-radius:12px;padding:16px;margin:16px 0;text-align:center;">
         <p style="color:#6b7280;font-size:12px;margin:0 0 4px;">Sua senha inicial:</p>
         <p style="font-size:28px;font-weight:700;color:#1e40af;margin:0;letter-spacing:4px;font-family:monospace;">${defaultPassword}</p>
-        <p style="color:#9ca3af;font-size:11px;margin:4px 0 0;">(5 primeiros digitos do seu CPF/CNPJ)</p>
+        <p style="color:#9ca3af;font-size:11px;margin:4px 0 0;">(senha gerada automaticamente — guarde com seguranca)</p>
       </div>
       <div style="text-align:center;margin:20px 0;">
         <a href="${loginUrl}" style="display:inline-block;padding:12px 32px;background:#2563eb;color:white;text-decoration:none;border-radius:8px;font-size:14px;font-weight:600;">Acessar Portal</a>
@@ -141,7 +141,7 @@ export async function POST(req: NextRequest) {
         success: true,
         customer_name: maskName(customer.legal_name),
         email_hint: customer.email ? maskEmail(customer.email) : null,
-        message: 'Acesso criado com sucesso! Sua senha sao os 5 primeiros digitos do seu CPF/CNPJ.',
+        message: 'Acesso criado com sucesso! Verifique seu e-mail para a senha inicial.',
       },
     })
   } catch (err) {
