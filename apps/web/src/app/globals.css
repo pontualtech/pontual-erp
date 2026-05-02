@@ -51,4 +51,29 @@
 @layer base {
   * { @apply border-border; }
   body { @apply bg-background text-foreground; }
+
+  /* UX-4 #1: respeita prefers-reduced-motion (WCAG 2.1 SC 2.3.3) */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  /* UX-4 #2: focus-visible consistente para a11y de teclado */
+  *:focus-visible {
+    outline: 2px solid hsl(217 91% 60%);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  /* Anula em campos que ja gerenciam ring proprio (input/select/textarea) */
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: none;
+  }
 }

@@ -6,6 +6,7 @@ import { ThemeProvider } from './components/theme-provider'
 import { AnnouncementModal } from './components/announcement-modal'
 import { RouteGuard } from './components/route-guard'
 import { KeyboardShortcuts } from './components/keyboard-shortcuts'
+import { WebVitalsReporter } from '../web-vitals'
 import { CallToast } from '@/components/voip/CallToast'
 import { SonaxWebphone } from '@/components/voip/SonaxWebphone'
 import { SonaxCallControls } from '@/components/voip/SonaxCallControls'
@@ -36,6 +37,7 @@ export default async function DashboardLayout({
         </div>
         <AnnouncementModal />
         <KeyboardShortcuts />
+        <WebVitalsReporter />
         <CallToast />
         {/* SonaxWebphone — FEATURE FLAG.
             Default true (compat retroativo). Setar NEXT_PUBLIC_SONAX_WEBPHONE_ENABLED=false

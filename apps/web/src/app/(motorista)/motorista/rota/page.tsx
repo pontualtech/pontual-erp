@@ -9,6 +9,7 @@ import { Package, Truck, MapPin, Phone, CheckCircle2, AlertTriangle, RefreshCw, 
 import SyncBadge from '../../components/sync-badge'
 import InstallPrompt from '../../components/install-prompt'
 import PushPermission from '../../components/push-permission'
+import { NavigateButton } from '../../components/navigate-button'
 import StopChat from '../_components/StopChat'
 import { getCompanyTheme, type CompanyTheme } from '../_components/company-theme'
 
@@ -690,15 +691,9 @@ function StopCard({ stop, myLocation, onNotifyCustomer, onMove, onAskPostpone, o
                 <Phone className="w-3.5 h-3.5" /> Ligar
               </a>
             )}
-            {/* Navegar: abre Google Maps (universal — mobile escolhe app). */}
+            {/* UX-4 #6: navegar com escolha Waze/Google/Apple Maps */}
             {stop.lat != null && stop.lng != null && (
-              <a
-                href={`https://www.google.com/maps/dir/?api=1&destination=${stop.lat},${stop.lng}&travelmode=driving`}
-                target="_blank" rel="noopener noreferrer"
-                onClick={e => e.stopPropagation()}
-                className="inline-flex items-center gap-1.5 text-sm bg-green-50 text-green-700 px-3 py-1.5 rounded-full font-medium active:scale-95">
-                <Navigation className="w-3.5 h-3.5" /> Navegar
-              </a>
+              <NavigateButton lat={stop.lat} lng={stop.lng} />
             )}
             {/* Chat disponivel apos motorista avisar que esta a caminho (notified)
                 ou quando stop ja esta ativo (EN_ROUTE/ARRIVED). Evita botao
@@ -792,24 +787,24 @@ function StopCard({ stop, myLocation, onNotifyCustomer, onMove, onAskPostpone, o
         </div>
       </Link>
 
-      {/* Controles inline — nao passam pelo Link pra evitar navegacao */}
+      {/* Controles inline — UX-4 #8: 44px min tap target (Apple HIG) */}
       <div className="flex items-center border-t border-gray-100 bg-gray-50">
         <button type="button" onClick={() => onMove(stop.id, 'up')}
-          className="flex-1 flex items-center justify-center gap-1 py-2 text-[11px] text-gray-600 hover:bg-gray-100 active:scale-95"
-          aria-label="Subir">
-          <ArrowUp className="w-3 h-3" /> Subir
+          className="flex-1 flex items-center justify-center gap-1.5 min-h-[44px] py-2.5 text-xs text-gray-700 hover:bg-gray-100 active:scale-95 font-medium"
+          aria-label="Subir parada">
+          <ArrowUp className="w-4 h-4" /> Subir
         </button>
-        <div className="w-px bg-gray-200 h-4" />
+        <div className="w-px bg-gray-200 h-6" />
         <button type="button" onClick={() => onMove(stop.id, 'down')}
-          className="flex-1 flex items-center justify-center gap-1 py-2 text-[11px] text-gray-600 hover:bg-gray-100 active:scale-95"
-          aria-label="Descer">
-          <ArrowDown className="w-3 h-3" /> Descer
+          className="flex-1 flex items-center justify-center gap-1.5 min-h-[44px] py-2.5 text-xs text-gray-700 hover:bg-gray-100 active:scale-95 font-medium"
+          aria-label="Descer parada">
+          <ArrowDown className="w-4 h-4" /> Descer
         </button>
-        <div className="w-px bg-gray-200 h-4" />
+        <div className="w-px bg-gray-200 h-6" />
         <button type="button" onClick={() => onAskPostpone(stop)}
-          className="flex-1 flex items-center justify-center gap-1 py-2 text-[11px] font-semibold text-amber-700 hover:bg-amber-50 active:scale-95"
-          aria-label="Adiar">
-          <CalendarClock className="w-3 h-3" /> Adiar
+          className="flex-1 flex items-center justify-center gap-1.5 min-h-[44px] py-2.5 text-xs font-semibold text-amber-700 hover:bg-amber-50 active:scale-95"
+          aria-label="Adiar parada">
+          <CalendarClock className="w-4 h-4" /> Adiar
         </button>
       </div>
     </div>
@@ -871,11 +866,7 @@ function AvulsaCard({ stop, myLocation, onAvulsaAction, featured }: {
         ) : null}
         {stop.lat != null && stop.lng != null && (
           <div className="mt-3">
-            <a href={`https://www.google.com/maps/dir/?api=1&destination=${stop.lat},${stop.lng}&travelmode=driving`}
-              target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-sm bg-green-50 text-green-700 px-3 py-1.5 rounded-full font-medium active:scale-95">
-              <Navigation className="w-3.5 h-3.5" /> Navegar
-            </a>
+            <NavigateButton lat={stop.lat} lng={stop.lng} />
           </div>
         )}
       </div>

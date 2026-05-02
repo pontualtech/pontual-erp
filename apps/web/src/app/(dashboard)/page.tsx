@@ -585,51 +585,77 @@ export default function DashboardPage() {
       </div>
 
       {/* ===== Metrics Row ===== */}
-      {isWidgetVisible('metrics') && <div className={cn('grid grid-cols-1 gap-4', canViewFinanceiro ? 'sm:grid-cols-3' : 'sm:grid-cols-2')}>
-        <div className="rounded-xl border bg-white p-5 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-purple-50 p-2.5">
-              <Clock className="h-5 w-5 text-purple-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Tempo Medio de Reparo</p>
-              <p className="mt-0.5 text-xl font-bold text-gray-900">
-                {loading ? '...' : stats?.metrics.avgRepairDays != null ? `${stats.metrics.avgRepairDays} dias` : '—'}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-xl border bg-white p-5 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-teal-50 p-2.5">
-              <Target className="h-5 w-5 text-teal-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Taxa de Aprovacao</p>
-              <p className="mt-0.5 text-xl font-bold text-gray-900">
-                {loading ? '...' : stats?.metrics.approvalRate != null ? `${stats.metrics.approvalRate}%` : '—'}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {canViewFinanceiro && (
-          <div className="rounded-xl border bg-white p-5 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-green-50 p-2.5">
-                <TrendingUp className="h-5 w-5 text-green-600" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">Ticket Medio</p>
-                <p className="mt-0.5 text-xl font-bold text-gray-900">
-                  {loading ? '...' : stats?.metrics.avgTicketCents != null ? formatCurrency(stats.metrics.avgTicketCents) : '—'}
-                </p>
+      {/* UX-4 #11: KPI semáforo — borda colorida + dot indicando saúde */}
+      {isWidgetVisible('metrics') && (() => {
+        const repairDays = stats?.metrics.avgRepairDays
+        const approvalRate = stats?.metrics.approvalRate
+        // Thresholds (ajustáveis no futuro via tabela `kpi_thresholds`)
+        const repairSeverity = repairDays == null ? 'neutral' : repairDays <= 3 ? 'good' : repairDays <= 5 ? 'warn' : 'bad'
+        const approvalSeverity = approvalRate == null ? 'neutral' : approvalRate >= 80 ? 'good' : approvalRate >= 60 ? 'warn' : 'bad'
+        const sevClass = (s: string) =>
+          s === 'good' ? 'border-l-4 border-l-emerald-500' :
+          s === 'warn' ? 'border-l-4 border-l-amber-500' :
+          s === 'bad' ? 'border-l-4 border-l-red-500' :
+          'border-l-4 border-l-gray-200'
+        const sevDot = (s: string) =>
+          s === 'good' ? 'bg-emerald-500' :
+          s === 'warn' ? 'bg-amber-500' :
+          s === 'bad' ? 'bg-red-500' :
+          'bg-gray-300'
+        return (
+          <div className={cn('grid grid-cols-1 gap-4', canViewFinanceiro ? 'sm:grid-cols-3' : 'sm:grid-cols-2')}>
+            <div className={cn('rounded-xl border bg-white p-5 shadow-sm', sevClass(repairSeverity))}>
+              <div className="flex items-center gap-3">
+                <div className="rounded-xl bg-purple-50 p-2.5">
+                  <Clock className="h-5 w-5 text-purple-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm text-gray-500">Tempo Medio de Reparo</p>
+                    <span className={cn('w-2 h-2 rounded-full', sevDot(repairSeverity))} aria-label={`Status: ${repairSeverity}`} />
+                  </div>
+                  <p className="mt-0.5 text-xl font-bold text-gray-900">
+                    {loading ? '...' : repairDays != null ? `${repairDays} dias` : '—'}
+                  </p>
+                </div>
               </div>
             </div>
+
+            <div className={cn('rounded-xl border bg-white p-5 shadow-sm', sevClass(approvalSeverity))}>
+              <div className="flex items-center gap-3">
+                <div className="rounded-xl bg-teal-50 p-2.5">
+                  <Target className="h-5 w-5 text-teal-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm text-gray-500">Taxa de Aprovacao</p>
+                    <span className={cn('w-2 h-2 rounded-full', sevDot(approvalSeverity))} aria-label={`Status: ${approvalSeverity}`} />
+                  </div>
+                  <p className="mt-0.5 text-xl font-bold text-gray-900">
+                    {loading ? '...' : approvalRate != null ? `${approvalRate}%` : '—'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {canViewFinanceiro && (
+              <div className="rounded-xl border bg-white p-5 shadow-sm border-l-4 border-l-gray-200">
+                <div className="flex items-center gap-3">
+                  <div className="rounded-xl bg-green-50 p-2.5">
+                    <TrendingUp className="h-5 w-5 text-green-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-gray-500">Ticket Medio</p>
+                    <p className="mt-0.5 text-xl font-bold text-gray-900">
+                      {loading ? '...' : stats?.metrics.avgTicketCents != null ? formatCurrency(stats.metrics.avgTicketCents) : '—'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-        )}
-      </div>}
+        )
+      })()}
 
       {/* ===== Recent Activity ===== */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

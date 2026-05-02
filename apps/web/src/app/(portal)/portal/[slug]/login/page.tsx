@@ -11,8 +11,9 @@ export default function PortalLoginPage() {
   const searchParams = useSearchParams()
   const slug = params.slug as string
 
-  // Pre-fill document from URL param (from email links)
+  // Pre-fill document/phone from URL param (UX-4 #5: magic link com ?phone=)
   const docFromUrl = searchParams.get('doc') || ''
+  const phoneFromUrl = searchParams.get('phone') || ''
   const redirectAfterLogin = searchParams.get('redirect') || ''
   const loginError = searchParams.get('error') || ''
   const LOGIN_ERROR_MESSAGES: Record<string, string> = {
@@ -174,6 +175,19 @@ export default function PortalLoginPage() {
       setDocument(formatDocument(docFromUrl))
     }
   }, [docFromUrl]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // UX-4 #5: pre-fill phone from magic link (?phone=11987654321)
+  // + auto-switch tab para WhatsApp (mais provável fluxo)
+  useEffect(() => {
+    if (phoneFromUrl) {
+      const digits = phoneFromUrl.replace(/\D/g, '').slice(0, 11)
+      const masked = digits
+        .replace(/(\d{2})(\d)/, '($1) $2')
+        .replace(/(\d{5})(\d)/, '$1-$2')
+      setPhone(masked)
+      setOtpChannel('whatsapp')
+    }
+  }, [phoneFromUrl]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function formatDocument(value: string) {
     const digits = value.replace(/\D/g, '')

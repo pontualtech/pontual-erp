@@ -272,8 +272,9 @@ export default function PortalOSDetailPage() {
     os?.status.name.toLowerCase().includes('entregue')
 
   const isEntregue = os?.status.name.toLowerCase().includes('entregue')
-  // NPS OCULTO TEMPORARIAMENTE — para reativar, remover o `false &&` dos 3 blocos abaixo e setar showNps = true
-  const showNps = false
+  // UX-4 #3: NPS reativado (estava hardcoded false). Pesquisa pos-entrega
+  // gera signal valioso de qualidade e abre janela pra CTA "review Google".
+  const showNps = true
   const showNpsSurvey = showNps && isEntregue && !npsExisting && !npsSubmitted
 
   if (loading) {

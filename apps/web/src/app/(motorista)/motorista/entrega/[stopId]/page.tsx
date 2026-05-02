@@ -58,6 +58,9 @@ export default function EntregaPage() {
   // UX-2 #4: countdown undo após confirmar entrega — 5s pra desfazer
   const [pendingPayload, setPendingPayload] = useState<Record<string, unknown> | null>(null)
   const [undoCountdown, setUndoCountdown] = useState<number>(0)
+  // UX-4 #9: foto "delivered to" obrigatória (Amazon Flex pattern — disputa)
+  const [deliveredPhoto, setDeliveredPhoto] = useState<string | null>(null)
+  const [deliveredPhotoCameraOpen, setDeliveredPhotoCameraOpen] = useState(false)
 
   useEffect(() => {
     fetch('/api/driver/rota/hoje', { cache: 'no-store' })
@@ -94,6 +97,8 @@ export default function EntregaPage() {
     if (outcome === 'entregue_aprovado') {
       if (!paymentMethod) return toast.error('Selecione a forma de pagamento')
       if (needsReceipt && !receiptPhoto) return toast.error('Tire foto do comprovante')
+      // UX-4 #9: foto da entrega física obrigatória (proteção em disputas)
+      if (!deliveredPhoto) return toast.error('Tire foto do equipamento entregue (porta, recepção, etc)')
     }
     if (!signaturePng) return toast.error('Cliente precisa assinar')
     if (!signerName.trim()) return toast.error('Informe quem assinou')
@@ -118,6 +123,8 @@ export default function EntregaPage() {
           receipt_photo_base64: receiptPhoto,
           notes: paymentNotes.trim() || null,
         }
+        // UX-4 #9: foto da entrega física no payload
+        payload.delivered_photo_base64 = deliveredPhoto
       }
       // UX-2 #4: agenda undo countdown 5s antes de enfileirar de fato
       setPendingPayload(payload)
@@ -168,6 +175,10 @@ export default function EntregaPage() {
     hint="Foto do comprovante (PIX, maquininha, etc)"
     onCapture={b => { setReceiptPhoto(b); setCameraOpen(false) }}
     onCancel={() => setCameraOpen(false)} />
+  if (deliveredPhotoCameraOpen) return <CameraCapture
+    hint="Foto do equipamento na recepção/porta (proteção em disputas)"
+    onCapture={b => { setDeliveredPhoto(b); setDeliveredPhotoCameraOpen(false) }}
+    onCancel={() => setDeliveredPhotoCameraOpen(false)} />
 
   // UX-2 #4: tela de countdown de 5s pra desfazer
   if (pendingPayload && undoCountdown > 0) {
@@ -375,6 +386,29 @@ export default function EntregaPage() {
                 )}
               </section>
             )}
+
+            {/* UX-4 #9: foto delivered-to (Amazon Flex pattern) — protege em disputas */}
+            <section>
+              <h2 className="font-semibold text-gray-900 mb-1">Foto da entrega <span className="text-xs font-normal text-red-600">obrigatória</span></h2>
+              <p className="text-xs text-gray-500 mb-2">Equipamento na porta, recepção, ou nas mãos de quem recebeu.</p>
+              {deliveredPhoto ? (
+                <div className="space-y-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={`data:image/jpeg;base64,${deliveredPhoto}`} alt="Foto da entrega"
+                    className="w-full max-h-72 object-contain rounded-lg border" />
+                  <button type="button" onClick={() => setDeliveredPhotoCameraOpen(true)}
+                    className="w-full py-2 border border-gray-300 rounded-lg text-gray-600 min-h-[44px]">
+                    Refazer foto
+                  </button>
+                </div>
+              ) : (
+                <button type="button" onClick={() => setDeliveredPhotoCameraOpen(true)}
+                  className="w-full py-6 border-2 border-dashed border-blue-500 rounded-xl flex flex-col items-center gap-2 active:bg-blue-50 min-h-[44px]">
+                  <Camera className="w-8 h-8 text-blue-600" />
+                  <span className="font-medium text-blue-700">Tirar foto do equipamento entregue</span>
+                </button>
+              )}
+            </section>
 
             <section>
               <h2 className="font-semibold text-gray-900 mb-2">Observação do pagamento <span className="text-xs font-normal text-gray-500">(opcional)</span></h2>
