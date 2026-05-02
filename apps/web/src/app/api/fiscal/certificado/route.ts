@@ -82,11 +82,17 @@ export async function POST(req: NextRequest) {
       certificate_size_bytes: buffer.byteLength,
     }
 
+    // N1 fix (audit pos-fix): senha do certificado A1 NF-e gravada
+    // ENCRIPTADA com AES-256-GCM (lib/encryption). Antes plaintext no DB —
+    // compromise = certificados + senhas → emissão NF-e fraudulenta no
+    // CNPJ do cliente. Endpoints de leitura já fazem decrypt() condicional.
+    const { encrypt } = await import('@/lib/encryption')
+    const encryptedPassword = encrypt(password)
     if (config) {
       await prisma.fiscalConfig.update({
         where: { company_id: user.companyId },
         data: {
-          certificate_password: password,
+          certificate_password: encryptedPassword,
           settings: newSettings as any,
           updated_at: new Date(),
         },
@@ -95,7 +101,7 @@ export async function POST(req: NextRequest) {
       await prisma.fiscalConfig.create({
         data: {
           company_id: user.companyId,
-          certificate_password: password,
+          certificate_password: encryptedPassword,
           settings: newSettings as any,
         },
       })
