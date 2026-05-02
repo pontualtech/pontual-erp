@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
+import { requireInternalKey } from '@/lib/internal-auth'
 
 /**
  * Configura webhook do Meta WhatsApp Cloud API programaticamente
@@ -17,11 +18,7 @@ import { prisma } from '@pontual/db'
  * Auth: x-internal-key = CRON_SECRET ou CHATWOOT_WEBHOOK_SECRET
  */
 export async function POST(req: NextRequest) {
-  const key = req.headers.get('x-internal-key')
-  const valid = [process.env.CRON_SECRET, process.env.CHATWOOT_WEBHOOK_SECRET].filter(Boolean)
-  if (!key || !valid.includes(key)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const guard = requireInternalKey(req); if (guard) return guard
 
   const body = await req.json().catch(() => ({}))
   const { company_id } = body

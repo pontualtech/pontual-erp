@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
+import { requireInternalKey } from '@/lib/internal-auth'
 
 /**
  * POST /api/internal/whatsapp/test-otp-send
@@ -7,11 +8,7 @@ import { prisma } from '@pontual/db'
  * Body: { company_id, phone, test_code? }
  */
 export async function POST(req: NextRequest) {
-  const internalKey = req.headers.get('x-internal-key')
-  const valid = [process.env.CRON_SECRET, process.env.CHATWOOT_WEBHOOK_SECRET].filter(Boolean)
-  if (!internalKey || !valid.includes(internalKey)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const guard = requireInternalKey(req); if (guard) return guard
 
   const { company_id, phone, test_code = '123456' } = await req.json().catch(() => ({}))
   if (!company_id || !phone) {

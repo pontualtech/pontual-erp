@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
+import { requireInternalKey } from '@/lib/internal-auth'
 
 /**
  * POST /api/internal/whatsapp/create-rota-iniciada-template
@@ -15,16 +16,7 @@ import { prisma } from '@pontual/db'
  * Em caso de duvida, responda esta mensagem.
  */
 export async function POST(req: NextRequest) {
-  const internalKey = req.headers.get('x-internal-key')
-  const validKeys = [
-    process.env.INTERNAL_API_KEY,
-    process.env.BOT_WEBHOOK_SECRET,
-    process.env.CRON_SECRET,
-    process.env.CHATWOOT_WEBHOOK_SECRET,
-  ].filter(Boolean)
-  if (!internalKey || !validKeys.includes(internalKey)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const guard = requireInternalKey(req); if (guard) return guard
 
   const body = await req.json().catch(() => ({}))
   const { company_id, waba_id: wabaIdFromBody } = body

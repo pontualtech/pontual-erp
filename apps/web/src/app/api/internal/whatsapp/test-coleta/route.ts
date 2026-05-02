@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
+import { requireInternalKey } from '@/lib/internal-auth'
 
 /**
  * POST /api/internal/whatsapp/test-coleta
  * Sends a known-working template (pt_coleta_v2) to test delivery path.
  */
 export async function POST(req: NextRequest) {
-  const key = req.headers.get('x-internal-key')
-  const valid = [process.env.CRON_SECRET, process.env.CHATWOOT_WEBHOOK_SECRET].filter(Boolean)
-  if (!key || !valid.includes(key)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const guard = requireInternalKey(req); if (guard) return guard
 
   const { company_id, phone } = await req.json().catch(() => ({}))
   if (!company_id || !phone) return NextResponse.json({ error: 'need company_id and phone' }, { status: 400 })

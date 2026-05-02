@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { createAccessToken } from '@/lib/portal-auth'
 import { sendWhatsAppTemplate } from '@/lib/whatsapp/cloud-api'
+import { requireInternalKey } from '@/lib/internal-auth'
 
 /**
  * POST /api/internal/whatsapp/test-status-v2
@@ -9,9 +10,7 @@ import { sendWhatsAppTemplate } from '@/lib/whatsapp/cloud-api'
  * Body: { company_id, phone, os_number?, equipment? }
  */
 export async function POST(req: NextRequest) {
-  const key = req.headers.get('x-internal-key')
-  const valid = [process.env.CRON_SECRET, process.env.CHATWOOT_WEBHOOK_SECRET].filter(Boolean)
-  if (!key || !valid.includes(key)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const guard = requireInternalKey(req); if (guard) return guard
 
   const { company_id, phone, os_number = '6030', equipment = 'Impressora Teste', status = 'Pronto para retirada' } = await req.json().catch(() => ({}))
   if (!company_id || !phone) return NextResponse.json({ error: 'company_id and phone required' }, { status: 400 })
