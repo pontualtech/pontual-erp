@@ -667,9 +667,23 @@ export default function PortalOSDetailPage() {
                             </span>
                           )}
                           {isActive && historyDate && (
-                            <span className="text-xs text-gray-400 dark:text-gray-500 block">
-                              Desde {new Date(historyDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                            </span>
+                            <>
+                              <span className="text-xs text-gray-400 dark:text-gray-500 block">
+                                Desde {new Date(historyDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                              {/* UX-6 #3: tempo decorrido visual (tipo iFood "saiu pra entrega há 12min") */}
+                              {(() => {
+                                const ms = Date.now() - new Date(historyDate).getTime()
+                                const min = Math.floor(ms / 60000)
+                                if (min < 1) return <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">agora mesmo ⚡</span>
+                                if (min < 60) return <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">há {min} min</span>
+                                const h = Math.floor(min / 60)
+                                if (h < 24) return <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">há {h}h{min % 60 > 0 ? ` ${min % 60}min` : ''}</span>
+                                const d = Math.floor(h / 24)
+                                if (d < 7) return <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">há {d} dia{d > 1 ? 's' : ''}</span>
+                                return <span className="text-xs text-red-600 dark:text-red-400 font-semibold">há {d} dias 🕐</span>
+                              })()}
+                            </>
                           )}
                         </div>
                       </div>

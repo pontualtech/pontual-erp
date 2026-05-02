@@ -19,6 +19,7 @@ export async function GET(req: NextRequest) {
     const module = searchParams.get('module') || undefined
     const action = searchParams.get('action') || undefined
     const userId = searchParams.get('user_id') || undefined
+    const entityId = searchParams.get('entity_id') || undefined  // UX-6 #5: filtro direto por entidade
     const search = searchParams.get('search') || undefined
     const dateFrom = searchParams.get('from') || undefined
     const dateTo = searchParams.get('to') || undefined
@@ -27,6 +28,7 @@ export async function GET(req: NextRequest) {
     if (module) where.module = module
     if (action) where.action = { contains: action, mode: 'insensitive' }
     if (userId) where.user_id = userId
+    if (entityId) where.entity_id = entityId
     if (dateFrom || dateTo) {
       where.created_at = {}
       if (dateFrom) where.created_at.gte = new Date(dateFrom)

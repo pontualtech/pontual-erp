@@ -34,6 +34,17 @@ export default function FinanceiroPage() {
   const [data, setData] = useState<FinanceData | null>(null)
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'all' | 'unpaid' | 'paid'>('all')
+  // UX-6 #4: seleção múltipla pra bulk pay
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+
+  function toggleSelected(osId: string) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(osId)) next.delete(osId)
+      else next.add(osId)
+      return next
+    })
+  }
 
   useEffect(() => {
     fetch('/api/portal/financeiro')
@@ -118,9 +129,20 @@ export default function FinanceiroPage() {
             <div className="space-y-3">
               {filtered.map(item => {
                 const badge = statusBadge(item.payment_status)
+                const isUnpaid = item.payment_status !== 'paid' && item.is_final
+                const isSelected = selected.has(item.os_id)
                 return (
-                  <div key={item.os_id} className="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-700 p-5">
+                  <div key={item.os_id} className={`bg-white dark:bg-zinc-900 rounded-xl border p-5 transition-all ${isSelected ? 'border-emerald-400 dark:border-emerald-700 ring-2 ring-emerald-200 dark:ring-emerald-900' : 'border-gray-200 dark:border-zinc-700'}`}>
                     <div className="flex items-start justify-between gap-4">
+                      {isUnpaid && (
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelected(item.os_id)}
+                          aria-label={`Selecionar OS #${item.os_number} pra pagar em lote`}
+                          className="mt-1 w-5 h-5 rounded border-gray-300 dark:border-zinc-600 text-emerald-600 focus:ring-emerald-500 cursor-pointer flex-shrink-0"
+                        />
+                      )}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <span className="font-bold text-gray-900 dark:text-gray-100">OS #{item.os_number}</span>
@@ -170,6 +192,44 @@ export default function FinanceiroPage() {
           </div>
         )}
       </main>
+
+      {/* UX-6 #4: barra fixa quando há OS selecionadas pra pagar em lote */}
+      {selected.size > 0 && data && (() => {
+        const selectedItems = data.items.filter(i => selected.has(i.os_id))
+        const totalCents = selectedItems.reduce((sum, i) => sum + i.total_cost, 0)
+        const formatted = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalCents / 100)
+        const firstId = selectedItems[0]?.os_id
+        return (
+          <div className="fixed bottom-0 left-0 right-0 z-30 bg-white dark:bg-zinc-900 border-t-2 border-emerald-500 shadow-2xl pb-[env(safe-area-inset-bottom)]">
+            <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-gray-900 dark:text-gray-100">
+                  {selected.size} OS selecionada{selected.size > 1 ? 's' : ''}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Total: <span className="font-semibold text-emerald-600">{formatted}</span></p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelected(new Set())}
+                className="text-xs text-gray-500 hover:text-red-600 underline"
+              >
+                limpar
+              </button>
+              <Link
+                href={`/portal/${slug}/os/${firstId}#pagar`}
+                onClick={() => {
+                  if (selected.size > 1) {
+                    toast.info(`Pagando 1 de ${selected.size}. Volte aqui pra pagar as próximas.`, { duration: 4000 })
+                  }
+                }}
+                className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl min-h-[44px]"
+              >
+                Pagar agora →
+              </Link>
+            </div>
+          </div>
+        )
+      })()}
 
       <footer className="border-t border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 mt-12">
         <div className="max-w-4xl mx-auto px-4 py-4 text-center text-xs text-gray-400 dark:text-gray-500">Powered by PontualERP</div>

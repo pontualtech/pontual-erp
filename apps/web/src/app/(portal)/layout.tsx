@@ -4,17 +4,26 @@ import '../globals.css'
 import { Toaster } from 'sonner'
 import { ThemeProvider } from 'next-themes'
 import { PortalFooter } from './components/portal-footer'
+import PortalSwRegister from './components/sw-register'
 
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
   title: 'Portal do Cliente',
-  description: 'Acompanhe suas ordens de servico',
+  description: 'Acompanhe suas ordens de servico, pagamentos e fotos',
+  manifest: '/portal/manifest.webmanifest',
   icons: {
     icon: '/favicon.svg',
+    apple: [{ url: '/motorista/icon-192.png', sizes: '192x192', type: 'image/png' }],
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Portal',
   },
   other: {
     'mobile-web-app-capable': 'yes',
+    'apple-mobile-web-app-capable': 'yes',
   },
 }
 
@@ -54,6 +63,7 @@ export default function PortalRootLayout({
             {children}
           </div>
           <PortalFooter />
+          <PortalSwRegister />
           <Toaster position="top-right" richColors />
         </ThemeProvider>
       </body>
