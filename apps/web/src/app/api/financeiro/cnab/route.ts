@@ -226,13 +226,20 @@ export async function POST(req: NextRequest) {
     const unmatchedDetails: Array<{ seuNumero: string; nossoNumero: string; valorPago: number; dataCredito: string | null; status: string; ocorrencia: string | null }> = []
 
     for (const ret of retornos) {
-      // Buscar conta a receber pelo seuNumero (ID parcial) ou nossoNumero
+      // N16 fix (audit pos-fix): match strict por id exato OU por
+      // nossoNumero exato em pix_code (JSON contém nossoNumero exato).
+      // Antes `id: { startsWith }` permitia 2 ARs com mesmo prefixo UUID
+      // colidirem, marcando AR errada como RECEBIDA. seuNumero do retorno
+      // CNAB é truncado a 10 chars (vide L75 do gerador) — esperar match
+      // exato do prefixo seria frágil; preferimos contains do nossoNumero.
       const receivable = await prisma.accountReceivable.findFirst({
         where: {
           company_id: user.companyId,
           OR: [
-            { id: { startsWith: ret.seuNumero } },
-            { pix_code: { contains: ret.nossoNumero } },
+            // Equality first: ideal quando seuNumero não foi truncado
+            { id: ret.seuNumero },
+            // Fallback por nossoNumero exato no pix_code JSON
+            { pix_code: { contains: `"nossoNumero":"${ret.nossoNumero}"` } },
           ],
         },
       })
