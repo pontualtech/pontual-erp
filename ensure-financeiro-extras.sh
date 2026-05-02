@@ -294,6 +294,94 @@ const p = new PrismaClient();
       `);
     }
 
+    // N25 fix (audit pos-fix): FKs sem @@index no schema.prisma — DELETE
+    // cascade vira O(n) em volume. Adicionar via raw SQL é mais barato que
+    // schema.prisma rebuild + db push. IF NOT EXISTS torna idempotente.
+    try {
+      const fkIndexes: Array<[string, string, string]> = [
+        // [table, index_name, columns]
+        ['quotes', 'idx_quotes_service_order', '(service_order_id)'],
+        ['service_order_items', 'idx_soi_product', '(product_id)'],
+        ['stock_movements', 'idx_sm_product', '(product_id)'],
+        ['stock_alerts', 'idx_sa_product', '(product_id)'],
+        ['purchase_entries', 'idx_pe_supplier', '(supplier_id)'],
+        ['purchase_entry_items', 'idx_pei_product', '(product_id)'],
+        ['purchase_entry_items', 'idx_pei_purchase', '(purchase_entry_id)'],
+        ['accounts_payable', 'idx_ap_supplier', '(supplier_id)'],
+        ['accounts_payable', 'idx_ap_category', '(category_id)'],
+        ['accounts_receivable', 'idx_ar_service_order', '(service_order_id)'],
+        ['accounts_receivable', 'idx_ar_category', '(category_id)'],
+        ['installments', 'idx_inst_parent', '(parent_id, parent_type)'],
+        ['invoice_items', 'idx_ii_invoice', '(invoice_id)'],
+        ['invoice_items', 'idx_ii_product', '(product_id)'],
+        ['fiscal_logs', 'idx_fl_invoice', '(invoice_id)'],
+        ['tickets', 'idx_t_customer', '(customer_id)'],
+        ['tickets', 'idx_t_service_order', '(service_order_id)'],
+        ['payments', 'idx_pay_parent', '(parent_payment_id)'],
+        ['webhook_logs', 'idx_wl_payment', '(payment_id)'],
+      ];
+      for (const [tbl, idx, cols] of fkIndexes) {
+        const tblExists = await p.$queryRawUnsafe(
+          `SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=$1`,
+          tbl
+        ) as any[];
+        if (!tblExists || tblExists.length === 0) continue;
+        await p.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS ${idx} ON ${tbl} ${cols}`);
+      }
+    } catch (e: any) {
+      console.warn('[ensure-financeiro] N25 FK indexes:', e?.message);
+    }
+
+    // N34 fix (audit pos-fix): vhsys_id partial UNIQUE em 6 tabelas.
+    // Schema só tem em Customer; reexec do migrate-vhsys-full.js cria
+    // duplicatas em ServiceOrder/Product/PurchaseEntry/AccountPayable/
+    // AccountReceivable/Invoice. Partial pra ignorar nulls.
+    try {
+      const vhsysTables = ['service_orders', 'products', 'purchase_entries',
+                           'accounts_payable', 'accounts_receivable', 'invoices'];
+      for (const tbl of vhsysTables) {
+        const tblExists = await p.$queryRawUnsafe(
+          `SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=$1`,
+          tbl
+        ) as any[];
+        if (!tblExists || tblExists.length === 0) continue;
+        // Verifica se a coluna vhsys_id existe (alguns models antigos podem não ter)
+        const colExists = await p.$queryRawUnsafe(
+          `SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 AND column_name='vhsys_id'`,
+          tbl
+        ) as any[];
+        if (!colExists || colExists.length === 0) continue;
+        await p.$executeRawUnsafe(`
+          CREATE UNIQUE INDEX IF NOT EXISTS uniq_${tbl}_company_vhsys
+            ON ${tbl} (company_id, vhsys_id)
+            WHERE vhsys_id IS NOT NULL
+        `);
+      }
+    } catch (e: any) {
+      console.warn('[ensure-financeiro] N34 vhsys unique:', e?.message);
+    }
+
+    // N13 fix (audit pos-fix): UNIQUE composite em payment_reminders.
+    // Sem isso, scheduler `createMany skipDuplicates: true` é no-op real
+    // (Postgres só pula em conflict de UNIQUE/PK, não detecta duplicates
+    // semânticos). 2 cron concorrentes = duplicate reminders = cliente
+    // recebe 2x WhatsApp/email quando real_dispatch ligar.
+    // Partial UNIQUE pra ignorar legacy rows com rule_step_id=null.
+    try {
+      const prExists = await p.$queryRawUnsafe(
+        `SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='payment_reminders'`
+      ) as any[];
+      if (prExists && prExists.length > 0) {
+        await p.$executeRawUnsafe(`
+          CREATE UNIQUE INDEX IF NOT EXISTS uniq_payment_reminders_step
+            ON payment_reminders (company_id, payment_id, rule_step_id)
+            WHERE rule_step_id IS NOT NULL
+        `);
+      }
+    } catch (e: any) {
+      console.warn('[ensure-financeiro] N13 unique payment_reminders:', e?.message);
+    }
+
     // 5. CHECK constraints adicionais (idempotente via DO blocks)
     const checkConstraints = [
       { table: 'payment_history', name: 'chk_payment_history_event_type',
@@ -907,7 +995,27 @@ const p = new PrismaClient();
       // CTE em vez de duas (SELECT + WHERE). Função é STABLE — planner não
       // dedupe automaticamente. Em backfill com 1000 rows = 2000 chamadas
       // antes; agora 1000.
-      const arBackfill = await p.$executeRawUnsafe(`
+      //
+      // N17 fix (audit pos-fix): batch limit 500 rows + skip rápido se já
+      // backfilled. Prod com 6000+ ARs migradas tinha lock prolongado de
+      // fiscal_entries no boot (cada redeploy roda novamente). LIMIT força
+      // chunks; loop até count==0 ou max iterations protege contra runaway.
+      // Skip rápido: se >50% já backfilled, vira no-op pra acelerar boot.
+      const arUnbackfilled = await p.$queryRawUnsafe<Array<{ count: bigint }>>(`
+        SELECT COUNT(*)::bigint AS count FROM accounts_receivable ar
+         WHERE ar.status IN ('RECEBIDO', 'PAGO')
+           AND ar.deleted_at IS NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM fiscal_entries fe
+              WHERE fe.metadata->>'origin_type' = 'ACCOUNT_RECEIVABLE'
+                AND fe.metadata->>'origin_id' = ar.id
+           )
+      `);
+      const arRemaining = Number(arUnbackfilled[0]?.count ?? 0);
+      if (arRemaining === 0) {
+        console.log('[ensure-financeiro] N17: AR backfill já completo, skip');
+      }
+      const arBackfill = arRemaining === 0 ? 0 : await p.$executeRawUnsafe(`
         WITH resolved AS (
           SELECT ar.*,
                  cat.module AS cat_module, cat.name AS cat_name,
@@ -939,8 +1047,24 @@ const p = new PrismaClient();
                 AND fe.metadata->>'origin_type' = 'ACCOUNT_RECEIVABLE'
                 AND fe.metadata->>'origin_id' = r.id
            )
+         LIMIT 500
       `);
-      const apBackfill = await p.$executeRawUnsafe(`
+      // Análogo pra AP: skip rápido se completo
+      const apUnbackfilled = await p.$queryRawUnsafe<Array<{ count: bigint }>>(`
+        SELECT COUNT(*)::bigint AS count FROM accounts_payable ap
+         WHERE ap.status = 'PAGO'
+           AND ap.deleted_at IS NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM fiscal_entries fe
+              WHERE fe.metadata->>'origin_type' = 'ACCOUNT_PAYABLE'
+                AND fe.metadata->>'origin_id' = ap.id
+           )
+      `);
+      const apRemaining = Number(apUnbackfilled[0]?.count ?? 0);
+      if (apRemaining === 0) {
+        console.log('[ensure-financeiro] N17: AP backfill já completo, skip');
+      }
+      const apBackfill = apRemaining === 0 ? 0 : await p.$executeRawUnsafe(`
         WITH resolved AS (
           SELECT ap.*,
                  cat.module AS cat_module, cat.name AS cat_name,
@@ -972,8 +1096,15 @@ const p = new PrismaClient();
                 AND fe.metadata->>'origin_type' = 'ACCOUNT_PAYABLE'
                 AND fe.metadata->>'origin_id' = r.id
            )
+         LIMIT 500
       `);
       backfillCount = (Number(arBackfill) || 0) + (Number(apBackfill) || 0);
+      // N17: log se ainda há rows pendentes — informa que próximo boot vai
+      // continuar (chunks de 500). Não roda em loop aqui pra não estourar
+      // boot timeout; sucessivos restarts completam progressivamente.
+      if (arRemaining > 500 || apRemaining > 500) {
+        console.log(`[ensure-financeiro] N17: backfill em chunks — restam AR=${Math.max(0, arRemaining - 500)} AP=${Math.max(0, apRemaining - 500)} pra próximo boot`);
+      }
 
       // 11.5 REFRESH MV (CONCURRENTLY se houver dados; senão refresh normal)
       try {
