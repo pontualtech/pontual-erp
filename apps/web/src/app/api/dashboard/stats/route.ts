@@ -1,9 +1,9 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { getServerUser, hasPermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const user = await getServerUser()
     if (!user) return error('Nao autenticado', 401)
@@ -43,7 +43,14 @@ export async function GET() {
     const todayStart = new Date(Date.UTC(spNow.getFullYear(), spNow.getMonth(), spNow.getDate()))
     const todayEnd = new Date(todayStart.getTime() + 86400000)
     const yesterdayStart = new Date(todayStart.getTime() - 86400000)
-    const monthStart = new Date(Date.UTC(spNow.getFullYear(), spNow.getMonth(), 1))
+    const monthCorrente = new Date(Date.UTC(spNow.getFullYear(), spNow.getMonth(), 1))
+    // UX-8 #2: date range param (7d/30d/90d/mtd default)
+    const range = (req.nextUrl?.searchParams?.get('range') as '7d' | '30d' | '90d' | 'mtd' | null) || 'mtd'
+    const monthStart = (() => {
+      const days = range === '7d' ? 7 : range === '30d' ? 30 : range === '90d' ? 90 : null
+      if (days != null) return new Date(todayEnd.getTime() - days * 86400000)
+      return monthCorrente
+    })()
     // UX-7 #1: comparativo MoM — mês anterior pro mesmo dia
     const prevMonthStart = new Date(Date.UTC(spNow.getFullYear(), spNow.getMonth() - 1, 1))
     const prevMonthSameDay = new Date(Date.UTC(spNow.getFullYear(), spNow.getMonth() - 1, spNow.getDate()))

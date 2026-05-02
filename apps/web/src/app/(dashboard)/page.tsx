@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/use-auth'
 import {
@@ -125,9 +126,12 @@ const priorityLabel: Record<string, string> = {
 /* ---------- Component ---------- */
 
 export default function DashboardPage() {
+  const router = useRouter()
   const { user, isAdmin, hasPermission } = useAuth()
   const canViewDashboard = isAdmin || hasPermission('dashboard', 'view')
   const canViewFinanceiro = hasPermission('financeiro', 'view')
+  // UX-8 #2: range filter (7d/30d/90d/mes-corrente). Default: mes corrente.
+  const [dateRange, setDateRange] = useState<'7d' | '30d' | '90d' | 'mtd'>('mtd')
 
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [avisos, setAvisos] = useState<Aviso[]>([])
@@ -202,14 +206,16 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!canViewDashboard) return
+    setLoading(true)
     Promise.all([
-      fetch('/api/dashboard/stats').then(r => r.json()).then(d => setStats(d.data)).catch(() => toast.error('Erro ao carregar dashboard')),
+      // UX-8 #2: passa range param pro endpoint stats
+      fetch(`/api/dashboard/stats?range=${dateRange}`).then(r => r.json()).then(d => setStats(d.data)).catch(() => toast.error('Erro ao carregar dashboard')),
       fetch('/api/dashboard/preferences').then(r => r.json()).then(d => {
         if (d.data?.widgets?.length) setWidgetPrefs(d.data.widgets)
       }).catch(() => {}),
     ]).finally(() => setLoading(false))
     loadAvisos()
-  }, [canViewDashboard])
+  }, [canViewDashboard, dateRange])
 
   useEffect(() => {
     function handleEsc(e: KeyboardEvent) { if (e.key === 'Escape') setShowAvisoModal(false) }
@@ -262,16 +268,43 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <button
-          type="button"
-          onClick={() => setShowCustomize(true)}
-          className="flex items-center gap-2 rounded-lg border bg-white px-3 py-1.5 text-sm text-gray-600 shadow-sm hover:bg-gray-50 transition-colors"
-        >
-          <Settings className="h-4 w-4" />
-          Personalizar
-        </button>
+        <div className="flex items-center gap-2">
+          {/* UX-8 #2: range toggle */}
+          <div className="inline-flex rounded-lg border bg-white shadow-sm overflow-hidden" role="tablist" aria-label="Período do dashboard">
+            {([
+              { k: 'mtd', l: 'Mês' },
+              { k: '7d', l: '7d' },
+              { k: '30d', l: '30d' },
+              { k: '90d', l: '90d' },
+            ] as const).map(({ k, l }) => (
+              <button
+                key={k}
+                type="button"
+                role="tab"
+                aria-selected={dateRange === k ? 'true' : 'false'}
+                onClick={() => setDateRange(k)}
+                className={cn(
+                  'px-3 py-1.5 text-xs font-semibold transition-colors min-h-[36px]',
+                  dateRange === k
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-600 hover:bg-gray-50'
+                )}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowCustomize(true)}
+            className="flex items-center gap-2 rounded-lg border bg-white px-3 py-1.5 text-sm text-gray-600 shadow-sm hover:bg-gray-50 transition-colors"
+          >
+            <Settings className="h-4 w-4" />
+            Personalizar
+          </button>
+        </div>
       </div>
 
       {/* ===== Customization Modal ===== */}
@@ -552,14 +585,30 @@ export default function DashboardPage() {
             <p className="flex h-52 items-center justify-center text-sm text-gray-400">Sem dados</p>
           ) : (
             <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={stats!.osPerWeek} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+              <BarChart
+                data={stats!.osPerWeek}
+                margin={{ top: 5, right: 10, left: -10, bottom: 0 }}
+                onClick={(e: any) => {
+                  // UX-8 #1: drill-down — clicar em barra leva pra lista filtrada
+                  if (!e?.activeLabel) return
+                  // Formato dia/mes "DD/MM" — converter pra ?from=YYYY-MM-DD
+                  const [d, m] = String(e.activeLabel).split('/')
+                  if (!d || !m) return
+                  const yr = new Date().getFullYear()
+                  const from = `${yr}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`
+                  // Adiciona 6 dias pro range (semana)
+                  const fromDate = new Date(from)
+                  const to = new Date(fromDate.getTime() + 6 * 86400000).toISOString().slice(0,10)
+                  router.push(`/os?from=${from}&to=${to}`)
+                }}
+              >
                 <XAxis dataKey="week" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
                 <YAxis allowDecimals={false} tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
                 <Tooltip
                   contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '13px' }}
                   labelFormatter={(v) => `Semana ${v}`}
                 />
-                <Bar dataKey="count" name="OS" fill="#3b82f6" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="count" name="OS" fill="#3b82f6" radius={[6, 6, 0, 0]} cursor="pointer" />
               </BarChart>
             </ResponsiveContainer>
           )}
@@ -587,6 +636,13 @@ export default function DashboardPage() {
                   outerRadius={75}
                   paddingAngle={2}
                   label={false}
+                  cursor="pointer"
+                  onClick={(e: any) => {
+                    // UX-8 #1: drill-down — clicar em fatia leva pra OS desse status
+                    const name = e?.name
+                    if (!name) return
+                    router.push(`/os?status=${encodeURIComponent(name)}`)
+                  }}
                 >
                   {stats!.pipeline.filter(p => p.count > 0).map((entry, index) => (
                     <Cell key={index} fill={entry.color} />

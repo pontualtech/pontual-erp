@@ -544,6 +544,37 @@ export default function PortalOSDetailPage() {
                 <Mail className="w-4 h-4" />
                 <span className="hidden sm:inline">Email</span>
               </button>
+              {/* UX-8 #3: Web Share API — cliente compartilha OS por WhatsApp/SMS nativo */}
+              <button
+                type="button"
+                title="Compartilhar"
+                onClick={async () => {
+                  if (!os) return
+                  const url = typeof window !== 'undefined' ? window.location.href : ''
+                  const shareData = {
+                    title: `OS #${os.os_number} — ${company?.name || 'Portal'}`,
+                    text: `Acompanhe minha OS #${os.os_number} (${os.equipment_type}): ${os.status.name}`,
+                    url,
+                  }
+                  try {
+                    if (typeof navigator !== 'undefined' && (navigator as any).share) {
+                      await (navigator as any).share(shareData)
+                    } else if (typeof navigator !== 'undefined' && navigator.clipboard) {
+                      await navigator.clipboard.writeText(url)
+                      toast.success('Link copiado!')
+                    } else {
+                      toast.error('Compartilhamento não suportado neste navegador')
+                    }
+                  } catch (err: any) {
+                    // AbortError = usuário cancelou — silencioso
+                    if (err?.name !== 'AbortError') toast.error('Erro ao compartilhar')
+                  }
+                }}
+                className="print:hidden inline-flex items-center gap-1.5 px-3 py-2 border border-gray-300 dark:border-zinc-700 rounded-lg text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-zinc-800 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
+                <span className="hidden sm:inline">Compartilhar</span>
+              </button>
             </div>
           </div>
 
