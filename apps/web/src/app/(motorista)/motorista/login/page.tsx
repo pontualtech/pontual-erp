@@ -86,7 +86,7 @@ export default function MotoristaLoginPage() {
           </form>
 
           <p className="text-center text-blue-200 text-xs mt-6">
-            Precisa de acesso? Fale com o operador.
+            Precisa de acesso? Fale com o escritório.
           </p>
         </div>
       </div>

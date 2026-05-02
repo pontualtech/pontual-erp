@@ -47,9 +47,20 @@ export function PhotoGallery({ osId, customerId, initialPhotos = [] }: PhotoGall
         toast.error(`${file.name}: arquivo muito grande (max 10MB)`)
         continue
       }
-      if (!['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(file.type)) {
-        toast.error(`${file.name}: tipo nao permitido`)
+      // UX-3 #5: aceita HEIC/HEIF (iPhone padrão). Backend converte via sharp.
+      const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf', 'image/heic', 'image/heif']
+      const fname = (file.name || '').toLowerCase()
+      const isHeicByExt = fname.endsWith('.heic') || fname.endsWith('.heif')
+      const accepted = allowedMimes.includes(file.type) || isHeicByExt
+      if (!accepted) {
+        toast.error(
+          `${file.name}: tipo não suportado. Use JPG, PNG, WEBP ou PDF.`,
+          { duration: 5000 }
+        )
         continue
+      }
+      if ((file.type === 'image/heic' || file.type === 'image/heif' || isHeicByExt)) {
+        toast.info('Foto HEIC do iPhone — pode demorar mais para enviar', { duration: 3000 })
       }
 
       setUploading(true)
@@ -138,7 +149,7 @@ export function PhotoGallery({ osId, customerId, initialPhotos = [] }: PhotoGall
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/jpeg,image/png,image/webp,application/pdf"
+            accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif,application/pdf"
             multiple
             className="hidden"
             onChange={e => e.target.files && handleUpload(e.target.files)}
@@ -168,12 +179,9 @@ export function PhotoGallery({ osId, customerId, initialPhotos = [] }: PhotoGall
           {photos.map(photo => (
             <div key={photo.id} className="group relative aspect-square rounded-lg overflow-hidden bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700">
               {isImage(photo) ? (
-                <img
+                <PhotoThumb
                   src={getPhotoUrl(photo)}
-                  alt="Foto da OS"
-                  className="w-full h-full object-cover cursor-pointer transition-transform group-hover:scale-105"
                   onClick={() => setLightbox(getPhotoUrl(photo))}
-                  loading="lazy"
                 />
               ) : (
                 <div
@@ -215,6 +223,38 @@ export function PhotoGallery({ osId, customerId, initialPhotos = [] }: PhotoGall
       {/* Lightbox com zoom (UX-1 #4) */}
       {lightbox && <Lightbox src={lightbox} onClose={() => setLightbox(null)} />}
     </div>
+  )
+}
+
+/**
+ * Thumb com skeleton placeholder enquanto imagem carrega.
+ * UX-3 #4: 4G fraco demora 5-10s, sem skeleton parece "sem foto".
+ */
+function PhotoThumb({ src, onClick }: { src: string; onClick: () => void }) {
+  const [loaded, setLoaded] = useState(false)
+  const [errored, setErrored] = useState(false)
+  return (
+    <>
+      {!loaded && !errored && (
+        <div className="absolute inset-0 bg-gradient-to-br from-gray-200 via-gray-300 to-gray-200 dark:from-zinc-700 dark:via-zinc-600 dark:to-zinc-700 animate-pulse" aria-hidden="true" />
+      )}
+      {errored ? (
+        <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-400">
+          ⚠ falha ao carregar
+        </div>
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={src}
+          alt="Foto da OS"
+          className={`w-full h-full object-cover cursor-pointer transition-all duration-300 group-hover:scale-105 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+          onClick={onClick}
+          onLoad={() => setLoaded(true)}
+          onError={() => setErrored(true)}
+          loading="lazy"
+        />
+      )}
+    </>
   )
 }
 

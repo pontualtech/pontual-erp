@@ -1324,7 +1324,17 @@ export default function OSDetailPage() {
             <div className="flex items-baseline justify-between">
               <span className="text-xs text-gray-400 uppercase w-16 shrink-0">Tel</span>
               <div className="flex items-center gap-1.5">
-                <span className="text-sm text-gray-700 text-right">{os.customers?.mobile || os.customers?.phone || '--'}</span>
+                {(os.customers?.mobile || os.customers?.phone) ? (
+                  <a
+                    href={`tel:${(os.customers?.mobile || os.customers?.phone || '').replace(/\D/g, '')}`}
+                    title="Ligar (app de telefone)"
+                    className="text-sm text-gray-700 text-right hover:text-blue-600 hover:underline"
+                  >
+                    {os.customers?.mobile || os.customers?.phone}
+                  </a>
+                ) : (
+                  <span className="text-sm text-gray-700 text-right">--</span>
+                )}
                 {(os.customers?.mobile || os.customers?.phone) && (
                   <a href={`https://wa.me/${(() => { const d = (os.customers?.mobile || os.customers?.phone || '').replace(/\D/g, ''); return d.startsWith('55') ? d : '55' + d })()}`}
                     target="_blank" rel="noopener noreferrer" title="WhatsApp"

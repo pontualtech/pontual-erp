@@ -318,7 +318,7 @@ export default function RotaHojePage() {
           <AlertTriangle className="mx-auto w-12 h-12 text-amber-500 mb-2" />
           <p className="font-medium">Nenhuma rota atribuída para hoje.</p>
           <p className="text-sm text-gray-500 mt-1">
-            Fale com o operador do ERP se isso não estiver certo.
+            Avise o escritório se isso não estiver certo.
           </p>
         </div>
       )}
