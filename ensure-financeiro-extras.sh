@@ -240,6 +240,10 @@ const p = new PrismaClient();
             v_old_status := OLD.status;
           END IF;
 
+          -- N18 fix (audit pos-fix): sanitiza payload antes de gravar pra evitar
+          -- LGPD violation. Remove campos sensíveis (qr_code raw, pix_code,
+          -- bank_slip_url, idempotency_key, metadata interno). Mantém status,
+          -- valores e datas — suficiente pra trilha de auditoria contábil.
           BEGIN
             INSERT INTO payment_history(
               company_id, payment_id, event_type,
@@ -250,15 +254,31 @@ const p = new PrismaClient();
               COALESCE(NEW.id, OLD.id),
               v_event,
               v_old_status, v_new_status,
-              CASE WHEN TG_OP <> 'INSERT' THEN to_jsonb(OLD) ELSE NULL END,
-              CASE WHEN TG_OP <> 'DELETE' THEN to_jsonb(NEW) ELSE NULL END,
+              CASE WHEN TG_OP <> 'INSERT' THEN
+                to_jsonb(OLD)
+                  - 'qr_code' - 'qr_code_image' - 'pix_code'
+                  - 'bank_slip_url' - 'invoice_url' - 'pix_payload'
+                  - 'idempotency_key' - 'metadata' - 'custom_data'
+              ELSE NULL END,
+              CASE WHEN TG_OP <> 'DELETE' THEN
+                to_jsonb(NEW)
+                  - 'qr_code' - 'qr_code_image' - 'pix_code'
+                  - 'bank_slip_url' - 'invoice_url' - 'pix_payload'
+                  - 'idempotency_key' - 'metadata' - 'custom_data'
+              ELSE NULL END,
               v_amount_delta,
               COALESCE(NULLIF(current_setting('app.audit_source', true), ''), 'TRIGGER'),
               NULLIF(current_setting('app.user_id', true), '')
             );
           EXCEPTION
             WHEN OTHERS THEN
-              PERFORM fn_record_trigger_failure('payment_history_trigger', to_jsonb(NEW), SQLERRM, SQLSTATE);
+              -- _trigger_failures também não armazena raw NEW (sensível) —
+              -- só id e status pra rastrear o evento sem expor PII.
+              PERFORM fn_record_trigger_failure(
+                'payment_history_trigger',
+                jsonb_build_object('payment_id', COALESCE(NEW.id, OLD.id), 'op', TG_OP, 'status', v_new_status),
+                SQLERRM, SQLSTATE
+              );
               RAISE WARNING 'payment_history_trigger failed: % (%)', SQLERRM, SQLSTATE;
           END;
 
@@ -571,7 +591,12 @@ const p = new PrismaClient();
               WHERE id = NEW.id;
             END IF;
           EXCEPTION WHEN OTHERS THEN
-            PERFORM fn_record_trigger_failure('dual_write_ar_to_payments', to_jsonb(NEW), SQLERRM, SQLSTATE);
+            -- N18: payload mínimo (sem PII) — só id+status pra triagem
+            PERFORM fn_record_trigger_failure(
+              'dual_write_ar_to_payments',
+              jsonb_build_object('ar_id', NEW.id, 'status', NEW.status, 'op', TG_OP),
+              SQLERRM, SQLSTATE
+            );
             RAISE WARNING 'dual_write_ar_to_payments failed for AR=%: % (%)',
               NEW.id, SQLERRM, SQLSTATE;
           END;
@@ -629,7 +654,12 @@ const p = new PrismaClient();
               WHERE id = NEW.id;
             END IF;
           EXCEPTION WHEN OTHERS THEN
-            PERFORM fn_record_trigger_failure('dual_write_ap_to_payments', to_jsonb(NEW), SQLERRM, SQLSTATE);
+            -- N18: payload mínimo (sem PII)
+            PERFORM fn_record_trigger_failure(
+              'dual_write_ap_to_payments',
+              jsonb_build_object('ap_id', NEW.id, 'status', NEW.status, 'op', TG_OP),
+              SQLERRM, SQLSTATE
+            );
             RAISE WARNING 'dual_write_ap_to_payments failed for AP=%: % (%)',
               NEW.id, SQLERRM, SQLSTATE;
           END;
@@ -791,7 +821,12 @@ const p = new PrismaClient();
           EXCEPTION WHEN OTHERS THEN
             -- Falha não-fatal: AR não trava. Registra em _trigger_failures pra
             -- visibilidade (RAISE NOTICE não aparece em log default).
-            PERFORM fn_record_trigger_failure('fn_ar_to_fiscal_entry', to_jsonb(NEW), SQLERRM, SQLSTATE);
+            -- N18: payload mínimo (sem PII)
+            PERFORM fn_record_trigger_failure(
+              'fn_ar_to_fiscal_entry',
+              jsonb_build_object('ar_id', NEW.id, 'status', NEW.status, 'company_id', NEW.company_id),
+              SQLERRM, SQLSTATE
+            );
             RAISE NOTICE '[fn_ar_to_fiscal_entry] %', SQLERRM;
           END;
           RETURN NEW;
@@ -847,7 +882,12 @@ const p = new PrismaClient();
                  AND metadata->>'origin_id' = NEW.id
             );
           EXCEPTION WHEN OTHERS THEN
-            PERFORM fn_record_trigger_failure('fn_ap_to_fiscal_entry', to_jsonb(NEW), SQLERRM, SQLSTATE);
+            -- N18: payload mínimo (sem PII)
+            PERFORM fn_record_trigger_failure(
+              'fn_ap_to_fiscal_entry',
+              jsonb_build_object('ap_id', NEW.id, 'status', NEW.status, 'company_id', NEW.company_id),
+              SQLERRM, SQLSTATE
+            );
             RAISE NOTICE '[fn_ap_to_fiscal_entry] %', SQLERRM;
           END;
           RETURN NEW;
