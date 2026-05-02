@@ -12,14 +12,20 @@ export const dynamic = 'force-dynamic'
  * Não exige auth (telemetry pública por path). Anti-abuso: rate-limit no
  * proxy / Coolify se virar problema.
  */
+// UX-10 #8: body size cap — endpoint público sem cap permitia bot enviar
+// 200KB+/req e estourar memória/storage. Web Vitals legítimo é < 500 bytes.
+const MAX_BODY_BYTES = 4096
+
 export async function POST(req: NextRequest) {
   try {
-    // UX-9 #8: rate limit por IP — endpoint pode ser spammed (sem auth).
-    // 60 reqs/min/IP é generoso pra Web Vitals legítimo (LCP+CLS+FID+INP+TTFB
-    // = 5 metrics × N páginas), mas barra bot.
+    // UX-9 #8: rate limit por IP — endpoint pode ser spammed (sem auth)
     const ip = getClientIp(req)
     const { allowed } = rateLimit(`vitals:${ip}`, 60, 60_000)
     if (!allowed) return new NextResponse(null, { status: 429 })
+
+    // UX-10 #8: cap de body antes de parse JSON
+    const contentLength = parseInt(req.headers.get('content-length') || '0', 10)
+    if (contentLength > MAX_BODY_BYTES) return new NextResponse(null, { status: 413 })
 
     const data = await req.json().catch(() => null)
     if (data && typeof data === 'object') {

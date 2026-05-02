@@ -1,15 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { rateLimit, getClientIp } from '@/lib/rate-limit'
+
+const GENERIC_MESSAGE = 'Se o email estiver cadastrado, voce recebera um link para redefinir sua senha.'
 
 export async function POST(request: NextRequest) {
   try {
-    const { email } = await request.json()
+    // UX-10 #1: rate limit por IP+email — endpoint era spammable (60 reqs/min/200 OK)
+    // que abria vetor de enumeration timing + flood SMTP/WhatsApp.
+    const ip = getClientIp(request)
 
-    if (!email || typeof email !== 'string') {
-      // Still return 200 with generic message to not reveal if email exists
-      return NextResponse.json({
-        message: 'Se o email estiver cadastrado, voce recebera um link para redefinir sua senha.',
-      })
+    // Body parse seguro — não vaza 500 se body vazio (UX-10 #2)
+    let email: string | undefined
+    try {
+      const body = await request.json()
+      email = typeof body?.email === 'string' ? body.email.toLowerCase().trim() : undefined
+    } catch {
+      return NextResponse.json({ message: GENERIC_MESSAGE })
+    }
+
+    // Rate limit composto: IP global (anti-flood) + email-específico (anti-targeted)
+    const ipLimit = rateLimit(`forgot:ip:${ip}`, 5, 60_000)
+    if (!ipLimit.allowed) {
+      return NextResponse.json({ error: 'Muitas tentativas. Aguarde um momento.' }, { status: 429 })
+    }
+    if (email) {
+      const emailLimit = rateLimit(`forgot:email:${email}`, 3, 15 * 60_000)
+      if (!emailLimit.allowed) {
+        // Mantém mensagem genérica pra não revelar se email existe
+        return NextResponse.json({ message: GENERIC_MESSAGE })
+      }
+    }
+
+    if (!email) {
+      return NextResponse.json({ message: GENERIC_MESSAGE })
     }
 
     const supabase = createAdminClient()
@@ -17,15 +41,9 @@ export async function POST(request: NextRequest) {
       redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/reset-password`,
     })
 
-    // Always return success (don't reveal if email exists or not)
-    return NextResponse.json({
-      message: 'Se o email estiver cadastrado, voce recebera um link para redefinir sua senha.',
-    })
+    return NextResponse.json({ message: GENERIC_MESSAGE })
   } catch (err) {
     console.error('[forgot-password]', err)
-    // Still return 200 to not leak info
-    return NextResponse.json({
-      message: 'Se o email estiver cadastrado, voce recebera um link para redefinir sua senha.',
-    })
+    return NextResponse.json({ message: GENERIC_MESSAGE })
   }
 }

@@ -6,7 +6,12 @@ import { rateLimit } from '@/lib/rate-limit'
 
 export async function POST(req: NextRequest) {
   try {
-    const { customer_id, company_id, otp_code } = await req.json()
+    // UX-10 #2: body vazio retornava 500 — agora 400 limpo
+    const body = await req.json().catch(() => null)
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Body invalido' }, { status: 400 })
+    }
+    const { customer_id, company_id, otp_code } = body
 
     if (!customer_id || !company_id || !otp_code) {
       return NextResponse.json(

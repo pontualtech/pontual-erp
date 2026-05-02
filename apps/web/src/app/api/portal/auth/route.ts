@@ -46,7 +46,12 @@ function otpEmailHtml(code: string, customerName: string, companyName: string): 
 
 export async function POST(req: NextRequest) {
   try {
-    const { document, password, company_slug } = await req.json()
+    // UX-10 #2: body vazio retornava 500 — agora 400 limpo
+    const body = await req.json().catch(() => null)
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Body invalido' }, { status: 400 })
+    }
+    const { document, password, company_slug } = body
 
     if (!document || !password || !company_slug) {
       return NextResponse.json(

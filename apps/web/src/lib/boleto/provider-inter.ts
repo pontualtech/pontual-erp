@@ -4,6 +4,18 @@ import forge from 'node-forge'
 import { prisma } from '@pontual/db'
 
 /**
+ * UX-10 #3: parseFloat * 100 sofre IEEE-754 drift em alguns valores.
+ * Ex: parseFloat("1.005") * 100 = 100.49999...→ Math.round = 100 (perde 1 cent).
+ * EPSILON neutraliza esse drift. Mesmo padrão de B4 (rede-parser.toCents).
+ */
+function toCentsSafe(raw: string | number | undefined | null): number | undefined {
+  if (raw == null) return undefined
+  const n = typeof raw === 'string' ? parseFloat(raw) : raw
+  if (!isFinite(n) || isNaN(n)) return undefined
+  return Math.round((n + Number.EPSILON) * 100)
+}
+
+/**
  * Banco Inter — Provider de Boletos via API v3
  *
  * Usa mTLS com certificado A1 (mesmo do NFS-e)
@@ -170,7 +182,7 @@ export class InterBoletoProvider implements BoletoProvider {
     return {
       nossoNumero,
       status: statusMap[json.situacao] || 'REGISTERED',
-      paidAmount: json.valorTotalRecebimento ? Math.round(parseFloat(json.valorTotalRecebimento) * 100) : undefined,
+      paidAmount: toCentsSafe(json.valorTotalRecebimento),
       paidDate: json.dataPagamento || undefined,
     }
   }

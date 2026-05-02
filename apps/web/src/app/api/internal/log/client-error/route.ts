@@ -11,13 +11,19 @@ export const dynamic = 'force-dynamic'
  * Aceita beacon (sem auth — telemetry pública). Anti-abuso: rate-limit
  * no proxy se virar problema.
  */
+// UX-10 #8: body size cap — stack trace + path + ua tipicamente < 8KB
+const MAX_BODY_BYTES = 16384
+
 export async function POST(req: NextRequest) {
   try {
-    // UX-9 #8: rate limit por IP — 20 erros/min/IP é generoso pra crash real,
-    // mas barra bot spammando logs Coolify.
+    // UX-9 #8: rate limit por IP — 20 erros/min/IP é generoso pra crash real
     const ip = getClientIp(req)
     const { allowed } = rateLimit(`client-error:${ip}`, 20, 60_000)
     if (!allowed) return new NextResponse(null, { status: 429 })
+
+    // UX-10 #8: cap de body antes de parse JSON
+    const contentLength = parseInt(req.headers.get('content-length') || '0', 10)
+    if (contentLength > MAX_BODY_BYTES) return new NextResponse(null, { status: 413 })
 
     const data = await req.json().catch(() => null)
     if (data && typeof data === 'object') {

@@ -147,7 +147,12 @@ async function handleMessageCreated(body: any) {
       const lowerMessage = message.toLowerCase()
       const isApproval = lowerMessage.includes('aprovar') || lowerMessage.includes('aprovado') || lowerMessage.includes('aprovo')
 
-      if (isApproval && os.module_statuses?.name === 'Aguardando Aprovacao') {
+      // UX-10 #4: comparação flexível — antes era 'Aguardando Aprovacao' sem til,
+      // mas status real tem til 'Aguardando Aprovação' → bot Marta nunca aprovava.
+      // Normaliza ambos lados (NFD + remove diacríticos + toLowerCase).
+      const normalize = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
+      const statusNormalized = normalize(os.module_statuses?.name || '')
+      if (isApproval && statusNormalized === 'aguardando aprovacao') {
         // Find the "Aprovada" status
         const approvedStatus = await prisma.moduleStatus.findFirst({
           where: {

@@ -3,7 +3,12 @@ import { createClient } from '@supabase/supabase-js'
 
 export async function POST(request: NextRequest) {
   try {
-    const { password, access_token, refresh_token } = await request.json()
+    // UX-10 #2: body vazio retornava 500 — agora 400
+    const body = await request.json().catch(() => null)
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Body invalido' }, { status: 400 })
+    }
+    const { password, access_token, refresh_token } = body
 
     if (!password || password.length < 6) {
       return NextResponse.json(

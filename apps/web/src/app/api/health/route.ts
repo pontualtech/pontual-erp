@@ -7,6 +7,15 @@ import { prisma } from '@pontual/db'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
+// UX-10 #8: TRACE/CONNECT/etc → 405 limpo (antes batia em 500)
+function methodNotAllowed() {
+  return new NextResponse(null, { status: 405, headers: { Allow: 'GET' } })
+}
+export const POST = methodNotAllowed
+export const PUT = methodNotAllowed
+export const DELETE = methodNotAllowed
+export const PATCH = methodNotAllowed
+
 /**
  * N3 fix (audit pos-fix): healthcheck completo pra observabilidade real.
  * Antes Coolify só checava porta 3000 — crash silencioso de trigger,

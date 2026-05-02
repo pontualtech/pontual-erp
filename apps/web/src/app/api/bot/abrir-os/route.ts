@@ -57,6 +57,18 @@ export async function POST(req: NextRequest) {
 
     if (!defeito && !equipamento) return botError('Campos "equipamento" e "defeito" sao obrigatorios')
 
+    // UX-10 #9: anti-fantasma — antes Dify alucinava com payload sem identidade
+    // (nome=undefined + documento=undefined + phone="WHATSAPP") e criava
+    // customer "Cliente WhatsApp" sem doc/phone. Exigir pelo menos 1 ID forte.
+    const hasCustomerIdentity = !!(
+      body.customer_id ||
+      (typeof documento === 'string' && documento.replace(/\D/g, '').length >= 11) ||
+      (typeof telefone === 'string' && telefone.replace(/\D/g, '').length >= 10)
+    )
+    if (!hasCustomerIdentity) {
+      return botError('Identidade do cliente obrigatória: informe customer_id OU documento (CPF/CNPJ) OU telefone (DDD+número)')
+    }
+
     // Formatar no padrão Title Case
     const { formatName, formatDescription } = await import('@/lib/format-text')
     if (nome) nome = formatName(nome.normalize('NFC'))

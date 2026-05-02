@@ -22,7 +22,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const body = await request.json()
+    // UX-10 #2: body vazio retornava 500 — agora 400 limpo
+    const body = await request.json().catch(() => null)
+    if (!body || typeof body !== 'object') {
+      return error('Body invalido', 400)
+    }
     const { email, password } = body
 
     if (!email || !password) {

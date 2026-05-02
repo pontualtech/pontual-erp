@@ -84,6 +84,43 @@ async function processInterWebhook(body: any) {
     return NextResponse.json({ received: true, skipped: 'missing_identifier' })
   }
 
+  // UX-10 #6: idempotência via WebhookEventLog (mesmo padrão Asaas Audit 2 #N9).
+  // Antes: webhook duplicado podia sobrescrever received_amount com payload manipulado.
+  // Note: company_id é resolvido após o lookup do receivable (linhas abaixo).
+  // Aqui só pré-validamos via UNIQUE(provider, event_id) usando placeholder
+  // company_id que será atualizado depois se receivable for encontrado.
+  const eventId = `${nossoNumero || ''}:${seuNumero || ''}:${dataPagamento || ''}:${situacao || ''}`
+  let logId: string | null = null
+  if (eventId.replace(/:/g, '').length > 0) {
+    try {
+      // Tenta buscar receivable primeiro pra ter company_id
+      const earlyReceivable = seuNumero
+        ? await prisma.accountReceivable.findFirst({ where: { id: seuNumero }, select: { company_id: true } })
+        : null
+      if (earlyReceivable) {
+        const log = await prisma.webhookEventLog.create({
+          data: {
+            company_id: earlyReceivable.company_id,
+            provider: 'INTER_CNAB',
+            event_id: eventId,
+            event_type: situacao || 'UNKNOWN',
+            status: 'PROCESSING',
+            raw_payload: body,
+          },
+        })
+        logId = log.id
+      }
+    } catch (err: any) {
+      // P2002 = UNIQUE violation (provider+event_id) → dedup, retorno 200 OK
+      if (err?.code === 'P2002') {
+        console.log(`[INTER WEBHOOK] dedup event_id=${eventId}`)
+        return NextResponse.json({ received: true, dedup: true })
+      }
+      // Outros erros: continua processando (não bloqueia webhook)
+      console.warn(`[INTER WEBHOOK] WebhookEventLog write failed: ${err?.message}`)
+    }
+  }
+
   // seuNumero is the receivable ID we sent during generation
   // Find the receivable by searching pix_code JSON for nossoNumero
   let receivable = null

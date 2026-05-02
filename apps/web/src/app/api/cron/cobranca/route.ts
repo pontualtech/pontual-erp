@@ -10,7 +10,9 @@ import { sendOverdueReminders } from '@/app/api/financeiro/cobranca/route'
  * Protegido por CRON_SECRET no header Authorization.
  */
 export async function GET(request: NextRequest) {
-  // N5 fix (audit pos-fix): advisory lock pra 1 instancia rodando por vez
+  // UX-10 #5: advisory lock session-level com unlock garantido em finally.
+  // Antes não unlockava — Prisma pool reusa connection com lock pendurado.
+  let lockAcquired = false
   try {
     const _lock: Array<{ ok: boolean }> = await (prisma as any).$queryRaw`
       SELECT pg_try_advisory_lock(hashtext('cron:cobranca')::bigint) AS ok
@@ -18,6 +20,7 @@ export async function GET(request: NextRequest) {
     if (!_lock?.[0]?.ok) {
       return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'concurrent_run' }), { status: 200, headers: { 'content-type': 'application/json' } })
     }
+    lockAcquired = true
   } catch { /* non-fatal: tabela/conexao indisponivel — segue sem lock */ }
 
   try {
@@ -89,5 +92,12 @@ export async function GET(request: NextRequest) {
     })
   } catch (err) {
     return handleError(err)
+  } finally {
+    // UX-10 #5: garantir unlock pra não prender connection no pool
+    if (lockAcquired) {
+      try {
+        await (prisma as any).$queryRaw`SELECT pg_advisory_unlock(hashtext('cron:cobranca')::bigint)`
+      } catch { /* swallow — connection drop liberou auto */ }
+    }
   }
 }

@@ -58,6 +58,21 @@ export function isValidDocument(raw?: string | null): boolean {
 }
 
 /**
+ * UX-10 #10: validação telefone — antes aceitava "9", "abc", qualquer string
+ * <= 20 chars. Agora extrai digits + valida 10 (fixo DDD+8) ou 11 (cel DDD+9).
+ */
+const PHONE_REGEX = /^\d{10,11}$/
+const phoneField = (label: string) =>
+  z.string()
+    .max(20)
+    .transform(v => v ? v.replace(/\D/g, '') : v)
+    .refine(v => !v || PHONE_REGEX.test(v), {
+      message: `${label} deve ter 10 ou 11 dígitos (DDD + número)`,
+    })
+    .optional()
+    .nullable()
+
+/**
  * Schema para criação de cliente
  */
 export const createCustomerSchema = z.object({
@@ -69,8 +84,8 @@ export const createCustomerSchema = z.object({
     .transform(v => v ? normalizeDocument(v) : v)
     .refine(v => !v || isValidDocument(v), { message: 'CPF/CNPJ inválido' }),
   email: z.string().email().max(255).optional().nullable(),
-  phone: z.string().max(20).optional().nullable(),
-  mobile: z.string().max(20).optional().nullable(),
+  phone: phoneField('Telefone'),
+  mobile: phoneField('Celular'),
   address_street: z.string().max(255).optional().nullable(),
   address_number: z.string().max(20).optional().nullable(),
   address_complement: z.string().max(255).optional().nullable(),
@@ -92,10 +107,12 @@ export const updateCustomerSchema = z.object({
   trade_name: z.string().max(255).nullable().optional(),
   person_type: z.enum(['FISICA', 'JURIDICA']).optional(),
   customer_type: z.enum(['CLIENTE', 'FORNECEDOR', 'AMBOS']).optional(),
-  document_number: z.string().max(20).optional().transform(v => v ? normalizeDocument(v) : v),
+  document_number: z.string().max(20).optional()
+    .transform(v => v ? normalizeDocument(v) : v)
+    .refine(v => !v || isValidDocument(v), { message: 'CPF/CNPJ inválido' }),
   email: z.string().email().max(255).nullable().optional(),
-  phone: z.string().max(20).nullable().optional(),
-  mobile: z.string().max(20).nullable().optional(),
+  phone: phoneField('Telefone'),
+  mobile: phoneField('Celular'),
   address_street: z.string().max(255).nullable().optional(),
   address_number: z.string().max(20).nullable().optional(),
   address_complement: z.string().max(255).nullable().optional(),

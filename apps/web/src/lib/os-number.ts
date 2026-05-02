@@ -1,19 +1,25 @@
 import { prisma } from '@pontual/db'
 
 /**
- * Get the next OS number for a company.
- * Respects the 'os.next_number' setting as minimum floor.
- * Thread-safe: uses MAX(os_number) + 1 from the database.
+ * UX-10 #7: gerar próximo número de OS atomicamente para evitar UNIQUE
+ * collision quando 2 atendentes/motoristas criam OS simultâneos.
  *
- * @param companyId - Company UUID
- * @param tx - Optional Prisma transaction client
- * @returns Next OS number
+ * Estratégia: pg_advisory_xact_lock por company_id (releaseado no COMMIT
+ * automaticamente). Lock só protege a leitura de MAX — ser rápido.
+ * MUST ser chamado dentro de prisma.$transaction caller.
  */
 export async function getNextOsNumber(
   companyId: string,
   tx?: any,
 ): Promise<number> {
   const db = tx || prisma
+
+  // UX-10 #7: lock xact-level — segurança contra race "MAX seguido de INSERT"
+  // Funciona dentro de tx; fora de tx, advisory_xact_lock vira advisory_lock
+  // efêmero (libera no fim do statement). Caller idealmente passa tx.
+  await db.$queryRaw`
+    SELECT pg_advisory_xact_lock(hashtext('os.next_number:' || ${companyId})::bigint)
+  `
 
   // Get the configured minimum from settings
   const minSetting = await db.setting.findUnique({
