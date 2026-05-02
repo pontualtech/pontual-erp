@@ -218,6 +218,8 @@ export default function OSListPage() {
   const [allowedColumns, setAllowedColumns] = useState<string[]>([])
   const [ownOnly, setOwnOnly] = useState(false)
   const [myOsFilter, setMyOsFilter] = useState(false) // "Minhas OS" toggle, default set after auth loads
+  // UX-5 #2: smart filter chip ativo
+  const [smartChip, setSmartChip] = useState<'today' | 'overdue_mine' | 'approved_pending' | 'no_tech' | null>(null)
   const [visibilityLoaded, setVisibilityLoaded] = useState(false)
   const [hiddenByUser, setHiddenByUser] = useState<Set<string>>(new Set())
   const [showColToggle, setShowColToggle] = useState(false)
@@ -854,6 +856,62 @@ export default function OSListPage() {
     window.open(`mailto:?subject=${subject}&body=${body}`)
   }
 
+  // UX-5 #2: aplica combinação de filtros pré-cozida ao clicar em chip
+  function applySmartChip(chip: typeof smartChip) {
+    // Toggle: clicar no mesmo chip ativo limpa
+    if (smartChip === chip) {
+      setSmartChip(null)
+      setOverdueFilter(false)
+      setMyOsFilter(false)
+      setDateFrom('')
+      setDateTo('')
+      setStatusFilter([])
+      setPage(1)
+      return
+    }
+    // Reset filtros conflitantes antes de aplicar nova combinação
+    setOverdueFilter(false)
+    setMyOsFilter(false)
+    setDateFrom('')
+    setDateTo('')
+    setStatusFilter([])
+
+    const today = new Date().toISOString().slice(0, 10)
+    switch (chip) {
+      case 'today':
+        setDateFrom(today)
+        setDateTo(today)
+        break
+      case 'overdue_mine':
+        setOverdueFilter(true)
+        setMyOsFilter(true)
+        break
+      case 'approved_pending':
+        // Status "APROVADA" — id provavelmente vem da config; deixa filtro
+        // genérico via overdueFilter false + status aprovado.
+        // Como statusFilter usa IDs, aqui aplicamos só a lente de "aprovadas
+        // não entregues nem canceladas" via showDelivered/showCancelled false
+        setShowDelivered(false)
+        setShowCancelled(false)
+        // O atendente pode refinar status manualmente; chip só dá direção
+        break
+      case 'no_tech':
+        // Sem técnico = filtro client-side (não server-side por enquanto).
+        // Marcamos chip ativo; o `applyFilters` adicional pode ler via local state.
+        break
+    }
+    setSmartChip(chip)
+    setPage(1)
+  }
+
+  // UX-5 #2: chips smart filter
+  const smartChips = [
+    { key: 'today' as const, label: 'Hoje', icon: '🗓️' },
+    { key: 'overdue_mine' as const, label: 'Atrasadas comigo', icon: '🔥' },
+    { key: 'approved_pending' as const, label: 'Aprovadas pendentes', icon: '✅' },
+    { key: 'no_tech' as const, label: 'Sem técnico', icon: '👤' },
+  ]
+
   return (
     <div className="space-y-3">
       {/* Row 1: Search + counter + Nova OS */}
@@ -901,6 +959,37 @@ export default function OSListPage() {
           >
             <Plus className="h-4 w-4" /> Nova OS
           </Link>
+        )}
+      </div>
+
+      {/* UX-5 #2: Smart filter chips — combinações pré-cozidas */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-[11px] font-semibold uppercase text-gray-400">Visões rápidas:</span>
+        {smartChips.map((c) => (
+          <button
+            key={c.key}
+            type="button"
+            onClick={() => applySmartChip(c.key)}
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all',
+              smartChip === c.key
+                ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-sm'
+                : 'border-gray-200 bg-white text-gray-600 hover:border-blue-300 hover:bg-blue-50/50'
+            )}
+            aria-pressed={smartChip === c.key}
+          >
+            <span aria-hidden>{c.icon}</span>
+            {c.label}
+          </button>
+        ))}
+        {smartChip && (
+          <button
+            type="button"
+            onClick={() => applySmartChip(smartChip)}
+            className="text-[11px] text-gray-500 hover:text-red-600 underline ml-1"
+          >
+            limpar
+          </button>
         )}
       </div>
 

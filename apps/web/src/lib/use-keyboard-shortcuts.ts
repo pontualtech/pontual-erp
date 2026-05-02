@@ -97,10 +97,15 @@ export function useKeyboardShortcuts() {
 }
 
 export const SHORTCUT_HELP = [
+  { keys: ['Cmd', 'K'], label: 'Paleta de comandos (busca + ações)' },
   { keys: ['g', 'd'], label: 'Ir para Dashboard' },
   { keys: ['g', 'o'], label: 'Ir para lista de OS' },
   { keys: ['g', 'c'], label: 'Ir para Clientes' },
   { keys: ['g', 'f'], label: 'Ir para Financeiro' },
   { keys: ['n'], label: 'Nova OS' },
+  { keys: ['j'], label: 'Próximo item da lista (em listas)' },
+  { keys: ['k'], label: 'Item anterior da lista' },
+  { keys: ['Enter'], label: 'Abrir item ativo' },
+  { keys: ['e'], label: 'Editar item ativo' },
   { keys: ['?'], label: 'Mostrar/ocultar esta ajuda' },
 ] as const
