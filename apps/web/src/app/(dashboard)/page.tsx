@@ -37,6 +37,11 @@ interface DashboardStats {
     osColetar: number
     faturamentoMesCents: number
   }
+  // UX-7 #1: comparativo pra delta MoM/dia-a-dia
+  previous?: {
+    osAbertasOntem?: number
+    faturamentoMesAnteriorCents?: number
+  }
   osPerWeek: { week: string; count: number }[]
   pipeline: { name: string; color: string; count: number }[]
   metrics: {
@@ -231,13 +236,26 @@ export default function DashboardPage() {
   }
 
   // UX-1 #10: cards do dashboard agora levam a filtro/contexto detalhado.
+  // UX-7 #1: cada card pode ter `delta` (Δ% vs período anterior).
   // Cada card vira link cliclavel — gerente ja chega na lista filtrada.
+  function calcDelta(curr: number, prev: number | undefined): { pct: number; up: boolean } | null {
+    if (prev == null || prev === 0) return null
+    const pct = Math.round(((curr - prev) / prev) * 100)
+    if (Math.abs(pct) < 1) return null  // ignora variação <1% (ruído)
+    return { pct: Math.abs(pct), up: pct >= 0 }
+  }
+
+  const osAbertasHoje = stats?.cards.osAbertasHoje ?? 0
+  const osAbertasOntem = stats?.previous?.osAbertasOntem
+  const faturamentoMes = stats?.cards.faturamentoMesCents ?? 0
+  const faturamentoPrev = stats?.previous?.faturamentoMesAnteriorCents
+
   const cards = [
-    { label: 'OS Abertas Hoje', value: stats?.cards.osAbertasHoje ?? 0, icon: ClipboardList, color: 'text-blue-600 bg-blue-50', href: '/os?status=ABERTA&period=today' },
-    { label: 'Aguardando Coleta', value: stats?.cards.osColetar ?? 0, icon: PackageCheck, color: 'text-purple-600 bg-purple-50', href: '/os?status=COLETAR' },
-    { label: 'OS em Execucao', value: stats?.cards.osEmExecucao ?? 0, icon: Wrench, color: 'text-amber-600 bg-amber-50', href: '/os?status=EM_EXECUCAO' },
-    { label: 'Prontas p/ Entrega', value: stats?.cards.osProntas ?? 0, icon: Truck, color: 'text-emerald-600 bg-emerald-50', href: '/os?status=PRONTA' },
-    ...(canViewFinanceiro ? [{ label: 'Faturamento do Mes', value: formatCurrency(stats?.cards.faturamentoMesCents ?? 0), icon: DollarSign, color: 'text-green-600 bg-green-50', href: '/financeiro/dre' }] : []),
+    { label: 'OS Abertas Hoje', value: osAbertasHoje, icon: ClipboardList, color: 'text-blue-600 bg-blue-50', href: '/os?status=ABERTA&period=today', delta: calcDelta(osAbertasHoje, osAbertasOntem), deltaLabel: 'vs ontem' },
+    { label: 'Aguardando Coleta', value: stats?.cards.osColetar ?? 0, icon: PackageCheck, color: 'text-purple-600 bg-purple-50', href: '/os?status=COLETAR', delta: null, deltaLabel: '' },
+    { label: 'OS em Execucao', value: stats?.cards.osEmExecucao ?? 0, icon: Wrench, color: 'text-amber-600 bg-amber-50', href: '/os?status=EM_EXECUCAO', delta: null, deltaLabel: '' },
+    { label: 'Prontas p/ Entrega', value: stats?.cards.osProntas ?? 0, icon: Truck, color: 'text-emerald-600 bg-emerald-50', href: '/os?status=PRONTA', delta: null, deltaLabel: '' },
+    ...(canViewFinanceiro ? [{ label: 'Faturamento do Mes', value: formatCurrency(faturamentoMes), icon: DollarSign, color: 'text-green-600 bg-green-50', href: '/financeiro/dre', delta: calcDelta(faturamentoMes, faturamentoPrev), deltaLabel: 'vs mês passado (até hoje)' }] : []),
   ]
 
   if (!canViewDashboard) return null
@@ -458,6 +476,16 @@ export default function DashboardPage() {
                   <p className="mt-1 text-2xl font-bold text-gray-900">
                     {loading ? <Loader2 className="h-5 w-5 animate-spin text-gray-300" /> : card.value}
                   </p>
+                  {/* UX-7 #1: Δ% vs período anterior */}
+                  {card.delta && (
+                    <p className={cn(
+                      'mt-1 text-[11px] font-semibold inline-flex items-center gap-0.5',
+                      card.delta.up ? 'text-emerald-600' : 'text-red-600'
+                    )} title={card.deltaLabel}>
+                      {card.delta.up ? '↑' : '↓'} {card.delta.pct}%
+                      <span className="text-gray-400 font-normal ml-1">{card.deltaLabel}</span>
+                    </p>
+                  )}
                 </div>
                 <div className={cn('rounded-xl p-2.5 transition-transform group-hover:scale-110', card.color)}>
                   <Icon className="h-5 w-5" />

@@ -9,6 +9,7 @@ import Link from 'next/link'
 import { NotificationBell } from './notification-bell'
 import { MissedCallsBell } from '@/components/voip/MissedCallsBell'
 import { CommandPalette } from './command-palette'
+import { CompanySwitcher } from './company-switcher'
 
 const breadcrumbMap: Record<string, string> = {
   os: 'Ordens de Servico',
@@ -101,6 +102,8 @@ export function Header({ user }: { user: AuthUser }) {
       </div>
 
       <div className="flex items-center gap-3">
+        {/* UX-7 #3: Company switcher inline (multi-tenant) */}
+        <CompanySwitcher user={user} />
         {/* Search trigger */}
         <button
           onClick={() => setSearchOpen(true)}

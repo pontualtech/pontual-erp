@@ -42,15 +42,21 @@ export async function GET() {
     const spNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }))
     const todayStart = new Date(Date.UTC(spNow.getFullYear(), spNow.getMonth(), spNow.getDate()))
     const todayEnd = new Date(todayStart.getTime() + 86400000)
+    const yesterdayStart = new Date(todayStart.getTime() - 86400000)
     const monthStart = new Date(Date.UTC(spNow.getFullYear(), spNow.getMonth(), 1))
+    // UX-7 #1: comparativo MoM — mês anterior pro mesmo dia
+    const prevMonthStart = new Date(Date.UTC(spNow.getFullYear(), spNow.getMonth() - 1, 1))
+    const prevMonthSameDay = new Date(Date.UTC(spNow.getFullYear(), spNow.getMonth() - 1, spNow.getDate()))
 
     // ---- 1. Summary Cards ----
     const [
       osAbertasHoje,
+      osAbertasOntem,
       osEmExecucao,
       osProntas,
       osColetar,
       faturamentoMesCents,
+      prevFaturamentoSameDay,
     ] = await Promise.all([
       // OS abertas hoje (excluindo finalizadas)
       prisma.serviceOrder.count({
@@ -58,6 +64,16 @@ export async function GET() {
           company_id: cid,
           deleted_at: null,
           created_at: { gte: todayStart, lt: todayEnd },
+          ...(finalIds.length > 0 ? { status_id: { notIn: finalIds } } : {}),
+        },
+      }),
+
+      // UX-7 #1: OS abertas ontem — pra delta dia-a-dia
+      prisma.serviceOrder.count({
+        where: {
+          company_id: cid,
+          deleted_at: null,
+          created_at: { gte: yesterdayStart, lt: todayStart },
           ...(finalIds.length > 0 ? { status_id: { notIn: finalIds } } : {}),
         },
       }),
@@ -91,6 +107,17 @@ export async function GET() {
           deleted_at: null,
           ...(finalIds.length > 0 ? { status_id: { in: finalIds.filter(id => !cancelledIds.includes(id)) } } : {}),
           updated_at: { gte: monthStart },
+        },
+        _sum: { total_cost: true },
+      }),
+
+      // UX-7 #1: faturamento mes passado ate o mesmo dia — pra MoM
+      prisma.serviceOrder.aggregate({
+        where: {
+          company_id: cid,
+          deleted_at: null,
+          ...(finalIds.length > 0 ? { status_id: { in: finalIds.filter(id => !cancelledIds.includes(id)) } } : {}),
+          updated_at: { gte: prevMonthStart, lt: prevMonthSameDay },
         },
         _sum: { total_cost: true },
       }),
@@ -255,6 +282,11 @@ export async function GET() {
         osProntas,
         osColetar,
         ...(canViewFinanceiro ? { faturamentoMesCents: faturamentoMesCents._sum.total_cost ?? 0 } : {}),
+      },
+      // UX-7 #1: comparativos pra delta visual no dashboard
+      previous: {
+        osAbertasOntem,
+        ...(canViewFinanceiro ? { faturamentoMesAnteriorCents: prevFaturamentoSameDay._sum.total_cost ?? 0 } : {}),
       },
       osPerWeek: osPerWeek.map(w => ({ week: w.week, count: Number(w.count) })),
       pipeline: pipelineData,
