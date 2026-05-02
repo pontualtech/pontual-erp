@@ -7,15 +7,27 @@ import { X, RefreshCw, Check } from 'lucide-react'
  * Fullscreen camera capture for mobile. Uses getUserMedia (standard Web API).
  *
  * Produces a compressed JPEG data URL (base64) via canvas.toBlob() + FileReader.
- * Target: long-edge 1280px at 0.75 quality — typical comprovante fica ~150-300KB.
+ * Default: long-edge 1280px at 0.75 quality (~150-300KB).
  *
- * Called from parent with `onCapture(jpegBase64)` / `onCancel()`.
+ * UX-2 #2: detecta conexao 2g/3g via Network Information API e reduz
+ * qualidade pra 800px @ 0.6 (~60KB) — sobe rapido em 4G fraco e nao
+ * trava motorista no spinner por minutos.
  */
+function detectNetworkProfile(): { maxLongEdge: number; quality: number; label: string } {
+  if (typeof navigator === 'undefined') return { maxLongEdge: 1280, quality: 0.75, label: 'desktop' }
+  const conn = (navigator as any).connection || (navigator as any).mozConnection || (navigator as any).webkitConnection
+  const effective = conn?.effectiveType
+  if (effective === 'slow-2g' || effective === '2g') return { maxLongEdge: 600, quality: 0.5, label: '2g' }
+  if (effective === '3g') return { maxLongEdge: 800, quality: 0.6, label: '3g' }
+  if (conn?.saveData) return { maxLongEdge: 800, quality: 0.6, label: 'save-data' }
+  return { maxLongEdge: 1280, quality: 0.75, label: '4g' }
+}
+
 export default function CameraCapture({
   onCapture,
   onCancel,
-  maxLongEdge = 1280,
-  quality = 0.75,
+  maxLongEdge,
+  quality,
   hint,
 }: {
   onCapture: (jpegBase64: string) => void
@@ -24,6 +36,9 @@ export default function CameraCapture({
   quality?: number
   hint?: string
 }) {
+  const networkProfile = detectNetworkProfile()
+  const effectiveLongEdge = maxLongEdge ?? networkProfile.maxLongEdge
+  const effectiveQuality = quality ?? networkProfile.quality
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
@@ -56,14 +71,14 @@ export default function CameraCapture({
     const video = videoRef.current
     if (!video) return
     const canvas = document.createElement('canvas')
-    // Scale down to maxLongEdge to keep file size reasonable.
+    // Scale down to effectiveLongEdge (adaptado pela conexao) pra economizar payload.
     const longEdge = Math.max(video.videoWidth, video.videoHeight)
-    const scale = longEdge > maxLongEdge ? maxLongEdge / longEdge : 1
+    const scale = longEdge > effectiveLongEdge ? effectiveLongEdge / longEdge : 1
     canvas.width = Math.round(video.videoWidth * scale)
     canvas.height = Math.round(video.videoHeight * scale)
     const ctx = canvas.getContext('2d')!
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-    const dataUrl = canvas.toDataURL('image/jpeg', quality)
+    const dataUrl = canvas.toDataURL('image/jpeg', effectiveQuality)
     setPreview(dataUrl)
   }
 
@@ -80,7 +95,12 @@ export default function CameraCapture({
         <button onClick={onCancel} aria-label="Fechar" className="p-2">
           <X className="w-6 h-6" />
         </button>
-        <p className="text-sm opacity-80 text-center flex-1">{hint || 'Enquadre e toque pra capturar'}</p>
+        <div className="text-center flex-1 min-w-0">
+          <p className="text-sm opacity-80 truncate">{hint || 'Enquadre e toque pra capturar'}</p>
+          {(networkProfile.label === '2g' || networkProfile.label === '3g' || networkProfile.label === 'save-data') && (
+            <p className="text-[10px] opacity-60 mt-0.5">📶 Rede {networkProfile.label} — foto em modo econômico</p>
+          )}
+        </div>
         <div className="w-10" />
       </div>
 

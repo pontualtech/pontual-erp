@@ -46,6 +46,7 @@ export default function PortalPayBox({ osId, totalCost, alreadyPaid }: {
   const [verifying, setVerifying] = useState(false)
   const [mountChecked, setMountChecked] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
 
   // No mount: checa se OS ja foi quitada (AR RECEBIDO). Se sim, bloqueia
   // geracao de nova cobranca pra evitar duplicata (bug OS 60222).
@@ -61,6 +62,18 @@ export default function PortalPayBox({ osId, totalCost, alreadyPaid }: {
       .catch(() => { if (!cancelled) setMountChecked(true) })
     return () => { cancelled = true }
   }, [osId])
+
+  // UX-2 #1: auto-trigger PIX quando URL contem #pagar (vindo do financeiro)
+  useEffect(() => {
+    if (!mountChecked || paid || pix || boleto) return
+    if (typeof window === 'undefined') return
+    if (window.location.hash !== '#pagar') return
+    containerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    // Delay leve pra scroll terminar antes do modal abrir
+    const t = setTimeout(() => { void createPix() }, 600)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mountChecked, paid])
 
   async function createPix() {
     setLoading('pix')
@@ -174,7 +187,7 @@ export default function PortalPayBox({ osId, totalCost, alreadyPaid }: {
 
   return (
     <>
-      <div className="rounded-2xl border-2 border-emerald-300 dark:border-emerald-800 bg-gradient-to-br from-emerald-50 to-white dark:from-emerald-950/30 dark:to-gray-900 p-5 shadow-sm">
+      <div ref={containerRef} id="pagar" className="rounded-2xl border-2 border-emerald-300 dark:border-emerald-800 bg-gradient-to-br from-emerald-50 to-white dark:from-emerald-950/30 dark:to-gray-900 p-5 shadow-sm scroll-mt-20">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 rounded-full bg-emerald-600 flex items-center justify-center">
             <CreditCard className="h-5 w-5 text-white" />

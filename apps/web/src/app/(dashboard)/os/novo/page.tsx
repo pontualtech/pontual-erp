@@ -9,6 +9,8 @@ import Link from 'next/link'
 interface Cliente { id: string; legal_name: string; trade_name: string | null }
 interface UserProfile { id: string; name: string }
 
+const OS_DRAFT_KEY = 'erp:os-novo:draft'
+
 export default function NovaOSPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -54,6 +56,62 @@ export default function NovaOSPage() {
     technician_id: '',
     estimated_delivery: '',
   })
+  const submittedRef = useRef(false)
+  const [draftRestored, setDraftRestored] = useState(false)
+
+  // UX-2 #5: restore draft on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(OS_DRAFT_KEY)
+      if (!raw) return
+      const draft = JSON.parse(raw)
+      if (draft && typeof draft === 'object' && (draft.reported_issue || draft.equipment_brand || draft.serial_number)) {
+        setForm((prev) => ({ ...prev, ...draft }))
+        setDraftRestored(true)
+      }
+    } catch {}
+  }, [])
+
+  // UX-2 #5: auto-save dirty form (debounced 800ms)
+  useEffect(() => {
+    if (submittedRef.current) return
+    const isDirty = !!(form.reported_issue || form.equipment_brand || form.equipment_model || form.serial_number || form.reception_notes)
+    if (!isDirty) return
+    const t = setTimeout(() => {
+      try { localStorage.setItem(OS_DRAFT_KEY, JSON.stringify(form)) } catch {}
+    }, 800)
+    return () => clearTimeout(t)
+  }, [form])
+
+  // UX-2 #5: beforeunload guard
+  useEffect(() => {
+    const isDirty = !!(form.reported_issue || form.equipment_brand || form.serial_number)
+    if (!isDirty) return
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [form])
+
+  function discardOsDraft() {
+    try { localStorage.removeItem(OS_DRAFT_KEY) } catch {}
+    setForm({
+      customer_id: '',
+      equipment_type: 'Impressora',
+      equipment_brand: '',
+      equipment_model: '',
+      serial_number: '',
+      reported_issue: '',
+      reception_notes: '',
+      internal_notes: '',
+      priority: 'MEDIUM',
+      os_type: 'AVULSO',
+      os_location: '',
+      technician_id: '',
+      estimated_delivery: '',
+    })
+    setDraftRestored(false)
+    toast.success('Rascunho descartado')
+  }
 
   // Load brands on mount
   useEffect(() => {
@@ -232,6 +290,8 @@ export default function NovaOSPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Erro ao criar OS')
 
+      submittedRef.current = true
+      try { localStorage.removeItem(OS_DRAFT_KEY) } catch {}
       toast.success(`OS #${data.data.os_number} criada!`)
       router.push(`/os/${data.data.id}`)
     } catch (err) {
@@ -258,6 +318,26 @@ export default function NovaOSPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Banner: rascunho restaurado (UX-2 #5) */}
+        {draftRestored && (
+          <div className="rounded-lg border-2 border-blue-300 bg-blue-50 p-4 flex items-start gap-3">
+            <CheckCircle className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-blue-900">Rascunho restaurado</p>
+              <p className="text-xs text-blue-700">
+                Recuperamos o que você havia preenchido. Pode continuar de onde parou ou descartar.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={discardOsDraft}
+              className="text-xs text-blue-700 hover:text-blue-900 font-semibold underline whitespace-nowrap"
+            >
+              Descartar
+            </button>
+          </div>
+        )}
+
         {/* Local — PRIMEIRO CAMPO (define status inicial) */}
         <div className="rounded-lg border-2 border-blue-200 bg-blue-50 p-5">
           <h2 className="font-semibold text-gray-900 mb-3">Onde esta o equipamento? <span className="text-red-500">*</span></h2>

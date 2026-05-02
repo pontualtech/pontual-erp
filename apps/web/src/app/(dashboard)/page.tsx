@@ -7,7 +7,7 @@ import { useAuth } from '@/lib/use-auth'
 import {
   ClipboardList, Wrench, Truck, DollarSign, PackageCheck,
   Bell, Pin, Plus, X, Clock, TrendingUp, Target,
-  ArrowRight, Loader2, Settings, Eye, EyeOff,
+  ArrowRight, Loader2, Settings, Eye, EyeOff, AlertTriangle, User,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { VoipDashboardCard } from '@/components/voip/VoipDashboardCard'
@@ -470,6 +470,43 @@ export default function DashboardPage() {
           )
         })}
       </div>}
+
+      {/* ===== Alertas Criticos (UX-2 #6) — derivados dos dados ja carregados ===== */}
+      {!loading && stats && (() => {
+        const alerts: { label: string; count: number; icon: typeof ClipboardList; color: string; href: string }[] = []
+        if (stats.osAtrasadas > 0) alerts.push({ label: 'OS atrasadas', count: stats.osAtrasadas, icon: AlertTriangle, color: 'text-red-700 bg-red-100 border-red-300', href: '/os?delayed=1' })
+        if (stats.semTecnico > 0) alerts.push({ label: 'OS sem técnico', count: stats.semTecnico, icon: User, color: 'text-amber-700 bg-amber-100 border-amber-300', href: '/os?no_tech=1' })
+        const arVencidas = (stats.recentReceivable || []).filter(r => r.status === 'VENCIDO').length
+        if (canViewFinanceiro && arVencidas > 0) alerts.push({ label: 'Contas vencidas', count: arVencidas, icon: DollarSign, color: 'text-red-700 bg-red-100 border-red-300', href: '/financeiro?status=VENCIDO' })
+        if (alerts.length === 0) return null
+        return (
+          <div className="rounded-xl border-2 border-red-200 bg-gradient-to-br from-red-50 to-amber-50 p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <AlertTriangle className="h-5 w-5 text-red-600" />
+              <h2 className="font-bold text-gray-900">Atenção necessária</h2>
+              <span className="text-xs text-gray-600">— {alerts.length} item{alerts.length > 1 ? 's' : ''} aguardando você</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {alerts.map(a => {
+                const I = a.icon
+                return (
+                  <Link
+                    key={a.label}
+                    href={a.href}
+                    className={cn('flex items-center gap-3 rounded-lg border p-3 hover:shadow-md transition-all bg-white', a.color)}
+                  >
+                    <I className="h-5 w-5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-2xl font-bold leading-none">{a.count}</p>
+                      <p className="text-xs font-semibold mt-1">{a.label}</p>
+                    </div>
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* ===== Voip stats ===== */}
       <VoipDashboardCard />

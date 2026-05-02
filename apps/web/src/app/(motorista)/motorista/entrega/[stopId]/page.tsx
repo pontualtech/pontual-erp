@@ -55,6 +55,9 @@ export default function EntregaPage() {
   const [signerName, setSignerName] = useState('')
   const [signaturePng, setSignaturePng] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  // UX-2 #4: countdown undo após confirmar entrega — 5s pra desfazer
+  const [pendingPayload, setPendingPayload] = useState<Record<string, unknown> | null>(null)
+  const [undoCountdown, setUndoCountdown] = useState<number>(0)
 
   useEffect(() => {
     fetch('/api/driver/rota/hoje', { cache: 'no-store' })
@@ -116,15 +119,45 @@ export default function EntregaPage() {
           notes: paymentNotes.trim() || null,
         }
       }
-
-      // Offline-first via IndexedDB: se cair rede, sync worker tenta depois.
-      // event_id garante idempotência no servidor.
-      await enqueueSubmission(`/api/driver/stop/${stopId}/entrega`, payload)
-      toast.success(outcome === 'entregue_aprovado' ? 'Entrega registrada! Sincronizando…' : 'Recusa registrada')
-      router.replace('/motorista/rota')
+      // UX-2 #4: agenda undo countdown 5s antes de enfileirar de fato
+      setPendingPayload(payload)
+      setUndoCountdown(5)
     } catch {
       toast.error('Erro ao salvar. Tente novamente.')
     } finally { setSubmitting(false) }
+  }
+
+  // UX-2 #4: countdown undo — chega em 0, dispara enqueue + redireciona
+  useEffect(() => {
+    if (!pendingPayload || undoCountdown <= 0) return
+    const t = setTimeout(() => setUndoCountdown((c) => c - 1), 1000)
+    return () => clearTimeout(t)
+  }, [pendingPayload, undoCountdown])
+
+  useEffect(() => {
+    if (!pendingPayload || undoCountdown !== 0) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        await enqueueSubmission(`/api/driver/stop/${stopId}/entrega`, pendingPayload)
+        if (cancelled) return
+        toast.success(outcome === 'entregue_aprovado' ? 'Entrega registrada! Sincronizando…' : 'Recusa registrada')
+        router.replace('/motorista/rota')
+      } catch {
+        if (!cancelled) {
+          toast.error('Erro ao salvar. Tente novamente.')
+          setPendingPayload(null)
+        }
+      }
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [undoCountdown, pendingPayload])
+
+  function undoSubmit() {
+    setPendingPayload(null)
+    setUndoCountdown(0)
+    toast('Entrega não registrada — confira os dados', { icon: '↩️' })
   }
 
   if (loading) return <div className="flex min-h-[100dvh] items-center justify-center">
@@ -135,6 +168,56 @@ export default function EntregaPage() {
     hint="Foto do comprovante (PIX, maquininha, etc)"
     onCapture={b => { setReceiptPhoto(b); setCameraOpen(false) }}
     onCancel={() => setCameraOpen(false)} />
+
+  // UX-2 #4: tela de countdown de 5s pra desfazer
+  if (pendingPayload && undoCountdown > 0) {
+    const isEntrega = outcome === 'entregue_aprovado'
+    return (
+      <div className="min-h-[100dvh] bg-emerald-50 flex flex-col items-center justify-center p-6">
+        <div className="w-full max-w-sm bg-white rounded-3xl shadow-xl p-6 text-center">
+          <div className={`w-20 h-20 mx-auto rounded-full flex items-center justify-center ${isEntrega ? 'bg-green-500' : 'bg-red-500'} mb-4`}>
+            {isEntrega ? <Check className="w-10 h-10 text-white" /> : <X className="w-10 h-10 text-white" />}
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-1">
+            {isEntrega ? 'Entrega registrada!' : 'Recusa registrada'}
+          </h2>
+          <p className="text-sm text-gray-600 mb-6">
+            {isEntrega
+              ? `${stop.customer_name} · ${selectedPayment?.label}${amountCents > 0 ? ` · ${fmtBRL(amountCents)}` : ''}`
+              : stop.customer_name}
+          </p>
+
+          <div className="relative w-32 h-32 mx-auto mb-4">
+            <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="45" stroke="#d1d5db" strokeWidth="6" fill="none" />
+              <circle
+                cx="50" cy="50" r="45"
+                stroke={isEntrega ? '#10b981' : '#ef4444'}
+                strokeWidth="6" fill="none"
+                strokeDasharray={`${(undoCountdown / 5) * 282.74} 282.74`}
+                className="transition-all duration-1000 ease-linear"
+              />
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="text-4xl font-bold text-gray-900">{undoCountdown}</span>
+            </div>
+          </div>
+
+          <p className="text-xs text-gray-500 mb-4">
+            Sincronizando em {undoCountdown}s. Toque em <strong>Desfazer</strong> se algo está errado.
+          </p>
+
+          <button
+            type="button"
+            onClick={undoSubmit}
+            className="w-full py-3 px-4 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl flex items-center justify-center gap-2 active:scale-[0.99] transition min-h-[44px]"
+          >
+            ↩️ Desfazer
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-[100dvh] bg-slate-50 flex flex-col">
