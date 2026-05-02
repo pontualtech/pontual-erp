@@ -87,6 +87,10 @@ export async function middleware(request: NextRequest) {
   if (pathname.startsWith('/api/internal/')) {
     return NextResponse.next()
   }
+  // Health endpoint público — Coolify Healthcheck precisa acessar sem auth
+  if (pathname === '/api/health') {
+    return NextResponse.next()
+  }
   // Internal notification routes: exact path prefix match only
   if (pathname.startsWith('/api/os/') && (
     pathname.endsWith('/notificar-abertura') || pathname.endsWith('/notificar-pronto') || pathname.endsWith('/notificar-coleta')

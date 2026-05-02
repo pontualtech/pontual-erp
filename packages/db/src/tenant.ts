@@ -55,25 +55,40 @@ export async function withTenantTx<T>(
     throw new Error(`withTenantTx: companyId inválido: "${companyId}"`)
   }
   return prisma.$transaction(async (tx) => {
-    await tx.$executeRawUnsafe(`SET LOCAL app.company_id = '${companyId}'`)
+    // N15 fix (audit pos-fix): usa set_config() PARAMETERIZED em vez de
+    // string interpolation. PostgreSQL não aceita SET LOCAL com bind params,
+    // mas set_config() aceita. Defense-in-depth caso o regex acima fraqueje.
+    // 3º arg `true` = scope LOCAL (mesmo behavior de SET LOCAL, dura até COMMIT).
+    await tx.$executeRaw`SELECT set_config('app.company_id', ${companyId}, true)`
     return fn(tx as unknown as TenantTxClient)
   })
 }
 
 /**
- * Versão "best-effort" pra rotas que querem strict-ready sem migrar pra
- * transaction. Roda raw `SET app.company_id` no connection — funciona se o
- * connection não for trocado entre queries (pool reuse). Menos seguro que
- * withTenantTx, mas útil pra short-lived single-query routes.
+ * @deprecated N32 fix (audit pos-fix): connection-pool poisoning vulnerability.
  *
- * NÃO use em queries longas / multi-step. Use `withTenantTx` quando crítico.
+ * Esta função usa `SET` (não SET LOCAL) → persiste no connection enquanto
+ * vivo no pool Prisma. Se a conexão for reusada por outra rota antes de
+ * RESET, queries leem com `app.company_id` errado. Em RLS strict mode =
+ * **vazamento cross-tenant**. NÃO USE.
+ *
+ * Use `withTenantTx(companyId, async (tx) => {...})` — escopo LOCAL via
+ * transaction, garante reset no COMMIT/ROLLBACK.
+ *
+ * Mantida exportada por backward compat com runtime warnings; será
+ * REMOVIDA em release futuro. Grep `setTenantContextOnConnection` e migre
+ * pra `withTenantTx`.
  */
 export async function setTenantContextOnConnection(companyId: string): Promise<void> {
+  console.warn(
+    '[tenant.ts] DEPRECATED setTenantContextOnConnection — use withTenantTx. ' +
+    'Connection-pool poisoning vulnerability. Audit pos-fix N32.'
+  )
   if (!companyId || !/^[a-zA-Z0-9_-]+$/.test(companyId)) {
     throw new Error(`setTenantContextOnConnection: companyId inválido: "${companyId}"`)
   }
-  // SET (não SET LOCAL) — persiste no connection enquanto vivo no pool.
-  await prisma.$executeRawUnsafe(`SET app.company_id = '${companyId}'`)
+  // Switched to set_config() parameterized (defense-in-depth aside from deprecation)
+  await prisma.$executeRaw`SELECT set_config('app.company_id', ${companyId}, false)`
 }
 
 /**
