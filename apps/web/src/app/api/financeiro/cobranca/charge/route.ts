@@ -371,11 +371,11 @@ function buildChargeEmailHtml(params: {
           <td style="padding:12px 16px;font-size:14px;color:#1f2937;text-align:right">${escapeHtml(params.description)}</td>
         </tr>` : ''}
       </table>
-      <a href="${params.invoiceUrl}" style="display:block;text-align:center;background:#059669;color:#fff;padding:14px 24px;border-radius:8px;text-decoration:none;font-size:16px;font-weight:bold">
+      <a href="${escapeHtml(params.invoiceUrl)}" style="display:block;text-align:center;background:#059669;color:#fff;padding:14px 24px;border-radius:8px;text-decoration:none;font-size:16px;font-weight:bold">
         Pagar Agora
       </a>
       <p style="font-size:12px;color:#9ca3af;text-align:center;margin:16px 0 0">
-        Ou copie e cole: <a href="${params.invoiceUrl}" style="color:#059669;word-break:break-all">${params.invoiceUrl}</a>
+        Ou copie e cole: <a href="${escapeHtml(params.invoiceUrl)}" style="color:#059669;word-break:break-all">${escapeHtml(params.invoiceUrl)}</a>
       </p>
     </td>
   </tr>

@@ -37,6 +37,20 @@ function formatFieldValue(fieldName: string, value: unknown): unknown {
   const cleaned = value.trim().replace(/\s+/g, ' ')
   if (!cleaned) return cleaned
 
+  // M15 fix (audit): skip strings JSON-looking — alguns endpoints gravam
+  // JSON em campos como description (capture-fees.ts grava metadata como
+  // string JSON em description). UPPERCASE'ing JSON corrompe a estrutura
+  // (chaves viram CAIXA ALTA, perde validação). Heurística simples: se
+  // começa com `{` ou `[` E parseia como JSON válido, preserva original.
+  const looksLikeJson = (cleaned.startsWith('{') && cleaned.endsWith('}')) ||
+                        (cleaned.startsWith('[') && cleaned.endsWith(']'))
+  if (looksLikeJson) {
+    try {
+      JSON.parse(cleaned)
+      return cleaned // valid JSON → não toca
+    } catch {} // não era JSON real, segue formatação normal
+  }
+
   if (UPPERCASE_FIELDS.includes(fieldName)) {
     return cleaned.toUpperCase()
   }

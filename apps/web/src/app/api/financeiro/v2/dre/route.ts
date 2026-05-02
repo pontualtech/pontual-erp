@@ -106,14 +106,23 @@ export async function GET(request: NextRequest) {
     const periodTo = `${year}-${String(endMonth).padStart(2, '0')}`
 
     // M-007 canary: roda com tenant context (no-op em RLS lazy mode, ativo em strict)
-    const rows = await withTenantTx(user.companyId, async (tx) => {
-      return tx.$queryRaw<DreRow[]>`
+    // B2 fix (audit): combinado em UM withTenantTx (snapshot atômico) em vez
+    // de 2 separados — evita inconsistência se REFRESH MV rodar entre as
+    // duas transactions. B6 fix: GREATEST(MAX, NULL) era no-op (== MAX).
+    const { rows, stats } = await withTenantTx(user.companyId, async (tx) => {
+      const rowsResult = await tx.$queryRaw<DreRow[]>`
         SELECT fiscal_period, account_type::text AS account_type, code, name, total_cents
           FROM dre_monthly
          WHERE company_id = ${user.companyId}
            AND fiscal_period BETWEEN ${periodFrom} AND ${periodTo}
          ORDER BY fiscal_period, code
       `
+      const statsResult = await tx.$queryRaw<{ total_entries: bigint; last_refresh: Date | null }[]>`
+        SELECT
+          (SELECT COUNT(*) FROM fiscal_entries WHERE company_id = ${user.companyId})::bigint AS total_entries,
+          (SELECT MAX(created_at) FROM fiscal_entries WHERE company_id = ${user.companyId}) AS last_refresh
+      `
+      return { rows: rowsResult, stats: statsResult }
     })
 
     const dre = buildDre(rows)
@@ -142,15 +151,6 @@ export async function GET(request: NextRequest) {
         lucro_liquido: md.lucro_liquido,
       })
     }
-
-    // Estatística da MV (também via tenant context)
-    const stats = await withTenantTx(user.companyId, async (tx) => {
-      return tx.$queryRaw<{ total_entries: bigint; last_refresh: Date | null }[]>`
-        SELECT
-          (SELECT COUNT(*) FROM fiscal_entries WHERE company_id = ${user.companyId})::bigint AS total_entries,
-          (SELECT GREATEST(MAX(created_at), NULL) FROM fiscal_entries WHERE company_id = ${user.companyId}) AS last_refresh
-      `
-    })
 
     return success({
       year,

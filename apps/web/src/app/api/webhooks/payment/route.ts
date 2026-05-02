@@ -495,22 +495,26 @@ export async function POST(req: NextRequest) {
 
           // Email
           if (customer.email) {
+            // B1 fix (audit): escapeHtml em todos os fields do user-controlled
+            // input (legal_name, equipment) + URLs (ml.url). XSS sandbox em
+            // clients de email modernos mitiga, mas é dívida higiênica.
+            const { escapeHtml } = await import('@/lib/escape-html')
             const html = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;background:#f4f4f5;padding:20px;">
               <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;">
                 <div style="background:#059669;padding:24px 32px;color:#fff;">
-                  <h1 style="margin:0;font-size:20px;">${companyName}</h1>
-                  <p style="margin:4px 0 0;font-size:14px;">Pagamento confirmado — OS #${osNum}</p>
+                  <h1 style="margin:0;font-size:20px;">${escapeHtml(companyName)}</h1>
+                  <p style="margin:4px 0 0;font-size:14px;">Pagamento confirmado — OS #${escapeHtml(osNum)}</p>
                 </div>
                 <div style="padding:32px;">
-                  <p>Ola, <strong>${customer.legal_name || 'Cliente'}</strong>!</p>
+                  <p>Ola, <strong>${escapeHtml(customer.legal_name || 'Cliente')}</strong>!</p>
                   <p>Confirmamos o recebimento do seu pagamento. Obrigado pela confianca!</p>
                   <table width="100%" cellpadding="8" style="background:#f9fafb;border-radius:6px;margin:16px 0;">
-                    <tr><td>Valor</td><td style="text-align:right;font-weight:bold;">${valorBRL}</td></tr>
-                    <tr><td>Forma</td><td style="text-align:right;">${metodo}</td></tr>
-                    <tr><td>OS</td><td style="text-align:right;">#${osNum}</td></tr>
-                    <tr><td>Equipamento</td><td style="text-align:right;">${equipment}</td></tr>
+                    <tr><td>Valor</td><td style="text-align:right;font-weight:bold;">${escapeHtml(valorBRL)}</td></tr>
+                    <tr><td>Forma</td><td style="text-align:right;">${escapeHtml(metodo)}</td></tr>
+                    <tr><td>OS</td><td style="text-align:right;">#${escapeHtml(osNum)}</td></tr>
+                    <tr><td>Equipamento</td><td style="text-align:right;">${escapeHtml(equipment)}</td></tr>
                   </table>
-                  <a href="${ml.url}" style="display:block;text-align:center;background:#2563eb;color:#fff;padding:14px;border-radius:6px;text-decoration:none;font-weight:bold;">Acompanhar OS no portal</a>
+                  <a href="${escapeHtml(ml.url)}" style="display:block;text-align:center;background:#2563eb;color:#fff;padding:14px;border-radius:6px;text-decoration:none;font-weight:bold;">Acompanhar OS no portal</a>
                 </div>
               </div>
             </body></html>`

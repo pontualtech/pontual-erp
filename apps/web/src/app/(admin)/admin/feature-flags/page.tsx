@@ -42,25 +42,31 @@ export default function FeatureFlagsPage() {
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<FeatureFlag | null>(null)
 
-  useEffect(() => { load() }, [])
+  // B3 fix (audit): AbortController previne setState em componente desmontado
+  useEffect(() => {
+    const ctrl = new AbortController()
+    load(ctrl.signal)
+    return () => ctrl.abort()
+  }, [])
 
-  async function load() {
+  async function load(signal?: AbortSignal) {
     setLoading(true)
     try {
       const [flagsRes, companiesRes] = await Promise.all([
-        fetch('/api/admin/feature-flags'),
-        fetch('/api/admin/empresas').catch(() => null),
+        fetch('/api/admin/feature-flags', { signal }),
+        fetch('/api/admin/empresas', { signal }).catch(() => null),
       ])
+      if (signal?.aborted) return
       const fj = await flagsRes.json()
-      setFlags(fj.data ?? [])
+      if (!signal?.aborted) setFlags(fj.data ?? [])
       if (companiesRes && companiesRes.ok) {
         const cj = await companiesRes.json()
-        setCompanies(cj.data ?? [])
+        if (!signal?.aborted) setCompanies(cj.data ?? [])
       }
-    } catch {
-      toast.error('Erro ao carregar')
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') toast.error('Erro ao carregar')
     } finally {
-      setLoading(false)
+      if (!signal?.aborted) setLoading(false)
     }
   }
 
@@ -270,6 +276,7 @@ function CreateFlagModal({ onClose, onSaved }: { onClose: () => void; onSaved: (
               <label className="block text-xs font-medium text-gray-400 mb-1">Rollout %</label>
               <input
                 type="number"
+                aria-label="Rollout percentual (criar)"
                 min={0}
                 max={100}
                 disabled={strategy !== 'PERCENTAGE'}
@@ -406,6 +413,7 @@ function EditFlagModal({
           <div>
             <label className="block text-xs font-medium text-gray-400 mb-1">Descrição</label>
             <textarea
+              aria-label="Descrição da flag (editar)"
               value={description}
               onChange={e => setDescription(e.target.value)}
               rows={2}
@@ -431,6 +439,7 @@ function EditFlagModal({
               <label className="block text-xs font-medium text-gray-400 mb-1">Rollout %</label>
               <input
                 type="number"
+                aria-label="Rollout percentual (editar)"
                 min={0}
                 max={100}
                 disabled={strategy !== 'PERCENTAGE'}

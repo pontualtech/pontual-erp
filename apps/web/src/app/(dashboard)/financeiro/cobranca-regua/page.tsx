@@ -56,18 +56,25 @@ export default function CobrancaReguaPage() {
   const [editing, setEditing] = useState<Rule | null>(null)
   const [creating, setCreating] = useState(false)
 
-  useEffect(() => { load() }, [])
+  // B3 fix (audit): AbortController previne setState em componente
+  // desmontado quando user navega rapidamente. Sem isso: warning "Can't
+  // perform a React state update on an unmounted component".
+  useEffect(() => {
+    const ctrl = new AbortController()
+    load(ctrl.signal)
+    return () => ctrl.abort()
+  }, [])
 
-  async function load() {
+  async function load(signal?: AbortSignal) {
     setLoading(true)
     try {
-      const r = await fetch('/api/financeiro/v2/cobranca-rules')
+      const r = await fetch('/api/financeiro/v2/cobranca-rules', { signal })
       const j = await r.json()
-      setRules(j.data ?? [])
-    } catch {
-      toast.error('Erro ao carregar réguas')
+      if (!signal?.aborted) setRules(j.data ?? [])
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') toast.error('Erro ao carregar réguas')
     } finally {
-      setLoading(false)
+      if (!signal?.aborted) setLoading(false)
     }
   }
 

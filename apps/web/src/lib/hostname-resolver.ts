@@ -7,6 +7,16 @@ interface CompanyHost {
 }
 
 // In-memory cache: hostname → company (TTL 60s)
+//
+// B5 nota (audit): cache em memória é process-local. Em deploy
+// horizontal multi-instance (Coolify scale futuro), cada container tem
+// seu próprio cache. Update no DB invalida só uma instância — outras
+// servem dado velho até TTL expirar (max 60s).
+//
+// Tradeoff aceitável hoje (ERP single-instance, mudanças raras de
+// hostname). Quando scale horizontal, migrar pra Redis com pub/sub
+// invalidation OU TTL menor + cache stampede protection. Priorizar
+// quando >1 container ativo OU quando hostname mudar com frequência.
 const cache = new Map<string, { data: CompanyHost | null; expires: number }>()
 const CACHE_TTL = 60_000
 
