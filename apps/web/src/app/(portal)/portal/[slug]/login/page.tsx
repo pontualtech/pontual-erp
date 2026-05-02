@@ -705,7 +705,9 @@ export default function PortalLoginPage() {
                       <div>
                         <p className="font-medium text-green-900 dark:text-green-300">Senha resetada com sucesso!</p>
                         <p className="text-sm text-green-700 dark:text-green-400 mt-1">
-                          Use os 5 primeiros digitos do seu CPF/CNPJ como senha.
+                          {recoveryResult.email_hint
+                            ? 'Enviamos sua nova senha por email. Use-a para entrar e troque assim que possível.'
+                            : 'Sua senha foi alterada. Entre em contato com nosso suporte para receber a nova senha temporária.'}
                         </p>
                       </div>
                     </div>
@@ -714,16 +716,10 @@ export default function PortalLoginPage() {
                   {recoveryResult.email_hint && (
                     <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-900 rounded-xl p-4">
                       <p className="text-sm text-blue-800 dark:text-blue-300">
-                        Um email foi enviado para <strong>{recoveryResult.email_hint}</strong> com as instrucoes.
+                        📧 Email enviado para <strong>{recoveryResult.email_hint}</strong>. Verifique sua caixa de entrada (e o spam).
                       </p>
                     </div>
                   )}
-
-                  <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-900 rounded-xl p-4">
-                    <p className="text-sm text-amber-800 dark:text-amber-300">
-                      <strong>Exemplo:</strong> CPF 123.456.789-00 → senha: <strong>12345</strong>
-                    </p>
-                  </div>
                 </div>
               )}
 

@@ -230,63 +230,123 @@ export default function PortalPayBox({ osId, totalCost, alreadyPaid }: {
       </div>
 
       {pix && !paid && (
-        <dialog
-          ref={(el) => { if (el && !el.open) el.showModal() }}
-          onClick={e => { if (e.target === e.currentTarget) closePix() }}
-          style={{
-            padding: 0, border: 'none', borderRadius: 16,
-            maxWidth: 420, width: '90vw',
-            background: 'white',
-            boxShadow: '0 25px 50px -12px rgba(0,0,0,0.4)',
-          }}
-        >
-          <div style={{ width: '100%' }} onClick={e => e.stopPropagation()}>
-            <div className="bg-emerald-600 px-5 py-3 flex items-center justify-between">
-              <h3 className="text-white font-bold flex items-center gap-2"><Zap className="h-5 w-5" /> Pagamento PIX</h3>
-              <button type="button" onClick={closePix} aria-label="Fechar" className="text-white/80 hover:text-white">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="p-5 text-center">
-              <p className="text-sm text-gray-600 mb-3">Escaneie o QR code com o app do seu banco</p>
-              {pix.qr_code_image ? (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img src={pix.qr_code_image} alt="QR Code PIX"
-                  className="w-64 h-64 mx-auto border-4 border-emerald-500 rounded-xl" />
-              ) : (
-                <div className="w-64 h-64 mx-auto flex items-center justify-center border-2 border-gray-200 rounded-xl">
-                  <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
-                </div>
-              )}
-
-              <p className="text-xs text-gray-500 mt-3 mb-1">OU copie e cole no seu banco:</p>
-              <div className="flex gap-2 mb-4">
-                <input type="text" readOnly value={pix.qr_code || ''}
-                  aria-label="Codigo PIX copia e cola"
-                  className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-xs font-mono bg-gray-50"
-                  onFocus={e => e.target.select()} />
-                <button type="button" onClick={copyPix}
-                  className="px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold">
-                  {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                </button>
-              </div>
-
-              <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 flex items-center gap-2 justify-center">
-                <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
-                <span className="text-sm text-blue-800">Aguardando pagamento...</span>
-              </div>
-              <p className="text-[10px] text-gray-400 mt-2">A confirmacao chega automaticamente em segundos.</p>
-
-              <button type="button" onClick={verifyPayment} disabled={verifying}
-                className="mt-3 w-full rounded-lg border-2 border-emerald-500 bg-white text-emerald-700 hover:bg-emerald-50 py-2.5 text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50">
-                {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                Ja paguei — verificar agora
-              </button>
-            </div>
-          </div>
-        </dialog>
+        <PixModal
+          pix={pix}
+          copied={copied}
+          verifying={verifying}
+          onClose={closePix}
+          onCopy={copyPix}
+          onVerify={verifyPayment}
+        />
       )}
     </>
+  )
+}
+
+/**
+ * Modal PIX cross-browser: usa div + fixed em vez de <dialog> nativo
+ * pra suportar iOS Safari < 15.4. Inclui body scroll lock, ESC pra fechar
+ * e tap-fora-fecha. Aspect-square no QR pra evitar layout shift.
+ */
+function PixModal({
+  pix, copied, verifying, onClose, onCopy, onVerify,
+}: {
+  pix: PixPayment
+  copied: boolean
+  verifying: boolean
+  onClose: () => void
+  onCopy: () => void
+  onVerify: () => void
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prev
+    }
+  }, [onClose])
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="pix-modal-title"
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-[420px] max-h-[95dvh] overflow-y-auto rounded-2xl bg-white shadow-2xl"
+      >
+        <div className="bg-emerald-600 px-5 py-3 flex items-center justify-between sticky top-0">
+          <h3 id="pix-modal-title" className="text-white font-bold flex items-center gap-2">
+            <Zap className="h-5 w-5" /> Pagamento PIX
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fechar modal de pagamento"
+            className="text-white/80 hover:text-white p-1 -m-1 rounded touch-manipulation"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="p-5 text-center">
+          <p className="text-sm text-gray-600 mb-3">Escaneie o QR code com o app do seu banco</p>
+          {pix.qr_code_image ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={pix.qr_code_image}
+              alt="QR Code PIX"
+              className="w-64 h-64 mx-auto border-4 border-emerald-500 rounded-xl"
+            />
+          ) : (
+            <div className="w-64 h-64 mx-auto flex items-center justify-center border-2 border-gray-200 rounded-xl">
+              <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+            </div>
+          )}
+
+          <p className="text-xs text-gray-500 mt-3 mb-1">OU copie e cole no seu banco:</p>
+          <div className="flex gap-2 mb-4">
+            <input
+              type="text"
+              readOnly
+              value={pix.qr_code || ''}
+              aria-label="Codigo PIX copia e cola"
+              className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-xs font-mono bg-gray-50 min-h-[44px]"
+              onFocus={(e) => e.target.select()}
+            />
+            <button
+              type="button"
+              onClick={onCopy}
+              aria-label={copied ? 'Codigo copiado' : 'Copiar codigo PIX'}
+              className="px-4 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold min-h-[44px] min-w-[44px] flex items-center justify-center"
+            >
+              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+            </button>
+          </div>
+
+          <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 flex items-center gap-2 justify-center">
+            <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+            <span className="text-sm text-blue-800">Aguardando pagamento...</span>
+          </div>
+          <p className="text-[10px] text-gray-400 mt-2">A confirmacao chega automaticamente em segundos.</p>
+
+          <button
+            type="button"
+            onClick={onVerify}
+            disabled={verifying}
+            className="mt-3 w-full rounded-lg border-2 border-emerald-500 bg-white text-emerald-700 hover:bg-emerald-50 py-3 text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50 min-h-[44px]"
+          >
+            {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            Ja paguei — verificar agora
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }

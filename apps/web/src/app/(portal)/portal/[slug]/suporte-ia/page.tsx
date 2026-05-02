@@ -28,8 +28,19 @@ export default function SuporteIAPage() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
-  const [company, setCompany] = useState<{ name: string } | null>(null)
-  const [customer, setCustomer] = useState<{ name: string } | null>(null)
+  const [company, setCompany] = useState<{ name: string; whatsapp?: string; phone?: string } | null>(null)
+  const [customer, setCustomer] = useState<{ name: string }  | null>(null)
+
+  // UX-1 #5: link wa.me pra escapar do bot quando nao resolve
+  function buildWhatsappEscape(): string | null {
+    const raw = company?.whatsapp || company?.phone
+    if (!raw) return null
+    const digits = raw.replace(/\D/g, '')
+    if (!digits || digits.length < 10) return null
+    const text = encodeURIComponent(`Ola! Vim do portal de ${company?.name || 'atendimento'} e gostaria de falar com uma pessoa.`)
+    return `https://wa.me/${digits.startsWith('55') ? digits : `55${digits}`}?text=${text}`
+  }
+  const waEscape = buildWhatsappEscape()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -159,6 +170,19 @@ export default function SuporteIAPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {waEscape && (
+              <a
+                href={waEscape}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hidden sm:inline-flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400 font-semibold px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950 hover:bg-emerald-100 dark:hover:bg-emerald-900 transition-colors"
+                aria-label="Falar com atendente humano via WhatsApp"
+                title="Falar com pessoa"
+              >
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4l-2-1c-.2-.1-.5-.1-.7.1l-.9 1c-1-.5-2.4-1.9-3-2.9l1-.9c.2-.2.2-.5.1-.7l-1-2c-.2-.4-.7-.6-1.1-.4l-1 .5c-.5.2-.7.7-.5 1.2.6 2 2.7 4.6 4.6 5.6.5.2 1 .1 1.2-.4l.5-1c.2-.4 0-.9-.4-1.1zM12 2C6.5 2 2 6.5 2 12c0 1.7.5 3.4 1.3 4.8L2 22l5.4-1.3c1.3.8 3 1.3 4.6 1.3 5.5 0 10-4.5 10-10S17.5 2 12 2z"/></svg>
+                Falar com pessoa
+              </a>
+            )}
             <button
               type="button"
               onClick={handleNewChat}
@@ -253,6 +277,24 @@ export default function SuporteIAPage() {
 
         {/* Input */}
         <div className="sticky bottom-0 bg-gray-50 dark:bg-zinc-950 pt-2 pb-4">
+          {/* Banner contextual: aparece apos 4+ msgs sugerindo escape humano (UX-1 #5) */}
+          {waEscape && messages.length >= 4 && (
+            <div className="mb-2 rounded-xl bg-emerald-50 dark:bg-emerald-950 border border-emerald-200 dark:border-emerald-900 p-3 flex items-center gap-3">
+              <svg className="w-5 h-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4l-2-1c-.2-.1-.5-.1-.7.1l-.9 1c-1-.5-2.4-1.9-3-2.9l1-.9c.2-.2.2-.5.1-.7l-1-2c-.2-.4-.7-.6-1.1-.4l-1 .5c-.5.2-.7.7-.5 1.2.6 2 2.7 4.6 4.6 5.6.5.2 1 .1 1.2-.4l.5-1c.2-.4 0-.9-.4-1.1zM12 2C6.5 2 2 6.5 2 12c0 1.7.5 3.4 1.3 4.8L2 22l5.4-1.3c1.3.8 3 1.3 4.6 1.3 5.5 0 10-4.5 10-10S17.5 2 12 2z"/></svg>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-emerald-900 dark:text-emerald-300">A IA não resolveu?</p>
+                <p className="text-[11px] text-emerald-700 dark:text-emerald-400">Fale com nossa equipe pelo WhatsApp.</p>
+              </div>
+              <a
+                href={waEscape}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-shrink-0 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg min-h-[40px] flex items-center"
+              >
+                Conversar
+              </a>
+            </div>
+          )}
           <form
             onSubmit={e => { e.preventDefault(); handleSend() }}
             className="flex gap-2"

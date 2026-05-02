@@ -40,6 +40,7 @@ export const viewport: Viewport = {
   userScalable: false,
   themeColor: '#1e40af',
   viewportFit: 'cover',   // usar safe-area (notch)
+  interactiveWidget: 'resizes-content', // teclado virtual empurra conteudo (UX-1 #6) — botoes sticky ficam visiveis acima do teclado
 }
 
 export default function MotoristaRootLayout({ children }: { children: React.ReactNode }) {

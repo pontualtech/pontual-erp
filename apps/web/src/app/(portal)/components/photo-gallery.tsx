@@ -212,29 +212,103 @@ export function PhotoGallery({ osId, customerId, initialPhotos = [] }: PhotoGall
         <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-4">Nenhuma foto enviada</p>
       ) : null}
 
-      {/* Lightbox */}
-      {lightbox && (
-        <div
-          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
-          onClick={() => setLightbox(null)}
-        >
+      {/* Lightbox com zoom (UX-1 #4) */}
+      {lightbox && <Lightbox src={lightbox} onClose={() => setLightbox(null)} />}
+    </div>
+  )
+}
+
+/**
+ * Lightbox com zoom (1×, 2×, 3×) + pan via overflow + ESC fechar.
+ * Click/double-tap na imagem cicla zoom. Pinch nativo funciona via
+ * touch-action: pinch-zoom no contêiner scrollável.
+ */
+function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
+  const [zoom, setZoom] = useState(1)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+      if (e.key === '+' || e.key === '=') setZoom((z) => Math.min(3, z + 1))
+      if (e.key === '-') setZoom((z) => Math.max(1, z - 1))
+    }
+    document.addEventListener('keydown', onKey)
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prev
+    }
+  }, [onClose])
+
+  function cycleZoom() {
+    setZoom((z) => (z >= 3 ? 1 : z + 1))
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Foto ampliada"
+      className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center"
+      onClick={onClose}
+    >
+      {/* Botões controle */}
+      <div className="absolute top-4 left-4 right-4 flex items-center justify-between z-10" onClick={(e) => e.stopPropagation()}>
+        <div className="flex gap-2">
           <button
             type="button"
-            className="absolute top-4 right-4 w-10 h-10 bg-white/20 rounded-full flex items-center justify-center text-white hover:bg-white/30 transition-colors"
-            onClick={() => setLightbox(null)}
+            onClick={() => setZoom((z) => Math.max(1, z - 1))}
+            disabled={zoom <= 1}
+            aria-label="Diminuir zoom"
+            className="w-11 h-11 bg-white/20 rounded-full text-white text-2xl font-bold hover:bg-white/30 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center"
           >
-            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            −
           </button>
-          <img
-            src={lightbox}
-            alt="Foto ampliada"
-            className="max-w-full max-h-[90vh] object-contain rounded-lg"
-            onClick={e => e.stopPropagation()}
-          />
+          <button
+            type="button"
+            onClick={() => setZoom((z) => Math.min(3, z + 1))}
+            disabled={zoom >= 3}
+            aria-label="Aumentar zoom"
+            className="w-11 h-11 bg-white/20 rounded-full text-white text-2xl font-bold hover:bg-white/30 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center"
+          >
+            +
+          </button>
+          <span className="px-3 h-11 bg-white/10 rounded-full text-white text-sm font-semibold flex items-center min-w-[60px] justify-center">
+            {zoom}×
+          </span>
         </div>
-      )}
+        <button
+          type="button"
+          aria-label="Fechar foto"
+          onClick={onClose}
+          className="w-11 h-11 bg-white/20 rounded-full flex items-center justify-center text-white hover:bg-white/30"
+        >
+          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Container com scroll quando zoom > 1 */}
+      <div
+        className="w-full h-full overflow-auto flex items-center justify-center p-4 touch-pinch-zoom"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <img
+          src={src}
+          alt="Foto ampliada — toque para alternar zoom"
+          onClick={cycleZoom}
+          className={`max-w-full max-h-[90vh] object-contain rounded-lg origin-center scale-[var(--lb-zoom)] transition-transform duration-200 select-none ${zoom >= 3 ? 'cursor-zoom-out' : 'cursor-zoom-in'}`}
+          style={{ ['--lb-zoom' as string]: zoom }}
+          draggable={false}
+        />
+      </div>
+
+      {/* Hint mobile */}
+      <p className="absolute bottom-4 left-0 right-0 text-center text-white/60 text-xs px-4">
+        Toque na foto para ampliar · pinch para zoom livre
+      </p>
     </div>
   )
 }

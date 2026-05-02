@@ -137,7 +137,7 @@ export default function EntregaPage() {
     onCancel={() => setCameraOpen(false)} />
 
   return (
-    <div className="min-h-[100dvh] bg-slate-50">
+    <div className="min-h-[100dvh] bg-slate-50 flex flex-col">
       <header className="sticky top-0 bg-emerald-700 text-white px-4 py-3 flex items-center gap-3 shadow z-10">
         <button onClick={() => router.back()} aria-label="Voltar" className="p-1"><ArrowLeft className="w-6 h-6" /></button>
         <div className="flex-1 min-w-0">
@@ -146,7 +146,7 @@ export default function EntregaPage() {
         </div>
       </header>
 
-      <main className="p-4 space-y-4 pb-32">
+      <main className="p-4 space-y-4 pb-4 flex-1">
         {/* Resumo OS */}
         <section className="bg-white rounded-xl border p-4 space-y-3">
           {stop.os?.diagnosis && (
@@ -315,8 +315,7 @@ export default function EntregaPage() {
       </main>
 
       {outcome && (
-        <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t shadow-lg"
-          style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}>
+        <div className="sticky bottom-0 left-0 right-0 p-4 bg-white border-t shadow-lg pb-[calc(1rem+env(safe-area-inset-bottom))] z-20">
           <button onClick={finalizar} disabled={submitting}
             className={`w-full font-bold py-4 rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.99] transition text-white ${
               outcome === 'entregue_aprovado' ? 'bg-green-600' : 'bg-red-600'

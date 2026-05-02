@@ -230,12 +230,14 @@ export default function DashboardPage() {
     loadAvisos()
   }
 
+  // UX-1 #10: cards do dashboard agora levam a filtro/contexto detalhado.
+  // Cada card vira link cliclavel — gerente ja chega na lista filtrada.
   const cards = [
-    { label: 'OS Abertas Hoje', value: stats?.cards.osAbertasHoje ?? 0, icon: ClipboardList, color: 'text-blue-600 bg-blue-50' },
-    { label: 'Aguardando Coleta', value: stats?.cards.osColetar ?? 0, icon: PackageCheck, color: 'text-purple-600 bg-purple-50' },
-    { label: 'OS em Execucao', value: stats?.cards.osEmExecucao ?? 0, icon: Wrench, color: 'text-amber-600 bg-amber-50' },
-    { label: 'Prontas p/ Entrega', value: stats?.cards.osProntas ?? 0, icon: Truck, color: 'text-emerald-600 bg-emerald-50' },
-    ...(canViewFinanceiro ? [{ label: 'Faturamento do Mes', value: formatCurrency(stats?.cards.faturamentoMesCents ?? 0), icon: DollarSign, color: 'text-green-600 bg-green-50' }] : []),
+    { label: 'OS Abertas Hoje', value: stats?.cards.osAbertasHoje ?? 0, icon: ClipboardList, color: 'text-blue-600 bg-blue-50', href: '/os?status=ABERTA&period=today' },
+    { label: 'Aguardando Coleta', value: stats?.cards.osColetar ?? 0, icon: PackageCheck, color: 'text-purple-600 bg-purple-50', href: '/os?status=COLETAR' },
+    { label: 'OS em Execucao', value: stats?.cards.osEmExecucao ?? 0, icon: Wrench, color: 'text-amber-600 bg-amber-50', href: '/os?status=EM_EXECUCAO' },
+    { label: 'Prontas p/ Entrega', value: stats?.cards.osProntas ?? 0, icon: Truck, color: 'text-emerald-600 bg-emerald-50', href: '/os?status=PRONTA' },
+    ...(canViewFinanceiro ? [{ label: 'Faturamento do Mes', value: formatCurrency(stats?.cards.faturamentoMesCents ?? 0), icon: DollarSign, color: 'text-green-600 bg-green-50', href: '/financeiro/dre' }] : []),
   ]
 
   if (!canViewDashboard) return null
@@ -439,24 +441,32 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ===== Summary Cards ===== */}
+      {/* ===== Summary Cards (clicaveis - UX-1 #10) ===== */}
       {isWidgetVisible('summary_cards') && <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {cards.map(card => {
           const Icon = card.icon
           return (
-            <div key={card.label} className="rounded-xl border bg-white p-5 shadow-sm">
+            <Link
+              key={card.label}
+              href={card.href}
+              aria-label={`${card.label}: ${card.value}. Clique para ver detalhes.`}
+              className="group rounded-xl border bg-white p-5 shadow-sm hover:shadow-md hover:border-blue-300 active:scale-[0.99] transition-all cursor-pointer"
+            >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-gray-500">{card.label}</p>
+                  <p className="text-sm text-gray-500 group-hover:text-blue-600 transition-colors">{card.label}</p>
                   <p className="mt-1 text-2xl font-bold text-gray-900">
                     {loading ? <Loader2 className="h-5 w-5 animate-spin text-gray-300" /> : card.value}
                   </p>
                 </div>
-                <div className={cn('rounded-xl p-2.5', card.color)}>
+                <div className={cn('rounded-xl p-2.5 transition-transform group-hover:scale-110', card.color)}>
                   <Icon className="h-5 w-5" />
                 </div>
               </div>
-            </div>
+              <p className="mt-2 text-[11px] text-gray-400 group-hover:text-blue-500 font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                Ver detalhes →
+              </p>
+            </Link>
           )
         })}
       </div>}

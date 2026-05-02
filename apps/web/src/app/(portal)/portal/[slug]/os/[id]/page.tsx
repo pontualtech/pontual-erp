@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { Printer, Mail, X, CreditCard, Truck, Clock, Banknote, Zap, CheckCircle2, MessageSquare } from 'lucide-react'
+import { Printer, Mail, X, CreditCard, Truck, Clock, Banknote, Zap, CheckCircle2, MessageSquare, Loader2 } from 'lucide-react'
 import { PhotoGallery } from '../../../../components/photo-gallery'
 import PortalPayBox from './_components/portal-pay-box'
 
@@ -85,6 +85,14 @@ export default function PortalOSDetailPage() {
   const [showEmailModal, setShowEmailModal] = useState(false)
   const [emailTo, setEmailTo] = useState('')
   const [emailSending, setEmailSending] = useState(false)
+  const [showNegotiate, setShowNegotiate] = useState(false)
+  const [negotiateReason, setNegotiateReason] = useState('')
+  const NEGOTIATE_SUGGESTIONS = [
+    'Achei o valor alto',
+    'Pode parcelar mais vezes?',
+    'Posso tirar alguma peça?',
+    'Tem desconto à vista?',
+  ]
 
   function loadOS() {
     // Auth token is sent automatically via httpOnly cookie
@@ -364,6 +372,99 @@ export default function PortalOSDetailPage() {
               >
                 {emailSending ? 'Enviando...' : 'Enviar'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Negociar Orcamento (substitui window.prompt — UX-1 #3) */}
+      {showNegotiate && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="negotiate-modal-title"
+          onClick={() => !actionLoading && setShowNegotiate(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md max-h-[95dvh] overflow-y-auto rounded-2xl bg-white dark:bg-zinc-900 shadow-2xl"
+          >
+            <div className="px-5 py-4 border-b border-gray-200 dark:border-zinc-700 flex items-center justify-between">
+              <h3 id="negotiate-modal-title" className="font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                <MessageSquare className="h-5 w-5 text-amber-600" />
+                Quero negociar
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowNegotiate(false)}
+                disabled={actionLoading}
+                aria-label="Fechar"
+                className="text-gray-400 hover:text-gray-600 disabled:opacity-50 p-1 -m-1"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Conte o que você gostaria de ajustar — vamos entrar em contato para conversar.
+              </p>
+
+              <div>
+                <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">Sugestões rápidas:</p>
+                <div className="flex flex-wrap gap-2">
+                  {NEGOTIATE_SUGGESTIONS.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setNegotiateReason((prev) => prev ? `${prev} ${s}` : s)}
+                      className="px-3 py-1.5 rounded-full bg-amber-50 dark:bg-amber-950 hover:bg-amber-100 dark:hover:bg-amber-900 border border-amber-300 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-300 font-medium"
+                    >
+                      + {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="negotiate-textarea" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Sua mensagem (opcional)
+                </label>
+                <textarea
+                  id="negotiate-textarea"
+                  value={negotiateReason}
+                  onChange={(e) => setNegotiateReason(e.target.value)}
+                  rows={4}
+                  maxLength={500}
+                  placeholder="Ex: Posso parcelar em mais vezes? Qual seria o desconto à vista?"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm bg-white dark:bg-zinc-800 text-gray-900 dark:text-gray-100"
+                  autoFocus
+                />
+                <p className="text-[10px] text-gray-400 mt-1 text-right">{negotiateReason.length}/500</p>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowNegotiate(false)}
+                  disabled={actionLoading}
+                  className="flex-1 px-4 py-3 border border-gray-300 dark:border-zinc-700 rounded-xl text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-800 text-sm font-semibold disabled:opacity-50 min-h-[44px]"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleAction('reject', negotiateReason.trim() || 'Cliente solicitou negociacao')
+                    setShowNegotiate(false)
+                  }}
+                  disabled={actionLoading}
+                  className="flex-1 px-4 py-3 bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white rounded-xl text-sm font-bold min-h-[44px] flex items-center justify-center gap-2"
+                >
+                  {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageSquare className="h-4 w-4" />}
+                  Enviar e aguardar
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -692,13 +793,10 @@ export default function PortalOSDetailPage() {
                       Aprovar e iniciar reparo agora
                     </button>
 
-                    {/* CTA secundario: Negociar — visualmente menor */}
+                    {/* CTA secundario: Negociar — abre modal proprio */}
                     <button
                       type="button"
-                      onClick={() => {
-                        const reason = prompt('Conta pra gente o que voce gostaria de negociar (opcional):')
-                        handleAction('reject', reason || 'Cliente solicitou negociacao')
-                      }}
+                      onClick={() => { setNegotiateReason(''); setShowNegotiate(true) }}
                       disabled={actionLoading}
                       className="w-full py-2.5 px-4 bg-transparent border-2 border-amber-400 dark:border-amber-700 hover:bg-amber-100/50 dark:hover:bg-amber-900/30 disabled:opacity-50 text-amber-800 dark:text-amber-300 font-semibold text-sm rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
                     >

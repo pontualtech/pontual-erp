@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Search, Loader2, CheckCircle, AlertCircle, Building2, User, ArrowLeft } from 'lucide-react'
@@ -61,6 +61,8 @@ const emptyForm = {
   notes: '',
 }
 
+const DRAFT_KEY = 'erp:cliente-novo:draft'
+
 export default function NovoClientePage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
@@ -74,9 +76,64 @@ export default function NovoClientePage() {
     matchFields: string[]
     payload: any
   } | null>(null)
+  const submittedRef = useRef(false)
+  const [draftRestored, setDraftRestored] = useState(false)
+
+  // UX-1 #9: Restore draft on mount (atendente recarregou pagina ou voltou)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY)
+      if (!raw) return
+      const draft = JSON.parse(raw)
+      if (draft && typeof draft === 'object' && draft.legal_name) {
+        setForm({ ...emptyForm, ...draft })
+        setDraftRestored(true)
+      }
+    } catch {}
+  }, [])
+
+  // UX-1 #9: Auto-save dirty form to localStorage (debounced 800ms)
+  useEffect(() => {
+    if (submittedRef.current) return
+    const isDirty = form.legal_name || form.trade_name || form.document_number || form.email || form.phone || form.mobile
+    if (!isDirty) return
+    const t = setTimeout(() => {
+      try { localStorage.setItem(DRAFT_KEY, JSON.stringify(form)) } catch {}
+    }, 800)
+    return () => clearTimeout(t)
+  }, [form])
+
+  // UX-1 #9: beforeunload guard quando ha dados nao salvos
+  useEffect(() => {
+    const isDirty = !!(form.legal_name || form.document_number || form.email || form.phone || form.mobile)
+    if (!isDirty) return
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [form])
 
   function update(field: string, value: string) {
     setForm(prev => ({ ...prev, [field]: value }))
+  }
+
+  function handleCancel() {
+    const isDirty = !!(form.legal_name || form.document_number || form.email || form.phone || form.mobile)
+    if (isDirty) {
+      const ok = window.confirm('Você tem dados preenchidos não salvos. Deseja descartar e voltar?')
+      if (!ok) return
+    }
+    try { localStorage.removeItem(DRAFT_KEY) } catch {}
+    router.back()
+  }
+
+  function discardDraft() {
+    try { localStorage.removeItem(DRAFT_KEY) } catch {}
+    setForm(emptyForm)
+    setDraftRestored(false)
+    toast.success('Rascunho descartado')
   }
 
   // ── Detect CPF vs CNPJ by length ──
@@ -291,6 +348,8 @@ export default function NovoClientePage() {
 
       if (!res.ok) throw new Error(data.error || 'Erro ao cadastrar')
 
+      submittedRef.current = true
+      try { localStorage.removeItem(DRAFT_KEY) } catch {}
       toast.success(existingClientId ? 'Cliente atualizado!' : 'Cliente cadastrado!')
       router.push('/clientes')
     } catch (err) {
@@ -311,6 +370,8 @@ export default function NovoClientePage() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Erro ao atualizar')
+      submittedRef.current = true
+      try { localStorage.removeItem(DRAFT_KEY) } catch {}
       toast.success('Cliente atualizado com sucesso!')
       setDuplicateModal(null)
       router.push('/clientes')
@@ -350,6 +411,26 @@ export default function NovoClientePage() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-5">
+
+        {/* Banner: rascunho restaurado (UX-1 #9) */}
+        {draftRestored && (
+          <div className="rounded-lg border-2 border-blue-300 bg-blue-50 p-4 flex items-start gap-3">
+            <CheckCircle className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-blue-900">Rascunho restaurado</p>
+              <p className="text-xs text-blue-700">
+                Recuperamos o que você havia preenchido. Pode continuar de onde parou ou descartar abaixo.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={discardDraft}
+              className="text-xs text-blue-700 hover:text-blue-900 font-semibold underline whitespace-nowrap"
+            >
+              Descartar
+            </button>
+          </div>
+        )}
 
         {/* ── STEP 1: Document ── */}
         <div className="rounded-lg border bg-white p-5 space-y-4">
@@ -579,7 +660,7 @@ export default function NovoClientePage() {
 
         {/* ── Submit ── */}
         <div className="flex gap-3">
-          <button type="button" onClick={() => router.back()}
+          <button type="button" onClick={handleCancel}
             className="px-5 py-2.5 border rounded-md text-gray-700 hover:bg-gray-50 transition-colors">
             Cancelar
           </button>

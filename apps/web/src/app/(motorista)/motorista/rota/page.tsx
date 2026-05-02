@@ -117,22 +117,36 @@ export default function RotaHojePage() {
 
   // Wake Lock: mantem tela acesa enquanto motorista esta na pagina da rota.
   // Sem isso, celular entra em lock screen e GPS deixa de atualizar — gestor
-  // perde o rastreamento. A lock e re-adquirida se o usuario volta a pagina.
+  // perde o rastreamento. A lock e re-adquirida em 3 cenarios (UX-1 #7):
+  // 1. Mount inicial
+  // 2. visibilitychange (volta de background)
+  // 3. release event (Android revoga em modo economia / bateria baixa)
   useEffect(() => {
     let lock: any = null
+    let cancelled = false
+
     async function acquire() {
+      if (cancelled) return
       try {
         // @ts-ignore — wakeLock nao esta nos typings DOM por default
         if ('wakeLock' in navigator) {
           // @ts-ignore
           lock = await navigator.wakeLock.request('screen')
+          // Re-aquire automaticamente quando o sistema revoga
+          lock?.addEventListener?.('release', () => {
+            if (!cancelled && !document.hidden) {
+              // backoff curto: tenta de novo em 2s pra evitar tight loop
+              setTimeout(() => { void acquire() }, 2000)
+            }
+          })
         }
       } catch { /* ignora; alguns iOS antigos nao suportam */ }
     }
-    const onVisibility = () => { if (!document.hidden) acquire() }
-    acquire()
+    const onVisibility = () => { if (!document.hidden) void acquire() }
+    void acquire()
     document.addEventListener('visibilitychange', onVisibility)
     return () => {
+      cancelled = true
       document.removeEventListener('visibilitychange', onVisibility)
       try { lock?.release?.() } catch {}
     }
@@ -713,17 +727,17 @@ function StopCard({ stop, myLocation, onNotifyCustomer, onMove, onAskPostpone, o
 
         {!notified && !confirmed && stop.status !== 'COMPLETED' && stop.status !== 'FAILED' && (
           <button type="button" onClick={handleNotify} disabled={notifying}
-            className={`w-full py-3 text-sm font-bold text-white active:scale-[0.99] disabled:opacity-60 flex items-center justify-center gap-2 transition ${theme.primaryBg} ${theme.primaryHover}`}>
+            className="w-full py-3 text-sm font-bold text-white active:scale-[0.99] disabled:opacity-60 flex items-center justify-center gap-2 transition bg-amber-500 hover:bg-amber-600 border-b-4 border-amber-700">
             {notifying ? (
               <><RefreshCw className="w-4 h-4 animate-spin" /> Enviando…</>
             ) : (
-              <>🚗 Avisar cliente que estou a caminho</>
+              <>📢 Avisar cliente que estou a caminho</>
             )}
           </button>
         )}
 
-        <Link href={href} className={`block w-full py-3 text-sm font-bold text-center text-white active:scale-[0.99] transition ${theme.primaryBg} brightness-90`}>
-          {isColeta ? 'Iniciar Coleta →' : 'Iniciar Entrega →'}
+        <Link href={href} className={`block w-full py-4 text-base font-extrabold text-center text-white active:scale-[0.99] transition ${theme.primaryBg} ${theme.primaryHover}`}>
+          {isColeta ? '🚀 Iniciar Coleta →' : '🚀 Iniciar Entrega →'}
         </Link>
 
         {/* Controles de reordenar/adiar — sempre visiveis na hero card */}
