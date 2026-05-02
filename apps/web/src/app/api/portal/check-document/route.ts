@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { rateLimit } from '@/lib/rate-limit'
 
 export async function POST(req: NextRequest) {
+  const startedAt = Date.now()
   try {
     const rl = rateLimit(`check-doc:${req.ip || 'unknown'}`, 10, 60 * 1000) // 10 per minute
     if (!rl.allowed) {
@@ -42,10 +43,32 @@ export async function POST(req: NextRequest) {
       },
     })
 
+    // N10 mitigação (audit pos-fix): timing constant pra evitar oracle
+    // (atacante mede latência pra distinguir "encontrou" vs "não encontrou").
+    // Não fechamos a enumeration completamente porque UX precisa distinguir
+    // pra mostrar fluxo de registro vs login — mas adicionamos audit + delay.
+    const respondInConstantTime = async (data: any, status = 200) => {
+      const elapsed = Date.now() - startedAt
+      const target = 350 // ms — delay constante pra resposta
+      if (elapsed < target) await new Promise(r => setTimeout(r, target - elapsed))
+      return NextResponse.json({ data }, { status })
+    }
+
     if (!customer) {
-      return NextResponse.json({
-        data: { exists: false, has_access: false },
-      })
+      // Audit lookup tentativa pra detecção de enumeration em volume
+      try {
+        await prisma.auditLog.create({
+          data: {
+            company_id: company.id,
+            user_id: 'system:portal-check-doc',
+            module: 'portal',
+            action: 'doc_lookup_not_found',
+            ip_address: req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null,
+            new_value: { doc_hash_prefix: cleanDoc.slice(0, 4) + '***' },
+          },
+        })
+      } catch {}
+      return respondInConstantTime({ exists: false, has_access: false })
     }
 
     // Customer exists — check if has portal access
@@ -64,14 +87,12 @@ export async function POST(req: NextRequest) {
       ? customer.email.replace(/^(.{2}).*(@.*)$/, '$1***$2')
       : null
 
-    return NextResponse.json({
-      data: {
-        exists: true,
-        has_access: !!access,
-        email_verified: access?.email_verified || false,
-        customer_name: customer.legal_name?.split(' ')[0] || 'Cliente',
-        email_hint: emailHint,
-      },
+    return respondInConstantTime({
+      exists: true,
+      has_access: !!access,
+      email_verified: access?.email_verified || false,
+      customer_name: customer.legal_name?.split(' ')[0] || 'Cliente',
+      email_hint: emailHint,
     })
   } catch (err) {
     console.error('[Portal Check Document Error]', err)

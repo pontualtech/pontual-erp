@@ -12,6 +12,7 @@ import { prisma } from '@pontual/db'
 import { error, handleError } from '@/lib/api-response'
 import { downloadRecording, readRecording, fetchRecordingViaSonaxApi } from '@/lib/voip/recording'
 import { verifyShareToken } from '@/lib/voip/share-token'
+import { rateLimit } from '@/lib/rate-limit'
 
 // public — middleware bypass: rota fora de matcher? Verificar.
 // `/api/voip/share/...` deve estar em allowlist do middleware.
@@ -22,7 +23,13 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: { token: string } },
 ) {
+  const ip = _req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || _req.ip || 'unknown'
   try {
+    // N29 fix (audit pos-fix): rate limit + audit log download.
+    // Áudio é dado pessoal sensível (voz) — LGPD requer trilha.
+    const rl = rateLimit(`recording-share:${ip}`, 30, 60 * 1000)
+    if (!rl.allowed) return error('Muitas tentativas', 429)
+
     const payload = verifyShareToken(params.token)
     if (!payload) return error('Link expirado ou invalido', 403)
 
@@ -39,6 +46,21 @@ export async function GET(
     })
     if (!call) return error('Chamada nao encontrada', 404)
     if (!call.recording_url) return error('Sem gravacao disponivel', 404)
+
+    // N29: audit log download (LGPD trilha de quem acessou áudio sensível)
+    try {
+      await prisma.auditLog.create({
+        data: {
+          company_id: call.company_id,
+          user_id: 'system:share-link',
+          module: 'voip',
+          action: 'recording_share_download',
+          entity_id: call.id,
+          ip_address: ip,
+          new_value: { call_id: call.call_id },
+        },
+      })
+    } catch {}
 
     const filename = `call-${call.call_id}.mp3`
     const baseHeaders = {
