@@ -356,13 +356,13 @@ export default function BoletosPage() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
-              <th className="px-4 py-3">Descricao</th>
+              <th className="px-4 py-3">Descrição</th>
               <th className="px-4 py-3">Cliente</th>
-              <th className="px-4 py-3">Nosso Numero</th>
+              <th className="px-4 py-3">Nosso Número</th>
               <th className="px-4 py-3">Vencimento</th>
               <th className="px-4 py-3 text-right">Valor</th>
               <th className="px-4 py-3 text-center">Status</th>
-              <th className="px-4 py-3 text-right">Acoes</th>
+              <th className="px-4 py-3 text-right">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y">
@@ -445,7 +445,7 @@ export default function BoletosPage() {
                         {boleto.pixCode && (
                           <button
                             type="button"
-                            onClick={() => copyToClipboard(boleto.pixCode!, 'Codigo PIX')}
+                            onClick={() => copyToClipboard(boleto.pixCode!, 'Código PIX')}
                             title="Copiar PIX copia-e-cola"
                             className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-purple-600"
                           >
@@ -529,7 +529,7 @@ export default function BoletosPage() {
                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="Buscar por descricao ou cliente..."
+                  placeholder="Buscar por descrição ou cliente..."
                   value={receivableSearch}
                   onChange={e => {
                     setReceivableSearch(e.target.value)
@@ -644,7 +644,7 @@ export default function BoletosPage() {
               {/* Info grid */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <p className="text-xs text-gray-500">Descricao</p>
+                  <p className="text-xs text-gray-500">Descrição</p>
                   <p className="text-sm font-medium text-gray-900">{detailBoleto.description}</p>
                 </div>
                 <div>
@@ -660,7 +660,7 @@ export default function BoletosPage() {
                   <p className="text-sm font-medium text-gray-900">{formatDate(detailBoleto.dueDate)}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-500">Nosso Numero</p>
+                  <p className="text-xs text-gray-500">Nosso Número</p>
                   <p className="text-sm font-mono text-gray-900">{detailBoleto.nossoNumero}</p>
                 </div>
                 <div>
@@ -674,10 +674,10 @@ export default function BoletosPage() {
                 {detailBoleto.digitableLine && (
                   <div className="rounded-md border bg-gray-50 p-3">
                     <div className="flex items-center justify-between mb-1">
-                      <p className="text-xs font-medium text-gray-500">Linha Digitavel</p>
+                      <p className="text-xs font-medium text-gray-500">Linha Digitável</p>
                       <button
                         type="button"
-                        onClick={() => copyToClipboard(detailBoleto.digitableLine, 'Linha digitavel')}
+                        onClick={() => copyToClipboard(detailBoleto.digitableLine, 'Linha digitável')}
                         className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
                       >
                         <Copy className="h-3 w-3" /> Copiar
@@ -689,10 +689,10 @@ export default function BoletosPage() {
                 {detailBoleto.barcode && (
                   <div className="rounded-md border bg-gray-50 p-3">
                     <div className="flex items-center justify-between mb-1">
-                      <p className="text-xs font-medium text-gray-500">Codigo de Barras</p>
+                      <p className="text-xs font-medium text-gray-500">Código de Barras</p>
                       <button
                         type="button"
-                        onClick={() => copyToClipboard(detailBoleto.barcode, 'Codigo de barras')}
+                        onClick={() => copyToClipboard(detailBoleto.barcode, 'Código de barras')}
                         className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
                       >
                         <Copy className="h-3 w-3" /> Copiar
@@ -707,7 +707,7 @@ export default function BoletosPage() {
                       <p className="text-xs font-medium text-gray-500">PIX Copia e Cola</p>
                       <button
                         type="button"
-                        onClick={() => copyToClipboard(detailBoleto.pixCode!, 'Codigo PIX')}
+                        onClick={() => copyToClipboard(detailBoleto.pixCode!, 'Código PIX')}
                         className="flex items-center gap-1 text-xs text-purple-600 hover:text-purple-800"
                       >
                         <Copy className="h-3 w-3" /> Copiar
