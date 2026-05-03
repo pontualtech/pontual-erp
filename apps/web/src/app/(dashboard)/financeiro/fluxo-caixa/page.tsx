@@ -124,7 +124,7 @@ export default function FluxoCaixaPage() {
           </Link>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Fluxo de Caixa</h1>
-            <p className="text-sm text-gray-500">Entradas e saidas por periodo</p>
+            <p className="text-sm text-gray-500">Entradas e saídas por período</p>
           </div>
         </div>
       </div>
@@ -146,7 +146,7 @@ export default function FluxoCaixaPage() {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Ate</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Até</label>
             <input
               type="date"
               value={toDate}
@@ -155,12 +155,12 @@ export default function FluxoCaixaPage() {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Conta Bancaria</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Conta Bancária</label>
             <select
               value={accountId}
               onChange={e => setAccountId(e.target.value)}
-              title="Conta Bancaria"
-              aria-label="Conta Bancaria"
+              title="Conta Bancária"
+              aria-label="Conta Bancária"
               className="rounded-md border bg-white py-2 px-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 min-w-[180px]"
             >
               <option value="">Todas as contas</option>
@@ -196,12 +196,12 @@ export default function FluxoCaixaPage() {
         </div>
       </div>
 
-      {/* Saldo Bancario */}
+      {/* Saldo Bancário */}
       {data && data.contas && data.contas.length > 0 && (
         <div className="rounded-lg border bg-gradient-to-r from-blue-50 to-indigo-50 p-5 shadow-sm">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold text-gray-700">
-              Saldo Bancario Atual
+              Saldo Bancário Atual
               {accountId && <span className="text-xs text-gray-400 ml-2">(filtrado)</span>}
             </h2>
             <span className={cn('text-2xl font-bold', (data.saldoBancario ?? 0) >= 0 ? 'text-blue-700' : 'text-red-600')}>
@@ -242,7 +242,7 @@ export default function FluxoCaixaPage() {
           <div className="rounded-lg border bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-500">Total Saidas</p>
+                <p className="text-sm text-gray-500">Total Saídas</p>
                 <p className="mt-1 text-2xl font-bold text-red-600">
                   {loading ? '...' : formatCurrency(totais.saidas)}
                 </p>
@@ -276,7 +276,7 @@ export default function FluxoCaixaPage() {
 
       {/* Chart */}
       <div className="rounded-lg border bg-white p-5 shadow-sm">
-        <h2 className="text-sm font-semibold text-gray-700 mb-4">Entradas vs Saidas por Mes</h2>
+        <h2 className="text-sm font-semibold text-gray-700 mb-4">Entradas vs Saídas por Mês</h2>
         {loading ? (
           <div className="flex items-center justify-center h-[350px] text-gray-400">
             <Loader2 className="h-6 w-6 animate-spin mr-2" /> Carregando...
@@ -312,7 +312,7 @@ export default function FluxoCaixaPage() {
             <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
               <th className="px-4 py-3">Mes</th>
               <th className="px-4 py-3 text-right">Entradas</th>
-              <th className="px-4 py-3 text-right">Saidas</th>
+              <th className="px-4 py-3 text-right">Saídas</th>
               <th className="px-4 py-3 text-right">Saldo</th>
               <th className="px-4 py-3 text-right">Acumulado</th>
             </tr>
