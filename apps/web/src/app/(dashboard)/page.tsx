@@ -243,10 +243,11 @@ export default function DashboardPage() {
 
   // UX-1 #10: cards do dashboard agora levam a filtro/contexto detalhado.
   // UX-7 #1: cada card pode ter `delta` (Δ% vs período anterior).
-  // UX-12 #3: esconde delta se base anterior < 5 — evita mensagem enganosa
-  //           tipo "↓ 100% vs ontem" quando ontem teve só 1 OS (volume baixo
-  //           amplifica ruído percentual).
-  function calcDelta(curr: number, prev: number | undefined, minBase = 5): { pct: number; up: boolean } | null {
+  // UX-12 #3 + Audit 9: esconde delta se base anterior <= 9 — evita mensagem
+  //   enganosa tipo "↓ 100% vs ontem" quando ontem teve só 5 OS. Audit 9
+  //   detectou off-by-one: minBase=5 + `prev < 5` deixava prev=5 passar e
+  //   exibia ↓100% com curr=0. Threshold 10 OS dá margem real contra ruído.
+  function calcDelta(curr: number, prev: number | undefined, minBase = 10): { pct: number; up: boolean } | null {
     if (prev == null || prev === 0) return null
     if (prev < minBase) return null  // base muito baixa → delta enganoso
     const pct = Math.round(((curr - prev) / prev) * 100)
@@ -262,9 +263,9 @@ export default function DashboardPage() {
   const cards = [
     { label: 'OS Abertas Hoje', value: osAbertasHoje, icon: ClipboardList, color: 'text-blue-600 bg-blue-50', href: '/os?status=ABERTA&period=today', delta: calcDelta(osAbertasHoje, osAbertasOntem), deltaLabel: 'vs ontem' },
     { label: 'Aguardando Coleta', value: stats?.cards.osColetar ?? 0, icon: PackageCheck, color: 'text-purple-600 bg-purple-50', href: '/os?status=COLETAR', delta: null, deltaLabel: '' },
-    { label: 'OS em Execucao', value: stats?.cards.osEmExecucao ?? 0, icon: Wrench, color: 'text-amber-600 bg-amber-50', href: '/os?status=EM_EXECUCAO', delta: null, deltaLabel: '' },
+    { label: 'OS em Execução', value: stats?.cards.osEmExecucao ?? 0, icon: Wrench, color: 'text-amber-600 bg-amber-50', href: '/os?status=EM_EXECUCAO', delta: null, deltaLabel: '' },
     { label: 'Prontas p/ Entrega', value: stats?.cards.osProntas ?? 0, icon: Truck, color: 'text-emerald-600 bg-emerald-50', href: '/os?status=PRONTA', delta: null, deltaLabel: '' },
-    ...(canViewFinanceiro ? [{ label: 'Faturamento do Mes', value: formatCurrency(faturamentoMes), icon: DollarSign, color: 'text-green-600 bg-green-50', href: '/financeiro/dre', delta: calcDelta(faturamentoMes, faturamentoPrev), deltaLabel: 'vs mês passado (até hoje)' }] : []),
+    ...(canViewFinanceiro ? [{ label: 'Faturamento do Mês', value: formatCurrency(faturamentoMes), icon: DollarSign, color: 'text-green-600 bg-green-50', href: '/financeiro/dre', delta: calcDelta(faturamentoMes, faturamentoPrev), deltaLabel: 'vs mês passado (até hoje)' }] : []),
   ]
 
   if (!canViewDashboard) return null

@@ -67,8 +67,8 @@ export default function VoipRamaisPage() {
       </div>
 
       <p className="text-sm text-gray-500">
-        Para chamar outro funcionario internamente, disque o numero do ramal abaixo no widget Sonax (canto direito).
-        Cada ramal toca no usuario logado correspondente.
+        Para chamar outro funcionário internamente, disque o número do ramal abaixo no widget Sonax (canto direito).
+        Cada ramal toca no usuário logado correspondente.
       </p>
 
       <div className="rounded-lg border bg-white shadow-sm">
@@ -90,11 +90,11 @@ export default function VoipRamaisPage() {
               <thead>
                 <tr className="border-b bg-gray-50 text-left text-xs uppercase text-gray-500">
                   <th className="px-4 py-3">Ramal</th>
-                  <th className="px-4 py-3">Funcionario</th>
-                  <th className="px-4 py-3">Funcao</th>
+                  <th className="px-4 py-3">Funcionário</th>
+                  <th className="px-4 py-3">Função</th>
                   <th className="px-4 py-3">E-mail (login)</th>
                   <th className="px-4 py-3">Celular</th>
-                  <th className="px-4 py-3 text-right">Acoes</th>
+                  <th className="px-4 py-3 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -141,8 +141,8 @@ export default function VoipRamaisPage() {
           <Phone className="h-4 w-4" /> Como funciona
         </p>
         <ul className="space-y-1 text-blue-800 list-disc list-inside">
-          <li>Cada funcionario faz login no ERP com seu e-mail e o widget Sonax aparece com o ramal dele</li>
-          <li>Para ligar pra outro funcionario, abra o widget e disque o numero do ramal (3 digitos)</li>
+          <li>Cada funcionário faz login no ERP com seu e-mail e o widget Sonax aparece com o ramal dele</li>
+          <li>Para ligar pra outro funcionário, abra o widget e disque o número do ramal (3 dígitos)</li>
           <li>Para receber chamadas, basta estar logado e com o widget aberto (microfone permitido)</li>
         </ul>
       </div>

@@ -63,7 +63,7 @@ export function NotificationBell() {
       <button
         onClick={() => setOpen(!open)}
         className="relative flex h-8 w-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-        aria-label="Notificacoes"
+        aria-label="Notificações"
       >
         <Bell className="h-5 w-5" />
         {count > 0 && (
@@ -76,14 +76,14 @@ export function NotificationBell() {
       {open && (
         <div className="absolute right-0 top-10 z-50 w-80 rounded-lg border bg-white shadow-xl sm:w-96">
           <div className="border-b px-4 py-3">
-            <h3 className="text-sm font-semibold text-gray-900">Notificacoes</h3>
+            <h3 className="text-sm font-semibold text-gray-900">Notificações</h3>
           </div>
 
           <div className="max-h-80 overflow-y-auto">
             {announcements.length === 0 ? (
               <div className="p-6 text-center">
                 <Bell className="mx-auto h-8 w-8 text-gray-300" />
-                <p className="mt-2 text-sm text-gray-400">Nenhuma notificacao pendente</p>
+                <p className="mt-2 text-sm text-gray-400">Nenhuma notificação pendente</p>
               </div>
             ) : (
               announcements.map(a => (

@@ -38,7 +38,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
   {
     title: 'Operacional',
     items: [
-      { label: 'Ordens de Servico', href: '/os', icon: ClipboardList, module: 'os', action: 'view' },
+      { label: 'Ordens de Serviço', href: '/os', icon: ClipboardList, module: 'os', action: 'view' },
       { label: 'Clientes', href: '/clientes', icon: Users, module: 'clientes', action: 'view' },
       { label: 'Tickets', href: '/tickets', icon: MessageSquare, requiredAnyPermission: [{ module: 'os', action: 'create' }] },
       { label: 'Chat', href: '/chat', icon: MessageCircle, requiredAnyPermission: [{ module: 'os', action: 'create' }] },
@@ -46,7 +46,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
       { label: 'Chamadas', href: '/voip/calls', icon: PhoneCall, requiredAnyPermission: [{ module: 'os', action: 'create' }] },
       { label: 'Ramais', href: '/voip/ramais', icon: Phone, requiredAnyPermission: [{ module: 'os', action: 'create' }] },
       { label: 'Ramais (Admin)', href: '/voip/admin/ramais', icon: Hash, adminOnly: true },
-      { label: 'Logistica', href: '/logistica', icon: Truck, module: 'logistics', action: 'view' },
+      { label: 'Logística', href: '/logistica', icon: Truck, module: 'logistics', action: 'view' },
       { label: 'Contratos', href: '/contratos', icon: FileText, adminOnly: true },
     ],
   },
@@ -72,7 +72,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
     items: [
       { label: 'Financeiro', href: '/financeiro', icon: DollarSign, module: 'financeiro', action: 'view' },
       { label: 'Fiscal', href: '/fiscal', icon: FileText, module: 'fiscal', action: 'view' },
-      { label: 'BI / Relatorios', href: '/relatorios-bi', icon: BarChart3, module: 'financeiro', action: 'view' },
+      { label: 'BI / Relatórios', href: '/relatorios-bi', icon: BarChart3, module: 'financeiro', action: 'view' },
     ],
   },
   {
@@ -80,7 +80,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
     items: [
       { label: 'Log Portal', href: '/portal-log', icon: Activity, adminOnly: true },
       { label: 'Logs de Atividade', href: '/logs', icon: Activity, adminOnly: true },
-      { label: 'Configuracoes', href: '/config', icon: Settings, adminOnly: true },
+      { label: 'Configurações', href: '/config', icon: Settings, adminOnly: true },
     ],
   },
   {

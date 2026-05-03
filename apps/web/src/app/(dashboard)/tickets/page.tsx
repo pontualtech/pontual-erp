@@ -117,7 +117,7 @@ export default function TicketsPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Comunicacao / Tickets</h1>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Comunicação / Tickets</h1>
         <Link
           href="/tickets/novo"
           className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
@@ -198,12 +198,12 @@ export default function TicketsPage() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-gray-50 dark:bg-gray-900 dark:border-gray-700 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
-              <th className="px-4 py-3">Numero</th>
+              <th className="px-4 py-3">Número</th>
               <th className="px-4 py-3">Assunto</th>
               <th className="px-4 py-3">Prioridade</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">OS</th>
-              <th className="px-4 py-3">Responsavel</th>
+              <th className="px-4 py-3">Responsável</th>
               <th className="px-4 py-3">Origem</th>
               <th className="px-4 py-3">Data</th>
               <th className="px-4 py-3 text-center">Msgs</th>
@@ -239,7 +239,7 @@ export default function TicketsPage() {
                   </td>
                   <td className="px-4 py-3 text-xs">
                     {ticket.os_id ? (
-                      <Link href={`/ordens/${ticket.os_id}`} className="font-medium text-blue-600 hover:underline">
+                      <Link href={`/os/${ticket.os_id}`} className="font-medium text-blue-600 hover:underline">
                         OS #{String(ticket.os_number).padStart(4, '0')}
                       </Link>
                     ) : (

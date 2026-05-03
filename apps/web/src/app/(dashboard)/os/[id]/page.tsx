@@ -1230,7 +1230,7 @@ export default function OSDetailPage() {
           {canEditOs && (
             <button type="button" onClick={openQuoteModal}
               className="flex items-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors">
-              <Send className="h-4 w-4" /> Enviar Orcamento
+              <Send className="h-4 w-4" /> Enviar Orçamento
             </button>
           )}
           {canEditOs && (os as any).customer_id && (
@@ -1422,7 +1422,7 @@ export default function OSDetailPage() {
             {(!showAddItem || addItemSection !== 'SERVICO') && (
               <button type="button" onClick={() => openAddItem('SERVICO')}
                 className="flex items-center gap-1.5 rounded-lg bg-amber-50 border border-amber-200 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100 transition-colors">
-                <Plus className="h-3.5 w-3.5" /> Adicionar servico
+                <Plus className="h-3.5 w-3.5" /> Adicionar serviço
               </button>
             )}
             <div className="relative">
@@ -1819,7 +1819,7 @@ export default function OSDetailPage() {
                   className="w-full px-2 py-1.5 border rounded text-sm" />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 uppercase font-medium mb-1">Prazo (dias uteis)</label>
+                <label className="block text-xs text-gray-500 uppercase font-medium mb-1">Prazo (dias úteis)</label>
                 <input type="number" min="1" max="90" value={customBusinessDays}
                   onChange={e => setCustomBusinessDays(e.target.value)}
                   placeholder="10"
@@ -3280,7 +3280,7 @@ export default function OSDetailPage() {
             <div className="flex items-center justify-between p-4 border-b shrink-0">
               <h2 className="text-lg font-semibold flex items-center gap-2">
                 <Send className="h-5 w-5 text-blue-600" />
-                Enviar Orcamento - OS-{String(os.os_number).padStart(4, '0')}
+                Enviar Orçamento - OS-{String(os.os_number).padStart(4, '0')}
               </h2>
               <button type="button" onClick={() => setShowQuoteModal(false)} title="Fechar" className="p-1 rounded-lg hover:bg-gray-100 text-gray-400">
                 <X className="h-5 w-5" />
@@ -3318,7 +3318,7 @@ export default function OSDetailPage() {
               <button type="button" onClick={handleSendQuote} disabled={sendingQuote || !quoteEmail}
                 className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors">
                 {sendingQuote ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                {sendingQuote ? 'Enviando...' : 'Enviar Orcamento'}
+                {sendingQuote ? 'Enviando...' : 'Enviar Orçamento'}
               </button>
               <button type="button" onClick={() => setShowQuoteModal(false)}
                 className="px-4 py-2.5 border rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
@@ -3568,7 +3568,7 @@ function InlineAddItemForm({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h3 className="font-semibold text-gray-900 text-sm">
-            {isServico ? 'Adicionar Servico' : 'Adicionar Produto'}
+            {isServico ? 'Adicionar Serviço' : 'Adicionar Produto'}
           </h3>
           {showAddedCheck && (
             <span className="flex items-center gap-1 text-xs font-medium text-green-600 bg-green-100 px-2 py-0.5 rounded-full animate-pulse">
@@ -3685,7 +3685,7 @@ function InlineAddItemForm({
 
       {/* Description / Qty / Price */}
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Descricao *</label>
+        <label className="block text-xs font-medium text-gray-600 mb-1">Descrição *</label>
         <input type="text" value={itemDesc} onChange={e => { setItemDesc(e.target.value); setItemProductId(null) }}
           placeholder={isServico ? 'Ex: Limpeza de cabecote' : 'Ex: Toner HP 85A'}
           className="w-full px-3 py-2 border rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-200 bg-white" />
