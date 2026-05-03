@@ -64,8 +64,8 @@ const DATE_PRESETS = [
   { key: 'hoje', label: 'Hoje' },
   { key: '7d', label: '7 dias' },
   { key: '15d', label: '15 dias' },
-  { key: 'mes', label: 'Este Mes' },
-  { key: 'mes_ant', label: 'Mes Anterior' },
+  { key: 'mes', label: 'Este Mês' },
+  { key: 'mes_ant', label: 'Mês Anterior' },
   { key: 'trim', label: 'Trimestre' },
   { key: 'ano', label: 'Ano' },
 ]
@@ -311,7 +311,7 @@ export default function ExtratoPage() {
 
       const res = await fetch(endpoint, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Erro') }
-      toast.success('Lancamento atualizado!')
+      toast.success('Lançamento atualizado!')
       setEditItem(null)
       loadData()
     } catch (err) { toast.error(err instanceof Error ? err.message : 'Erro ao salvar') }
@@ -359,7 +359,7 @@ export default function ExtratoPage() {
           </Link>
           <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Extrato Financeiro</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Lancamentos consolidados por periodo</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Lançamentos consolidados por período</p>
           </div>
         </div>
         <div className="relative">
@@ -404,11 +404,11 @@ export default function ExtratoPage() {
             <p className="text-lg font-bold text-green-600 dark:text-green-400 mt-1">{fmt(resumo.entradas)}</p>
           </div>
           <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4 shadow-sm text-center">
-            <p className="text-[11px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center justify-center gap-1"><TrendingDown className="h-3.5 w-3.5 text-red-500" /> Saidas</p>
+            <p className="text-[11px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center justify-center gap-1"><TrendingDown className="h-3.5 w-3.5 text-red-500" /> Saídas</p>
             <p className="text-lg font-bold text-red-600 dark:text-red-400 mt-1">{fmt(resumo.saidas)}</p>
           </div>
           <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4 shadow-sm text-center">
-            <p className="text-[11px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center justify-center gap-1"><DollarSign className="h-3.5 w-3.5" /> Saldo Periodo</p>
+            <p className="text-[11px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center justify-center gap-1"><DollarSign className="h-3.5 w-3.5" /> Saldo Período</p>
             <p className={cn('text-lg font-bold mt-1', resumo.saldo_periodo >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400')}>{fmt(resumo.saldo_periodo)}</p>
           </div>
           <div className="rounded-xl border border-blue-200 dark:border-blue-800 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950 dark:to-indigo-950 p-4 shadow-sm text-center">
@@ -426,7 +426,7 @@ export default function ExtratoPage() {
             {[
               { value: '' as const, label: 'Todos' },
               { value: 'ENTRADA' as const, label: 'Entradas', color: 'text-green-700 dark:text-green-400' },
-              { value: 'SAIDA' as const, label: 'Saidas', color: 'text-red-700 dark:text-red-400' },
+              { value: 'SAIDA' as const, label: 'Saídas', color: 'text-red-700 dark:text-red-400' },
             ].map(tab => (
               <button key={tab.value} type="button"
                 onClick={() => { setTipoFilter(tab.value); setPage(1) }}
@@ -467,14 +467,14 @@ export default function ExtratoPage() {
               className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-200 dark:focus:ring-blue-800" />
           </div>
           <div>
-            <label className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Ate</label>
+            <label className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Até</label>
             <input type="date" title="Data final" value={toDate} onChange={e => { setToDate(e.target.value); setActivePreset(''); setPage(1) }}
               className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-200 dark:focus:ring-blue-800" />
           </div>
           <div className="relative flex-1 min-w-[220px]">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
             <input type="text" value={searchInput} onChange={e => setSearchInput(e.target.value)}
-              placeholder="Buscar por descricao, cliente, fornecedor..."
+              placeholder="Buscar por descrição, cliente, fornecedor..."
               className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 pl-9 pr-3 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 dark:focus:ring-blue-800" />
           </div>
           <button type="button" onClick={() => setShowAdvanced(!showAdvanced)}
@@ -606,7 +606,7 @@ export default function ExtratoPage() {
                 <span className="flex items-center gap-1">Data <SortIcon field="data" /></span>
               </th>
               <th className="px-4 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300 transition-colors" onClick={() => toggleSort('descricao')}>
-                <span className="flex items-center gap-1">Lancamento <SortIcon field="descricao" /></span>
+                <span className="flex items-center gap-1">Lançamento <SortIcon field="descricao" /></span>
               </th>
               <th className="px-4 py-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-300 transition-colors" onClick={() => toggleSort('entidade')}>
                 <span className="flex items-center gap-1">Entidade <SortIcon field="entidade" /></span>
@@ -629,7 +629,7 @@ export default function ExtratoPage() {
               </td></tr>
             ) : sortedItems.length === 0 ? (
               <tr><td colSpan={6} className="px-4 py-16 text-center text-gray-400 dark:text-gray-500">
-                Nenhum lancamento encontrado no periodo
+                Nenhum lançamento encontrado no período
               </td></tr>
             ) : sortedItems.map(item => (
               <tr key={`${item.origem}-${item.id}`}
@@ -679,7 +679,7 @@ export default function ExtratoPage() {
           {!loading && sortedItems.length > 0 && resumo && (
             <tfoot>
               <tr className="border-t-2 border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 font-semibold">
-                <td colSpan={5} className="px-4 py-3 text-right text-gray-700 dark:text-gray-300 text-sm">{total} lancamento(s)</td>
+                <td colSpan={5} className="px-4 py-3 text-right text-gray-700 dark:text-gray-300 text-sm">{total} lançamento(s)</td>
                 <td className="px-4 py-3 text-right text-sm">
                   <span className="text-green-600 dark:text-green-400">+{fmt(resumo.entradas)}</span>
                   <span className="mx-1.5 text-gray-300 dark:text-gray-600">|</span>
@@ -715,7 +715,7 @@ export default function ExtratoPage() {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                  <Pencil className="h-5 w-5 text-blue-600" /> Editar Lancamento
+                  <Pencil className="h-5 w-5 text-blue-600" /> Editar Lançamento
                 </h2>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{editItem.descricao}</p>
               </div>

@@ -27,9 +27,9 @@ const TYPE_CONFIG: Record<string, { label: string; icon: any; bg: string; text: 
   rejection:  { label: 'Recusado',     icon: XCircle,       bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200' },
   transition: { label: 'Status',       icon: ArrowRight,    bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-200' },
   create:     { label: 'Criado',       icon: Package,       bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
-  quote:      { label: 'Orcamento',    icon: FileText,      bg: 'bg-cyan-50',    text: 'text-cyan-700',    border: 'border-cyan-200' },
+  quote:      { label: 'Orçamento',    icon: FileText,      bg: 'bg-cyan-50',    text: 'text-cyan-700',    border: 'border-cyan-200' },
   item:       { label: 'Item OS',      icon: Wrench,        bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200' },
-  nps:        { label: 'Avaliacao',    icon: Star,          bg: 'bg-yellow-50',  text: 'text-yellow-700',  border: 'border-yellow-200' },
+  nps:        { label: 'Avaliação',    icon: Star,          bg: 'bg-yellow-50',  text: 'text-yellow-700',  border: 'border-yellow-200' },
   login:      { label: 'Login',        icon: LogIn,         bg: 'bg-indigo-50',  text: 'text-indigo-700',  border: 'border-indigo-200' },
   ticket:     { label: 'Ticket',       icon: MessageCircle, bg: 'bg-pink-50',    text: 'text-pink-700',    border: 'border-pink-200' },
   payment:    { label: 'Pagamento',    icon: CreditCard,    bg: 'bg-green-50',   text: 'text-green-700',   border: 'border-green-200' },
@@ -41,12 +41,12 @@ function relativeTime(ts: string): string {
   const diff = Date.now() - new Date(ts).getTime()
   const mins = Math.floor(diff / 60000)
   if (mins < 1) return 'agora'
-  if (mins < 60) return `ha ${mins} min`
+  if (mins < 60) return `há ${mins} min`
   const hours = Math.floor(mins / 60)
-  if (hours < 24) return `ha ${hours}h`
+  if (hours < 24) return `há ${hours}h`
   const days = Math.floor(hours / 24)
   if (days === 1) return 'ontem'
-  if (days < 7) return `ha ${days} dias`
+  if (days < 7) return `há ${days} dias`
   return new Date(ts).toLocaleDateString('pt-BR')
 }
 
@@ -107,7 +107,7 @@ export default function PortalLogPage() {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Atividade do Sistema</h1>
-            <p className="text-sm text-gray-500">Tudo que aconteceu — portal, funcionarios, bot</p>
+            <p className="text-sm text-gray-500">Tudo que aconteceu — portal, funcionários, bot</p>
           </div>
         </div>
         <div className="flex items-center gap-2">

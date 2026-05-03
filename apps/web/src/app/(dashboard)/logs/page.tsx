@@ -154,7 +154,7 @@ export default function LogsPage() {
               </div>
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Modulo</label>
+              <label className="block text-xs text-gray-500 mb-1">Módulo</label>
               <select value={moduleFilter} onChange={e => { setModuleFilter(e.target.value); setPage(1) }}
                 title="Filtrar por modulo" className="w-full px-3 py-2 border rounded-lg text-sm bg-white">
                 <option value="">Todos</option>
@@ -188,8 +188,8 @@ export default function LogsPage() {
                 <tr className="border-b bg-gray-50 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500">
                   <th className="px-4 py-2.5 w-40">Data/Hora</th>
                   <th className="px-4 py-2.5">Usuario</th>
-                  <th className="px-4 py-2.5 w-24">Modulo</th>
-                  <th className="px-4 py-2.5">Acao</th>
+                  <th className="px-4 py-2.5 w-24">Módulo</th>
+                  <th className="px-4 py-2.5">Ação</th>
                   <th className="px-4 py-2.5 w-28">Entidade</th>
                   <th className="px-4 py-2.5 w-28">IP</th>
                   <th className="px-4 py-2.5 w-10"></th>
@@ -277,13 +277,13 @@ export default function LogsPage() {
                   <p className="text-xs text-gray-400">{selectedLog.user_id}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-500 uppercase font-medium">Modulo</p>
+                  <p className="text-xs text-gray-500 uppercase font-medium">Módulo</p>
                   <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-semibold mt-0.5 inline-block', MODULE_COLORS[selectedLog.module] || 'bg-gray-100 text-gray-600')}>
                     {selectedLog.module}
                   </span>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-500 uppercase font-medium">Acao</p>
+                  <p className="text-xs text-gray-500 uppercase font-medium">Ação</p>
                   <p className="text-sm font-medium text-gray-900 mt-0.5">{getActionLabel(selectedLog.action)}</p>
                   <p className="text-xs text-gray-400 font-mono">{selectedLog.action}</p>
                 </div>
