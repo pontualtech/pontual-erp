@@ -407,9 +407,9 @@ export default function ConciliacaoPage() {
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Conciliacao Bancaria</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Conciliação Bancária</h1>
             <p className="text-sm text-gray-500 mt-0.5">
-              Importe o extrato OFX e concilie com lancamentos do sistema
+              Importe o extrato OFX e concilie com lançamentos do sistema
             </p>
           </div>
         </div>
@@ -972,7 +972,7 @@ export default function ConciliacaoPage() {
         <div className="rounded-lg border bg-white p-10 text-center shadow-sm">
           <FileSpreadsheet className="h-10 w-10 text-gray-300 mx-auto mb-3" />
           <p className="text-sm text-gray-500">
-            Selecione uma conta bancaria acima para iniciar a conciliacao
+            Selecione uma conta bancária acima para iniciar a conciliação
           </p>
         </div>
       )}

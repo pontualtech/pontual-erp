@@ -66,7 +66,7 @@ export default function MaquininhaRelatoriosPage() {
             <ArrowLeft className="h-3.5 w-3.5" /> Voltar
           </Link>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-            <BarChart3 className="h-6 w-6" /> Relatorios da Maquininha
+            <BarChart3 className="h-6 w-6" /> Relatórios da Maquininha
           </h1>
           <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Taxas pagas, antecipacao, conciliacao</p>
         </div>
@@ -119,7 +119,7 @@ export default function MaquininhaRelatoriosPage() {
               </div>
               <div className="flex-1">
                 <p className="font-bold text-gray-900 dark:text-gray-100">
-                  Conciliacao: {report.match_status.matched_count} de {report.match_status.matched_count + report.match_status.unmatched_count} vinculadas ({pct(report.match_status.match_rate)})
+                  Conciliação: {report.match_status.matched_count} de {report.match_status.matched_count + report.match_status.unmatched_count} vinculadas ({pct(report.match_status.match_rate)})
                 </p>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                   Vinculadas: {fmt(report.match_status.matched_amount)} • Pendentes: {fmt(report.match_status.unmatched_amount)}

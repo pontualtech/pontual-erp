@@ -134,13 +134,13 @@ export default function MaquininhaHubPage() {
     <div className="container mx-auto px-6 py-6 max-w-7xl">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Maquininha — Conciliacao</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Maquininha — Conciliação</h1>
           <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Importe extrato Rede e vincule vendas a OSes</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Link href="/financeiro/maquininha/relatorios"
             className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-gray-300 dark:border-zinc-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-800 text-sm font-semibold cursor-pointer">
-            <BarChart3 className="h-4 w-4" /> Relatorios
+            <BarChart3 className="h-4 w-4" /> Relatórios
           </Link>
           <Link href="/financeiro/maquininha/configurar"
             className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-gray-300 dark:border-zinc-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-800 text-sm font-semibold cursor-pointer">
@@ -152,7 +152,7 @@ export default function MaquininhaHubPage() {
             title="Vincula automaticamente quando confianca >= 95%"
             className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-blue-300 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 dark:border-blue-800 disabled:opacity-50 text-blue-800 dark:text-blue-300 text-sm font-bold cursor-pointer">
             {autoMatching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
-            {autoMatching ? 'Buscando...' : 'Match automatico'}
+            {autoMatching ? 'Buscando...' : 'Match automático'}
           </button>
           <button type="button"
             onClick={runSyncRede}
