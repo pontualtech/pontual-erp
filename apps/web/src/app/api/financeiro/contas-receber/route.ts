@@ -29,7 +29,11 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status')
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
-    const customerId = searchParams.get('customerId')
+    // HOTFIX 2026-05-03: aceita customer_id (snake_case do frontend) E customerId
+    // (camelCase legacy). Antes só camelCase → frontend passava customer_id que era
+    // ignorado → query retornava TODAS as contas da empresa em vez do cliente
+    // específico (vazamento de dados ao abrir cadastro de qualquer cliente).
+    const customerId = searchParams.get('customer_id') || searchParams.get('customerId')
     const search = searchParams.get('search')
     const categoryId = searchParams.get('categoryId')
     const paymentMethod = searchParams.get('paymentMethod')

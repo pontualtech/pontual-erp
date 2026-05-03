@@ -16,7 +16,8 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status')
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
-    const customerId = searchParams.get('customerId')
+    // HOTFIX 2026-05-03: aceita ambas notações pra evitar vazamento (frontend manda snake_case)
+    const customerId = searchParams.get('customer_id') || searchParams.get('customerId')
 
     const where: any = { company_id: user.companyId }
     if (type) where.invoice_type = type
