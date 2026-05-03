@@ -1,0 +1,90 @@
+# ⚠️ Este arquivo é um TEMPLATE. Pra ativar como GitHub Action:
+#    1. Crie um Personal Access Token com scope `workflow` em
+#       https://github.com/settings/tokens
+#    2. Mova manualmente: cp ci-templates/lint.yml.template .github/workflows/lint.yml
+#    3. Commit + push (com token de scope workflow)
+#
+# Não foi criado direto em .github/workflows porque tokens OAuth padrão
+# não têm permissão pra modificar workflows (segurança GitHub).
+
+name: Lint Guards
+
+# Roda em todo PR e push pra main. Falha CI se:
+# 1. Secrets hardcoded (lint-structural --check=secrets) — CRITICAL
+# 2. Novo issue pt-BR comparado ao baseline (warning, não bloqueia)
+# 3. Multi-tenant CRITICAL acima de 18 (baseline atual) — bloqueia
+#
+# Lint LOW (console.log) e MEDIUM (any) rodam como informacional.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  lint-secrets:
+    name: 🔥 Secrets hardcoded (CRITICAL)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: Run lint:struct:secrets
+        run: |
+          set -e
+          OUTPUT=$(node scripts/lint-structural.mjs --check=secrets 2>&1)
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -q "CRITICAL=" ; then
+            echo "::error::Secret hardcoded detectado — bloqueia PR. Move pra env var."
+            exit 1
+          fi
+
+  lint-multi-tenant:
+    name: 🔥 Multi-tenant baseline guard
+    runs-on: ubuntu-latest
+    continue-on-error: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: Run lint:struct:tenant + check baseline
+        run: |
+          OUTPUT=$(node scripts/lint-structural.mjs --check=multi-tenant 2>&1 || true)
+          COUNT=$(echo "$OUTPUT" | grep -oE "TOTAL: [0-9]+" | head -1 | grep -oE "[0-9]+" || echo "0")
+          BASELINE=18
+          echo "Multi-tenant CRITICAL count: $COUNT (baseline: $BASELINE)"
+          if [ "$COUNT" -gt "$BASELINE" ]; then
+            echo "::error::Multi-tenant CRITICAL count ($COUNT) acima do baseline ($BASELINE) — adicione company_id no where ou justifique com // lint-struct:ignore"
+            echo "$OUTPUT" | tail -60
+            exit 1
+          fi
+
+  lint-pt-br-info:
+    name: 📝 pt-BR acentuação (informational)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: Run lint:pt-br:stats
+        run: |
+          OUTPUT=$(node scripts/lint-pt-br.mjs --fix-stats 2>&1 || true)
+          echo "$OUTPUT"
+          COUNT=$(echo "$OUTPUT" | grep -oE "[0-9]+ issues" | head -1 | grep -oE "[0-9]+" || echo "0")
+          echo "::notice::pt-BR baseline: $COUNT issues (target: 0)"
+
+  lint-any-info:
+    name: 🟡 any em rotas (informational)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: Run lint:struct:any
+        run: |
+          OUTPUT=$(node scripts/lint-structural.mjs --check=any 2>&1 || true)
+          COUNT=$(echo "$OUTPUT" | grep -oE "TOTAL: [0-9]+" | head -1 | grep -oE "[0-9]+" || echo "0")
+          echo "::notice::any em rotas baseline: $COUNT issues (refactor pra tipos Prisma direto — defer)"
