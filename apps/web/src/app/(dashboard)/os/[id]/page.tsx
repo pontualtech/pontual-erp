@@ -344,7 +344,7 @@ export default function OSDetailPage() {
           }
         }
       })
-      .catch(() => toast.error('Erro ao carregar ordem de servico'))
+      .catch(() => toast.error('Erro ao carregar ordem de serviço'))
       .finally(() => setLoading(false))
   }
 
@@ -398,7 +398,7 @@ export default function OSDetailPage() {
     }).catch(() => toast.error('Erro ao carregar formas de pagamento'))
     // Endpoints financeiros: só pra users com permissão
     if (canViewFinanceiroForOs) {
-      fetch('/api/financeiro/card-fees').then(r => r.json()).then(d => setCardFees(d.data ?? [])).catch(() => toast.error('Erro ao carregar taxas de cartao'))
+      fetch('/api/financeiro/card-fees').then(r => r.json()).then(d => setCardFees(d.data ?? [])).catch(() => toast.error('Erro ao carregar taxas de cartão'))
       fetch('/api/financeiro/contas-bancarias').then(r => r.json()).then(d => setBankAccounts(d.data ?? [])).catch(() => {})
     }
     // /api/settings: só pra users com permissão (atendente sem config.view dispara 403)
@@ -581,7 +581,7 @@ export default function OSDetailPage() {
       setShowQuickRegister(false)
       setQuickName('')
       setQuickPrice('')
-      toast.success(`${itemType === 'SERVICO' ? 'Servico' : 'Produto'} cadastrado e selecionado!`)
+      toast.success(`${itemType === 'SERVICO' ? 'Serviço' : 'Produto'} cadastrado e selecionado!`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro')
     } finally {
@@ -659,7 +659,7 @@ export default function OSDetailPage() {
     if (!os) return
 
     // Buscar template de discriminação e garantia das configurações
-    let template = 'Reparo em {{equipamento}} marca {{marca}} modelo {{modelo}}, numero de serie {{serie}}, conforme ordem de servico numero {{os_number}}. Garantia {{garantia}} dias.'
+    let template = 'Reparo em {{equipamento}} marca {{marca}} modelo {{modelo}}, número de série {{serie}}, conforme ordem de serviço número {{os_number}}. Garantia {{garantia}} dias.'
     let garantiaDias = '90'
     try {
       const res = await fetch('/api/settings/nfse-template')
@@ -783,7 +783,7 @@ export default function OSDetailPage() {
   }
 
   const CANCEL_REASONS = [
-    'Cliente desistiu do servico',
+    'Cliente desistiu do serviço',
     'Erro de preenchimento / OS duplicada',
     'Cliente disse que ia trazer mas nao trouxe',
     'Equipamento sem conserto (irreparavel)',
@@ -911,9 +911,9 @@ export default function OSDetailPage() {
       if (whatsapp) parts.push('WhatsApp')
       if (email) parts.push('email')
       if (parts.length > 0) toast.success(`Notificacao enviada via ${parts.join(' e ')}`)
-      else toast.info('Nenhuma notificacao enviada')
+      else toast.info('Nenhuma notificação enviada')
     } catch {
-      toast.error('Erro ao enviar notificacao')
+      toast.error('Erro ao enviar notificação')
     }
     setNotifyModal(null)
   }
@@ -1490,7 +1490,7 @@ export default function OSDetailPage() {
                   <tr key={item.id} className="group hover:bg-amber-50/30 transition-colors">
                     <td className="py-2.5 text-center text-gray-400 text-xs">{idx + 1}</td>
                     {editingItem === item.id ? (<>
-                      <td className="py-1"><input type="text" title="Descricao" value={editItemData.description} onChange={e => setEditItemData(d => ({ ...d, description: e.target.value }))} className="w-full rounded border px-2 py-1 text-sm" autoFocus /></td>
+                      <td className="py-1"><input type="text" title="Descrição" value={editItemData.description} onChange={e => setEditItemData(d => ({ ...d, description: e.target.value }))} className="w-full rounded border px-2 py-1 text-sm" autoFocus /></td>
                       <td className="py-1 w-20"><input type="number" title="Quantidade" min="1" value={editItemData.quantity} onChange={e => setEditItemData(d => ({ ...d, quantity: e.target.value }))} className="w-full rounded border px-2 py-1 text-sm text-right" /></td>
                       <td className="py-1 w-32"><MoneyInput title="Valor unitario" value={parseFloat(editItemData.unit_price) || 0} onChange={v => setEditItemData(d => ({ ...d, unit_price: String(v) }))} className="w-full" /></td>
                       <td className="py-2.5 text-right font-medium text-gray-400">{fmt(Math.round((parseFloat(editItemData.quantity) || 1) * (parseFloat(editItemData.unit_price) || 0) * 100))}</td>
@@ -1603,7 +1603,7 @@ export default function OSDetailPage() {
                   <tr key={item.id} className="group hover:bg-blue-50/30 transition-colors">
                     <td className="py-2.5 text-center text-gray-400 text-xs">{idx + 1}</td>
                     {editingItem === item.id ? (<>
-                      <td className="py-1"><input type="text" title="Descricao" value={editItemData.description} onChange={e => setEditItemData(d => ({ ...d, description: e.target.value }))} className="w-full rounded border px-2 py-1 text-sm" autoFocus /></td>
+                      <td className="py-1"><input type="text" title="Descrição" value={editItemData.description} onChange={e => setEditItemData(d => ({ ...d, description: e.target.value }))} className="w-full rounded border px-2 py-1 text-sm" autoFocus /></td>
                       <td className="py-1 w-20"><input type="number" title="Quantidade" min="1" value={editItemData.quantity} onChange={e => setEditItemData(d => ({ ...d, quantity: e.target.value }))} className="w-full rounded border px-2 py-1 text-sm text-right" /></td>
                       <td className="py-1 w-32"><MoneyInput title="Valor unitario" value={parseFloat(editItemData.unit_price) || 0} onChange={v => setEditItemData(d => ({ ...d, unit_price: String(v) }))} className="w-full" /></td>
                       <td className="py-2.5 text-right font-medium text-gray-400">{fmt(Math.round((parseFloat(editItemData.quantity) || 1) * (parseFloat(editItemData.unit_price) || 0) * 100))}</td>
@@ -2206,7 +2206,7 @@ export default function OSDetailPage() {
                 <span className="text-sm text-gray-900">{os.os_type}</span>
               )}
             </DetailRow>
-            <DetailRow label="Tecnico">
+            <DetailRow label="Técnico">
               <span className="text-sm text-gray-900">{os.user_profiles?.name || '--'}</span>
             </DetailRow>
             {os.payment_method && (
@@ -2228,7 +2228,7 @@ export default function OSDetailPage() {
               })
               if (!prontaEntry) return null
               return (
-                <DetailRow label="Concluida em">
+                <DetailRow label="Concluída em">
                   <span className="text-sm text-blue-700 font-medium">{new Date(prontaEntry.created_at).toLocaleDateString('pt-BR')}</span>
                 </DetailRow>
               )
@@ -2252,7 +2252,7 @@ export default function OSDetailPage() {
             <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-green-100">
               <Clock className="h-4 w-4 text-green-600" />
             </div>
-            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Historico</h2>
+            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Histórico</h2>
           </div>
           <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
             {(os.service_order_history ?? []).length === 0 ? (
@@ -2476,7 +2476,7 @@ export default function OSDetailPage() {
               onChange={async (e) => {
                 const file = e.target.files?.[0]
                 if (!file) return
-                if (file.size > 2 * 1024 * 1024) { toast.error('Arquivo muito grande. Maximo: 2MB'); return }
+                if (file.size > 2 * 1024 * 1024) { toast.error('Arquivo muito grande. Máximo: 2MB'); return }
                 const form = new FormData()
                 form.append('file', file)
                 form.append('description', file.name)
@@ -2619,7 +2619,7 @@ export default function OSDetailPage() {
               }}
                 className="flex-1 px-4 py-2.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium flex items-center justify-center gap-2">
                 {sendingPronto ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                {sendingPronto ? 'Enviando...' : 'Enviar Notificacao'}
+                {sendingPronto ? 'Enviando...' : 'Enviar Notificação'}
               </button>
             </div>
           </div>
@@ -2707,7 +2707,7 @@ export default function OSDetailPage() {
               }}
                 className="flex-1 px-4 py-2.5 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 font-medium flex items-center justify-center gap-2">
                 {sendingAprovacao ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                {sendingAprovacao ? 'Enviando...' : 'Enviar Notificacao'}
+                {sendingAprovacao ? 'Enviando...' : 'Enviar Notificação'}
               </button>
             </div>
           </div>
@@ -2849,7 +2849,7 @@ export default function OSDetailPage() {
                   if (enviados.length > 0) {
                     toast.success(`Notificacao enviada via ${enviados.join(' + ')}!`)
                   } else {
-                    toast.error('Nenhuma notificacao foi enviada (cliente sem email/telefone?)')
+                    toast.error('Nenhuma notificação foi enviada (cliente sem email/telefone?)')
                   }
                   setShowAberturaModal(false)
                 } catch (err: any) { toast.error(err.message) }
@@ -2857,7 +2857,7 @@ export default function OSDetailPage() {
               }}
                 className="flex-1 px-4 py-2.5 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 font-medium flex items-center justify-center gap-2">
                 {sendingAbertura ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                {sendingAbertura ? 'Enviando...' : 'Enviar Notificacao'}
+                {sendingAbertura ? 'Enviando...' : 'Enviar Notificação'}
               </button>
             </div>
           </div>
@@ -2958,7 +2958,7 @@ export default function OSDetailPage() {
               }}
                 className="flex-1 px-4 py-2.5 text-sm bg-sky-600 text-white rounded-lg hover:bg-sky-700 disabled:opacity-50 font-medium flex items-center justify-center gap-2">
                 {sendingColeta ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                {sendingColeta ? 'Enviando...' : 'Enviar Notificacao'}
+                {sendingColeta ? 'Enviando...' : 'Enviar Notificação'}
               </button>
             </div>
           </div>
@@ -3199,7 +3199,7 @@ export default function OSDetailPage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Tecnico responsavel *</label>
                 <select
-                  title="Tecnico responsavel"
+                  title="Técnico responsável"
                   value={editTechnicianId}
                   onChange={e => setEditTechnicianId(e.target.value)}
                   className="w-full px-3 py-2 border rounded-lg text-sm focus:border-green-500 focus:ring-1 focus:ring-green-200"
@@ -3236,7 +3236,7 @@ export default function OSDetailPage() {
                             {(acc.bank_name || acc.name).substring(0, 2).toUpperCase()}
                           </span>
                           <span className="truncate">{acc.bank_name || acc.name}</span>
-                          {isDefault && <span className="text-[9px] bg-green-100 text-green-700 rounded px-1 py-0.5 ml-auto">Padrao</span>}
+                          {isDefault && <span className="text-[9px] bg-green-100 text-green-700 rounded px-1 py-0.5 ml-auto">Padrão</span>}
                         </button>
                       )
                     })}
@@ -3254,7 +3254,7 @@ export default function OSDetailPage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Observacoes</label>
                 <input type="text" value={paymentNotes} onChange={e => setPaymentNotes(e.target.value)}
-                  placeholder="Numero do cartao, parcelas, etc..."
+                  placeholder="Número do cartão, parcelas, etc..."
                   className="w-full px-3 py-2 border rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-200" />
               </div>
             </div>
@@ -3410,7 +3410,7 @@ export default function OSDetailPage() {
                   onChange={e => setNfseDescription(e.target.value)}
                   rows={4}
                   className="w-full rounded-lg border px-3 py-2 text-sm focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
-                  placeholder="Descricao detalhada do servico prestado..."
+                  placeholder="Descrição detalhada do serviço prestado..."
                 />
               </div>
 
@@ -3624,12 +3624,12 @@ function InlineAddItemForm({
       {/* Product/service search */}
       <div className="relative">
         <label className="block text-xs font-medium text-gray-600 mb-1">
-          Buscar {isServico ? 'servico' : 'produto'} cadastrado
+          Buscar {isServico ? 'serviço' : 'produto'} cadastrado
         </label>
         <div className="relative">
           <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
           <input type="text" value={itemSearch} onChange={e => setItemSearch(e.target.value)}
-            placeholder={`Buscar ${isServico ? 'servico' : 'produto'}...`}
+            placeholder={`Buscar ${isServico ? 'serviço' : 'produto'}...`}
             className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-200 bg-white" />
         </div>
         {itemSearch.length >= 2 && (
@@ -3649,7 +3649,7 @@ function InlineAddItemForm({
             <div className="border-t">
               <button type="button" onClick={() => { setShowQuickRegister(true); setQuickName(itemSearch); setItemSearch(''); setItemResults([]) }}
                 className="w-full text-left px-3 py-2 hover:bg-green-50 text-sm font-medium text-green-700 flex items-center gap-1.5">
-                <Plus className="h-3.5 w-3.5" /> Cadastrar &quot;{itemSearch}&quot; como {isServico ? 'servico' : 'produto'}
+                <Plus className="h-3.5 w-3.5" /> Cadastrar &quot;{itemSearch}&quot; como {isServico ? 'serviço' : 'produto'}
               </button>
             </div>
           </div>
@@ -3661,7 +3661,7 @@ function InlineAddItemForm({
         <div className="rounded-lg border border-green-200 bg-green-50 p-3 space-y-2">
           <div className="flex items-center justify-between">
             <h4 className="text-sm font-semibold text-green-800">
-              Cadastrar {isServico ? 'Servico' : 'Produto'}
+              Cadastrar {isServico ? 'Serviço' : 'Produto'}
             </h4>
             <button type="button" onClick={() => setShowQuickRegister(false)} className="text-green-600 hover:text-green-800 text-xs">Cancelar</button>
           </div>

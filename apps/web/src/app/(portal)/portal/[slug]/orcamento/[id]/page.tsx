@@ -54,13 +54,13 @@ function OrcamentoContent() {
   const [rejectReasonOption, setRejectReasonOption] = useState('')
   const [rejectConfirmed, setRejectConfirmed] = useState(false)
   const [rejectReasons, setRejectReasons] = useState<string[]>([
-    'O valor nao compensa o conserto',
+    'O valor não compensa o conserto',
     'Estou sem recursos no momento',
     'Vou comprar um equipamento novo',
-    'Encontrei um servico mais barato',
+    'Encontrei um serviço mais barato',
     'Desisti do reparo',
-    'O equipamento nao e mais necessario',
-    'Vou tentar resolver por conta propria',
+    'O equipamento não é mais necessário',
+    'Vou tentar resolver por conta própria',
     'Outros motivos',
   ])
   const [paymentMethod, setPaymentMethod] = useState('')
@@ -171,7 +171,7 @@ function OrcamentoContent() {
             <div className="rounded-2xl border-2 border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg dark:shadow-zinc-900/50 overflow-hidden print:shadow-none print:border print:rounded-none">
               {/* Receipt Header */}
               <div className="bg-gray-900 dark:bg-zinc-800 p-6 text-center text-white print:bg-white print:text-black print:border-b-2 print:border-black">
-                <h2 className="text-lg font-bold tracking-wide capitalize">Comprovante de Aprovacao</h2>
+                <h2 className="text-lg font-bold tracking-wide capitalize">Comprovante de Aprovação</h2>
                 <p className="mt-1 text-gray-400 dark:text-gray-500 text-xs print:text-gray-600">{data.company.name}</p>
               </div>
 
@@ -187,7 +187,7 @@ function OrcamentoContent() {
                 {/* Details Table */}
                 <div className="border border-gray-200 dark:border-zinc-700 rounded-lg divide-y divide-gray-200 dark:divide-zinc-700 text-sm">
                   <div className="flex justify-between px-4 py-3">
-                    <span className="text-gray-500 dark:text-gray-400">Ordem de Servico</span>
+                    <span className="text-gray-500 dark:text-gray-400">Ordem de Serviço</span>
                     <span className="font-bold text-gray-900 dark:text-gray-100 font-mono">#{data.os_number}</span>
                   </div>
                   <div className="flex justify-between px-4 py-3">
@@ -226,14 +226,14 @@ function OrcamentoContent() {
 
                 {/* Confirmation Code */}
                 <div className="rounded-lg bg-gray-100 dark:bg-zinc-800 border border-dashed border-gray-400 dark:border-zinc-600 p-4 text-center">
-                  <p className="text-xs text-gray-500 dark:text-gray-400 capitalize tracking-wide mb-1">Codigo de Confirmacao</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 capitalize tracking-wide mb-1">Código de Confirmação</p>
                   <p className="text-2xl font-bold font-mono tracking-widest text-gray-900 dark:text-gray-100">{confirmationCode}</p>
                 </div>
 
                 {/* Next Steps */}
                 <div className="rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-900 p-4 text-sm text-blue-800 dark:text-blue-300 print:hidden">
-                  <p className="font-semibold mb-1">Proximo passo</p>
-                  <p>Nossa equipe tecnica ja foi notificada e o reparo comeca agora. Voce recebera um aviso quando estiver pronto.</p>
+                  <p className="font-semibold mb-1">Próximo passo</p>
+                  <p>Nossa equipe técnica já foi notificada e o reparo começa agora. Você receberá um aviso quando estiver pronto.</p>
                 </div>
 
                 {/* Action Buttons */}
@@ -328,12 +328,12 @@ function OrcamentoContent() {
               </div>
             )}
             <h1 className="text-xl font-bold">{data.company.name}</h1>
-            <p className="mt-1 text-sm opacity-80">{isRecalculado ? 'Preparamos uma condicao diferenciada para voce' : 'Orcamento Tecnico'}</p>
+            <p className="mt-1 text-sm opacity-80">{isRecalculado ? 'Preparamos uma condição diferenciada para você' : 'Orçamento Técnico'}</p>
           </div>
           <div className="p-6">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Ordem de Servico</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Ordem de Serviço</p>
                 <div className="flex items-center gap-2">
                   <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">#{data.os_number}</p>
                   {data.quote_version && (
@@ -368,7 +368,7 @@ function OrcamentoContent() {
 
         {/* Laudo */}
         <div className="mb-4 rounded-2xl border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-6 shadow-sm dark:shadow-zinc-900/50">
-          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 capitalize tracking-wide mb-3">Laudo Tecnico</h3>
+          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 capitalize tracking-wide mb-3">Laudo Técnico</h3>
           <div className="space-y-3 text-sm">
             <div>
               <p className="text-gray-400 dark:text-gray-500 text-xs capitalize mb-1">Problema relatado</p>
@@ -393,7 +393,7 @@ function OrcamentoContent() {
             {services.length > 0 && (
               <>
                 <div className="bg-blue-50 dark:bg-blue-950 px-4 py-2 text-xs font-bold capitalize text-blue-700 dark:text-blue-300 border-b border-gray-200 dark:border-zinc-700">
-                  Servicos
+                  Serviços
                 </div>
                 <div className="divide-y divide-gray-200 dark:divide-zinc-700">
                   {services.map(item => (
@@ -450,14 +450,14 @@ function OrcamentoContent() {
         <div className="mb-4 rounded-2xl overflow-hidden shadow-lg dark:shadow-zinc-900/50">
           <div className={`p-6 text-center text-white ${isRecalculado ? 'bg-gradient-to-r from-amber-500 to-orange-600' : 'bg-gradient-to-r from-blue-600 to-blue-700 dark:from-blue-700 dark:to-blue-800'}`}>
             <p className="text-3xl font-extrabold">{maxInstallments}x de {installmentValue}</p>
-            <p className="mt-1 text-sm opacity-80">sem juros no cartao de credito</p>
+            <p className="mt-1 text-sm opacity-80">sem juros no cartão de crédito</p>
             <p className="mt-2 text-xs opacity-60">Valor total: {fmt(data.total_cost)}</p>
           </div>
           <div className="bg-gradient-to-r from-green-600 to-emerald-600 dark:from-green-700 dark:to-emerald-700 px-6 py-3 flex items-center justify-center gap-3 text-white">
             <svg className="h-5 w-5 text-green-200" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>
             <div className="text-center">
               <p className="text-sm font-bold">3 meses de garantia</p>
-              <p className="text-xs text-green-200">em todos os servicos e pecas</p>
+              <p className="text-xs text-green-200">em todos os serviços e peças</p>
             </div>
           </div>
         </div>
@@ -606,25 +606,25 @@ function OrcamentoContent() {
               </button>
 
               {/* Cartão Crédito com dropdown */}
-              <div className={`rounded-lg border-2 p-4 transition-all ${paymentMethod.startsWith('Cartao Credito') ? 'border-green-500 bg-green-100 dark:bg-green-950' : 'border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900'}`}>
+              <div className={`rounded-lg border-2 p-4 transition-all ${paymentMethod.startsWith('Cartão Crédito') ? 'border-green-500 bg-green-100 dark:bg-green-950' : 'border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900'}`}>
                 <div className="flex items-center justify-between">
-                  <div><p className="text-sm font-semibold text-gray-900 dark:text-gray-100">💳 Cartao de Credito</p><p className="text-xs text-gray-500 dark:text-gray-400">Ate 3x sem juros na entrega</p></div>
-                  <select title="Parcelas" value={paymentMethod.startsWith('Cartao Credito') ? paymentMethod : ''}
+                  <div><p className="text-sm font-semibold text-gray-900 dark:text-gray-100">💳 Cartão de Crédito</p><p className="text-xs text-gray-500 dark:text-gray-400">Ate 3x sem juros na entrega</p></div>
+                  <select title="Parcelas" value={paymentMethod.startsWith('Cartão Crédito') ? paymentMethod : ''}
                     onChange={e => { if (e.target.value) setPaymentMethod(e.target.value) }}
                     className="rounded-md border border-gray-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-100">
                     <option value="">Parcelas</option>
-                    <option value="Cartao Credito 1x">1x de {fmt(displayCost)}</option>
-                    <option value="Cartao Credito 2x">2x de {fmt(Math.ceil(displayCost / 2))}</option>
-                    <option value="Cartao Credito 3x">3x de {fmt(Math.ceil(displayCost / 3))}</option>
+                    <option value="Cartão Crédito 1x">1x de {fmt(displayCost)}</option>
+                    <option value="Cartão Crédito 2x">2x de {fmt(Math.ceil(displayCost / 2))}</option>
+                    <option value="Cartão Crédito 3x">3x de {fmt(Math.ceil(displayCost / 3))}</option>
                   </select>
                 </div>
               </div>
 
               {/* Cartão Débito */}
-              <button type="button" onClick={() => setPaymentMethod('Cartao Debito')}
-                className={`w-full rounded-lg border-2 p-4 text-left transition-all ${paymentMethod === 'Cartao Debito' ? 'border-green-500 bg-green-100 dark:bg-green-950' : 'border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:border-green-300'}`}>
+              <button type="button" onClick={() => setPaymentMethod('Cartão Débito')}
+                className={`w-full rounded-lg border-2 p-4 text-left transition-all ${paymentMethod === 'Cartão Débito' ? 'border-green-500 bg-green-100 dark:bg-green-950' : 'border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:border-green-300'}`}>
                 <div className="flex items-center justify-between">
-                  <div><p className="text-sm font-semibold text-gray-900 dark:text-gray-100">💳 Cartao de Debito</p><p className="text-xs text-gray-500 dark:text-gray-400">Pagamento a vista na entrega</p></div>
+                  <div><p className="text-sm font-semibold text-gray-900 dark:text-gray-100">💳 Cartão de Débito</p><p className="text-xs text-gray-500 dark:text-gray-400">Pagamento a vista na entrega</p></div>
                   <p className="text-lg font-bold text-green-700 dark:text-green-400">{fmt(displayCost)}</p>
                 </div>
               </button>
@@ -636,7 +636,7 @@ function OrcamentoContent() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">🏦 Boleto Bancario</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">Vencimento em 7 dias — sujeito a analise de credito</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Vencimento em 7 dias — sujeito a análise de crédito</p>
                     </div>
                     <p className="text-lg font-bold text-green-700 dark:text-green-400">{fmt(displayCost)}</p>
                   </div>
@@ -650,13 +650,13 @@ function OrcamentoContent() {
 
             <div className="rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-900 p-4 mb-4">
               <p className="text-sm font-semibold text-blue-800 dark:text-blue-300 mb-1">📅 Previsao de entrega</p>
-              <p className="text-xs text-blue-700 dark:text-blue-400">Ate <strong>10 dias uteis</strong> a partir da aprovacao. Sempre tentamos entregar o quanto antes!</p>
+              <p className="text-xs text-blue-700 dark:text-blue-400">Até <strong>10 dias úteis</strong> a partir da aprovação. Sempre tentamos entregar o quanto antes!</p>
             </div>
 
             <div className="flex gap-3">
               <button type="button" onClick={() => handleAction('approve')} disabled={submitting || !paymentMethod}
                 className="flex-1 rounded-lg bg-green-600 dark:bg-green-500 py-3 text-sm font-bold text-white hover:bg-green-700 disabled:opacity-50">
-                {submitting ? 'Processando...' : '✅ Confirmar Aprovacao'}
+                {submitting ? 'Processando...' : '✅ Confirmar Aprovação'}
               </button>
               <button type="button" onClick={() => { setShowApproveForm(false); setApplyDiscount(false); setPaymentMethod('') }}
                 className="rounded-lg border border-gray-300 dark:border-zinc-600 px-6 py-3 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-800">
@@ -676,7 +676,7 @@ function OrcamentoContent() {
           if (!podeAprovar) {
             return (
               <div className="mb-6 rounded-2xl bg-gray-100 dark:bg-zinc-800 p-6 text-center">
-                <p className="text-sm text-gray-500 dark:text-gray-400">Este orcamento nao esta disponivel para aprovacao no momento.</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Este orçamento não está disponível para aprovação no momento.</p>
                 <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Status atual: {data.status}</p>
                 <a href={whatsappUrl} target="_blank" rel="noopener noreferrer"
                   className="mt-3 inline-flex items-center gap-2 rounded-lg bg-green-600 dark:bg-green-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-green-700">
@@ -690,7 +690,7 @@ function OrcamentoContent() {
             return (
               <div className="mb-6 rounded-2xl bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-900 p-6 text-center">
                 <p className="text-sm text-amber-800 dark:text-amber-300 font-medium">Orcamento ainda sem valor definido.</p>
-                <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">Aguarde a equipe tecnica finalizar o laudo e definir o valor.</p>
+                <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">Aguarde a equipe técnica finalizar o laudo e definir o valor.</p>
               </div>
             )
           }
@@ -704,21 +704,21 @@ function OrcamentoContent() {
                     <span className="text-blue-500 mt-0.5">📅</span>
                     <div>
                       <p className="font-semibold text-gray-800 dark:text-gray-200">Prazo de entrega</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">Ate 10 dias uteis apos a aprovacao. Sempre tentamos entregar o quanto antes!</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Até 10 dias úteis após a aprovação. Sempre tentamos entregar o quanto antes!</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-3 px-5 py-3.5">
                     <span className="text-green-500 mt-0.5">💳</span>
                     <div>
                       <p className="font-semibold text-gray-800 dark:text-gray-200">Formas de pagamento</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">PIX, dinheiro, cartao de credito (ate 3x sem juros) ou debito. Pagamento na entrega/retirada do equipamento.</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">PIX, dinheiro, cartão de crédito (até 3x sem juros) ou débito. Pagamento na entrega/retirada do equipamento.</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-3 px-5 py-3.5">
                     <span className="text-amber-500 mt-0.5">🛡️</span>
                     <div>
                       <p className="font-semibold text-gray-800 dark:text-gray-200">Garantia</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">3 meses de garantia em todos os servicos e pecas, conforme Art. 26 do CDC.</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">3 meses de garantia em todos os serviços e peças, conforme Art. 26 do CDC.</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-3 px-5 py-3.5">
@@ -767,7 +767,7 @@ function OrcamentoContent() {
         {/* Footer */}
         <div className="mt-8 text-center space-y-2">
           <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">{data.company.name}</p>
-          <p className="text-xs text-gray-400 dark:text-gray-500">Assistencia Tecnica em Informatica</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500">Assistência Técnica em Informática</p>
           {data.company.phone && (
             <p className="text-xs text-gray-500 dark:text-gray-400">
               Tel: <a href={`tel:${data.company.phone}`} className="hover:text-blue-600 dark:hover:text-blue-400">{data.company.phone}</a>
@@ -781,7 +781,7 @@ function OrcamentoContent() {
             <svg viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.625.846 5.059 2.284 7.034L.789 23.492a.5.5 0 00.611.611l4.458-1.495A11.952 11.952 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-2.387 0-4.594-.838-6.32-2.234l-.144-.113-3.147 1.055 1.055-3.147-.113-.144A9.935 9.935 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/></svg>
             Fale com nosso suporte
           </a>
-          <p className="text-xs text-gray-300 dark:text-gray-600 pt-2">Garantia de 3 meses em todos os servicos</p>
+          <p className="text-xs text-gray-300 dark:text-gray-600 pt-2">Garantia de 3 meses em todos os serviços</p>
         </div>
       </div>
     </div>

@@ -12,7 +12,9 @@
     "db:generate": "npm run generate --workspace=packages/db",
     "db:migrate": "npm run migrate --workspace=packages/db",
     "db:seed": "npm run seed --workspace=packages/db",
-    "migrate:vhsys": "npx tsx scripts/migrate-vhsys/run.ts"
+    "migrate:vhsys": "npx tsx scripts/migrate-vhsys/run.ts",
+    "lint:pt-br": "node scripts/lint-pt-br.mjs",
+    "lint:pt-br:stats": "node scripts/lint-pt-br.mjs --fix-stats"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

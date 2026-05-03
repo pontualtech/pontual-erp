@@ -52,7 +52,7 @@ const TABS = [
   { id: 'produtividade', label: 'Produtividade', icon: Users },
   { id: 'sla', label: 'SLA', icon: Clock },
   { id: 'margem', label: 'Margem', icon: TrendingUp },
-  { id: 'comissao', label: 'Comissao', icon: BarChart3 },
+  { id: 'comissao', label: 'Comissão', icon: BarChart3 },
   { id: 'funil', label: 'Funil', icon: Filter },
 ] as const
 
@@ -183,8 +183,8 @@ function ProdutividadeTab({ data }: { data: any }) {
   function exportCSV() {
     downloadCSV(technicians.map((t: any) => ({
       Tecnico: t.technicianName,
-      'OS Concluidas': t.totalCompleted,
-      'Tempo Medio (h)': t.avgRepairHours,
+      'OS Concluídas': t.totalCompleted,
+      'Tempo Médio (h)': t.avgRepairHours,
       'Retrabalhos': t.reworkCount,
       'Retrabalho %': t.reworkPercent,
       'Faturamento': formatCurrency(t.revenueCents),
@@ -194,15 +194,15 @@ function ProdutividadeTab({ data }: { data: any }) {
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <StatCard label="OS Concluidas" value={String(summary.totalCompleted)} color="text-blue-600" />
-        <StatCard label="Tempo Medio (h)" value={String(summary.avgRepairHours)} color="text-amber-600" />
+        <StatCard label="OS Concluídas" value={String(summary.totalCompleted)} color="text-blue-600" />
+        <StatCard label="Tempo Médio (h)" value={String(summary.avgRepairHours)} color="text-amber-600" />
         <StatCard label="Faturamento Total" value={formatCurrency(summary.totalRevenueCents)} color="text-emerald-600" />
       </div>
 
       {/* Chart */}
       {technicians.length > 0 && (
         <div className="rounded-lg border bg-white dark:bg-gray-800 dark:border-gray-700 p-6 shadow-sm">
-          <h3 className="mb-4 text-sm font-semibold text-gray-700 dark:text-gray-300">OS Concluidas por Tecnico</h3>
+          <h3 className="mb-4 text-sm font-semibold text-gray-700 dark:text-gray-300">OS Concluídas por Técnico</h3>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={technicians} layout="vertical" margin={{ left: 20 }}>
               <CartesianGrid strokeDasharray="3 3" />
@@ -210,12 +210,12 @@ function ProdutividadeTab({ data }: { data: any }) {
               <YAxis dataKey="technicianName" type="category" width={120} tick={{ fontSize: 12 }} />
               <Tooltip formatter={(v: number, name: string) => {
                 if (name === 'totalCompleted') return [v, 'OS']
-                if (name === 'avgRepairHours') return [`${v}h`, 'Tempo Medio']
+                if (name === 'avgRepairHours') return [`${v}h`, 'Tempo Médio']
                 return [v, name]
               }} />
               <Legend />
-              <Bar dataKey="totalCompleted" name="OS Concluidas" fill="#3b82f6" radius={[0, 4, 4, 0]} />
-              <Bar dataKey="avgRepairHours" name="Tempo Medio (h)" fill="#f59e0b" radius={[0, 4, 4, 0]} />
+              <Bar dataKey="totalCompleted" name="OS Concluídas" fill="#3b82f6" radius={[0, 4, 4, 0]} />
+              <Bar dataKey="avgRepairHours" name="Tempo Médio (h)" fill="#f59e0b" radius={[0, 4, 4, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -224,7 +224,7 @@ function ProdutividadeTab({ data }: { data: any }) {
       {/* Table */}
       <div className="rounded-lg border bg-white dark:bg-gray-800 dark:border-gray-700 shadow-sm">
         <div className="flex items-center justify-between border-b dark:border-gray-700 px-4 py-3">
-          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Detalhamento por Tecnico</h3>
+          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Detalhamento por Técnico</h3>
           <button onClick={exportCSV} className="flex items-center gap-1 rounded-md bg-gray-100 dark:bg-gray-700 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600">
             <Download className="h-3.5 w-3.5" /> CSV
           </button>
@@ -233,9 +233,9 @@ function ProdutividadeTab({ data }: { data: any }) {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 dark:bg-gray-700/50 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
               <tr>
-                <th className="px-4 py-3">Tecnico</th>
-                <th className="px-4 py-3 text-right">OS Concluidas</th>
-                <th className="px-4 py-3 text-right">Tempo Medio (h)</th>
+                <th className="px-4 py-3">Técnico</th>
+                <th className="px-4 py-3 text-right">OS Concluídas</th>
+                <th className="px-4 py-3 text-right">Tempo Médio (h)</th>
                 <th className="px-4 py-3 text-right">Retrabalhos</th>
                 <th className="px-4 py-3 text-right">Retrabalho %</th>
                 <th className="px-4 py-3 text-right">Faturamento</th>
@@ -318,7 +318,7 @@ function SlaTab({ data }: { data: any }) {
       {/* Gauges */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
         <StatCard label="Total OS" value={String(sla.totalOs)} color="text-blue-600" />
-        <StatCard label="Concluidas" value={String(sla.totalCompleted)} color="text-emerald-600" />
+        <StatCard label="Concluídas" value={String(sla.totalCompleted)} color="text-emerald-600" />
         <div className="rounded-lg border bg-white dark:bg-gray-800 dark:border-gray-700 p-4 shadow-sm flex items-center justify-center">
           <GaugeChart percent={sla.slaRepairPercent} label="Dentro do SLA (10d)" color={sla.slaRepairPercent >= 80 ? '#10b981' : sla.slaRepairPercent >= 50 ? '#f59e0b' : '#ef4444'} />
         </div>
@@ -328,13 +328,13 @@ function SlaTab({ data }: { data: any }) {
       {/* Avg time per status */}
       {statusTimes.length > 0 && (
         <div className="rounded-lg border bg-white dark:bg-gray-800 dark:border-gray-700 p-6 shadow-sm">
-          <h3 className="mb-4 text-sm font-semibold text-gray-700 dark:text-gray-300">Tempo Medio por Status (horas)</h3>
+          <h3 className="mb-4 text-sm font-semibold text-gray-700 dark:text-gray-300">Tempo Médio por Status (horas)</h3>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={statusTimes}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="statusName" tick={{ fontSize: 11 }} />
               <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip formatter={(v: number) => [`${v}h`, 'Tempo Medio']} />
+              <Tooltip formatter={(v: number) => [`${v}h`, 'Tempo Médio']} />
               <Bar dataKey="avgHours" name="Horas" radius={[4, 4, 0, 0]}>
                 {statusTimes.map((s: any, i: number) => (
                   <Cell key={i} fill={s.color || COLORS[i % COLORS.length]} />
@@ -360,7 +360,7 @@ function SlaTab({ data }: { data: any }) {
                 <th className="px-4 py-3">OS</th>
                 <th className="px-4 py-3">Equipamento</th>
                 <th className="px-4 py-3">Cliente</th>
-                <th className="px-4 py-3">Tecnico</th>
+                <th className="px-4 py-3">Técnico</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3 text-right">Horas Aberta</th>
                 <th className="px-4 py-3">Abertura</th>
@@ -494,7 +494,7 @@ function MargemTable({ title, rows, exportCSV, positive }: { title: string; rows
   )
 }
 
-// ─── Comissao Tab ────────────────────────────────────────────────────────────
+// ─── Comissão Tab ────────────────────────────────────────────────────────────
 
 function ComissaoTab({ data, commissionPct, setCommissionPct, onRefresh }: {
   data: any; commissionPct: number; setCommissionPct: (n: number) => void; onRefresh: () => void
@@ -504,10 +504,10 @@ function ComissaoTab({ data, commissionPct, setCommissionPct, onRefresh }: {
   function exportCSV() {
     downloadCSV(technicians.map((t: any) => ({
       Tecnico: t.technicianName,
-      'OS Concluidas': t.osCount,
+      'OS Concluídas': t.osCount,
       Faturamento: formatCurrency(t.revenueCents),
-      'Comissao %': `${t.commissionPercent}%`,
-      'Comissao R$': formatCurrency(t.commissionCents),
+      'Comissão %': `${t.commissionPercent}%`,
+      'Comissão R$': formatCurrency(t.commissionCents),
     })), 'comissao')
   }
 
@@ -515,7 +515,7 @@ function ComissaoTab({ data, commissionPct, setCommissionPct, onRefresh }: {
     <div className="space-y-6">
       {/* Commission rate config */}
       <div className="flex items-center gap-4 rounded-lg border bg-white dark:bg-gray-800 dark:border-gray-700 p-4 shadow-sm">
-        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Comissao %:</label>
+        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Comissão %:</label>
         <input
           type="number"
           min={0}
@@ -535,13 +535,13 @@ function ComissaoTab({ data, commissionPct, setCommissionPct, onRefresh }: {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard label="Total OS" value={String(summary.totalOs)} color="text-blue-600" />
         <StatCard label="Faturamento Total" value={formatCurrency(summary.totalRevenueCents)} color="text-emerald-600" />
-        <StatCard label="Total Comissoes" value={formatCurrency(summary.totalCommissionCents)} color="text-amber-600" />
+        <StatCard label="Total Comissões" value={formatCurrency(summary.totalCommissionCents)} color="text-amber-600" />
       </div>
 
       {/* Table */}
       <div className="rounded-lg border bg-white dark:bg-gray-800 dark:border-gray-700 shadow-sm">
         <div className="flex items-center justify-between border-b dark:border-gray-700 px-4 py-3">
-          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Comissao por Tecnico</h3>
+          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Comissão por Técnico</h3>
           <button onClick={exportCSV} className="flex items-center gap-1 rounded-md bg-gray-100 dark:bg-gray-700 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600">
             <Download className="h-3.5 w-3.5" /> CSV
           </button>
@@ -550,11 +550,11 @@ function ComissaoTab({ data, commissionPct, setCommissionPct, onRefresh }: {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 dark:bg-gray-700/50 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
               <tr>
-                <th className="px-4 py-3">Tecnico</th>
-                <th className="px-4 py-3 text-right">OS Concluidas</th>
+                <th className="px-4 py-3">Técnico</th>
+                <th className="px-4 py-3 text-right">OS Concluídas</th>
                 <th className="px-4 py-3 text-right">Faturamento</th>
-                <th className="px-4 py-3 text-right">Comissao %</th>
-                <th className="px-4 py-3 text-right">Comissao R$</th>
+                <th className="px-4 py-3 text-right">Comissão %</th>
+                <th className="px-4 py-3 text-right">Comissão R$</th>
               </tr>
             </thead>
             <tbody className="divide-y dark:divide-gray-700">
