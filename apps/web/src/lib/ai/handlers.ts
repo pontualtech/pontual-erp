@@ -88,6 +88,8 @@ export async function findCustomerByPhone(phone: string): Promise<{
   companyId: string
 } | null> {
   const digits = phone.replace(/\D/g, '')
+  // lint-struct:ignore — by-design cross-tenant: AI handler resolve company_id
+  // a partir do phone, retornando companyId no Promise pra uso downstream.
   const customer = await prisma.customer.findFirst({
     where: {
       OR: [
@@ -111,6 +113,7 @@ export async function findCustomerByDocument(doc: string): Promise<{
 } | null> {
   const digits = doc.replace(/\D/g, '')
   if (digits.length < 11) return null
+  // lint-struct:ignore — by-design cross-tenant (mesmo motivo de findCustomerByPhone).
   const customer = await prisma.customer.findFirst({
     where: { document_number: digits, deleted_at: null },
     orderBy: { last_os_at: 'desc' },
@@ -322,6 +325,8 @@ async function continueOrcamentoFlow(
             isNewCustomer = true
             console.log(`[Bot] Novo cliente criado: ${contactName} (${contactPhone}) doc:${contactDoc}`)
           } else if (!customerName) {
+            // lint-struct:ignore — finalCustomerId vem de findCustomerByPhone/Document
+            // ou newCustomer.id (acabou de ser criado com companyId correto).
             const c = await prisma.customer.findUnique({ where: { id: finalCustomerId }, select: { legal_name: true, trade_name: true } })
             customerName = c?.trade_name || c?.legal_name || ''
           }

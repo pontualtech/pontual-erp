@@ -65,6 +65,8 @@ export async function geocodeAddress(address: string): Promise<{ lat: number; ln
  * Senão geocoda e persiste. Retorna null se tudo falhar.
  */
 export async function ensureCustomerGeocoded(customerId: string): Promise<{ lat: number; lng: number } | null> {
+  // lint-struct:ignore — TODO: aceitar companyId param pra defesa em profundidade.
+  // Atualmente caller (sempre /api/logistics/*) garante customerId tenant-safe.
   const customer = await prisma.customer.findUnique({
     where: { id: customerId },
     select: {
@@ -83,6 +85,7 @@ export async function ensureCustomerGeocoded(customerId: string): Promise<{ lat:
   const coords = await geocodeAddress(addr)
   if (!coords) return null
 
+  // lint-struct:ignore — mesmo motivo que findUnique acima.
   await prisma.customer.update({
     where: { id: customerId },
     data: {

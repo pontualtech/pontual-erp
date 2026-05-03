@@ -14,7 +14,13 @@
     "db:seed": "npm run seed --workspace=packages/db",
     "migrate:vhsys": "npx tsx scripts/migrate-vhsys/run.ts",
     "lint:pt-br": "node scripts/lint-pt-br.mjs",
-    "lint:pt-br:stats": "node scripts/lint-pt-br.mjs --fix-stats"
+    "lint:pt-br:stats": "node scripts/lint-pt-br.mjs --fix-stats",
+    "lint:struct": "node scripts/lint-structural.mjs",
+    "lint:struct:secrets": "node scripts/lint-structural.mjs --check=secrets",
+    "lint:struct:tenant": "node scripts/lint-structural.mjs --check=multi-tenant",
+    "lint:struct:console": "node scripts/lint-structural.mjs --check=console",
+    "lint:struct:any": "node scripts/lint-structural.mjs --check=any",
+    "lint:all": "npm run lint:pt-br:stats && npm run lint:struct:secrets"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
