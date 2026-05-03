@@ -44,7 +44,7 @@ interface DashboardStats {
     faturamentoMesAnteriorCents?: number
   }
   osPerWeek: { week: string; count: number }[]
-  pipeline: { name: string; color: string; count: number }[]
+  pipeline: { id?: string; name: string; color: string; count: number }[]
   metrics: {
     avgRepairDays: number | null
     approvalRate: number | null
@@ -641,10 +641,15 @@ export default function DashboardPage() {
                   label={false}
                   cursor="pointer"
                   onClick={(e: any) => {
-                    // UX-8 #1: drill-down — clicar em fatia leva pra OS desse status
+                    // UX-8 #1 + Audit 9: drill-down — clicar em fatia leva
+                    // pra OS desse status. Frontend filtra por statusId (UUID),
+                    // não por nome. Antes mandava nome → 0 OS retornadas.
                     const name = e?.name
                     if (!name) return
-                    router.push(`/os?status=${encodeURIComponent(name)}`)
+                    const item = stats?.pipeline?.find(p => p.name === name)
+                    const id = item?.id
+                    if (id) router.push(`/os?status=${encodeURIComponent(id)}`)
+                    else router.push(`/os?search=${encodeURIComponent(name)}`)
                   }}
                 >
                   {stats!.pipeline.filter(p => p.count > 0).map((entry, index) => (

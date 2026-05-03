@@ -158,6 +158,9 @@ export async function GET(req: NextRequest) {
     const pipelineCounts = new Map(pipeline.map(p => [p.status_id, p._count.id]))
 
     const pipelineData = allStatuses.map(status => ({
+      // Audit 9: incluir id pra drill-down chart funcionar (frontend
+      // espera statusId UUID, não nome — antes ?status=LAUDO retornava 0)
+      id: status.id,
       name: status.name,
       color: status.color ?? '#6B7280',
       count: pipelineCounts.get(status.id) ?? 0,
