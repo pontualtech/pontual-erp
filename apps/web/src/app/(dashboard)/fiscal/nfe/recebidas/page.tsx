@@ -543,14 +543,14 @@ export default function NfeRecebidasPage() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
-              <th className="px-4 py-3">Numero</th>
+              <th className="px-4 py-3">Número</th>
               <th className="px-4 py-3">Emitente</th>
               <th className="px-4 py-3">CNPJ</th>
               <th className="px-4 py-3 text-right">Valor</th>
               <th className="px-4 py-3">Data</th>
-              <th className="px-4 py-3">Situacao</th>
+              <th className="px-4 py-3">Situação</th>
               <th className="px-4 py-3">Importado?</th>
-              <th className="px-4 py-3 text-right">Acoes</th>
+              <th className="px-4 py-3 text-right">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y">

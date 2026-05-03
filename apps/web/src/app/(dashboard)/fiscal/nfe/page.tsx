@@ -999,7 +999,7 @@ export default function NfeListPage() {
               className="rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-blue-500" />
           </div>
           <div className="flex items-center gap-2">
-            <label htmlFor="nfe-end" className="text-sm text-gray-500">Ate</label>
+            <label htmlFor="nfe-end" className="text-sm text-gray-500">Até</label>
             <input id="nfe-end" type="date" value={endDate}
               onChange={e => { setEndDate(e.target.value); setPage(1) }}
               className="rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-blue-500" />
@@ -1024,15 +1024,15 @@ export default function NfeListPage() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
-              <th className="px-4 py-3">Numero</th>
-              <th className="px-4 py-3">Serie</th>
+              <th className="px-4 py-3">Número</th>
+              <th className="px-4 py-3">Série</th>
               <th className="px-4 py-3">Data</th>
               <th className="px-4 py-3">Cliente</th>
               <th className="px-4 py-3">CNPJ/CPF</th>
               <th className="px-4 py-3">Natureza</th>
               <th className="px-4 py-3 text-right">Valor</th>
               <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3 text-right">Acoes</th>
+              <th className="px-4 py-3 text-right">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y">

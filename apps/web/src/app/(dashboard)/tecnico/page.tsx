@@ -32,7 +32,7 @@ function fmtDateTime(d: string) { return d ? new Date(d).toLocaleString('pt-BR',
 const prioConfig: Record<string, { label: string; color: string; icon: typeof Flame }> = {
   URGENT: { label: 'Urgente', color: 'text-red-600 bg-red-50 dark:text-red-400 dark:bg-red-950', icon: Flame },
   HIGH: { label: 'Alta', color: 'text-orange-600 bg-orange-50 dark:text-orange-400 dark:bg-orange-950', icon: AlertTriangle },
-  MEDIUM: { label: 'Media', color: 'text-blue-600 bg-blue-50 dark:text-blue-400 dark:bg-blue-950', icon: Target },
+  MEDIUM: { label: 'Média', color: 'text-blue-600 bg-blue-50 dark:text-blue-400 dark:bg-blue-950', icon: Target },
   LOW: { label: 'Baixa', color: 'text-gray-600 bg-gray-50 dark:text-gray-400 dark:bg-gray-800', icon: Clock },
 }
 
@@ -127,8 +127,8 @@ export default function TecnicoDashboard() {
         <KpiCard icon={Wrench} label="Em Andamento" value={cards?.em_andamento ?? 0} color="text-blue-600 dark:text-blue-400" bg="bg-blue-50 dark:bg-blue-950" />
         <KpiCard icon={CheckCircle} label="Hoje" value={cards?.completadas_hoje ?? 0} color="text-green-600 dark:text-green-400" bg="bg-green-50 dark:bg-green-950" />
         <KpiCard icon={TrendingUp} label="Semana" value={cards?.completadas_semana ?? 0} color="text-indigo-600 dark:text-indigo-400" bg="bg-indigo-50 dark:bg-indigo-950" />
-        <KpiCard icon={Trophy} label="Este Mes" value={cards?.completadas_mes ?? 0} color="text-purple-600 dark:text-purple-400" bg="bg-purple-50 dark:bg-purple-950" />
-        <KpiCard icon={Timer} label="Tempo Medio" value={`${perf?.avg_repair_days?.toFixed(1) ?? '—'}d`} color="text-amber-600 dark:text-amber-400" bg="bg-amber-50 dark:bg-amber-950" />
+        <KpiCard icon={Trophy} label="Este Mês" value={cards?.completadas_mes ?? 0} color="text-purple-600 dark:text-purple-400" bg="bg-purple-50 dark:bg-purple-950" />
+        <KpiCard icon={Timer} label="Tempo Médio" value={`${perf?.avg_repair_days?.toFixed(1) ?? '—'}d`} color="text-amber-600 dark:text-amber-400" bg="bg-amber-50 dark:bg-amber-950" />
         <KpiCard icon={ShieldAlert} label="Garantia" value={`${cards?.taxa_garantia ?? 0}%`} color={Number(cards?.taxa_garantia) > 10 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'} bg={Number(cards?.taxa_garantia) > 10 ? 'bg-red-50 dark:bg-red-950' : 'bg-green-50 dark:bg-green-950'} />
       </div>
 

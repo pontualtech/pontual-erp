@@ -309,9 +309,9 @@ export default function RecebidasPage() {
                 <th className="px-4 py-3">Chave</th>
                 <th className="px-4 py-3">Valor</th>
                 <th className="px-4 py-3">Data</th>
-                <th className="px-4 py-3">Situacao</th>
-                <th className="px-4 py-3">Manifestacao</th>
-                <th className="px-4 py-3 text-right">Acoes</th>
+                <th className="px-4 py-3">Situação</th>
+                <th className="px-4 py-3">Manifestação</th>
+                <th className="px-4 py-3 text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y">

@@ -7,54 +7,54 @@ const sections = [
   {
     title: 'Empresa',
     items: [
-      { label: 'Dados da Empresa', href: '/config/empresa', icon: Building2, desc: 'CNPJ, endereco, logo, dados fiscais' },
-      { label: 'Usuarios', href: '/config/usuarios', icon: Users, desc: 'Gerenciar usuarios e convites' },
-      { label: 'Permissoes', href: '/config/permissoes', icon: Shield, desc: 'Roles e permissoes de acesso' },
+      { label: 'Dados da Empresa', href: '/config/empresa', icon: Building2, desc: 'CNPJ, endereço, logo, dados fiscais' },
+      { label: 'Usuários', href: '/config/usuarios', icon: Users, desc: 'Gerenciar usuários e convites' },
+      { label: 'Permissões', href: '/config/permissoes', icon: Shield, desc: 'Roles e permissões de acesso' },
     ],
   },
   {
     title: 'Operacional',
     items: [
-      { label: 'Visibilidade OS', href: '/config/visibilidade-os', icon: Eye, desc: 'Colunas e filtros por perfil de usuario' },
+      { label: 'Visibilidade OS', href: '/config/visibilidade-os', icon: Eye, desc: 'Colunas e filtros por perfil de usuário' },
       { label: 'Status de OS', href: '/config/status', icon: Tag, desc: 'Configurar fluxo de status das OS' },
-      { label: 'Tipos de OS', href: '/config/tipos-os', icon: Tag, desc: 'Balcao, Coleta, Campo, Remoto, etc.' },
+      { label: 'Tipos de OS', href: '/config/tipos-os', icon: Tag, desc: 'Balcão, Coleta, Campo, Remoto, etc.' },
       { label: 'Locais de OS', href: '/config/locais-os', icon: Tag, desc: 'Loja, Externo, Cliente, etc.' },
-      { label: 'Equipamentos', href: '/config/equipamentos-os', icon: Tag, desc: 'Impressora, Notebook, Termica, etc.' },
-      { label: 'Tipos de Servico', href: '/config/tipos-servico', icon: Wrench, desc: 'Categorias e tipos de servico' },
-      { label: 'Templates', href: '/config/templates', icon: PrinterIcon, desc: 'Templates de impressao e email de OS' },
+      { label: 'Equipamentos', href: '/config/equipamentos-os', icon: Tag, desc: 'Impressora, Notebook, Térmica, etc.' },
+      { label: 'Tipos de Serviço', href: '/config/tipos-servico', icon: Wrench, desc: 'Categorias e tipos de serviço' },
+      { label: 'Templates', href: '/config/templates', icon: PrinterIcon, desc: 'Templates de impressão e email de OS' },
       { label: 'Marcas e Modelos', href: '/config/marcas-modelos', icon: Wrench, desc: 'Marcas e modelos de equipamentos para OS' },
-      { label: 'Kits de Servico', href: '/config/kits', icon: Layers, desc: 'Kits pre-definidos para adicionar na OS' },
-      { label: 'Tabela de Precos', href: '/config/tabela-precos', icon: DollarSign, desc: 'Precos padrao para orcamentos inteligentes' },
-      { label: 'Contas Padrao', href: '/config/contas-padrao', icon: Landmark, desc: 'Conta bancaria padrao por forma de pagamento' },
+      { label: 'Kits de Serviço', href: '/config/kits', icon: Layers, desc: 'Kits pré-definidos para adicionar na OS' },
+      { label: 'Tabela de Preços', href: '/config/tabela-precos', icon: DollarSign, desc: 'Preços padrão para orçamentos inteligentes' },
+      { label: 'Contas Padrão', href: '/config/contas-padrao', icon: Landmark, desc: 'Conta bancária padrão por forma de pagamento' },
     ],
   },
   {
-    title: 'Integracoes',
+    title: 'Integrações',
     items: [
       { label: 'Consulta CPF', href: '/config/consulta-cpf', icon: Search, desc: 'Auto-preencher nome pelo CPF (API paga)' },
-      { label: 'Taxas de Cartao', href: '/config/taxas-cartao', icon: Landmark, desc: 'Taxas por operadora, faixa de parcelas' },
-      { label: 'Integracoes Bancarias', href: '/config/integracoes', icon: Landmark, desc: 'Boletos: Inter, Itau, Stone' },
-      { label: 'NFS-e / Fiscal', href: '/fiscal/config', icon: FileText, desc: 'Focus NFe, inscricao municipal, aliquota' },
-      { label: 'NF-e Produto', href: '/config/nfe', icon: FileKey, desc: 'Emitente, impostos, serie, ambiente SEFAZ' },
+      { label: 'Taxas de Cartão', href: '/config/taxas-cartao', icon: Landmark, desc: 'Taxas por operadora, faixa de parcelas' },
+      { label: 'Integrações Bancárias', href: '/config/integracoes', icon: Landmark, desc: 'Boletos: Inter, Itaú, Stone' },
+      { label: 'NFS-e / Fiscal', href: '/fiscal/config', icon: FileText, desc: 'Focus NFe, inscrição municipal, alíquota' },
+      { label: 'NF-e Produto', href: '/config/nfe', icon: FileKey, desc: 'Emitente, impostos, série, ambiente SEFAZ' },
       { label: 'Certificado A1', href: '/config/certificado', icon: FileKey, desc: 'Instalar certificado digital para NF-e/NFS-e' },
       { label: 'Chatwoot / WhatsApp', href: '/integracoes/chatwoot', icon: MessageSquare, desc: 'Conversas e mensagens via WhatsApp' },
-      { label: 'Chatbot / IA', href: '/config/chatbot', icon: Bot, desc: 'WhatsApp bot, IA, respostas automaticas' },
-      { label: 'Follow-up Automatico', href: '/config/bot-followup', icon: MessageSquare, desc: 'Mensagens automaticas quando cliente nao responde' },
-      { label: 'Sincronizar VHSys', href: '/config/sync-vhsys', icon: RefreshCw, desc: 'Importar OS, clientes e servicos do VHSys' },
+      { label: 'Chatbot / IA', href: '/config/chatbot', icon: Bot, desc: 'WhatsApp bot, IA, respostas automáticas' },
+      { label: 'Follow-up Automático', href: '/config/bot-followup', icon: MessageSquare, desc: 'Mensagens automáticas quando cliente não responde' },
+      { label: 'Sincronizar VHSys', href: '/config/sync-vhsys', icon: RefreshCw, desc: 'Importar OS, clientes e serviços do VHSys' },
       { label: 'Cobrança Automática', href: '/config/cobranca', icon: Mail, desc: 'Lembrete de pagamento por email' },
-      { label: 'Email de Orcamento', href: '/config/orcamento-email', icon: FileText, desc: 'Template e condicoes do orcamento por email' },
-      { label: 'Lembrete Orcamento', href: '/config/lembrete-orcamento', icon: Clock, desc: 'Lembrete automatico para orcamentos pendentes' },
-      { label: 'Template NFS-e', href: '/config/nfse-template', icon: Receipt, desc: 'Texto da discriminacao do servico na nota fiscal' },
+      { label: 'Email de Orçamento', href: '/config/orcamento-email', icon: FileText, desc: 'Template e condições do orçamento por email' },
+      { label: 'Lembrete Orçamento', href: '/config/lembrete-orcamento', icon: Clock, desc: 'Lembrete automático para orçamentos pendentes' },
+      { label: 'Template NFS-e', href: '/config/nfse-template', icon: Receipt, desc: 'Texto da discriminação do serviço na nota fiscal' },
     ],
   },
   {
     title: 'Sistema',
     items: [
-      { label: 'Avisos', href: '/config/avisos', icon: Bell, desc: 'Leitura obrigatoria, prioridade minima, polling' },
-      { label: 'Configuracao de Email', href: '/config/email', icon: Mail, desc: 'Provedor de envio (Resend ou SMTP), remetente, teste' },
-      { label: 'Notificacoes', href: '/config/notificacoes', icon: Bell, desc: 'Email, WhatsApp, alertas internos' },
+      { label: 'Avisos', href: '/config/avisos', icon: Bell, desc: 'Leitura obrigatória, prioridade mínima, polling' },
+      { label: 'Configuração de Email', href: '/config/email', icon: Mail, desc: 'Provedor de envio (Resend ou SMTP), remetente, teste' },
+      { label: 'Notificações', href: '/config/notificacoes', icon: Bell, desc: 'Email, WhatsApp, alertas internos' },
       { label: 'Backup', href: '/config/backup', icon: Database, desc: 'Exportar dados e backups' },
-      { label: 'Aparencia', href: '/config/aparencia', icon: Palette, desc: 'Tema, cores, logo no PDF' },
+      { label: 'Aparência', href: '/config/aparencia', icon: Palette, desc: 'Tema, cores, logo no PDF' },
     ],
   },
 ]
@@ -62,7 +62,7 @@ const sections = [
 export default function ConfigPage() {
   return (
     <div className="space-y-8">
-      <h1 className="text-2xl font-bold text-gray-900">Configuracoes</h1>
+      <h1 className="text-2xl font-bold text-gray-900">Configurações</h1>
 
       {sections.map(section => (
         <div key={section.title}>

@@ -190,7 +190,7 @@ export default function LogisticaPage() {
   const summaryCards = [
     { label: 'Rotas Planejadas', value: summary.planned, icon: Route, color: 'text-blue-600 bg-blue-50' },
     { label: 'Em Andamento', value: summary.in_progress, icon: Truck, color: 'text-amber-600 bg-amber-50' },
-    { label: 'Concluidas', value: summary.completed, icon: CheckCircle2, color: 'text-green-600 bg-green-50' },
+    { label: 'Concluídas', value: summary.completed, icon: CheckCircle2, color: 'text-green-600 bg-green-50' },
     { label: 'Paradas Pendentes', value: summary.pending_stops, icon: MapPin, color: 'text-purple-600 bg-purple-50' },
   ]
 
@@ -202,7 +202,7 @@ export default function LogisticaPage() {
           <Link href="/" className="rounded-lg border p-1.5 text-gray-400 hover:bg-gray-50 hover:text-gray-600">
             <ArrowLeft className="h-4 w-4" />
           </Link>
-          <h1 className="text-2xl font-bold text-gray-900">Logistica</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Logística</h1>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
@@ -217,10 +217,10 @@ export default function LogisticaPage() {
           <Link
             href="/logistica/historico"
             className="flex items-center gap-2 rounded-lg border border-indigo-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-50 transition-colors"
-            title="Historico de rotas + dashboard de produtividade"
+            title="Histórico de rotas + dashboard de produtividade"
           >
             <BarChart3 className="h-4 w-4" />
-            Historico
+            Histórico
           </Link>
           <Link
             href="/logistica/chat"
@@ -239,7 +239,7 @@ export default function LogisticaPage() {
           <Link
             href="/logistica/alertas"
             className="flex items-center gap-2 rounded-lg border border-amber-300 bg-white px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50 transition-colors"
-            title="Historico de alertas de inatividade dos motoristas"
+            title="Histórico de alertas de inatividade dos motoristas"
           >
             <AlertTriangle className="h-4 w-4" />
             Alertas
@@ -297,7 +297,7 @@ export default function LogisticaPage() {
         <div className="rounded-xl border bg-white shadow-sm">
           <div className="border-b px-5 py-3 flex items-center gap-2">
             <BarChart3 className="h-4 w-4 text-blue-600" />
-            <h2 className="font-semibold text-gray-900">KPIs — ultimos {metrics.period_days} dias</h2>
+            <h2 className="font-semibold text-gray-900">KPIs — últimos {metrics.period_days} dias</h2>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-5 divide-y md:divide-y-0 md:divide-x">
             <div className="p-4 text-center">
@@ -306,9 +306,9 @@ export default function LogisticaPage() {
               <p className="text-[10px] text-gray-400 mt-0.5">{metrics.totals.stops} paradas total</p>
             </div>
             <div className="p-4 text-center">
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Conclusao</p>
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Conclusão</p>
               <p className="mt-1 text-2xl font-bold text-green-600">{metrics.rates.completion_pct}%</p>
-              <p className="text-[10px] text-gray-400 mt-0.5">{metrics.totals.completed} concluidas</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">{metrics.totals.completed} concluídas</p>
             </div>
             <div className="p-4 text-center">
               <p className="text-xs text-gray-500 uppercase tracking-wide">Adiadas</p>
@@ -321,7 +321,7 @@ export default function LogisticaPage() {
               <p className="text-[10px] text-gray-400 mt-0.5">{metrics.totals.failed} paradas</p>
             </div>
             <div className="p-4 text-center">
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Tempo medio</p>
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Tempo médio</p>
               <p className="mt-1 text-2xl font-bold text-blue-600">
                 {metrics.timing.avg_minutes_per_stop !== null ? `${metrics.timing.avg_minutes_per_stop}min` : '—'}
               </p>
@@ -363,10 +363,10 @@ export default function LogisticaPage() {
             </div>
             <h3 className="text-lg font-semibold text-gray-900 mb-1">Nenhuma rota para esta data</h3>
             <p className="text-sm text-gray-500 max-w-sm mb-1">
-              O modulo de Logistica organiza coletas e entregas em rotas otimizadas para os motoristas.
+              O módulo de Logística organiza coletas e entregas em rotas otimizadas para os motoristas.
             </p>
             <p className="text-xs text-gray-400 max-w-sm mb-6">
-              Crie uma rota, adicione paradas com enderecos de clientes e acompanhe o andamento em tempo real.
+              Crie uma rota, adicione paradas com endereços de clientes e acompanhe o andamento em tempo real.
             </p>
             <Link
               href="/logistica/nova"

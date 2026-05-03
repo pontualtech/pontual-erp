@@ -368,7 +368,7 @@ export default function NfseDetailPage() {
           {(invoice.status === 'AUTHORIZED' || invoice.status === 'PROCESSING') && (
             <div className="rounded-lg border bg-white shadow-sm">
               <div className="border-b px-6 py-4">
-                <h2 className="font-semibold text-gray-900">Acoes</h2>
+                <h2 className="font-semibold text-gray-900">Ações</h2>
               </div>
               <div className="p-6">
                 <button

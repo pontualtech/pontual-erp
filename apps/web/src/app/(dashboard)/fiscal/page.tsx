@@ -160,7 +160,7 @@ export default function FiscalPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Fiscal - NFS-e</h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            Gerenciamento de Notas Fiscais de Servico Eletronicas
+            Gerenciamento de Notas Fiscais de Serviço Eletrônicas
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -204,7 +204,7 @@ export default function FiscalPage() {
                 <BarChart3 className="h-5 w-5 text-green-600" />
               </div>
               <div>
-                <p className="text-sm text-gray-500">Faturamento (mes atual)</p>
+                <p className="text-sm text-gray-500">Faturamento (mês atual)</p>
                 <p className="text-2xl font-bold text-gray-900">{formatCurrency(dashboard.currentMonth.revenueCents)}</p>
               </div>
             </div>
@@ -266,7 +266,7 @@ export default function FiscalPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <label htmlFor="endDate" className="text-sm text-gray-500">Ate</label>
+          <label htmlFor="endDate" className="text-sm text-gray-500">Até</label>
           <input
             id="endDate"
             type="date"
@@ -296,12 +296,12 @@ export default function FiscalPage() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
-              <th className="px-4 py-3">Numero</th>
+              <th className="px-4 py-3">Número</th>
               <th className="px-4 py-3">Cliente</th>
               <th className="px-4 py-3">Valor</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Data</th>
-              <th className="px-4 py-3 text-right">Acoes</th>
+              <th className="px-4 py-3 text-right">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y">

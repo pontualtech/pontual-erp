@@ -124,14 +124,14 @@ export default function FinanceiroPage() {
         <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-400 mb-3">Relatórios</h2>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {[
-            { label: 'Extrato', href: '/financeiro/extrato', icon: Receipt, desc: 'Lancamentos por periodo', color: 'text-violet-600 bg-violet-50' },
+            { label: 'Extrato', href: '/financeiro/extrato', icon: Receipt, desc: 'Lançamentos por período', color: 'text-violet-600 bg-violet-50' },
             { label: 'Relatórios', href: '/financeiro/relatorios', icon: BarChart3, desc: 'Resumo e análises', color: 'text-blue-600 bg-blue-50' },
             { label: 'Fluxo de Caixa', href: '/financeiro/fluxo-caixa', icon: BarChart3, desc: 'Entradas e saídas', color: 'text-cyan-600 bg-cyan-50' },
             { label: 'DRE', href: '/financeiro/dre', icon: FileSpreadsheet, desc: 'Demonstrativo de resultados', color: 'text-indigo-600 bg-indigo-50' },
             { label: 'Conciliação', href: '/financeiro/conciliacao', icon: Receipt, desc: 'Importar OFX', color: 'text-teal-600 bg-teal-50' },
             { label: 'Boletos', href: '/financeiro/boletos', icon: Receipt, desc: 'Emitir e gerenciar', color: 'text-orange-600 bg-orange-50' },
             { label: 'CNAB Inter', href: '/financeiro/cnab', icon: FileSpreadsheet, desc: 'Remessa e retorno CNAB 400', color: 'text-amber-600 bg-amber-50' },
-            { label: 'Maquininha', href: '/financeiro/maquininha', icon: CreditCard, desc: 'Conciliacao cartao Rede', color: 'text-rose-600 bg-rose-50' },
+            { label: 'Maquininha', href: '/financeiro/maquininha', icon: CreditCard, desc: 'Conciliação cartão Rede', color: 'text-rose-600 bg-rose-50' },
           ].map(item => {
             const Icon = item.icon
             return (

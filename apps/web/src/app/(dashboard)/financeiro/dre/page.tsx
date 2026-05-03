@@ -244,7 +244,7 @@ export default function DREPage() {
     name: formatMonthLabel(m.month),
     'Receita Bruta': m.receita_bruta / 100,
     'Lucro Bruto': m.lucro_bruto / 100,
-    'Lucro Liquido': m.lucro_liquido / 100,
+    'Lucro Líquido': m.lucro_liquido / 100,
   }))
 
   const margemBruta = dre && dre.receita_bruta > 0
@@ -264,7 +264,7 @@ export default function DREPage() {
       lines.push(`  ${r.name},"${formatCurrency(r.amount)}"`)
     }
     if (dre.deducoes > 0) lines.push(`(-) DEDUCOES,"${formatCurrency(-dre.deducoes)}"`)
-    lines.push(`(=) RECEITA LIQUIDA,"${formatCurrency(dre.receita_liquida)}"`)
+    lines.push(`(=) RECEITA LÍQUIDA,"${formatCurrency(dre.receita_liquida)}"`)
     lines.push(`(-) CUSTOS,"${formatCurrency(-dre.custos)}"`)
     for (const c of dre.custos_detalhado) {
       lines.push(`  ${c.name},"${formatCurrency(c.amount)}"`)
@@ -277,11 +277,11 @@ export default function DREPage() {
     }
     lines.push(`(=) RESULTADO OPERACIONAL,"${formatCurrency(dre.resultado_operacional)}"`)
     lines.push(`(=) LUCRO LIQUIDO,"${formatCurrency(dre.lucro_liquido)}"`)
-    lines.push(`Margem Liquida,${margemLiquida}%`)
+    lines.push(`Margem Líquida,${margemLiquida}%`)
 
     if (monthly.length > 1) {
       lines.push('')
-      lines.push('Mes,Receita Bruta,Custos,Lucro Bruto,Despesas,Lucro Liquido')
+      lines.push('Mês,Receita Bruta,Custos,Lucro Bruto,Despesas,Lucro Líquido')
       for (const m of monthly) {
         lines.push(`${formatMonthLabel(m.month)},"${formatCurrency(m.receita_bruta)}","${formatCurrency(-(m.receita_bruta - m.lucro_bruto))}","${formatCurrency(m.lucro_bruto)}","${formatCurrency(-(m.lucro_bruto - m.resultado_operacional))}","${formatCurrency(m.lucro_liquido)}"`)
       }
@@ -301,7 +301,7 @@ export default function DREPage() {
     { value: '', label: 'Ano completo' },
     { value: '1', label: 'Janeiro' },
     { value: '2', label: 'Fevereiro' },
-    { value: '3', label: 'Marco' },
+    { value: '3', label: 'Março' },
     { value: '4', label: 'Abril' },
     { value: '5', label: 'Maio' },
     { value: '6', label: 'Junho' },
@@ -326,7 +326,7 @@ export default function DREPage() {
           </Link>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">DRE - Demonstrativo de Resultados</h1>
-            <p className="text-sm text-gray-500">Analise de receitas, custos e lucro</p>
+            <p className="text-sm text-gray-500">Análise de receitas, custos e lucro</p>
             {/* UX-11 #8: badge de frescor — alerta visível quando MV está stale */}
             {data?.meta?.last_entry_at && (() => {
               const b = freshnessBadge(data.meta.last_entry_at)
@@ -357,7 +357,7 @@ export default function DREPage() {
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Mes</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Mês</label>
             <select
               value={month}
               onChange={e => setMonth(e.target.value)}
@@ -441,7 +441,7 @@ export default function DREPage() {
           <div className="rounded-lg border bg-white shadow-sm overflow-hidden">
             <div className="border-b px-4 py-3 bg-gray-50">
               <h2 className="font-semibold text-gray-900">
-                Demonstrativo de Resultados do Exercicio
+                Demonstrativo de Resultados do Exercício
                 {data?.month ? ` - ${monthOptions[data.month]?.label}/${data.year}` : ` - ${data?.year}`}
               </h2>
             </div>
@@ -465,7 +465,7 @@ export default function DREPage() {
 
               {/* Receita Liquida */}
               <DRELine
-                label="RECEITA LIQUIDA"
+                label="RECEITA LÍQUIDA"
                 value={dre.receita_liquida}
                 bold
                 separator
@@ -474,7 +474,7 @@ export default function DREPage() {
 
               {/* Custos */}
               <CollapsibleSection
-                title="CUSTOS DOS SERVICOS/PRODUTOS"
+                title="CUSTOS DOS SERVIÇOS/PRODUTOS"
                 total={-dre.custos}
                 items={dre.custos_detalhado}
                 prefix="(-)"
@@ -519,7 +519,7 @@ export default function DREPage() {
                 prefix="(=)"
               />
 
-              {/* Lucro Liquido */}
+              {/* Lucro Líquido */}
               <div
                 className={cn(
                   'flex items-center justify-between py-3 px-4 border-t-2',
@@ -540,12 +540,12 @@ export default function DREPage() {
                 </span>
               </div>
 
-              {/* Margem Liquida */}
+              {/* Margem Líquida */}
               <div className={cn(
                 'flex items-center justify-between py-1.5 px-4',
                 dre.lucro_liquido >= 0 ? 'bg-green-50/50' : 'bg-red-50/50'
               )}>
-                <span className="text-xs text-gray-500 italic pl-4">Margem Liquida</span>
+                <span className="text-xs text-gray-500 italic pl-4">Margem Líquida</span>
                 <span className={cn(
                   'text-xs font-semibold tabular-nums',
                   Number(margemLiquida) >= 0 ? 'text-emerald-600' : 'text-red-600'
@@ -559,7 +559,7 @@ export default function DREPage() {
           {/* Monthly Evolution Chart */}
           {chartData.length > 1 && (
             <div className="rounded-lg border bg-white p-5 shadow-sm">
-              <h2 className="text-sm font-semibold text-gray-700 mb-4">Evolucao Mensal</h2>
+              <h2 className="text-sm font-semibold text-gray-700 mb-4">Evolução Mensal</h2>
               <ResponsiveContainer width="100%" height={350}>
                 <LineChart data={chartData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -591,7 +591,7 @@ export default function DREPage() {
                   />
                   <Line
                     type="monotone"
-                    dataKey="Lucro Liquido"
+                    dataKey="Lucro Líquido"
                     stroke="#8b5cf6"
                     strokeWidth={2}
                     dot={{ r: 4 }}
@@ -608,12 +608,12 @@ export default function DREPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
-                    <th className="px-4 py-3">Mes</th>
+                    <th className="px-4 py-3">Mês</th>
                     <th className="px-4 py-3 text-right">Receita Bruta</th>
                     <th className="px-4 py-3 text-right">Custos</th>
                     <th className="px-4 py-3 text-right">Lucro Bruto</th>
                     <th className="px-4 py-3 text-right">Despesas</th>
-                    <th className="px-4 py-3 text-right">Lucro Liquido</th>
+                    <th className="px-4 py-3 text-right">Lucro Líquido</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
