@@ -13,6 +13,8 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
 }
 
 // Map Asaas webhook events to internal payment status
+// UX-11 #9: incluídos eventos de chargeback/dispute — antes ficavam em IGNORED
+// silencioso, R$ chargebacks não eram refletidos no AR/DRE.
 const EVENT_STATUS_MAP: Record<string, string> = {
   PAYMENT_RECEIVED: 'RECEIVED',
   PAYMENT_CONFIRMED: 'CONFIRMED',
@@ -22,6 +24,15 @@ const EVENT_STATUS_MAP: Record<string, string> = {
   PAYMENT_DELETED: 'DELETED',
   PAYMENT_FAILED: 'FAILED',
   PAYMENT_CANCELLED: 'CANCELLED',
+  // Chargeback flow (cartão de crédito disputado pelo cliente)
+  PAYMENT_CHARGEBACK_REQUESTED: 'DISPUTED',
+  PAYMENT_CHARGEBACK_DISPUTE: 'DISPUTED',
+  PAYMENT_AWAITING_CHARGEBACK_REVERSAL: 'DISPUTED',
+  // Refund flow
+  PAYMENT_REFUND_IN_PROGRESS: 'REFUND_PENDING',
+  // Régua Asaas (cobrança)
+  PAYMENT_DUNNING_RECEIVED: 'RECEIVED',
+  PAYMENT_DUNNING_REQUESTED: 'OVERDUE',
 }
 
 // Only RECEIVED triggers auto-baixa (not CONFIRMED)

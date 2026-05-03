@@ -355,8 +355,17 @@ export default function NovoClientePage() {
 
       submittedRef.current = true
       try { localStorage.removeItem(DRAFT_KEY) } catch {}
-      toast.success(existingClientId ? 'Cliente atualizado!' : 'Cliente cadastrado!')
-      router.push('/clientes')
+      // UX-11 #2: redireciona pra Nova OS já com cliente pré-selecionado.
+      // Atendente quase sempre cadastra cliente justamente porque vai abrir
+      // OS dele em seguida. Antes ia pra /clientes (precisa buscar de novo).
+      const newId = data?.data?.id || data?.id
+      if (newId && !existingClientId) {
+        toast.success('Cliente cadastrado! Iniciando nova OS…')
+        router.push(`/os/novo?cliente=${newId}`)
+      } else {
+        toast.success(existingClientId ? 'Cliente atualizado!' : 'Cliente cadastrado!')
+        router.push(newId ? `/clientes/${newId}` : '/clientes')
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro')
     } finally {

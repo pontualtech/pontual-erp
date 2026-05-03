@@ -444,7 +444,11 @@ export default function OSDetailPage() {
   async function handleAddItem(closeAfter: boolean = false) {
     if (!itemDesc.trim()) { toast.error('Descricao e obrigatoria'); return }
     const qty = parseInt(itemQty) || 1
-    const price = Math.round(parseFloat(itemPrice || '0') * 100)
+    // UX-11 #3: parseBRLToCents lida com formato BR (vírgula decimal) corretamente.
+    // Antes parseFloat("1.250,50") retornava 1.25 — usuário digitava preço completo
+    // mas item virava R$ 1,25 silenciosamente.
+    const { parseBRLToCents } = await import('@/lib/parse-brl')
+    const price = parseBRLToCents(itemPrice || '0') ?? 0
 
     setAddingItem(true)
     try {

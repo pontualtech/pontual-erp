@@ -67,6 +67,9 @@ export default function ColetaPage() {
   const [ocrOpen, setOcrOpen] = useState(false)
   const [cameraOpen, setCameraOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  // UX-11 #4: undo countdown 5s antes de enfileirar coleta (paridade entrega)
+  const [pendingPayload, setPendingPayload] = useState<Record<string, unknown> | null>(null)
+  const [undoCountdown, setUndoCountdown] = useState<number>(0)
 
   // Extra-OS modal: motorista cria OS adicional quando cliente entrega
   // equipamento nao cadastrado no momento da coleta
@@ -178,7 +181,9 @@ export default function ColetaPage() {
       navigator.geolocation.getCurrentPosition(
         p => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
         () => resolve(null),
-        { enableHighAccuracy: true, timeout: 6000, maximumAge: 30_000 }
+        // UX-11 #5: timeout 2s — não trava finalização em garagem subterrânea.
+        // Se GPS demora >2s, segue sem location (location: null aceitável).
+        { enableHighAccuracy: false, timeout: 2000, maximumAge: 60_000 }
       )
     })
   }
@@ -224,7 +229,7 @@ export default function ColetaPage() {
         toast.success('Alteracoes salvas!')
         router.replace('/motorista/rota')
       } else {
-        // Modo FINALIZAR: POST com offline queue + notificacoes
+        // Modo FINALIZAR: agenda undo countdown 5s antes de enfileirar (UX-11 #4)
         const location = await getCurrentLocation()
         const payload = {
           event_id: uuidv4(),
@@ -237,14 +242,55 @@ export default function ColetaPage() {
           photos_base64: photosBase64,
           location,
         }
-        await enqueueSubmission(`/api/driver/stop/${stopId}/coleta`, payload)
-        toast.success('Coleta registrada! Sincronizando…')
-        router.replace('/motorista/rota')
+        setPendingPayload(payload)
+        setUndoCountdown(5)
       }
     } catch (err) {
       toast.error('Erro ao salvar. Tente novamente.')
     } finally { setSubmitting(false) }
   }
+
+  // UX-11 #4: countdown undo — chega em 0, dispara enqueue + redireciona
+  useEffect(() => {
+    if (!pendingPayload || undoCountdown <= 0) return
+    const t = setTimeout(() => setUndoCountdown((c) => c - 1), 1000)
+    return () => clearTimeout(t)
+  }, [pendingPayload, undoCountdown])
+
+  useEffect(() => {
+    if (!pendingPayload || undoCountdown !== 0) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        await enqueueSubmission(`/api/driver/stop/${stopId}/coleta`, pendingPayload)
+        if (cancelled) return
+        toast.success('Coleta registrada! Sincronizando…')
+        router.replace('/motorista/rota')
+      } catch {
+        if (!cancelled) {
+          toast.error('Erro ao salvar. Tente novamente.')
+          setPendingPayload(null)
+        }
+      }
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [undoCountdown, pendingPayload])
+
+  function undoColetaSubmit() {
+    setPendingPayload(null)
+    setUndoCountdown(0)
+    toast('Coleta não registrada — confira os dados', { icon: '↩️' })
+  }
+
+  // UX-11 #6: beforeunload guard quando há campos preenchidos
+  useEffect(() => {
+    const isDirty = !!(serial || observations || signerName || signaturePng || extraPhotos.length > 0)
+    if (!isDirty || pendingPayload) return  // Se está no countdown, já é commit-in-flight
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [serial, observations, signerName, signaturePng, extraPhotos, pendingPayload])
 
   if (loading) {
     return <div className="flex min-h-[100dvh] items-center justify-center">
@@ -257,6 +303,48 @@ export default function ColetaPage() {
     hint="Foto do estado do equipamento"
     onCapture={b => { setExtraPhotos(p => [...p, b]); setCameraOpen(false) }}
     onCancel={() => setCameraOpen(false)} />
+
+  // UX-11 #4: tela de countdown 5s undo (paridade com entrega UX-2 #4)
+  if (pendingPayload && undoCountdown > 0) {
+    return (
+      <div className="min-h-[100dvh] bg-purple-50 flex flex-col items-center justify-center p-6">
+        <div className="w-full max-w-sm bg-white rounded-3xl shadow-xl p-6 text-center">
+          <div className="w-20 h-20 mx-auto rounded-full flex items-center justify-center bg-purple-600 mb-4">
+            <Check className="w-10 h-10 text-white" />
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-1">Coleta registrada!</h2>
+          <p className="text-sm text-gray-600 mb-6">
+            {stop.customer_name} {stop.os ? `· OS #${stop.os.number}` : ''}
+          </p>
+          <div className="relative w-32 h-32 mx-auto mb-4">
+            <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="45" stroke="#d1d5db" strokeWidth="6" fill="none" />
+              <circle
+                cx="50" cy="50" r="45"
+                stroke="#9333ea"
+                strokeWidth="6" fill="none"
+                strokeDasharray={`${(undoCountdown / 5) * 282.74} 282.74`}
+                className="transition-all duration-1000 ease-linear"
+              />
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="text-4xl font-bold text-gray-900">{undoCountdown}</span>
+            </div>
+          </div>
+          <p className="text-xs text-gray-500 mb-4">
+            Sincronizando em {undoCountdown}s. Toque em <strong>Desfazer</strong> se algo está errado.
+          </p>
+          <button
+            type="button"
+            onClick={undoColetaSubmit}
+            className="w-full py-3 px-4 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl flex items-center justify-center gap-2 active:scale-[0.99] transition min-h-[44px]"
+          >
+            ↩️ Desfazer
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-[100dvh] bg-slate-50 flex flex-col">

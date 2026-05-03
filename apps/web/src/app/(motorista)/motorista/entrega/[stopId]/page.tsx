@@ -85,7 +85,8 @@ export default function EntregaPage() {
       navigator.geolocation.getCurrentPosition(
         p => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
         () => resolve(null),
-        { enableHighAccuracy: true, timeout: 6000, maximumAge: 30_000 }
+        // UX-11 #5: timeout 2s pra não bloquear submit em garagem subterrânea
+        { enableHighAccuracy: false, timeout: 2000, maximumAge: 60_000 }
       )
     })
   }
@@ -166,6 +167,15 @@ export default function EntregaPage() {
     setUndoCountdown(0)
     toast('Entrega não registrada — confira os dados', { icon: '↩️' })
   }
+
+  // UX-11 #6: beforeunload guard quando há campos preenchidos
+  useEffect(() => {
+    const isDirty = !!(outcome || refusalReason || paymentMethod || receiptPhoto || deliveredPhoto || signaturePng || signerName)
+    if (!isDirty || pendingPayload) return
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [outcome, refusalReason, paymentMethod, receiptPhoto, deliveredPhoto, signaturePng, signerName, pendingPayload])
 
   if (loading) return <div className="flex min-h-[100dvh] items-center justify-center">
     <div className="animate-spin h-8 w-8 border-4 border-emerald-600 border-t-transparent rounded-full" />

@@ -49,6 +49,22 @@ interface DREResponse {
   month: number | null
   dre: DREData
   monthly: MonthlyDRE[]
+  // UX-11 #8: meta de frescor pra badge "atualizado em"
+  meta?: {
+    total_entries?: number
+    last_entry_at?: string | null
+    engine?: 'live' | 'mv'
+  }
+}
+
+// UX-11 #8: helper de freshness — usado no badge do header DRE
+function freshnessBadge(lastIso: string | null | undefined): { color: string; label: string; icon: string } {
+  if (!lastIso) return { color: 'text-gray-500 bg-gray-100 border-gray-200', label: 'Sem dados', icon: '—' }
+  const ageH = (Date.now() - new Date(lastIso).getTime()) / 3_600_000
+  const fmt = new Date(lastIso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+  if (ageH > 24) return { color: 'text-red-700 bg-red-50 border-red-200', label: `Defasado: ${fmt}`, icon: '⚠️' }
+  if (ageH > 2)  return { color: 'text-amber-700 bg-amber-50 border-amber-200', label: `Atualizado em: ${fmt}`, icon: '⏱' }
+  return { color: 'text-emerald-700 bg-emerald-50 border-emerald-200', label: `Atualizado em: ${fmt}`, icon: '✓' }
 }
 
 function formatCurrency(cents: number) {
@@ -311,6 +327,16 @@ export default function DREPage() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">DRE - Demonstrativo de Resultados</h1>
             <p className="text-sm text-gray-500">Analise de receitas, custos e lucro</p>
+            {/* UX-11 #8: badge de frescor — alerta visível quando MV está stale */}
+            {data?.meta?.last_entry_at && (() => {
+              const b = freshnessBadge(data.meta.last_entry_at)
+              return (
+                <span className={cn('inline-flex items-center gap-1 mt-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium', b.color)}>
+                  <span aria-hidden>{b.icon}</span>
+                  {b.label}
+                </span>
+              )
+            })()}
           </div>
         </div>
       </div>

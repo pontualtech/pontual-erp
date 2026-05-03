@@ -122,8 +122,12 @@ export function PhotoGallery({ osId, customerId, initialPhotos = [] }: PhotoGall
   }
 
   function isImage(photo: Photo): boolean {
+    // UX-11 #7: aceita HEIC/HEIF do iPhone — antes apareciam como ícone PDF
+    // mesmo sendo foto válida (especialmente se backend não converte HEIC→JPEG).
     const url = photo.url.toLowerCase()
-    return url.endsWith('.jpg') || url.endsWith('.jpeg') || url.endsWith('.png') || url.endsWith('.webp')
+    return url.endsWith('.jpg') || url.endsWith('.jpeg') || url.endsWith('.png') ||
+           url.endsWith('.webp') || url.endsWith('.heic') || url.endsWith('.heif') ||
+           url.endsWith('.gif')
   }
 
   return (

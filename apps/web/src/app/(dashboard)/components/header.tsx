@@ -91,6 +91,25 @@ export function Header({ user }: { user: AuthUser }) {
   }, [])
 
   async function handleLogout() {
+    // UX-11 #1: limpa drafts/preferências em localStorage antes do redirect.
+    // Evita vazamento em PC compartilhado (loja física) — próxima atendente
+    // não deve ver "rascunho restaurado" do cliente anterior nem herdar
+    // toggle os_notify_mode='auto' deixado pela colega.
+    try {
+      const keysToWipe = [
+        'erp:cliente-novo:draft',
+        'erp:os-novo:draft',
+        'os_notify_mode',
+      ]
+      keysToWipe.forEach(k => { try { localStorage.removeItem(k) } catch {} })
+      // Limpa também qualquer chave com prefixo erp: que possa conter draft/state
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i)
+        if (k && k.startsWith('erp:') && k.endsWith(':draft')) {
+          try { localStorage.removeItem(k) } catch {}
+        }
+      }
+    } catch { /* swallow — logout não pode falhar por isso */ }
     await fetch('/api/auth/logout', { method: 'POST' })
     router.push('/login')
   }

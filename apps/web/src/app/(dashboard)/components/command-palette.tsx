@@ -116,43 +116,42 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
             Nenhum resultado para &quot;{query}&quot;
           </Command.Empty>
 
-          {/* Ações rápidas — sempre visíveis quando query vazia */}
-          {query.trim().length < 2 && (
-            <>
-              <Command.Group heading="Ações rápidas" className="px-2 pt-2 pb-1 text-[11px] font-semibold uppercase text-gray-500 dark:text-gray-400">
-                <PaletteItem
-                  icon={Plus}
-                  label="Nova OS"
-                  shortcut="N"
-                  onSelect={() => runAction('Nova OS', () => router.push('/os/novo'))}
-                />
-                <PaletteItem
-                  icon={Plus}
-                  label="Novo cliente"
-                  onSelect={() => runAction('Novo cliente', () => router.push('/clientes/novo'))}
-                />
-                <PaletteItem
-                  icon={Plus}
-                  label="Novo produto"
-                  onSelect={() => runAction('Novo produto', () => router.push('/produtos/novo'))}
-                />
-              </Command.Group>
+          {/* UX-11 #10: Ações rápidas SEMPRE visíveis (com filtro local por synonyms).
+              Antes só apareciam com query vazia — usuário digitava "Criar OS" e não achava. */}
+          {(() => {
+            const q = query.toLowerCase().trim()
+            // Helper: retorna se o item bate com a query via synonyms
+            const matches = (synonyms: string[]) => !q || synonyms.some(s => s.toLowerCase().includes(q))
+            return (
+              <>
+                <Command.Group heading="Ações rápidas" className="px-2 pt-2 pb-1 text-[11px] font-semibold uppercase text-gray-500 dark:text-gray-400">
+                  {matches(['Nova OS', 'Criar OS', 'Abrir OS', 'Novo serviço', 'Nova ordem']) && (
+                    <PaletteItem icon={Plus} label="Nova OS" shortcut="N" onSelect={() => runAction('Nova OS', () => router.push('/os/novo'))} />
+                  )}
+                  {matches(['Novo cliente', 'Cadastrar cliente', 'Adicionar cliente', 'Criar cliente']) && (
+                    <PaletteItem icon={Plus} label="Novo cliente" onSelect={() => runAction('Novo cliente', () => router.push('/clientes/novo'))} />
+                  )}
+                  {matches(['Novo produto', 'Cadastrar produto', 'Adicionar produto', 'Criar produto']) && (
+                    <PaletteItem icon={Plus} label="Novo produto" onSelect={() => runAction('Novo produto', () => router.push('/produtos/novo'))} />
+                  )}
+                </Command.Group>
 
-              <Command.Group heading="Ir para..." className="px-2 pt-2 pb-1 text-[11px] font-semibold uppercase text-gray-500 dark:text-gray-400">
-                <PaletteItem icon={Home} label="Dashboard" shortcut="G D" onSelect={() => navigateTo('/')} />
-                <PaletteItem icon={Wrench} label="Ordens de Serviço" shortcut="G O" onSelect={() => navigateTo('/os')} />
-                <PaletteItem icon={Users} label="Clientes" shortcut="G C" onSelect={() => navigateTo('/clientes')} />
-                <PaletteItem icon={DollarSign} label="Financeiro" shortcut="G F" onSelect={() => navigateTo('/financeiro')} />
-                <PaletteItem icon={Truck} label="Logística" onSelect={() => navigateTo('/logistica')} />
-                <PaletteItem icon={Package} label="Produtos / Estoque" onSelect={() => navigateTo('/produtos')} />
-                <PaletteItem icon={FileText} label="Fiscal (NFS-e)" onSelect={() => navigateTo('/fiscal')} />
-                <PaletteItem icon={BarChart3} label="Relatórios BI" onSelect={() => navigateTo('/relatorios-bi')} />
-                <PaletteItem icon={Phone} label="VoIP / Chamadas" onSelect={() => navigateTo('/voip')} />
-                <PaletteItem icon={MessageCircle} label="WhatsApp / Chat" onSelect={() => navigateTo('/chat')} />
-                <PaletteItem icon={Settings} label="Configurações" onSelect={() => navigateTo('/configuracoes')} />
-              </Command.Group>
-            </>
-          )}
+                <Command.Group heading="Ir para..." className="px-2 pt-2 pb-1 text-[11px] font-semibold uppercase text-gray-500 dark:text-gray-400">
+                  {matches(['Dashboard', 'Inicio', 'Home', 'Painel']) && <PaletteItem icon={Home} label="Dashboard" shortcut="G D" onSelect={() => navigateTo('/')} />}
+                  {matches(['Ordens de Serviço', 'OS', 'Lista de OS', 'Servicos']) && <PaletteItem icon={Wrench} label="Ordens de Serviço" shortcut="G O" onSelect={() => navigateTo('/os')} />}
+                  {matches(['Clientes', 'Customers']) && <PaletteItem icon={Users} label="Clientes" shortcut="G C" onSelect={() => navigateTo('/clientes')} />}
+                  {matches(['Financeiro', 'Caixa', 'AR', 'AP', 'Contas']) && <PaletteItem icon={DollarSign} label="Financeiro" shortcut="G F" onSelect={() => navigateTo('/financeiro')} />}
+                  {matches(['Logística', 'Logistica', 'Rotas', 'Motorista', 'Entrega']) && <PaletteItem icon={Truck} label="Logística" onSelect={() => navigateTo('/logistica')} />}
+                  {matches(['Produtos', 'Estoque', 'Pecas']) && <PaletteItem icon={Package} label="Produtos / Estoque" onSelect={() => navigateTo('/produtos')} />}
+                  {matches(['Fiscal', 'NFSe', 'NF-e', 'Notas']) && <PaletteItem icon={FileText} label="Fiscal (NFS-e)" onSelect={() => navigateTo('/fiscal')} />}
+                  {matches(['Relatórios BI', 'Relatorios', 'BI', 'Margem', 'Analytics']) && <PaletteItem icon={BarChart3} label="Relatórios BI" onSelect={() => navigateTo('/relatorios-bi')} />}
+                  {matches(['VoIP', 'Chamadas', 'Telefonia', 'Ligar']) && <PaletteItem icon={Phone} label="VoIP / Chamadas" onSelect={() => navigateTo('/voip')} />}
+                  {matches(['WhatsApp', 'Chat', 'Mensagens']) && <PaletteItem icon={MessageCircle} label="WhatsApp / Chat" onSelect={() => navigateTo('/chat')} />}
+                  {matches(['Configurações', 'Configuracoes', 'Settings', 'Ajustes']) && <PaletteItem icon={Settings} label="Configurações" onSelect={() => navigateTo('/configuracoes')} />}
+                </Command.Group>
+              </>
+            )
+          })()}
 
           {/* Resultados da busca quando query >= 2 chars */}
           {results && (
