@@ -310,9 +310,9 @@ export default function ClientesPage() {
           <option value="">Cidade: Todas</option>
           {cities.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
-        <select value={recurrenceFilter} title="Filtrar por recorrencia" onChange={e => { setRecurrenceFilter(e.target.value); setPage(1) }}
+        <select value={recurrenceFilter} title="Filtrar por recorrência" onChange={e => { setRecurrenceFilter(e.target.value); setPage(1) }}
           className="rounded-md border bg-white px-3 py-2 text-sm outline-none focus:border-blue-500">
-          <option value="">Recorrencia: Todos</option>
+          <option value="">Recorrência: Todos</option>
           <option value="true">Recorrente</option>
           <option value="false">Novo</option>
         </select>

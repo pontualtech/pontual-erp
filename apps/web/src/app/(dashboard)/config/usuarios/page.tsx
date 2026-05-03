@@ -91,13 +91,13 @@ export default function UsuariosPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Usuarios</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Usuários</h1>
         {isAdmin && (
           <button
             onClick={() => setShowCreateModal(true)}
             className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
           >
-            <Plus className="h-4 w-4" /> Novo Usuario
+            <Plus className="h-4 w-4" /> Novo Usuário
           </button>
         )}
       </div>
@@ -121,7 +121,7 @@ export default function UsuariosPage() {
               <th className="px-4 py-3">Perfil</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Criado em</th>
-              <th className="px-4 py-3 w-28">Acoes</th>
+              <th className="px-4 py-3 w-28">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y">
@@ -284,7 +284,7 @@ function CreateUserModal({ roles, onClose, onCreated }: { roles: Role[]; onClose
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
       <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">Novo Usuario</h2>
+          <h2 className="text-lg font-semibold text-gray-900">Novo Usuário</h2>
           <button onClick={onClose} className="rounded p-1 text-gray-400 hover:bg-gray-100">
             <X className="h-5 w-5" />
           </button>

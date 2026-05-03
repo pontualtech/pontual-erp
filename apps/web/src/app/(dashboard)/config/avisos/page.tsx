@@ -79,7 +79,7 @@ export default function ConfigAvisosPage() {
   if (!isAdmin) {
     return (
       <div className="p-8 text-center text-sm text-gray-400">
-        Apenas administradores podem acessar esta pagina.
+        Apenas administradores podem acessar esta página.
       </div>
     )
   }
@@ -97,16 +97,16 @@ export default function ConfigAvisosPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
             <Bell className="h-6 w-6" />
-            Configuracoes de Avisos
+            Configurações de Avisos
           </h1>
-          <p className="text-sm text-gray-500">Controle como os avisos sao exibidos e quais exigem confirmacao de leitura</p>
+          <p className="text-sm text-gray-500">Controle como os avisos são exibidos e quais exigem confirmação de leitura</p>
         </div>
       </div>
 
       <div className="rounded-lg border bg-white dark:bg-gray-800 p-6 shadow-sm space-y-6">
-        {/* Leitura obrigatoria */}
+        {/* Leitura obrigatória */}
         <div>
-          <h2 className="font-semibold text-gray-900 dark:text-white mb-3">Leitura Obrigatoria</h2>
+          <h2 className="font-semibold text-gray-900 dark:text-white mb-3">Leitura Obrigatória</h2>
 
           <label className="flex items-center gap-3 cursor-pointer">
             <input
@@ -117,19 +117,19 @@ export default function ConfigAvisosPage() {
             />
             <div>
               <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Ativar modal de leitura obrigatoria
+                Ativar modal de leitura obrigatória
               </span>
               <p className="text-xs text-gray-400">
-                Quando ativado, avisos marcados como "leitura obrigatoria" bloqueiam a tela ate o usuario confirmar
+                Quando ativado, avisos marcados como "leitura obrigatória" bloqueiam a tela até o usuário confirmar
               </p>
             </div>
           </label>
         </div>
 
-        {/* Prioridade minima */}
+        {/* Prioridade mínima */}
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Prioridade minima para forcar leitura
+            Prioridade mínima para forçar leitura
           </label>
           <select
             value={settings['avisos.force_read_min_priority']}
@@ -141,14 +141,14 @@ export default function ConfigAvisosPage() {
             ))}
           </select>
           <p className="mt-1 text-xs text-gray-400">
-            Avisos com prioridade abaixo desta nao exigirao confirmacao mesmo se marcados
+            Avisos com prioridade abaixo desta não exigirão confirmação mesmo se marcados
           </p>
         </div>
 
         {/* Polling interval */}
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Intervalo de verificacao (segundos)
+            Intervalo de verificação (segundos)
           </label>
           <input
             type="number"
@@ -159,14 +159,14 @@ export default function ConfigAvisosPage() {
             className="rounded-lg border px-3 py-2 text-sm w-32 focus:border-blue-500 focus:outline-none dark:bg-gray-700 dark:border-gray-600 dark:text-white"
           />
           <p className="mt-1 text-xs text-gray-400">
-            Com que frequencia o sistema verifica novos avisos (minimo 10s)
+            Com que frequência o sistema verifica novos avisos (mínimo 10s)
           </p>
         </div>
 
         {/* Auto expire */}
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Expirar avisos automaticamente apos (dias)
+            Expirar avisos automaticamente após (dias)
           </label>
           <input
             type="number"
@@ -177,7 +177,7 @@ export default function ConfigAvisosPage() {
             className="rounded-lg border px-3 py-2 text-sm w-32 focus:border-blue-500 focus:outline-none dark:bg-gray-700 dark:border-gray-600 dark:text-white"
           />
           <p className="mt-1 text-xs text-gray-400">
-            0 = nunca expirar automaticamente. Avisos sem data de expiracao ficam vissiveis para sempre.
+            0 = nunca expirar automaticamente. Avisos sem data de expiração ficam visíveis para sempre.
           </p>
         </div>
       </div>
@@ -190,7 +190,7 @@ export default function ConfigAvisosPage() {
           className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
         >
           <Save className="h-4 w-4" />
-          {saving ? 'Salvando...' : 'Salvar Configuracoes'}
+          {saving ? 'Salvando...' : 'Salvar Configurações'}
         </button>
         {saved && (
           <span className="text-sm text-green-600 font-medium">Salvo com sucesso!</span>

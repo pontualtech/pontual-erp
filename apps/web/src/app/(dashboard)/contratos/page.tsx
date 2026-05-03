@@ -100,7 +100,7 @@ export default function ContratosPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Contratos</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Contratos de manutencao preventiva</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Contratos de manutenção preventiva</p>
         </div>
         <Link
           href="/contratos/novo"
@@ -156,7 +156,7 @@ export default function ContratosPage() {
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
-            placeholder="Buscar por numero, descricao ou cliente..."
+            placeholder="Buscar por número, descrição ou cliente..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') { setPage(1); load() } }}
@@ -188,10 +188,10 @@ export default function ContratosPage() {
           </div>
           <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Nenhum contrato encontrado</h3>
           <p className="text-sm text-gray-500 dark:text-gray-400 max-w-sm mb-1">
-            Gerencie contratos de manutencao preventiva com seus clientes.
+            Gerencie contratos de manutenção preventiva com seus clientes.
           </p>
           <p className="text-xs text-gray-400 dark:text-gray-500 max-w-sm mb-6">
-            Defina equipamentos cobertos, frequencia de visitas, valor mensal e acompanhe vencimentos automaticamente.
+            Defina equipamentos cobertos, frequência de visitas, valor mensal e acompanhe vencimentos automaticamente.
           </p>
           <Link
             href="/contratos/novo"

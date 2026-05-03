@@ -100,7 +100,7 @@ export default function ConfigEmpresaPage() {
           <Link href="/config" className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100"><ArrowLeft className="h-5 w-5" /></Link>
           <div>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2"><Building2 className="h-6 w-6" /> Dados da Empresa</h1>
-            <p className="text-sm text-gray-500">Cadastro, endereco, contato, email e configuracoes fiscais</p>
+            <p className="text-sm text-gray-500">Cadastro, endereço, contato, email e configurações fiscais</p>
           </div>
         </div>
         <button type="button" onClick={handleSave} disabled={saving}
@@ -114,26 +114,26 @@ export default function ConfigEmpresaPage() {
       <div className="rounded-lg border bg-white p-5 shadow-sm">
         <h2 className="font-semibold text-gray-900 mb-4">Dados da Empresa</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div className="sm:col-span-2"><label className="block text-xs text-gray-500 mb-1">Razao Social</label><input title="Razao Social" value={config.razao_social} onChange={e => upd('razao_social', e.target.value)} className={inp} /></div>
+          <div className="sm:col-span-2"><label className="block text-xs text-gray-500 mb-1">Razão Social</label><input title="Razão Social" value={config.razao_social} onChange={e => upd('razao_social', e.target.value)} className={inp} /></div>
           <div><label className="block text-xs text-gray-500 mb-1">Nome Fantasia</label><input title="Nome Fantasia" value={config.nome_fantasia} onChange={e => upd('nome_fantasia', e.target.value)} className={inp} /></div>
           <div><label className="block text-xs text-gray-500 mb-1">CNPJ</label><input value={config.cnpj} onChange={e => upd('cnpj', e.target.value)} placeholder="00.000.000/0001-00" className={inp} /></div>
-          <div><label className="block text-xs text-gray-500 mb-1">Inscricao Estadual</label><input title="Inscricao Estadual" value={config.ie} onChange={e => upd('ie', e.target.value)} className={inp} /></div>
-          <div><label className="block text-xs text-gray-500 mb-1">Inscricao Municipal</label><input title="Inscricao Municipal" value={config.im} onChange={e => upd('im', e.target.value)} className={inp} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Inscrição Estadual</label><input title="Inscrição Estadual" value={config.ie} onChange={e => upd('ie', e.target.value)} className={inp} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Inscrição Municipal</label><input title="Inscrição Municipal" value={config.im} onChange={e => upd('im', e.target.value)} className={inp} /></div>
           <div><label className="block text-xs text-gray-500 mb-1">CNAE</label><input value={config.cnae} onChange={e => upd('cnae', e.target.value)} placeholder="4751201" className={inp} /></div>
         </div>
       </div>
 
-      {/* Secao 2: Endereco */}
+      {/* Seção 2: Endereço */}
       <div className="rounded-lg border bg-white p-5 shadow-sm">
-        <h2 className="font-semibold text-gray-900 mb-4">Endereco</h2>
+        <h2 className="font-semibold text-gray-900 mb-4">Endereço</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <div className="sm:col-span-2"><label className="block text-xs text-gray-500 mb-1">Logradouro</label><input title="Logradouro" value={config.logradouro} onChange={e => upd('logradouro', e.target.value)} className={inp} /></div>
-          <div><label className="block text-xs text-gray-500 mb-1">Numero</label><input title="Numero" value={config.numero} onChange={e => upd('numero', e.target.value)} className={inp} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Número</label><input title="Número" value={config.numero} onChange={e => upd('numero', e.target.value)} className={inp} /></div>
           <div><label className="block text-xs text-gray-500 mb-1">Complemento</label><input title="Complemento" value={config.complemento} onChange={e => upd('complemento', e.target.value)} className={inp} /></div>
           <div><label className="block text-xs text-gray-500 mb-1">Bairro</label><input title="Bairro" value={config.bairro} onChange={e => upd('bairro', e.target.value)} className={inp} /></div>
           <div><label className="block text-xs text-gray-500 mb-1">CEP</label><input value={config.cep} onChange={e => upd('cep', e.target.value)} placeholder="00000-000" className={inp} /></div>
-          <div><label className="block text-xs text-gray-500 mb-1">Municipio</label><input title="Municipio" value={config.municipio} onChange={e => upd('municipio', e.target.value)} className={inp} /></div>
-          <div><label className="block text-xs text-gray-500 mb-1">Cod. Municipio IBGE</label><input value={config.cod_municipio} onChange={e => upd('cod_municipio', e.target.value)} placeholder="3550308" className={inp} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Município</label><input title="Município" value={config.municipio} onChange={e => upd('municipio', e.target.value)} className={inp} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Cod. Município IBGE</label><input value={config.cod_municipio} onChange={e => upd('cod_municipio', e.target.value)} placeholder="3550308" className={inp} /></div>
           <div><label className="block text-xs text-gray-500 mb-1">UF</label>
             <select value={config.uf} onChange={e => upd('uf', e.target.value)} title="UF" className={inp}>
               {UF_OPTIONS.map(u => <option key={u} value={u}>{u}</option>)}
@@ -192,8 +192,8 @@ export default function ConfigEmpresaPage() {
       <div className="rounded-lg border bg-white p-5 shadow-sm">
         <h2 className="font-semibold text-gray-900 mb-4">NFS-e Servico</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div><label className="block text-xs text-gray-500 mb-1">Codigo do Municipio</label><input value={config.nfse_codigo_municipio} onChange={e => upd('nfse_codigo_municipio', e.target.value)} placeholder="3550308" className={inp} /></div>
-          <div><label className="block text-xs text-gray-500 mb-1">CCM / Inscricao Municipal</label><input title="CCM / Inscricao Municipal" value={config.im} disabled className={inp + ' bg-gray-50'} />
+          <div><label className="block text-xs text-gray-500 mb-1">Codigo do Município</label><input value={config.nfse_codigo_municipio} onChange={e => upd('nfse_codigo_municipio', e.target.value)} placeholder="3550308" className={inp} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">CCM / Inscrição Municipal</label><input title="CCM / Inscrição Municipal" value={config.im} disabled className={inp + ' bg-gray-50'} />
             <p className="text-xs text-gray-400 mt-1">Mesmo valor do campo acima (Dados da Empresa)</p>
           </div>
           <div><label className="block text-xs text-gray-500 mb-1">Aliquota ISS padrao (%)</label><input value={config.aliquota_iss} onChange={e => upd('aliquota_iss', e.target.value)} placeholder="5.00" className={inp} /></div>
