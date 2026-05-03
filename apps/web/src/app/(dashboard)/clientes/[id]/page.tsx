@@ -37,7 +37,7 @@ interface OS {
   status_id: string
   module_statuses?: { name: string; color: string | null }
   reported_issue: string | null
-  total_amount: number
+  total_cost: number
   created_at: string
 }
 
@@ -283,7 +283,7 @@ export default function ClienteDetalhePage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-gray-500 max-w-xs truncate">{os.reported_issue || '—'}</td>
-                    <td className="px-4 py-3 font-medium">{formatCurrency(os.total_amount || 0)}</td>
+                    <td className="px-4 py-3 font-medium">{formatCurrency(os.total_cost || 0)}</td>
                     <td className="px-4 py-3 text-gray-500">{new Date(os.created_at).toLocaleDateString('pt-BR')}</td>
                   </tr>
                 ))
