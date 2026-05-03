@@ -243,9 +243,12 @@ export default function DashboardPage() {
 
   // UX-1 #10: cards do dashboard agora levam a filtro/contexto detalhado.
   // UX-7 #1: cada card pode ter `delta` (Δ% vs período anterior).
-  // Cada card vira link cliclavel — gerente ja chega na lista filtrada.
-  function calcDelta(curr: number, prev: number | undefined): { pct: number; up: boolean } | null {
+  // UX-12 #3: esconde delta se base anterior < 5 — evita mensagem enganosa
+  //           tipo "↓ 100% vs ontem" quando ontem teve só 1 OS (volume baixo
+  //           amplifica ruído percentual).
+  function calcDelta(curr: number, prev: number | undefined, minBase = 5): { pct: number; up: boolean } | null {
     if (prev == null || prev === 0) return null
+    if (prev < minBase) return null  // base muito baixa → delta enganoso
     const pct = Math.round(((curr - prev) / prev) * 100)
     if (Math.abs(pct) < 1) return null  // ignora variação <1% (ruído)
     return { pct: Math.abs(pct), up: pct >= 0 }

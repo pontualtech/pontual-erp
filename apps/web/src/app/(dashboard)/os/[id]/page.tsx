@@ -382,6 +382,12 @@ export default function OSDetailPage() {
     }
   }
 
+  // UX-12 #2: gates de permissão pra evitar 403 spam no console quando
+  // atendente abre OS — endpoints financeiros internos só carregam se
+  // user tem permissão. Antes geravam 4 req com 403 em cada OS aberta.
+  const canViewFinanceiroForOs = !!user && (isAdmin || hasPermission('financeiro', 'view'))
+  const canViewSettingsForOs = !!user && (isAdmin || hasPermission('config', 'view'))
+
   useEffect(() => {
     fetch('/api/users?simple=true').then(r => r.json()).then(d => setUsers(d.data ?? [])).catch(() => toast.error('Erro ao carregar usuarios'))
     fetch('/api/settings/tipos-os').then(r => r.json()).then(d => setTiposOS(d.data ?? [])).catch(() => {})
@@ -390,18 +396,25 @@ export default function OSDetailPage() {
       setPaymentMethods((d.data ?? []).filter((m: any) => m.active))
       setPaymentMethodsLoaded(true)
     }).catch(() => toast.error('Erro ao carregar formas de pagamento'))
-    fetch('/api/financeiro/card-fees').then(r => r.json()).then(d => setCardFees(d.data ?? [])).catch(() => toast.error('Erro ao carregar taxas de cartao'))
-    fetch('/api/financeiro/contas-bancarias').then(r => r.json()).then(d => setBankAccounts(d.data ?? [])).catch(() => {})
-    fetch('/api/settings').then(r => r.json()).then(d => {
-      const map: Record<string, string> = {}
-      const accountDefaults = d.data?.account_default ?? {}
-      for (const [key, val] of Object.entries(accountDefaults)) {
-        const method = key.replace('account_default.', '')
-        if ((val as any)?.value) map[method] = (val as any).value
-      }
-      setDefaultAccountMap(map)
-    }).catch(() => {})
-  }, [])
+    // Endpoints financeiros: só pra users com permissão
+    if (canViewFinanceiroForOs) {
+      fetch('/api/financeiro/card-fees').then(r => r.json()).then(d => setCardFees(d.data ?? [])).catch(() => toast.error('Erro ao carregar taxas de cartao'))
+      fetch('/api/financeiro/contas-bancarias').then(r => r.json()).then(d => setBankAccounts(d.data ?? [])).catch(() => {})
+    }
+    // /api/settings: só pra users com permissão (atendente sem config.view dispara 403)
+    if (canViewSettingsForOs) {
+      fetch('/api/settings').then(r => r.json()).then(d => {
+        const map: Record<string, string> = {}
+        const accountDefaults = d.data?.account_default ?? {}
+        for (const [key, val] of Object.entries(accountDefaults)) {
+          const method = key.replace('account_default.', '')
+          if ((val as any)?.value) map[method] = (val as any).value
+        }
+        setDefaultAccountMap(map)
+      }).catch(() => {})
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canViewFinanceiroForOs, canViewSettingsForOs])
 
   useEffect(() => {
     fetch('/api/status?module=os')

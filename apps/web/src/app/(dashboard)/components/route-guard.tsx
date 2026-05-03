@@ -55,7 +55,7 @@ function AccessDenied() {
         Acesso negado
       </h2>
       <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 max-w-md">
-        Voce nao tem permissao para acessar esta pagina. Entre em contato com o administrador se acredita que isso e um erro.
+        Você não tem permissão para acessar esta página. Entre em contato com o administrador se acredita que isso é um erro.
       </p>
       <Link
         href="/"
