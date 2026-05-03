@@ -43,6 +43,14 @@ interface DashboardStats {
     osAbertasOntem?: number
     faturamentoMesAnteriorCents?: number
   }
+  // Audit 11: IDs dos status reais por categoria — frontend usa em hrefs
+  // dos cards. Antes cards apontavam pra ?status=PRONTA enum inexistente.
+  statusIds?: {
+    coletar: string[]
+    execucao: string[]
+    prontas: string[]
+    finais: string[]
+  }
   osPerWeek: { week: string; count: number }[]
   pipeline: { id?: string; name: string; color: string; count: number }[]
   metrics: {
@@ -260,11 +268,20 @@ export default function DashboardPage() {
   const faturamentoMes = stats?.cards.faturamentoMesCents ?? 0
   const faturamentoPrev = stats?.previous?.faturamentoMesAnteriorCents
 
+  // Audit 11: hrefs dos cards usam IDs reais dos status retornados pelo
+  // backend. Antes apontavam pra ?status=PRONTA/COLETAR/EM_EXECUCAO enum
+  // que não existia — clique levava pra lista filtrada por valor inválido,
+  // resultando em 0 OS quando havia 14.
+  const csvOrEmpty = (ids?: string[]) => (ids && ids.length > 0 ? ids.join(',') : '')
+  const hrefColetar = csvOrEmpty(stats?.statusIds?.coletar)
+  const hrefExecucao = csvOrEmpty(stats?.statusIds?.execucao)
+  const hrefProntas = csvOrEmpty(stats?.statusIds?.prontas)
+
   const cards = [
-    { label: 'OS Abertas Hoje', value: osAbertasHoje, icon: ClipboardList, color: 'text-blue-600 bg-blue-50', href: '/os?status=ABERTA&period=today', delta: calcDelta(osAbertasHoje, osAbertasOntem), deltaLabel: 'vs ontem' },
-    { label: 'Aguardando Coleta', value: stats?.cards.osColetar ?? 0, icon: PackageCheck, color: 'text-purple-600 bg-purple-50', href: '/os?status=COLETAR', delta: null, deltaLabel: '' },
-    { label: 'OS em Execução', value: stats?.cards.osEmExecucao ?? 0, icon: Wrench, color: 'text-amber-600 bg-amber-50', href: '/os?status=EM_EXECUCAO', delta: null, deltaLabel: '' },
-    { label: 'Prontas p/ Entrega', value: stats?.cards.osProntas ?? 0, icon: Truck, color: 'text-emerald-600 bg-emerald-50', href: '/os?status=PRONTA', delta: null, deltaLabel: '' },
+    { label: 'OS Abertas Hoje', value: osAbertasHoje, icon: ClipboardList, color: 'text-blue-600 bg-blue-50', href: '/os?period=today', delta: calcDelta(osAbertasHoje, osAbertasOntem), deltaLabel: 'vs ontem' },
+    { label: 'Aguardando Coleta', value: stats?.cards.osColetar ?? 0, icon: PackageCheck, color: 'text-purple-600 bg-purple-50', href: hrefColetar ? `/os?status=${encodeURIComponent(hrefColetar)}` : '/os', delta: null, deltaLabel: '' },
+    { label: 'OS em Execução', value: stats?.cards.osEmExecucao ?? 0, icon: Wrench, color: 'text-amber-600 bg-amber-50', href: hrefExecucao ? `/os?status=${encodeURIComponent(hrefExecucao)}` : '/os', delta: null, deltaLabel: '' },
+    { label: 'Prontas p/ Entrega', value: stats?.cards.osProntas ?? 0, icon: Truck, color: 'text-emerald-600 bg-emerald-50', href: hrefProntas ? `/os?status=${encodeURIComponent(hrefProntas)}` : '/os', delta: null, deltaLabel: '' },
     ...(canViewFinanceiro ? [{ label: 'Faturamento do Mês', value: formatCurrency(faturamentoMes), icon: DollarSign, color: 'text-green-600 bg-green-50', href: '/financeiro/dre', delta: calcDelta(faturamentoMes, faturamentoPrev), deltaLabel: 'vs mês passado (até hoje)' }] : []),
   ]
 

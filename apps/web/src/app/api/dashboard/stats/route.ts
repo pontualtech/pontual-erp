@@ -293,6 +293,14 @@ export async function GET(req: NextRequest) {
         osColetar,
         ...(canViewFinanceiro ? { faturamentoMesCents: faturamentoMesCents._sum.total_cost ?? 0 } : {}),
       },
+      // Audit 11: IDs reais dos status pra frontend usar em hrefs dos cards
+      // (antes cards apontavam pra ?status=PRONTA enum que não existia)
+      statusIds: {
+        coletar: coletarIds,
+        execucao: execStatusIds,
+        prontas: prontaIds,
+        finais: finalIds,
+      },
       // UX-7 #1: comparativos pra delta visual no dashboard
       previous: {
         osAbertasOntem,
