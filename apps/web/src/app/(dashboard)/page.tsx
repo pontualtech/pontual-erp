@@ -559,7 +559,7 @@ export default function DashboardPage() {
         if (stats.osAtrasadas > 0) alerts.push({ label: 'OS atrasadas', count: stats.osAtrasadas, icon: AlertTriangle, color: 'text-red-700 bg-red-100 border-red-300', href: '/os?delayed=1' })
         if (stats.semTecnico > 0) alerts.push({ label: 'OS sem técnico', count: stats.semTecnico, icon: User, color: 'text-amber-700 bg-amber-100 border-amber-300', href: '/os?no_tech=1' })
         const arVencidas = (stats.recentReceivable || []).filter(r => r.status === 'VENCIDO').length
-        if (canViewFinanceiro && arVencidas > 0) alerts.push({ label: 'Contas vencidas', count: arVencidas, icon: DollarSign, color: 'text-red-700 bg-red-100 border-red-300', href: '/financeiro?status=VENCIDO' })
+        if (canViewFinanceiro && arVencidas > 0) alerts.push({ label: 'Contas vencidas', count: arVencidas, icon: DollarSign, color: 'text-red-700 bg-red-100 border-red-300', href: '/financeiro/contas-receber?status=VENCIDO' })
         if (alerts.length === 0) return null
         return (
           <div className="rounded-xl border-2 border-red-200 bg-gradient-to-br from-red-50 to-amber-50 p-5">

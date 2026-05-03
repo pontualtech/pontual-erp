@@ -124,7 +124,9 @@ export default function ContasReceberPage() {
   // Filters (inicializar da URL se vier de outra pagina)
   const [search, setSearch] = useState(urlParams.get('search') || '')
   const [customerIdFilter] = useState(urlParams.get('customerId') || '')
-  const [statusFilter, setStatusFilter] = useState('')
+  // Audit 11: aceita ?status= via URL pra deep link do dashboard
+  // ("Contas vencidas" alert → /financeiro/contas-receber?status=VENCIDO)
+  const [statusFilter, setStatusFilter] = useState(urlParams.get('status') || '')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [paymentMethodFilter, setPaymentMethodFilter] = useState('')
