@@ -563,11 +563,11 @@ export default function NovoClientePage() {
                   className="w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:ring-1 focus:ring-blue-200 transition-colors" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Inscricao Estadual (IE)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Inscrição Estadual (IE)</label>
                 <input type="text" value={form.state_registration} onChange={e => update('state_registration', e.target.value.replace(/\D/g, ''))}
-                  placeholder="Isento ou numero da IE"
+                  placeholder="Isento ou número da IE"
                   className="w-full px-3 py-2 border rounded-md focus:border-blue-500 focus:ring-1 focus:ring-blue-200 transition-colors" />
-                <p className="text-xs text-gray-400 mt-1">Necessario para emissao de NF-e. Deixe vazio para contribuinte isento.</p>
+                <p className="text-xs text-gray-400 mt-1">Necessário para emissão de NF-e. Deixe vazio para contribuinte isento.</p>
               </div>
             </>
           )}

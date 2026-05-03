@@ -137,7 +137,7 @@ export default function NovoTicketPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Descricao</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Descrição</label>
             <textarea
               value={form.description}
               onChange={e => updateForm('description', e.target.value)}
@@ -183,13 +183,13 @@ export default function NovoTicketPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Responsavel</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Responsável</label>
             <select
               value={form.assigned_to}
               onChange={e => updateForm('assigned_to', e.target.value)}
               className="w-full rounded-md border bg-white dark:bg-gray-900 dark:border-gray-600 dark:text-gray-100 px-3 py-2 text-sm outline-none focus:border-blue-500"
             >
-              <option value="">Nao atribuido</option>
+              <option value="">Não atribuído</option>
               {users.map(u => (
                 <option key={u.id} value={u.id}>{u.name}</option>
               ))}
@@ -199,7 +199,7 @@ export default function NovoTicketPage() {
 
         {/* Optional links */}
         <div className="rounded-lg border bg-white dark:bg-gray-800 dark:border-gray-700 p-5 space-y-4">
-          <h2 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">Vinculos (opcional)</h2>
+          <h2 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">Vínculos (opcional)</h2>
 
           {/* Customer */}
           <div className="relative">
@@ -245,7 +245,7 @@ export default function NovoTicketPage() {
 
           {/* OS */}
           <div className="relative">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Ordem de Servico</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Ordem de Serviço</label>
             {form.service_order_id && selectedOS ? (
               <div className="flex items-center gap-2 rounded-md border bg-blue-50 dark:bg-blue-900/30 dark:border-blue-800 px-3 py-2">
                 <span className="text-sm text-blue-700 dark:text-blue-400 font-medium">

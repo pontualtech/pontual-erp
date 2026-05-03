@@ -785,11 +785,11 @@ export default function OSDetailPage() {
   const CANCEL_REASONS = [
     'Cliente desistiu do serviço',
     'Erro de preenchimento / OS duplicada',
-    'Cliente disse que ia trazer mas nao trouxe',
+    'Cliente disse que ia trazer mas não trouxe',
     'Equipamento sem conserto (irreparavel)',
     'Cliente optou por comprar equipamento novo',
     'Orcamento recusado — valor inviavel para o cliente',
-    'Cliente nao responde / sem contato',
+    'Cliente não responde / sem contato',
     'Outro motivo (descrever abaixo)',
   ]
 
@@ -1041,7 +1041,7 @@ export default function OSDetailPage() {
   }
 
   if (loading) return <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-blue-500" /></div>
-  if (!os) return <p className="p-6 text-red-500">OS nao encontrada</p>
+  if (!os) return <p className="p-6 text-red-500">OS não encontrada</p>
 
   const currentStatus = statusMap[os.status_id]
   const items = os.service_order_items ?? []
@@ -1121,7 +1121,7 @@ export default function OSDetailPage() {
               const next = !notifyAuto
               setNotifyAuto(next)
               localStorage.setItem('os_notify_mode', next ? 'auto' : 'manual')
-              toast.info(next ? 'Notificacoes automaticas ATIVADAS' : 'Notificacoes manuais — voce decide antes de enviar')
+              toast.info(next ? 'Notificações automáticas ATIVADAS' : 'Notificações manuais — você decide antes de enviar')
             }}
             className={cn(
               'flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium border transition-colors',
@@ -1416,7 +1416,7 @@ export default function OSDetailPage() {
             <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-amber-100">
               <Wrench className="h-4 w-4 text-amber-600" />
             </div>
-            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Servicos ({servicos.length})</h2>
+            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Serviços ({servicos.length})</h2>
           </div>
           <div className="flex items-center gap-2">
             {(!showAddItem || addItemSection !== 'SERVICO') && (
@@ -1478,7 +1478,7 @@ export default function OSDetailPage() {
               <thead>
                 <tr className="border-b text-left text-xs font-medium uppercase text-gray-400">
                   <th className="pb-2 w-8 text-center">#</th>
-                  <th className="pb-2">Servico / Codigo</th>
+                  <th className="pb-2">Serviço / Código</th>
                   <th className="pb-2 w-20 text-right">Qtd</th>
                   <th className="pb-2 w-28 text-right">V.Unit</th>
                   <th className="pb-2 w-28 text-right">Total</th>
@@ -1513,7 +1513,7 @@ export default function OSDetailPage() {
               </tbody>
               <tfoot>
                 <tr className="border-t font-medium">
-                  <td colSpan={4} className="py-2 text-right text-gray-500 text-xs uppercase">Subtotal Servicos</td>
+                  <td colSpan={4} className="py-2 text-right text-gray-500 text-xs uppercase">Subtotal Serviços</td>
                   <td className="py-2 text-right font-semibold text-amber-700">{fmt(os.total_services)}</td>
                   <td></td>
                 </tr>
@@ -1524,7 +1524,7 @@ export default function OSDetailPage() {
 
         {servicos.length === 0 && (!showAddItem || addItemSection !== 'SERVICO') && (
           <div className="px-4 pb-4 text-center py-6 text-gray-400 text-sm">
-            Nenhum servico adicionado
+            Nenhum serviço adicionado
           </div>
         )}
 
@@ -1591,7 +1591,7 @@ export default function OSDetailPage() {
               <thead>
                 <tr className="border-b text-left text-xs font-medium uppercase text-gray-400">
                   <th className="pb-2 w-8 text-center">#</th>
-                  <th className="pb-2">Produto / Codigo</th>
+                  <th className="pb-2">Produto / Código</th>
                   <th className="pb-2 w-20 text-right">Qtd</th>
                   <th className="pb-2 w-28 text-right">V.Unit</th>
                   <th className="pb-2 w-28 text-right">Total</th>
@@ -1698,7 +1698,7 @@ export default function OSDetailPage() {
           {/* Diagnosis (editable) */}
           <div>
             <label className="flex items-center gap-1.5 text-xs font-medium text-gray-400 uppercase mb-1">
-              Laudo Tecnico
+              Laudo Técnico
               {savingField === 'diagnosis' && <Loader2 className="h-3 w-3 animate-spin text-blue-500" />}
             </label>
             <textarea
@@ -2678,8 +2678,8 @@ export default function OSDetailPage() {
 
               <div className="rounded-lg border bg-gray-50 p-3 text-xs text-gray-600">
                 <p className="font-medium text-gray-700 mb-1">O cliente vai receber:</p>
-                <p>Confirmacao detalhada da aprovacao do orcamento</p>
-                <p>Informacoes de prazo, formas de pagamento (PIX/Cartao)</p>
+                <p>Confirmação detalhada da aprovação do orçamento</p>
+                <p>Informações de prazo, formas de pagamento (PIX/Cartão)</p>
                 <p>Horarios de entrega + WhatsApp de contato</p>
               </div>
             </div>
@@ -2698,7 +2698,7 @@ export default function OSDetailPage() {
                   const data = await res.json()
                   if (!res.ok) throw new Error(data.error || 'Erro')
                   const enviados = (data.data?.results || []).filter((r: any) => r.status === 'enviado')
-                  if (enviados.length > 0) toast.success(`Notificacao de aprovacao enviada via ${enviados.map((r: any) => r.channel).join(' e ')}!`)
+                  if (enviados.length > 0) toast.success(`Notificação de aprovação enviada via ${enviados.map((r: any) => r.channel).join(' e ')}!`)
                   const erros = (data.data?.results || []).filter((r: any) => r.status !== 'enviado')
                   erros.forEach((r: any) => toast.error(`${r.channel}: ${r.status === 'sem_email' ? 'Sem email' : r.status === 'sem_telefone' ? 'Sem telefone' : 'Erro'}`))
                   setShowAprovacaoModal(false)
