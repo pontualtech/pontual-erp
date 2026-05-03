@@ -158,6 +158,13 @@ export default function OSListPage() {
     // URL params override sessionStorage (for direct links)
     if (searchParams.get('status')) saved.current.status = searchParams.get('status')!
     if (searchParams.get('q')) saved.current.q = searchParams.get('q')!
+    // Audit 11 wave 3: ?period=today preenche dateFrom/dateTo com hoje (BR)
+    // Card dashboard "OS Abertas Hoje" → /os?period=today
+    if (searchParams.get('period') === 'today') {
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
+      saved.current.from = today
+      saved.current.to = today
+    }
   }
 
   const [search, setSearch] = useState(saved.current.q || '')
@@ -187,6 +194,9 @@ export default function OSListPage() {
   const [sortField, setSortField] = useState<string>('os_number')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [overdueFilter, setOverdueFilter] = useState(searchParams.get('overdue') === '1')
+  // Audit 11 wave 3: aceita ?no_tech=1 e ?period=today via URL pra deep link
+  // dos alerts e cards do dashboard.
+  const [noTechFilter, setNoTechFilter] = useState(searchParams.get('no_tech') === '1')
   // Persist filters to sessionStorage + URL (survives Next.js client navigation)
   useEffect(() => {
     const data: Record<string, string> = {}
@@ -400,6 +410,8 @@ export default function OSListPage() {
     if (brandFilter) params.set('equipmentBrand', brandFilter)
     if (modelFilter) params.set('equipmentModel', modelFilter)
     if (overdueFilter) params.set('overdue', 'true')
+    // Audit 11 wave 3: filtro server-side OS sem técnico atribuído
+    if (noTechFilter) params.set('noTech', 'true')
     if (!showCancelled) params.set('hideCancelled', 'true')
     if (!showDelivered) params.set('hideDelivered', 'true')
     if (ownOnly) params.set('own_only', 'true')
@@ -431,7 +443,7 @@ export default function OSListPage() {
       .finally(() => { if (!ctrl.signal.aborted) setLoading(false) })
   }
 
-  useEffect(() => { loadOS(); setSelected(new Set()) }, [debouncedSearch, statusFilter, typeFilter, locationFilter, equipFilter, brandFilter, modelFilter, overdueFilter, showCancelled, showDelivered, page, visibilityLoaded, ownOnly, myOsFilter, dateFrom, dateTo, sortField, sortDir])
+  useEffect(() => { loadOS(); setSelected(new Set()) }, [debouncedSearch, statusFilter, typeFilter, locationFilter, equipFilter, brandFilter, modelFilter, overdueFilter, noTechFilter, showCancelled, showDelivered, page, visibilityLoaded, ownOnly, myOsFilter, dateFrom, dateTo, sortField, sortDir])
 
   function toggleSelect(id: string) {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -862,6 +874,7 @@ export default function OSListPage() {
     if (smartChip === chip) {
       setSmartChip(null)
       setOverdueFilter(false)
+      setNoTechFilter(false)
       setMyOsFilter(false)
       setDateFrom('')
       setDateTo('')
@@ -871,6 +884,7 @@ export default function OSListPage() {
     }
     // Reset filtros conflitantes antes de aplicar nova combinação
     setOverdueFilter(false)
+    setNoTechFilter(false)
     setMyOsFilter(false)
     setDateFrom('')
     setDateTo('')
@@ -896,8 +910,8 @@ export default function OSListPage() {
         // O atendente pode refinar status manualmente; chip só dá direção
         break
       case 'no_tech':
-        // Sem técnico = filtro client-side (não server-side por enquanto).
-        // Marcamos chip ativo; o `applyFilters` adicional pode ler via local state.
+        // Audit 11 wave 3: agora server-side via noTechFilter + noTech=true API param
+        setNoTechFilter(true)
         break
     }
     setSmartChip(chip)

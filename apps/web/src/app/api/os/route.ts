@@ -56,6 +56,9 @@ export async function GET(req: NextRequest) {
     }
 
     const overdue = url.get('overdue') === 'true'
+    // Audit 11 wave 3: noTech filtra OS sem técnico atribuído (deep link
+    // do alert "OS sem técnico" no dashboard + chip smart filter)
+    const noTech = url.get('noTech') === 'true'
 
     // Apply explicit status filter — intersect with role-based filter if present
     if (statusIds.length > 0) {
@@ -136,6 +139,44 @@ export async function GET(req: NextRequest) {
     if (overdue) {
       where.estimated_delivery = { lt: new Date() }
       where.actual_delivery = null
+    }
+
+    // Audit 11 wave 3: filtro OS sem técnico (alert dashboard "OS sem técnico").
+    // Mesma lógica usada em /api/dashboard/stats: só conta a partir de "Aprovado"
+    // (Coletar/Orçar/Aguardando Aprovação não esperam técnico ainda).
+    if (noTech) {
+      where.technician_id = null
+      const needsTechStatuses = await prisma.moduleStatus.findMany({
+        where: {
+          company_id: user.companyId,
+          module: 'os',
+          is_final: false,
+          OR: [
+            { name: { contains: 'aprovado', mode: 'insensitive' } },
+            { name: { contains: 'execu', mode: 'insensitive' } },
+            { name: { contains: 'andamento', mode: 'insensitive' } },
+            { name: { contains: 'peça', mode: 'insensitive' } },
+            { name: { contains: 'peca', mode: 'insensitive' } },
+            { name: { contains: 'entregar', mode: 'insensitive' } },
+            { name: { contains: 'pronto', mode: 'insensitive' } },
+            { name: { contains: 'reparado', mode: 'insensitive' } },
+          ],
+        },
+        select: { id: true },
+      })
+      if (needsTechStatuses.length > 0) {
+        const ids = needsTechStatuses.map(s => s.id)
+        if (where.status_id?.in) {
+          // Intersect com filtro de role (motorista, etc)
+          const allowed = new Set(where.status_id.in as string[])
+          const intersected = ids.filter(id => allowed.has(id))
+          where.status_id = intersected.length === 1 ? intersected[0] : { in: intersected }
+        } else if (typeof where.status_id === 'string') {
+          if (!ids.includes(where.status_id)) where.status_id = { in: [] }  // empty
+        } else {
+          where.status_id = { in: ids }
+        }
+      }
     }
     if (search) {
       where.OR = [

@@ -556,7 +556,8 @@ export default function DashboardPage() {
       {/* ===== Alertas Criticos (UX-2 #6) — derivados dos dados ja carregados ===== */}
       {!loading && stats && (() => {
         const alerts: { label: string; count: number; icon: typeof ClipboardList; color: string; href: string }[] = []
-        if (stats.osAtrasadas > 0) alerts.push({ label: 'OS atrasadas', count: stats.osAtrasadas, icon: AlertTriangle, color: 'text-red-700 bg-red-100 border-red-300', href: '/os?delayed=1' })
+        // Audit 11 wave 3: ?delayed=1 não existia, /os consome ?overdue=1.
+        if (stats.osAtrasadas > 0) alerts.push({ label: 'OS atrasadas', count: stats.osAtrasadas, icon: AlertTriangle, color: 'text-red-700 bg-red-100 border-red-300', href: '/os?overdue=1' })
         if (stats.semTecnico > 0) alerts.push({ label: 'OS sem técnico', count: stats.semTecnico, icon: User, color: 'text-amber-700 bg-amber-100 border-amber-300', href: '/os?no_tech=1' })
         const arVencidas = (stats.recentReceivable || []).filter(r => r.status === 'VENCIDO').length
         if (canViewFinanceiro && arVencidas > 0) alerts.push({ label: 'Contas vencidas', count: arVencidas, icon: DollarSign, color: 'text-red-700 bg-red-100 border-red-300', href: '/financeiro/contas-receber?status=VENCIDO' })
@@ -898,7 +899,7 @@ export default function DashboardPage() {
                 {(stats.semTecnico ?? 0) > 0 && (
                   <tr className="hover:bg-gray-50 bg-amber-50/50">
                     <td className="px-4 py-2.5">
-                      <Link href="/os?filter=sem_tecnico" className="font-medium text-amber-700 hover:text-amber-900">Sem tecnico atribuido</Link>
+                      <Link href="/os?no_tech=1" className="font-medium text-amber-700 hover:text-amber-900">Sem técnico atribuído</Link>
                     </td>
                     <td className="px-4 py-2.5 text-center font-semibold text-amber-700">{stats.semTecnico}</td>
                     <td className="px-4 py-2.5 text-center text-gray-400">—</td>
