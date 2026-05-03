@@ -131,7 +131,7 @@ export default function PortalNovaOSPage() {
           </div>
         </div>
         <div className="sm:hidden border-t border-gray-100 dark:border-zinc-800 px-4 py-2 flex gap-4">
-          <Link href={`/portal/${slug}`} className="text-gray-600 text-sm">Inicio</Link>
+          <Link href={`/portal/${slug}`} className="text-gray-600 text-sm">Início</Link>
           <Link href={`/portal/${slug}/os`} className="text-gray-600 text-sm">Minhas OS</Link>
           <Link href={`/portal/${slug}/tickets`} className="text-gray-600 text-sm">Tickets</Link>
         </div>
@@ -149,7 +149,7 @@ export default function PortalNovaOSPage() {
             </svg>
             Voltar para Minhas OS
           </Link>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-2">Nova Ordem de Servico</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-2">Nova Ordem de Serviço</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">Preencha os dados do equipamento e descreva o problema</p>
         </div>
 
@@ -214,7 +214,7 @@ export default function PortalNovaOSPage() {
           {/* Serial Number */}
           <div>
             <label htmlFor="serial_number" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-              Numero de Serie
+              Número de Série
             </label>
             <input
               type="text"
@@ -230,7 +230,7 @@ export default function PortalNovaOSPage() {
           {/* Reported Issue */}
           <div>
             <label htmlFor="reported_issue" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-              Descricao do Problema *
+              Descrição do Problema *
             </label>
             <textarea
               id="reported_issue"
@@ -238,7 +238,7 @@ export default function PortalNovaOSPage() {
               value={form.reported_issue}
               onChange={handleChange}
               rows={4}
-              placeholder="Descreva o defeito ou problema do equipamento com o maximo de detalhes possivel..."
+              placeholder="Descreva o defeito ou problema do equipamento com o máximo de detalhes possível..."
               className="w-full border border-gray-300 dark:border-zinc-600 rounded-lg px-3 py-2.5 text-gray-900 dark:text-gray-100 bg-white dark:bg-zinc-800 placeholder-gray-400 dark:placeholder-gray-600 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none"
             />
           </div>
@@ -276,7 +276,7 @@ export default function PortalNovaOSPage() {
                   Criando...
                 </span>
               ) : (
-                'Abrir Ordem de Servico'
+                'Abrir Ordem de Serviço'
               )}
             </button>
           </div>

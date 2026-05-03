@@ -9,7 +9,7 @@ function toTitleCase(str: string): string {
   return str.toLowerCase().replace(/(?:^|\s|[-/])\S/g, c => c.toUpperCase())
 }
 
-const STEPS = ['Identificacao', 'Dados Pessoais', 'Endereco', 'Senha']
+const STEPS = ['Identificação', 'Dados Pessoais', 'Endereço', 'Senha']
 
 const UF_OPTIONS = [
   'AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA',
@@ -169,7 +169,7 @@ export default function CadastroPage() {
           if (data.bairro) setBairro(toTitleCase(data.bairro))
           if (data.localidade) setCidade(toTitleCase(data.localidade))
           if (data.uf) setUf(data.uf.toUpperCase())
-          toast.success('Endereco preenchido pelo CEP')
+          toast.success('Endereço preenchido pelo CEP')
         }
       }
     } catch {
@@ -210,7 +210,7 @@ export default function CadastroPage() {
     }
     if (step === 2) {
       if (cep.replace(/\D/g, '').length !== 8) { toast.error('Informe um CEP valido'); return false }
-      if (!numero.trim()) { toast.error('Informe o numero do endereco'); return false }
+      if (!numero.trim()) { toast.error('Informe o número do endereço'); return false }
       return true
     }
     if (step === 3) {
@@ -396,7 +396,7 @@ export default function CadastroPage() {
                         </h3>
                         <p className="text-sm text-amber-700 dark:text-amber-400 mt-1">
                           {existingCustomer.has_access
-                            ? 'Voce ja tem acesso ao portal. Faca login ou recupere sua senha.'
+                            ? 'Você já tem acesso ao portal. Faça login ou recupere sua senha.'
                             : 'Encontramos seu cadastro no sistema. Ative seu acesso ao portal.'}
                         </p>
                         {existingCustomer.email_hint && (
@@ -541,7 +541,7 @@ export default function CadastroPage() {
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Numero</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Número</label>
                   <input
                     type="text"
                     value={numero}
@@ -608,7 +608,7 @@ export default function CadastroPage() {
                   type="password"
                   value={senha}
                   onChange={e => setSenha(e.target.value)}
-                  placeholder="Minimo 6 caracteres"
+                  placeholder="Mínimo 6 caracteres"
                   className="w-full px-4 py-3 border border-gray-300 dark:border-zinc-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 dark:text-gray-100 dark:bg-zinc-800 placeholder-gray-400 dark:placeholder-gray-600"
                   autoFocus
                 />
@@ -670,7 +670,7 @@ export default function CadastroPage() {
                 {checkingDoc ? (
                   <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> Verificando...</>
                 ) : (
-                  'Proximo'
+                  'Próximo'
                 )}
               </button>
             ) : (
@@ -695,12 +695,12 @@ export default function CadastroPage() {
           {/* Back to login */}
           <div className="mt-6 text-center">
             <p className="text-gray-500 dark:text-gray-400 text-sm">
-              Ja tem conta?{' '}
+              Já tem conta?{' '}
               <Link
                 href={`/portal/${slug}/login`}
                 className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium"
               >
-                Faca login
+                Faça login
               </Link>
             </p>
           </div>
