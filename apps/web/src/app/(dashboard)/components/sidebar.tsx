@@ -87,17 +87,15 @@ const navGroups: { title: string; items: NavItem[] }[] = [
     title: 'Plataforma',
     items: [
       { label: 'Super Admin', href: '/admin', icon: Shield, superAdminOnly: true },
+      // Audit 12: rotas /super-admin/voip/* nunca foram criadas (404).
+      // Apontamos provisoriamente pra /voip/admin/ramais que existe e
+      // já cobre o caso de uso (admin de ramais SIP). Ver memória pra
+      // restaurar children quando rotas Providers/Asterisk forem criadas.
       {
-        label: 'Telefonia',
-        href: '/super-admin/voip',
+        label: 'Telefonia (Admin)',
+        href: '/voip/admin/ramais',
         icon: PhoneCall,
         superAdminOnly: true,
-        children: [
-          { label: 'Providers', href: '/super-admin/voip/providers', icon: Phone },
-          { label: 'Ramais', href: '/super-admin/voip/extensions', icon: Phone },
-          { label: 'Numeros', href: '/super-admin/voip/inbound-numbers', icon: Phone },
-          { label: 'Asterisk', href: '/super-admin/voip/asterisk', icon: Server },
-        ],
       },
     ],
   },
