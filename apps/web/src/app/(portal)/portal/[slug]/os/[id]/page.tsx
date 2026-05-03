@@ -289,7 +289,7 @@ export default function PortalOSDetailPage() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <p className="text-gray-500 dark:text-gray-400 mb-4">OS nao encontrada</p>
+          <p className="text-gray-500 dark:text-gray-400 mb-4">OS não encontrada</p>
           <Link href={`/portal/${slug}/os`} className="text-blue-600 dark:text-blue-400 hover:text-blue-700">
             Voltar para lista
           </Link>
@@ -336,7 +336,7 @@ export default function PortalOSDetailPage() {
       {/* Print header - only visible when printing */}
       <div className="hidden print:block text-center mb-6 border-b pb-4">
         <h1 className="text-xl font-bold">{company?.name || slug}</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">Ordem de Servico #{os.os_number}</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">Ordem de Serviço #{os.os_number}</p>
       </div>
 
       {/* Email Modal */}
@@ -483,7 +483,7 @@ export default function PortalOSDetailPage() {
             <span className="font-semibold text-gray-900 dark:text-gray-100">{company?.name || slug}</span>
           </div>
           <nav className="hidden sm:flex items-center gap-6">
-            <Link href={`/portal/${slug}`} className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 text-sm">Inicio</Link>
+            <Link href={`/portal/${slug}`} className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 text-sm">Início</Link>
             <Link href={`/portal/${slug}/os`} className="text-blue-600 dark:text-blue-400 font-medium text-sm">Minhas OS</Link>
             <Link href={`/portal/${slug}/tickets`} className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 text-sm">Tickets</Link>
           </nav>
@@ -623,7 +623,7 @@ export default function PortalOSDetailPage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M4.93 19h14.14a2 2 0 001.74-3L13.74 4a2 2 0 00-3.48 0L3.19 16a2 2 0 001.74 3z" />
                     </svg>
                     <div className="text-sm">
-                      <div className="font-semibold text-amber-900 dark:text-amber-200">Atencao: OS em {os.status.name}</div>
+                      <div className="font-semibold text-amber-900 dark:text-amber-200">Atenção: OS em {os.status.name}</div>
                       <div className="text-amber-800 dark:text-amber-300 mt-0.5">
                         Ha uma pendencia fora do fluxo normal de reparo. Verifique as atualizacoes recentes abaixo ou entre em contato com o suporte.
                       </div>
@@ -753,7 +753,7 @@ export default function PortalOSDetailPage() {
               <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-900 rounded-lg p-4">
                 <h3 className="text-sm font-semibold text-blue-700 dark:text-blue-400 capitalize mb-2">Previsao de Entrega</h3>
                 <p className="text-xl font-bold text-blue-900 dark:text-blue-300">{new Date(os.estimated_delivery).toLocaleDateString('pt-BR')}</p>
-                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">Prazo maximo de 10 dias uteis apos aprovacao. Sempre tentamos entregar o quanto antes!</p>
+                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">Prazo máximo de 10 dias úteis após aprovação. Sempre tentamos entregar o quanto antes!</p>
               </div>
             )}
             {os.warranty_until && (
@@ -775,8 +775,8 @@ export default function PortalOSDetailPage() {
           const paymentOptions = [
             { value: 'PIX', label: 'PIX', icon: '⚡', desc: 'A vista na entrega' },
             { value: 'Dinheiro', label: 'Dinheiro', icon: '💵', desc: 'A vista na entrega' },
-            { value: 'Cartao Credito', label: 'Cartao de Credito', icon: '💳', desc: 'Ate 3x sem juros' },
-            { value: 'Cartao Debito', label: 'Cartao de Debito', icon: '💳', desc: 'A vista na entrega' },
+            { value: 'Cartao Credito', label: 'Cartão de Crédito', icon: '💳', desc: 'Até 3x sem juros' },
+            { value: 'Cartao Debito', label: 'Cartão de Débito', icon: '💳', desc: 'À vista na entrega' },
             { value: 'Boleto', label: 'Boleto Bancario', icon: '📄', desc: 'Somente PJ (7 dias)' },
           ]
           const maxParcelas = isRecalculado ? 5 : 3
@@ -798,11 +798,11 @@ export default function PortalOSDetailPage() {
                 ) : (
                   <div className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-amber-500 text-white px-3 py-1 text-[11px] font-bold uppercase tracking-wider">
                     <Clock className="h-3.5 w-3.5" />
-                    Aguardando sua aprovacao
+                    Aguardando sua aprovação
                   </div>
                 )}
 
-                <h3 className="font-extrabold text-gray-900 dark:text-gray-50 text-xl sm:text-2xl mb-1">{isRecalculado ? 'Preparamos uma condicao especial pra voce' : 'Seu orcamento esta pronto!'}</h3>
+                <h3 className="font-extrabold text-gray-900 dark:text-gray-50 text-xl sm:text-2xl mb-1">{isRecalculado ? 'Preparamos uma condição especial pra você' : 'Seu orçamento está pronto!'}</h3>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">Aprove abaixo para iniciarmos o reparo do seu equipamento.</p>
 
                 {/* Discount comparison */}
@@ -852,7 +852,7 @@ export default function PortalOSDetailPage() {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">Como voce prefere pagar?</p>
+                    <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">Como você prefere pagar?</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {paymentOptions.map(pm => (
                         <button
@@ -879,7 +879,7 @@ export default function PortalOSDetailPage() {
                         disabled={actionLoading || approvePayment === 'selecting'}
                         className="flex-1 py-3.5 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-base rounded-xl shadow-md shadow-green-600/30 hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer"
                       >
-                        {actionLoading ? 'Processando...' : <><CheckCircle2 className="h-5 w-5" /> Confirmar aprovacao</>}
+                        {actionLoading ? 'Processando...' : <><CheckCircle2 className="h-5 w-5" /> Confirmar aprovação</>}
                       </button>
                       <button type="button" onClick={() => setApprovePayment(null)}
                         className="px-4 py-3.5 border-2 border-gray-300 dark:border-zinc-700 rounded-xl text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-800 font-semibold cursor-pointer">
@@ -929,7 +929,7 @@ export default function PortalOSDetailPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <h4 className="font-bold text-gray-900 dark:text-gray-100 text-sm">Pague na entrega</h4>
-                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 mb-3">Quando o motorista entregar seu equipamento, voce paga direto a ele:</p>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 mb-3">Quando o motorista entregar seu equipamento, você paga direto a ele:</p>
                   <ul className="text-sm text-gray-800 dark:text-gray-200 space-y-1.5">
                     <li className="flex items-center gap-2">
                       <Banknote className="h-4 w-4 text-emerald-600 flex-shrink-0" />
@@ -941,7 +941,7 @@ export default function PortalOSDetailPage() {
                     </li>
                     <li className="flex items-center gap-2">
                       <CreditCard className="h-4 w-4 text-emerald-600 flex-shrink-0" />
-                      <span>Cartao de credito <strong className="text-emerald-700 dark:text-emerald-400">em ate 3x</strong></span>
+                      <span>Cartão de crédito <strong className="text-emerald-700 dark:text-emerald-400">em até 3x</strong></span>
                     </li>
                   </ul>
                 </div>
@@ -956,7 +956,7 @@ export default function PortalOSDetailPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <h4 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">Pagar antecipado pelo portal</h4>
-                  <p className="text-xs text-gray-700 dark:text-gray-300 mt-1 leading-relaxed">Os botoes de <strong>PIX</strong> e <strong>Boleto</strong> serao liberados aqui assim que voce <strong className="text-amber-800 dark:text-amber-300">aprovar o orcamento</strong> do reparo.</p>
+                  <p className="text-xs text-gray-700 dark:text-gray-300 mt-1 leading-relaxed">Os botões de <strong>PIX</strong> e <strong>Boleto</strong> serão liberados aqui assim que você <strong className="text-amber-800 dark:text-amber-300">aprovar o orçamento</strong> do reparo.</p>
                 </div>
               </div>
             </div>

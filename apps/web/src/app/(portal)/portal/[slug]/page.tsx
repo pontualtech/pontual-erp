@@ -112,7 +112,7 @@ export default function PortalDashboardPage() {
                 href={`/portal/${slug}`}
                 className="px-3 py-1.5 rounded-md text-sm font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950"
               >
-                Inicio
+                Início
               </Link>
               <Link
                 href={`/portal/${slug}/os`}
@@ -161,7 +161,7 @@ export default function PortalDashboardPage() {
               href={`/portal/${slug}`}
               className="flex-1 text-center px-2 py-1.5 rounded-md text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950"
             >
-              Inicio
+              Início
             </Link>
             <Link
               href={`/portal/${slug}/os`}
@@ -352,7 +352,7 @@ export default function PortalDashboardPage() {
         {/* Recent OS */}
         <div className="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-700 overflow-hidden">
           <div className="px-4 sm:px-5 py-4 border-b border-gray-100 dark:border-zinc-800 flex items-center justify-between">
-            <h2 className="font-semibold text-gray-900 dark:text-gray-100">Ordens de Servico Recentes</h2>
+            <h2 className="font-semibold text-gray-900 dark:text-gray-100">Ordens de Serviço Recentes</h2>
             <Link
               href={`/portal/${slug}/os`}
               className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium"
@@ -378,11 +378,11 @@ export default function PortalDashboardPage() {
                 <table className="w-full">
                   <thead className="bg-gray-50 dark:bg-zinc-800/50 border-b border-gray-100 dark:border-zinc-800">
                     <tr>
-                      <th className="text-left text-xs font-semibold text-gray-500 dark:text-gray-400 capitalize tracking-wider px-5 py-3">Numero</th>
+                      <th className="text-left text-xs font-semibold text-gray-500 dark:text-gray-400 capitalize tracking-wider px-5 py-3">Número</th>
                       <th className="text-left text-xs font-semibold text-gray-500 dark:text-gray-400 capitalize tracking-wider px-5 py-3">Equipamento</th>
                       <th className="text-left text-xs font-semibold text-gray-500 dark:text-gray-400 capitalize tracking-wider px-5 py-3">Status</th>
                       <th className="text-left text-xs font-semibold text-gray-500 dark:text-gray-400 capitalize tracking-wider px-5 py-3">Data</th>
-                      <th className="text-right text-xs font-semibold text-gray-500 dark:text-gray-400 capitalize tracking-wider px-5 py-3">Acao</th>
+                      <th className="text-right text-xs font-semibold text-gray-500 dark:text-gray-400 capitalize tracking-wider px-5 py-3">Ação</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 dark:divide-zinc-800">

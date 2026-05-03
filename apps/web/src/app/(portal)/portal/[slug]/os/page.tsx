@@ -150,7 +150,7 @@ export default function PortalOSListPage() {
 
           <nav className="hidden sm:flex items-center gap-6">
             <Link href={`/portal/${slug}`} className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 text-sm">
-              Inicio
+              Início
             </Link>
             <Link href={`/portal/${slug}/os`} className="text-blue-600 dark:text-blue-400 font-medium text-sm">
               Minhas OS
@@ -168,7 +168,7 @@ export default function PortalOSListPage() {
           </div>
         </div>
         <div className="sm:hidden border-t border-gray-100 dark:border-zinc-800 px-4 py-2 flex gap-4">
-          <Link href={`/portal/${slug}`} className="text-gray-600 dark:text-gray-400 text-sm">Inicio</Link>
+          <Link href={`/portal/${slug}`} className="text-gray-600 dark:text-gray-400 text-sm">Início</Link>
           <Link href={`/portal/${slug}/os`} className="text-blue-600 dark:text-blue-400 font-medium text-sm">Minhas OS</Link>
           <Link href={`/portal/${slug}/tickets`} className="text-gray-600 dark:text-gray-400 text-sm">Tickets</Link>
         </div>
@@ -179,7 +179,7 @@ export default function PortalOSListPage() {
         {/* Title + Nova OS */}
         <div className="flex items-center justify-between mb-5">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Minhas Ordens de Servico</h1>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Minhas Ordens de Serviço</h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{total} OS encontradas</p>
           </div>
           <Link
@@ -262,7 +262,7 @@ export default function PortalOSListPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Voce ainda nao tem ordens de servico</h3>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Você ainda não tem ordens de serviço</h3>
             <p className="text-gray-500 dark:text-gray-400 mb-5">Abra sua primeira OS!</p>
             <Link
               href={`/portal/${slug}/nova-os`}
@@ -299,7 +299,7 @@ export default function PortalOSListPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/50">
-                    <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 capitalize tracking-wide">Numero OS</th>
+                    <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 capitalize tracking-wide">Número OS</th>
                     <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 capitalize tracking-wide">Equipamento</th>
                     <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 capitalize tracking-wide">Status</th>
                     <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 capitalize tracking-wide">Data Abertura</th>
