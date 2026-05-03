@@ -147,7 +147,7 @@ export default function CNABPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cnpj, razao_social: razaoSocial, agencia, conta, convenio, carteira, inter_client_id: interClientId, inter_client_secret: interClientSecret }),
       })
-      if (res.ok) toast.success('Configuracao salva!')
+      if (res.ok) toast.success('Configuração salva!')
       else toast.error('Erro ao salvar')
     } catch { toast.error('Erro ao salvar') }
     finally { setSaving(false) }
@@ -234,7 +234,7 @@ export default function CNABPage() {
             <ul className="mt-2 space-y-1 text-sm text-green-800">
               <li>1. Baixe o arquivo de retorno (.ret) no Internet Banking do Banco Inter</li>
               <li>2. Importe o arquivo abaixo</li>
-              <li>3. O sistema atualiza as contas, gera os lancamentos financeiros e atualiza o saldo bancario</li>
+              <li>3. O sistema atualiza as contas, gera os lançamentos financeiros e atualiza o saldo bancário</li>
             </ul>
           </div>
 
@@ -268,8 +268,8 @@ export default function CNABPage() {
                     </div>
                     <div className="text-right text-sm text-emerald-600">
                       <p>{retornoResult.pagos} boleto(s) pago(s)</p>
-                      {retornoResult.contaBancaria && <p>Lancamento gerado na conta bancaria</p>}
-                      {!retornoResult.contaBancaria && <p className="text-amber-600">Sem conta bancaria vinculada — cadastre em Contas</p>}
+                      {retornoResult.contaBancaria && <p>Lançamento gerado na conta bancária</p>}
+                      {!retornoResult.contaBancaria && <p className="text-amber-600">Sem conta bancária vinculada — cadastre em Contas</p>}
                     </div>
                   </div>
                 </div>
@@ -324,9 +324,9 @@ export default function CNABPage() {
           <div className="border-b px-6 py-4">
             <h2 className="font-semibold text-gray-900 flex items-center gap-2">
               <Settings className="h-5 w-5 text-orange-600" />
-              Dados Bancarios — Banco Inter
+              Dados Bancários — Banco Inter
             </h2>
-            <p className="text-sm text-gray-500 mt-1">Configuracao do cedente para geracao de boletos CNAB 400</p>
+            <p className="text-sm text-gray-500 mt-1">Configuração do cedente para geração de boletos CNAB 400</p>
           </div>
           <div className="p-6 space-y-4">
             {loading ? (
@@ -340,35 +340,35 @@ export default function CNABPage() {
                       className="w-full rounded-lg border px-3 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Razao Social</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Razão Social</label>
                     <input value={razaoSocial} onChange={e => setRazaoSocial(e.target.value)}
                       className="w-full rounded-lg border px-3 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Agencia (com digito)</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Agencia (com dígito)</label>
                     <input value={agencia} onChange={e => setAgencia(e.target.value)} placeholder="0001-9"
                       className="w-full rounded-lg border px-3 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Conta Corrente (com digito)</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Conta Corrente (com dígito)</label>
                     <input value={conta} onChange={e => setConta(e.target.value)} placeholder="12345678-9"
                       className="w-full rounded-lg border px-3 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Codigo do Convenio</label>
-                    <input value={convenio} onChange={e => setConvenio(e.target.value)} placeholder="Codigo beneficiario Inter"
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Código do Convênio</label>
+                    <input value={convenio} onChange={e => setConvenio(e.target.value)} placeholder="Código beneficiário Inter"
                       className="w-full rounded-lg border px-3 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Carteira</label>
                     <input value={carteira} onChange={e => setCarteira(e.target.value)} placeholder="112"
                       className="w-full rounded-lg border px-3 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500" />
-                    <p className="mt-1 text-xs text-gray-400">112 = Cobranca registrada Inter</p>
+                    <p className="mt-1 text-xs text-gray-400">112 = Cobrança registrada Inter</p>
                   </div>
                 </div>
 
                 <div className="border-t pt-4 mt-4">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3">API Banco Inter (para emissao online de boletos)</h3>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">API Banco Inter (para emissão online de boletos)</h3>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Client ID</label>
@@ -381,7 +381,7 @@ export default function CNABPage() {
                         className="w-full rounded-lg border px-3 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500" />
                     </div>
                   </div>
-                  <p className="mt-2 text-xs text-gray-400">Obtido no painel de desenvolvedores do Banco Inter. Usa o mesmo certificado A1 do modulo fiscal (mTLS).</p>
+                  <p className="mt-2 text-xs text-gray-400">Obtido no painel de desenvolvedores do Banco Inter. Usa o mesmo certificado A1 do módulo fiscal (mTLS).</p>
                 </div>
                 <div className="flex justify-end pt-2">
                   <button onClick={handleSaveConfig} disabled={saving}
