@@ -79,7 +79,7 @@ const statusConfig: Record<string, { label: string; color: string }> = {
 }
 
 const exportColumns = [
-  { key: 'description', label: 'Descricao' },
+  { key: 'description', label: 'Descrição' },
   { key: 'supplier_name', label: 'Fornecedor' },
   { key: 'total_amount', label: 'Valor', format: (v: number) => v ? (v/100).toFixed(2) : '' },
   { key: 'status', label: 'Status' },
@@ -518,7 +518,7 @@ export default function ContasPagarPage() {
                 <CheckCircle2 className="h-5 w-5 text-green-600" />
               </div>
               <div>
-                <p className="text-sm text-gray-500">Pagas no Mes</p>
+                <p className="text-sm text-gray-500">Pagas no Mês</p>
                 <p className="text-xl font-bold text-green-600">{formatCurrency(summary.pagas_mes)}</p>
                 <p className="text-xs text-gray-400">{summary.pagas_mes_count} conta(s)</p>
               </div>
@@ -535,7 +535,7 @@ export default function ContasPagarPage() {
             <div className="relative">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
               <input
-                placeholder="Descricao, fornecedor..."
+                placeholder="Descrição, fornecedor..."
                 value={search}
                 onChange={e => { setSearch(e.target.value); setPage(1) }}
                 className="w-full rounded-md border bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
@@ -565,7 +565,7 @@ export default function ContasPagarPage() {
             />
           </div>
           <div className="min-w-[140px]">
-            <label className="block text-xs font-medium text-gray-500 mb-1">Ate</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Até</label>
             <input type="date" title="Data final"
               value={endDate}
               onChange={e => { setEndDate(e.target.value); setPage(1) }}
@@ -642,13 +642,13 @@ export default function ContasPagarPage() {
                     onChange={toggleAll} className="rounded text-blue-600" />
                 </th>
               )}
-              <th className="px-4 py-3">Descricao</th>
+              <th className="px-4 py-3">Descrição</th>
               <th className="px-4 py-3">Fornecedor</th>
               <th className="px-4 py-3">Categoria</th>
               <th className="px-4 py-3">Vencimento</th>
               <th className="px-4 py-3 text-right">Valor</th>
               <th className="px-4 py-3 text-center">Status</th>
-              <th className="px-4 py-3 text-right">Acoes</th>
+              <th className="px-4 py-3 text-right">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y">
@@ -681,7 +681,7 @@ export default function ContasPagarPage() {
                     )}
                     <td className="px-4 py-3">
                       <p className="font-medium text-gray-900">{conta.description}</p>
-                      {conta.notes && (
+                      {conta.notes && !conta.notes.trim().startsWith('{') && (
                         <p className="text-xs text-gray-400 truncate max-w-[200px]">{conta.notes}</p>
                       )}
                     </td>
@@ -957,7 +957,7 @@ export default function ContasPagarPage() {
 
             <div className="rounded-md bg-blue-50 border border-blue-200 p-3 mb-4">
               <p className="text-xs text-blue-700">
-                <strong>Mapeamento esperado:</strong> Descricao (obrigatorio), Fornecedor, Valor (em reais, ex: 10,50 — sera convertido para centavos), Vencimento (DD/MM/AAAA ou AAAA-MM-DD).
+                <strong>Mapeamento esperado:</strong> Descrição (obrigatório), Fornecedor, Valor (em reais, ex: 10,50 — será convertido para centavos), Vencimento (DD/MM/AAAA ou AAAA-MM-DD).
               </p>
             </div>
 

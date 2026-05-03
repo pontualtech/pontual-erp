@@ -559,7 +559,13 @@ export default function DashboardPage() {
         // Audit 11 wave 3: ?delayed=1 não existia, /os consome ?overdue=1.
         if (stats.osAtrasadas > 0) alerts.push({ label: 'OS atrasadas', count: stats.osAtrasadas, icon: AlertTriangle, color: 'text-red-700 bg-red-100 border-red-300', href: '/os?overdue=1' })
         if (stats.semTecnico > 0) alerts.push({ label: 'OS sem técnico', count: stats.semTecnico, icon: User, color: 'text-amber-700 bg-amber-100 border-amber-300', href: '/os?no_tech=1' })
-        const arVencidas = (stats.recentReceivable || []).filter(r => r.status === 'VENCIDO').length
+        // Audit 12: status DB nunca é setado como 'VENCIDO' (default 'PENDENTE').
+        // Vencido = displayStatus calculado: PENDENTE + due_date < hoje.
+        // Antes alert "Contas vencidas" NUNCA aparecia.
+        const todayStr = new Date().toISOString().slice(0, 10)
+        const arVencidas = (stats.recentReceivable || []).filter(r =>
+          r.status === 'PENDENTE' && r.due_date && r.due_date.slice(0, 10) < todayStr
+        ).length
         if (canViewFinanceiro && arVencidas > 0) alerts.push({ label: 'Contas vencidas', count: arVencidas, icon: DollarSign, color: 'text-red-700 bg-red-100 border-red-300', href: '/financeiro/contas-receber?status=VENCIDO' })
         if (alerts.length === 0) return null
         return (

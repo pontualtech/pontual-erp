@@ -100,7 +100,7 @@ const statusConfig: Record<string, { label: string; color: string }> = {
 }
 
 const exportColumns = [
-  { key: 'description', label: 'Descricao' },
+  { key: 'description', label: 'Descrição' },
   { key: 'customer_name', label: 'Cliente' },
   { key: 'total_amount', label: 'Valor', format: (v: number) => v ? (v/100).toFixed(2) : '' },
   { key: 'status', label: 'Status' },
@@ -185,7 +185,7 @@ export default function ContasReceberPage() {
   })
 
   const allColumns = [
-    { key: 'description', label: 'Descricao' },
+    { key: 'description', label: 'Descrição' },
     { key: 'customer', label: 'Cliente' },
     { key: 'category', label: 'Categoria' },
     { key: 'due_date', label: 'Vencimento' },
@@ -218,7 +218,7 @@ export default function ContasReceberPage() {
       <h1>Contas a Receber</h1>
       <p style="color:#666;font-size:12px;margin-bottom:12px">Gerado em ${new Date().toLocaleString('pt-BR')}</p>
       <table><thead><tr>
-      ${isColVisible('description') ? '<th>Descricao</th>' : ''}
+      ${isColVisible('description') ? '<th>Descrição</th>' : ''}
       ${isColVisible('customer') ? '<th>Cliente</th>' : ''}
       ${isColVisible('category') ? '<th>Categoria</th>' : ''}
       ${isColVisible('due_date') ? '<th>Vencimento</th>' : ''}
@@ -894,7 +894,7 @@ export default function ContasReceberPage() {
                 <CheckCircle2 className="h-5 w-5 text-green-600" />
               </div>
               <div>
-                <p className="text-sm text-gray-500">Recebidas no Mes</p>
+                <p className="text-sm text-gray-500">Recebidas no Mês</p>
                 <p className="text-xl font-bold text-green-600">{formatCurrency(summary.recebidas_mes)}</p>
                 <p className="text-xs text-gray-400">{summary.recebidas_mes_count} conta(s)</p>
               </div>
@@ -911,7 +911,7 @@ export default function ContasReceberPage() {
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
               <input
                 id="search-receivable"
-                placeholder="Buscar por descricao, cliente..."
+                placeholder="Buscar por descrição, cliente..."
                 value={search}
                 onChange={e => { setSearch(e.target.value); setPage(1) }}
                 className="w-full rounded-md border bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
@@ -1122,13 +1122,13 @@ export default function ContasReceberPage() {
                     onChange={toggleAll} className="rounded text-blue-600" />
                 </th>
               )}
-              {isColVisible('description') && <th className="px-4 py-3">Descricao</th>}
+              {isColVisible('description') && <th className="px-4 py-3">Descrição</th>}
               {isColVisible('customer') && <th className="px-4 py-3">Cliente</th>}
               {isColVisible('category') && <th className="px-4 py-3">Categoria</th>}
               {isColVisible('due_date') && <th className="px-4 py-3">Vencimento</th>}
               {isColVisible('total_amount') && <th className="px-4 py-3 text-right">Valor</th>}
               {isColVisible('status') && <th className="px-4 py-3 text-center">Status</th>}
-              <th className="px-4 py-3 text-right">Acoes</th>
+              <th className="px-4 py-3 text-right">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y">
@@ -1266,7 +1266,7 @@ export default function ContasReceberPage() {
                           <button
                             type="button"
                             onClick={() => openCobranca(conta)}
-                            title="Enviar Cobranca (PIX/Boleto/Cartao)"
+                            title="Enviar Cobrança (PIX/Boleto/Cartão)"
                             className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-emerald-600"
                           >
                             <Send className="h-4 w-4" />
@@ -1523,7 +1523,7 @@ export default function ContasReceberPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
-                    <th className="px-3 py-2">Descricao</th>
+                    <th className="px-3 py-2">Descrição</th>
                     <th className="px-3 py-2 text-right">Valor</th>
                   </tr>
                 </thead>
@@ -1712,7 +1712,7 @@ export default function ContasReceberPage() {
                 <div className="flex justify-between"><span className="text-gray-500">Cliente:</span><span className="font-medium">{boletoModalConta.customers?.legal_name}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Valor:</span><span className="font-bold text-green-700">{formatCurrency(boletoModalConta.total_amount)}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Vencimento:</span><span>{formatDate(boletoModalConta.due_date)}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">Descricao:</span><span>{boletoModalConta.description}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Descrição:</span><span>{boletoModalConta.description}</span></div>
               </div>
 
               <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-800">
@@ -1755,7 +1755,7 @@ export default function ContasReceberPage() {
               <div className="flex justify-between"><span className="text-gray-500">Cliente:</span><span className="font-medium">{cobrancaConta.customers?.legal_name || 'Sem cliente'}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Valor:</span><span className="font-bold text-emerald-700">{formatCurrency(cobrancaConta.total_amount - (cobrancaConta.received_amount || 0))}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Vencimento:</span><span>{formatDate(cobrancaConta.due_date)}</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Descricao:</span><span className="text-right max-w-[200px] truncate">{cobrancaConta.description}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Descrição:</span><span className="text-right max-w-[200px] truncate">{cobrancaConta.description}</span></div>
             </div>
 
             {cobrancaResult ? (
@@ -1803,7 +1803,7 @@ export default function ContasReceberPage() {
                     {([
                       { value: 'PIX' as const, label: 'PIX', icon: '⚡', active: 'border-emerald-500 bg-emerald-50 text-emerald-700' },
                       { value: 'BOLETO' as const, label: 'Boleto', icon: '📄', active: 'border-blue-500 bg-blue-50 text-blue-700' },
-                      { value: 'CREDIT_CARD' as const, label: 'Cartao', icon: '💳', active: 'border-purple-500 bg-purple-50 text-purple-700' },
+                      { value: 'CREDIT_CARD' as const, label: 'Cartão', icon: '💳', active: 'border-purple-500 bg-purple-50 text-purple-700' },
                     ] as const).map(opt => (
                       <button
                         key={opt.value}
@@ -1953,7 +1953,7 @@ export default function ContasReceberPage() {
 
             <div className="rounded-md bg-blue-50 border border-blue-200 p-3 mb-4">
               <p className="text-xs text-blue-700">
-                <strong>Mapeamento esperado:</strong> Descricao (obrigatorio), Cliente, Valor (em reais, ex: 10,50 — sera convertido para centavos), Vencimento (DD/MM/AAAA ou AAAA-MM-DD).
+                <strong>Mapeamento esperado:</strong> Descrição (obrigatório), Cliente, Valor (em reais, ex: 10,50 — será convertido para centavos), Vencimento (DD/MM/AAAA ou AAAA-MM-DD).
               </p>
             </div>
 
