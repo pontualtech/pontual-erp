@@ -19,7 +19,7 @@ interface NfeConfig {
   inscricao_municipal: string
   cnae: string
   crt: string
-  // Endereco
+  // Endereço
   logradouro: string
   numero: string
   complemento: string
@@ -34,7 +34,7 @@ interface NfeConfig {
   serie: string
   proximo_numero: string
   // Impostos
-  csosn_padrao: string
+  csosn_padrão: string
   aliquota_simples: string
   cfop_venda_interna: string
   cfop_venda_interestadual: string
@@ -109,7 +109,7 @@ export default function ConfigNfePage() {
     cnae: '', crt: '1', logradouro: '', numero: '', complemento: '', bairro: '',
     codigo_municipio: '', municipio: '', uf: 'SP', cep: '', telefone: '',
     ambiente: '2', serie: '1', proximo_numero: '1',
-    csosn_padrao: '102', aliquota_simples: '', cfop_venda_interna: '5102',
+    csosn_padrão: '102', aliquota_simples: '', cfop_venda_interna: '5102',
     cfop_venda_interestadual: '6102', cfop_devolucao: '5202',
     info_complementar: '',
     cert_instalado: '', cert_validade: '', cert_valid_from: '', cert_cnpj: '',
@@ -132,7 +132,7 @@ export default function ConfigNfePage() {
     fetch('/api/settings/nfe-config')
       .then(r => r.json())
       .then(d => { if (d.data) setConfig(prev => ({ ...prev, ...d.data })) })
-      .catch(() => toast.error('Erro ao carregar configuracoes'))
+      .catch(() => toast.error('Erro ao carregar configurações'))
       .finally(() => setLoading(false))
   }, [])
 
@@ -142,7 +142,7 @@ export default function ConfigNfePage() {
 
   async function handleSave() {
     if (!config.cnpj || !config.inscricao_estadual) {
-      toast.error('CNPJ e Inscricao Estadual sao obrigatorios')
+      toast.error('CNPJ e Inscrição Estadual sao obrigatórios')
       return
     }
     setSaving(true)
@@ -153,7 +153,7 @@ export default function ConfigNfePage() {
         body: JSON.stringify(config),
       })
       if (!res.ok) { const d = await res.json(); throw new Error(d.error) }
-      toast.success('Configuracoes NF-e salvas com sucesso!')
+      toast.success('Configurações NF-e salvas com sucesso!')
     } catch (err: any) { toast.error(err.message || 'Erro ao salvar') }
     finally { setSaving(false) }
   }
@@ -202,7 +202,7 @@ export default function ConfigNfePage() {
     }
   }
 
-  function confirmProducao() {
+  function confirmProdução() {
     upd('ambiente', '1')
     setShowProdWarning(false)
   }
@@ -210,13 +210,13 @@ export default function ConfigNfePage() {
   const inp = 'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-colors bg-white'
   const label = 'block text-xs font-medium text-gray-500 mb-1.5'
   const certInstalled = config.cert_instalado === 'true'
-  const isProducao = config.ambiente === '1'
+  const isProdução = config.ambiente === '1'
 
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
         <Loader2 className="h-6 w-6 animate-spin text-gray-400 mr-3" />
-        <span className="text-gray-500">Carregando configuracoes...</span>
+        <span className="text-gray-500">Carregando configurações...</span>
       </div>
     )
   }
@@ -232,7 +232,7 @@ export default function ConfigNfePage() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
               <FileText className="h-6 w-6 text-blue-600" />
-              Configuracoes NF-e
+              Configurações NF-e
             </h1>
             <p className="text-sm text-gray-500 mt-0.5">Certificado digital, ambiente, impostos e dados fiscais</p>
           </div>
@@ -240,7 +240,7 @@ export default function ConfigNfePage() {
         <button type="button" onClick={handleSave} disabled={saving}
           className="flex items-center gap-2 rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 shadow-sm transition-colors">
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          {saving ? 'Salvando...' : 'Salvar Configuracoes'}
+          {saving ? 'Salvando...' : 'Salvar Configurações'}
         </button>
       </div>
 
@@ -264,7 +264,7 @@ export default function ConfigNfePage() {
             <Shield className="h-5 w-5 text-blue-600" />
             Certificado Digital A1
           </h2>
-          <p className="text-xs text-gray-500 mt-0.5">Arquivo .pfx ou .p12 necessario para emissao de NF-e</p>
+          <p className="text-xs text-gray-500 mt-0.5">Arquivo .pfx ou .p12 necessário para emissão de NF-e</p>
         </div>
 
         <div className="p-6">
@@ -360,7 +360,7 @@ export default function ConfigNfePage() {
             <ToggleLeft className="h-5 w-5 text-blue-600" />
             Ambiente de Emissao
           </h2>
-          <p className="text-xs text-gray-500 mt-0.5">Alterne entre homologacao (testes) e producao (notas reais)</p>
+          <p className="text-xs text-gray-500 mt-0.5">Alterne entre homologação (testes) e produção (notas reais)</p>
         </div>
 
         <div className="p-6">
@@ -372,34 +372,34 @@ export default function ConfigNfePage() {
               className="relative flex items-center"
               title="Alternar ambiente"
             >
-              <div className={`w-16 h-8 rounded-full transition-colors duration-300 ${isProducao ? 'bg-green-500' : 'bg-amber-400'}`}>
-                <div className={`absolute top-1 w-6 h-6 rounded-full bg-white shadow-md transition-transform duration-300 ${isProducao ? 'translate-x-9' : 'translate-x-1'}`} />
+              <div className={`w-16 h-8 rounded-full transition-colors duration-300 ${isProdução ? 'bg-green-500' : 'bg-amber-400'}`}>
+                <div className={`absolute top-1 w-6 h-6 rounded-full bg-white shadow-md transition-transform duration-300 ${isProdução ? 'translate-x-9' : 'translate-x-1'}`} />
               </div>
             </button>
 
             <div className="flex-1">
               <div className="flex items-center gap-3">
                 <span className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold ${
-                  isProducao
+                  isProdução
                     ? 'bg-green-100 text-green-800'
                     : 'bg-amber-100 text-amber-800'
                 }`}>
-                  {isProducao ? 'Producao' : 'Homologacao'}
+                  {isProdução ? 'Produção' : 'Homologacao'}
                 </span>
               </div>
               <p className="text-xs text-gray-500 mt-1">
-                {isProducao
-                  ? 'Notas fiscais serao emitidas com validade juridica na SEFAZ de producao.'
-                  : 'Notas fiscais serao emitidas apenas como teste (sem validade juridica).'}
+                {isProdução
+                  ? 'Notas fiscais serão emitidas com validade jurídica na SEFAZ de produção.'
+                  : 'Notas fiscais serão emitidas apenas como teste (sem validade jurídica).'}
               </p>
             </div>
           </div>
 
-          {isProducao && (
+          {isProdução && (
             <div className="mt-4 rounded-lg bg-green-50 border border-green-200 p-3 flex items-start gap-2">
               <CheckCircle className="h-4 w-4 text-green-600 mt-0.5 shrink-0" />
               <p className="text-xs text-green-700">
-                Ambiente de producao ativo. Todas as NF-e emitidas terao validade fiscal. Certifique-se de que os dados do emitente estao corretos antes de emitir.
+                Ambiente de produção ativo. Todas as NF-e emitidas terao validade fiscal. Certifique-se de que os dados do emitente estao corretos antes de emitir.
               </p>
             </div>
           )}
@@ -411,21 +411,21 @@ export default function ConfigNfePage() {
         <div className="border-b bg-gray-50/50 px-6 py-4">
           <h2 className="font-semibold text-gray-900 flex items-center gap-2">
             <Percent className="h-5 w-5 text-blue-600" />
-            Impostos Padrao - Simples Nacional
+            Impostos Padrão - Simples Nacional
           </h2>
-          <p className="text-xs text-gray-500 mt-0.5">Valores padrao para novas NF-e (podem ser alterados na emissao)</p>
+          <p className="text-xs text-gray-500 mt-0.5">Valores padrão para novas NF-e (podem ser alterados na emissão)</p>
         </div>
 
         <div className="p-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <div className="sm:col-span-2">
-              <label className={label}>CSOSN Padrao</label>
-              <select value={config.csosn_padrao} onChange={e => upd('csosn_padrao', e.target.value)} title="CSOSN" className={inp}>
+              <label className={label}>CSOSN Padrão</label>
+              <select value={config.csosn_padrão} onChange={e => upd('csosn_padrão', e.target.value)} title="CSOSN" className={inp}>
                 {CSOSN_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
             <div>
-              <label className={label}>Aliquota Simples Nacional (%)</label>
+              <label className={label}>Alíquota Simples Nacional (%)</label>
               <div className="relative">
                 <input
                   type="number"
@@ -439,7 +439,7 @@ export default function ConfigNfePage() {
                 />
                 <span className="absolute right-3 top-2.5 text-sm text-gray-400">%</span>
               </div>
-              <p className="text-xs text-gray-400 mt-1">Exibido nas informacoes complementares da NF-e</p>
+              <p className="text-xs text-gray-400 mt-1">Exibido nas informações complementares da NF-e</p>
             </div>
             <div>
               <label className={label}>CFOP Venda Interna (mesma UF)</label>
@@ -450,7 +450,7 @@ export default function ConfigNfePage() {
               <input value={config.cfop_venda_interestadual} onChange={e => upd('cfop_venda_interestadual', e.target.value)} placeholder="6102" className={inp} />
             </div>
             <div>
-              <label className={label}>CFOP Devolucao</label>
+              <label className={label}>CFOP Devolução</label>
               <input value={config.cfop_devolucao} onChange={e => upd('cfop_devolucao', e.target.value)} placeholder="5202" className={inp} />
             </div>
           </div>
@@ -477,12 +477,12 @@ export default function ConfigNfePage() {
                 <input value={config.cnpj} onChange={e => upd('cnpj', formatCnpj(e.target.value))} placeholder="00.000.000/0001-00" className={inp} />
               </div>
               <div>
-                <label className={label}>Inscricao Estadual (IE) *</label>
-                <input value={config.inscricao_estadual} onChange={e => upd('inscricao_estadual', e.target.value)} placeholder="Inscricao Estadual" className={inp} />
+                <label className={label}>Inscrição Estadual (IE) *</label>
+                <input value={config.inscricao_estadual} onChange={e => upd('inscricao_estadual', e.target.value)} placeholder="Inscrição Estadual" className={inp} />
               </div>
               <div>
-                <label className={label}>Inscricao Municipal (IM)</label>
-                <input value={config.inscricao_municipal} onChange={e => upd('inscricao_municipal', e.target.value)} placeholder="Inscricao Municipal" className={inp} />
+                <label className={label}>Inscrição Municipal (IM)</label>
+                <input value={config.inscricao_municipal} onChange={e => upd('inscricao_municipal', e.target.value)} placeholder="Inscrição Municipal" className={inp} />
               </div>
               <div>
                 <label className={label}>Regime Tributario</label>
@@ -495,7 +495,7 @@ export default function ConfigNfePage() {
                 <input value={config.serie} onChange={e => upd('serie', e.target.value)} placeholder="1" className={inp} />
               </div>
               <div>
-                <label className={label}>Proximo Numero NF-e</label>
+                <label className={label}>Próximo Número NF-e</label>
                 <input
                   type="number"
                   min="1"
@@ -531,17 +531,17 @@ export default function ConfigNfePage() {
             </div>
           </div>
 
-          {/* Endereco */}
+          {/* Endereço */}
           <div>
-            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Endereco do Emitente</h3>
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Endereço do Emitente</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="sm:col-span-2">
                 <label className={label}>Logradouro</label>
                 <input value={config.logradouro} onChange={e => upd('logradouro', e.target.value)} placeholder="Rua, Av, etc." className={inp} />
               </div>
               <div>
-                <label className={label}>Numero</label>
-                <input value={config.numero} onChange={e => upd('numero', e.target.value)} placeholder="Numero" className={inp} />
+                <label className={label}>Número</label>
+                <input value={config.numero} onChange={e => upd('numero', e.target.value)} placeholder="Número" className={inp} />
               </div>
               <div>
                 <label className={label}>Complemento</label>
@@ -557,7 +557,7 @@ export default function ConfigNfePage() {
               </div>
               <div>
                 <label className={label}>Municipio</label>
-                <input value={config.municipio} onChange={e => upd('municipio', e.target.value)} placeholder="Sao Paulo" className={inp} />
+                <input value={config.municipio} onChange={e => upd('municipio', e.target.value)} placeholder="São Paulo" className={inp} />
               </div>
               <div>
                 <label className={label}>Cod. Municipio IBGE</label>
@@ -581,7 +581,7 @@ export default function ConfigNfePage() {
             <Info className="h-5 w-5 text-blue-600" />
             Informacoes Complementares
           </h2>
-          <p className="text-xs text-gray-500 mt-0.5">Texto padrao no campo de informacoes adicionais da NF-e</p>
+          <p className="text-xs text-gray-500 mt-0.5">Texto padrão no campo de informações adicionais da NF-e</p>
         </div>
 
         <div className="p-6">
@@ -593,7 +593,7 @@ export default function ConfigNfePage() {
             className={inp}
           />
           <p className="text-xs text-gray-400 mt-2">
-            Esse texto aparecera em todas as NF-e emitidas. Voce pode sobrescrever na hora da emissao.
+            Esse texto aparecera em todas as NF-e emitidas. Voce pode sobrescrever na hora da emissão.
           </p>
         </div>
       </div>
@@ -603,7 +603,7 @@ export default function ConfigNfePage() {
         <button type="button" onClick={handleSave} disabled={saving}
           className="flex items-center gap-2 rounded-lg bg-blue-600 px-8 py-3 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 shadow-sm transition-colors">
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          {saving ? 'Salvando...' : 'Salvar Configuracoes'}
+          {saving ? 'Salvando...' : 'Salvar Configurações'}
         </button>
       </div>
 
@@ -617,7 +617,7 @@ export default function ConfigNfePage() {
               <Upload className="h-5 w-5 text-blue-600" />
               {certInstalled ? 'Substituir Certificado' : 'Instalar Certificado A1'}
             </h2>
-            <p className="text-xs text-gray-500 mb-5">Arquivo .pfx ou .p12 (maximo 50KB)</p>
+            <p className="text-xs text-gray-500 mb-5">Arquivo .pfx ou .p12 (máximo 50KB)</p>
 
             <div className="space-y-4">
               <input ref={fileRef} type="file" accept=".pfx,.p12" onChange={e => setCertFile(e.target.files?.[0] || null)} className="hidden" aria-label="Arquivo do certificado" />
@@ -675,10 +675,10 @@ export default function ConfigNfePage() {
               <div className="rounded-full bg-amber-100 p-2">
                 <AlertTriangle className="h-5 w-5 text-amber-600" />
               </div>
-              <h2 className="text-lg font-semibold text-gray-900">Ativar Producao?</h2>
+              <h2 className="text-lg font-semibold text-gray-900">Ativar Produção?</h2>
             </div>
             <p className="text-sm text-gray-600 mb-2">
-              Ao mudar para <strong>producao</strong>, todas as NF-e emitidas terao validade juridica e fiscal.
+              Ao mudar para <strong>produção</strong>, todas as NF-e emitidas terao validade jurídica e fiscal.
             </p>
             <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
               Certifique-se de que o certificado digital esta instalado e os dados do emitente estao corretos antes de continuar.
@@ -686,9 +686,9 @@ export default function ConfigNfePage() {
             <div className="flex gap-3 justify-end">
               <button type="button" onClick={() => setShowProdWarning(false)}
                 className="px-4 py-2 text-sm border rounded-lg hover:bg-gray-50 transition-colors">Cancelar</button>
-              <button type="button" onClick={confirmProducao}
+              <button type="button" onClick={confirmProdução}
                 className="px-5 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors">
-                Ativar Producao
+                Ativar Produção
               </button>
             </div>
           </div>

@@ -395,7 +395,7 @@ export default function EmitirNfePage() {
           address_zip: digits,
           cod_municipio: data.ibge || selectedCliente.cod_municipio,
         })
-        toast.success('Endereco atualizado pelo CEP')
+        toast.success('Endereço atualizado pelo CEP')
       }
     } catch {
       toast.error('CEP nao encontrado')
@@ -472,7 +472,7 @@ export default function EmitirNfePage() {
   // Step navigation
   function goNext() {
     if (currentStep === 1 && !step1Valid) {
-      toast.error('Selecione um cliente e a natureza da operacao')
+      toast.error('Selecione um cliente e a natureza da operação')
       return
     }
     if (currentStep === 2 && !step2Valid) {
@@ -607,7 +607,7 @@ export default function EmitirNfePage() {
     <div className="max-w-5xl mx-auto space-y-6 pb-12">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-sm text-gray-400">
-        <Link href="/" className="hover:text-gray-600 flex items-center gap-1"><Home className="h-3.5 w-3.5" /> Inicio</Link>
+        <Link href="/" className="hover:text-gray-600 flex items-center gap-1"><Home className="h-3.5 w-3.5" /> Início</Link>
         <span>/</span>
         <Link href="/fiscal" className="hover:text-gray-600">Fiscal</Link>
         <span>/</span>
@@ -710,9 +710,9 @@ export default function EmitirNfePage() {
       {/* ═══════════════════════════════════════════════ */}
       {currentStep === 1 && (
         <div className="space-y-6 animate-in fade-in duration-300">
-          {/* Natureza da Operacao */}
+          {/* Natureza da Operação */}
           <div className="rounded-xl border bg-white p-6 shadow-sm">
-            <h2 className="text-base font-semibold text-gray-900 mb-1">Natureza da Operacao</h2>
+            <h2 className="text-base font-semibold text-gray-900 mb-1">Natureza da Operação</h2>
             <p className="text-sm text-gray-400 mb-4">Selecione o tipo de operacao fiscal</p>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               {NATUREZAS.map(nat => {
@@ -841,7 +841,7 @@ export default function EmitirNfePage() {
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
                   <div>
-                    <p className="text-xs text-gray-400 mb-0.5">Endereco</p>
+                    <p className="text-xs text-gray-400 mb-0.5">Endereço</p>
                     <p className="font-medium text-gray-700">
                       {selectedCliente.address_street || '---'}{selectedCliente.address_number ? `, ${selectedCliente.address_number}` : ''}
                     </p>
@@ -970,10 +970,10 @@ export default function EmitirNfePage() {
                   {/* Item fields grid */}
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-12 sm:gap-2 sm:items-end">
                     <div className="col-span-2 sm:col-span-4">
-                      <label className="block text-xs text-gray-500 mb-1">Descricao *</label>
+                      <label className="block text-xs text-gray-500 mb-1">Descrição *</label>
                       <input type="text" value={item.descricao}
                         onChange={e => updateItem(idx, 'descricao', e.target.value)}
-                        placeholder="Descricao do produto"
+                        placeholder="Descrição do produto"
                         className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:border-blue-500" />
                     </div>
                     <div className="sm:col-span-2">
@@ -1052,7 +1052,7 @@ export default function EmitirNfePage() {
                       <label className="block text-xs text-gray-500 mb-1">Cod. Produto</label>
                       <input type="text" value={item.codigo_produto}
                         onChange={e => updateItem(idx, 'codigo_produto', e.target.value)}
-                        placeholder="Codigo interno"
+                        placeholder="Código interno"
                         className="w-full rounded-md border px-3 py-2 text-sm outline-none focus:border-blue-500" />
                     </div>
                   </div>
@@ -1354,7 +1354,7 @@ export default function EmitirNfePage() {
                     <p className="text-xs text-gray-500">{formatDocument(selectedCliente?.document_number)}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-400">Natureza da Operacao</p>
+                    <p className="text-xs text-gray-400">Natureza da Operação</p>
                     <p className="font-semibold">{selectedNat?.label}</p>
                     <span className="inline-block mt-0.5 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-mono text-gray-600">
                       CFOP {selectedNat?.cfop}
@@ -1362,7 +1362,7 @@ export default function EmitirNfePage() {
                   </div>
                   {selectedCliente?.address_city && (
                     <div>
-                      <p className="text-xs text-gray-400">Endereco</p>
+                      <p className="text-xs text-gray-400">Endereço</p>
                       <p className="font-medium text-gray-700">
                         {selectedCliente.address_street}, {selectedCliente.address_number} — {selectedCliente.address_city}/{selectedCliente.address_state}
                       </p>
