@@ -13,7 +13,7 @@ const createPayableSchema = z.object({
   due_date: z.string(),
   category_id: z.string().optional(),
   cost_center_id: z.string().optional(),
-  // account_id: defer Sprint UX-24 (schema AccountPayable não tem coluna account_id)
+  account_id: z.string().optional(), // Sprint UX-24: banco origem do pagamento (Itau, Asaas, etc)
   payment_method: z.string().optional(),
   installment_count: z.number().int().min(1).max(120).optional(),
 })
@@ -37,6 +37,8 @@ export async function GET(request: NextRequest) {
     const paymentMethod = searchParams.get('paymentMethod')
     const valueMin = searchParams.get('valueMin') ? Number(searchParams.get('valueMin')) : null
     const valueMax = searchParams.get('valueMax') ? Number(searchParams.get('valueMax')) : null
+    // Sprint UX-24: filtro por banco vinculado (account_id)
+    const bankAccountId = searchParams.get('bankAccountId')
 
     const where: any = { company_id: user.companyId, deleted_at: null }
 
@@ -53,6 +55,7 @@ export async function GET(request: NextRequest) {
     if (categoryId) where.category_id = categoryId
     if (costCenterId) where.cost_center_id = costCenterId
     if (paymentMethod) where.payment_method = paymentMethod
+    if (bankAccountId) where.account_id = bankAccountId
     if (valueMin !== null || valueMax !== null) {
       where.total_amount = {}
       if (valueMin !== null) where.total_amount.gte = valueMin
@@ -188,6 +191,7 @@ export async function POST(request: NextRequest) {
         due_date: new Date(data.due_date),
         category_id: data.category_id || null,
         cost_center_id: data.cost_center_id || null,
+        account_id: data.account_id || null, // Sprint UX-24: banco origem
         payment_method: data.payment_method,
         status: 'PENDENTE',
       },

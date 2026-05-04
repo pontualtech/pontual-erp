@@ -18,6 +18,7 @@ interface ContaPagar {
   id: string; description: string; total_amount: number; paid_amount: number
   due_date: string; status: string; payment_method: string | null; notes: string | null
   category_id: string | null; cost_center_id: string | null
+  account_id: string | null  // Sprint UX-24: banco vinculado
   created_at: string
   categories: { id: string; name: string } | null
   cost_centers: { id: string; name: string } | null
@@ -75,7 +76,7 @@ export default function ContaPagarDetalhePage() {
 
   // Edit
   const [editing, setEditing] = useState(false)
-  const [editForm, setEditForm] = useState({ description: '', total_amount: '', due_date: '', payment_method: '', category_id: '', cost_center_id: '', notes: '' })
+  const [editForm, setEditForm] = useState({ description: '', total_amount: '', due_date: '', payment_method: '', category_id: '', cost_center_id: '', account_id: '', notes: '' })
   const [saving, setSaving] = useState(false)
 
   // Baixa
@@ -107,6 +108,7 @@ export default function ContaPagarDetalhePage() {
           payment_method: c.payment_method || '',
           category_id: c.category_id || '',
           cost_center_id: c.cost_center_id || '',
+          account_id: c.account_id || '',
           notes: c.notes || '',
         })
       })
@@ -130,6 +132,7 @@ export default function ContaPagarDetalhePage() {
       payment_method: conta.payment_method || '',
       category_id: conta.category_id || '',
       cost_center_id: conta.cost_center_id || '',
+      account_id: conta.account_id || '',
       notes: conta.notes || '',
     })
     setEditing(true)
@@ -145,6 +148,7 @@ export default function ContaPagarDetalhePage() {
         payment_method: editForm.payment_method || null,
         category_id: editForm.category_id || null,
         cost_center_id: editForm.cost_center_id || null,
+        account_id: editForm.account_id || null, // Sprint UX-24
       }
       const amt = Math.round(parseFloat(editForm.total_amount) * 100)
       if (isNaN(amt) || amt <= 0) { toast.error('Valor deve ser maior que zero'); setSaving(false); return }
@@ -338,6 +342,33 @@ export default function ContaPagarDetalhePage() {
               <p className="text-sm font-medium text-gray-900 dark:text-white">{conta.cost_centers?.name || '—'}</p>
             )}
           </div>
+        </div>
+
+        {/* Sprint UX-24: Banco vinculado (account_id) */}
+        <div className="p-5">
+          <h3 className="flex items-center gap-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+            <Landmark className="h-3.5 w-3.5" /> Conta Bancária Vinculada
+          </h3>
+          {editing ? (
+            <select title="Banco origem do pagamento" value={editForm.account_id} onChange={e => setEditForm(f => ({ ...f, account_id: e.target.value }))}
+              className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white w-full max-w-md">
+              <option value="">Nenhum (definir na hora de pagar)</option>
+              {accounts.map(acc => (
+                <option key={acc.id} value={acc.id}>
+                  {acc.bank_name ? `${acc.bank_name} — ${acc.name}` : acc.name}
+                </option>
+              ))}
+            </select>
+          ) : (() => {
+            const linked = accounts.find(a => a.id === conta.account_id)
+            return linked ? (
+              <p className="text-sm font-medium text-gray-900 dark:text-white">
+                {linked.bank_name ? `${linked.bank_name} — ${linked.name}` : linked.name}
+              </p>
+            ) : (
+              <p className="text-sm text-gray-400">Nenhum banco vinculado (será definido na baixa)</p>
+            )
+          })()}
         </div>
 
         {/* Forma de Pagamento */}

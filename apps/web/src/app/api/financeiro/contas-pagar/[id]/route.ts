@@ -15,6 +15,7 @@ const updatePayableSchema = z.object({
   due_date: z.string().optional(),
   category_id: z.string().nullable().optional(),
   cost_center_id: z.string().nullable().optional(),
+  account_id: z.string().nullable().optional(), // Sprint UX-24: editar banco vinculado
   payment_method: z.string().nullable().optional(),
   status: z.enum(['PENDENTE', 'PAGO', 'CANCELADO']).optional(),
 })

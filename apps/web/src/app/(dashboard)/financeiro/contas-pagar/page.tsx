@@ -107,6 +107,7 @@ export default function ContasPagarPage() {
   const [categoryFilter, setCategoryFilter] = useState('')
   const [costCenterFilter, setCostCenterFilter] = useState('')
   const [paymentMethodFilter, setPaymentMethodFilter] = useState('')
+  const [bankAccountFilter, setBankAccountFilter] = useState('') // Sprint UX-24
   const [valueMin, setValueMin] = useState('')
   const [valueMax, setValueMax] = useState('')
   const [showAdvanced, setShowAdvanced] = useState(false)
@@ -148,6 +149,7 @@ export default function ContasPagarPage() {
     if (categoryFilter) params.set('categoryId', categoryFilter)
     if (costCenterFilter) params.set('costCenterId', costCenterFilter)
     if (paymentMethodFilter) params.set('paymentMethod', paymentMethodFilter)
+    if (bankAccountFilter) params.set('bankAccountId', bankAccountFilter)
     if (valueMin) params.set('valueMin', String(Math.round(Number(valueMin) * 100)))
     if (valueMax) params.set('valueMax', String(Math.round(Number(valueMax) * 100)))
 
@@ -166,7 +168,7 @@ export default function ContasPagarPage() {
       })
       .catch(() => toast.error('Erro ao carregar contas'))
       .finally(() => setLoading(false))
-  }, [page, search, statusFilter, startDate, endDate, categoryFilter, costCenterFilter, paymentMethodFilter, valueMin, valueMax])
+  }, [page, search, statusFilter, startDate, endDate, categoryFilter, costCenterFilter, paymentMethodFilter, bankAccountFilter, valueMin, valueMax])
 
   useEffect(() => { loadContas(); setSelected(new Set()) }, [loadContas])
 
@@ -280,6 +282,7 @@ export default function ContasPagarPage() {
       if (categoryFilter) params.set('categoryId', categoryFilter)
       if (costCenterFilter) params.set('costCenterId', costCenterFilter)
       if (paymentMethodFilter) params.set('paymentMethod', paymentMethodFilter)
+      if (bankAccountFilter) params.set('bankAccountId', bankAccountFilter)
       if (valueMin) params.set('valueMin', String(Math.round(Number(valueMin) * 100)))
       if (valueMax) params.set('valueMax', String(Math.round(Number(valueMax) * 100)))
       const res = await fetch(`/api/financeiro/contas-pagar?${params}`)
@@ -394,11 +397,11 @@ export default function ContasPagarPage() {
 
   function clearFilters() {
     setSearch(''); setStatusFilter(''); setStartDate(''); setEndDate('')
-    setCategoryFilter(''); setCostCenterFilter(''); setPaymentMethodFilter('')
+    setCategoryFilter(''); setCostCenterFilter(''); setPaymentMethodFilter(''); setBankAccountFilter('')
     setValueMin(''); setValueMax(''); setPage(1)
   }
 
-  const hasFilters = search || statusFilter || startDate || endDate || categoryFilter || costCenterFilter || paymentMethodFilter || valueMin || valueMax
+  const hasFilters = search || statusFilter || startDate || endDate || categoryFilter || costCenterFilter || paymentMethodFilter || bankAccountFilter || valueMin || valueMax
   const contaToDelete = contas.find(c => c.id === deleteId)
   const contaBaixa = contas.find(c => c.id === baixaId)
 
@@ -627,7 +630,7 @@ export default function ContasPagarPage() {
           <button type="button" onClick={() => setShowAdvanced(!showAdvanced)}
             className={cn('flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm', showAdvanced ? 'bg-blue-50 border-blue-300 text-blue-700' : 'text-gray-600 hover:bg-gray-50')}>
             <Filter className="h-4 w-4" /> Filtros
-            {(categoryFilter || costCenterFilter || paymentMethodFilter || valueMin || valueMax) && (
+            {(categoryFilter || costCenterFilter || paymentMethodFilter || bankAccountFilter || valueMin || valueMax) && (
               <span className="bg-blue-600 text-white rounded-full h-4 w-4 text-[10px] flex items-center justify-center font-bold">!</span>
             )}
           </button>
@@ -666,6 +669,19 @@ export default function ContasPagarPage() {
                 className="w-full rounded-md border bg-white py-2 px-3 text-sm">
                 <option value="">Todas</option>
                 {filterPaymentMethods.map(pm => <option key={pm} value={pm}>{pm}</option>)}
+              </select>
+            </div>
+            {/* Sprint UX-24: filtro banco vinculado */}
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Banco vinculado</label>
+              <select title="Filtrar por banco" value={bankAccountFilter} onChange={e => { setBankAccountFilter(e.target.value); setPage(1) }}
+                className="w-full rounded-md border bg-white py-2 px-3 text-sm">
+                <option value="">Todos</option>
+                {bankAccounts.map(acc => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.bank_name ? `${acc.bank_name} — ${acc.name}` : acc.name}
+                  </option>
+                ))}
               </select>
             </div>
             <div>

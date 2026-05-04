@@ -120,7 +120,7 @@ export default function NovaContaPagarPage() {
           supplier_id: form.supplier_id || undefined,
           category_id: form.category_id || undefined,
           cost_center_id: form.cost_center_id || undefined,
-          // account_id: defer Sprint UX-24 (precisa migration AccountPayable)
+          account_id: form.account_id || undefined, // Sprint UX-24: banco origem
           payment_method: form.payment_method || undefined,
           notes: form.notes || undefined,
           installment_count: installmentCount > 1 ? installmentCount : undefined,
@@ -305,11 +305,26 @@ export default function NovaContaPagarPage() {
               </select>
             </div>
           </div>
-          {/* TODO Sprint UX-24: AccountPayable NÃO tem campo account_id no
-              schema. Migration necessária:
-              ALTER TABLE accounts_payable ADD COLUMN account_id TEXT NULL
-              REFERENCES accounts(id);
-              Após migration: descomentar dropdown e API. */}
+          {/* Sprint UX-24: dropdown banco origem (account_id) */}
+          <div>
+            <label htmlFor="account_id" className="block text-sm text-gray-600 mb-1">Conta bancária (origem)</label>
+            <select
+              id="account_id"
+              value={form.account_id}
+              onChange={e => updateForm('account_id', e.target.value)}
+              className="w-full px-3 py-2 border rounded-md text-sm"
+            >
+              <option value="">Selecione (opcional)...</option>
+              {bankAccounts.map(acc => (
+                <option key={acc.id} value={acc.id}>
+                  {acc.bank_name ? `${acc.bank_name} — ${acc.name}` : acc.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-400 mt-1">
+              Banco que efetuará o pagamento. Pode ser definido depois na hora de pagar.
+            </p>
+          </div>
         </div>
 
         {/* Observacoes */}
