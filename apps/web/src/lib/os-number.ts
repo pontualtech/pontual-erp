@@ -17,7 +17,11 @@ export async function getNextOsNumber(
   // UX-10 #7: lock xact-level — segurança contra race "MAX seguido de INSERT"
   // Funciona dentro de tx; fora de tx, advisory_xact_lock vira advisory_lock
   // efêmero (libera no fim do statement). Caller idealmente passa tx.
-  await db.$queryRaw`
+  // HOTFIX 2026-05-04: usar $executeRaw em vez de $queryRaw porque
+  // pg_advisory_xact_lock retorna void — Prisma 5.22 (regenerado durante
+  // Sprint UX-24) passou a validar deserialização de void e quebra.
+  // $executeRaw aceita retorno void (espera apenas affected rows count).
+  await db.$executeRaw`
     SELECT pg_advisory_xact_lock(hashtext('os.next_number:' || ${companyId})::bigint)
   `
 
