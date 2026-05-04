@@ -137,6 +137,7 @@ export default function ContaReceberDetalhePage() {
           due_date: c.due_date ? new Date(c.due_date).toISOString().split('T')[0] : '',
           payment_method: c.payment_method || '',
           category_id: c.category_id || '',
+          account_id: c.account_id || '',
           notes: c.notes || '',
         })
       })
