@@ -85,7 +85,7 @@ export default function TabelaPrecosPage() {
   }
 
   async function handleSave() {
-    if (!formDescription.trim()) { toast.error('Descricao do servico e obrigatoria'); return }
+    if (!formDescription.trim()) { toast.error('Descrição do serviço é obrigatória'); return }
     setSaving(true)
     try {
       const payload = {
@@ -189,8 +189,8 @@ export default function TabelaPrecosPage() {
             <ArrowLeft className="h-4 w-4" />
           </Link>
           <div>
-            <h1 className="text-xl font-bold text-gray-900">Tabela de Precos</h1>
-            <p className="text-sm text-gray-500">Precos padrao por equipamento/servico para orcamentos inteligentes</p>
+            <h1 className="text-xl font-bold text-gray-900">Tabela de Preços</h1>
+            <p className="text-sm text-gray-500">Preços padrão por equipamento/serviço para orçamentos inteligentes</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -216,7 +216,7 @@ export default function TabelaPrecosPage() {
           type="text"
           value={search}
           onChange={e => { setSearch(e.target.value); setPage(1) }}
-          placeholder="Buscar por equipamento, marca, modelo ou servico..."
+          placeholder="Buscar por equipamento, marca, modelo ou serviço..."
           className="w-full pl-10 pr-4 py-2 border rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-200"
         />
       </div>
@@ -230,8 +230,8 @@ export default function TabelaPrecosPage() {
         ) : entries.length === 0 ? (
           <div className="text-center py-20 text-gray-400">
             <DollarSign className="h-12 w-12 mx-auto mb-3 opacity-30" />
-            <p className="text-lg font-medium">Nenhuma entrada na tabela de precos</p>
-            <p className="text-sm mt-1">Cadastre precos padrao para agilizar orcamentos.</p>
+            <p className="text-lg font-medium">Nenhuma entrada na tabela de preços</p>
+            <p className="text-sm mt-1">Cadastre preços padrão para agilizar orçamentos.</p>
           </div>
         ) : (
           <>
@@ -241,8 +241,8 @@ export default function TabelaPrecosPage() {
                   <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
                     <th className="px-4 py-3">Equipamento</th>
                     <th className="px-4 py-3">Marca</th>
-                    <th className="px-4 py-3">Modelo (padrao)</th>
-                    <th className="px-4 py-3">Servico</th>
+                    <th className="px-4 py-3">Modelo (padrão)</th>
+                    <th className="px-4 py-3">Serviço</th>
                     <th className="px-4 py-3 text-right">Preco</th>
                     <th className="px-4 py-3 text-right">Tempo Est.</th>
                     <th className="px-4 py-3 w-20"></th>
@@ -287,7 +287,7 @@ export default function TabelaPrecosPage() {
                     className="px-3 py-1 text-xs border rounded hover:bg-gray-50 disabled:opacity-50">Anterior</button>
                   <span className="px-3 py-1 text-xs text-gray-500">{page} / {totalPages}</span>
                   <button type="button" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}
-                    className="px-3 py-1 text-xs border rounded hover:bg-gray-50 disabled:opacity-50">Proxima</button>
+                    className="px-3 py-1 text-xs border rounded hover:bg-gray-50 disabled:opacity-50">Próxima</button>
                 </div>
               </div>
             )}
@@ -297,8 +297,8 @@ export default function TabelaPrecosPage() {
 
       {/* CSV format hint */}
       <div className="rounded-lg border bg-gray-50 p-4 text-xs text-gray-500">
-        <p className="font-medium text-gray-700 mb-1">Formato CSV para importacao:</p>
-        <p className="font-mono">equipamento;marca;modelo;servico;preco;tempo_min</p>
+        <p className="font-medium text-gray-700 mb-1">Formato CSV para importação:</p>
+        <p className="font-mono">equipamento;marca;modelo;serviço;preço;tempo_min</p>
         <p className="font-mono mt-0.5">Impressora;HP;LaserJet Pro;Limpeza completa;150.00;60</p>
       </div>
 
@@ -330,14 +330,14 @@ export default function TabelaPrecosPage() {
                     placeholder="Ex: HP" className="w-full px-3 py-2 border rounded-lg text-sm" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Modelo (padrao)</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Modelo (padrão)</label>
                   <input type="text" value={formModel} onChange={e => setFormModel(e.target.value)}
                     placeholder="Ex: LaserJet" className="w-full px-3 py-2 border rounded-lg text-sm" />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Descricao do Servico *</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Descrição do Serviço *</label>
                 <input type="text" value={formDescription} onChange={e => setFormDescription(e.target.value)}
                   placeholder="Ex: Limpeza completa com troca de rolo"
                   className="w-full px-3 py-2 border rounded-lg text-sm" />
@@ -345,7 +345,7 @@ export default function TabelaPrecosPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Preco Padrao (R$)</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Preço Padrão (R$)</label>
                   <MoneyInput value={parseFloat(formPrice) || 0}
                     onChange={v => setFormPrice(String(v))} placeholder="0,00" />
                 </div>

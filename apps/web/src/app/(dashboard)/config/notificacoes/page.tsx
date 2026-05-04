@@ -122,7 +122,7 @@ export default function NotificacoesPage() {
         body: JSON.stringify({ rules, permission_required: permissionRequired }),
       })
       if (!res.ok) throw new Error('Erro ao salvar')
-      toast.success('Regras de notificacao salvas!')
+      toast.success('Regras de notificação salvas!')
     } catch (err: any) { toast.error(err.message) }
     finally { setSaving(false) }
   }
@@ -141,8 +141,8 @@ export default function NotificacoesPage() {
         <div className="flex items-center gap-3">
           <Link href="/config" className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100"><ArrowLeft className="h-5 w-5" /></Link>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2"><Bell className="h-6 w-6" /> Notificacoes por Status</h1>
-            <p className="text-sm text-gray-500">{autoCount} automaticas, {activeCount - autoCount} manuais, {statuses.length - activeCount} desligadas</p>
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2"><Bell className="h-6 w-6" /> Notificações por Status</h1>
+            <p className="text-sm text-gray-500">{autoCount} automáticas, {activeCount - autoCount} manuais, {statuses.length - activeCount} desligadas</p>
           </div>
         </div>
         <button type="button" onClick={handleSave} disabled={saving}
@@ -262,7 +262,7 @@ export default function NotificacoesPage() {
               {/* Expanded: custom templates */}
               {isExpanded && rule.mode !== 'off' && (
                 <div className="border-t px-4 py-4 bg-gray-50/50 space-y-4">
-                  <p className="text-xs text-gray-500">Personalize as mensagens para este status. Deixe vazio para usar o padrao do sistema.</p>
+                  <p className="text-xs text-gray-500">Personalize as mensagens para este status. Deixe vazio para usar o padrão do sistema.</p>
 
                   {rule.email && (
                     <div className="space-y-2">

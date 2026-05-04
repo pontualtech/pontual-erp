@@ -140,9 +140,9 @@ export default function KitsPage() {
   }
 
   async function handleSave() {
-    if (!kitName.trim()) { toast.error('Nome do kit e obrigatorio'); return }
+    if (!kitName.trim()) { toast.error('Nome do kit é obrigatório'); return }
     const validItems = kitItems.filter(i => i.description.trim())
-    if (validItems.length === 0) { toast.error('Adicione pelo menos um item com descricao'); return }
+    if (validItems.length === 0) { toast.error('Adicione pelo menos um item com descrição'); return }
 
     setSaving(true)
     try {
@@ -212,8 +212,8 @@ export default function KitsPage() {
             <ArrowLeft className="h-5 w-5 text-gray-500" />
           </Link>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Kits de Servico</h1>
-            <p className="text-sm text-gray-500">Kits pre-definidos com laudo padrao para adicionar rapidamente na OS</p>
+            <h1 className="text-2xl font-bold text-gray-900">Kits de Serviço</h1>
+            <p className="text-sm text-gray-500">Kits pré-definidos com laudo padrão para adicionar rapidamente na OS</p>
           </div>
         </div>
         {!showForm && (
@@ -247,13 +247,13 @@ export default function KitsPage() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               <FileText className="h-4 w-4 inline mr-1 text-purple-500" />
-              Laudo Padrao (opcional)
+              Laudo Padrão (opcional)
             </label>
             <textarea value={kitLaudo} onChange={e => setKitLaudo(e.target.value)}
-              placeholder="Texto padrao do laudo tecnico que sera preenchido automaticamente ao aplicar o kit na OS..."
+              placeholder="Texto padrão do laudo técnico que será preenchido automaticamente ao aplicar o kit na OS..."
               rows={3}
               className="w-full px-3 py-2.5 border rounded-lg text-sm focus:border-purple-500 focus:ring-1 focus:ring-purple-200 resize-none" />
-            <p className="text-xs text-gray-400 mt-1">Este texto sera inserido no campo &quot;Laudo Tecnico&quot; da OS ao aplicar o kit</p>
+            <p className="text-xs text-gray-400 mt-1">Este texto será inserido no campo &quot;Laudo Técnico&quot; da OS ao aplicar o kit</p>
           </div>
 
           {/* Items */}
@@ -273,7 +273,7 @@ export default function KitsPage() {
                     <div className="flex-1 grid grid-cols-12 gap-2">
                       {/* Search + Description */}
                       <div className="col-span-5 relative">
-                        <label className="block text-xs text-gray-500 mb-0.5">Buscar servico/produto</label>
+                        <label className="block text-xs text-gray-500 mb-0.5">Buscar serviço/produto</label>
                         <div className="relative">
                           <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-gray-400" />
                           <input type="text"
@@ -313,8 +313,8 @@ export default function KitsPage() {
                         <select value={item.item_type} title="Tipo do item"
                           onChange={e => updateKitItem(idx, 'item_type', e.target.value)}
                           className="w-full px-2 py-1.5 border rounded text-sm bg-white">
-                          <option value="SERVICO">Servico</option>
-                          <option value="PECA">Peca</option>
+                          <option value="SERVICO">Serviço</option>
+                          <option value="PECA">Peça</option>
                         </select>
                       </div>
                       <div className="col-span-2">
@@ -374,7 +374,7 @@ export default function KitsPage() {
         <div className="rounded-xl border bg-white p-12 text-center">
           <Layers className="h-12 w-12 text-gray-300 mx-auto mb-3" />
           <p className="text-gray-500 text-sm">Nenhum kit cadastrado</p>
-          <p className="text-gray-400 text-xs mt-1">Kits permitem adicionar varios itens + laudo padrao de uma vez na OS</p>
+          <p className="text-gray-400 text-xs mt-1">Kits permitem adicionar vários itens + laudo padrão de uma vez na OS</p>
           <button type="button" onClick={openNewKit}
             className="mt-4 inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-purple-700 transition-colors">
             <Plus className="h-4 w-4" /> Criar primeiro kit
