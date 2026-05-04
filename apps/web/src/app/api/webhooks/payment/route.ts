@@ -319,6 +319,51 @@ export async function POST(req: NextRequest) {
             },
           })
 
+          // Audit 14 BUG 3 fix: criar Transaction + atualizar saldo da conta
+          // bancária quando o webhook auto-baixa um pagamento. Antes:
+          // accountReceivable virava RECEBIDO mas conta Asaas mostrava R$ 0,00
+          // (extrato e fluxo-caixa não viam o crédito).
+          //
+          // Estratégia: usar receivable.account_id quando definido; senão
+          // resolver via convenção "Asaas/PIX/Boleto" buscando primeira
+          // Account ativa cujo bank_name match o billing_type.
+          const billingType = (fresh.billing_type || fresh.method || '').toUpperCase()
+          let creditAccountId: string | null = receivable.account_id || null
+          if (!creditAccountId) {
+            const inferred = await tx.account.findFirst({
+              where: {
+                company_id: fresh.company_id,
+                is_active: true,
+                OR: [
+                  { name: { contains: 'asaas', mode: 'insensitive' } },
+                  { bank_name: { contains: 'asaas', mode: 'insensitive' } },
+                ],
+              },
+              select: { id: true },
+            })
+            creditAccountId = inferred?.id ?? null
+          }
+          if (creditAccountId) {
+            await tx.transaction.create({
+              data: {
+                company_id: fresh.company_id,
+                account_id: creditAccountId,
+                transaction_type: 'CREDIT',
+                amount: fresh.amount,
+                description: `Recebimento Asaas (${billingType || 'PIX'}): ${receivable.description}`,
+                bank_ref: asaasPayment.id,
+                transaction_date: new Date(),
+              },
+            })
+            await tx.account.update({
+              where: { id: creditAccountId },
+              data: {
+                current_balance: { increment: fresh.amount },
+                updated_at: new Date(),
+              },
+            })
+          }
+
           // Append nas obs internas da OS — historico visivel pro atendente
           if (fresh.service_order_id) {
             const so = await tx.serviceOrder.findUnique({
