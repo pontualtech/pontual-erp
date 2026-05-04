@@ -476,7 +476,18 @@ export default function ContasPagarPage() {
       {/* Summary Cards */}
       {summary && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="rounded-lg border bg-white p-4 shadow-sm">
+          <button
+            type="button"
+            onClick={() => {
+              clearFilters()
+              setStatusFilter('PENDENTE')
+            }}
+            className={cn(
+              'rounded-lg border bg-white p-4 shadow-sm text-left transition-all hover:border-blue-300 hover:shadow-md',
+              statusFilter === 'PENDENTE' && !startDate && !endDate ? 'ring-2 ring-blue-400 border-blue-400' : ''
+            )}
+            title="Clique para filtrar contas em aberto"
+          >
             <div className="flex items-center gap-3">
               <div className="rounded-full bg-blue-50 p-2">
                 <DollarSign className="h-5 w-5 text-blue-600" />
@@ -487,8 +498,19 @@ export default function ContasPagarPage() {
                 <p className="text-xs text-gray-400">{summary.total_aberto_count} conta(s)</p>
               </div>
             </div>
-          </div>
-          <div className="rounded-lg border bg-white p-4 shadow-sm">
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              clearFilters()
+              setStatusFilter('VENCIDO')
+            }}
+            className={cn(
+              'rounded-lg border bg-white p-4 shadow-sm text-left transition-all hover:border-red-300 hover:shadow-md',
+              statusFilter === 'VENCIDO' ? 'ring-2 ring-red-400 border-red-400' : ''
+            )}
+            title="Clique para filtrar contas vencidas"
+          >
             <div className="flex items-center gap-3">
               <div className="rounded-full bg-red-50 p-2">
                 <AlertTriangle className="h-5 w-5 text-red-600" />
@@ -499,8 +521,22 @@ export default function ContasPagarPage() {
                 <p className="text-xs text-gray-400">{summary.total_vencidas_count} conta(s)</p>
               </div>
             </div>
-          </div>
-          <div className="rounded-lg border bg-white p-4 shadow-sm">
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              clearFilters()
+              setStatusFilter('PENDENTE')
+              const today = new Date().toISOString().slice(0, 10)
+              setStartDate(today)
+              setEndDate(today)
+            }}
+            className={cn(
+              'rounded-lg border bg-white p-4 shadow-sm text-left transition-all hover:border-amber-300 hover:shadow-md',
+              statusFilter === 'PENDENTE' && startDate && startDate === endDate ? 'ring-2 ring-amber-400 border-amber-400' : ''
+            )}
+            title="Clique para filtrar contas que vencem hoje"
+          >
             <div className="flex items-center gap-3">
               <div className="rounded-full bg-amber-50 p-2">
                 <CalendarClock className="h-5 w-5 text-amber-600" />
@@ -511,8 +547,24 @@ export default function ContasPagarPage() {
                 <p className="text-xs text-gray-400">{summary.vencendo_hoje_count} conta(s)</p>
               </div>
             </div>
-          </div>
-          <div className="rounded-lg border bg-white p-4 shadow-sm">
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              clearFilters()
+              setStatusFilter('PAGO')
+              const now = new Date()
+              const first = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10)
+              const last = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10)
+              setStartDate(first)
+              setEndDate(last)
+            }}
+            className={cn(
+              'rounded-lg border bg-white p-4 shadow-sm text-left transition-all hover:border-green-300 hover:shadow-md',
+              statusFilter === 'PAGO' && startDate && endDate && startDate !== endDate ? 'ring-2 ring-green-400 border-green-400' : ''
+            )}
+            title="Clique para filtrar pagas no mês atual"
+          >
             <div className="flex items-center gap-3">
               <div className="rounded-full bg-green-50 p-2">
                 <CheckCircle2 className="h-5 w-5 text-green-600" />
@@ -523,7 +575,7 @@ export default function ContasPagarPage() {
                 <p className="text-xs text-gray-400">{summary.pagas_mes_count} conta(s)</p>
               </div>
             </div>
-          </div>
+          </button>
         </div>
       )}
 
