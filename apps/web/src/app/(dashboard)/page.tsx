@@ -163,12 +163,12 @@ export default function DashboardPage() {
   const WIDGET_LABELS: Record<string, string> = {
     avisos: 'Avisos',
     summary_cards: 'Cards de Resumo',
-    chart_os_week: 'Grafico OS por Semana',
+    chart_os_week: 'Gráfico OS por Semana',
     chart_pipeline: 'Pipeline de OS',
-    metrics: 'Metricas (Tempo Reparo, Aprovacao, Ticket)',
-    recent_os: 'Ultimas OS',
+    metrics: 'Métricas (Tempo Reparo, Aprovação, Ticket)',
+    recent_os: 'Últimas OS',
     receivables: 'Contas a Receber',
-    tech_workload: 'Carga por Tecnico',
+    tech_workload: 'Carga por Técnico',
   }
 
   const isWidgetVisible = (id: string) => widgetPrefs.find(w => w.id === id)?.visible ?? true
@@ -776,10 +776,10 @@ export default function DashboardPage() {
 
       {/* ===== Recent Activity ===== */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {/* Ultimas OS */}
+        {/* Últimas OS */}
         {isWidgetVisible('recent_os') && <div className="rounded-xl border bg-white shadow-sm">
           <div className="flex items-center justify-between border-b px-5 py-3">
-            <h2 className="font-semibold text-gray-900">Ultimas OS</h2>
+            <h2 className="font-semibold text-gray-900">Últimas OS</h2>
             <Link href="/os" className="flex items-center gap-1 text-sm text-blue-600 hover:underline">
               Ver todas <ArrowRight className="h-3.5 w-3.5" />
             </Link>
@@ -856,14 +856,14 @@ export default function DashboardPage() {
         <div className="rounded-xl border bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold text-gray-900 flex items-center gap-2">
-              <Wrench className="h-4 w-4 text-blue-600" /> Carga de Trabalho — Tecnicos
+              <Wrench className="h-4 w-4 text-blue-600" /> Carga de Trabalho — Técnicos
             </h2>
             <div className="flex gap-3 text-xs">
               {(stats.osAtrasadas ?? 0) > 0 && (
                 <span className="px-2 py-1 rounded-full bg-red-100 text-red-700 font-semibold">{stats.osAtrasadas} atrasada{stats.osAtrasadas > 1 ? 's' : ''}</span>
               )}
               {(stats.semTecnico ?? 0) > 0 && (
-                <span className="px-2 py-1 rounded-full bg-amber-100 text-amber-700 font-semibold">{stats.semTecnico} sem tecnico</span>
+                <span className="px-2 py-1 rounded-full bg-amber-100 text-amber-700 font-semibold">{stats.semTecnico} sem técnico</span>
               )}
             </div>
           </div>
@@ -871,9 +871,9 @@ export default function DashboardPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-gray-50 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-                  <th className="px-4 py-2.5">Tecnico</th>
+                  <th className="px-4 py-2.5">Técnico</th>
                   <th className="px-4 py-2.5 text-center">OS Pendentes</th>
-                  <th className="px-4 py-2.5 text-center">Em Execucao</th>
+                  <th className="px-4 py-2.5 text-center">Em Execução</th>
                   <th className="px-4 py-2.5 text-center">Atrasadas</th>
                   <th className="px-4 py-2.5">Carga</th>
                 </tr>

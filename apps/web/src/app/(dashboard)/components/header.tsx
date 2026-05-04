@@ -11,15 +11,69 @@ import { MissedCallsBell } from '@/components/voip/MissedCallsBell'
 import { CommandPalette } from './command-palette'
 import { CompanySwitcher } from './company-switcher'
 
+// Audit 16: mapa de exibicao de breadcrumb. Sem entrada, breadcrumb mostra
+// o slug da rota em lowercase ("tickets", "contratos", etc) — ruim de UX.
+// Adicionados: tickets/contratos/tecnico/logistica/voip/chat/whatsapp + sub-rotas
+// financeiro/fiscal. Acentos corrigidos em "Ordens de Serviço" e "Configurações".
 const breadcrumbMap: Record<string, string> = {
-  os: 'Ordens de Servico',
+  // Operacional
+  os: 'Ordens de Serviço',
   clientes: 'Clientes',
   produtos: 'Produtos',
+  tickets: 'Tickets',
+  chat: 'Chat',
+  whatsapp: 'WhatsApp',
+  contratos: 'Contratos',
+  logistica: 'Logística',
+  tecnico: 'Meu Painel',
+  // Financeiro / Fiscal
   financeiro: 'Financeiro',
   fiscal: 'Fiscal',
-  config: 'Configuracoes',
+  'contas-receber': 'Contas a Receber',
+  'contas-pagar': 'Contas a Pagar',
+  'fluxo-caixa': 'Fluxo de Caixa',
+  dre: 'DRE',
+  transferencia: 'Transferência',
+  boletos: 'Boletos',
+  cnab: 'CNAB',
+  extrato: 'Extrato',
+  relatorios: 'Relatórios',
+  'relatorios-bi': 'BI / Relatórios',
+  categorias: 'Categorias',
+  'centros-custo': 'Centros de Custo',
+  'contas-bancarias': 'Contas Bancárias',
+  'condicoes-pagamento': 'Condições de Pagamento',
+  'formas-pagamento': 'Formas de Pagamento',
+  conciliacao: 'Conciliação',
+  maquininha: 'Maquininha',
+  nfe: 'NF-e',
+  nfse: 'NFS-e',
+  recebidas: 'Recebidas',
+  emitir: 'Emitir',
+  // VoIP
+  voip: 'Telefonia',
+  calls: 'Chamadas',
+  ramais: 'Ramais',
+  admin: 'Admin',
+  // Sistema
+  config: 'Configurações',
   perfil: 'Perfil',
-  novo: 'Nova',
+  usuarios: 'Usuários',
+  permissoes: 'Permissões',
+  notificacoes: 'Notificações',
+  cadastros: 'Cadastros',
+  'tabela-precos': 'Tabela de Preços',
+  kits: 'Kits',
+  'tipos-os': 'Tipos de OS',
+  integracoes: 'Integrações',
+  chatwoot: 'Chatwoot',
+  // Logs
+  logs: 'Logs',
+  'portal-log': 'Log Portal',
+  // Comum
+  novo: 'Novo',
+  nova: 'Nova',
+  editar: 'Editar',
 }
 
 function Breadcrumb() {

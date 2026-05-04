@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Plus, Search, Pencil, Trash2, Eye, Loader2, MessageCircle, Download, Upload, FileSpreadsheet, FileText, FileDown, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/lib/use-auth'
@@ -21,13 +21,15 @@ const personTypeLabel: Record<string, string> = { FISICA: 'PF', JURIDICA: 'PJ' }
 
 export default function ClientesPage() {
   const router = useRouter()
+  const urlParams = useSearchParams()
   const { isAdmin } = useAuth()
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
-  const [personType, setPersonType] = useState('')
-  const [cityFilter, setCityFilter] = useState('')
-  const [recurrenceFilter, setRecurrenceFilter] = useState('')
+  // Audit 16: aceita ?search=, ?personType=, ?city=, ?isRecurrent= via URL pra deep-link
+  const [search, setSearch] = useState(urlParams.get('search') || '')
+  const [personType, setPersonType] = useState(urlParams.get('personType') || '')
+  const [cityFilter, setCityFilter] = useState(urlParams.get('city') || '')
+  const [recurrenceFilter, setRecurrenceFilter] = useState(urlParams.get('isRecurrent') || '')
   const [cities, setCities] = useState<string[]>([])
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
@@ -386,7 +388,10 @@ export default function ClientesPage() {
                     )}
                   </td>
                   <td className="px-4 py-3 text-gray-500 text-xs">
-                    {c.last_os_at ? new Date(c.last_os_at).toLocaleDateString('pt-BR') : '—'}
+                    {/* Audit 16: campo last_os_at e total_os sao cached e podem ficar stale
+                        quando OS e deletada/movida. So mostra a data se ainda houver OS reais
+                        (os_count > 0). Evita inconsistencia "0 OS mas ultima OS em 02/02". */}
+                    {c.os_count > 0 && c.last_os_at ? new Date(c.last_os_at).toLocaleDateString('pt-BR') : '—'}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
