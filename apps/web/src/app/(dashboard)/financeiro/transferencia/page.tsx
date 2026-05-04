@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, ArrowRightLeft, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { MoneyInput } from '@/components/ui/money-input'
+import { MoneyInput } from '@/app/(dashboard)/components/money-input'
 
 interface BankAccount {
   id: string
