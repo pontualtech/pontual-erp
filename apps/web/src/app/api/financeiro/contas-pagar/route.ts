@@ -7,12 +7,13 @@ import { z } from 'zod'
 
 const createPayableSchema = z.object({
   supplier_id: z.string().optional(),
-  description: z.string().min(1, 'Descricao e obrigatoria'),
+  description: z.string().min(1, 'Descrição é obrigatória'),
   notes: z.string().optional(),
   total_amount: z.number().int().positive('Valor deve ser positivo'),
   due_date: z.string(),
   category_id: z.string().optional(),
   cost_center_id: z.string().optional(),
+  // account_id: defer Sprint UX-24 (schema AccountPayable não tem coluna account_id)
   payment_method: z.string().optional(),
   installment_count: z.number().int().min(1).max(120).optional(),
 })

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import Link from 'next/link'
-import { TrendingUp, TrendingDown, DollarSign, AlertTriangle, Landmark, FolderTree, Target, CreditCard, BarChart3, FileSpreadsheet, Receipt } from 'lucide-react'
+import { TrendingUp, TrendingDown, DollarSign, AlertTriangle, Landmark, FolderTree, Target, CreditCard, BarChart3, FileSpreadsheet, Receipt, ArrowRightLeft } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface FinanceiroDashboard {
@@ -132,6 +132,7 @@ export default function FinanceiroPage() {
             { label: 'Boletos', href: '/financeiro/boletos', icon: Receipt, desc: 'Emitir e gerenciar', color: 'text-orange-600 bg-orange-50' },
             { label: 'CNAB Inter', href: '/financeiro/cnab', icon: FileSpreadsheet, desc: 'Remessa e retorno CNAB 400', color: 'text-amber-600 bg-amber-50' },
             { label: 'Maquininha', href: '/financeiro/maquininha', icon: CreditCard, desc: 'Conciliação cartão Rede', color: 'text-rose-600 bg-rose-50' },
+            { label: 'Transferência', href: '/financeiro/transferencia', icon: ArrowRightLeft, desc: 'Mover saldo entre bancos', color: 'text-sky-600 bg-sky-50' },
           ].map(item => {
             const Icon = item.icon
             return (

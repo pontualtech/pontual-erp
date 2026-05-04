@@ -16,6 +16,12 @@ interface Category {
   name: string
 }
 
+interface BankAccount {
+  id: string
+  name: string
+  bank_name?: string | null
+}
+
 export default function NovaContaReceberPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
@@ -28,6 +34,7 @@ export default function NovaContaReceberPage() {
   // Selects data
   const [categories, setCategories] = useState<Category[]>([])
   const [cardFees, setCardFees] = useState<any[]>([])
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
 
   const [form, setForm] = useState({
     customer_id: '',
@@ -38,13 +45,14 @@ export default function NovaContaReceberPage() {
     payment_method: '',
     category_id: '',
     installment_count: '1',
+    account_id: '', // Sprint UX-23: pré-vincular banco que receberá
   })
 
   function updateForm(field: string, value: string) {
     setForm(prev => ({ ...prev, [field]: value }))
   }
 
-  // Load categories and cost centers
+  // Load categories, card fees and bank accounts
   useEffect(() => {
     fetch('/api/financeiro/categorias?limit=100')
       .then(r => r.json())
@@ -53,6 +61,10 @@ export default function NovaContaReceberPage() {
     fetch('/api/financeiro/card-fees')
       .then(r => r.json())
       .then(d => setCardFees(d.data ?? []))
+      .catch(() => {})
+    fetch('/api/financeiro/contas-bancarias')
+      .then(r => r.json())
+      .then(d => setBankAccounts(d.data ?? []))
       .catch(() => {})
   }, [])
 
@@ -99,6 +111,7 @@ export default function NovaContaReceberPage() {
           due_date: form.due_date,
           customer_id: form.customer_id || undefined,
           category_id: form.category_id || undefined,
+          account_id: form.account_id || undefined,
           payment_method: form.payment_method || undefined,
           notes: form.notes || undefined,
           installment_count: installmentCount > 1 ? installmentCount : undefined,
@@ -285,22 +298,44 @@ export default function NovaContaReceberPage() {
           })()}
         </div>
 
-        {/* Classificacao */}
+        {/* Classificação */}
         <div className="rounded-lg border bg-white p-5 space-y-3">
-          <h2 className="font-semibold text-gray-900">Classificacao</h2>
-          <div>
-            <label htmlFor="category_id" className="block text-sm text-gray-600 mb-1">Categoria</label>
-            <select
-              id="category_id"
-              value={form.category_id}
-              onChange={e => updateForm('category_id', e.target.value)}
-              className="w-full px-3 py-2 border rounded-md text-sm"
-            >
-              <option value="">Selecione...</option>
-              {categories.map(cat => (
-                <option key={cat.id} value={cat.id}>{cat.name}</option>
-              ))}
-            </select>
+          <h2 className="font-semibold text-gray-900">Classificação</h2>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="category_id" className="block text-sm text-gray-600 mb-1">Categoria</label>
+              <select
+                id="category_id"
+                value={form.category_id}
+                onChange={e => updateForm('category_id', e.target.value)}
+                className="w-full px-3 py-2 border rounded-md text-sm"
+              >
+                <option value="">Selecione...</option>
+                {categories.map(cat => (
+                  <option key={cat.id} value={cat.id}>{cat.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="account_id" className="block text-sm text-gray-600 mb-1">Conta bancária (destino)</label>
+              <select
+                id="account_id"
+                value={form.account_id}
+                onChange={e => updateForm('account_id', e.target.value)}
+                className="w-full px-3 py-2 border rounded-md text-sm"
+              >
+                <option value="">Nenhuma (definir na baixa)</option>
+                {bankAccounts.map(acc => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.name}{acc.bank_name ? ` — ${acc.bank_name}` : ''}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-400 mt-1">
+                Pré-vincula o banco que receberá. Webhook Asaas usa esse campo pra
+                creditar saldo automaticamente.
+              </p>
+            </div>
           </div>
         </div>
 

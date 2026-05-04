@@ -21,6 +21,12 @@ interface CostCenter {
   name: string
 }
 
+interface BankAccount {
+  id: string
+  name: string
+  bank_name?: string | null
+}
+
 export default function NovaContaPagarPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
@@ -33,6 +39,7 @@ export default function NovaContaPagarPage() {
   // Selects data
   const [categories, setCategories] = useState<Category[]>([])
   const [costCenters, setCostCenters] = useState<CostCenter[]>([])
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
 
   const [form, setForm] = useState({
     supplier_id: '',
@@ -43,6 +50,7 @@ export default function NovaContaPagarPage() {
     payment_method: '',
     category_id: '',
     cost_center_id: '',
+    account_id: '', // Sprint UX-23: pré-vincular banco que pagará
     installment_count: '1',
   })
 
@@ -50,7 +58,7 @@ export default function NovaContaPagarPage() {
     setForm(prev => ({ ...prev, [field]: value }))
   }
 
-  // Load categories and cost centers
+  // Load categories, cost centers, bank accounts
   useEffect(() => {
     fetch('/api/financeiro/categorias?limit=100')
       .then(r => r.json())
@@ -60,6 +68,11 @@ export default function NovaContaPagarPage() {
     fetch('/api/financeiro/centros-custo?limit=100')
       .then(r => r.json())
       .then(d => setCostCenters(d.data ?? []))
+      .catch(() => {})
+
+    fetch('/api/financeiro/contas-bancarias')
+      .then(r => r.json())
+      .then(d => setBankAccounts(d.data ?? []))
       .catch(() => {})
   }, [])
 
@@ -107,6 +120,7 @@ export default function NovaContaPagarPage() {
           supplier_id: form.supplier_id || undefined,
           category_id: form.category_id || undefined,
           cost_center_id: form.cost_center_id || undefined,
+          // account_id: defer Sprint UX-24 (precisa migration AccountPayable)
           payment_method: form.payment_method || undefined,
           notes: form.notes || undefined,
           installment_count: installmentCount > 1 ? installmentCount : undefined,
@@ -291,6 +305,11 @@ export default function NovaContaPagarPage() {
               </select>
             </div>
           </div>
+          {/* TODO Sprint UX-24: AccountPayable NÃO tem campo account_id no
+              schema. Migration necessária:
+              ALTER TABLE accounts_payable ADD COLUMN account_id TEXT NULL
+              REFERENCES accounts(id);
+              Após migration: descomentar dropdown e API. */}
         </div>
 
         {/* Observacoes */}

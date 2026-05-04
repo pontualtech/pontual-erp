@@ -8,11 +8,12 @@ import { z } from 'zod'
 const createReceivableSchema = z.object({
   customer_id: z.string().optional(),
   service_order_id: z.string().optional(),
-  description: z.string().min(1, 'Descricao e obrigatoria'),
+  description: z.string().min(1, 'Descrição é obrigatória'),
   notes: z.string().optional(),
   total_amount: z.number().int().positive('Valor deve ser positivo'),
   due_date: z.string(),
   category_id: z.string().optional(),
+  account_id: z.string().optional(), // Sprint UX-23: pré-vincular conta bancária destino
   payment_method: z.string().optional(),
   installment_count: z.number().int().min(1).max(120).optional(),
 })
@@ -223,6 +224,7 @@ export async function POST(request: NextRequest) {
         total_amount: data.total_amount,
         due_date: new Date(data.due_date),
         category_id: data.category_id || null,
+        account_id: data.account_id || null, // Sprint UX-23: banco que receberá
         payment_method: data.payment_method,
         installment_count: installmentCount,
         card_fee_total: cardFeeTotal,
