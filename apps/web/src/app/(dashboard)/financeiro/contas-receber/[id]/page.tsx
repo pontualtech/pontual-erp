@@ -25,6 +25,7 @@ interface ContaReceber {
   group_id: string | null; grouped_into_id: string | null
   charge_id: string | null; charge_status: string | null; charge_url: string | null
   category_id: string | null
+  account_id: string | null
   created_at: string; categories: { id: string; name: string } | null
   customers: { id: string; legal_name: string; document_number?: string } | null
   service_orders: { id: string; os_number: number } | null
@@ -97,7 +98,7 @@ export default function ContaReceberDetalhePage() {
 
   // Edit mode
   const [editing, setEditing] = useState(false)
-  const [editForm, setEditForm] = useState({ description: '', total_amount: '', due_date: '', payment_method: '', category_id: '', notes: '' })
+  const [editForm, setEditForm] = useState({ description: '', total_amount: '', due_date: '', payment_method: '', category_id: '', account_id: '', notes: '' })
   const [saving, setSaving] = useState(false)
 
   // Modals
@@ -159,13 +160,14 @@ export default function ContaReceberDetalhePage() {
       due_date: conta.due_date ? new Date(conta.due_date).toISOString().split('T')[0] : '',
       payment_method: conta.payment_method || '',
       category_id: conta.category_id || '',
+      account_id: conta.account_id || '',
       notes: conta.notes || '',
     })
     setEditing(true)
   }
 
   async function saveEdit() {
-    if (!editForm.description.trim()) { toast.error('Descricao e obrigatoria'); return }
+    if (!editForm.description.trim()) { toast.error('Descrição é obrigatória'); return }
     setSaving(true)
     try {
       const payload: any = {
@@ -173,6 +175,7 @@ export default function ContaReceberDetalhePage() {
         notes: editForm.notes.trim() || null,
         payment_method: editForm.payment_method || null,
         category_id: editForm.category_id || null,
+        account_id: editForm.account_id || null,
       }
       const amt = Math.round(parseFloat(editForm.total_amount) * 100)
       if (isNaN(amt) || amt <= 0) { toast.error('Valor deve ser maior que zero'); setSaving(false); return }
@@ -442,36 +445,63 @@ export default function ContaReceberDetalhePage() {
           )}
         </div>
 
-        {/* Banco */}
+        {/* Banco vinculado (Sprint UX-23 wave 2) — antes mostrava TODAS as
+            contas, agora mostra apenas a conta vinculada (conta.account_id)
+            ou permite editar via dropdown */}
         <div className="p-5">
           <h3 className="flex items-center gap-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
-            <Building2 className="h-3.5 w-3.5" /> Contas Bancarias
+            <Building2 className="h-3.5 w-3.5" /> Conta Bancária Vinculada
           </h3>
-          {accounts.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
+          {editing ? (
+            <select
+              title="Conta bancária vinculada"
+              value={editForm.account_id}
+              onChange={e => setEditForm(f => ({ ...f, account_id: e.target.value }))}
+              className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white"
+            >
+              <option value="">Nenhuma (definir na baixa)</option>
               {accounts.map(acc => (
-                <div key={acc.id} className="flex items-center gap-2 rounded-lg bg-gray-50 dark:bg-gray-800 px-3 py-2">
-                  <div className="h-7 w-7 rounded-full bg-blue-600 flex items-center justify-center text-[10px] font-bold text-white">
-                    {(acc.bank_name || acc.name).substring(0, 2).toUpperCase()}
-                  </div>
-                  <span className="text-sm font-medium text-gray-900 dark:text-white">{acc.bank_name || acc.name}</span>
-                </div>
+                <option key={acc.id} value={acc.id}>
+                  {acc.name}{acc.bank_name ? ` — ${acc.bank_name}` : ''}
+                </option>
               ))}
-            </div>
-          ) : <p className="text-sm text-gray-400">Nenhuma conta</p>}
+            </select>
+          ) : (() => {
+            const linkedAccount = accounts.find(a => a.id === conta.account_id)
+            if (!linkedAccount) {
+              return (
+                <p className="text-sm text-gray-400">
+                  Nenhum banco vinculado <span className="text-xs">(será definido na baixa)</span>
+                </p>
+              )
+            }
+            return (
+              <div className="inline-flex items-center gap-2 rounded-lg bg-gray-50 dark:bg-gray-800 px-3 py-2">
+                <div className="h-7 w-7 rounded-full bg-blue-600 flex items-center justify-center text-[10px] font-bold text-white">
+                  {(linkedAccount.bank_name || linkedAccount.name).substring(0, 2).toUpperCase()}
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">{linkedAccount.name}</p>
+                  {linkedAccount.bank_name && (
+                    <p className="text-xs text-gray-500">{linkedAccount.bank_name}</p>
+                  )}
+                </div>
+              </div>
+            )
+          })()}
         </div>
 
-        {/* Observacoes */}
+        {/* Observações */}
         <div className="p-5">
           <h3 className="flex items-center gap-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
-            <ClipboardList className="h-3.5 w-3.5" /> Observacoes
+            <ClipboardList className="h-3.5 w-3.5" /> Observações
           </h3>
           {editing ? (
             <textarea rows={3} value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
-              placeholder="Observacoes internas..."
+              placeholder="Observações internas..."
               className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 resize-none" />
           ) : (
-            <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{conta.notes || <span className="text-gray-400">Nenhuma observacao</span>}</p>
+            <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{conta.notes || <span className="text-gray-400">Nenhuma observação</span>}</p>
           )}
         </div>
 

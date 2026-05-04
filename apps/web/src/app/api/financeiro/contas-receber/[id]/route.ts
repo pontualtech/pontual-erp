@@ -15,6 +15,7 @@ const updateReceivableSchema = z.object({
   total_amount: z.number().int().positive().optional(),
   due_date: z.string().optional(),
   category_id: z.string().nullable().optional(),
+  account_id: z.string().nullable().optional(), // Sprint UX-23: editar banco vinculado
   payment_method: z.string().nullable().optional(),
   status: z.enum(['PENDENTE', 'RECEBIDO', 'CANCELADO']).optional(),
 })
