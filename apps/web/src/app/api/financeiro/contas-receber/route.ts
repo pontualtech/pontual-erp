@@ -57,7 +57,9 @@ export async function GET(request: NextRequest) {
     if (customerId) where.customer_id = customerId
     if (categoryId) where.category_id = categoryId
     if (paymentMethod) where.payment_method = paymentMethod
-    if (bankAccountId) where.bank_account_id = bankAccountId
+    // Sprint UX-23: schema usa `account_id` (banco que recebera/recebeu),
+    // NAO `bank_account_id` (coluna inexistente — Prisma rejeita).
+    if (bankAccountId) where.account_id = bankAccountId
 
     if (valueMin || valueMax) {
       where.total_amount = {}
