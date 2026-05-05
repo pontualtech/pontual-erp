@@ -1631,6 +1631,17 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
         .replace(/\[([^\]]+)\]\(\s*\)/g, '')                    // link vazio remove
         .replace(/\n{3,}/g, '\n\n')                             // limpa quebras excessivas
 
+      // Encurta URLs do portal pra UX melhor no chat — magic-links de 350+
+      // chars (com JWT) ficam visualmente feios e parecem string aleatoria.
+      // Decisao Karlao 2026-05-05. Curto vai pra `portal.pontualtech.com.br/s/aBc123`.
+      try {
+        const { shortenAllPortalUrls } = await import('@/lib/short-link')
+        const customerIdForLink = identifiedCustomerId || undefined
+        responseText = await shortenAllPortalUrls(responseText, cfg.companyId, customerIdForLink)
+      } catch (err) {
+        console.warn('[Bot] shortenAllPortalUrls failed, sending with original URLs:', err instanceof Error ? err.message : err)
+      }
+
       // Decisao Karlao 2026-05-05 final: Marta volta pro comportamento
       // original (texto + URL inline via Chatwoot, sem card destacado).
       // Card+botao destacado fica APENAS no cron de reviews (cron/google-
