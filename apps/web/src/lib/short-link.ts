@@ -106,9 +106,16 @@ export async function shortenAllPortalUrls(
 
   let result = text
   for (const url of urls) {
+    // Strip trailing punctuation que pode ter colado quando URL e final
+    // de frase (ex: "Portal: https://....fa96." -> URL real sem ponto).
+    // Pontos finais (.,;:!?) raramente fazem parte de URL valida.
+    const cleanUrl = url.replace(/[.,;:!?]+$/, '')
     try {
-      const short = await shortenUrl(url, companyId, customerId)
-      result = result.replace(url, short)
+      const short = await shortenUrl(cleanUrl, companyId, customerId)
+      // Replace usa URL original (com pontuacao) — preserva pontuacao
+      // depois do short link na frase final.
+      const trailing = url.slice(cleanUrl.length)
+      result = result.replace(url, short + trailing)
     } catch (err) {
       console.warn('[shortenAllPortalUrls] failed for url, keeping original:', err instanceof Error ? err.message : err)
     }
