@@ -35,24 +35,30 @@ export default function PortalPagamentoPage() {
   const [copied, setCopied] = useState(false)
   const [timeLeft, setTimeLeft] = useState(0)
 
+  // Sprint UX-32: estado pra distinguir "precisa login" de "outros erros"
+  const [needsLogin, setNeedsLogin] = useState(false)
+
   // Create or fetch PIX charge
   const createCharge = useCallback(async () => {
     setLoading(true)
     setError('')
+    setNeedsLogin(false)
     try {
       const res = await fetch('/api/portal/payments/pix', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ service_order_id: osId }),
       })
-      // Sprint UX-32: endpoint pode nao existir (404 retorna HTML, nao JSON).
-      // Detectar status nao-OK antes de tentar parsear JSON pra evitar
-      // SyntaxError silencioso e mostrar mensagem amigavel pro cliente.
+      // Sprint UX-32: tratamento granular de status. 401 = precisa login (mostra
+      // CTA pra login); 404 = endpoint indisponivel (mensagem manutenção);
+      // demais = erro generico com retry.
       if (!res.ok) {
-        if (res.status === 404) {
+        if (res.status === 401) {
+          setNeedsLogin(true)
+          setError('Você precisa estar logado para visualizar este pagamento.')
+        } else if (res.status === 404) {
           setError('Pagamento online em manutenção. Entre em contato pelo WhatsApp para outras formas de pagamento.')
         } else {
-          // Tenta extrair erro JSON; se falhar, usa fallback generico
           try {
             const data = await res.json()
             setError(data.error || 'Não foi possível gerar o pagamento. Tente novamente em alguns minutos.')
@@ -153,9 +159,19 @@ export default function PortalPagamentoPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
             </svg>
             <p className="text-red-700 dark:text-red-400 font-medium">{error}</p>
-            <button type="button" onClick={createCharge} className="mt-3 text-sm text-blue-600 dark:text-blue-400 font-medium hover:underline">
-              Tentar novamente
-            </button>
+            {/* Sprint UX-32: CTA contextual — login se 401, retry caso contrário */}
+            {needsLogin ? (
+              <Link
+                href={`/portal/${slug}/login?redirect=${encodeURIComponent(`/portal/${slug}/pagamento/${osId}`)}`}
+                className="inline-block mt-3 bg-blue-600 hover:bg-blue-700 text-white font-medium px-5 py-2 rounded-lg text-sm"
+              >
+                Fazer login
+              </Link>
+            ) : (
+              <button type="button" onClick={createCharge} className="mt-3 text-sm text-blue-600 dark:text-blue-400 font-medium hover:underline">
+                Tentar novamente
+              </button>
+            )}
           </div>
         )}
 

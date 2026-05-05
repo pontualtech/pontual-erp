@@ -58,7 +58,7 @@ export default function PortalRootLayout({
           gtag('config', 'G-Z2TDQ081F5', { send_page_view: true });
         `}} />
       </head>
-      <body className={`${inter.className} bg-gray-50 dark:bg-zinc-950 min-h-screen antialiased flex flex-col transition-colors`}>
+      <body className={`${inter.className} bg-gray-50 dark:bg-zinc-950 min-h-screen antialiased flex flex-col transition-colors`} suppressHydrationWarning>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <div className="flex-1">
             {children}
