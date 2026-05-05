@@ -126,24 +126,62 @@ export default function TicketsPage() {
         </Link>
       </div>
 
-      {/* Summary Cards */}
+      {/* Summary Cards (Sprint UX-25: clicaveis, pre-aplicam filtro status) */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded-lg border bg-white dark:bg-gray-800 dark:border-gray-700 p-4">
+        <button
+          type="button"
+          onClick={() => { setStatusFilter('ABERTO'); setPage(1) }}
+          className={cn(
+            'rounded-lg border bg-white dark:bg-gray-800 dark:border-gray-700 p-4 text-left transition-all hover:border-blue-300 hover:shadow-md',
+            statusFilter === 'ABERTO' ? 'ring-2 ring-blue-400 border-blue-400' : ''
+          )}
+          title="Clique para filtrar tickets abertos"
+        >
           <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Abertos</p>
           <p className="text-2xl font-bold text-blue-600">{summary.abertos}</p>
-        </div>
-        <div className="rounded-lg border bg-white dark:bg-gray-800 dark:border-gray-700 p-4">
+        </button>
+        <button
+          type="button"
+          onClick={() => { setStatusFilter('EM_ANDAMENTO'); setPage(1) }}
+          className={cn(
+            'rounded-lg border bg-white dark:bg-gray-800 dark:border-gray-700 p-4 text-left transition-all hover:border-amber-300 hover:shadow-md',
+            statusFilter === 'EM_ANDAMENTO' ? 'ring-2 ring-amber-400 border-amber-400' : ''
+          )}
+          title="Clique para filtrar tickets em andamento"
+        >
           <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Em Andamento</p>
           <p className="text-2xl font-bold text-amber-600">{summary.emAndamento}</p>
-        </div>
-        <div className="rounded-lg border bg-white dark:bg-gray-800 dark:border-gray-700 p-4">
+        </button>
+        <button
+          type="button"
+          onClick={() => { setStatusFilter('RESOLVIDO'); setPage(1) }}
+          className={cn(
+            'rounded-lg border bg-white dark:bg-gray-800 dark:border-gray-700 p-4 text-left transition-all hover:border-green-300 hover:shadow-md',
+            statusFilter === 'RESOLVIDO' ? 'ring-2 ring-green-400 border-green-400' : ''
+          )}
+          title="Clique para filtrar tickets resolvidos"
+        >
           <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Resolvidos</p>
           <p className="text-2xl font-bold text-green-600">{summary.resolvidosHoje}</p>
-        </div>
-        <div className="rounded-lg border bg-white dark:bg-gray-800 dark:border-gray-700 p-4">
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setSearch('')
+            setStatusFilter('')
+            setPriorityFilter('')
+            setSourceFilter('')
+            setPage(1)
+          }}
+          className={cn(
+            'rounded-lg border bg-white dark:bg-gray-800 dark:border-gray-700 p-4 text-left transition-all hover:border-gray-300 hover:shadow-md',
+            !statusFilter && !priorityFilter && !sourceFilter && !search ? 'ring-2 ring-gray-400 border-gray-400' : ''
+          )}
+          title="Clique para limpar todos os filtros"
+        >
           <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Total</p>
           <p className="text-2xl font-bold text-gray-700 dark:text-gray-300">{summary.total}</p>
-        </div>
+        </button>
       </div>
 
       {/* Filters */}

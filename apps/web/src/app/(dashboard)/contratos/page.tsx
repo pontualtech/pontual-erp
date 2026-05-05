@@ -111,9 +111,20 @@ export default function ContratosPage() {
         </Link>
       </div>
 
-      {/* Summary Cards */}
+      {/* Summary Cards (Sprint UX-25: Ativos+Vencendo clicaveis. Valor mensal e
+          agregado, nao filtra. NOTA: contagens limitadas a pagina atual — 20
+          itens. Se 100+ contratos, valor estara subestimado. Deferred backend
+          summary endpoint pra futuro.) */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className="rounded-lg border bg-white dark:bg-gray-800 dark:border-gray-700 p-4">
+        <button
+          type="button"
+          onClick={() => { setStatusFilter('ACTIVE'); setPage(1) }}
+          className={cn(
+            'rounded-lg border bg-white dark:bg-gray-800 dark:border-gray-700 p-4 text-left transition-all hover:border-green-300 hover:shadow-md',
+            statusFilter === 'ACTIVE' ? 'ring-2 ring-green-400 border-green-400' : ''
+          )}
+          title="Clique para filtrar contratos ativos"
+        >
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-100 dark:bg-green-900/30">
               <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
@@ -123,9 +134,17 @@ export default function ContratosPage() {
               <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{active.length}</p>
             </div>
           </div>
-        </div>
+        </button>
 
-        <div className="rounded-lg border bg-white dark:bg-gray-800 dark:border-gray-700 p-4">
+        <button
+          type="button"
+          onClick={() => { setStatusFilter('ACTIVE'); setPage(1) }}
+          className={cn(
+            'rounded-lg border bg-white dark:bg-gray-800 dark:border-gray-700 p-4 text-left transition-all hover:border-amber-300 hover:shadow-md',
+            statusFilter === 'ACTIVE' ? 'ring-2 ring-amber-400 border-amber-400' : ''
+          )}
+          title="Clique para ver contratos ativos (vencimento mais proximo no topo)"
+        >
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100 dark:bg-amber-900/30">
               <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
@@ -135,9 +154,12 @@ export default function ContratosPage() {
               <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{expiringSoon.length}</p>
             </div>
           </div>
-        </div>
+        </button>
 
-        <div className="rounded-lg border bg-white dark:bg-gray-800 dark:border-gray-700 p-4">
+        <div
+          className="rounded-lg border bg-white dark:bg-gray-800 dark:border-gray-700 p-4"
+          title="Soma do valor mensal dos contratos ativos visiveis"
+        >
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-900/30">
               <DollarSign className="h-5 w-5 text-blue-600 dark:text-blue-400" />
