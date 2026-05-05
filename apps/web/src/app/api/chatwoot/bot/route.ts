@@ -213,6 +213,53 @@ async function cwSendMessage(cfg: BotCompanyConfig, conversationId: number, cont
   }
 }
 
+/**
+ * Envia mensagem interactive (card + botao URL) via Chatwoot v4 inbox
+ * WhatsApp Cloud. content_type 'input_select' + items array vira card
+ * com botao no celular do cliente, e msg normal no historico Chatwoot.
+ *
+ * Uma unica chamada faz:
+ *  - Cliente recebe card+botao clicavel via WhatsApp
+ *  - Atendente ve mensagem normal no historico Chatwoot
+ *  - Sem Cloud API direto, sem duplicacao
+ *
+ * Validado em 2026-05-05 com Chatwoot v4.10.1.
+ */
+async function cwSendInteractiveCard(
+  cfg: BotCompanyConfig,
+  conversationId: number,
+  content: string,
+  buttonText: string,
+  url: string,
+): Promise<boolean> {
+  try {
+    const res = await fetch(`${cwBase(cfg)}/conversations/${conversationId}/messages`, {
+      method: 'POST',
+      headers: cwHeaders(cfg),
+      body: JSON.stringify({
+        content,
+        message_type: 'outgoing',
+        private: false,
+        content_type: 'input_select',
+        content_attributes: {
+          items: [{ title: buttonText.slice(0, 24), value: url }],
+          bot_sent: true,
+        },
+      }),
+      signal: AbortSignal.timeout(10000),
+    })
+    if (!res.ok) {
+      const body = await res.text()
+      console.error(`[Bot] Chatwoot interactive failed ${res.status}: ${body}`)
+      return false
+    }
+    return true
+  } catch (err) {
+    console.error(`[Bot] Chatwoot interactive error:`, err instanceof Error ? err.message : err)
+    return false
+  }
+}
+
 async function cwSetLabels(cfg: BotCompanyConfig, conversationId: number, labels: string[]) {
   const convRes = await fetch(`${cwBase(cfg)}/conversations/${conversationId}`, {
     headers: cwHeaders(cfg),
@@ -1611,33 +1658,24 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
           .replace(/[ \t]+/g, ' ')
           .trim()
 
-        // URL do botao: pega primeira URL e remove o ?r=... (redirect
-        // especifico de UMA OS). Magic-link sem `r=` cai no portal home,
-        // cliente ve a lista de TODAS as OS dele apos login automatico.
-        // shouldSendCta acima garante length >= 1 — non-null assert pra TS strict.
+        // URL do botao: primeira URL sem ?r= (vai pra portal home, cliente
+        // ve lista de TODAS suas OS apos login magic-link).
         const firstUrl = portalUrls[0]!
         const portalHomeUrl = firstUrl.replace(/[?&]r=[^&]*/, '').replace(/&t=/, '?t=')
 
-        // Card visual com header destacado + footer da empresa.
-        // Header limit Meta: 60 chars. Footer limit: 60 chars.
-        const cardHeader = `🔔 ${cfg.companyDisplayName || 'PontualTech'}`
-        const cardFooter = `Suporte • ${cfg.companyDisplayName || 'PontualTech'}`
         try {
-          const ctaResult = await sendWhatsAppCtaUrl(
-            cfg.companyId, phone, cleanBody.slice(0, 1024),
-            '✨ Acessar Portal', portalHomeUrl, cardHeader, cardFooter,
+          // Solucao final 2026-05-05 (validada com Chatwoot v4.10.1):
+          // mandar interactive direto via Chatwoot inbox WhatsApp Cloud com
+          // content_type='input_select'. Chatwoot traduz pra interactive
+          // nativo Meta — cliente recebe card+botao no celular E atendente
+          // ve mensagem normal no historico. UMA mensagem so. Sem dupli-
+          // cacao, sem nota privada, sem Cloud API direto.
+          const cwResult = await cwSendInteractiveCard(
+            cfg, conversationId, cleanBody.slice(0, 1024),
+            '✨ Acessar Portal', portalHomeUrl,
           )
-          if (ctaResult.success) {
-            // Sync no Chatwoot como mensagem PUBLICA outgoing (atendente ve
-            // historico normal). Decisao Karlao 2026-05-05: prefere atendente
-            // ver msg normal mesmo que cliente receba copia (sem URL — card
-            // + texto consecutivos, ambos sem links inline).
-            // Trade-off: cliente recebe 2 mensagens (card via Cloud direto +
-            // texto sem URL via Chatwoot/inbox). Aceitavel pq nenhuma tem
-            // URL exposta — texto so descreve, card tem o botao de acesso.
-            await cwSendMessage(cfg, conversationId, cleanBody, false)
-          } else {
-            console.warn('[Bot] CTA send failed, falling back to plain text:', ctaResult.error)
+          if (!cwResult) {
+            console.warn('[Bot] Interactive send failed, falling back to text')
             await cwSendWithTyping(cfg, conversationId, responseText)
           }
         } catch (ctaErr) {
