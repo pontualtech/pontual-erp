@@ -183,23 +183,19 @@ export async function POST(req: NextRequest) {
       const link = `${getBaseUrl(stop.company_id)}/avaliar/${token}`
       const freeText = `Ola, ${firstName}! Gostariamos muito de ouvir sua opiniao sobre o atendimento. Toque no link para deixar seu feedback:\n\n${link}`
 
-      // Estrategia: FREE TEXT primeiro (chega direto se janela 24h aberta).
-      // Fallback = pt_feedback_v1 (categoria MARKETING — permite oferta
-      // de desconto; templates UTILITY eram filtrados).
+      // Estrategia 2026-05-05 (apos teste real OS 60342 — Karlao nao recebeu
+      // WA mas recebeu email): MARKETING (pt_feedback_v1) e filtrado pelo Meta
+      // ~40% das vezes. UTILITY (pt_avaliacao_google_v3) tem deliverability
+      // ~95%. Trocada a ordem do fallback chain — UTILITY primeiro, MARKETING
+      // como ultimo recurso. Cupom 10% e gerado quando cliente clica no link
+      // (handler /cupom-avaliacao/[token]) — body do template UTILITY nao
+      // precisa mencionar oferta (Meta proibe oferta em UTILITY de qualquer
+      // jeito).
       let r = await sendWhatsAppCloud(stop.company_id, normalizedPhone, freeText)
+      let channelUsed: 'free_text' | 'pt_avaliacao_google_v3' | 'pt_feedback_v1' | null =
+        r.success ? 'free_text' : null
 
       if (!r.success) {
-        r = await sendWhatsAppTemplate(
-          stop.company_id, normalizedPhone, 'pt_feedback_v1', 'pt_BR',
-          [
-            { type: 'body', parameters: [{ type: 'text', text: firstName }] },
-            { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: token }] },
-          ],
-          freeText,
-        )
-      }
-      if (!r.success) {
-        // Ultimo fallback: v3 UTILITY (se aprovar um dia)
         r = await sendWhatsAppTemplate(
           stop.company_id, normalizedPhone, 'pt_avaliacao_google_v3', 'pt_BR',
           [
@@ -208,6 +204,20 @@ export async function POST(req: NextRequest) {
           ],
           freeText,
         )
+        if (r.success) channelUsed = 'pt_avaliacao_google_v3'
+      }
+      if (!r.success) {
+        // Ultimo fallback: MARKETING (oferta explicita 10%) — permite
+        // mas alta taxa de filtragem Meta-side, por isso e ultimo.
+        r = await sendWhatsAppTemplate(
+          stop.company_id, normalizedPhone, 'pt_feedback_v1', 'pt_BR',
+          [
+            { type: 'body', parameters: [{ type: 'text', text: firstName }] },
+            { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: token }] },
+          ],
+          freeText,
+        )
+        if (r.success) channelUsed = 'pt_feedback_v1'
       }
       // E-mail de avaliacao em PARALELO (fire-and-forget) — independente
       // do resultado do WhatsApp. Multi-canal: WA + Email cobre os dois
@@ -246,7 +256,10 @@ export async function POST(req: NextRequest) {
           data: { reviews_sent_at: new Date() },
         })
         sent++
-        results.push({ stop_id: stop.id, sent: true, os_number: os.os_number })
+        // Loga qual canal deu certo — possibilita medir CTR real e priorizar
+        // canais por deliverability efetiva ao longo do tempo.
+        console.log(`[Cron/GoogleReviews] OS ${os.os_number} sent via ${channelUsed} to ${normalizedPhone.slice(0,4)}***`)
+        results.push({ stop_id: stop.id, sent: true, os_number: os.os_number, channel: channelUsed })
       } else {
         // Falhou — NAO marca, tenta de novo no proximo tick ate 48h
         skipped++
