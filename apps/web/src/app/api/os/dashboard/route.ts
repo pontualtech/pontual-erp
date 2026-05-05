@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, handleError } from '@/lib/api-response'
+import { getOverdueOsWhereClause } from '@/lib/os-overdue'
 
 export async function GET(req: NextRequest) {
   try {
@@ -69,13 +70,10 @@ export async function GET(req: NextRequest) {
         _sum: { total_cost: true },
       }),
 
-      // Overdue OS (estimated_delivery passed, not final)
+      // Overdue OS — Sprint UX-31: helper compartilhado garante que dashboard
+      // e /api/os?overdue=true usam exatamente o mesmo criterio.
       prisma.serviceOrder.count({
-        where: {
-          ...where,
-          status_id: { notIn: finalIds },
-          estimated_delivery: { lt: new Date() },
-        },
+        where: await getOverdueOsWhereClause(user.companyId),
       }),
     ])
 

@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { success, paginated, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { getNextOsNumber } from '@/lib/os-number'
+import { getOverdueOsWhereClause } from '@/lib/os-overdue'
 
 export async function GET(req: NextRequest) {
   try {
@@ -135,18 +136,20 @@ export async function GET(req: NextRequest) {
     if (priority) where.priority = priority
     if (osType) where.os_type = osType
 
-    // Filtro de OS em atraso: tem data de previsão e passou, e não está em status final.
-    // Sprint UX-26: unificado com /api/os/dashboard.overdueCount — antes usava
-    // `actual_delivery IS NULL` que dava count diferente (incluía CANCELADAS/finalizadas
-    // sem actual_delivery setado). Agora usa is_final flag igual dashboard.
+    // Filtro de OS em atraso: usa helper compartilhado com /api/os/dashboard.
+    // Sprint UX-31: refatorado pra unico ponto de verdade em lib/os-overdue.ts.
     if (overdue) {
-      const finalStatuses = await prisma.moduleStatus.findMany({
-        where: { company_id: user.companyId, module: 'os', is_final: true },
-        select: { id: true },
-      })
-      const finalIds = finalStatuses.map(s => s.id)
-      where.estimated_delivery = { lt: new Date() }
-      where.status_id = { ...(where.status_id || {}), notIn: finalIds }
+      const overdueWhere = await getOverdueOsWhereClause(user.companyId)
+      where.estimated_delivery = overdueWhere.estimated_delivery
+      // Preserva intersecao se ja tinha status_id filter (motorista role, etc)
+      const existingStatusFilter = where.status_id
+      if (existingStatusFilter?.in && Array.isArray(existingStatusFilter.in)) {
+        // Role ja restringiu a uma lista; intersecta removendo finalIds dela
+        const finalIdSet = new Set((overdueWhere.status_id as any).notIn as string[])
+        where.status_id = { in: existingStatusFilter.in.filter((id: string) => !finalIdSet.has(id)) }
+      } else {
+        where.status_id = overdueWhere.status_id
+      }
     }
 
     // Audit 11 wave 3: filtro OS sem técnico (alert dashboard "OS sem técnico").
