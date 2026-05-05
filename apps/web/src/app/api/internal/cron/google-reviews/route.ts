@@ -105,8 +105,15 @@ export async function POST(req: NextRequest) {
         const urlSetting = await prisma.setting.findFirst({
           where: { company_id: stop.company_id, key: 'google_reviews.url' },
         })
+        // Ordem dos aliases DEVE bater com a do driver/entrega:
+        //   apps/web/src/app/api/driver/stop/[id]/entrega/route.ts (linha ~199-204)
+        // PontualTech tem 'Entregue' (sem 'Entregue Reparado'); Imprimitech
+        // tem 'Entregue Reparado' (sem 'Entregue'). Se a ordem aqui divergir
+        // do driver, o cron resolve pra um status_id diferente do que o
+        // motorista setou na OS — e o equality check mais abaixo (linha ~144)
+        // sempre falha em silencio (skip 'os_not_entregue_reparado').
         const entregueStatus = await findStatusByName(
-          stop.company_id, 'os', 'Entregue Reparado', 'Entregar Reparado', 'Entregue',
+          stop.company_id, 'os', 'Entregue', 'Entregue Reparado', 'Entregar Reparado',
         )
         cache = {
           reviewsUrl: urlSetting?.value || null,
