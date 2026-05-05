@@ -1573,19 +1573,26 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       let responseText = parsed.cleanText
         .replace(/https?:\/\/wa\.me\/\d+/gi, `https://wa.me/${supportNum}`)
 
-      // Detecta URL do portal na resposta do Dify. Se houver E for bot suporte
-      // (Marta/Aline), envia UMA mensagem via interactive cta_url — cliente
-      // recebe card com botao clicavel em vez de URL longa inline. Reposta
-      // do Dify menciona "portal" no copy mas o link sai pelo botao.
-      // Bot vendas (Ana) e outros caem no fluxo classico (cwSendWithTyping).
-      const isSupportBot = cfg.slug.includes('suporte') || cfg.botOrigin?.includes('marta') || cfg.botOrigin?.includes('aline')
-      const portalUrlMatch = responseText.match(/https?:\/\/portal\.[^\s)>\]]+/)
-      const shouldSendCta = phone && !parsed.action && isSupportBot && portalUrlMatch
+      // Limpa markdown link syntax [texto](url) que WhatsApp NAO renderiza —
+      // aparece literal pro cliente. Converte:
+      //   [Acesse aqui](https://...)  -> https://...
+      //   [Texto qualquer]()          -> (vazio, remove)
+      //   [Texto](url)                -> url
+      // Bot Dify as vezes retorna markdown apesar do prompt pedir texto puro.
+      responseText = responseText
+        .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '$2')  // link com URL valido
+        .replace(/\[([^\]]+)\]\(\s*\)/g, '')                    // link vazio remove
+        .replace(/\n{3,}/g, '\n\n')                             // limpa quebras excessivas
 
-      if (shouldSendCta && portalUrlMatch) {
-        const portalUrl = portalUrlMatch[0]
-        // Remove a URL do corpo (deixa o botao carregar). Tambem remove
-        // espacos duplos resultantes da limpeza.
+      // Detecta URLs do portal na resposta. UM link -> card com botao.
+      // Multiplos links (cliente com varias OS) -> texto puro (botao unico
+      // nao representa multiplos links direta).
+      const isSupportBot = cfg.slug.includes('suporte') || cfg.botOrigin?.includes('marta') || cfg.botOrigin?.includes('aline')
+      const portalUrls = responseText.match(/https?:\/\/portal\.[^\s)>\]]+/g) || []
+      const shouldSendCta = phone && !parsed.action && isSupportBot && portalUrls.length === 1
+
+      if (shouldSendCta) {
+        const portalUrl = portalUrls[0]
         const cleanBody = responseText
           .replace(portalUrl, '')
           .replace(/\s+\n/g, '\n')
@@ -1593,17 +1600,14 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
           .replace(/[ \t]+/g, ' ')
           .trim()
         try {
-          // Tentativa 1: WhatsApp direto via Cloud API com botao clicavel
           const ctaResult = await sendWhatsAppCtaUrl(
             cfg.companyId, phone, cleanBody.slice(0, 1024), '📱 Abrir Portal', portalUrl,
           )
           if (ctaResult.success) {
             // Sync no Chatwoot como nota privada pra atendente ver contexto
-            // (mensagem real foi pro cliente direto via Cloud API)
             await cwSendMessage(cfg, conversationId,
               cleanBody + '\n\n[Botao enviado: 📱 Abrir Portal → ' + portalUrl + ']', true)
           } else {
-            // Fallback: cai no comportamento classico (texto inteiro + URL inline)
             console.warn('[Bot] CTA send failed, falling back to plain text:', ctaResult.error)
             await cwSendWithTyping(cfg, conversationId, responseText)
           }
@@ -1612,7 +1616,8 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
           await cwSendWithTyping(cfg, conversationId, responseText)
         }
       } else {
-        // Fluxo classico: sem URL ou bot vendas — manda texto inteiro via Chatwoot
+        // 0 links OU multiplos links OU bot vendas: manda texto puro via
+        // Chatwoot. URLs ja estao limpas de markdown — clientes veem URL crua.
         await cwSendWithTyping(cfg, conversationId, responseText)
       }
     }
