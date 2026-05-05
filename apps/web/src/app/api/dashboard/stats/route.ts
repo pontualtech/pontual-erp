@@ -107,26 +107,33 @@ export async function GET(req: NextRequest) {
           })
         : Promise.resolve(0),
 
-      // Faturamento do mes — OS finalizadas (excluindo canceladas)
-      prisma.serviceOrder.aggregate({
+      // Sprint UX-28: Faturamento do mes = dinheiro entrando (regime de caixa).
+      // Antes usava SUM(total_cost) de OS com status finalIds + updated_at no mes
+      // (regime de competencia). Isso divergia do card "Recebidas no Mes" do
+      // /financeiro/contas-receber que usa SUM(total_amount) WHERE status='RECEBIDO'.
+      // Karlão reportou: dashboard mostrava R$ 0 enquanto receber mostrava R$ 552
+      // pra mesma janela. Unificado pra usar mesma fonte (accounts_receivable
+      // RECEBIDO) — coerente com 'Faturamento' = caixa em PT-BR e bate visualmente.
+      prisma.accountReceivable.aggregate({
         where: {
           company_id: cid,
           deleted_at: null,
-          ...(finalIds.length > 0 ? { status_id: { in: finalIds.filter(id => !cancelledIds.includes(id)) } } : {}),
+          status: 'RECEBIDO',
           updated_at: { gte: monthStart },
         },
-        _sum: { total_cost: true },
+        _sum: { total_amount: true },
       }),
 
       // UX-7 #1: faturamento mes passado ate o mesmo dia — pra MoM
-      prisma.serviceOrder.aggregate({
+      // Sprint UX-28: aplicar mesma logica de caixa pro periodo comparativo.
+      prisma.accountReceivable.aggregate({
         where: {
           company_id: cid,
           deleted_at: null,
-          ...(finalIds.length > 0 ? { status_id: { in: finalIds.filter(id => !cancelledIds.includes(id)) } } : {}),
+          status: 'RECEBIDO',
           updated_at: { gte: prevMonthStart, lt: prevMonthSameDay },
         },
-        _sum: { total_cost: true },
+        _sum: { total_amount: true },
       }),
     ])
 
@@ -291,7 +298,7 @@ export async function GET(req: NextRequest) {
         osEmExecucao,
         osProntas,
         osColetar,
-        ...(canViewFinanceiro ? { faturamentoMesCents: faturamentoMesCents._sum.total_cost ?? 0 } : {}),
+        ...(canViewFinanceiro ? { faturamentoMesCents: faturamentoMesCents._sum.total_amount ?? 0 } : {}),
       },
       // Audit 11: IDs reais dos status pra frontend usar em hrefs dos cards
       // (antes cards apontavam pra ?status=PRONTA enum que não existia)
@@ -304,7 +311,7 @@ export async function GET(req: NextRequest) {
       // UX-7 #1: comparativos pra delta visual no dashboard
       previous: {
         osAbertasOntem,
-        ...(canViewFinanceiro ? { faturamentoMesAnteriorCents: prevFaturamentoSameDay._sum.total_cost ?? 0 } : {}),
+        ...(canViewFinanceiro ? { faturamentoMesAnteriorCents: prevFaturamentoSameDay._sum.total_amount ?? 0 } : {}),
       },
       osPerWeek: osPerWeek.map(w => ({ week: w.week, count: Number(w.count) })),
       pipeline: pipelineData,
