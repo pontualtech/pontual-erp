@@ -135,10 +135,18 @@ export async function GET(req: NextRequest) {
     if (priority) where.priority = priority
     if (osType) where.os_type = osType
 
-    // Filtro de OS em atraso: tem data de previsão e passou, e não está em status final
+    // Filtro de OS em atraso: tem data de previsão e passou, e não está em status final.
+    // Sprint UX-26: unificado com /api/os/dashboard.overdueCount — antes usava
+    // `actual_delivery IS NULL` que dava count diferente (incluía CANCELADAS/finalizadas
+    // sem actual_delivery setado). Agora usa is_final flag igual dashboard.
     if (overdue) {
+      const finalStatuses = await prisma.moduleStatus.findMany({
+        where: { company_id: user.companyId, module: 'os', is_final: true },
+        select: { id: true },
+      })
+      const finalIds = finalStatuses.map(s => s.id)
       where.estimated_delivery = { lt: new Date() }
-      where.actual_delivery = null
+      where.status_id = { ...(where.status_id || {}), notIn: finalIds }
     }
 
     // Audit 11 wave 3: filtro OS sem técnico (alert dashboard "OS sem técnico").

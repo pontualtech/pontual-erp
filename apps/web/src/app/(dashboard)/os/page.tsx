@@ -1087,10 +1087,12 @@ export default function OSListPage() {
           <AlertTriangle className="h-3.5 w-3.5" />
           Em atraso
           {(() => {
-            const count = osList.filter(o => {
-              const st = o.module_statuses || statusMap[o.status_id]
-              return isOverdue(o, st?.name)
-            }).length
+            // Sprint UX-26: usar totalFiltered (count server-side respeitando is_final)
+            // ao inves de filter client-side com regex de nome — antes badge dava
+            // count diferente do dashboard (28 vs 32) por (a) so olhar pagina atual,
+            // (b) regex 'entreg|cancelad|finaliz' nao bater alguns nomes de status.
+            // Mostra contagem real apenas quando o filtro overdue esta ativo.
+            const count = overdueFilter ? totalFiltered : 0
             return count > 0 ? (
               <span className="ml-0.5 rounded-full bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 leading-none min-w-[18px] text-center">
                 {count}
