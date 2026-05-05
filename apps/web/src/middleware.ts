@@ -83,6 +83,12 @@ export async function middleware(request: NextRequest) {
   if (pathname.startsWith('/cupom-avaliacao/') || pathname.startsWith('/avaliar/')) {
     return NextResponse.next()
   }
+  // URL shortener publico — cliente recebe link curto via WhatsApp/email
+  // e precisa abrir sem autenticacao (handler /s/[slug] faz redirect 302
+  // pro magic-link real que entao faz auto-login).
+  if (pathname.startsWith('/s/')) {
+    return NextResponse.next()
+  }
   // Internal routes with their own auth (X-Internal-Key header)
   if (pathname.startsWith('/api/internal/')) {
     return NextResponse.next()
