@@ -1609,7 +1609,8 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
         // URL do botao: pega primeira URL e remove o ?r=... (redirect
         // especifico de UMA OS). Magic-link sem `r=` cai no portal home,
         // cliente ve a lista de TODAS as OS dele apos login automatico.
-        const firstUrl = portalUrls[0]
+        // shouldSendCta acima garante length >= 1 — non-null assert pra TS strict.
+        const firstUrl = portalUrls[0]!
         const portalHomeUrl = firstUrl.replace(/[?&]r=[^&]*/, '').replace(/&t=/, '?t=')
 
         try {
