@@ -202,27 +202,32 @@ export async function POST(req: NextRequest) {
       const link = `${getBaseUrl(os.company_id)}/avaliar/${token}`
       const freeText = `Ola, ${firstName}! Gostariamos muito de ouvir sua opiniao sobre o atendimento. Toque no link para deixar seu feedback:\n\n${link}`
 
-      // === Chain UTILITY-first ===
-      // Estrategia 2026-05-05 (apos teste real OS 60342): MARKETING
-      // (pt_feedback_v1) e filtrado pelo Meta ~40% das vezes silenciosamente.
-      // UTILITY (pt_avaliacao_google_v3) tem deliverability ~95%. UTILITY
-      // primeiro, MARKETING como ultimo recurso. Cupom 10% e gerado quando
-      // cliente clica no link (handler /cupom-avaliacao/[token]).
-      let r = await sendWhatsAppCloud(os.company_id, normalizedPhone, freeText)
-      let channelUsed: 'free_text' | 'pt_avaliacao_google_v3' | 'pt_feedback_v1' | null =
-        r.success ? 'free_text' : null
+      // === Chain TEMPLATE-first (com botoes) ===
+      // Decisao Karlao 2026-05-05 tarde: prefere mensagens com BOTAO clicavel
+      // ("Deixar feedback") em vez de free-text com link inline. Mais
+      // profissional + melhor CTR + visual mobile melhor.
+      //
+      // Ordem:
+      // 1. pt_avaliacao_google_v3 (UTILITY, botao "Deixar feedback")
+      //    - Categoria UTILITY = deliverability ~95%
+      //    - Body neutro, sem mencionar oferta (regra Meta)
+      // 2. pt_feedback_v1 (MARKETING, botao "Avaliar e ganhar 10%")
+      //    - Body menciona desconto explicitamente
+      //    - MARKETING tem mais filtragem Meta-side, fica como fallback
+      // 3. free-text com link inline
+      //    - Ultimo recurso quando ambos templates falharem
+      //    - Fica sem botao (link no body)
+      let r = await sendWhatsAppTemplate(
+        os.company_id, normalizedPhone, 'pt_avaliacao_google_v3', 'pt_BR',
+        [
+          { type: 'body', parameters: [{ type: 'text', text: firstName }] },
+          { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: token }] },
+        ],
+        freeText,
+      )
+      let channelUsed: 'pt_avaliacao_google_v3' | 'pt_feedback_v1' | 'free_text' | null =
+        r.success ? 'pt_avaliacao_google_v3' : null
 
-      if (!r.success) {
-        r = await sendWhatsAppTemplate(
-          os.company_id, normalizedPhone, 'pt_avaliacao_google_v3', 'pt_BR',
-          [
-            { type: 'body', parameters: [{ type: 'text', text: firstName }] },
-            { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: token }] },
-          ],
-          freeText,
-        )
-        if (r.success) channelUsed = 'pt_avaliacao_google_v3'
-      }
       if (!r.success) {
         r = await sendWhatsAppTemplate(
           os.company_id, normalizedPhone, 'pt_feedback_v1', 'pt_BR',
@@ -233,6 +238,11 @@ export async function POST(req: NextRequest) {
           freeText,
         )
         if (r.success) channelUsed = 'pt_feedback_v1'
+      }
+      if (!r.success) {
+        // Ultimo recurso: free-text. Sem botao, link no corpo.
+        r = await sendWhatsAppCloud(os.company_id, normalizedPhone, freeText)
+        if (r.success) channelUsed = 'free_text'
       }
 
       // === E-mail paralelo (fire-and-forget) ===
