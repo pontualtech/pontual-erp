@@ -57,7 +57,21 @@ export async function GET(req: NextRequest) {
       where.person_type = personTypeMap[personType] || personType
     }
     if (customerType) where.customer_type = customerType
-    if (city) where.address_city = { equals: city, mode: 'insensitive' }
+    // Sprint UX-29: filtro cidade case+accent insensitive. Antes equals/insensitive
+    // do Prisma NAO ignorava acentos (Mauá != Maua). Agora pre-filtra IDs via raw
+    // SQL com unaccent e usa em where.id.in.
+    if (city) {
+      const matching = await prisma.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM customers
+        WHERE company_id = ${user.companyId}
+          AND deleted_at IS NULL
+          AND lower(unaccent(address_city)) = lower(unaccent(${city}))
+      `
+      const matchedIds = matching.map(m => m.id)
+      // 0 matches: usa sentinel inexistente pra retornar lista vazia
+      // (Prisma 5.x rejeita where.id.in: [])
+      where.id = matchedIds.length > 0 ? { in: matchedIds } : { in: ['__no_match__'] }
+    }
     // isRecurrent filtering is applied post-query on recent_os_count
     if (search) {
       andConditions.push({
