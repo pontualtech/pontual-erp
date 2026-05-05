@@ -51,10 +51,9 @@ export async function sendWhatsAppCloud(
 ): Promise<CloudSendResult> {
   const config = await getCloudConfig(companyId)
   if (!config) {
-    // Cloud API not configured — fallback to Evolution API
-    console.info('[WhatsApp Cloud] Not configured, falling back to Evolution for company', companyId)
-    const evoResult = await sendWhatsAppEvolution(companyId, phone, text)
-    return { success: evoResult.success, error: evoResult.error }
+    // PontualTech / Imprimitech operam APENAS via Meta Cloud API oficial
+    // (decisao Karlao 2026-05-05). Sem fallback Evolution.
+    return { success: false, error: 'cloud_not_configured' }
   }
 
   // Format phone: ensure country code, remove non-digits
@@ -85,34 +84,17 @@ export async function sendWhatsAppCloud(
     if (!res.ok) {
       const errCode = data.error?.code
       const errMsg = data.error?.message || `HTTP ${res.status}`
-
-      // Codigos de erro Meta relacionados a janela 24h / politica de conversa:
-      //   131047 — outside 24h window, precisa template
-      //   131026 — message undeliverable (regras de sessao)
-      //   131051 — unsupported message type
-      // Nesses casos, tenta Evolution API como fallback (regras diferentes,
-      // frequentemente consegue entregar pelo WhatsApp Web/nao-oficial)
-      const shouldFallback = [131047, 131026, 131051].includes(errCode)
-      if (shouldFallback) {
-        console.info(`[WhatsApp Cloud] Error ${errCode} (${errMsg}) — falling back to Evolution`)
-        const evoResult = await sendWhatsAppEvolution(companyId, phone, text)
-        if (evoResult.success) {
-          return { success: true, messageId: undefined }
-        }
-        return { success: false, error: `Cloud ${errCode}: ${errMsg} | Evolution: ${evoResult.error}` }
-      }
-
-      console.error('[WhatsApp Cloud] Send error:', { status: res.status, error: data.error })
-      return { success: false, error: errMsg }
+      // Sem fallback Evolution — caller (cron) decide proximo passo
+      // (ex: tentar template). Isso preserva visibilidade real da Meta.
+      console.error('[WhatsApp Cloud] Send error:', { status: res.status, code: errCode, error: data.error })
+      return { success: false, error: `${errCode || res.status}: ${errMsg}` }
     }
 
     const messageId = data.messages?.[0]?.id
     return { success: true, messageId }
   } catch (err) {
-    console.error('[WhatsApp Cloud] Send failed:', err)
-    // Exception (timeout, network) — tenta Evolution como fallback
-    const evoResult = await sendWhatsAppEvolution(companyId, phone, text)
-    if (evoResult.success) return { success: true }
+    // Exception (timeout, network) — sem fallback. Caller decide.
+    console.error('[WhatsApp Cloud] Send failed:', err instanceof Error ? err.message : err)
     return { success: false, error: String(err) }
   }
 }
