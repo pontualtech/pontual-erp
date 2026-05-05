@@ -1613,9 +1613,14 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
         const firstUrl = portalUrls[0]!
         const portalHomeUrl = firstUrl.replace(/[?&]r=[^&]*/, '').replace(/&t=/, '?t=')
 
+        // Card visual com header destacado + footer da empresa.
+        // Header limit Meta: 60 chars. Footer limit: 60 chars.
+        const cardHeader = `🔔 ${cfg.companyDisplayName || 'PontualTech'}`
+        const cardFooter = `Suporte • ${cfg.companyDisplayName || 'PontualTech'}`
         try {
           const ctaResult = await sendWhatsAppCtaUrl(
-            cfg.companyId, phone, cleanBody.slice(0, 1024), '📱 Abrir Portal', portalHomeUrl,
+            cfg.companyId, phone, cleanBody.slice(0, 1024),
+            '✨ Acessar Portal', portalHomeUrl, cardHeader, cardFooter,
           )
           if (ctaResult.success) {
             // Sync Chatwoot como nota privada
