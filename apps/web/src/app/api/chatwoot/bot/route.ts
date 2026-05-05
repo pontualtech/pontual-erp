@@ -1663,19 +1663,26 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
         const firstUrl = portalUrls[0]!
         const portalHomeUrl = firstUrl.replace(/[?&]r=[^&]*/, '').replace(/&t=/, '?t=')
 
+        // Card visual com header destacado + footer da empresa.
+        const cardHeader = `🔔 ${cfg.companyDisplayName || 'PontualTech'}`
+        const cardFooter = `Suporte • ${cfg.companyDisplayName || 'PontualTech'}`
+
         try {
-          // Solucao final 2026-05-05 (validada com Chatwoot v4.10.1):
-          // mandar interactive direto via Chatwoot inbox WhatsApp Cloud com
-          // content_type='input_select'. Chatwoot traduz pra interactive
-          // nativo Meta — cliente recebe card+botao no celular E atendente
-          // ve mensagem normal no historico. UMA mensagem so. Sem dupli-
-          // cacao, sem nota privada, sem Cloud API direto.
-          const cwResult = await cwSendInteractiveCard(
-            cfg, conversationId, cleanBody.slice(0, 1024),
-            '✨ Acessar Portal', portalHomeUrl,
+          // Decisao final Karlao 2026-05-05: opcao A (apos descobrir que
+          // Chatwoot v4 NAO traduz interactive cta_url pro provider WA).
+          // Cliente recebe card+botao via Cloud API direto (UMA msg).
+          // Atendente ve via NOTA PRIVADA no Chatwoot (atende UI mas nao
+          // historico padrao). Trade-off aceitavel pq cliente — receptor
+          // do atendimento — recebe melhor UX possivel (botao clicavel).
+          const ctaResult = await sendWhatsAppCtaUrl(
+            cfg.companyId, phone, cleanBody.slice(0, 1024),
+            '✨ Acessar Portal', portalHomeUrl, cardHeader, cardFooter,
           )
-          if (!cwResult) {
-            console.warn('[Bot] Interactive send failed, falling back to text')
+          if (ctaResult.success) {
+            await cwSendMessage(cfg, conversationId,
+              `${cleanBody}\n\n[Card enviado: ✨ Acessar Portal → ${portalHomeUrl}]\n[URLs originais detectadas: ${portalUrls.length}]`, true)
+          } else {
+            console.warn('[Bot] CTA send failed, falling back to text:', ctaResult.error)
             await cwSendWithTyping(cfg, conversationId, responseText)
           }
         } catch (ctaErr) {
