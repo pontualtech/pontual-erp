@@ -33,12 +33,15 @@ function getBaseUrl(companyId: string): string {
   return process.env.NEXT_PUBLIC_APP_URL || 'https://portal.pontualtech.com.br'
 }
 
-// Aliases que indicam "OS efetivamente entregue ao cliente" (modulo OS).
-// Usado pra resolver os status_id por empresa — empresas tem nomenclaturas
-// diferentes (PontualTech: 'Entregue'; Imprimitech: 'Entregue Reparado').
-// Mantido em UM lugar pra evitar regressao tipo bb03b4b (cron e driver
-// resolvendo aliases em ordens diferentes).
-const DELIVERED_STATUS_ALIASES = ['Entregue', 'Entregue Reparado', 'Entregar Reparado']
+// Aliases que indicam "OS EFETIVAMENTE entregue ao cliente" (modulo OS).
+// PontualTech: 'Entregue' (status final apos cliente receber).
+// Imprimitech: 'Entregue Reparado' (idem, nomenclatura diferente).
+//
+// IMPORTANTE: 'Entregar Reparado' NAO entra aqui. Esse status significa
+// "preparado pra entregar / pronto pra retirada" — OS ainda esta na loja
+// aguardando cliente. Disparar review nesse momento e prematuro
+// (decisao Karlao 2026-05-05 apos 16 OS receberem review antes de saida).
+const DELIVERED_STATUS_ALIASES = ['Entregue', 'Entregue Reparado']
 
 /**
  * POST /api/internal/cron/google-reviews
