@@ -106,21 +106,34 @@ function startCronJobs() {
   }, 24 * 60 * 60 * 1000) // 24 hours
 
   // Google Reviews — every 5 min (envia link avaliacao 10min apos entrega aprovada)
-  setInterval(async () => {
-    try {
-      const res = await fetch(`${BASE_URL}/api/internal/cron/google-reviews`, {
-        method: 'POST', headers,
-      })
-      if (res.ok) {
-        const data = await res.json()
-        if (data.data?.sent > 0) {
-          console.log(`[Cron/GoogleReviews] Sent ${data.data.sent} review links`)
+  // Diferente dos outros crons: este endpoint exige `x-internal-key` com
+  // INTERNAL_API_KEY (audit C9 endureceu auth em 2026-05-01). Se mudarmos
+  // pra Authorization: Bearer CRON_SECRET o endpoint retorna 401 silencioso.
+  const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY
+  if (!INTERNAL_API_KEY) {
+    console.warn('[Cron/GoogleReviews] INTERNAL_API_KEY ausente — cron desabilitado')
+  } else {
+    setInterval(async () => {
+      try {
+        const res = await fetch(`${BASE_URL}/api/internal/cron/google-reviews`, {
+          method: 'POST',
+          headers: { 'x-internal-key': INTERNAL_API_KEY },
+        })
+        if (res.ok) {
+          const data = await res.json()
+          if (data.data?.sent > 0) {
+            console.log(`[Cron/GoogleReviews] Sent ${data.data.sent} review links`)
+          }
+        } else {
+          // Logging defensivo: ate antes desse fix, 401 ficava silencioso
+          // pq nao tinha else aqui. Cron rodou 5 dias mudo em prod.
+          console.error(`[Cron/GoogleReviews] HTTP ${res.status}`)
         }
+      } catch (err) {
+        console.error('[Cron/GoogleReviews] Error:', err instanceof Error ? err.message : err)
       }
-    } catch (err) {
-      console.error('[Cron/GoogleReviews] Error:', err instanceof Error ? err.message : err)
-    }
-  }, 5 * 60 * 1000) // 5 minutes
+    }, 5 * 60 * 1000) // 5 minutes
+  }
 
   console.log('[Cron] Internal cron jobs started:')
   console.log('  - Bot Follow-up: every 5 min')
