@@ -1637,11 +1637,11 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       // todas as OS dele lá). Decisão Karlao 2026-05-05.
       const isSupportBot = cfg.slug.includes('suporte') || cfg.botOrigin?.includes('marta') || cfg.botOrigin?.includes('aline')
       const portalUrls = responseText.match(/https?:\/\/portal\.[^\s)>\]]+/g) || []
-      // Bloqueia CTA APENAS pra actions que disparam fluxo proprio
-      // (ex: ABRIR_OS chama endpoint, TRANSFERIR_HUMANO redireciona).
-      // ENCERRAR_CONVERSA e flag de Chatwoot resolve no fim — pode
-      // mandar card primeiro e fechar depois.
-      const blocksCta = ['ABRIR_OS', 'TRANSFERIR_HUMANO', 'TRANSFERIR_RAFAEL'].includes(parsed.action || '')
+      // Bloqueia CTA APENAS pra ABRIR_OS (que tem fluxo proprio de
+      // criacao de OS). TRANSFERIR_HUMANO/RAFAEL e ENCERRAR_CONVERSA
+      // podem ter card+botao antes da acao final — cliente nao recebe
+      // URLs inline mesmo na msg de transfer/despedida.
+      const blocksCta = ['ABRIR_OS'].includes(parsed.action || '')
       const shouldSendCta = phone && !blocksCta && isSupportBot && portalUrls.length >= 1
 
       if (shouldSendCta) {
