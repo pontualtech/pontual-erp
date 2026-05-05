@@ -29,10 +29,13 @@ export async function withAdvisoryLock<T>(
   const lockKey = hash.readBigInt64BE(0)
 
   return prisma.$transaction(async (tx) => {
-    const rows = await tx.$queryRaw<Array<{ pg_try_advisory_xact_lock: boolean }>>`
-      SELECT pg_try_advisory_xact_lock(${lockKey})
+    // Sprint UX-27 audit: usar `AS acquired` explicito ao inves de
+    // depender do nome auto-gerado pelo Prisma. Mais robusto contra
+    // mudancas de driver e mais legivel.
+    const rows = await tx.$queryRaw<Array<{ acquired: boolean }>>`
+      SELECT pg_try_advisory_xact_lock(${lockKey}) AS acquired
     `
-    const acquired = rows[0]?.pg_try_advisory_xact_lock === true
+    const acquired = rows[0]?.acquired === true
     if (!acquired) {
       return { acquired: false as const }
     }

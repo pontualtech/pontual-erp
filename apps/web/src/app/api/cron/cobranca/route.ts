@@ -94,9 +94,12 @@ export async function GET(request: NextRequest) {
     return handleError(err)
   } finally {
     // UX-10 #5: garantir unlock pra não prender connection no pool
+    // Sprint UX-27 audit: $executeRaw em vez de $queryRaw — resultado nao usado,
+    // evita risco de Prisma 5.22+ rejeitar void deserialize (mesmo bug do hotfix
+    // c9c9326 em os-number.ts).
     if (lockAcquired) {
       try {
-        await (prisma as any).$queryRaw`SELECT pg_advisory_unlock(hashtext('cron:cobranca')::bigint)`
+        await (prisma as any).$executeRaw`SELECT pg_advisory_unlock(hashtext('cron:cobranca')::bigint)`
       } catch { /* swallow — connection drop liberou auto */ }
     }
   }

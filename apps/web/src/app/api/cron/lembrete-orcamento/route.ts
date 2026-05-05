@@ -94,8 +94,10 @@ export async function GET(request: NextRequest) {
   } finally {
     if (lockAcquired) {
       try {
-        await (prisma as any).$queryRaw`SELECT pg_advisory_unlock(hashtext('cron:lembrete-orcamento')::bigint)`
-      } catch { /* swallow */ }
+        // Sprint UX-27 audit: $executeRaw em vez de $queryRaw — resultado nao
+        // e usado, evita risco de Prisma 5.22+ rejeitar void deserialize.
+        await (prisma as any).$executeRaw`SELECT pg_advisory_unlock(hashtext('cron:lembrete-orcamento')::bigint)`
+      } catch { /* swallow — connection drop libera auto */ }
     }
   }
 }
