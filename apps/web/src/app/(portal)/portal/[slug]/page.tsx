@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { ThemeToggle } from '../../components/theme-toggle'
+import { readPortalCompany, readPortalCustomer } from '@/lib/portal-auth-storage'
 
 interface PortalOS {
   id: string
@@ -40,10 +41,20 @@ export default function PortalDashboardPage() {
   const [company, setCompany] = useState<{ id: string; name: string; slug: string } | null>(null)
 
   useEffect(() => {
-    const savedCustomer = localStorage.getItem('portal_customer')
-    const savedCompany = localStorage.getItem('portal_company')
-    try { if (savedCustomer) setCustomer(JSON.parse(savedCustomer)) } catch {}
-    try { if (savedCompany) setCompany(JSON.parse(savedCompany)) } catch {}
+    // Sprint UX-32: parse seguro centralizado
+    const savedCustomer = readPortalCustomer()
+    const savedCompany = readPortalCompany()
+    if (savedCustomer) setCustomer(savedCustomer as any)
+    if (savedCompany) setCompany(savedCompany as any)
+
+    // Sprint UX-32: se NAO ha auth local (sem customer/company em storage),
+    // pula o fetch e redireciona direto pra login. Antes o componente sempre
+    // chamava /api/portal/os?limit=10 que retornava 401, poluindo console
+    // e fazendo round-trip desnecessario.
+    if (!savedCustomer || !savedCompany) {
+      router.push(`/portal/${slug}/login`)
+      return
+    }
 
     // Auth token is sent automatically via httpOnly cookie
     fetch('/api/portal/os?limit=10')
@@ -58,7 +69,7 @@ export default function PortalDashboardPage() {
         if (res?.data) setOsList(res.data)
       })
       .catch(() => {
-        toast.error('Erro ao carregar ordens de servico. Tente novamente.')
+        toast.error('Erro ao carregar suas ordens de serviço. Tente novamente.')
       })
       .finally(() => setLoading(false))
   }, [slug, router])

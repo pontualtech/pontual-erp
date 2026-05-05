@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
 
@@ -21,14 +21,13 @@ interface PaymentInfo {
 
 export default function PortalPagamentoPage() {
   const params = useParams()
-  const router = useRouter()
   const slug = params.slug as string
+  // Sprint UX-32: param.id e o ID do RECEBIVEL (accounts_receivable), nao da OS.
+  // O endpoint /api/portal/payments/pix nao existe; deixamos o flow tentar e
+  // mostrar o estado de erro com fallback claro pro cliente. Antes havia um
+  // useEffect que redirecionava pra /portal/X/os/<id> mas <id> era o
+  // receivableId, gerando URL invalida (cliente caia em OS que nao existia).
   const osId = params.id as string
-
-  // Pagamento online desativado temporariamente — redireciona para a OS
-  useEffect(() => {
-    router.replace(`/portal/${slug}/os/${osId}`)
-  }, [router, slug, osId])
 
   const [loading, setLoading] = useState(true)
   const [payment, setPayment] = useState<PaymentInfo | null>(null)
@@ -46,14 +45,27 @@ export default function PortalPagamentoPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ service_order_id: osId }),
       })
-      const data = await res.json()
+      // Sprint UX-32: endpoint pode nao existir (404 retorna HTML, nao JSON).
+      // Detectar status nao-OK antes de tentar parsear JSON pra evitar
+      // SyntaxError silencioso e mostrar mensagem amigavel pro cliente.
       if (!res.ok) {
-        setError(data.error || 'Erro ao gerar pagamento')
+        if (res.status === 404) {
+          setError('Pagamento online em manutenção. Entre em contato pelo WhatsApp para outras formas de pagamento.')
+        } else {
+          // Tenta extrair erro JSON; se falhar, usa fallback generico
+          try {
+            const data = await res.json()
+            setError(data.error || 'Não foi possível gerar o pagamento. Tente novamente em alguns minutos.')
+          } catch {
+            setError('Não foi possível gerar o pagamento. Tente novamente em alguns minutos.')
+          }
+        }
         return
       }
+      const data = await res.json()
       setPayment(data.data)
     } catch {
-      setError('Erro de conexao')
+      setError('Sem conexão com o servidor. Verifique sua internet e tente novamente.')
     } finally {
       setLoading(false)
     }

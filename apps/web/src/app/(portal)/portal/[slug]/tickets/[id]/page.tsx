@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
+import { readPortalCompany, readPortalCustomer } from '@/lib/portal-auth-storage'
 
 interface TicketDetail {
   id: string
@@ -57,10 +58,9 @@ export default function PortalTicketDetailPage() {
   }
 
   useEffect(() => {
-    const savedCompany = localStorage.getItem('portal_company')
-    const savedCustomer = localStorage.getItem('portal_customer')
-    if (savedCompany) setCompany(JSON.parse(savedCompany))
-    if (savedCustomer) setCustomer(JSON.parse(savedCustomer))
+    // Sprint UX-32: parse seguro centralizado
+    const c = readPortalCompany(); if (c) setCompany(c as any)
+    const u = readPortalCustomer(); if (u) setCustomer(u as any)
     loadTicket()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticketId])

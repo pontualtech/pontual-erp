@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
+import { readPortalCompany, readPortalCustomer } from '@/lib/portal-auth-storage'
 
 interface ChatMessage {
   id: string
@@ -47,8 +48,9 @@ export default function SuporteIAPage() {
   useEffect(() => {
     const savedCompany = localStorage.getItem('portal_company')
     const savedCustomer = localStorage.getItem('portal_customer')
-    if (savedCompany) setCompany(JSON.parse(savedCompany))
-    if (savedCustomer) setCustomer(JSON.parse(savedCustomer))
+    // Sprint UX-32: parse seguro centralizado
+    if (savedCompany) { const c = readPortalCompany(); if (c) setCompany(c as any) }
+    if (savedCustomer) { const u = readPortalCustomer(); if (u) setCustomer(u as any) }
   }, [])
 
   useEffect(() => {

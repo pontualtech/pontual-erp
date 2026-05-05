@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
+import { readPortalCompany } from '@/lib/portal-auth-storage'
 
 interface ReportData {
   company_name: string
@@ -39,8 +40,9 @@ export default function RelatoriosPage() {
   const [company, setCompany] = useState<{ name: string } | null>(null)
 
   useEffect(() => {
-    const saved = localStorage.getItem('portal_company')
-    if (saved) setCompany(JSON.parse(saved))
+    // Sprint UX-32: helper centraliza parse seguro
+    const c = readPortalCompany()
+    if (c) setCompany(c)
 
     fetch('/api/portal/reports/weekly')
       .then(r => {

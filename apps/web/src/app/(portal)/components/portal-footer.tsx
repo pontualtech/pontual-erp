@@ -26,12 +26,15 @@ type CompanyTrust = {
 
 export function PortalFooter() {
   const [company, setCompany] = useState<CompanyTrust | null>(null)
-  // currentYear must be set in useEffect — when a page is served from the Next
-  // build cache around year-turnover, `new Date()` at render time produces a
-  // different value than at build time and React throws hydration error #418.
   const [currentYear, setCurrentYear] = useState<number | null>(null)
+  // Sprint UX-32: guard de hydration. Antes o componente renderizava SSR vazio
+  // e CSR populava de localStorage — provocava React error #418 nas paginas
+  // anonimas (login/cadastro/registrar). Ao gatekeeper render com "hydrated",
+  // SSR retorna stub fixo e tudo dinâmico só aparece pós-hydration.
+  const [hydrated, setHydrated] = useState(false)
 
   useEffect(() => {
+    setHydrated(true)
     setCurrentYear(new Date().getFullYear())
     const stored = localStorage.getItem('portal_company')
     if (stored) {
@@ -51,18 +54,18 @@ export function PortalFooter() {
   const yearsInBusiness = company?.founded_year && currentYear ? currentYear - company.founded_year : null
 
   return (
-    <footer className="print-hidden mt-auto border-t border-gray-200/60 dark:border-zinc-800/60 bg-white/50 dark:bg-zinc-900/50 backdrop-blur-sm">
+    <footer className="print-hidden mt-auto border-t border-gray-200/60 dark:border-zinc-800/60 bg-white/50 dark:bg-zinc-900/50 backdrop-blur-sm" suppressHydrationWarning>
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 space-y-3">
         {/* Linha 1: nome + dados fiscais (trust signals) */}
         <div className="flex flex-col items-center gap-2 text-center sm:flex-row sm:justify-between sm:text-left">
           <div>
-            {companyName && (
+            {hydrated && companyName && (
               <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">{companyName}</p>
             )}
             <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-gray-500 dark:text-gray-400 sm:justify-start">
-              {cnpj && <span>CNPJ {cnpj}</span>}
-              {address && <span>· {address}</span>}
-              {yearsInBusiness !== null && yearsInBusiness > 0 && (
+              {hydrated && cnpj && <span>CNPJ {cnpj}</span>}
+              {hydrated && address && <span>· {address}</span>}
+              {hydrated && yearsInBusiness !== null && yearsInBusiness > 0 && (
                 <span>· {yearsInBusiness} ano{yearsInBusiness > 1 ? 's' : ''} no mercado</span>
               )}
             </div>
@@ -90,7 +93,7 @@ export function PortalFooter() {
           >
             Pol&iacute;tica de Privacidade
           </a>
-          {supportWhatsApp && (
+          {hydrated && supportWhatsApp && (
             <>
               <span className="text-gray-300 dark:text-zinc-700">|</span>
               <a
