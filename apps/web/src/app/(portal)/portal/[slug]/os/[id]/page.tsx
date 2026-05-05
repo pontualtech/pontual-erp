@@ -769,7 +769,7 @@ export default function PortalOSDetailPage() {
             Quando OS está em "Aguardando Aprovação", esse card aparece
             ACIMA de tudo (so depois de Equipment Info) pra cliente nao
             precisar scrollar pra achar o botao verde. Substitui o card
-            de pagamento (que vira redundante — ja mostra formas aqui). */
+            de pagamento (que vira redundante — ja mostra formas aqui). */}
         {isAguardandoAprovacao && (() => {
           const fmt = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v / 100)
           const paymentOptions = [
