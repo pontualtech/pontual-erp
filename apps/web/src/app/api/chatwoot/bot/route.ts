@@ -1584,29 +1584,42 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
         .replace(/\[([^\]]+)\]\(\s*\)/g, '')                    // link vazio remove
         .replace(/\n{3,}/g, '\n\n')                             // limpa quebras excessivas
 
-      // Detecta URLs do portal na resposta. UM link -> card com botao.
-      // Multiplos links (cliente com varias OS) -> texto puro (botao unico
-      // nao representa multiplos links direta).
+      // Detecta URLs do portal na resposta. Sempre que tem URL E e bot
+      // suporte: envia UM card com UM botao "Abrir Portal" (mesmo se tiver
+      // varias OS — cliente clica, abre portal magic-link, ve a lista de
+      // todas as OS dele lá). Decisão Karlao 2026-05-05.
       const isSupportBot = cfg.slug.includes('suporte') || cfg.botOrigin?.includes('marta') || cfg.botOrigin?.includes('aline')
       const portalUrls = responseText.match(/https?:\/\/portal\.[^\s)>\]]+/g) || []
-      const shouldSendCta = phone && !parsed.action && isSupportBot && portalUrls.length === 1
+      const shouldSendCta = phone && !parsed.action && isSupportBot && portalUrls.length >= 1
 
       if (shouldSendCta) {
-        const portalUrl = portalUrls[0]
-        const cleanBody = responseText
-          .replace(portalUrl, '')
+        // Remove TODAS as URLs do texto (deixa so contexto descritivo das OS).
+        // Tambem remove "Label:" sozinhos que sobram apos remocao da URL
+        // (ex: "Canon G3110:\nXerox:" -> linhas vazias removidas).
+        let cleanBody = responseText
+        for (const u of portalUrls) cleanBody = cleanBody.replace(u, '')
+        cleanBody = cleanBody
+          // Remove linhas que viraram "Label:" sem URL (ate 50 chars + ':' no final)
+          .replace(/^[ \t]*[^\n:]{1,80}:\s*$/gm, '')
           .replace(/\s+\n/g, '\n')
           .replace(/\n{3,}/g, '\n\n')
           .replace(/[ \t]+/g, ' ')
           .trim()
+
+        // URL do botao: pega primeira URL e remove o ?r=... (redirect
+        // especifico de UMA OS). Magic-link sem `r=` cai no portal home,
+        // cliente ve a lista de TODAS as OS dele apos login automatico.
+        const firstUrl = portalUrls[0]
+        const portalHomeUrl = firstUrl.replace(/[?&]r=[^&]*/, '').replace(/&t=/, '?t=')
+
         try {
           const ctaResult = await sendWhatsAppCtaUrl(
-            cfg.companyId, phone, cleanBody.slice(0, 1024), '📱 Abrir Portal', portalUrl,
+            cfg.companyId, phone, cleanBody.slice(0, 1024), '📱 Abrir Portal', portalHomeUrl,
           )
           if (ctaResult.success) {
-            // Sync no Chatwoot como nota privada pra atendente ver contexto
+            // Sync Chatwoot como nota privada
             await cwSendMessage(cfg, conversationId,
-              cleanBody + '\n\n[Botao enviado: 📱 Abrir Portal → ' + portalUrl + ']', true)
+              `${cleanBody}\n\n[Card enviado: 📱 Abrir Portal → ${portalHomeUrl}]\n[URLs originais detectadas: ${portalUrls.length}]`, true)
           } else {
             console.warn('[Bot] CTA send failed, falling back to plain text:', ctaResult.error)
             await cwSendWithTyping(cfg, conversationId, responseText)
@@ -1616,8 +1629,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
           await cwSendWithTyping(cfg, conversationId, responseText)
         }
       } else {
-        // 0 links OU multiplos links OU bot vendas: manda texto puro via
-        // Chatwoot. URLs ja estao limpas de markdown — clientes veem URL crua.
+        // 0 links OU bot vendas: manda texto puro via Chatwoot.
         await cwSendWithTyping(cfg, conversationId, responseText)
       }
     }
