@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { sendWhatsAppTemplate, sendWhatsAppCloud } from '@/lib/whatsapp/cloud-api'
-import { findStatusByName } from '@/lib/module-status'
 import { sendCompanyEmail } from '@/lib/send-email'
 import { getFeedbackEmail } from '@/lib/email-templates/feedback'
 import crypto from 'crypto'
@@ -34,24 +33,38 @@ function getBaseUrl(companyId: string): string {
   return process.env.NEXT_PUBLIC_APP_URL || 'https://portal.pontualtech.com.br'
 }
 
+// Aliases que indicam "OS efetivamente entregue ao cliente" (modulo OS).
+// Usado pra resolver os status_id por empresa — empresas tem nomenclaturas
+// diferentes (PontualTech: 'Entregue'; Imprimitech: 'Entregue Reparado').
+// Mantido em UM lugar pra evitar regressao tipo bb03b4b (cron e driver
+// resolvendo aliases em ordens diferentes).
+const DELIVERED_STATUS_ALIASES = ['Entregue', 'Entregue Reparado', 'Entregar Reparado']
+
 /**
  * POST /api/internal/cron/google-reviews
  *
- * Envia link de avaliacao do Google Meu Negocio ~10min apos o
- * motorista finalizar uma entrega APROVADA (Entregue Reparado).
+ * Envia link de avaliacao do Google Meu Negocio + cupom 10% pra clientes
+ * com OS em status "Entregue/Entregue Reparado". Trigger e baseado em
+ * ServiceOrder (nao em LogisticsStop) — assim cobre QUALQUER caller que
+ * marque a OS como entregue: motorista, atendente ERP, bot, portal.
  *
  * Criterios:
- *  - LogisticsStop.type = ENTREGA
- *  - status = COMPLETED
- *  - completed_at >= 10min atras E < 48h atras (evita reviver stops velhos)
- *  - reviews_sent_at IS NULL
- *  - OS em status 'Entregue Reparado' (nao envia para recusadas)
+ *  - ServiceOrder.status_id em DELIVERED_STATUS_ALIASES (per-company)
+ *  - actual_delivery >= 1min atras E < 48h atras
+ *  - review_request_sent_at IS NULL
+ *  - deleted_at IS NULL
  *  - Setting google_reviews.url configurado na empresa
+ *  - Cliente com telefone valido (>= 10 digitos)
+ *
+ * Auto-backfill: se a OS tem stop antigo com reviews_sent_at populated
+ * (flow pre-2026-05-05, baseado em LogisticsStop), copia o timestamp
+ * pra service_orders.review_request_sent_at e skip — evita duplicar
+ * envio pra cliente que ja recebeu.
  *
  * Roda via instrumentation.ts a cada 5 min.
  */
 const WINDOW_MIN_MS = 1 * 60 * 1000        // >= 1min depois de entregar (Karlao: 2026-05-05)
-const WINDOW_MAX_MS = 48 * 60 * 60 * 1000  // < 48h (stops antigos sao ignorados)
+const WINDOW_MAX_MS = 48 * 60 * 60 * 1000  // < 48h (entregas antigas sao ignoradas)
 
 export async function POST(req: NextRequest) {
   // C9 fix (audit): aceitar APENAS INTERNAL_API_KEY. Antes aceitava 3 chaves
@@ -69,135 +82,136 @@ export async function POST(req: NextRequest) {
   }
 
   const now = new Date()
-  const maxCompletedAt = new Date(now.getTime() - WINDOW_MIN_MS)
-  const minCompletedAt = new Date(now.getTime() - WINDOW_MAX_MS)
+  const maxDeliveredAt = new Date(now.getTime() - WINDOW_MIN_MS)
+  const minDeliveredAt = new Date(now.getTime() - WINDOW_MAX_MS)
 
-  const stops = await prisma.logisticsStop.findMany({
+  // Pega TODAS as OS com actual_delivery na janela, sem review enviada.
+  // Filtragem por status_id "delivered" e feita em codigo (per-company)
+  // pra evitar query monstro com status_id IN (...) cross-company.
+  const orders = await prisma.serviceOrder.findMany({
     where: {
-      type: 'ENTREGA',
-      status: 'COMPLETED',
-      reviews_sent_at: null,
-      completed_at: { gte: minCompletedAt, lte: maxCompletedAt },
+      review_request_sent_at: null,
+      deleted_at: null,
+      actual_delivery: { gte: minDeliveredAt, lte: maxDeliveredAt },
     },
     take: 100,
-    orderBy: { completed_at: 'asc' },
+    orderBy: { actual_delivery: 'asc' },
     select: {
-      id: true, company_id: true, os_id: true, customer_name: true,
-      customer_phone: true, completed_at: true,
+      id: true, company_id: true, status_id: true, os_number: true,
+      customer_id: true, actual_delivery: true,
+      customers: { select: { legal_name: true, mobile: true, phone: true, email: true } },
     },
   })
 
-  if (stops.length === 0) {
+  if (orders.length === 0) {
     return NextResponse.json({ data: { processed: 0, sent: 0, skipped: 0 } })
   }
 
-  // Cache por empresa: url + status 'Entregue Reparado' id
-  const companyCache = new Map<string, { reviewsUrl: string | null; entregueReparadoId: string | null }>()
+  // Cache per-company: { reviewsUrl, deliveredIds[] }
+  const companyCache = new Map<string, { reviewsUrl: string | null; deliveredIds: string[] }>()
 
   let sent = 0
   let skipped = 0
   const results: any[] = []
 
-  for (const stop of stops) {
+  for (const os of orders) {
     try {
-      let cache = companyCache.get(stop.company_id)
+      // === Auto-backfill ===
+      // Se a OS ja tem stop com reviews_sent_at populated (cliente recebeu
+      // via flow antigo baseado em LogisticsStop), copia o timestamp pro
+      // service_orders.review_request_sent_at e skip. Evita duplicar envio.
+      const oldStop = await prisma.logisticsStop.findFirst({
+        where: { os_id: os.id, reviews_sent_at: { not: null } },
+        select: { reviews_sent_at: true },
+        orderBy: { reviews_sent_at: 'desc' },
+      })
+      if (oldStop?.reviews_sent_at) {
+        await prisma.serviceOrder.update({
+          where: { id: os.id },
+          data: { review_request_sent_at: oldStop.reviews_sent_at },
+        })
+        skipped++
+        results.push({ os_id: os.id, os_number: os.os_number, skipped: 'backfilled_from_old_stop' })
+        continue
+      }
+
+      // === Cache: URL Google + status delivered da empresa ===
+      let cache = companyCache.get(os.company_id)
       if (!cache) {
         const urlSetting = await prisma.setting.findFirst({
-          where: { company_id: stop.company_id, key: 'google_reviews.url' },
+          where: { company_id: os.company_id, key: 'google_reviews.url' },
         })
-        // Ordem dos aliases DEVE bater com a do driver/entrega:
-        //   apps/web/src/app/api/driver/stop/[id]/entrega/route.ts (linha ~199-204)
-        // PontualTech tem 'Entregue' (sem 'Entregue Reparado'); Imprimitech
-        // tem 'Entregue Reparado' (sem 'Entregue'). Se a ordem aqui divergir
-        // do driver, o cron resolve pra um status_id diferente do que o
-        // motorista setou na OS — e o equality check mais abaixo (linha ~144)
-        // sempre falha em silencio (skip 'os_not_entregue_reparado').
-        const entregueStatus = await findStatusByName(
-          stop.company_id, 'os', 'Entregue', 'Entregue Reparado', 'Entregar Reparado',
-        )
+        const deliveredStatuses = await prisma.moduleStatus.findMany({
+          where: {
+            company_id: os.company_id,
+            module: 'os',
+            name: { in: DELIVERED_STATUS_ALIASES },
+          },
+          select: { id: true },
+        })
         cache = {
           reviewsUrl: urlSetting?.value || null,
-          entregueReparadoId: entregueStatus?.id || null,
+          deliveredIds: deliveredStatuses.map(s => s.id),
         }
-        companyCache.set(stop.company_id, cache)
+        companyCache.set(os.company_id, cache)
       }
 
-      if (!cache.reviewsUrl || !cache.entregueReparadoId) {
-        // sem url configurada OU sem status de entrega aprovada — pula mas
-        // marca pra nao re-tentar indefinidamente (so se tiver url)
-        if (!cache.reviewsUrl) {
-          skipped++
-          results.push({ stop_id: stop.id, skipped: 'no_google_reviews_url' })
-        } else {
-          skipped++
-          results.push({ stop_id: stop.id, skipped: 'no_entregue_reparado_status' })
-        }
-        continue
-      }
-
-      // Valida que OS esta em Entregue Reparado (cliente aceitou o conserto)
-      if (!stop.os_id) {
+      if (!cache.reviewsUrl) {
         skipped++
-        results.push({ stop_id: stop.id, skipped: 'no_os' })
+        results.push({ os_id: os.id, os_number: os.os_number, skipped: 'no_google_reviews_url' })
         continue
       }
-      const os = await prisma.serviceOrder.findFirst({
-        where: { id: stop.os_id, company_id: stop.company_id, deleted_at: null },
-        select: {
-          status_id: true, os_number: true, customer_id: true,
-          customers: { select: { legal_name: true, mobile: true, phone: true } },
-        },
-      })
-      if (!os || os.status_id !== cache.entregueReparadoId) {
-        // OS nao aprovada — NAO envia e NAO marca. Se status mudar, proxima
-        // execucao ainda pode enviar (ate 48h).
+      if (cache.deliveredIds.length === 0) {
         skipped++
-        results.push({ stop_id: stop.id, skipped: 'os_not_entregue_reparado' })
+        results.push({ os_id: os.id, os_number: os.os_number, skipped: 'no_delivered_status_configured' })
         continue
       }
 
-      const rawPhone = (os.customers?.mobile || os.customers?.phone || stop.customer_phone || '').replace(/\D/g, '')
+      // === Status atual da OS DEVE ser um "delivered" ===
+      // OS pode ter actual_delivery setado mas atendente moveu pra outro
+      // status depois (ex: Garantia). Nao envia review nesse caso.
+      if (!cache.deliveredIds.includes(os.status_id)) {
+        skipped++
+        results.push({ os_id: os.id, os_number: os.os_number, skipped: 'os_no_longer_delivered' })
+        continue
+      }
+
+      // === Telefone valido ===
+      const rawPhone = (os.customers?.mobile || os.customers?.phone || '').replace(/\D/g, '')
       if (!rawPhone || rawPhone.length < 10) {
-        // Sem telefone — marca pra nao re-tentar
-        await prisma.logisticsStop.update({
-          where: { id: stop.id },
-          data: { reviews_sent_at: new Date() },
+        // Sem telefone — marca pra nao re-tentar (email fire-and-forget
+        // ainda dispara abaixo se houver email)
+        await prisma.serviceOrder.update({
+          where: { id: os.id },
+          data: { review_request_sent_at: new Date() },
         })
         skipped++
-        results.push({ stop_id: stop.id, skipped: 'no_phone' })
+        results.push({ os_id: os.id, os_number: os.os_number, skipped: 'no_phone' })
         continue
       }
       const normalizedPhone = rawPhone.startsWith('55') ? rawPhone : `55${rawPhone}`
-      const customerName = os.customers?.legal_name || stop.customer_name || 'Cliente'
+      const customerName = os.customers?.legal_name || 'Cliente'
       const firstName = customerName.split(' ')[0]
 
-      // customer_id pra gerar o token do cupom — ja veio no select de os.
+      // === Token cupom ===
       const customerId: string | null = os.customer_id || null
-
-      // Token do cupom vai como PARAMETRO DO BOTAO URL (nao no body).
-      // Template v2 tem botao https://portal.pontualtech.com.br/cupom-avaliacao/{{1}}.
-      const token = customerId
-        ? buildCouponToken(stop.company_id, customerId)
-        : 'sem-token'
-
-      const link = `${getBaseUrl(stop.company_id)}/avaliar/${token}`
+      const token = customerId ? buildCouponToken(os.company_id, customerId) : 'sem-token'
+      const link = `${getBaseUrl(os.company_id)}/avaliar/${token}`
       const freeText = `Ola, ${firstName}! Gostariamos muito de ouvir sua opiniao sobre o atendimento. Toque no link para deixar seu feedback:\n\n${link}`
 
-      // Estrategia 2026-05-05 (apos teste real OS 60342 — Karlao nao recebeu
-      // WA mas recebeu email): MARKETING (pt_feedback_v1) e filtrado pelo Meta
-      // ~40% das vezes. UTILITY (pt_avaliacao_google_v3) tem deliverability
-      // ~95%. Trocada a ordem do fallback chain — UTILITY primeiro, MARKETING
-      // como ultimo recurso. Cupom 10% e gerado quando cliente clica no link
-      // (handler /cupom-avaliacao/[token]) — body do template UTILITY nao
-      // precisa mencionar oferta (Meta proibe oferta em UTILITY de qualquer
-      // jeito).
-      let r = await sendWhatsAppCloud(stop.company_id, normalizedPhone, freeText)
+      // === Chain UTILITY-first ===
+      // Estrategia 2026-05-05 (apos teste real OS 60342): MARKETING
+      // (pt_feedback_v1) e filtrado pelo Meta ~40% das vezes silenciosamente.
+      // UTILITY (pt_avaliacao_google_v3) tem deliverability ~95%. UTILITY
+      // primeiro, MARKETING como ultimo recurso. Cupom 10% e gerado quando
+      // cliente clica no link (handler /cupom-avaliacao/[token]).
+      let r = await sendWhatsAppCloud(os.company_id, normalizedPhone, freeText)
       let channelUsed: 'free_text' | 'pt_avaliacao_google_v3' | 'pt_feedback_v1' | null =
         r.success ? 'free_text' : null
 
       if (!r.success) {
         r = await sendWhatsAppTemplate(
-          stop.company_id, normalizedPhone, 'pt_avaliacao_google_v3', 'pt_BR',
+          os.company_id, normalizedPhone, 'pt_avaliacao_google_v3', 'pt_BR',
           [
             { type: 'body', parameters: [{ type: 'text', text: firstName }] },
             { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: token }] },
@@ -207,10 +221,8 @@ export async function POST(req: NextRequest) {
         if (r.success) channelUsed = 'pt_avaliacao_google_v3'
       }
       if (!r.success) {
-        // Ultimo fallback: MARKETING (oferta explicita 10%) — permite
-        // mas alta taxa de filtragem Meta-side, por isso e ultimo.
         r = await sendWhatsAppTemplate(
-          stop.company_id, normalizedPhone, 'pt_feedback_v1', 'pt_BR',
+          os.company_id, normalizedPhone, 'pt_feedback_v1', 'pt_BR',
           [
             { type: 'body', parameters: [{ type: 'text', text: firstName }] },
             { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: token }] },
@@ -219,31 +231,24 @@ export async function POST(req: NextRequest) {
         )
         if (r.success) channelUsed = 'pt_feedback_v1'
       }
-      // E-mail de avaliacao em PARALELO (fire-and-forget) — independente
-      // do resultado do WhatsApp. Multi-canal: WA + Email cobre os dois
-      // canais mais comuns.
-      const customerEmail = await (async () => {
-        if (!stop.os_id) return null
-        const oo = await prisma.serviceOrder.findUnique({
-          where: { id: stop.os_id },
-          select: { customers: { select: { email: true } } },
-        })
-        return oo?.customers?.email || null
-      })()
+
+      // === E-mail paralelo (fire-and-forget) ===
+      // Independente do resultado WhatsApp — multi-canal cobre falhas Meta.
+      const customerEmail = os.customers?.email || null
       if (customerEmail) {
         void (async () => {
           try {
             const company = await prisma.company.findUnique({
-              where: { id: stop.company_id },
+              where: { id: os.company_id },
               select: { name: true },
             })
-            const tpl = await getFeedbackEmail(stop.company_id, {
+            const tpl = await getFeedbackEmail(os.company_id, {
               cliente: customerName,
               empresa: company?.name || 'PontualTech',
               os_number: os.os_number,
               link,
             })
-            await sendCompanyEmail(stop.company_id, customerEmail, tpl.subject, tpl.html)
+            await sendCompanyEmail(os.company_id, customerEmail, tpl.subject, tpl.html)
           } catch (err) {
             console.warn('[reviews] email falhou:', err instanceof Error ? err.message : String(err))
           }
@@ -251,27 +256,28 @@ export async function POST(req: NextRequest) {
       }
 
       if (r.success) {
-        await prisma.logisticsStop.update({
-          where: { id: stop.id },
-          data: { reviews_sent_at: new Date() },
+        await prisma.serviceOrder.update({
+          where: { id: os.id },
+          data: { review_request_sent_at: new Date() },
         })
         sent++
         // Loga qual canal deu certo — possibilita medir CTR real e priorizar
         // canais por deliverability efetiva ao longo do tempo.
-        console.log(`[Cron/GoogleReviews] OS ${os.os_number} sent via ${channelUsed} to ${normalizedPhone.slice(0,4)}***`)
-        results.push({ stop_id: stop.id, sent: true, os_number: os.os_number, channel: channelUsed })
+        console.log(`[Cron/GoogleReviews] OS ${os.os_number} sent via ${channelUsed} to ${normalizedPhone.slice(0, 4)}***`)
+        results.push({ os_id: os.id, os_number: os.os_number, sent: true, channel: channelUsed })
       } else {
-        // Falhou — NAO marca, tenta de novo no proximo tick ate 48h
+        // Falhou WA — NAO marca review_request_sent_at, tenta de novo no
+        // proximo tick ate completar 48h
         skipped++
-        results.push({ stop_id: stop.id, skipped: 'wa_failed', error: r.error })
+        results.push({ os_id: os.id, os_number: os.os_number, skipped: 'wa_failed', error: r.error })
       }
     } catch (err: any) {
       skipped++
-      results.push({ stop_id: stop.id, skipped: 'exception', error: String(err?.message || err) })
+      results.push({ os_id: os.id, os_number: os.os_number, skipped: 'exception', error: String(err?.message || err) })
     }
   }
 
   return NextResponse.json({
-    data: { processed: stops.length, sent, skipped, details: results.slice(0, 20) },
+    data: { processed: orders.length, sent, skipped, details: results.slice(0, 20) },
   })
 }

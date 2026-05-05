@@ -564,6 +564,11 @@ model ServiceOrder {
   warranty_os_id        String?
   estimated_delivery    DateTime?             @db.Timestamptz(6)
   actual_delivery       DateTime?             @db.Timestamptz(6)
+  // Marca quando cliente recebeu pedido de avaliacao Google + cupom 10%.
+  // Ate 2026-05-05 a flag vivia em logistics_stops.reviews_sent_at, mas isso
+  // limitava o trigger a entregas via motorista. Agora a flag esta na OS,
+  // disparada pelo cron sempre que status vira "Entregue" — qualquer caller.
+  review_request_sent_at DateTime?            @db.Timestamptz(6)
   payment_method        String?
   custom_data           Json?                 @default("{}")
   warranty_original     ServiceOrder?         @relation("warranty_chain", fields: [warranty_os_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
