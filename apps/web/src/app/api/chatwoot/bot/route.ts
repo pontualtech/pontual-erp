@@ -1572,42 +1572,48 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       const supportNum = (cfg.supportWhatsApp || '').replace(/\D/g, '') || '551126263841'
       let responseText = parsed.cleanText
         .replace(/https?:\/\/wa\.me\/\d+/gi, `https://wa.me/${supportNum}`)
-      await cwSendWithTyping(cfg, conversationId, responseText)
 
-      // ── POST-RESPONSE: send portal CTA when Dify mentions portal ──
-      if (phone && !parsed.action && (cfg.slug.includes('suporte') || cfg.botOrigin?.includes('marta') || cfg.botOrigin?.includes('aline'))) {
+      // Detecta URL do portal na resposta do Dify. Se houver E for bot suporte
+      // (Marta/Aline), envia UMA mensagem via interactive cta_url — cliente
+      // recebe card com botao clicavel em vez de URL longa inline. Reposta
+      // do Dify menciona "portal" no copy mas o link sai pelo botao.
+      // Bot vendas (Ana) e outros caem no fluxo classico (cwSendWithTyping).
+      const isSupportBot = cfg.slug.includes('suporte') || cfg.botOrigin?.includes('marta') || cfg.botOrigin?.includes('aline')
+      const portalUrlMatch = responseText.match(/https?:\/\/portal\.[^\s)>\]]+/)
+      const shouldSendCta = phone && !parsed.action && isSupportBot && portalUrlMatch
+
+      if (shouldSendCta && portalUrlMatch) {
+        const portalUrl = portalUrlMatch[0]
+        // Remove a URL do corpo (deixa o botao carregar). Tambem remove
+        // espacos duplos resultantes da limpeza.
+        const cleanBody = responseText
+          .replace(portalUrl, '')
+          .replace(/\s+\n/g, '\n')
+          .replace(/\n{3,}/g, '\n\n')
+          .replace(/[ \t]+/g, ' ')
+          .trim()
         try {
-          const lowerResp = responseText.toLowerCase()
-          if (lowerResp.includes('portal')) {
-            // Extract specific portal URL from response, or use default
-            const portalUrlMatch = responseText.match(/https?:\/\/portal\.[^\s)>\]]+/)
-            let portalUrl = portalUrlMatch?.[0]
-            // Generate magic link if we have an identified customer
-            if (!portalUrl && phone) {
-              try {
-                const phoneDigits = phone.replace(/\D/g, '')
-                const phoneNoCC = phoneDigits.startsWith('55') ? phoneDigits.slice(2) : phoneDigits
-                const matched = await prisma.customer.findFirst({
-                  where: {
-                    company_id: cfg.companyId,
-                    deleted_at: null,
-                    OR: [{ mobile: { contains: phoneNoCC } }, { phone: { contains: phoneNoCC } }],
-                  },
-                  select: { id: true },
-                })
-                if (matched) {
-                  const { createAccessToken } = await import('@/lib/portal-auth')
-                  const token = createAccessToken(matched.id, cfg.companyId)
-                  portalUrl = `${portalBase(cfg)}/entrar?t=${token}`
-                }
-              } catch {}
-            }
-            portalUrl = portalUrl || `${portalBase(cfg)}/login`
-            await sendWhatsAppCtaUrl(cfg.companyId, phone, 'Acesse o portal para aprovar, recusar ou acompanhar sua OS:', '📱 Abrir Portal', portalUrl)
+          // Tentativa 1: WhatsApp direto via Cloud API com botao clicavel
+          const ctaResult = await sendWhatsAppCtaUrl(
+            cfg.companyId, phone, cleanBody.slice(0, 1024), '📱 Abrir Portal', portalUrl,
+          )
+          if (ctaResult.success) {
+            // Sync no Chatwoot como nota privada pra atendente ver contexto
+            // (mensagem real foi pro cliente direto via Cloud API)
+            await cwSendMessage(cfg, conversationId,
+              cleanBody + '\n\n[Botao enviado: 📱 Abrir Portal → ' + portalUrl + ']', true)
+          } else {
+            // Fallback: cai no comportamento classico (texto inteiro + URL inline)
+            console.warn('[Bot] CTA send failed, falling back to plain text:', ctaResult.error)
+            await cwSendWithTyping(cfg, conversationId, responseText)
           }
-        } catch (btnErr) {
-          console.error('[Bot] Post-response CTA error:', btnErr)
+        } catch (ctaErr) {
+          console.error('[Bot] CTA error:', ctaErr)
+          await cwSendWithTyping(cfg, conversationId, responseText)
         }
+      } else {
+        // Fluxo classico: sem URL ou bot vendas — manda texto inteiro via Chatwoot
+        await cwSendWithTyping(cfg, conversationId, responseText)
       }
     }
 
