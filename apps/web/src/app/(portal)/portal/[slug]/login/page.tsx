@@ -18,14 +18,14 @@ export default function PortalLoginPage() {
   const loginError = searchParams.get('error') || ''
   const LOGIN_ERROR_MESSAGES: Record<string, string> = {
     google_access_denied: 'Login com Google cancelado.',
-    google_no_code: 'Login com Google nao concluido. Tente novamente.',
-    google_bad_state: 'Sessao expirou. Tente novamente.',
-    google_token_error: 'Nao foi possivel validar seu login Google.',
-    google_userinfo_error: 'Nao foi possivel obter seus dados do Google.',
-    google_unverified_email: 'Sua conta Google nao tem email verificado.',
-    google_not_configured: 'Login com Google nao esta configurado para esta empresa.',
-    email_not_registered: 'Seu email Google nao esta cadastrado. Use outra forma de acesso ou fale com o suporte.',
-    company_not_found: 'Empresa nao encontrada.',
+    google_no_code: 'Login com Google não concluído. Tente novamente.',
+    google_bad_state: 'Sessão expirou. Tente novamente.',
+    google_token_error: 'Não foi possível validar seu login Google.',
+    google_userinfo_error: 'Não foi possível obter seus dados do Google.',
+    google_unverified_email: 'Sua conta Google não tem email verificado.',
+    google_not_configured: 'Login com Google não está configurado para esta empresa.',
+    email_not_registered: 'Seu email Google não está cadastrado. Use outra forma de acesso ou fale com o suporte.',
+    company_not_found: 'Empresa não encontrada.',
   }
   const loginErrorMessage = loginError
     ? (LOGIN_ERROR_MESSAGES[loginError] || `Erro ao fazer login: ${loginError}`)
@@ -657,18 +657,23 @@ export default function PortalLoginPage() {
               </form>
               )}
 
-              {/* Register links */}
+              {/* Sprint UX-33: copy reescrito pra clarear os 2 fluxos. Antes
+                  o botao grande era 'Cadastre-se' (ambiguo entre novo cliente
+                  e cliente VHSys) e o link pequeno 'Ative seu acesso' era
+                  facil passar batido. Agora distincao explicita por contexto:
+                  primeiro acesso (novo) vs cliente existente (atendimento
+                  anterior). */}
               <div className="mt-6 space-y-3">
                 <Link
                   href={`/portal/${slug}/cadastro`}
                   className="block w-full text-center py-3 rounded-xl border-2 border-blue-600 dark:border-blue-400 text-blue-600 dark:text-blue-400 font-semibold text-sm hover:bg-blue-50 dark:hover:bg-blue-950 transition-colors"
                 >
-                  Cadastre-se
+                  Criar minha conta
                 </Link>
-                <p className="text-gray-400 dark:text-gray-500 text-xs text-center">
-                  Já tem cadastro mas não tem senha?{' '}
-                  <Link href={`/portal/${slug}/registrar`} className="text-blue-500 dark:text-blue-400 hover:underline">
-                    Ative seu acesso aqui
+                <p className="text-gray-500 dark:text-gray-400 text-xs text-center">
+                  Já fui atendido antes?{' '}
+                  <Link href={`/portal/${slug}/registrar`} className="text-blue-600 dark:text-blue-400 hover:underline font-medium">
+                    Ativar meu acesso
                   </Link>
                 </p>
               </div>

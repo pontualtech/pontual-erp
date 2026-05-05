@@ -766,10 +766,10 @@ export default function PortalOSDetailPage() {
         </div>
 
         {/* APROVACAO DO ORCAMENTO — TOPO DA AREA DE ACAO
-            Quando OS esta em "Aguardando Aprovacao", esse card aparece
+            Quando OS está em "Aguardando Aprovação", esse card aparece
             ACIMA de tudo (so depois de Equipment Info) pra cliente nao
             precisar scrollar pra achar o botao verde. Substitui o card
-            de pagamento (que vira redundante — ja mostra formas aqui). */}
+            de pagamento (que vira redundante — ja mostra formas aqui). */
         {isAguardandoAprovacao && (() => {
           const fmt = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v / 100)
           const paymentOptions = [
@@ -990,8 +990,8 @@ export default function PortalOSDetailPage() {
         {showCondicoesReparo && (
           <div className="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-700 mb-6 overflow-hidden">
             <div className="px-5 py-4 border-b border-gray-100 dark:border-zinc-800 bg-gradient-to-r from-blue-50 to-emerald-50 dark:from-blue-950 dark:to-emerald-950">
-              <h2 className="font-semibold text-gray-900 dark:text-gray-100 text-lg">Condicoes do Reparo</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Informacoes importantes sobre o servico</p>
+              <h2 className="font-semibold text-gray-900 dark:text-gray-100 text-lg">Condições do Reparo</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Informações importantes sobre o serviço</p>
             </div>
             <div className="p-5 space-y-5">
 
@@ -999,11 +999,11 @@ export default function PortalOSDetailPage() {
               <div className="flex gap-3">
                 <div className="flex-shrink-0 w-10 h-10 bg-blue-100 dark:bg-blue-900 rounded-lg flex items-center justify-center text-lg">🛠️</div>
                 <div>
-                  <h4 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">Prazo de Execucao</h4>
+                  <h4 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">Prazo de Execução</h4>
                   <ul className="mt-1 text-sm text-gray-600 dark:text-gray-400 space-y-1">
-                    <li>O prazo de execucao e de ate <strong>{company?.default_business_days || '10'} dias uteis</strong> a partir da aprovacao</li>
-                    <li>Nosso compromisso e finalizar o quanto antes</li>
-                    <li>Voce sera notificado assim que o equipamento estiver pronto</li>
+                    <li>O prazo de execução é de até <strong>{company?.default_business_days || '10'} dias úteis</strong> a partir da aprovação</li>
+                    <li>Nosso compromisso é finalizar o quanto antes</li>
+                    <li>Você será notificado assim que o equipamento estiver pronto</li>
                   </ul>
                 </div>
               </div>
@@ -1014,12 +1014,12 @@ export default function PortalOSDetailPage() {
                 <div>
                   <h4 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">Formas de Pagamento (na Entrega)</h4>
                   <ul className="mt-1 text-sm text-gray-600 dark:text-gray-400 space-y-1">
-                    <li><strong>Cartao de Credito:</strong> ate 3x sem juros</li>
-                    <li><strong>Cartao de Debito:</strong> a vista</li>
-                    <li><strong>PIX / Transferencia:</strong> Chave (CNPJ): <span className="font-mono text-gray-800 dark:text-gray-200">{company?.pix_chave || company?.cnpj || '—'}</span></li>
+                    <li><strong>Cartão de Crédito:</strong> até 3x sem juros</li>
+                    <li><strong>Cartão de Débito:</strong> à vista</li>
+                    <li><strong>PIX / Transferência:</strong> Chave (CNPJ): <span className="font-mono text-gray-800 dark:text-gray-200">{company?.pix_chave || company?.cnpj || '—'}</span></li>
                     {company?.pix_banco && <li>Banco: {company.pix_banco}</li>}
                     <li>Favorecido: {company?.name}</li>
-                    <li><strong>Dinheiro:</strong> a vista na entrega</li>
+                    <li><strong>Dinheiro:</strong> à vista na entrega</li>
                   </ul>
                 </div>
               </div>
@@ -1030,8 +1030,8 @@ export default function PortalOSDetailPage() {
                 <div>
                   <h4 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">Garantia</h4>
                   <ul className="mt-1 text-sm text-gray-600 dark:text-gray-400 space-y-1">
-                    <li>Todo servico possui garantia conforme descrito no orcamento</li>
-                    <li>Pecas substituidas com garantia do fabricante</li>
+                    <li>Todo serviço possui garantia conforme descrito no orçamento</li>
+                    <li>Peças substituídas com garantia do fabricante</li>
                     <li>Acompanhe pelo portal a qualquer momento</li>
                   </ul>
                 </div>
@@ -1041,11 +1041,11 @@ export default function PortalOSDetailPage() {
               <div className="flex gap-3">
                 <div className="flex-shrink-0 w-10 h-10 bg-amber-100 dark:bg-amber-900 rounded-lg flex items-center justify-center text-lg">🚚</div>
                 <div>
-                  <h4 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">Entrega e Horarios</h4>
+                  <h4 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">Entrega e Horários</h4>
                   <ul className="mt-1 text-sm text-gray-600 dark:text-gray-400 space-y-1">
                     <li>Antes da entrega, entraremos em contato para confirmar</li>
-                    <li><strong>Horarios:</strong> {company?.horario || 'Seg a Qui 08:00-18:00 | Sex 08:00-17:00'}</li>
-                    {company?.address && <li><strong>Endereco:</strong> {company.address}</li>}
+                    <li><strong>Horários:</strong> {company?.horario || 'Seg a Qui 08:00-18:00 | Sex 08:00-17:00'}</li>
+                    {company?.address && <li><strong>Endereço:</strong> {company.address}</li>}
                   </ul>
                 </div>
               </div>
@@ -1107,7 +1107,7 @@ export default function PortalOSDetailPage() {
                             ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300'
                             : 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300'
                         }`}>
-                          {item.item_type === 'PECA' ? 'Peca' : 'Servico'}
+                          {item.item_type === 'PECA' ? 'Peça' : 'Serviço'}
                         </span>
                       </td>
                       <td className="px-5 py-3 text-gray-900 dark:text-gray-100">{item.description}</td>

@@ -10,7 +10,7 @@ const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
   title: 'Portal do Cliente',
-  description: 'Acompanhe suas ordens de servico, pagamentos e fotos',
+  description: 'Acompanhe suas ordens de serviço, pagamentos e fotos',
   manifest: '/portal/manifest.webmanifest',
   icons: {
     icon: '/favicon.svg',

@@ -77,7 +77,7 @@ export default function PortalNovaOSPage() {
       const json = await res.json()
 
       if (!res.ok) {
-        setError(json.error || 'Erro ao criar ordem de servico')
+        setError(json.error || 'Erro ao criar ordem de serviço')
         return
       }
 

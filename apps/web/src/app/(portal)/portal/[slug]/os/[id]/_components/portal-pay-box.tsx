@@ -138,7 +138,7 @@ export default function PortalPayBox({ osId, totalCost, alreadyPaid }: {
     if (!pix?.qr_code) return
     navigator.clipboard.writeText(pix.qr_code).then(() => {
       setCopied(true)
-      toast.success('Codigo PIX copiado')
+      toast.success('Código PIX copiado')
       setTimeout(() => setCopied(false), 2000)
     })
   }
@@ -329,7 +329,7 @@ function PixModal({
               type="text"
               readOnly
               value={pix.qr_code || ''}
-              aria-label="Codigo PIX copia e cola"
+              aria-label="Código PIX copia e cola"
               className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-xs font-mono bg-gray-50 min-h-[44px]"
               onFocus={(e) => e.target.select()}
             />

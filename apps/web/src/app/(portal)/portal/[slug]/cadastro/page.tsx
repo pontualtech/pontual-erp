@@ -215,8 +215,8 @@ export default function CadastroPage() {
     }
     if (step === 3) {
       if (senha.length < 6) { toast.error('A senha deve ter pelo menos 6 caracteres'); return false }
-      if (senha !== confirmarSenha) { toast.error('As senhas nao conferem'); return false }
-      if (!aceitaTermos) { toast.error('Voce precisa aceitar a Politica de Privacidade'); return false }
+      if (senha !== confirmarSenha) { toast.error('As senhas não conferem'); return false }
+      if (!aceitaTermos) { toast.error('Você precisa aceitar a Política de Privacidade'); return false }
       return true
     }
     return true
@@ -317,7 +317,7 @@ export default function CadastroPage() {
               </div>
             )}
             <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">{company?.name}</h1>
-            <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Cadastro de Novo Cliente</p>
+            <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Crie sua conta no portal</p>
           </div>
 
           {/* Step Indicator */}
@@ -639,7 +639,7 @@ export default function CadastroPage() {
                 <span className="text-sm text-gray-600 dark:text-gray-400">
                   Concordo com a{' '}
                   <a href="https://pontualtech.com.br/politica-de-privacidade.html" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">
-                    Politica de Privacidade
+                    Política de Privacidade
                   </a>
                 </span>
               </label>

@@ -23,7 +23,7 @@ type StatusFilter = 'todas' | 'em_andamento' | 'aguardando' | 'concluidas'
 const STATUS_TABS: { key: StatusFilter; label: string }[] = [
   { key: 'todas', label: 'Todas' },
   { key: 'em_andamento', label: 'Em Andamento' },
-  { key: 'aguardando', label: 'Aguardando Aprovacao' },
+  { key: 'aguardando', label: 'Aguardando Aprovação' },
   { key: 'concluidas', label: 'Concluidas' },
 ]
 
@@ -438,7 +438,7 @@ export default function PortalOSListPage() {
                   disabled={page === totalPages}
                   className="px-4 py-2 text-sm font-medium text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-zinc-700 rounded-lg disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition-colors"
                 >
-                  Proxima
+                  Próxima
                 </button>
               </div>
             )}

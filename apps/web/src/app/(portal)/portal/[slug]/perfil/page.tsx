@@ -131,7 +131,7 @@ export default function PerfilPage() {
           </div>
 
           <hr className="border-gray-200 dark:border-zinc-700" />
-          <h3 className="font-semibold text-gray-900 dark:text-gray-100">Endereco</h3>
+          <h3 className="font-semibold text-gray-900 dark:text-gray-100">Endereço</h3>
 
           <div className="grid grid-cols-3 gap-4">
             <div className="col-span-2">
@@ -151,7 +151,7 @@ export default function PerfilPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className={lbl}>Numero</label>
+              <label className={lbl}>Número</label>
               <input type="text" value={form.address_number} onChange={e => setForm(f => ({ ...f, address_number: e.target.value }))} className={inp} />
             </div>
             <div>
@@ -176,11 +176,11 @@ export default function PerfilPage() {
             disabled={saving}
             className="w-full py-3 bg-blue-600 dark:bg-blue-500 hover:bg-blue-700 dark:hover:bg-blue-600 text-white font-semibold rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
           >
-            {saving ? <><div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" /> Salvando...</> : 'Salvar Alteracoes'}
+            {saving ? <><div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" /> Salvando...</> : 'Salvar Alterações'}
           </button>
 
           <p className="text-xs text-gray-400 dark:text-gray-500 text-center">
-            Alteracoes serao notificadas a equipe da empresa.
+            Alterações serão notificadas à equipe da empresa.
           </p>
         </form>
       </main>

@@ -210,7 +210,7 @@ export default function PortalDashboardPage() {
               </div>
               <div className="flex-1 min-w-0">
                 <h3 className="font-bold text-red-800 dark:text-red-300 text-base sm:text-lg">
-                  Voce tem {osAguardandoAprovacao.length} orcamento{osAguardandoAprovacao.length > 1 ? 's' : ''} aguardando sua decisao!
+                  Você tem {osAguardandoAprovacao.length} orçamento{osAguardandoAprovacao.length > 1 ? 's' : ''} aguardando sua decisão!
                 </h3>
                 <p className="text-sm text-red-700 dark:text-red-400 mt-0.5">
                   Aprove agora para evitar atrasos no reparo do seu equipamento.
@@ -296,7 +296,7 @@ export default function PortalDashboardPage() {
               </div>
               <div className="text-center sm:text-left">
                 <p className="text-2xl sm:text-3xl font-bold text-amber-600 dark:text-amber-400">{osAguardandoAprovacao.length}</p>
-                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 font-medium">Aguardando Aprovacao</p>
+                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 font-medium">Aguardando Aprovação</p>
               </div>
             </div>
           </Link>
@@ -379,7 +379,7 @@ export default function PortalDashboardPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
               </div>
-              <p className="text-gray-500 dark:text-gray-400 font-medium">Nenhuma ordem de servico encontrada</p>
+              <p className="text-gray-500 dark:text-gray-400 font-medium">Nenhuma ordem de serviço encontrada</p>
               <p className="text-gray-400 dark:text-gray-500 text-sm mt-1">Suas OS aparecerão aqui quando criadas.</p>
             </div>
           ) : (

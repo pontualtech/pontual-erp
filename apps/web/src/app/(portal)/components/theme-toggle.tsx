@@ -110,7 +110,7 @@ export function ThemeToggle() {
               }}
               className="w-full text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 py-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-700 transition-colors"
             >
-              Restaurar padrao
+              Restaurar padrão
             </button>
           </div>
         </div>
