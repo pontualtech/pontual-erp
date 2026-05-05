@@ -50,7 +50,7 @@ function getBaseUrl(companyId: string): string {
  *
  * Roda via instrumentation.ts a cada 5 min.
  */
-const WINDOW_MIN_MS = 10 * 60 * 1000       // >= 10min depois de entregar
+const WINDOW_MIN_MS = 1 * 60 * 1000        // >= 1min depois de entregar (Karlao: 2026-05-05)
 const WINDOW_MAX_MS = 48 * 60 * 60 * 1000  // < 48h (stops antigos sao ignorados)
 
 export async function POST(req: NextRequest) {
