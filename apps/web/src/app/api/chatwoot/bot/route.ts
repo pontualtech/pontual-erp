@@ -1628,9 +1628,14 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
             '✨ Acessar Portal', portalHomeUrl, cardHeader, cardFooter,
           )
           if (ctaResult.success) {
-            // Sync Chatwoot como nota privada
-            await cwSendMessage(cfg, conversationId,
-              `${cleanBody}\n\n[Card enviado: 📱 Abrir Portal → ${portalHomeUrl}]\n[URLs originais detectadas: ${portalUrls.length}]`, true)
+            // Sync no Chatwoot como mensagem PUBLICA outgoing (atendente ve
+            // historico normal). Decisao Karlao 2026-05-05: prefere atendente
+            // ver msg normal mesmo que cliente receba copia (sem URL — card
+            // + texto consecutivos, ambos sem links inline).
+            // Trade-off: cliente recebe 2 mensagens (card via Cloud direto +
+            // texto sem URL via Chatwoot/inbox). Aceitavel pq nenhuma tem
+            // URL exposta — texto so descreve, card tem o botao de acesso.
+            await cwSendMessage(cfg, conversationId, cleanBody, false)
           } else {
             console.warn('[Bot] CTA send failed, falling back to plain text:', ctaResult.error)
             await cwSendWithTyping(cfg, conversationId, responseText)
