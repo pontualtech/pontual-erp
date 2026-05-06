@@ -701,6 +701,75 @@ interface ParsedResponse {
   retentionOsNumber: number | null
 }
 
+/**
+ * Converte HTML de email (Outlook/Gmail/etc) em texto plain consumivel pelo
+ * Dify. Sem isso a Marta recebe `<p>Texto</p>` como query e Gemini retorna
+ * vazio (nao reconhece como pergunta valida).
+ *
+ * Tambem remove artefatos comuns:
+ * - Reply quotes (`> texto`, blocos "On X wrote:", "Em X escreveu:")
+ * - Footers de cliente ("Obter o Outlook para Android", "Sent from my iPhone")
+ * - Multiplas quebras de linha (>2 -> 2)
+ */
+function htmlToText(html: string): string {
+  if (!html) return ''
+  let text = html
+    // <br> -> \n
+    .replace(/<br\s*\/?>/gi, '\n')
+    // <p>, <div>, <h*>, <li>, <tr> -> separator
+    .replace(/<\/(p|div|h[1-6]|li|tr|blockquote)>/gi, '\n')
+    // strip remaining tags
+    .replace(/<[^>]+>/g, '')
+    // common HTML entities
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&[a-z]+;/gi, '')
+    // smart quotes Unicode -> ascii
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/[–—]/g, '-')
+
+  // Cut at common reply markers (keep only the new content above)
+  // "On Mon, May 6, 2026 at 6:16 AM Roberto <roberto@...> wrote:"
+  // "Em ter., 6 de mai. de 2026 às 06:16, Roberto <...> escreveu:"
+  // "De: Roberto" (Outlook PT)
+  // Use [\s\S] em vez de . com flag s (dotAll) — flag s requer ES2018+,
+  // tsconfig do projeto e anterior. [\s\S] funciona em qualquer ES.
+  const replyCutRegexes = [
+    /\n\s*On\s+\w+,?\s+\w+\s+\d+,?\s+20\d{2}[\s\S]*?wrote:/i,
+    /\n\s*Em\s+\w+\.?,?\s+\d+\s+de\s+\w+\.?\s+de\s+20\d{2}[\s\S]*?escreveu:/i,
+    /\n\s*De:\s*[^\n]+\n[\s\S]*?Para:/i,
+    /\n\s*-{3,}\s*Original Message\s*-{3,}/i,
+    /\n\s*From:\s*[^\n]+\n[\s\S]*?To:/i,
+  ]
+  for (const re of replyCutRegexes) {
+    const m = text.match(re)
+    if (m && m.index !== undefined) {
+      text = text.slice(0, m.index)
+    }
+  }
+
+  // Strip common email-client footers
+  text = text
+    .replace(/\n\s*Obter o Outlook para (Android|iOS)[\s\S]*$/i, '')
+    .replace(/\n\s*Sent from my (iPhone|iPad|Android|Samsung)[\s\S]*$/i, '')
+    .replace(/\n\s*Enviado do (meu )?(iPhone|iPad|Android|Samsung)[\s\S]*$/i, '')
+    .replace(/\n\s*Get Outlook for (Android|iOS)[\s\S]*$/i, '')
+
+  // Strip quoted lines (lines starting with >)
+  text = text.split('\n').filter(line => !line.trim().startsWith('>')).join('\n')
+
+  // Normalize whitespace
+  return text
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
 function parseDifyResponse(text: string): ParsedResponse {
   let cleanText = text
   let vhsysData: Record<string, unknown> | null = null
@@ -927,6 +996,16 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
 
   // Extract content and handle audio
   let content = body.content?.trim() || ''
+
+  // 2026-05-06 BUG FIX: emails do Outlook/Gmail vem com HTML completo no
+  // body.content (<p>, <a>, smart quotes). Marta no Dify recebia HTML cru
+  // como query e Gemini retornava vazio. Converte HTML->plain antes de
+  // processar quando canal e email. WhatsApp segue intocado.
+  if (isEmailChannel && content) {
+    const before = content.length
+    content = htmlToText(content)
+    console.log(`[Bot/Email] HTML stripped: ${before} -> ${content.length} chars. Preview: "${content.slice(0, 100)}"`)
+  }
 
   // Process attachments: audio, images, video, documents
   const attachments = body.attachments || body.conversation?.messages?.[0]?.attachments || []
