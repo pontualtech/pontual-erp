@@ -1416,12 +1416,28 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
           }
 
           // 3. (2026-05-06) Inbox de email nao tem phone — tenta email do sender.
+          // Mesmo padrao do phone: pode haver multiplos customers com mesmo email
+          // (familia, empresa+pessoa). Prioriza o que tem OS ativa.
           if (!customer && senderEmail) {
-            const c = await findCustomerByEmail(senderEmail, cfg.companyId)
-            if (c) {
-              customer = c
-              activeOS = await getActiveOrders(c.id, cfg.companyId)
-              console.log(`[Bot] Customer by email (${senderEmail}): ${redactName(c.legal_name)} — ${activeOS.length} OS ativas`)
+            const allEmailMatches = await prisma.customer.findMany({
+              where: {
+                company_id: cfg.companyId, deleted_at: null,
+                email: { equals: senderEmail, mode: 'insensitive' },
+              },
+              take: 10,
+            })
+            for (const c of allEmailMatches) {
+              const os = await getActiveOrders(c.id, cfg.companyId)
+              if (os.length > 0) {
+                customer = c
+                activeOS = os
+                console.log(`[Bot] Customer by email (with OS): ${redactName(c.legal_name)} (${os.length} OS)`)
+                break
+              }
+            }
+            if (!customer && allEmailMatches.length > 0) {
+              customer = allEmailMatches[0]
+              console.log(`[Bot] Customer by email (no OS): ${redactName(customer.legal_name)}`)
             }
           }
 
