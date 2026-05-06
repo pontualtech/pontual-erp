@@ -357,7 +357,7 @@ export default function ContasReceberPage() {
 
   function getDisplayStatus(conta: ContaReceber): string {
     const today = new Date(); today.setHours(0, 0, 0, 0)
-    if (conta.status === 'PENDENTE' && new Date(conta.due_date + 'T00:00:00') < today) {
+    if (conta.status === 'PENDENTE' && new Date(conta.due_date) < today) {
       return 'VENCIDO'
     }
     return conta.status || 'PENDENTE'
