@@ -1218,7 +1218,7 @@ export default function OSDetailPage() {
           {currentStatus?.name?.toLowerCase().includes('aprovac') && (
             <button type="button" onClick={() => setShowAprovacaoModal(true)}
               className="flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-100 transition-colors">
-              <Mail className="h-4 w-4" /> Notificar Aprovacao
+              <Send className="h-4 w-4" /> Solicitar Aprovação
             </button>
           )}
           {(currentStatus?.name?.toLowerCase().includes('reparad') || currentStatus?.name?.toLowerCase().includes('pronta')) && (
@@ -2632,8 +2632,8 @@ export default function OSDetailPage() {
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold flex items-center gap-2">
-                <Mail className="h-5 w-5 text-emerald-600" />
-                Notificar Aprovacao
+                <Send className="h-5 w-5 text-emerald-600" />
+                Solicitar Aprovação
               </h2>
               <button type="button" onClick={() => setShowAprovacaoModal(false)} disabled={sendingAprovacao}
                 title="Fechar" className="p-1 rounded-lg hover:bg-gray-100 text-gray-400">
@@ -2678,9 +2678,9 @@ export default function OSDetailPage() {
 
               <div className="rounded-lg border bg-gray-50 p-3 text-xs text-gray-600">
                 <p className="font-medium text-gray-700 mb-1">O cliente vai receber:</p>
-                <p>Confirmação detalhada da aprovação do orçamento</p>
-                <p>Informações de prazo, formas de pagamento (PIX/Cartão)</p>
-                <p>Horarios de entrega + WhatsApp de contato</p>
+                <p>Aviso de que o orçamento está pronto para avaliação</p>
+                <p>Botão de acesso direto ao Portal do Cliente (sem senha)</p>
+                <p>No Portal: detalhes, valor, peças e fotos para aprovar ou recusar</p>
               </div>
             </div>
 

@@ -5,7 +5,6 @@ import { success, error, handleError } from '@/lib/api-response'
 import { sendCompanyEmail } from '@/lib/send-email'
 import { sendWhatsAppTemplate } from '@/lib/whatsapp/cloud-api'
 import { escapeHtml } from '@/lib/escape-html'
-import { getCompanyContact } from '@/lib/company-contact'
 
 type Params = { params: { id: string } }
 
@@ -37,8 +36,6 @@ export async function POST(req: NextRequest, { params }: Params) {
     const settings = await prisma.setting.findMany({ where: { company_id: user.companyId } })
     const cfg: Record<string, string> = {}
     for (const s of settings) cfg[s.key] = s.value
-
-    const cc = await getCompanyContact(user.companyId)
 
     const { toTitleCase } = await import('@/lib/format-text')
     const customerName = toTitleCase(os.customers?.legal_name || 'Cliente')
@@ -92,11 +89,12 @@ export async function POST(req: NextRequest, { params }: Params) {
           const portalDomain = isImpri ? 'portal.imprimitech.com.br' : 'portal.pontualtech.com.br'
           const magicRedirect = encodeURIComponent(`/portal/${slug}/os/${os.id}`)
           const magicLink = `https://${portalDomain}/portal/${slug}/entrar?t=${magicToken}&r=${magicRedirect}`
-          const fallback = `*Orcamento pronto — OS #${osNum}*\n\nValor: ${fmtValue}\nEquipamento: ${equipment || 'Equipamento'}\n\nAcesse o portal para aprovar ou recusar:\n${magicLink}`
-          const waResult = await sendWhatsAppTemplate(user.companyId, phone, 'pontualtech_orcamento_v2', 'pt_BR', [
+          // v3 (2026-05-06): sem valor no body. Cliente ve detalhes no portal
+          // antes de aprovar/recusar — evita rejeicao "as cegas" so pelo numero.
+          const fallback = `*Orcamento pronto — OS #${osNum}*\n\nEquipamento: ${equipment || 'Equipamento'}\n\nOs detalhes do orcamento (valor, pecas, fotos) estao disponiveis no Portal.\nToque para acessar e aprovar ou recusar:\n${magicLink}`
+          const waResult = await sendWhatsAppTemplate(user.companyId, phone, 'pontualtech_orcamento_v3', 'pt_BR', [
             { type: 'body', parameters: [
               { type: 'text', text: osNum },
-              { type: 'text', text: fmtValue },
               { type: 'text', text: equipment || 'Equipamento' },
             ] },
             { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: magicToken }] },
@@ -140,86 +138,60 @@ export async function POST(req: NextRequest, { params }: Params) {
             .replace(/\{\{pix_banco\}\}/g, e(pixBanco))
             .replace(/\{\{horario\}\}/g, e(horario))
         } else {
-          // Built-in professional template
+          // Built-in template v3 (2026-05-06): SEM valor. Forca cliente
+          // a acessar o portal pra ver detalhes (servicos, pecas, fotos)
+          // antes de aprovar — evita rejeicao "as cegas" so pelo numero.
+          // Removidas secoes "Formas de pagamento", "Entrega/horarios"
+          // e "Sobre o servico e prazos" (so fazem sentido pos-aprovacao).
+          const portalCtaUrl = await (async () => {
+            const PORTAL_DOMAIN_BY_SLUG: Record<string, string> = {
+              pontualtech: 'portal.pontualtech.com.br',
+              imprimitech: 'portal.imprimitech.com.br',
+            }
+            const sl = os.companies?.slug || ''
+            const pb = process.env.PORTAL_URL
+              || (sl ? `https://${PORTAL_DOMAIN_BY_SLUG[sl] || `portal.${sl}.com.br`}` : 'https://portal.pontualtech.com.br')
+            const { createAccessToken: catEmailAprov } = await import('@/lib/portal-auth')
+            const tokenEmailAprov = catEmailAprov(os.customer_id, user.companyId)
+            const redirEmailAprov = encodeURIComponent(`/portal/${sl}/os/${os.id}`)
+            return sl ? `${pb}/portal/${sl}/entrar?t=${tokenEmailAprov}&r=${redirEmailAprov}` : pb
+          })()
           emailHtml = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
 <body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:32px 0;"><tr><td align="center">
 <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.08);">
 <tr><td style="background:linear-gradient(135deg,#15803d,#22c55e);padding:36px 32px;text-align:center;">
-  <div style="font-size:36px;margin:0 0 8px;">✅</div>
-  <h1 style="margin:0 0 4px;color:#fff;font-size:20px;">Aprovacao Confirmada</h1>
-  <p style="margin:0;color:rgba(255,255,255,.7);font-size:12px;">${e(companyName)} — OS #${osNum}</p>
+  <div style="font-size:36px;margin:0 0 8px;">📋</div>
+  <h1 style="margin:0 0 4px;color:#fff;font-size:20px;">Orcamento Pronto para Aprovacao</h1>
+  <p style="margin:0;color:rgba(255,255,255,.85);font-size:12px;">${e(companyName)} — OS #${osNum}</p>
 </td></tr>
 <tr><td style="padding:32px;">
   <p style="font-size:15px;color:#1e293b;margin:0 0 16px;">Prezado(a) <strong>${e(customerFirstName)}</strong>,</p>
-  <p style="font-size:14px;color:#475569;line-height:1.7;margin:0 0 24px;">
-    Recebemos sua aprovacao e agradecemos pela confianca! Ja demos o sinal verde para nossa equipe tecnica e o reparo do seu equipamento sera iniciado imediatamente.
+  <p style="font-size:14px;color:#475569;line-height:1.7;margin:0 0 20px;">
+    Boas noticias! O orcamento da sua Ordem de Servico esta pronto para sua avaliacao. Acesse o Portal do Cliente para revisar todos os detalhes (servicos, pecas e fotos do diagnostico) e aprovar ou recusar quando achar conveniente.
   </p>
   <div style="background:#f8fafc;border:2px solid #e2e8f0;border-radius:10px;padding:16px;margin:0 0 24px;">
     <table width="100%" style="font-size:14px;color:#1e293b;">
-      <tr><td style="padding:6px 0;font-weight:700;width:150px;color:#64748b;">Equipamento:</td><td style="padding:6px 0;font-weight:600;">${e(equipment)}</td></tr>
-      <tr><td style="padding:6px 0;font-weight:700;color:#64748b;">Valor aprovado:</td><td style="padding:6px 0;font-weight:800;font-size:18px;color:#15803d;">${fmtValue}</td></tr>
-      <tr><td style="padding:6px 0;font-weight:700;color:#64748b;">Previsao entrega:</td><td style="padding:6px 0;font-weight:700;">${previsao}</td></tr>
+      <tr><td style="padding:6px 0;font-weight:700;width:160px;color:#64748b;">Ordem de Servico:</td><td style="padding:6px 0;font-weight:700;">#${osNum}</td></tr>
+      <tr><td style="padding:6px 0;font-weight:700;color:#64748b;">Equipamento:</td><td style="padding:6px 0;font-weight:600;">${e(equipment)}</td></tr>
     </table>
   </div>
-  <div style="margin:0 0 24px;">
-    <h3 style="margin:0 0 8px;font-size:14px;color:#1e293b;">🛠️ Sobre o Servico e Prazos</h3>
-    <ul style="margin:0;padding:0 0 0 20px;font-size:13px;color:#475569;line-height:1.8;">
-      <li><strong>Inicio da Contagem:</strong> O prazo comeca a contar a partir de agora.</li>
-      <li><strong>Agilidade:</strong> Nosso compromisso e finalizar e entregar o mais rapido possivel.</li>
-      <li><strong>Aviso de Conclusao:</strong> Voce recebera uma notificacao assim que o servico for finalizado.</li>
-    </ul>
+  <div style="text-align:center;margin:0 0 24px;">
+    <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr><td style="background:#15803d;border-radius:10px;">
+      <a href="${portalCtaUrl}" style="display:inline-block;color:#fff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 32px;">
+        Ver Orcamento e Aprovar
+      </a>
+    </td></tr></table>
+    <p style="margin:12px 0 0;font-size:12px;color:#64748b;">Acesso direto, sem senha.</p>
   </div>
-  <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:16px;margin:0 0 24px;">
-    <h3 style="margin:0 0 8px;font-size:14px;color:#1e40af;">💳 Formas de Pagamento (na Entrega)</h3>
-    <ul style="margin:0;padding:0 0 0 20px;font-size:13px;color:#1e40af;line-height:1.8;">
-      <li><strong>Cartao de Credito:</strong> Parcelamos em ate 3x sem juros</li>
-      <li><strong>PIX / Transferencia:</strong>${pixBanco ? ` ${e(pixBanco)} —` : ''} Chave PIX (CNPJ): ${e(pixKey)}</li>
-      <li>Favorecido: ${e(companyName)}</li>
-    </ul>
-  </div>
-  <div style="margin:0 0 24px;">
-    <h3 style="margin:0 0 8px;font-size:14px;color:#1e293b;">🚚 Entrega e Horarios</h3>
-    <p style="font-size:13px;color:#475569;line-height:1.7;margin:0;">
-      Antes de levarmos o equipamento, entraremos em contato para confirmar se havera alguem no local.<br>
-      <strong>Horarios:</strong> ${e(horario)}
-    </p>
-  </div>
-  ${whatsappUrl ? `<div style="text-align:center;margin:0 0 16px;">
+  ${whatsappUrl ? `<div style="text-align:center;margin:0;border-top:1px solid #e2e8f0;padding-top:20px;">
+    <p style="margin:0 0 10px;font-size:13px;color:#475569;">Duvidas? Fale com nosso suporte:</p>
     <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr><td style="background:#25d366;border-radius:8px;">
-      <a href="${whatsappUrl}" style="display:inline-block;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 28px;">
-        💬 Fale conosco pelo WhatsApp
+      <a href="${whatsappUrl}" style="display:inline-block;color:#fff;text-decoration:none;font-weight:700;font-size:13px;padding:10px 24px;">
+        💬 WhatsApp Suporte
       </a>
     </td></tr></table>
   </div>` : ''}
-</td></tr>
-<tr><td style="padding:0 32px 24px;">
-  <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:16px;text-align:center;">
-    <p style="margin:0 0 8px;font-size:14px;font-weight:700;color:#0369a1;">📱 Acompanhe sua OS</p>
-    <p style="margin:0 0 12px;font-size:13px;color:#0c4a6e;">Acesse o Portal do Cliente ou consulte pelo nosso site:</p>
-    <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr>
-      <td style="padding:0 6px;"><a href="${await (async () => {
-        const PORTAL_DOMAIN_BY_SLUG: Record<string, string> = {
-          pontualtech: 'portal.pontualtech.com.br',
-          imprimitech: 'portal.imprimitech.com.br',
-        }
-        const sl = os.companies?.slug || ''
-        const pb = process.env.PORTAL_URL
-          || (sl ? `https://${PORTAL_DOMAIN_BY_SLUG[sl] || `portal.${sl}.com.br`}` : 'https://portal.pontualtech.com.br')
-        // Magic-link: cliente clica no email e entra no portal sem senha,
-        // ja redirecionado pra OS especifica.
-        const { createAccessToken: catEmailAprov } = await import('@/lib/portal-auth')
-        const tokenEmailAprov = catEmailAprov(os.customer_id, user.companyId)
-        const redirEmailAprov = encodeURIComponent(`/portal/${sl}/os/${os.id}`)
-        return sl ? `${pb}/portal/${sl}/entrar?t=${tokenEmailAprov}&r=${redirEmailAprov}` : pb
-      })()}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Portal do Cliente</a></td>
-      ${cc.website ? `<td style="padding:0 6px;"><a href="${cc.website}/#consulta-os" style="display:inline-block;padding:10px 20px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">Consultar no Site</a></td>` : ''}
-    </tr></table>
-    <p style="margin:12px 0 0;font-size:13px;color:#0c4a6e;">Duvidas? Fale com nosso suporte:</p>
-    <table cellpadding="0" cellspacing="0" style="margin:8px auto 0;"><tr>
-      <td><a href="${whatsappUrl || cc.whatsappUrl}" style="display:inline-block;padding:10px 24px;background:#25d366;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">💬 WhatsApp Suporte</a></td>
-    </tr></table>
-  </div>
 </td></tr>
 <tr><td style="background:#1e293b;padding:24px 32px;text-align:center;">
   <p style="margin:0 0 4px;font-size:14px;font-weight:700;color:#fff;">${e(companyName)}</p>
@@ -236,7 +208,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           await sendCompanyEmail(
             user.companyId,
             customerEmail,
-            `Aprovacao Confirmada — Orcamento #${osNum} — ${companyName}`,
+            `Orcamento pronto — OS #${osNum} — Aguardando sua aprovacao`,
             emailHtml
           )
           results.push({ channel: 'email', status: 'enviado' })
