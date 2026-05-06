@@ -104,6 +104,17 @@ const ENV_CONFIGS: Record<string, Partial<BotCompanyConfig> & { settingsPrefix?:
     cwToken: process.env.CW_IMPRI_TOKEN || '',
     settingsPrefix: 'bot.aline.config.',
   },
+  // 2026-05-06: bot Aline atendendo na inbox SAC E.mail da Imprimitech
+  // (Channel::Email). Espelha pontualtech-email — empresas separadas:
+  // Chatwoot Imprimitech proprio (chat.imp.pontualtech.work), DIFY_IMPRI_*
+  // proprio, CW_IMPRI_TOKEN proprio. Reusa Aline (DIFY_IMPRI_SUPORTE_API_KEY).
+  'imprimitech-email': {
+    companyId: resolveBotCompanyId('BOT_IMPRI_COMPANY_ID', '86c829cf-32ed-4e40-80cd-59ce4178aa1a'),
+    difyApiKey: process.env.DIFY_IMPRI_SUPORTE_API_KEY || process.env.DIFY_IMPRI_API_KEY || '',
+    botApiKey: process.env.BOT_IMPRI_API_KEY || '',
+    cwToken: process.env.CW_IMPRI_TOKEN || '',
+    settingsPrefix: 'bot.email.imprimitech.config.',
+  },
 }
 
 // DB-loaded config cache (5 min TTL)
@@ -132,13 +143,19 @@ async function getCompanyConfig(companySlug?: string | null): Promise<BotCompany
     dbCfg[normalizedKey] = s.value
   }
 
-  // 2026-05-06: defaults por canal — slug "*-email" defaulta pra inbox 1
-  // (Chatwoot Channel::Email "contato"), bot_origin com 'marta' pra que a
-  // logica isSuporteBot existente (linhas 1226/1668) trate como suporte
-  // e nao como vendas (sem criar OS, sem follow-up de vendas).
+  // 2026-05-06: defaults por canal — slug "*-email" defaulta pra inbox de
+  // email do tenant (Chatwoot Channel::Email). PontualTech = inbox 1
+  // ("contato"), Imprimitech = inbox 2 ("SAC E.mail"). bot_origin contem
+  // 'marta' (PT) ou 'aline' (IM) pra que isSuporteBot existente (linhas
+  // 1226/1668) trate como suporte (sem criar OS, sem follow-up vendas).
   const isEmailChannel = slug.endsWith('-email')
-  const defaultAllowedInboxes = isEmailChannel ? '1' : '2,4,9'
-  const defaultBotOrigin = isEmailChannel ? `email_marta_${slug.replace('-email', '')}` : `whatsapp_bot_${slug}`
+  const isImprimitech = slug.includes('imprimitech')
+  const defaultAllowedInboxes = isEmailChannel
+    ? (isImprimitech ? '2' : '1')
+    : '2,4,9'
+  const defaultBotOrigin = isEmailChannel
+    ? (isImprimitech ? 'email_aline_imprimitech' : 'email_marta_pontualtech')
+    : `whatsapp_bot_${slug}`
   const cfg: BotCompanyConfig = {
     companyId: envCfg.companyId!,
     slug: dbCfg['bot.config.slug'] || slug,
