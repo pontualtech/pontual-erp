@@ -53,6 +53,16 @@ interface BotCompanyConfig {
   legacyOsMax: number // OS number range for legacy system (max)
   newOsMin: number // OS numbers >= this are new system
   legacyCutoffDate: string // ISO date: OS created before this = legacy (even if in new range)
+  // 2026-05-06: ground-truth da empresa pra injetar no prompt e impedir bot
+  // de alucinar PIX/CNPJ/URLs. Lido do DB (settings com keys pix.chave,
+  // company.cnpj, etc). Cache 5min via botConfigCache.
+  pixKey: string
+  pixBanco: string
+  companyCnpj: string
+  companyPhone: string
+  companyEmail: string
+  companyHorario: string
+  companyAddress: string
 }
 
 // C8 fix (audit): warning explícito se env vars de companyId faltarem.
@@ -132,15 +142,33 @@ async function getCompanyConfig(companySlug?: string | null): Promise<BotCompany
   if (botConfigCache.size >= CACHE_MAX) botConfigCache.clear()
 
   // Load from DB settings (custom prefix for multi-bot per company)
+  // Inclui tambem settings da empresa (pix.*, company.*) pra ground-truth
+  // que e injetada no prompt e impede o bot de alucinar dados financeiros.
   const prefix = (envCfg as any).settingsPrefix || 'bot.config.'
+  const COMPANY_GROUND_TRUTH_KEYS = [
+    'pix.chave', 'pix.banco',
+    'company.cnpj', 'company.phone', 'company.email',
+    'company.horario', 'company.address',
+  ]
   const settings = await prisma.setting.findMany({
-    where: { company_id: envCfg.companyId, key: { startsWith: prefix } },
+    where: {
+      company_id: envCfg.companyId,
+      OR: [
+        { key: { startsWith: prefix } },
+        { key: { in: COMPANY_GROUND_TRUTH_KEYS } },
+      ],
+    },
   })
   const dbCfg: Record<string, string> = {}
+  const companyGroundTruth: Record<string, string> = {}
   for (const s of settings) {
-    // Normalize key: remove prefix, then re-add as 'bot.config.' for uniform access
-    const normalizedKey = 'bot.config.' + s.key.slice(prefix.length)
-    dbCfg[normalizedKey] = s.value
+    if (s.key.startsWith(prefix)) {
+      // Normalize key: remove prefix, then re-add as 'bot.config.' for uniform access
+      const normalizedKey = 'bot.config.' + s.key.slice(prefix.length)
+      dbCfg[normalizedKey] = s.value
+    } else if (COMPANY_GROUND_TRUTH_KEYS.includes(s.key)) {
+      companyGroundTruth[s.key] = s.value
+    }
   }
 
   // 2026-05-06: defaults por canal — slug "*-email" defaulta pra inbox de
@@ -180,6 +208,14 @@ async function getCompanyConfig(companySlug?: string | null): Promise<BotCompany
     legacyOsMax: parseInt(dbCfg['bot.config.legacy_os_max'] || (slug.includes('imprimitech') ? '5200' : '59999')),
     newOsMin: parseInt(dbCfg['bot.config.new_os_min'] || (slug.includes('imprimitech') ? '6000' : '60000')),
     legacyCutoffDate: dbCfg['bot.config.legacy_cutoff_date'] || '2026-04-10',
+    // 2026-05-06: ground-truth da empresa (settings pix.* / company.*)
+    pixKey: companyGroundTruth['pix.chave'] || companyGroundTruth['company.cnpj'] || '',
+    pixBanco: companyGroundTruth['pix.banco'] || '',
+    companyCnpj: companyGroundTruth['company.cnpj'] || '',
+    companyPhone: companyGroundTruth['company.phone'] || '',
+    companyEmail: companyGroundTruth['company.email'] || '',
+    companyHorario: companyGroundTruth['company.horario'] || '',
+    companyAddress: companyGroundTruth['company.address'] || '',
   }
 
   botConfigCache.set(slug, { cfg, ts: Date.now() })
@@ -1513,6 +1549,26 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       }
     }
 
+    // ── GROUND-TRUTH DA EMPRESA — injecao GLOBAL (todos os bots, vendas e
+    //    suporte). Sem isso o bot inventa CNPJ, chave PIX, URL portal etc.
+    //    Caso reportado 2026-05-06: Aline disse "pix@imprimitech.com.br" e
+    //    "www.imprimitech.com.br/portal/123456" (FAKE). Solucao: passar
+    //    valores reais do DB (settings pix.chave, company.cnpj, etc) e
+    //    proibir explicitamente alucinacao.
+    {
+      const empParts: string[] = [`Empresa: ${cfg.companyDisplayName}`]
+      if (cfg.companyCnpj) empParts.push(`CNPJ: ${cfg.companyCnpj}`)
+      if (cfg.pixKey) empParts.push(`Chave PIX (e o proprio CNPJ): ${cfg.pixKey}`)
+      if (cfg.pixBanco) empParts.push(`Banco: ${cfg.pixBanco}`)
+      if (cfg.companyPhone) empParts.push(`Telefone: ${cfg.companyPhone}`)
+      if (cfg.companyEmail) empParts.push(`Email: ${cfg.companyEmail}`)
+      if (cfg.companyHorario) empParts.push(`Horario: ${cfg.companyHorario}`)
+      if (cfg.companyAddress) empParts.push(`Endereco: ${cfg.companyAddress}`)
+      empParts.push(`Portal do Cliente (base): ${portalBase(cfg)}`)
+      empParts.push(`Site institucional: https://${cfg.companyDisplayName.toLowerCase().includes('imprimitech') ? 'imprimitech.com.br' : 'pontualtech.com.br'}`)
+      query += `\n[DADOS REAIS DA EMPRESA — use APENAS estes valores. NUNCA invente CNPJ, chave PIX, URL, telefone ou email. Se o usuario perguntar PIX, copie a Chave PIX EXATA. Se perguntar URL/portal, use o magic-link do contexto da OS especifica (campo "Portal: https://..." dentro de "OS ativas"); se nao houver, use "Portal do Cliente (base)". NUNCA escreva URLs como "www.X.com.br/portal/123456" — sao falsas e perigosas. Dados disponiveis: ${empParts.join(' | ')}]`
+    }
+
     // ── BOT SUPORTE RULES: inject behavioral constraints for suporte bots (Marta/Aline) ──
     if (cfg.slug.includes('suporte') || cfg.botOrigin?.includes('marta') || cfg.botOrigin?.includes('aline')) {
       query += `\n[REGRAS DA ${cfg.botName.toUpperCase()} (${cfg.companyDisplayName}) — OBRIGATORIO:
@@ -1526,7 +1582,13 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
 8. Use [TRANSFERIR_HUMANO] APENAS quando: (a) cliente pedir explicitamente humano/atendente; (b) cliente fizer reclamacao GRAVE (mencionar Procon, juridico, processo, denuncia); (c) erro tecnico real que voce nao consegue resolver com os dados disponiveis. Em caso de duvida, NAO transfira — responda com o que voce sabe.
 9. PAGAMENTO (cliente diz "fiz Pix nao apareceu", "boleto pago", "comprovante", "pagamento nao caiu"): NAO transfira. Responda: "Vou registrar internamente para nossa equipe financeira conferir a compensacao. O sistema atualiza automaticamente em ate 2h uteis. Voce pode acompanhar pelo Portal." Tranquilize o cliente.
 10. ENTREGA / LOGISTICA / PRAZO ("preciso da impressora", "quando entrega", "previsao", "ja paguei quero o equipamento"): NAO transfira. Informe o status atual da OS e diga: "Nossa equipe de logistica entrara em contato para alinhar o agendamento da entrega assim que o servico for finalizado." Sem prometer data especifica.
-11. PARCELAMENTO / FORMAS DE PAGAMENTO ("posso parcelar", "no cartao", "vai dividir", "tem desconto", "pix"): NAO transfira. Responda DIRETO: "Sim! Aceitamos cartao de credito em ate 3x sem juros, PIX e dinheiro a vista. Voce pode escolher a melhor forma de pagamento na hora da retirada/entrega." Nunca diga "vou registrar pra equipe financeira" para essa pergunta.]`
+11. PARCELAMENTO / FORMAS DE PAGAMENTO ("posso parcelar", "no cartao", "vai dividir", "tem desconto", "pix"): NAO transfira. Responda DIRETO: "Sim! Aceitamos cartao de credito em ate 3x sem juros, PIX e dinheiro a vista. Voce pode escolher a melhor forma de pagamento na hora da retirada/entrega." Nunca diga "vou registrar pra equipe financeira" para essa pergunta.
+12. NUNCA INVENTE DADOS — esta e a regra mais critica. Quando o cliente pedir:
+    (a) Chave PIX -> use APENAS a "Chave PIX" listada em [DADOS REAIS DA EMPRESA]. NUNCA invente como "pix@empresa.com.br" ou "11999999999".
+    (b) Numero de OS -> use APENAS o numero que esta no [CONTEXTO DO CLIENTE / OS ativas] ou que o cliente JA forneceu. NUNCA invente "123456" ou numeros placeholder.
+    (c) URL do portal -> use APENAS a URL completa do campo "Portal: https://..." dentro de cada OS no contexto. Se nao houver OS especifica, use "Portal do Cliente (base)" do [DADOS REAIS DA EMPRESA]. NUNCA escreva "www.empresa.com.br/portal/123456".
+    (d) CNPJ, telefone, email, endereco -> use APENAS o valor de [DADOS REAIS DA EMPRESA].
+    Se nao tiver o dado real disponivel, diga: "Vou consultar essa informacao" e use [TRANSFERIR_HUMANO]. NUNCA forneca um valor inventado.]`
     }
 
     // Handle OS confirmation flow
