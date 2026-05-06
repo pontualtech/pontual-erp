@@ -1501,7 +1501,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
                 }
                 return `OS #${osNum} (${o.equipment}, Status: ${o.status_name}${portalLink ? `, Portal: ${portalLink}` : ''})`
               }).join('; ')
-              query += `\n[CONTEXTO DO CLIENTE: Nome: ${customer.legal_name || 'N/A'}, Telefone: ${phone}, OS ativas: ${osList}. O cliente JA FOI IDENTIFICADO — NAO pergunte numero da OS, ja informe o status diretamente. SEMPRE inclua o link do portal na resposta.]`
+              query += `\n[CONTEXTO DO CLIENTE: Nome: ${customer.legal_name || 'N/A'}, Telefone: ${phone}, OS ativas: ${osList}. O cliente JA FOI IDENTIFICADO — NAO pergunte numero da OS, ja informe o status diretamente. SEMPRE inclua na sua resposta a URL "Portal: https://..." COMPLETA da OS relevante (extraida do contexto OS ativas acima). NUNCA escreva apenas "portal.pontualtech.com.br" ou "portal.imprimitech.com.br" sozinho como link — sempre use a URL completa do contexto pra o cliente nao precisar fazer login.]`
               console.log(`[Bot] Auto-identified: ${customer.legal_name} — ${activeOS.length} active OS`)
             } else {
               // Customer found but no active OS — still inject name context
@@ -1688,7 +1688,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
           try {
             const { createAccessToken: cat } = await import('@/lib/portal-auth')
             const magicToken = cat(customerId, cfg.companyId)
-            const tenantSlug = cfg.slug.replace('-suporte', '')
+            const tenantSlug = cfg.slug.replace('-suporte', '').replace('-email', '')
             const redirectPath = `/portal/${tenantSlug}/os/${osId}`
             magicPortalUrl = `${portalBase(cfg)}/entrar?t=${magicToken}&r=${encodeURIComponent(redirectPath)}`
           } catch (e) {
@@ -1696,7 +1696,31 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
           }
         }
 
+        // 2026-05-06: encurta magic-link antes de enviar — URL de 350+ chars
+        // (com JWT) e visualmente feia no chat e parece string aleatoria.
+        // Curto fica `portal.X.com.br/s/aBc1234`. Karlao decision 2026-05-06.
+        let displayPortalUrl = magicPortalUrl
+        if (customerId && magicPortalUrl.includes('/entrar?t=')) {
+          try {
+            const { shortenUrl } = await import('@/lib/short-link')
+            displayPortalUrl = await shortenUrl(magicPortalUrl, cfg.companyId, customerId)
+          } catch (e) {
+            console.warn('[Bot] shortenUrl falhou para OS aberta, usando URL completa:', e instanceof Error ? e.message : e)
+          }
+        }
+
         if (osNum > 0) {
+          // 2026-05-06: linka customer recem-criado ao botConversation. Sem
+          // isso, quando o cliente continua conversando apos OS aberta, o
+          // findCustomerByChatwootContact retorna null (botConv sem customer_id)
+          // e o contexto rico com magic-link nao e injetado na proxima resposta.
+          if (customerId) {
+            await prisma.botConversation.update({
+              where: { id: botConv.id },
+              data: { customer_id: customerId },
+            }).catch(e => console.warn('[Bot] failed to link customer_id to botConv:', e instanceof Error ? e.message : e))
+          }
+
           await cwSendMessage(cfg, conversationId, `✅ *OS #${osNum}* aberta para ${clienteNome}!`)
 
           // NOTA: removida a chamada redundante a sendWhatsAppTemplate('pt_os_aberta_v3').
@@ -1712,7 +1736,9 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
 
           // Send the magic-link directly in the conversation — sempre dentro da
           // janela 24h (cliente acabou de mandar mensagem), Cloud aceita texto.
-          await cwSendMessage(cfg, conversationId, `🔗 Acompanhe sua OS pelo portal (acesso direto, sem senha):\n${magicPortalUrl}`)
+          // Usa displayPortalUrl (encurtado) pra cliente; nota privada usa o
+          // magicPortalUrl original (completo) pra atendente debug.
+          await cwSendMessage(cfg, conversationId, `🔗 Acompanhe sua OS pelo portal (acesso direto, sem senha):\n${displayPortalUrl}`)
 
           // Private note with all links for agents (always visible in conversation)
           const vdNote = parsed.vhsysData as Record<string, any>
@@ -1738,7 +1764,8 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
             `📧 ${pickNote('email') || 'N/I'} | 📍 ${pickNote('endereco', 'logradouro') || 'N/I'}`,
             ``,
             `🔗 ERP: ${ERP_BASE_URL}/os/${osNum}`,
-            `🔗 Portal (magic-link): ${magicPortalUrl}`,
+            `🔗 Portal (curto): ${displayPortalUrl}`,
+            `🔗 Portal (magic-link completo): ${magicPortalUrl}`,
           ]
           await cwSendMessage(cfg, conversationId, noteLines.join('\n'), true)
           await cwSetLabels(cfg, conversationId, ['os_aberta'])
