@@ -278,6 +278,94 @@ async function cwSendInteractiveCard(
   }
 }
 
+/**
+ * Converte texto plain da Marta em HTML estruturado para email.
+ * URLs viram <a> clicaveis. Paragrafos preservam quebras. Adiciona
+ * assinatura padrao "Marta — PontualTech".
+ *
+ * 2026-05-06: Karlao decidiu que email precisa de HTML formatado, nao
+ * texto plain. Mantem layout simples (sem cores fortes/imagens) pra
+ * compatibilidade com clientes corporativos.
+ */
+function wrapEmailHtml(plainText: string, cfg: BotCompanyConfig): string {
+  // Escape HTML special chars (proteção XSS no caso de Dify retornar texto malicioso)
+  const escapeHtml = (s: string) => s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+
+  // Linkify URLs (http/https) — escapa HTML primeiro, depois insere <a>
+  const linkify = (s: string) => s.replace(
+    /(https?:\/\/[^\s<>"]+)/g,
+    '<a href="$1" style="color:#0056b3;text-decoration:underline;">$1</a>'
+  )
+
+  const escaped = escapeHtml(plainText)
+  // Paragrafos: linhas vazias separam <p>; quebras simples viram <br>
+  const paragraphs = escaped.split(/\n\s*\n/).map(p =>
+    `<p style="margin:0 0 12px;">${linkify(p.replace(/\n/g, '<br>'))}</p>`
+  ).join('')
+
+  const supportNum = (cfg.supportWhatsApp || '').replace(/\D/g, '') || '551126263841'
+  const whatsappUrl = `https://wa.me/${supportNum}`
+
+  return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#1e293b;line-height:1.6;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:24px 0;"><tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.06);">
+<tr><td style="padding:28px 32px 8px;">
+${paragraphs}
+</td></tr>
+<tr><td style="padding:8px 32px 24px;border-top:1px solid #e2e8f0;margin-top:16px;">
+<p style="margin:16px 0 4px;font-size:14px;color:#1e293b;">Atenciosamente,</p>
+<p style="margin:0;font-size:14px;font-weight:700;color:#0056b3;">${escapeHtml(cfg.botName)}</p>
+<p style="margin:0;font-size:13px;color:#64748b;">Equipe ${escapeHtml(cfg.companyDisplayName)}</p>
+<p style="margin:8px 0 0;font-size:12px;color:#64748b;">WhatsApp Suporte: <a href="${whatsappUrl}" style="color:#0056b3;">${supportNum.replace(/^55/,'').replace(/^(\d{2})(\d{4,5})(\d{4})$/, '($1) $2-$3')}</a></p>
+</td></tr>
+</table></td></tr></table></body></html>`
+}
+
+/**
+ * Envia mensagem por email via Chatwoot. Diferente de cwSendMessage:
+ * passa content_attributes.email.html_content.full pra Chatwoot renderizar
+ * HTML rico no email enviado ao cliente. content (texto plain) tambem e
+ * enviado como fallback pra clientes que nao renderizam HTML.
+ */
+async function cwSendEmail(
+  cfg: BotCompanyConfig,
+  conversationId: number,
+  plainText: string,
+  htmlContent: string,
+): Promise<boolean> {
+  try {
+    const res = await fetch(`${cwBase(cfg)}/conversations/${conversationId}/messages`, {
+      method: 'POST',
+      headers: cwHeaders(cfg),
+      body: JSON.stringify({
+        content: plainText,
+        message_type: 'outgoing',
+        private: false,
+        content_attributes: {
+          bot_sent: true,
+          email: { html_content: { full: htmlContent } },
+        },
+      }),
+      signal: AbortSignal.timeout(10000),
+    })
+    if (!res.ok) {
+      const body = await res.text()
+      console.error(`[Bot/Email] Chatwoot email send failed ${res.status}: ${body.slice(0, 300)}`)
+      return false
+    }
+    return true
+  } catch (err) {
+    console.error(`[Bot/Email] Chatwoot email error:`, err instanceof Error ? err.message : err)
+    return false
+  }
+}
+
 async function cwSetLabels(cfg: BotCompanyConfig, conversationId: number, labels: string[]) {
   const convRes = await fetch(`${cwBase(cfg)}/conversations/${conversationId}`, {
     headers: cwHeaders(cfg),
@@ -605,12 +693,20 @@ interface ParsedResponse {
   cleanText: string
   vhsysData: Record<string, unknown> | null
   action: 'ABRIR_OS' | 'ENCERRAR_CONVERSA' | 'TRANSFERIR_HUMANO' | 'TRANSFERIR_RAFAEL' | 'NENHUMA_ACAO' | null
+  // 2026-05-06: retencao por email — Marta sinaliza transicao de status.
+  // NIVEL1 (cliente acha caro/recusa 1a vez) -> Orcar Negociar (tecnico avalia 2o orcamento).
+  // NIVEL2 (recusa 2a vez ou irredutivel) -> Renegociar (gerente intervem).
+  // Tag formato: [STATUS_ORCAR_NEGOCIAR:60343] ou [STATUS_RENEGOCIAR:60343].
+  retentionStatus: 'Orcar Negociar' | 'Renegociar' | null
+  retentionOsNumber: number | null
 }
 
 function parseDifyResponse(text: string): ParsedResponse {
   let cleanText = text
   let vhsysData: Record<string, unknown> | null = null
   let action: ParsedResponse['action'] = null
+  let retentionStatus: ParsedResponse['retentionStatus'] = null
+  let retentionOsNumber: number | null = null
 
   // Extract [VHSYS_DATA]{json}[/VHSYS_DATA]
   const dataMatch = text.match(/\[VHSYS_DATA\]([\s\S]+?)\[\/VHSYS_DATA\]/)
@@ -621,6 +717,21 @@ function parseDifyResponse(text: string): ParsedResponse {
       console.error('[Bot] Failed to parse VHSYS_DATA JSON')
     }
     cleanText = cleanText.replace(/\[VHSYS_DATA\]([\s\S]+?)\[\/VHSYS_DATA\]/, '').trim()
+  }
+
+  // Detect retention status tags (with optional OS number).
+  // Matches both [STATUS_ORCAR_NEGOCIAR:60343] and [STATUS_ORCAR_NEGOCIAR].
+  const orcarNegMatch = text.match(/\[STATUS_ORCAR_NEGOCIAR(?::(\d+))?\]/)
+  if (orcarNegMatch) {
+    retentionStatus = 'Orcar Negociar'
+    if (orcarNegMatch[1]) retentionOsNumber = parseInt(orcarNegMatch[1], 10)
+    cleanText = cleanText.replace(/\[STATUS_ORCAR_NEGOCIAR(?::\d+)?\]/g, '').trim()
+  }
+  const renegMatch = text.match(/\[STATUS_RENEGOCIAR(?::(\d+))?\]/)
+  if (renegMatch) {
+    retentionStatus = 'Renegociar'
+    if (renegMatch[1]) retentionOsNumber = parseInt(renegMatch[1], 10)
+    cleanText = cleanText.replace(/\[STATUS_RENEGOCIAR(?::\d+)?\]/g, '').trim()
   }
 
   // Detect action tags
@@ -641,7 +752,7 @@ function parseDifyResponse(text: string): ParsedResponse {
     cleanText = cleanText.replace(/\[NENHUMA_ACAO\]/g, '').trim()
   }
 
-  return { cleanText, vhsysData, action }
+  return { cleanText, vhsysData, action, retentionStatus, retentionOsNumber }
 }
 
 // ---------------------------------------------------------------------------
@@ -802,6 +913,12 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
   if (inboxId && !cfg.allowedInboxes.includes(inboxId)) {
     return
   }
+
+  // 2026-05-06: detecta canal email (inbox 1 "contato" Channel::Email).
+  // Quando email: (a) prefixa query do Dify com instrucao de tom formal,
+  // (b) wrappa resposta em HTML estruturado antes de enviar pra Chatwoot.
+  const channelType = body.inbox?.channel_type || body.conversation?.channel || ''
+  const isEmailChannel = channelType === 'Channel::Email' || cfg.slug.endsWith('-email')
 
   const conversationId: number = body.conversation?.id
   if (!conversationId) return
@@ -978,6 +1095,29 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
     const dateStr = `${nowBR.getDate()} de ${months[nowBR.getMonth()]} de ${nowBR.getFullYear()} (${weekdays[nowBR.getDay()]})`
     const timeStr = `${String(nowBR.getHours()).padStart(2,'0')}:${String(nowBR.getMinutes()).padStart(2,'0')}`
     query += `\n[DATA E HORA ATUAL: ${dateStr} ${timeStr} (horario de Brasilia). Use esta data como referencia para qualquer calculo relativo como "amanha", "proximo dia util", "proxima segunda", etc. NUNCA invente datas de anos anteriores.]`
+
+    // 2026-05-06: regras de canal injetadas inline (sem mexer no prompt
+    // do Dify). Email exige tom formal + paragrafos completos + sem emojis.
+    // Fluxo de retencao com transicao automatica de status: cliente recusa ->
+    // OS vai pra "Orcar Negociar" (tecnico avalia 2o orcamento reduzido).
+    // Se recusa de novo -> "Renegociar" (gerente intervem pessoalmente).
+    // Status disparado via tags [STATUS_ORCAR_NEGOCIAR] / [STATUS_RENEGOCIAR]
+    // que o webhook detecta apos resposta Dify e chama atualizar-os endpoint.
+    // WhatsApp mantem comportamento atual por default.
+    if (isEmailChannel) {
+      query += `\n[CANAL: EMAIL — REGRAS DE FORMATO E TOM:
+1. Responda em portugues formal, com paragrafos completos. NAO use emojis. NAO use markdown WhatsApp (*negrito*, _italico_).
+2. Estrutura: saudacao ("Prezado(a) [nome]"), corpo com paragrafos, encerramento educado.
+3. NAO assine ao final — a assinatura "Atenciosamente, Marta — Equipe PontualTech" sera adicionada automaticamente. Apenas escreva o corpo.
+4. Links: escreva a URL completa diretamente no texto. NAO use [texto](url) markdown — o sistema converte URLs em links clicaveis no email.
+5. Mantenha tom acolhedor e profissional, mas mais formal que WhatsApp.
+
+[FLUXO DE RETENCAO POR EMAIL — quando cliente recusa orcamento ou questiona valor:
+- NIVEL 1 (primeira recusa OU duvida sobre valor): seja resiliente. Reconheca a posicao do cliente, prometa avaliar com supervisor de pecas/servicos para ver se conseguimos reduzir o valor com um segundo orcamento. Prometa retorno em ate 24h uteis. NAO ofereca desconto direto — sinalize que vamos pedir ao tecnico revisar pecas e servicos para uma proposta nova. AO FINAL DA SUA RESPOSTA inclua a tag [STATUS_ORCAR_NEGOCIAR:NUMERO_DA_OS] na ultima linha (substituindo NUMERO_DA_OS pelo numero real, ex: [STATUS_ORCAR_NEGOCIAR:60343]). O sistema vai mover a OS automaticamente para o status "Orcar Negociar" e notificar o tecnico.
+- NIVEL 2 (cliente recusa o segundo orcamento OU se mantem irredutivel apos NIVEL1): escale para gerencia. Mencione que vamos avaliar nao so valor mas condicoes de pagamento (parcelamento, prazo) e que nosso gerente entrara em contato pessoalmente em ate 4h uteis. AO FINAL DA SUA RESPOSTA inclua a tag [STATUS_RENEGOCIAR:NUMERO_DA_OS] na ultima linha (substituindo NUMERO_DA_OS pelo numero real, ex: [STATUS_RENEGOCIAR:60343]). O sistema vai mover a OS automaticamente para "Renegociar" e notificar a gerencia.
+- Em ambos: NUNCA ofereca logistica de devolucao no email de retencao. O foco e renegociar o servico, nao desistir do equipamento.
+- Se nao for caso de retencao, NAO inclua nenhuma das tags acima.]`
+    }
 
     console.log(`[Bot] Conv ${conversationId}: loop ${loopIdx + 1} — processing ${pendingMsgs.length} consolidated message(s)`)
 
@@ -1632,6 +1772,59 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       data: updateData,
     })
 
+    // 2026-05-06: handler de retencao por email — Marta sinaliza transicao
+    // de status via tag [STATUS_ORCAR_NEGOCIAR:N] / [STATUS_RENEGOCIAR:N].
+    // Aqui chamamos /api/bot/atualizar-os pra mover OS, registramos nota
+    // interna no Chatwoot e disparamos human takeover (gerencia/tecnico
+    // precisa avaliar). Falha silenciosa: se a transicao falhar (transicao
+    // nao permitida, OS nao encontrada), bot ainda responde ao cliente
+    // com a mensagem de retencao — apenas a movimentacao de status falha.
+    if (parsed.retentionStatus && parsed.retentionOsNumber) {
+      try {
+        const novelStatus = parsed.retentionStatus
+        const isUrgent = novelStatus === 'Renegociar'
+        const noteHumano = isUrgent
+          ? `[BOT — URGENTE] Cliente recusou orcamento e nao aceita nem o segundo. OS movida para "Renegociar". Gerencia precisa intervir pessoalmente em ate 4h uteis para avaliar desconto agressivo ou plano de parcelamento.`
+          : `[BOT] Cliente questionou valor / recusou primeiro orcamento. OS movida para "Orcar Negociar". Tecnico deve avaliar reducao de valor (revisar pecas/servicos) e cadastrar segundo orcamento.`
+
+        const updateRes = await fetch(`${ERP_BASE_URL}/api/bot/atualizar-os`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Bot-Key': cfg.botApiKey,
+          },
+          body: JSON.stringify({
+            os_numero: parsed.retentionOsNumber,
+            status: novelStatus,
+            notas_internas: noteHumano,
+          }),
+        })
+
+        if (updateRes.ok) {
+          console.log(`[Bot/Retencao] OS ${parsed.retentionOsNumber} -> "${novelStatus}" (${isUrgent ? 'NIVEL2' : 'NIVEL1'})`)
+          await cwSendMessage(cfg, conversationId, noteHumano, true)
+          // Marca human takeover pra Rafael/gerencia atender
+          await prisma.botConversation.update({
+            where: { id: botConv.id },
+            data: { human_takeover: true, step: 'HUMAN' },
+          })
+          try {
+            await fetch(`${cwBase(cfg)}/conversations/${conversationId}/assignments`, {
+              method: 'POST',
+              headers: cwHeaders(cfg),
+              body: JSON.stringify({ assignee_id: cfg.humanAgentId }),
+            })
+          } catch {}
+        } else {
+          const errBody = await updateRes.text().catch(() => '')
+          console.warn(`[Bot/Retencao] Falha ao mover OS ${parsed.retentionOsNumber} para "${novelStatus}": ${updateRes.status} ${errBody.slice(0, 200)}`)
+          await cwSendMessage(cfg, conversationId, `[BOT] ⚠️ Marta detectou retencao (${novelStatus}) na OS ${parsed.retentionOsNumber}, mas nao conseguiu mover o status automaticamente. Atendente deve avaliar manualmente. Erro: ${errBody.slice(0, 100)}`, true)
+        }
+      } catch (err) {
+        console.error('[Bot/Retencao] Excecao chamando atualizar-os:', err instanceof Error ? err.message : err)
+      }
+    }
+
     // Send response to client — ensure wa.me links use the correct company support number
     if (parsed.cleanText) {
       const supportNum = (cfg.supportWhatsApp || '').replace(/\D/g, '') || '551126263841'
@@ -1668,7 +1861,14 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       // "maquina de empurrar portal" — cliente sentia que nao havia
       // resposta real, so direcionamento. Texto fluido com link inline
       // mantem conversa natural.
-      await cwSendWithTyping(cfg, conversationId, responseText)
+      //
+      // 2026-05-06: branch por canal — email envia HTML formatado, WhatsApp
+      // mantem texto plain (comportamento atual).
+      if (isEmailChannel) {
+        await cwSendEmail(cfg, conversationId, responseText, wrapEmailHtml(responseText, cfg))
+      } else {
+        await cwSendWithTyping(cfg, conversationId, responseText)
+      }
     }
 
     // Post-send actions: fecha a conversa Chatwoot em 2 cenarios
