@@ -699,6 +699,10 @@ interface ParsedResponse {
   // Tag formato: [STATUS_ORCAR_NEGOCIAR:60343] ou [STATUS_RENEGOCIAR:60343].
   retentionStatus: 'Orcar Negociar' | 'Renegociar' | null
   retentionOsNumber: number | null
+  // 2026-05-06: detecta spam recebido na caixa de email. Quando true, ERP
+  // adiciona label 'spam', registra nota e resolve conversa SEM responder
+  // ao remetente (evita que bot interaja com spammers/phishing).
+  isSpam: boolean
 }
 
 /**
@@ -776,6 +780,7 @@ function parseDifyResponse(text: string): ParsedResponse {
   let action: ParsedResponse['action'] = null
   let retentionStatus: ParsedResponse['retentionStatus'] = null
   let retentionOsNumber: number | null = null
+  let isSpam = false
 
   // Extract [VHSYS_DATA]{json}[/VHSYS_DATA]
   const dataMatch = text.match(/\[VHSYS_DATA\]([\s\S]+?)\[\/VHSYS_DATA\]/)
@@ -803,6 +808,12 @@ function parseDifyResponse(text: string): ParsedResponse {
     cleanText = cleanText.replace(/\[STATUS_RENEGOCIAR(?::\d+)?\]/g, '').trim()
   }
 
+  // Spam tag — Marta marca como spam e ERP nao envia resposta pro cliente
+  if (text.includes('[SPAM]')) {
+    isSpam = true
+    cleanText = cleanText.replace(/\[SPAM\]/g, '').trim()
+  }
+
   // Detect action tags
   if (text.includes('[ABRIR_OS]')) {
     action = 'ABRIR_OS'
@@ -821,7 +832,7 @@ function parseDifyResponse(text: string): ParsedResponse {
     cleanText = cleanText.replace(/\[NENHUMA_ACAO\]/g, '').trim()
   }
 
-  return { cleanText, vhsysData, action, retentionStatus, retentionOsNumber }
+  return { cleanText, vhsysData, action, retentionStatus, retentionOsNumber, isSpam }
 }
 
 // ---------------------------------------------------------------------------
@@ -1181,7 +1192,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
     // [STATUS_ORCAR_NEGOCIAR:NUMERO] / [STATUS_RENEGOCIAR:NUMERO] que o
     // webhook detecta e dispara transicao de status automatica.
     if (isEmailChannel) {
-      query += `\n[CANAL: EMAIL. Responda formal, sem emojis. NAO escreva assinatura no fim — sera adicionada automaticamente.\n\nRetencao de orcamento (so use estas tags se cliente recusar/achar caro o orcamento):\n- 1a recusa: prometa avaliar valor com supervisor em 24h, e na ULTIMA LINHA escreva [STATUS_ORCAR_NEGOCIAR:NUMERO_OS]\n- 2a recusa apos isso: escale gerencia em 4h, ULTIMA LINHA [STATUS_RENEGOCIAR:NUMERO_OS]]`
+      query += `\n[CANAL: EMAIL. Responda formal, sem emojis. NAO escreva assinatura no fim — sera adicionada automaticamente.\n\nNUNCA mencione valores monetarios (R$, valor, preco) na resposta — cliente deve entrar no Portal do Cliente para ver detalhes financeiros. Direcione sempre ao portal.\n\nSPAM: se a mensagem for spam, phishing, propaganda nao solicitada, scam, oferta comercial nao relacionada a impressoras, ou conteudo claramente malicioso/automatizado, responda APENAS com [SPAM] (sem mais nenhum texto). O sistema vai marcar a conversa como spam sem enviar resposta ao remetente.\n\nRetencao de orcamento (so use estas tags se cliente recusar/achar caro o orcamento):\n- 1a recusa: prometa avaliar com supervisor em 24h, e na ULTIMA LINHA escreva [STATUS_ORCAR_NEGOCIAR:NUMERO_OS]\n- 2a recusa apos isso: escale gerencia em 4h, ULTIMA LINHA [STATUS_RENEGOCIAR:NUMERO_OS]]`
     }
 
     console.log(`[Bot] Conv ${conversationId}: loop ${loopIdx + 1} — processing ${pendingMsgs.length} consolidated message(s)`)
@@ -1836,6 +1847,27 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       where: { id: botConv.id },
       data: updateData,
     })
+
+    // 2026-05-06: handler de SPAM por email — Marta detecta spam/phishing.
+    // Adiciona label 'spam' no Chatwoot, registra nota interna, resolve a
+    // conversa SEM enviar resposta ao remetente. Evita que o bot interaja
+    // com spammers e mantem caixa limpa pra atendentes humanos.
+    if (parsed.isSpam) {
+      try {
+        console.log(`[Bot/Spam] Marta detectou spam na conv ${conversationId}`)
+        await cwSetLabels(cfg, conversationId, ['spam'])
+        await cwSendMessage(cfg, conversationId, '[BOT] Mensagem identificada como SPAM/phishing pela Marta. Conversa fechada automaticamente sem resposta. Revisar manualmente se for falso positivo.', true)
+        await prisma.botConversation.update({
+          where: { id: botConv.id },
+          data: { human_takeover: false, step: 'IDLE' },
+        })
+        await cwResolve(cfg, conversationId)
+      } catch (err) {
+        console.error('[Bot/Spam] Falha ao marcar conv como spam:', err instanceof Error ? err.message : err)
+      }
+      await releaseLock(botConv.id)
+      return
+    }
 
     // 2026-05-06: handler de retencao por email — Marta sinaliza transicao
     // de status via tag [STATUS_ORCAR_NEGOCIAR:N] / [STATUS_RENEGOCIAR:N].
