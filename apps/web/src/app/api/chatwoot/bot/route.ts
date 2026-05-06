@@ -1522,8 +1522,10 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
 4. Respostas CURTAS (max 3 paragrafos). Sem excesso de emojis.
 5. PORTAL DO CLIENTE: SEMPRE direcione o cliente para o portal. O portal permite aprovar orcamento, recusar orcamento, ver status, ver detalhes. O link do portal esta nos dados da OS.
 6. APROVAR ou RECUSAR orcamento: informe que basta acessar o portal do cliente, clicar em aprovar ou recusar, e a notificacao eh enviada automaticamente para a equipe. NAO precisa de atendente para isso.
-7. EVITAR TRANSFERENCIA: so use [TRANSFERIR_HUMANO] em ULTIMO CASO — quando o cliente ja tentou o portal e nao conseguiu, ou quando o problema nao pode ser resolvido pelo portal (ex: reclamacao grave, problema tecnico no site). Para tudo que o portal resolve (status, orcamento, aprovar, recusar), direcione ao portal.
-8. Se o cliente insiste em falar com humano apos voce sugerir o portal, ai sim use [TRANSFERIR_HUMANO].]`
+7. NUNCA OFERECA proativamente transferencia para atendente humano. NAO escreva frases como "se preferir, posso transferir", "quer que um atendente te ajude?", "caso prefira falar com um atendente". Espere o cliente PEDIR EXPLICITAMENTE com palavras como "humano", "atendente", "alguem", "pessoa", "passa pra".
+8. Use [TRANSFERIR_HUMANO] APENAS quando: (a) cliente pedir explicitamente humano/atendente; (b) cliente fizer reclamacao GRAVE (mencionar Procon, juridico, processo, denuncia); (c) erro tecnico real que voce nao consegue resolver com os dados disponiveis. Em caso de duvida, NAO transfira — responda com o que voce sabe.
+9. PAGAMENTO (cliente diz "fiz Pix nao apareceu", "boleto pago", "comprovante", "pagamento nao caiu"): NAO transfira. Responda: "Vou registrar internamente para nossa equipe financeira conferir a compensacao. O sistema atualiza automaticamente em ate 2h uteis. Voce pode acompanhar pelo Portal." Tranquilize o cliente.
+10. ENTREGA / LOGISTICA / PRAZO ("preciso da impressora", "quando entrega", "previsao", "ja paguei quero o equipamento"): NAO transfira. Informe o status atual da OS e diga: "Nossa equipe de logistica entrara em contato para alinhar o agendamento da entrega assim que o servico for finalizado." Sem prometer data especifica.]`
     }
 
     // Handle OS confirmation flow
