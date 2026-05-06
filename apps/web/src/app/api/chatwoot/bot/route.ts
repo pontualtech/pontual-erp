@@ -1873,7 +1873,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       try {
         console.log(`[Bot/Spam] Marta detectou spam na conv ${conversationId}`)
         await cwSetLabels(cfg, conversationId, ['spam'])
-        await cwSendMessage(cfg, conversationId, '[BOT] Mensagem identificada como SPAM/phishing pela Marta. Conversa fechada automaticamente sem resposta. Revisar manualmente se for falso positivo.', true)
+        await cwSendMessage(cfg, conversationId, `[BOT] Mensagem identificada como SPAM/phishing pela ${cfg.botName}. Conversa fechada automaticamente sem resposta. Revisar manualmente se for falso positivo.`, true)
         await prisma.botConversation.update({
           where: { id: botConv.id },
           data: { human_takeover: false, step: 'IDLE' },
