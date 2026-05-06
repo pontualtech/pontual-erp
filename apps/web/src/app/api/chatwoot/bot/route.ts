@@ -1175,27 +1175,13 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
     const timeStr = `${String(nowBR.getHours()).padStart(2,'0')}:${String(nowBR.getMinutes()).padStart(2,'0')}`
     query += `\n[DATA E HORA ATUAL: ${dateStr} ${timeStr} (horario de Brasilia). Use esta data como referencia para qualquer calculo relativo como "amanha", "proximo dia util", "proxima segunda", etc. NUNCA invente datas de anos anteriores.]`
 
-    // 2026-05-06: regras de canal injetadas inline (sem mexer no prompt
-    // do Dify). Email exige tom formal + paragrafos completos + sem emojis.
-    // Fluxo de retencao com transicao automatica de status: cliente recusa ->
-    // OS vai pra "Orcar Negociar" (tecnico avalia 2o orcamento reduzido).
-    // Se recusa de novo -> "Renegociar" (gerente intervem pessoalmente).
-    // Status disparado via tags [STATUS_ORCAR_NEGOCIAR] / [STATUS_RENEGOCIAR]
-    // que o webhook detecta apos resposta Dify e chama atualizar-os endpoint.
-    // WhatsApp mantem comportamento atual por default.
+    // 2026-05-06: regras de canal compactas (sem mexer no prompt do Dify).
+    // VERSAO ENXUTA: bloco grande fazia Gemini gerar tokens mas zerar
+    // output (sobrecarga). Mantido apenas o essencial. Retencao via tags
+    // [STATUS_ORCAR_NEGOCIAR:NUMERO] / [STATUS_RENEGOCIAR:NUMERO] que o
+    // webhook detecta e dispara transicao de status automatica.
     if (isEmailChannel) {
-      query += `\n[CANAL: EMAIL — REGRAS DE FORMATO E TOM:
-1. Responda em portugues formal, com paragrafos completos. NAO use emojis. NAO use markdown WhatsApp (*negrito*, _italico_).
-2. Estrutura: saudacao ("Prezado(a) [nome]"), corpo com paragrafos, encerramento educado.
-3. NAO assine ao final — a assinatura "Atenciosamente, Marta — Equipe PontualTech" sera adicionada automaticamente. Apenas escreva o corpo.
-4. Links: escreva a URL completa diretamente no texto. NAO use [texto](url) markdown — o sistema converte URLs em links clicaveis no email.
-5. Mantenha tom acolhedor e profissional, mas mais formal que WhatsApp.
-
-[FLUXO DE RETENCAO POR EMAIL — quando cliente recusa orcamento ou questiona valor:
-- NIVEL 1 (primeira recusa OU duvida sobre valor): seja resiliente. Reconheca a posicao do cliente, prometa avaliar com supervisor de pecas/servicos para ver se conseguimos reduzir o valor com um segundo orcamento. Prometa retorno em ate 24h uteis. NAO ofereca desconto direto — sinalize que vamos pedir ao tecnico revisar pecas e servicos para uma proposta nova. AO FINAL DA SUA RESPOSTA inclua a tag [STATUS_ORCAR_NEGOCIAR:NUMERO_DA_OS] na ultima linha (substituindo NUMERO_DA_OS pelo numero real, ex: [STATUS_ORCAR_NEGOCIAR:60343]). O sistema vai mover a OS automaticamente para o status "Orcar Negociar" e notificar o tecnico.
-- NIVEL 2 (cliente recusa o segundo orcamento OU se mantem irredutivel apos NIVEL1): escale para gerencia. Mencione que vamos avaliar nao so valor mas condicoes de pagamento (parcelamento, prazo) e que nosso gerente entrara em contato pessoalmente em ate 4h uteis. AO FINAL DA SUA RESPOSTA inclua a tag [STATUS_RENEGOCIAR:NUMERO_DA_OS] na ultima linha (substituindo NUMERO_DA_OS pelo numero real, ex: [STATUS_RENEGOCIAR:60343]). O sistema vai mover a OS automaticamente para "Renegociar" e notificar a gerencia.
-- Em ambos: NUNCA ofereca logistica de devolucao no email de retencao. O foco e renegociar o servico, nao desistir do equipamento.
-- Se nao for caso de retencao, NAO inclua nenhuma das tags acima.]`
+      query += `\n[CANAL: EMAIL. Responda formal, sem emojis. NAO escreva assinatura no fim — sera adicionada automaticamente.\n\nRetencao de orcamento (so use estas tags se cliente recusar/achar caro o orcamento):\n- 1a recusa: prometa avaliar valor com supervisor em 24h, e na ULTIMA LINHA escreva [STATUS_ORCAR_NEGOCIAR:NUMERO_OS]\n- 2a recusa apos isso: escale gerencia em 4h, ULTIMA LINHA [STATUS_RENEGOCIAR:NUMERO_OS]]`
     }
 
     console.log(`[Bot] Conv ${conversationId}: loop ${loopIdx + 1} — processing ${pendingMsgs.length} consolidated message(s)`)
