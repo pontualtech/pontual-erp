@@ -1069,6 +1069,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
   // Extract sender info
   const sender = body.sender || body.conversation?.meta?.sender || {}
   const phone = sender.phone_number || sender.phone || ''
+  const senderEmail = sender.email || ''
   const contactId = sender.id || body.conversation?.contact_inbox?.contact?.id
 
   console.log(`[Bot] Message from ${phone || 'unknown'} in conv ${conversationId}: "${content.substring(0, 80)}"${buttonPayload ? ` [button: ${buttonPayload}]` : ''}`)
@@ -1116,7 +1117,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
   // INTERACTIVE BUTTONS: handle button clicks before debounce/Dify
   // -----------------------------------------------------------------------
   if (buttonPayload) {
-    const handled = await handleButtonClick(cfg, botConv, conversationId, buttonPayload, phone, messageId)
+    const handled = await handleButtonClick(cfg, botConv, conversationId, buttonPayload, phone, messageId, senderEmail, contactId)
     if (handled) return // Button was handled — skip Dify
   }
 
@@ -1411,6 +1412,29 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
                 customer = allMatches[0]
                 console.log(`[Bot] Customer by phone (no OS): ${redactName(customer.legal_name)}`)
               }
+            }
+          }
+
+          // 3. (2026-05-06) Inbox de email nao tem phone — tenta email do sender.
+          if (!customer && senderEmail) {
+            const c = await findCustomerByEmail(senderEmail, cfg.companyId)
+            if (c) {
+              customer = c
+              activeOS = await getActiveOrders(c.id, cfg.companyId)
+              console.log(`[Bot] Customer by email (${senderEmail}): ${redactName(c.legal_name)} — ${activeOS.length} OS ativas`)
+            }
+          }
+
+          // 4. (2026-05-06) Ultimo recurso: cliente recorrente identificado em
+          // conversa anterior via Chatwoot Contact ID. Resolve "Aline nao
+          // lembra do cliente" quando conversa e reaberta dias depois e Dify
+          // ja expirou a sessao.
+          if (!customer && contactId) {
+            const c = await findCustomerByChatwootContact(contactId, cfg.companyId)
+            if (c) {
+              customer = c
+              activeOS = await getActiveOrders(c.id, cfg.companyId)
+              console.log(`[Bot] Customer by chatwoot contact (${contactId}): ${redactName(c.legal_name)} — ${activeOS.length} OS ativas`)
             }
           }
 
@@ -2150,7 +2174,9 @@ async function handleButtonClick(
   conversationId: number,
   buttonPayload: string,
   phone: string,
-  messageId: string
+  messageId: string,
+  senderEmail?: string,
+  contactId?: number | string,
 ): Promise<boolean> {
   // Update last_message_id to prevent reprocessing
   await prisma.botConversation.update({
@@ -2166,8 +2192,10 @@ async function handleButtonClick(
 
   // ── Status: check specific OS ──
   if (buttonPayload === 'btn_status') {
-    // Find customer's active OS
-    const customer = phone ? await findCustomerByPhone(phone, cfg.companyId) : null
+    // Find customer via cascade: phone -> email -> chatwoot contact id
+    const customer = await findCustomerByAnyChannel(cfg.companyId, {
+      phone, email: senderEmail, chatwootContactId: contactId,
+    })
     if (!customer) {
       await cwSendMessage(cfg, conversationId, 'Para consultar o status, me informe o número da sua OS.')
       return true
@@ -2186,7 +2214,9 @@ async function handleButtonClick(
 
   // ── Orçamento ──
   if (buttonPayload === 'btn_orcamento') {
-    const customer = phone ? await findCustomerByPhone(phone, cfg.companyId) : null
+    const customer = await findCustomerByAnyChannel(cfg.companyId, {
+      phone, email: senderEmail, chatwootContactId: contactId,
+    })
     if (!customer) {
       await cwSendMessage(cfg, conversationId, 'Para ver o orçamento, me informe o número da sua OS.')
       return true
@@ -2482,6 +2512,82 @@ async function findCustomerByPhone(phone: string, companyId: string) {
       ],
     },
   })
+}
+
+/**
+ * Busca cliente por email — usado em inbox de email (Channel::Email),
+ * onde sender.phone_number geralmente vem vazio. Compare case-insensitive
+ * porque emails sao case-insensitive por RFC.
+ */
+async function findCustomerByEmail(email: string, companyId: string) {
+  if (!email || !email.includes('@')) return null
+  return prisma.customer.findFirst({
+    where: {
+      company_id: companyId,
+      deleted_at: null,
+      email: { equals: email, mode: 'insensitive' },
+    },
+  })
+}
+
+/**
+ * Busca cliente via histórico de conversas anteriores no Chatwoot.
+ *
+ * Quando Aline/Marta identifica um cliente em uma conversa (digamos, via
+ * fornecimento de OS/CPF), o ERP salva customer_id no botConversation.
+ * Ao reabrir a conversa dias depois, mesmo se Dify ja expirou a sessao,
+ * podemos recuperar a identificacao via chatwoot_contact_id (que e estavel
+ * por contact, nao por conversa).
+ *
+ * Solucao chave para "Aline nao lembra do cliente recorrente": em vez de
+ * pedir OS/CPF de novo, ja injeta contexto do cliente identificado em
+ * conversas passadas com o mesmo Chatwoot Contact.
+ */
+async function findCustomerByChatwootContact(contactId: number | string, companyId: string) {
+  if (!contactId) return null
+  const cidNum = typeof contactId === 'string' ? parseInt(contactId, 10) : contactId
+  if (!Number.isFinite(cidNum) || cidNum <= 0) return null
+  // Busca customer_id mais recente em bot_conversations vinculado a este contact
+  const recent = await prisma.botConversation.findFirst({
+    where: {
+      chatwoot_contact_id: cidNum,
+      customer_id: { not: null },
+    },
+    orderBy: { updated_at: 'desc' },
+    select: { customer_id: true },
+  })
+  if (!recent?.customer_id) return null
+  return prisma.customer.findFirst({
+    where: { id: recent.customer_id, company_id: companyId, deleted_at: null },
+  })
+}
+
+/**
+ * Cascata de identificacao do cliente: tenta phone -> email -> chatwoot
+ * contact id (memoria de conversas anteriores). Retorna o primeiro hit.
+ *
+ * Uso pretendido: ANTES de chamar Dify, identificar cliente para injetar
+ * contexto no prompt e evitar que bot pergunte OS/CPF de novo. Cobre os
+ * 3 canais: WhatsApp (phone), Email (email), e qualquer canal onde o
+ * mesmo cliente ja foi identificado antes (chatwoot contact id).
+ */
+async function findCustomerByAnyChannel(
+  companyId: string,
+  args: { phone?: string | null; email?: string | null; chatwootContactId?: number | string | null }
+) {
+  if (args.phone) {
+    const c = await findCustomerByPhone(args.phone, companyId)
+    if (c) return c
+  }
+  if (args.email) {
+    const c = await findCustomerByEmail(args.email, companyId)
+    if (c) return c
+  }
+  if (args.chatwootContactId) {
+    const c = await findCustomerByChatwootContact(args.chatwootContactId, companyId)
+    if (c) return c
+  }
+  return null
 }
 
 async function getActiveOrders(customerId: string, companyId: string): Promise<OsInfo[]> {
