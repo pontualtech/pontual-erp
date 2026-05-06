@@ -80,6 +80,17 @@ const ENV_CONFIGS: Record<string, Partial<BotCompanyConfig> & { settingsPrefix?:
     cwToken: process.env.CHATWOOT_API_TOKEN || process.env.CW_ADMIN_TOKEN || '',
     settingsPrefix: 'bot.marta.config.',
   },
+  // 2026-05-06: bot Marta atendendo na inbox de email (Channel::Email).
+  // Reaproveita 100% a Marta do Dify (mesma key, mesmo prompt, mesma memoria).
+  // Fluxo: Chatwoot inbox 1 (email) -> webhook 3 -> ERP -> Dify Marta -> Chatwoot.
+  // Substitui a Cintia (n8n) — Cintia preservada em Dify mas nao recebe mais trafego.
+  'pontualtech-email': {
+    companyId: resolveBotCompanyId('BOT_ANA_COMPANY_ID', 'pontualtech-001'),
+    difyApiKey: process.env.DIFY_SUPORTE_API_KEY || '',
+    botApiKey: process.env.BOT_ANA_API_KEY || '',
+    cwToken: process.env.CHATWOOT_API_TOKEN || process.env.CW_ADMIN_TOKEN || '',
+    settingsPrefix: 'bot.email.config.',
+  },
   imprimitech: {
     companyId: resolveBotCompanyId('BOT_IMPRI_COMPANY_ID', '86c829cf-32ed-4e40-80cd-59ce4178aa1a'),
     difyApiKey: process.env.DIFY_IMPRI_API_KEY || '',
@@ -121,10 +132,17 @@ async function getCompanyConfig(companySlug?: string | null): Promise<BotCompany
     dbCfg[normalizedKey] = s.value
   }
 
+  // 2026-05-06: defaults por canal — slug "*-email" defaulta pra inbox 1
+  // (Chatwoot Channel::Email "contato"), bot_origin com 'marta' pra que a
+  // logica isSuporteBot existente (linhas 1226/1668) trate como suporte
+  // e nao como vendas (sem criar OS, sem follow-up de vendas).
+  const isEmailChannel = slug.endsWith('-email')
+  const defaultAllowedInboxes = isEmailChannel ? '1' : '2,4,9'
+  const defaultBotOrigin = isEmailChannel ? `email_marta_${slug.replace('-email', '')}` : `whatsapp_bot_${slug}`
   const cfg: BotCompanyConfig = {
     companyId: envCfg.companyId!,
     slug: dbCfg['bot.config.slug'] || slug,
-    allowedInboxes: (dbCfg['bot.config.allowed_inboxes'] || '2,4,9').split(',').map(Number),
+    allowedInboxes: (dbCfg['bot.config.allowed_inboxes'] || defaultAllowedInboxes).split(',').map(Number),
     difyBaseUrl: dbCfg['bot.config.dify_base_url'] || `https://dify.${slug.startsWith('pontualtech') ? 'pontualtech.work' : 'imprimitech.com.br'}`,
     difyApiKey: envCfg.difyApiKey || '',
     botApiKey: envCfg.botApiKey || '',
@@ -133,7 +151,7 @@ async function getCompanyConfig(companySlug?: string | null): Promise<BotCompany
     cwToken: envCfg.cwToken || '',
     portalUrl: dbCfg['bot.config.portal_url'] || '',
     supportWhatsApp: dbCfg['bot.config.support_whatsapp'] || '',
-    botOrigin: dbCfg['bot.config.bot_origin'] || `whatsapp_bot_${slug}`,
+    botOrigin: dbCfg['bot.config.bot_origin'] || defaultBotOrigin,
     botAgentId: parseInt(dbCfg['bot.config.bot_agent_id'] || (slug.includes('imprimitech') ? '10' : '0')),
     humanAgentId: parseInt(dbCfg['bot.config.human_agent_id'] || (slug.includes('imprimitech') ? '7' : '4')),
     botName: dbCfg['bot.config.bot_name'] || (slug.includes('imprimitech') ? 'Aline' : 'Marta'),
