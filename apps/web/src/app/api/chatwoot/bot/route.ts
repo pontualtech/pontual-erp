@@ -1362,7 +1362,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
             try {
               const { createAccessToken: catOs } = await import('@/lib/portal-auth')
               const magicToken = catOs(osData.customer_id, cfg.companyId)
-              const tenantSlug = cfg.slug.replace('-suporte', '')
+              const tenantSlug = cfg.slug.replace('-suporte', '').replace('-email', '')
               const redirectPath = `/portal/${tenantSlug}/os/${osData.id}`
               osPortalUrl = `${portalBase(cfg)}/entrar?t=${magicToken}&r=${encodeURIComponent(redirectPath)}`
             } catch (e) {
@@ -1532,7 +1532,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
                 let portalLink = ''
                 if (o.os_id) {
                   const token = createAccessToken(customer.id, cfg.companyId)
-                  const redirect = `/portal/${cfg.slug.replace('-suporte', '')}/os/${o.os_id}`
+                  const redirect = `/portal/${cfg.slug.replace('-suporte', '').replace('-email', '')}/os/${o.os_id}`
                   portalLink = `${portalBase(cfg)}/entrar?t=${token}&r=${encodeURIComponent(redirect)}`
                 }
                 return `OS #${osNum} (${o.equipment}, Status: ${o.status_name}${portalLink ? `, Portal: ${portalLink}` : ''})`
@@ -2223,7 +2223,7 @@ async function handleOSConfirmation(
           try {
             const { createAccessToken: cat } = await import('@/lib/portal-auth')
             const token = cat(cidLegacy, cfg.companyId)
-            const tenantSlug = cfg.slug.replace('-suporte', '')
+            const tenantSlug = cfg.slug.replace('-suporte', '').replace('-email', '')
             const redirect = `/portal/${tenantSlug}/os/${osIdLegacy}`
             portalLine = `\n\n🔗 Acesso direto (sem senha): ${portalBase(cfg)}/entrar?t=${token}&r=${encodeURIComponent(redirect)}`
           } catch {
