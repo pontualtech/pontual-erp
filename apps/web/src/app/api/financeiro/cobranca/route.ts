@@ -187,8 +187,39 @@ export async function sendOverdueReminders(companyId: string, userId: string, sp
       if (!customer?.email) continue
 
       const company = rec.companies
-      const token = generatePaymentToken(rec.id)
-      const paymentLink = `${appUrl}/portal/${company.slug}/pagamento/${rec.id}?token=${token}`
+      // 2026-05-07: trocado de token HMAC + rota /pagamento/[id] (que tinha
+      // 3 bugs: param.id era receivableId mas pagina chamava endpoint com
+      // service_order_id, token nao era validado em lugar nenhum, e
+      // /api/portal/payments/pix podia nem existir) PARA o magic-link
+      // padrao usado nos outros emails (Solicitar Aprovacao, OS aberta).
+      // Cliente cai logado direto na OS associada (se houver) ou no
+      // dashboard financeiro do portal — ja tem botao pagar funcional.
+      const portalDomainByTenant: Record<string, string> = {
+        pontualtech: 'portal.pontualtech.com.br',
+        imprimitech: 'portal.imprimitech.com.br',
+      }
+      const tenantSlug = company.slug || 'pontualtech'
+      const portalDomain = portalDomainByTenant[tenantSlug] || `portal.${tenantSlug}.com.br`
+      let paymentLink = `${appUrl}/portal/${tenantSlug}/financeiro`
+      if (rec.customer_id) {
+        try {
+          const { createAccessToken } = await import('@/lib/portal-auth')
+          const magicToken = createAccessToken(rec.customer_id, companyId)
+          const redirectPath = rec.service_order_id
+            ? `/portal/${tenantSlug}/os/${rec.service_order_id}`
+            : `/portal/${tenantSlug}/financeiro`
+          const fullLink = `https://${portalDomain}/portal/${tenantSlug}/entrar?t=${magicToken}&r=${encodeURIComponent(redirectPath)}`
+          // Encurtar pra UX melhor no email (URL de 350+ chars vira /s/abc1234).
+          try {
+            const { shortenUrl } = await import('@/lib/short-link')
+            paymentLink = await shortenUrl(fullLink, companyId, rec.customer_id)
+          } catch {
+            paymentLink = fullLink // fallback URL completa
+          }
+        } catch (e) {
+          console.warn('[Cobranca] falha gerando magic-link, usando URL fallback:', e instanceof Error ? e.message : e)
+        }
+      }
 
       const days = daysOverdue(rec.due_date)
       const pendingAmount = rec.total_amount - (rec.received_amount || 0)
