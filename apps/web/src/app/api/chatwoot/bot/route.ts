@@ -1566,7 +1566,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       if (cfg.companyAddress) empParts.push(`Endereco: ${cfg.companyAddress}`)
       empParts.push(`Portal do Cliente (base): ${portalBase(cfg)}`)
       empParts.push(`Site institucional: https://${cfg.companyDisplayName.toLowerCase().includes('imprimitech') ? 'imprimitech.com.br' : 'pontualtech.com.br'}`)
-      query += `\n[DADOS REAIS DA EMPRESA — use APENAS estes valores. NUNCA invente CNPJ, chave PIX, URL, telefone ou email. Se o usuario perguntar PIX, copie a Chave PIX EXATA. Se perguntar URL/portal, use o magic-link do contexto da OS especifica (campo "Portal: https://..." dentro de "OS ativas"); se nao houver, use "Portal do Cliente (base)". NUNCA escreva URLs como "www.X.com.br/portal/123456" — sao falsas e perigosas. Dados disponiveis: ${empParts.join(' | ')}]`
+      query += `\n[DADOS REAIS DA EMPRESA — use APENAS estes valores. NUNCA invente CNPJ, chave PIX, URL, telefone ou email. Se o usuario perguntar PIX, copie a Chave PIX EXATA. Se perguntar URL/portal, use o magic-link do contexto da OS especifica (campo "Portal: https://..." dentro de "OS ativas"); se nao houver, use "Portal do Cliente (base)". NUNCA escreva URLs como "www.X.com.br/portal/123456" — sao falsas e perigosas. QUANDO TRANSFERIR PARA ATENDIMENTO HUMANO (a pedido do cliente ou por necessidade), SEMPRE cite o horario de atendimento humano (campo "Horario" abaixo) na sua resposta — para que o cliente saiba quando esperar retorno. Dados disponiveis: ${empParts.join(' | ')}]`
     }
 
     // ── BOT SUPORTE RULES: inject behavioral constraints for suporte bots (Marta/Aline) ──
