@@ -956,7 +956,7 @@ export default function PortalOSDetailPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <h4 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">Pagar antecipado pelo portal</h4>
-                  <p className="text-xs text-gray-700 dark:text-gray-300 mt-1 leading-relaxed">Os botões de <strong>PIX</strong> e <strong>Boleto</strong> serão liberados aqui assim que você <strong className="text-amber-800 dark:text-amber-300">aprovar o orçamento</strong> do reparo.</p>
+                  <p className="text-xs text-gray-700 dark:text-gray-300 mt-1 leading-relaxed">Os botões de <strong>PIX</strong> e <strong>Boleto</strong> serão liberados aqui assim que seu equipamento estiver <strong className="text-amber-800 dark:text-amber-300">pronto para entrega/retirada</strong>.</p>
                 </div>
               </div>
             </div>
