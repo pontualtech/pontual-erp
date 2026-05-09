@@ -756,6 +756,12 @@ interface ParsedResponse {
   // adiciona label 'spam', registra nota e resolve conversa SEM responder
   // ao remetente (evita que bot interaja com spammers/phishing).
   isSpam: boolean
+  // 2026-05-07: cliente cobrando atraso. Bot escala prioridade da OS e
+  // abre ticket pra atendentes. Tag formato:
+  //   [URGENCIA_ALTA:60343]    -> priority=HIGH    (1a cobranca)
+  //   [URGENCIA_URGENTE:60343] -> priority=URGENT  (cobranca insistente)
+  urgencyLevel: 'HIGH' | 'URGENT' | null
+  urgencyOsNumber: number | null
 }
 
 /**
@@ -834,6 +840,8 @@ function parseDifyResponse(text: string): ParsedResponse {
   let retentionStatus: ParsedResponse['retentionStatus'] = null
   let retentionOsNumber: number | null = null
   let isSpam = false
+  let urgencyLevel: ParsedResponse['urgencyLevel'] = null
+  let urgencyOsNumber: number | null = null
 
   // Extract [VHSYS_DATA]{json}[/VHSYS_DATA]
   const dataMatch = text.match(/\[VHSYS_DATA\]([\s\S]+?)\[\/VHSYS_DATA\]/)
@@ -867,6 +875,22 @@ function parseDifyResponse(text: string): ParsedResponse {
     cleanText = cleanText.replace(/\[SPAM\]/g, '').trim()
   }
 
+  // 2026-05-07: tags de urgencia (cliente cobrando atraso). URGENTE prioriza
+  // sobre ALTA se o modelo emitir as duas (improvavel mas defensivo).
+  const urgenteMatch = text.match(/\[URGENCIA_URGENTE(?::(\d+))?\]/)
+  if (urgenteMatch) {
+    urgencyLevel = 'URGENT'
+    if (urgenteMatch[1]) urgencyOsNumber = parseInt(urgenteMatch[1], 10)
+    cleanText = cleanText.replace(/\[URGENCIA_URGENTE(?::\d+)?\]/g, '').trim()
+  }
+  const altaMatch = text.match(/\[URGENCIA_ALTA(?::(\d+))?\]/)
+  if (altaMatch && !urgencyLevel) {
+    urgencyLevel = 'HIGH'
+    if (altaMatch[1]) urgencyOsNumber = parseInt(altaMatch[1], 10)
+  }
+  // Strip tag ALTA mesmo se URGENTE ja estiver setado (evita vazamento)
+  cleanText = cleanText.replace(/\[URGENCIA_ALTA(?::\d+)?\]/g, '').trim()
+
   // Detect action tags
   if (text.includes('[ABRIR_OS]')) {
     action = 'ABRIR_OS'
@@ -885,7 +909,7 @@ function parseDifyResponse(text: string): ParsedResponse {
     cleanText = cleanText.replace(/\[NENHUMA_ACAO\]/g, '').trim()
   }
 
-  return { cleanText, vhsysData, action, retentionStatus, retentionOsNumber, isSpam }
+  return { cleanText, vhsysData, action, retentionStatus, retentionOsNumber, isSpam, urgencyLevel, urgencyOsNumber }
 }
 
 // ---------------------------------------------------------------------------
@@ -1588,7 +1612,13 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
     (b) Numero de OS -> use APENAS o numero que esta no [CONTEXTO DO CLIENTE / OS ativas] ou que o cliente JA forneceu. NUNCA invente "123456" ou numeros placeholder.
     (c) URL do portal -> use APENAS a URL completa do campo "Portal: https://..." dentro de cada OS no contexto. Se nao houver OS especifica, use "Portal do Cliente (base)" do [DADOS REAIS DA EMPRESA]. NUNCA escreva "www.empresa.com.br/portal/123456".
     (d) CNPJ, telefone, email, endereco -> use APENAS o valor de [DADOS REAIS DA EMPRESA].
-    Se nao tiver o dado real disponivel, diga: "Vou consultar essa informacao" e use [TRANSFERIR_HUMANO]. NUNCA forneca um valor inventado.]`
+    Se nao tiver o dado real disponivel, diga: "Vou consultar essa informacao" e use [TRANSFERIR_HUMANO]. NUNCA forneca um valor inventado.
+13. CLIENTE COBRANDO ATRASO ("muito tempo", "demora", "quando fica pronto", "preciso urgente", "ja faz dias", "esta atrasada", "esqueceram"):
+    - 1a cobranca: tranquilize, prometa notificar laboratorio para priorizar reparo, prometa retorno com previsao atualizada. NAO transfira humano. AO FINAL DA SUA RESPOSTA inclua [URGENCIA_ALTA:NUMERO_OS] (ex: [URGENCIA_ALTA:60343]). O sistema vai elevar a priority da OS para HIGH e abrir um ticket interno na fila pros atendentes.
+    - 2a cobranca ou cliente irredutivel: escale, mencione carater de URGENCIA, prometa que supervisor vai acompanhar pessoalmente. AO FINAL inclua [URGENCIA_URGENTE:NUMERO_OS]. O sistema vai elevar priority para URGENT e abrir ticket URGENTE.
+    - Frase ex NIVEL ALTA: "Compreendo sua urgencia. Vou notificar nosso laboratorio agora mesmo para priorizar o reparo do seu equipamento e retornar com uma previsao atualizada em breve."
+    - Frase ex NIVEL URGENTE: "Estou marcando seu caso como URGENTE em nosso sistema. Nosso supervisor vai acompanhar pessoalmente para acelerar o reparo."
+    - Cliente continua sendo atendido por voce — nao transfira pra humano por causa disso. Use [TRANSFERIR_HUMANO] APENAS se cliente PEDIR explicitamente humano.]`
     }
 
     // Handle OS confirmation flow
@@ -2068,6 +2098,97 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
         }
       } catch (err) {
         console.error('[Bot/Retencao] Excecao chamando atualizar-os:', err instanceof Error ? err.message : err)
+      }
+    }
+
+    // 2026-05-07: handler de URGENCIA — bot detectou cliente cobrando atraso
+    // (regra 13 do prompt-injection). Sequencia:
+    //  1. Atualiza priority da OS (HIGH ou URGENT) via /api/bot/atualizar-os
+    //  2. Cria ticket interno na fila pros atendentes priorizarem
+    //  3. Nota interna no Chatwoot + label de urgencia
+    //  4. NAO transfere humano (cliente continua sendo atendido pelo bot)
+    if (parsed.urgencyLevel && parsed.urgencyOsNumber) {
+      try {
+        const isUrgent = parsed.urgencyLevel === 'URGENT'
+        const labelName = isUrgent ? 'urgencia_urgente' : 'urgencia_alta'
+        const noteSummary = isUrgent
+          ? `[BOT — URGENTE] Cliente cobrando atraso INSISTENTEMENTE na OS #${parsed.urgencyOsNumber}. Priority elevada para URGENT. Ticket aberto na fila — laboratorio/supervisor deve intervir IMEDIATAMENTE.`
+          : `[BOT] Cliente cobrando atraso na OS #${parsed.urgencyOsNumber}. Priority elevada para HIGH. Ticket aberto na fila — laboratorio deve priorizar reparo.`
+
+        // 1. Update priority
+        try {
+          const upRes = await fetch(`${ERP_BASE_URL}/api/bot/atualizar-os`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'X-Bot-Key': cfg.botApiKey },
+            body: JSON.stringify({
+              os_numero: parsed.urgencyOsNumber,
+              notas_internas: noteSummary,
+              // PUT /atualizar-os aceita priority? Nao — vai por field "raw" via prisma direto.
+              // Workaround: passa nas notas e atualiza priority via second call OR
+              // criar field na payload. Por enquanto, usa raw update via Supabase REST seria
+              // alternativa, mas mantemos pelo endpoint atual passando notas. Priority deve
+              // ser atualizada pela equipe ao ler ticket — futuramente extender atualizar-os.
+            }),
+          })
+          if (!upRes.ok) {
+            const errBody = await upRes.text().catch(() => '')
+            console.warn(`[Bot/Urgencia] atualizar-os falhou pra OS ${parsed.urgencyOsNumber}: ${upRes.status} ${errBody.slice(0, 200)}`)
+          }
+        } catch (e) {
+          console.warn('[Bot/Urgencia] excecao atualizar-os:', e instanceof Error ? e.message : e)
+        }
+
+        // 2. Find OS service_order_id (UUID) pra criar ticket linkado
+        let serviceOrderUuid: string | null = null
+        try {
+          const osRow = await prisma.serviceOrder.findFirst({
+            where: { os_number: parsed.urgencyOsNumber, company_id: cfg.companyId, deleted_at: null },
+            select: { id: true },
+          })
+          serviceOrderUuid = osRow?.id || null
+          // Atualiza priority direto via Prisma (atualizar-os nao expoe esse campo).
+          if (osRow) {
+            await prisma.serviceOrder.update({
+              where: { id: osRow.id },
+              data: { priority: parsed.urgencyLevel },
+            })
+          }
+        } catch (e) {
+          console.warn('[Bot/Urgencia] falha lookup/update OS:', e instanceof Error ? e.message : e)
+        }
+
+        // 3. Cria ticket
+        try {
+          const ticketRes = await fetch(`${ERP_BASE_URL}/api/bot/criar-ticket`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Bot-Key': cfg.botApiKey },
+            body: JSON.stringify({
+              subject: isUrgent
+                ? `URGENTE — Cliente insiste em cobrar atraso na OS #${parsed.urgencyOsNumber}`
+                : `Cliente cobrando atraso na OS #${parsed.urgencyOsNumber}`,
+              description: noteSummary,
+              priority: isUrgent ? 'URGENT' : 'HIGH',
+              category: 'ATRASO_REPARO',
+              service_order_id: serviceOrderUuid,
+            }),
+          })
+          if (ticketRes.ok) {
+            const data = await ticketRes.json()
+            const tNum = data?.data?.ticket_number || data?.ticket_number || '?'
+            console.log(`[Bot/Urgencia] Ticket #${tNum} aberto pra OS ${parsed.urgencyOsNumber} (${parsed.urgencyLevel})`)
+          } else {
+            const errBody = await ticketRes.text().catch(() => '')
+            console.warn(`[Bot/Urgencia] criar-ticket falhou: ${ticketRes.status} ${errBody.slice(0, 200)}`)
+          }
+        } catch (e) {
+          console.warn('[Bot/Urgencia] excecao criar-ticket:', e instanceof Error ? e.message : e)
+        }
+
+        // 4. Nota interna + label no Chatwoot
+        await cwSendMessage(cfg, conversationId, noteSummary, true)
+        try { await cwSetLabels(cfg, conversationId, [labelName]) } catch {}
+      } catch (err) {
+        console.error('[Bot/Urgencia] Excecao geral:', err instanceof Error ? err.message : err)
       }
     }
 
