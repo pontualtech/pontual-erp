@@ -1122,10 +1122,12 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
   // reais analisadas 2026-05-09.
   if (content && content.length <= 30) {
     const onlyDigits = content.replace(/\D/g, '')
-    const looksLikeOsNumber = /^\d{4,6}$/.test(content.trim())
+    // 2026-05-09: aceita formatos "60341", "OS-60341", "OS 60341", "#60341"
+    const osMatch = content.trim().match(/^(?:os[\s-]?|#)?(\d{4,6})$/i)
     const looksLikeCpfCnpj = onlyDigits.length === 11 || onlyDigits.length === 14
-    if (looksLikeOsNumber) {
-      content = `${content}\n[HINT INTERNO: cliente enviou apenas o numero. Provavelmente e numero de OS — consulte como OS #${content.trim()} e responda com status, equipamento e portal.]`
+    if (osMatch) {
+      const osNum = osMatch[1]
+      content = `${content}\n[HINT INTERNO: cliente enviou apenas o numero da OS. Provavelmente e a OS #${osNum} — consulte essa OS e responda com status, equipamento e portal.]`
     } else if (looksLikeCpfCnpj) {
       content = `${content}\n[HINT INTERNO: cliente enviou apenas CPF/CNPJ. Use pra identificar cliente e listar OSs ativas.]`
     } else if (content.trim() === '?' || content.trim() === '??' || /^o(la|i)\.?$/i.test(content.trim())) {
@@ -1663,7 +1665,8 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
     - Frase ex NIVEL URGENTE: "Estou marcando seu caso como URGENTE em nosso sistema. Nosso supervisor vai acompanhar pessoalmente para acelerar o reparo."
     - Cliente continua sendo atendido por voce — nao transfira pra humano por causa disso. Use [TRANSFERIR_HUMANO] APENAS se cliente PEDIR explicitamente humano.
 14. CANCELAMENTO de OS ("quero cancelar", "cancelar a OS", "desistir do servico", "nao quero mais"): NAO confunda com recusa de orcamento (regra retencao). Cancelamento e quando cliente quer interromper o servico independente de orcamento. Confirme com o cliente: "Confirmando: voce gostaria de cancelar a OS #X e organizar a devolucao do equipamento? Pode confirmar respondendo SIM?". Se ele confirmar, AO FINAL inclua [STATUS_CANCELADA:NUMERO_OS]. O sistema abre ticket interno e atendente faz a baixa formal + agendamento de devolucao.
-15. DEVOLUCAO LOGISTICA ("quero meu equipamento de volta", "preciso da devolucao", "quando devolvem", "ja recusei e nao recebi"): se OS ja em status Entregar Recusado/Cancelada e cliente cobra a devolucao fisica, NAO transfira humano. Tranquilize, prometa priorizar a devolucao com a logistica e AO FINAL inclua [DEVOLUCAO_LOGISTICA:NUMERO_OS]. O sistema abre ticket DEVOLUCAO priority HIGH pra equipe agendar.]`
+15. DEVOLUCAO LOGISTICA ("quero meu equipamento de volta", "preciso da devolucao", "quando devolvem", "ja recusei e nao recebi"): se OS ja em status Entregar Recusado/Cancelada e cliente cobra a devolucao fisica, NAO transfira humano. Tranquilize, prometa priorizar a devolucao com a logistica e AO FINAL inclua [DEVOLUCAO_LOGISTICA:NUMERO_OS]. O sistema abre ticket DEVOLUCAO priority HIGH pra equipe agendar.
+16. REAGENDAMENTO ("nao estarei", "ninguem pra receber", "remarcar", "outra data", "hoje nao posso", "nao vou estar"): cliente quer mudar dia de coleta/entrega. NAO transfira automaticamente — colete a NOVA data preferida e o periodo (manha/tarde) na propria conversa. Responda: "Sem problema! Qual nova data e periodo (manha/tarde) seriam melhores para voce? Vou registrar para nossa logistica reagendar." Apos cliente informar, use [TRANSFERIR_HUMANO] com nota interna detalhando os dados pra logistica reagendar.]`
     }
 
     // Handle OS confirmation flow
