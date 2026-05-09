@@ -762,6 +762,12 @@ interface ParsedResponse {
   //   [URGENCIA_URGENTE:60343] -> priority=URGENT  (cobranca insistente)
   urgencyLevel: 'HIGH' | 'URGENT' | null
   urgencyOsNumber: number | null
+  // 2026-05-09: cliente pediu cancelamento OU devolucao logistica.
+  //   [STATUS_CANCELADA:60343]  -> abre ticket CANCELAMENTO + nota interna
+  //   [DEVOLUCAO_LOGISTICA:60343] -> ticket DEVOLUCAO + label urgencia_alta
+  // ERP NAO move status sozinho — atendente confirma com cliente antes.
+  cancelOsNumber: number | null
+  returnOsNumber: number | null
 }
 
 /**
@@ -842,6 +848,8 @@ function parseDifyResponse(text: string): ParsedResponse {
   let isSpam = false
   let urgencyLevel: ParsedResponse['urgencyLevel'] = null
   let urgencyOsNumber: number | null = null
+  let cancelOsNumber: number | null = null
+  let returnOsNumber: number | null = null
 
   // Extract [VHSYS_DATA]{json}[/VHSYS_DATA]
   const dataMatch = text.match(/\[VHSYS_DATA\]([\s\S]+?)\[\/VHSYS_DATA\]/)
@@ -891,6 +899,18 @@ function parseDifyResponse(text: string): ParsedResponse {
   // Strip tag ALTA mesmo se URGENTE ja estiver setado (evita vazamento)
   cleanText = cleanText.replace(/\[URGENCIA_ALTA(?::\d+)?\]/g, '').trim()
 
+  // 2026-05-09: tags cancelamento + devolucao logistica
+  const cancelMatch = text.match(/\[STATUS_CANCELADA(?::(\d+))?\]/)
+  if (cancelMatch) {
+    if (cancelMatch[1]) cancelOsNumber = parseInt(cancelMatch[1], 10)
+    cleanText = cleanText.replace(/\[STATUS_CANCELADA(?::\d+)?\]/g, '').trim()
+  }
+  const returnMatch = text.match(/\[DEVOLUCAO_LOGISTICA(?::(\d+))?\]/)
+  if (returnMatch) {
+    if (returnMatch[1]) returnOsNumber = parseInt(returnMatch[1], 10)
+    cleanText = cleanText.replace(/\[DEVOLUCAO_LOGISTICA(?::\d+)?\]/g, '').trim()
+  }
+
   // Detect action tags
   if (text.includes('[ABRIR_OS]')) {
     action = 'ABRIR_OS'
@@ -909,7 +929,7 @@ function parseDifyResponse(text: string): ParsedResponse {
     cleanText = cleanText.replace(/\[NENHUMA_ACAO\]/g, '').trim()
   }
 
-  return { cleanText, vhsysData, action, retentionStatus, retentionOsNumber, isSpam, urgencyLevel, urgencyOsNumber }
+  return { cleanText, vhsysData, action, retentionStatus, retentionOsNumber, isSpam, urgencyLevel, urgencyOsNumber, cancelOsNumber, returnOsNumber }
 }
 
 // ---------------------------------------------------------------------------
@@ -1095,6 +1115,24 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
     console.log(`[Bot/Email] HTML stripped: ${before} -> ${content.length} chars. Preview: "${content.slice(0, 100)}"`)
   }
 
+  // 2026-05-09: preprocessor pra inputs curtos. Modelo Gemini zerava resposta
+  // quando recebia mensagens "?" ou so numero (ex: "60341") junto com REGRAS
+  // injetadas — ratio regras/conteudo alto demais. Solucao: enriquecer o
+  // input com hint pro modelo entender o intent. Detectado em 5 conversas
+  // reais analisadas 2026-05-09.
+  if (content && content.length <= 30) {
+    const onlyDigits = content.replace(/\D/g, '')
+    const looksLikeOsNumber = /^\d{4,6}$/.test(content.trim())
+    const looksLikeCpfCnpj = onlyDigits.length === 11 || onlyDigits.length === 14
+    if (looksLikeOsNumber) {
+      content = `${content}\n[HINT INTERNO: cliente enviou apenas o numero. Provavelmente e numero de OS — consulte como OS #${content.trim()} e responda com status, equipamento e portal.]`
+    } else if (looksLikeCpfCnpj) {
+      content = `${content}\n[HINT INTERNO: cliente enviou apenas CPF/CNPJ. Use pra identificar cliente e listar OSs ativas.]`
+    } else if (content.trim() === '?' || content.trim() === '??' || /^o(la|i)\.?$/i.test(content.trim())) {
+      content = `${content}\n[HINT INTERNO: cliente mandou cumprimento curto. Use o [CONTEXTO DO CLIENTE] (se houver) pra dar resposta proativa com status das OSs ativas; senao pergunte como pode ajudar.]`
+    }
+  }
+
   // Process attachments: audio, images, video, documents
   const attachments = body.attachments || body.conversation?.messages?.[0]?.attachments || []
   const thisMessageImageUrls: string[] = []
@@ -1270,7 +1308,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
     // [STATUS_ORCAR_NEGOCIAR:NUMERO] / [STATUS_RENEGOCIAR:NUMERO] que o
     // webhook detecta e dispara transicao de status automatica.
     if (isEmailChannel) {
-      query += `\n[CANAL: EMAIL. Responda formal, sem emojis. NAO escreva assinatura no fim — sera adicionada automaticamente.\n\nNUNCA mencione valores monetarios (R$, valor, preco) na resposta — cliente deve entrar no Portal do Cliente para ver detalhes financeiros. Direcione sempre ao portal.\n\nSPAM: se a mensagem for spam, phishing, propaganda nao solicitada, scam, oferta comercial nao relacionada a impressoras, ou conteudo claramente malicioso/automatizado, responda APENAS com [SPAM] (sem mais nenhum texto). O sistema vai marcar a conversa como spam sem enviar resposta ao remetente.\n\nRetencao de orcamento (so use estas tags se cliente recusar/achar caro o orcamento):\n- 1a recusa: prometa avaliar com supervisor em 24h, e na ULTIMA LINHA escreva [STATUS_ORCAR_NEGOCIAR:NUMERO_OS]\n- 2a recusa apos isso: escale gerencia em 4h, ULTIMA LINHA [STATUS_RENEGOCIAR:NUMERO_OS]]`
+      query += `\n[CANAL: EMAIL. Responda formal, sem emojis. NAO escreva assinatura no fim — sera adicionada automaticamente.\n\nNUNCA mencione valores monetarios (R$, valor, preco) na resposta — cliente deve entrar no Portal do Cliente para ver detalhes financeiros. Direcione sempre ao portal.\n\nSPAM: se a mensagem for spam, phishing, propaganda nao solicitada, scam, oferta comercial nao relacionada a impressoras, conteudo automatizado de outros sistemas (notificacoes de pedagio/multa/Detran, boletos de terceiros, listas de produtos pra venda de fornecedores, NF-e auto-emitida por terceiros, e-mails do tipo "Acabou de chegar" com lista de pecas, propaganda de seguros/empresarial), responda APENAS com [SPAM] (sem mais nenhum texto). O sistema vai marcar a conversa como spam sem enviar resposta ao remetente.\n\nRetencao de orcamento (so use estas tags se cliente recusar/achar caro o orcamento):\n- 1a recusa: prometa avaliar com supervisor em 24h, e na ULTIMA LINHA escreva [STATUS_ORCAR_NEGOCIAR:NUMERO_OS]\n- 2a recusa apos isso: escale gerencia em 4h, ULTIMA LINHA [STATUS_RENEGOCIAR:NUMERO_OS]]`
     }
 
     console.log(`[Bot] Conv ${conversationId}: loop ${loopIdx + 1} — processing ${pendingMsgs.length} consolidated message(s)`)
@@ -1559,7 +1597,12 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
                   const redirect = `/portal/${cfg.slug.replace('-suporte', '').replace('-email', '')}/os/${o.os_id}`
                   portalLink = `${portalBase(cfg)}/entrar?t=${token}&r=${encodeURIComponent(redirect)}`
                 }
-                return `OS #${osNum} (${o.equipment}, Status: ${o.status_name}${portalLink ? `, Portal: ${portalLink}` : ''})`
+                // 2026-05-09: incluir tecnico + previsao entrega no contexto
+                const tecnico = (o as any).technician_name ? `, Tecnico: ${(o as any).technician_name}` : ''
+                const previsao = (o as any).estimated_delivery
+                  ? `, Previsao entrega: ${new Date((o as any).estimated_delivery).toLocaleDateString('pt-BR')}`
+                  : ''
+                return `OS #${osNum} (${o.equipment}, Status: ${o.status_name}${tecnico}${previsao}${portalLink ? `, Portal: ${portalLink}` : ''})`
               }).join('; ')
               query += `\n[CONTEXTO DO CLIENTE: Nome: ${customer.legal_name || 'N/A'}, Telefone: ${phone}, OS ativas: ${osList}. O cliente JA FOI IDENTIFICADO — NAO pergunte numero da OS, ja informe o status diretamente. SEMPRE inclua na sua resposta a URL "Portal: https://..." COMPLETA da OS relevante (extraida do contexto OS ativas acima). NUNCA escreva apenas "portal.pontualtech.com.br" ou "portal.imprimitech.com.br" sozinho como link — sempre use a URL completa do contexto pra o cliente nao precisar fazer login.]`
               console.log(`[Bot] Auto-identified: ${customer.legal_name} — ${activeOS.length} active OS`)
@@ -1599,13 +1642,13 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
 1. NUNCA prometa acoes (devolucao, agendamento, coleta, entrega, desconto, prazo). Voce APENAS INFORMA status e dados.
 2. NUNCA diga "vou providenciar", "vou agendar", "vou devolver", "vou verificar com a equipe".
 3. NUNCA invente valores, prazos ou informacoes. Use APENAS os dados fornecidos no contexto.
-4. Respostas CURTAS (max 3 paragrafos). Sem excesso de emojis.
+4. Respostas CURTAS. WhatsApp: MAX 2 paragrafos curtos (cliente le no celular). Email: ate 3 paragrafos. Sem excesso de emojis. Direto ao ponto.
 5. PORTAL DO CLIENTE: SEMPRE direcione o cliente para o portal. O portal permite aprovar orcamento, recusar orcamento, ver status, ver detalhes. O link do portal esta nos dados da OS.
 6. APROVAR ou RECUSAR orcamento: informe que basta acessar o portal do cliente, clicar em aprovar ou recusar, e a notificacao eh enviada automaticamente para a equipe. NAO precisa de atendente para isso.
 7. NUNCA OFERECA proativamente transferencia para atendente humano. NAO escreva frases como "se preferir, posso transferir", "quer que um atendente te ajude?", "caso prefira falar com um atendente". Espere o cliente PEDIR EXPLICITAMENTE com palavras como "humano", "atendente", "alguem", "pessoa", "passa pra".
 8. Use [TRANSFERIR_HUMANO] APENAS quando: (a) cliente pedir explicitamente humano/atendente; (b) cliente fizer reclamacao GRAVE (mencionar Procon, juridico, processo, denuncia); (c) erro tecnico real que voce nao consegue resolver com os dados disponiveis. Em caso de duvida, NAO transfira — responda com o que voce sabe. AO TRANSFERIR, SEMPRE informe na sua resposta o horario de atendimento humano (esta em [DADOS REAIS DA EMPRESA] -> Horario) pra que o cliente saiba quando esperar retorno. Ex: "Vou transferir para nossa equipe. Nosso atendimento humano funciona de Seg a Qui das 08h as 18h e Sex das 08h as 17h. Em horario comercial retornaremos em breve; fora dele, no proximo dia util."
 9. PAGAMENTO (cliente diz "fiz Pix nao apareceu", "boleto pago", "comprovante", "pagamento nao caiu"): NAO transfira. Responda: "Vou registrar internamente para nossa equipe financeira conferir a compensacao. O sistema atualiza automaticamente em ate 2h uteis. Voce pode acompanhar pelo Portal." Tranquilize o cliente.
-10. ENTREGA / LOGISTICA / PRAZO ("preciso da impressora", "quando entrega", "previsao", "ja paguei quero o equipamento"): NAO transfira. Informe o status atual da OS e diga: "Nossa equipe de logistica entrara em contato para alinhar o agendamento da entrega assim que o servico for finalizado." Sem prometer data especifica.
+10. ENTREGA / LOGISTICA / PRAZO ("preciso da impressora", "quando entrega", "previsao", "ja paguei quero o equipamento", "que horas", "amanha"): NAO transfira. Se o contexto da OS tiver "Previsao entrega: DATA", cite essa data exata na resposta (ex: "A previsao de entrega esta agendada para 15/05/2026"). Se nao houver data ou cliente perguntar HORARIO especifico, diga: "Nossa equipe de logistica entrara em contato no dia anterior para alinhar o horario da entrega/coleta." Nunca prometa horario especifico.
 11. PARCELAMENTO / FORMAS DE PAGAMENTO ("posso parcelar", "no cartao", "vai dividir", "tem desconto", "pix"): NAO transfira. Responda DIRETO: "Sim! Aceitamos cartao de credito em ate 3x sem juros, PIX e dinheiro a vista. Voce pode escolher a melhor forma de pagamento na hora da retirada/entrega." Nunca diga "vou registrar pra equipe financeira" para essa pergunta.
 12. NUNCA INVENTE DADOS — esta e a regra mais critica. Quando o cliente pedir:
     (a) Chave PIX -> use APENAS a "Chave PIX" listada em [DADOS REAIS DA EMPRESA]. NUNCA invente como "pix@empresa.com.br" ou "11999999999".
@@ -1618,7 +1661,9 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
     - 2a cobranca ou cliente irredutivel: escale, mencione carater de URGENCIA, prometa que supervisor vai acompanhar pessoalmente. AO FINAL inclua [URGENCIA_URGENTE:NUMERO_OS]. O sistema vai elevar priority para URGENT e abrir ticket URGENTE.
     - Frase ex NIVEL ALTA: "Compreendo sua urgencia. Vou notificar nosso laboratorio agora mesmo para priorizar o reparo do seu equipamento e retornar com uma previsao atualizada em breve."
     - Frase ex NIVEL URGENTE: "Estou marcando seu caso como URGENTE em nosso sistema. Nosso supervisor vai acompanhar pessoalmente para acelerar o reparo."
-    - Cliente continua sendo atendido por voce — nao transfira pra humano por causa disso. Use [TRANSFERIR_HUMANO] APENAS se cliente PEDIR explicitamente humano.]`
+    - Cliente continua sendo atendido por voce — nao transfira pra humano por causa disso. Use [TRANSFERIR_HUMANO] APENAS se cliente PEDIR explicitamente humano.
+14. CANCELAMENTO de OS ("quero cancelar", "cancelar a OS", "desistir do servico", "nao quero mais"): NAO confunda com recusa de orcamento (regra retencao). Cancelamento e quando cliente quer interromper o servico independente de orcamento. Confirme com o cliente: "Confirmando: voce gostaria de cancelar a OS #X e organizar a devolucao do equipamento? Pode confirmar respondendo SIM?". Se ele confirmar, AO FINAL inclua [STATUS_CANCELADA:NUMERO_OS]. O sistema abre ticket interno e atendente faz a baixa formal + agendamento de devolucao.
+15. DEVOLUCAO LOGISTICA ("quero meu equipamento de volta", "preciso da devolucao", "quando devolvem", "ja recusei e nao recebi"): se OS ja em status Entregar Recusado/Cancelada e cliente cobra a devolucao fisica, NAO transfira humano. Tranquilize, prometa priorizar a devolucao com a logistica e AO FINAL inclua [DEVOLUCAO_LOGISTICA:NUMERO_OS]. O sistema abre ticket DEVOLUCAO priority HIGH pra equipe agendar.]`
     }
 
     // Handle OS confirmation flow
@@ -2192,6 +2237,74 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       }
     }
 
+    // 2026-05-09: handler de CANCELAMENTO — cliente pediu cancelar OS.
+    // ERP NAO move status sozinho (atendente confirma com cliente antes
+    // e formaliza). Aqui apenas: ticket aberto + nota interna + label.
+    if (parsed.cancelOsNumber) {
+      try {
+        const noteSummary = `[BOT] Cliente solicitou CANCELAMENTO da OS #${parsed.cancelOsNumber}. Confirmou via bot. Ticket aberto pra atendente formalizar a baixa e agendar devolucao do equipamento.`
+        let serviceOrderUuid: string | null = null
+        try {
+          const osRow = await prisma.serviceOrder.findFirst({
+            where: { os_number: parsed.cancelOsNumber, company_id: cfg.companyId, deleted_at: null },
+            select: { id: true },
+          })
+          serviceOrderUuid = osRow?.id || null
+        } catch {}
+        try {
+          await fetch(`${ERP_BASE_URL}/api/bot/criar-ticket`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Bot-Key': cfg.botApiKey },
+            body: JSON.stringify({
+              subject: `Cliente solicitou cancelamento — OS #${parsed.cancelOsNumber}`,
+              description: noteSummary,
+              priority: 'HIGH',
+              category: 'CANCELAMENTO',
+              service_order_id: serviceOrderUuid,
+            }),
+          })
+        } catch (e) { console.warn('[Bot/Cancel] criar-ticket falhou:', e instanceof Error ? e.message : e) }
+        await cwSendMessage(cfg, conversationId, noteSummary, true)
+        try { await cwSetLabels(cfg, conversationId, ['cancelamento']) } catch {}
+      } catch (err) {
+        console.error('[Bot/Cancel] Excecao:', err instanceof Error ? err.message : err)
+      }
+    }
+
+    // 2026-05-09: handler de DEVOLUCAO LOGISTICA — cliente cobra devolucao
+    // do equipamento (apos recusar orcamento ou cancelar). Abre ticket
+    // priority HIGH pra logistica priorizar agendamento.
+    if (parsed.returnOsNumber) {
+      try {
+        const noteSummary = `[BOT] Cliente cobrando devolucao da OS #${parsed.returnOsNumber}. Logistica deve priorizar agendamento de entrega. Ticket aberto.`
+        let serviceOrderUuid: string | null = null
+        try {
+          const osRow = await prisma.serviceOrder.findFirst({
+            where: { os_number: parsed.returnOsNumber, company_id: cfg.companyId, deleted_at: null },
+            select: { id: true },
+          })
+          serviceOrderUuid = osRow?.id || null
+        } catch {}
+        try {
+          await fetch(`${ERP_BASE_URL}/api/bot/criar-ticket`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Bot-Key': cfg.botApiKey },
+            body: JSON.stringify({
+              subject: `Devolucao pendente — OS #${parsed.returnOsNumber}`,
+              description: noteSummary,
+              priority: 'HIGH',
+              category: 'DEVOLUCAO_LOGISTICA',
+              service_order_id: serviceOrderUuid,
+            }),
+          })
+        } catch (e) { console.warn('[Bot/Devolucao] criar-ticket falhou:', e instanceof Error ? e.message : e) }
+        await cwSendMessage(cfg, conversationId, noteSummary, true)
+        try { await cwSetLabels(cfg, conversationId, ['devolucao_logistica']) } catch {}
+      } catch (err) {
+        console.error('[Bot/Devolucao] Excecao:', err instanceof Error ? err.message : err)
+      }
+    }
+
     // Send response to client — ensure wa.me links use the correct company support number
     if (parsed.cleanText) {
       const supportNum = (cfg.supportWhatsApp || '').replace(/\D/g, '') || '551126263841'
@@ -2577,6 +2690,7 @@ interface OsInfo {
   total_cost?: number | null
   os_id?: string
   has_items?: boolean
+  technician_name?: string | null
 }
 
 /** Send OS status with action buttons */
@@ -2830,6 +2944,8 @@ async function getActiveOrders(customerId: string, companyId: string): Promise<O
     include: {
       module_statuses: true,
       service_order_items: { where: { deleted_at: null }, select: { id: true } },
+      // 2026-05-09: incluir tecnico responsavel pra contexto do bot
+      user_profiles: { select: { name: true } },
     },
     orderBy: { created_at: 'desc' },
     take: 10,
@@ -2843,6 +2959,7 @@ async function getActiveOrders(customerId: string, companyId: string): Promise<O
     total_cost: os.total_cost,
     os_id: os.id,
     has_items: (os.service_order_items?.length || 0) > 0,
+    technician_name: os.user_profiles?.name || null,
   }))
 }
 
