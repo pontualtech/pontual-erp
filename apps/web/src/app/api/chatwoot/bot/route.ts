@@ -2182,6 +2182,64 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
               body: JSON.stringify({ assignee_id: cfg.humanAgentId }),
             })
           } catch {}
+
+          // 2026-05-09: Decisao Karlao — quando NIVEL2 (Renegociar), abrir
+          // ticket SEPARADO pra equipe de Logistica saber que pode precisar
+          // agendar devolucao do equipamento se cliente nao fechar acordo
+          // com a Gerencia. Ticket priority NORMAL (logistica nao precisa
+          // agir imediatamente — espera Gerencia tentar fechar primeiro),
+          // mas fica na fila pra alinhar agendamento de retirada.
+          if (isUrgent) {
+            try {
+              // Lookup OS UUID pra linkar ticket
+              let serviceOrderUuid: string | null = null
+              try {
+                const osRow = await prisma.serviceOrder.findFirst({
+                  where: { os_number: parsed.retentionOsNumber, company_id: cfg.companyId, deleted_at: null },
+                  select: { id: true },
+                })
+                serviceOrderUuid = osRow?.id || null
+              } catch {}
+
+              // 1. Ticket pra Gerencia (priority HIGH — atuar em 4h uteis)
+              const gerNote = `[BOT — GERENCIA] Cliente recusou orcamento RECALCULADO na OS #${parsed.retentionOsNumber}. 2a recusa. Necessario avaliar desconto agressivo, parcelamento facilitado ou aceitar perda do servico em ate 4h uteis.`
+              try {
+                await fetch(`${ERP_BASE_URL}/api/bot/criar-ticket`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'X-Bot-Key': cfg.botApiKey },
+                  body: JSON.stringify({
+                    subject: `URGENTE — Gerencia: 2a recusa OS #${parsed.retentionOsNumber}`,
+                    description: gerNote,
+                    priority: 'HIGH',
+                    category: 'RENEGOCIACAO_GERENCIA',
+                    service_order_id: serviceOrderUuid,
+                  }),
+                })
+              } catch (e) { console.warn('[Bot/Renegociar] criar-ticket gerencia falhou:', e instanceof Error ? e.message : e) }
+
+              // 2. Ticket pra Logistica (priority NORMAL — alinhar devolucao caso nao feche)
+              const logNote = `[BOT — LOGISTICA] OS #${parsed.retentionOsNumber} em "Renegociar" (cliente recusou orcamento recalculado). Aguardar Gerencia tentar fechar; caso nao haja acordo, agendar devolucao SEM custo de frete pro cliente. Cliente ja foi avisado dessa possibilidade.`
+              try {
+                await fetch(`${ERP_BASE_URL}/api/bot/criar-ticket`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'X-Bot-Key': cfg.botApiKey },
+                  body: JSON.stringify({
+                    subject: `Logistica: devolucao pendente — OS #${parsed.retentionOsNumber}`,
+                    description: logNote,
+                    priority: 'NORMAL',
+                    category: 'DEVOLUCAO_PENDENTE',
+                    service_order_id: serviceOrderUuid,
+                  }),
+                })
+              } catch (e) { console.warn('[Bot/Renegociar] criar-ticket logistica falhou:', e instanceof Error ? e.message : e) }
+
+              // Label adicional pra fila visual
+              try { await cwSetLabels(cfg, conversationId, ['renegociar_nivel2']) } catch {}
+              console.log(`[Bot/Renegociar] OS ${parsed.retentionOsNumber}: tickets gerencia (HIGH) + logistica (NORMAL) abertos`)
+            } catch (err) {
+              console.error('[Bot/Renegociar] Excecao ao abrir tickets gerencia/logistica:', err instanceof Error ? err.message : err)
+            }
+          }
         } else {
           const errBody = await updateRes.text().catch(() => '')
           console.warn(`[Bot/Retencao] Falha ao mover OS ${parsed.retentionOsNumber} para "${novelStatus}": ${updateRes.status} ${errBody.slice(0, 200)}`)
