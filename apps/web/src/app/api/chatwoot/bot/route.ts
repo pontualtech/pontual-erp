@@ -768,6 +768,19 @@ interface ParsedResponse {
   // ERP NAO move status sozinho — atendente confirma com cliente antes.
   cancelOsNumber: number | null
   returnOsNumber: number | null
+  // 2026-05-09: Marta detectou cliente pedindo desconto/recusando orcamento.
+  // Diferente de [STATUS_ORCAR_NEGOCIAR] (retencao geral): este tag e
+  // emitido especificamente quando cliente PEDE DESCONTO. Sistema:
+  //  1. Move OS para "Orcar Negociar"
+  //  2. Cria observacao [DESCONTO_SOLICITADO] na OS
+  //  3. Abre ticket priority NORMAL pra equipe comercial avaliar
+  // Tag formato: [STATUS_ORCAR_NEGOCIAR_DESCONTO:60343]
+  discountNegotiateOsNumber: number | null
+  // 2026-05-09: Marta detectou cliente IRRITADO/OFENSIVO (CAIXA ALTA, !!!,
+  // palavroes, frustracao persistente). Sistema abre ticket priority HIGH
+  // pra equipe atender com prioridade. Tag SEM OS number — cliente pode
+  // estar irritado sem OS associada. Tag formato: [STATUS_URGENCIA_ALTA]
+  clienteIrritado: boolean
 }
 
 /**
@@ -850,6 +863,8 @@ function parseDifyResponse(text: string): ParsedResponse {
   let urgencyOsNumber: number | null = null
   let cancelOsNumber: number | null = null
   let returnOsNumber: number | null = null
+  let discountNegotiateOsNumber: number | null = null
+  let clienteIrritado = false
 
   // Extract [VHSYS_DATA]{json}[/VHSYS_DATA]
   const dataMatch = text.match(/\[VHSYS_DATA\]([\s\S]+?)\[\/VHSYS_DATA\]/)
@@ -911,6 +926,25 @@ function parseDifyResponse(text: string): ParsedResponse {
     cleanText = cleanText.replace(/\[DEVOLUCAO_LOGISTICA(?::\d+)?\]/g, '').trim()
   }
 
+  // 2026-05-09: tag de desconto solicitado pela Marta. Importante: parsear
+  // ANTES de qualquer outra heuristica que use STATUS_ORCAR_NEGOCIAR pra
+  // evitar falso match — a tag DESCONTO contem ORCAR_NEGOCIAR como prefixo.
+  // Mas o regex original `STATUS_ORCAR_NEGOCIAR(?::\d+)?\]` ja exige `]`
+  // ou `:N]` apos NEGOCIAR, entao nao casa com `_DESCONTO` — sem conflito.
+  const descontoMatch = text.match(/\[STATUS_ORCAR_NEGOCIAR_DESCONTO(?::(\d+))?\]/)
+  if (descontoMatch) {
+    if (descontoMatch[1]) discountNegotiateOsNumber = parseInt(descontoMatch[1], 10)
+    cleanText = cleanText.replace(/\[STATUS_ORCAR_NEGOCIAR_DESCONTO(?::\d+)?\]/g, '').trim()
+  }
+
+  // 2026-05-09: tag de cliente irritado (sem OS). Diferente de URGENCIA_ALTA
+  // (cobrar atraso de OS especifica) — este e geral, abre ticket prioritario
+  // sem necessariamente associar a OS.
+  if (text.includes('[STATUS_URGENCIA_ALTA]')) {
+    clienteIrritado = true
+    cleanText = cleanText.replace(/\[STATUS_URGENCIA_ALTA\]/g, '').trim()
+  }
+
   // Detect action tags
   if (text.includes('[ABRIR_OS]')) {
     action = 'ABRIR_OS'
@@ -929,7 +963,7 @@ function parseDifyResponse(text: string): ParsedResponse {
     cleanText = cleanText.replace(/\[NENHUMA_ACAO\]/g, '').trim()
   }
 
-  return { cleanText, vhsysData, action, retentionStatus, retentionOsNumber, isSpam, urgencyLevel, urgencyOsNumber, cancelOsNumber, returnOsNumber }
+  return { cleanText, vhsysData, action, retentionStatus, retentionOsNumber, isSpam, urgencyLevel, urgencyOsNumber, cancelOsNumber, returnOsNumber, discountNegotiateOsNumber, clienteIrritado }
 }
 
 // ---------------------------------------------------------------------------
@@ -1132,6 +1166,15 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       content = `${content}\n[HINT INTERNO: cliente enviou apenas CPF/CNPJ. Use pra identificar cliente e listar OSs ativas.]`
     } else if (content.trim() === '?' || content.trim() === '??' || /^o(la|i)\.?$/i.test(content.trim())) {
       content = `${content}\n[HINT INTERNO: cliente mandou cumprimento curto. Use o [CONTEXTO DO CLIENTE] (se houver) pra dar resposta proativa com status das OSs ativas; senao pergunte como pode ajudar.]`
+    } else if (
+      // 2026-05-09: emoji puro (👍, ❤️, 🙏 etc.) ou figurinha/sticker placeholder.
+      // Detectado em 129 conversas reais analisadas — bot ficava em silencio
+      // ou respondia coisas confusas. Hint pro modelo perguntar o que cliente
+      // quis dizer e oferecer opcoes claras.
+      /^[\p{Emoji}\s]+$/u.test(content) ||
+      /^\[(figurinha|sticker|imagem|gif|foto)\]?$/i.test(content.trim())
+    ) {
+      content = `${content}\n[HINT INTERNO: cliente enviou apenas emoji/figurinha/sticker (mensagem ambigua). Pergunte gentilmente o que ele quis dizer e ofereca opcoes claras: status de OS, agendamento de coleta, falar com humano. NAO assuma intencao positiva ou negativa — peca esclarecimento.]`
     }
   }
 
@@ -2271,6 +2314,114 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
         try { await cwSetLabels(cfg, conversationId, ['cancelamento']) } catch {}
       } catch (err) {
         console.error('[Bot/Cancel] Excecao:', err instanceof Error ? err.message : err)
+      }
+    }
+
+    // 2026-05-09: handler R17 — cliente PEDIU DESCONTO. Marta marca tag
+    // [STATUS_ORCAR_NEGOCIAR_DESCONTO:N]. Sistema:
+    //  1. Move OS para "Orcar Negociar" (atualizar-os endpoint)
+    //  2. Lookup OS UUID pra linkar ticket
+    //  3. Abre ticket priority NORMAL category=DESCONTO_NEGOCIACAO
+    //  4. Nota interna no Chatwoot + label
+    // Diferente do retentionStatus 'Orcar Negociar' (recusa generica) —
+    // este e especifico pra solicitacao explicita de desconto/abatimento.
+    if (parsed.discountNegotiateOsNumber) {
+      try {
+        const note = `[BOT — DESCONTO_SOLICITADO] Cliente solicitou desconto/abatimento via Marta na OS #${parsed.discountNegotiateOsNumber}. OS movida para "Orcar Negociar". Equipe comercial deve analisar e retornar em ate 2h uteis com a melhor proposta possivel.`
+
+        // 1. Move OS pra Orcar Negociar
+        try {
+          const upRes = await fetch(`${ERP_BASE_URL}/api/bot/atualizar-os`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'X-Bot-Key': cfg.botApiKey },
+            body: JSON.stringify({
+              os_numero: parsed.discountNegotiateOsNumber,
+              status: 'Orcar Negociar',
+              notas_internas: note,
+            }),
+          })
+          if (!upRes.ok) {
+            const errBody = await upRes.text().catch(() => '')
+            console.warn(`[Bot/Desconto] atualizar-os falhou pra OS ${parsed.discountNegotiateOsNumber}: ${upRes.status} ${errBody.slice(0, 200)}`)
+          }
+        } catch (e) {
+          console.warn('[Bot/Desconto] excecao atualizar-os:', e instanceof Error ? e.message : e)
+        }
+
+        // 2. Lookup OS UUID
+        let serviceOrderUuid: string | null = null
+        try {
+          const osRow = await prisma.serviceOrder.findFirst({
+            where: { os_number: parsed.discountNegotiateOsNumber, company_id: cfg.companyId, deleted_at: null },
+            select: { id: true },
+          })
+          serviceOrderUuid = osRow?.id || null
+        } catch {}
+
+        // 3. Cria ticket pra equipe comercial avaliar desconto
+        try {
+          const tRes = await fetch(`${ERP_BASE_URL}/api/bot/criar-ticket`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Bot-Key': cfg.botApiKey },
+            body: JSON.stringify({
+              subject: `Cliente solicitou desconto — OS #${parsed.discountNegotiateOsNumber}`,
+              description: note,
+              priority: 'NORMAL',
+              category: 'DESCONTO_NEGOCIACAO',
+              service_order_id: serviceOrderUuid,
+            }),
+          })
+          if (tRes.ok) {
+            const data = await tRes.json()
+            const tNum = data?.data?.ticket_number || data?.ticket_number || '?'
+            console.log(`[Bot/Desconto] Ticket #${tNum} aberto pra OS ${parsed.discountNegotiateOsNumber}`)
+          } else {
+            const errBody = await tRes.text().catch(() => '')
+            console.warn(`[Bot/Desconto] criar-ticket falhou: ${tRes.status} ${errBody.slice(0, 200)}`)
+          }
+        } catch (e) { console.warn('[Bot/Desconto] excecao criar-ticket:', e instanceof Error ? e.message : e) }
+
+        // 4. Nota + label no Chatwoot
+        await cwSendMessage(cfg, conversationId, note, true)
+        try { await cwSetLabels(cfg, conversationId, ['desconto_solicitado']) } catch {}
+      } catch (err) {
+        console.error('[Bot/Desconto] Excecao geral:', err instanceof Error ? err.message : err)
+      }
+    }
+
+    // 2026-05-09: handler R19 — cliente IRRITADO/OFENSIVO (CAIXA ALTA, !!!,
+    // palavroes, frustracao persistente). Marta marca [STATUS_URGENCIA_ALTA]
+    // (sem OS — cliente pode estar irritado sem OS associada). Abre ticket
+    // priority HIGH pra equipe atender com urgencia em 1h util.
+    if (parsed.clienteIrritado) {
+      try {
+        const note = `[BOT — CLIENTE_IRRITADO] Cliente expressou frustracao forte (CAIXA ALTA, "!!!", palavroes ou irritacao persistente) na conversa. Ticket priority HIGH aberto — equipe deve atender com prioridade em 1h util.`
+        try {
+          const tRes = await fetch(`${ERP_BASE_URL}/api/bot/criar-ticket`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Bot-Key': cfg.botApiKey },
+            body: JSON.stringify({
+              subject: `Cliente irritado — atendimento prioritario`,
+              description: note,
+              priority: 'HIGH',
+              category: 'CLIENTE_IRRITADO',
+              service_order_id: null,
+            }),
+          })
+          if (tRes.ok) {
+            const data = await tRes.json()
+            const tNum = data?.data?.ticket_number || data?.ticket_number || '?'
+            console.log(`[Bot/Irritado] Ticket #${tNum} aberto (priority HIGH)`)
+          } else {
+            const errBody = await tRes.text().catch(() => '')
+            console.warn(`[Bot/Irritado] criar-ticket falhou: ${tRes.status} ${errBody.slice(0, 200)}`)
+          }
+        } catch (e) { console.warn('[Bot/Irritado] excecao criar-ticket:', e instanceof Error ? e.message : e) }
+
+        await cwSendMessage(cfg, conversationId, note, true)
+        try { await cwSetLabels(cfg, conversationId, ['cliente_irritado']) } catch {}
+      } catch (err) {
+        console.error('[Bot/Irritado] Excecao:', err instanceof Error ? err.message : err)
       }
     }
 
