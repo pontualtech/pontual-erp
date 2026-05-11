@@ -76,3 +76,35 @@ export async function findActivePendingPaymentForOs(
 
   return { payment, expired }
 }
+
+/**
+ * isOsAlreadyPaid — verifica se a OS ja foi paga. Considera 2 sinais:
+ *  1. AccountReceivable com status RECEBIDO (cobranca quitada)
+ *  2. Payment com status CONFIRMED ou RECEIVED (pagamento autorizado/recebido)
+ *
+ * Usado pelos 4 endpoints de cobranca pra BLOQUEAR criacao de nova cobranca
+ * em OS ja paga (caso real Karlao OS 60475: cartao pagou, AR ficou PENDENTE
+ * porque webhook so baixava no RECEIVED, sistema permitia nova cobranca).
+ */
+export async function isOsAlreadyPaid(osId: string, companyId: string): Promise<boolean> {
+  const receivedAR = await prisma.accountReceivable.findFirst({
+    where: {
+      service_order_id: osId,
+      company_id: companyId,
+      status: 'RECEBIDO',
+      deleted_at: null,
+    },
+    select: { id: true },
+  })
+  if (receivedAR) return true
+
+  const paidPayment = await prisma.payment.findFirst({
+    where: {
+      service_order_id: osId,
+      company_id: companyId,
+      status: { in: ['CONFIRMED', 'RECEIVED'] },
+    },
+    select: { id: true },
+  })
+  return !!paidPayment
+}

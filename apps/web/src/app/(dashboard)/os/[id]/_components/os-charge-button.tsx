@@ -579,7 +579,7 @@ export default function OsChargeButton({ osId, osNumber, totalCost }: {
   totalCost: number
 }) {
   const [open, setOpen] = useState(false)
-  const [hasPending, setHasPending] = useState<boolean | null>(null)
+  const [state, setState] = useState<'idle' | 'pending' | 'paid' | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -588,13 +588,30 @@ export default function OsChargeButton({ osId, osNumber, totalCost }: {
       .then(d => {
         if (cancelled) return
         const list = (d.data || []) as ChargeHistoryItem[]
-        setHasPending(list.some(p => p.status === 'PENDING'))
+        // 2026-05-11 (Karlao OS 60475): 3 estados — Pago (CONFIRMED/RECEIVED) >
+        // Cobranca ativa (PENDING) > Cobrar (nenhum). Pago bloqueia nova cobranca.
+        if (list.some(p => p.status === 'RECEIVED' || p.status === 'CONFIRMED' || p.status === 'PAID')) {
+          setState('paid')
+        } else if (list.some(p => p.status === 'PENDING')) {
+          setState('pending')
+        } else {
+          setState('idle')
+        }
       })
-      .catch(() => { if (!cancelled) setHasPending(false) })
+      .catch(() => { if (!cancelled) setState('idle') })
     return () => { cancelled = true }
   }, [osId, open])
 
-  if (hasPending === true) {
+  if (state === 'paid') {
+    return (
+      <span className="flex items-center gap-1.5 rounded-lg border border-emerald-400 bg-emerald-100 px-3 py-1.5 text-sm font-semibold text-emerald-800"
+        title="OS já foi paga — não é possível gerar nova cobrança">
+        <Check className="h-4 w-4" /> Pago
+      </span>
+    )
+  }
+
+  if (state === 'pending') {
     return (
       <>
         <button type="button" onClick={() => setOpen(true)}
@@ -615,7 +632,7 @@ export default function OsChargeButton({ osId, osNumber, totalCost }: {
   return (
     <>
       <button type="button" onClick={() => setOpen(true)}
-        className="flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-100 transition-colors"
+        className="flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-100 transition-colors cursor-pointer"
         title="Enviar link de pagamento ao cliente (PIX, boleto ou cartao)">
         <CreditCard className="h-4 w-4" /> Cobrar
       </button>

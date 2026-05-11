@@ -4,7 +4,7 @@ import { getPortalUserFromRequest } from '@/lib/portal-auth'
 import { getPaymentProviderForAccount } from '@/lib/payments/factory'
 import { resolveDefaultProviderAccount } from '@/lib/payments/resolve-account'
 import { canCustomerPayOS, PAYMENT_BLOCKED_MESSAGE } from '@/lib/os-payment-rules'
-import { findActivePendingPaymentForOs } from '@/lib/payments/find-active-charge'
+import { findActivePendingPaymentForOs, isOsAlreadyPaid } from '@/lib/payments/find-active-charge'
 
 /**
  * POST /api/portal/payments/credit-card
@@ -54,6 +54,14 @@ export async function POST(req: NextRequest) {
 
     if (!canCustomerPayOS(os.module_statuses?.name)) {
       return NextResponse.json({ error: PAYMENT_BLOCKED_MESSAGE }, { status: 422 })
+    }
+
+    // 2026-05-11 (Karlao OS 60475): bloqueia se OS ja paga
+    if (await isOsAlreadyPaid(os.id, portalUser.company_id)) {
+      return NextResponse.json({
+        error: 'Esta OS ja foi paga. Acesse o portal pra ver o comprovante.',
+        reason: 'os_already_paid',
+      }, { status: 409 })
     }
 
     // 2026-05-11: regra "1 OS = 1 Payment PENDING max". Bloqueia geracao se

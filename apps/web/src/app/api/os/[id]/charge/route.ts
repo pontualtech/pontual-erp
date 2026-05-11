@@ -7,7 +7,7 @@ import type { BillingType } from '@/lib/payments/types'
 import { sendWhatsAppTemplate } from '@/lib/whatsapp/cloud-api'
 import { sendCompanyEmail } from '@/lib/send-email'
 import { escapeHtml } from '@/lib/escape-html'
-import { findActivePendingPaymentForOs } from '@/lib/payments/find-active-charge'
+import { findActivePendingPaymentForOs, isOsAlreadyPaid } from '@/lib/payments/find-active-charge'
 import { z } from 'zod'
 
 /**
@@ -60,6 +60,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const amount = os.total_cost || 0
     if (amount <= 0) {
       return NextResponse.json({ error: 'OS sem valor — defina um orcamento antes de cobrar' }, { status: 400 })
+    }
+
+    // 2026-05-11 (Karlao OS 60475): bloqueia nova cobranca se OS ja paga
+    // (Payment CONFIRMED/RECEIVED OU AR RECEBIDO). Antes do check de
+    // "1 Payment PENDING max" porque mesmo sem PENDING ativo, OS paga
+    // nao deve aceitar nova cobranca.
+    const alreadyPaid = await isOsAlreadyPaid(params.id, auth.companyId)
+    if (alreadyPaid) {
+      return NextResponse.json({
+        error: 'Esta OS ja foi paga — nao gere nova cobranca. Se houve estorno, registre primeiro.',
+        reason: 'os_already_paid',
+      }, { status: 409 })
     }
 
     // 2026-05-11: regra de dominio "1 OS = 1 Payment PENDING max"

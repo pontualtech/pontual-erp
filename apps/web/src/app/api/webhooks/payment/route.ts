@@ -302,26 +302,40 @@ export async function POST(req: NextRequest) {
         data: paymentUpdate,
       })
 
-      // Auto-baixa: ONLY on RECEIVED (not CONFIRMED — prevents double-credit for credit card)
+      // RECEIVED: dinheiro DISPONIVEL na conta — sempre cria Transaction +
+      // FiscalEntry (regime caixa). Baixa o AR se ainda nao baixado (caso
+      // PIX direto sem CONFIRMED) ou apenas atualiza charge_status se ja
+      // baixou pelo CONFIRMED (cartao/boleto fluxo padrao).
       if (newStatus === AUTO_BAIXA_STATUS && fresh.receivable_id) {
         const receivable = await tx.accountReceivable.findFirst({
           where: { id: fresh.receivable_id, company_id: fresh.company_id },
         })
 
-        if (receivable && receivable.status !== 'RECEBIDO') {
-          const newReceived = (receivable.received_amount || 0) + fresh.amount
-          const isFullyPaid = newReceived >= receivable.total_amount
-
-          await tx.accountReceivable.update({
-            where: { id: fresh.receivable_id },
-            data: {
-              received_amount: newReceived,
-              status: isFullyPaid ? 'RECEBIDO' : 'PENDENTE',
-              charge_status: newStatus,
-              payment_method: fresh.billing_type || fresh.method || receivable.payment_method,
-              updated_at: new Date(),
-            },
-          })
+        if (receivable) {
+          // 2026-05-11: idempotencia AR baixa — so baixa se ainda PENDENTE.
+          // Se CONFIRMED ja baixou antes, RECEIVED nao baixa de novo (evita
+          // double credit). Mas Transaction + FiscalEntry SEMPRE rodam aqui
+          // porque sao do regime caixa (so quando dinheiro REALMENTE entra).
+          if (receivable.status !== 'RECEBIDO') {
+            const newReceived = (receivable.received_amount || 0) + fresh.amount
+            const isFullyPaid = newReceived >= receivable.total_amount
+            await tx.accountReceivable.update({
+              where: { id: fresh.receivable_id },
+              data: {
+                received_amount: newReceived,
+                status: isFullyPaid ? 'RECEBIDO' : 'PENDENTE',
+                charge_status: newStatus,
+                payment_method: fresh.billing_type || fresh.method || receivable.payment_method,
+                updated_at: new Date(),
+              },
+            })
+          } else {
+            // AR ja RECEBIDO (CONFIRMED veio antes). So atualiza charge_status.
+            await tx.accountReceivable.update({
+              where: { id: fresh.receivable_id },
+              data: { charge_status: newStatus, updated_at: new Date() },
+            })
+          }
 
           // Audit 14 BUG 3 fix: criar Transaction + atualizar saldo da conta
           // bancária quando o webhook auto-baixa um pagamento. Antes:
@@ -439,15 +453,60 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Handle CONFIRMED: update charge_status but do NOT increment received_amount
+      // 2026-05-11 (Karlao OS 60475): CONFIRMED tambem BAIXA o AR.
+      // Antes so atualizava charge_status — AR ficava PENDENTE eternamente
+      // pra cartao (que liquida CONFIRMED no dia 0 mas dinheiro so cai no
+      // RECEIVED D+30). Operacionalmente cliente quitou a divida no dia 0,
+      // entao AR=RECEBIDO. Transaction (extrato) + FiscalEntry (DRE) NAO
+      // sao criados aqui — continuam exclusivos do RECEIVED quando dinheiro
+      // de fato esta na conta (regime caixa, evita inflar saldo banco).
+      //
+      // PIX nao passa por esse handler porque Asaas envia direto PAYMENT_RECEIVED
+      // (pulando CONFIRMED). Boleto pode passar (CONFIRMED quando compensa
+      // + RECEIVED quando dinheiro vira disponivel). Cartao sempre passa.
       if (newStatus === 'CONFIRMED' && fresh.receivable_id) {
-        await tx.accountReceivable.update({
-          where: { id: fresh.receivable_id },
-          data: {
-            charge_status: 'CONFIRMED',
-            updated_at: new Date(),
-          },
+        const receivable = await tx.accountReceivable.findFirst({
+          where: { id: fresh.receivable_id, company_id: fresh.company_id },
         })
+        if (receivable && receivable.status !== 'RECEBIDO') {
+          const newReceived = (receivable.received_amount || 0) + fresh.amount
+          const isFullyPaid = newReceived >= receivable.total_amount
+          await tx.accountReceivable.update({
+            where: { id: fresh.receivable_id },
+            data: {
+              received_amount: newReceived,
+              status: isFullyPaid ? 'RECEBIDO' : 'PENDENTE',
+              charge_status: 'CONFIRMED',
+              payment_method: fresh.billing_type || fresh.method || receivable.payment_method,
+              updated_at: new Date(),
+            },
+          })
+
+          // Append nota interna na OS pra atendente ver pagamento confirmado
+          // mesmo antes do dinheiro cair na conta
+          if (fresh.service_order_id) {
+            const so = await tx.serviceOrder.findUnique({
+              where: { id: fresh.service_order_id },
+              select: { internal_notes: true },
+            })
+            const valorBRL = (fresh.amount / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+            const dataStr = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+            const metodo = fresh.billing_type || fresh.method || 'PIX'
+            const novaNota = `[${dataStr}] ✓ Pagamento confirmado (autorizado): ${metodo} ${valorBRL} — Asaas ${asaasPayment.id} (extrato/DRE atualizam no RECEIVED)`
+            const notesAtual = so?.internal_notes ? so.internal_notes + '\n' : ''
+            await tx.serviceOrder.update({
+              where: { id: fresh.service_order_id },
+              data: { internal_notes: notesAtual + novaNota },
+            })
+          }
+        } else if (receivable) {
+          // AR ja RECEBIDO (caso raro: CONFIRMED chegou DEPOIS de RECEIVED).
+          // So atualiza charge_status pra refletir estado mais recente.
+          await tx.accountReceivable.update({
+            where: { id: fresh.receivable_id },
+            data: { charge_status: 'CONFIRMED', updated_at: new Date() },
+          })
+        }
       }
 
       // Handle OVERDUE
