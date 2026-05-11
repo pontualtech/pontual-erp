@@ -7,8 +7,15 @@ import { captureFeesForPayment } from '@/lib/payments/capture-fees'
 const VALID_TRANSITIONS: Record<string, string[]> = {
   PENDING: ['CONFIRMED', 'RECEIVED', 'OVERDUE', 'DELETED', 'FAILED', 'CANCELLED'],
   OVERDUE: ['CONFIRMED', 'RECEIVED', 'DELETED', 'CANCELLED'],
-  CONFIRMED: ['RECEIVED', 'REFUNDED', 'PARTIALLY_REFUNDED'],
-  RECEIVED: ['REFUNDED', 'PARTIALLY_REFUNDED'],
+  // 2026-05-11 (chargeback): CONFIRMED/RECEIVED podem ir pra DISPUTED quando
+  // cliente contesta cartao no banco. Asaas envia PAYMENT_CHARGEBACK_REQUESTED.
+  CONFIRMED: ['RECEIVED', 'REFUNDED', 'PARTIALLY_REFUNDED', 'DISPUTED'],
+  RECEIVED: ['REFUNDED', 'PARTIALLY_REFUNDED', 'DISPUTED'],
+  // DISPUTED pode resolver pra (a) RECEIVED (comerciante ganhou disputa) ou
+  // (b) REFUNDED via AWAITING_CHARGEBACK_REVERSAL (cliente ganhou, Asaas
+  // estorna). REFUND_PENDING e estado transicional do Asaas refund.
+  DISPUTED: ['RECEIVED', 'REFUNDED', 'REFUND_PENDING'],
+  REFUND_PENDING: ['REFUNDED'],
   // 2026-05-11: CANCELLED -> DELETED aceito como idempotente. Cenario:
   // atendente cancela via /charge/[id]/cancel (Payment local vira CANCELLED
   // e Asaas tambem cancela). Asaas envia PAYMENT_DELETED webhook depois —
@@ -567,9 +574,16 @@ export async function POST(req: NextRequest) {
             debitAccountId = inferred?.id ?? null
           }
           if (debitAccountId) {
+            // 2026-05-11 (chargeback): se AWAITING_CHARGEBACK_REVERSAL ja debitou
+            // (bank_ref `<id>-chargeback`), REFUNDED nao deve duplicar. Checa
+            // ambos suffixes.
             const refundBankRef = `${asaasPayment.id}-refund`
+            const chargebackBankRef = `${asaasPayment.id}-chargeback`
             const existingDebit = await tx.transaction.findFirst({
-              where: { company_id: fresh.company_id, bank_ref: refundBankRef },
+              where: {
+                company_id: fresh.company_id,
+                bank_ref: { in: [refundBankRef, chargebackBankRef] },
+              },
               select: { id: true },
             })
             if (!existingDebit) {
@@ -632,6 +646,150 @@ export async function POST(req: NextRequest) {
             }
           } catch (refundFiscalErr) {
             console.error('[Webhook FiscalEntry Refund] Falha ao lancar estorno DRE:', refundFiscalErr instanceof Error ? refundFiscalErr.message : refundFiscalErr)
+          }
+        }
+      }
+
+      // 2026-05-11 (chargeback): Handle DISPUTED — cliente contestou cartao.
+      // Asaas envia 3 eventos distintos, todos mapeados pra DISPUTED:
+      //   PAYMENT_CHARGEBACK_REQUESTED  -> abertura disputa (sem mexer em $)
+      //   PAYMENT_CHARGEBACK_DISPUTE    -> em analise (sem mexer)
+      //   PAYMENT_AWAITING_CHARGEBACK_REVERSAL -> Asaas vai reverter (perdemos)
+      //
+      // Estrategia conservadora: REQUESTED/DISPUTE so marcam AR + abrem
+      // ticket pra atendente avaliar. AWAITING_REVERSAL reverte como refund
+      // (Transaction DEBIT + decremento saldo + FE negativo).
+      //
+      // Se eventualmente PAYMENT_REFUNDED chegar depois (Asaas formaliza o
+      // estorno), o handler REFUNDED ja vai detectar bank_ref existente e
+      // nao duplicar — idempotencia via WebhookEventLog + bank_ref check.
+      if (newStatus === 'DISPUTED' && fresh.receivable_id) {
+        const isReversal = event === 'PAYMENT_AWAITING_CHARGEBACK_REVERSAL'
+        const receivable = await tx.accountReceivable.findFirst({
+          where: { id: fresh.receivable_id, company_id: fresh.company_id },
+        })
+
+        if (receivable) {
+          if (isReversal) {
+            // Trata como refund: reverte AR + Transaction DEBIT + decremento + FE neg
+            const newReceived = Math.max(0, (receivable.received_amount || 0) - fresh.amount)
+            await tx.accountReceivable.update({
+              where: { id: fresh.receivable_id },
+              data: {
+                received_amount: newReceived,
+                status: newReceived >= receivable.total_amount ? 'RECEBIDO' : 'PENDENTE',
+                charge_status: 'CHARGEBACK_LOST',
+                updated_at: new Date(),
+              },
+            })
+
+            // Transaction DEBIT (mesma logica do REFUNDED handler)
+            const billingType = (fresh.billing_type || fresh.method || '').toUpperCase()
+            let debitAccountId: string | null = receivable.account_id || null
+            if (!debitAccountId) {
+              const inferred = await tx.account.findFirst({
+                where: {
+                  company_id: fresh.company_id,
+                  is_active: true,
+                  OR: [
+                    { name: { contains: 'asaas', mode: 'insensitive' } },
+                    { bank_name: { contains: 'asaas', mode: 'insensitive' } },
+                  ],
+                },
+                select: { id: true },
+              })
+              debitAccountId = inferred?.id ?? null
+            }
+            if (debitAccountId) {
+              const refundBankRef = `${asaasPayment.id}-chargeback`
+              const existingDebit = await tx.transaction.findFirst({
+                where: { company_id: fresh.company_id, bank_ref: refundBankRef },
+                select: { id: true },
+              })
+              if (!existingDebit) {
+                await tx.transaction.create({
+                  data: {
+                    company_id: fresh.company_id,
+                    account_id: debitAccountId,
+                    transaction_type: 'DEBIT',
+                    amount: fresh.amount,
+                    description: `Chargeback Asaas (${billingType || 'CREDIT_CARD'}): ${receivable.description}`,
+                    bank_ref: refundBankRef,
+                    transaction_date: new Date(),
+                  },
+                })
+                await tx.account.update({
+                  where: { id: debitAccountId },
+                  data: {
+                    current_balance: { decrement: fresh.amount },
+                    updated_at: new Date(),
+                  },
+                })
+              }
+            }
+
+            // FiscalEntry estorno por chargeback
+            try {
+              const cbChartAccount = await tx.accountChart.findFirst({
+                where: {
+                  company_id: fresh.company_id,
+                  is_active: true,
+                  account_type: 'REVENUE',
+                  OR: [
+                    { name: { contains: 'Servic', mode: 'insensitive' } },
+                    { name: { contains: 'Receita', mode: 'insensitive' } },
+                  ],
+                },
+                orderBy: { display_order: 'asc' },
+                select: { id: true },
+              })
+              if (cbChartAccount) {
+                await tx.fiscalEntry.create({
+                  data: {
+                    company_id: fresh.company_id,
+                    entry_date: new Date(),
+                    cash_date: new Date(),
+                    chart_account_id: cbChartAccount.id,
+                    payment_id: fresh.id,
+                    amount: BigInt(-fresh.amount),
+                    description: `CHARGEBACK ${fresh.billing_type || 'CREDIT_CARD'}: ${receivable.description}`,
+                    source: 'PAYMENT',
+                    is_provisional: false,
+                    metadata: {
+                      asaas_id: asaasPayment.id,
+                      billing_type: fresh.billing_type || null,
+                      receivable_id: fresh.receivable_id,
+                      chargeback: true,
+                    },
+                  },
+                })
+              }
+            } catch (cbErr) {
+              console.error('[Webhook FiscalEntry Chargeback] Falha:', cbErr instanceof Error ? cbErr.message : cbErr)
+            }
+          } else {
+            // REQUESTED ou DISPUTE: so marca AR.charge_status — sem mexer $
+            await tx.accountReceivable.update({
+              where: { id: fresh.receivable_id },
+              data: { charge_status: 'DISPUTED', updated_at: new Date() },
+            })
+          }
+
+          // Nota interna na OS pra atendente ver
+          if (fresh.service_order_id) {
+            const so = await tx.serviceOrder.findUnique({
+              where: { id: fresh.service_order_id },
+              select: { internal_notes: true },
+            })
+            const valorBRL = (fresh.amount / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+            const dataStr = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+            const eventLabel = isReversal ? 'ESTORNADO pelo Asaas' : 'EM DISPUTA'
+            const novaNota = `[${dataStr}] ⚠️ Chargeback ${eventLabel}: ${fresh.billing_type || 'CREDIT_CARD'} ${valorBRL} — Asaas ${asaasPayment.id}`
+            const notesAtual = so?.internal_notes ? so.internal_notes + '\n' : ''
+            await tx.serviceOrder.update({
+              where: { id: fresh.service_order_id },
+              data: { internal_notes: notesAtual + novaNota },
+            })
           }
         }
       }
