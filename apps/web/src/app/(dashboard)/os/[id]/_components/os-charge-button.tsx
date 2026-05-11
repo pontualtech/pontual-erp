@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { CreditCard, Loader2, X, Copy, ExternalLink, Check, Zap, FileText, Wallet, Mail, MessageSquare, Clock, History } from 'lucide-react'
+import { CreditCard, Loader2, X, Copy, ExternalLink, Check, Zap, FileText, Wallet, Mail, MessageSquare, Clock, History, Send } from 'lucide-react'
 
 type Account = {
   id: string
@@ -70,6 +70,7 @@ export function OsChargeModal({ osId, osNumber, totalCost, open, onClose }: {
   const [sendEmail, setSendEmail] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<{ invoice_url: string; billing_type: string; amount: number } | null>(null)
+  const [resendingId, setResendingId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -131,6 +132,28 @@ export function OsChargeModal({ osId, osNumber, totalCost, open, onClose }: {
   function copyLink(url: string) {
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
       navigator.clipboard.writeText(url).then(() => toast.success('Link copiado'))
+    }
+  }
+
+  async function handleResend(chargeId: string) {
+    setResendingId(chargeId)
+    try {
+      const res = await fetch(`/api/os/${osId}/charge/${chargeId}/resend`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ send_whatsapp: true, send_email: true }),
+      })
+      const data = await res.json()
+      if (!res.ok) { toast.error(data.error || 'Falha ao reenviar'); return }
+      const parts: string[] = []
+      if (data.sent_whatsapp) parts.push('WhatsApp')
+      if (data.sent_email) parts.push('E-mail')
+      toast.success(parts.length ? `Cobrança reenviada por ${parts.join(' + ')}` : 'Cobrança reenviada')
+      fetch(`/api/os/${osId}/charge`).then(r => r.json()).then(d => setHistory(d.data || [])).catch(() => {})
+    } catch {
+      toast.error('Erro de rede')
+    } finally {
+      setResendingId(null)
     }
   }
 
@@ -390,12 +413,24 @@ export function OsChargeModal({ osId, osNumber, totalCost, open, onClose }: {
                                 {fmtDateTime(h.created_at)}{h.account ? ` · ${h.account.name}` : ''}
                               </p>
                             </div>
-                            {h.invoice_url && (
-                              <a href={h.invoice_url} target="_blank" rel="noopener noreferrer"
-                                className="text-xs font-medium text-blue-600 hover:underline flex items-center gap-1 shrink-0">
-                                <ExternalLink className="h-3 w-3" /> abrir
-                              </a>
-                            )}
+                            <div className="flex items-center gap-2 shrink-0">
+                              {h.invoice_url && (
+                                <a href={h.invoice_url} target="_blank" rel="noopener noreferrer"
+                                  className="text-xs font-medium text-blue-600 hover:underline flex items-center gap-1">
+                                  <ExternalLink className="h-3 w-3" /> abrir
+                                </a>
+                              )}
+                              {h.status === 'PENDING' && h.invoice_url && (
+                                <button type="button" onClick={() => handleResend(h.id)}
+                                  disabled={resendingId === h.id}
+                                  className="text-xs font-medium text-emerald-700 hover:text-emerald-800 hover:underline flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                                  title="Reenviar link de pagamento ao cliente">
+                                  {resendingId === h.id
+                                    ? <><Loader2 className="h-3 w-3 animate-spin" /> enviando...</>
+                                    : <><Send className="h-3 w-3" /> reenviar</>}
+                                </button>
+                              )}
+                            </div>
                           </div>
                         ))}
                       </div>

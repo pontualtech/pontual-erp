@@ -781,6 +781,12 @@ interface ParsedResponse {
   // pra equipe atender com prioridade. Tag SEM OS number — cliente pode
   // estar irritado sem OS associada. Tag formato: [STATUS_URGENCIA_ALTA]
   clienteIrritado: boolean
+  // 2026-05-11: cliente disse "nao recebi boleto / link sumiu". Sistema
+  // reenvia o link de pagamento existente (Payment PENDING mais recente
+  // da OS) via WhatsApp + email. NAO cria cobranca nova no Asaas. Se a
+  // OS nao tiver cobranca PENDING ativa, Marta cai no fallback de regra 9
+  // (registrar pra financeiro conferir). Tag formato: [REENVIAR_COBRANCA:60343]
+  resendChargeOsNumber: number | null
 }
 
 /**
@@ -865,6 +871,7 @@ function parseDifyResponse(text: string): ParsedResponse {
   let returnOsNumber: number | null = null
   let discountNegotiateOsNumber: number | null = null
   let clienteIrritado = false
+  let resendChargeOsNumber: number | null = null
 
   // Extract [VHSYS_DATA]{json}[/VHSYS_DATA]
   const dataMatch = text.match(/\[VHSYS_DATA\]([\s\S]+?)\[\/VHSYS_DATA\]/)
@@ -945,6 +952,17 @@ function parseDifyResponse(text: string): ParsedResponse {
     cleanText = cleanText.replace(/\[STATUS_URGENCIA_ALTA\]/g, '').trim()
   }
 
+  // 2026-05-11: tag de reenvio de cobranca. Cliente disse "nao recebi
+  // boleto / link sumiu". Sistema chama /api/bot/reenviar-cobranca que
+  // reenvia o link da Payment PENDING mais recente da OS (sem criar
+  // cobranca nova). Se nao houver cobranca PENDING, cai no fallback da
+  // regra 9 (registrar pra financeiro).
+  const resendChargeMatch = text.match(/\[REENVIAR_COBRANCA(?::(\d+))?\]/)
+  if (resendChargeMatch) {
+    if (resendChargeMatch[1]) resendChargeOsNumber = parseInt(resendChargeMatch[1], 10)
+    cleanText = cleanText.replace(/\[REENVIAR_COBRANCA(?::\d+)?\]/g, '').trim()
+  }
+
   // Detect action tags
   if (text.includes('[ABRIR_OS]')) {
     action = 'ABRIR_OS'
@@ -963,7 +981,7 @@ function parseDifyResponse(text: string): ParsedResponse {
     cleanText = cleanText.replace(/\[NENHUMA_ACAO\]/g, '').trim()
   }
 
-  return { cleanText, vhsysData, action, retentionStatus, retentionOsNumber, isSpam, urgencyLevel, urgencyOsNumber, cancelOsNumber, returnOsNumber, discountNegotiateOsNumber, clienteIrritado }
+  return { cleanText, vhsysData, action, retentionStatus, retentionOsNumber, isSpam, urgencyLevel, urgencyOsNumber, cancelOsNumber, returnOsNumber, discountNegotiateOsNumber, clienteIrritado, resendChargeOsNumber }
 }
 
 // ---------------------------------------------------------------------------
@@ -1692,7 +1710,9 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
 6. APROVAR ou RECUSAR orcamento: informe que basta acessar o portal do cliente, clicar em aprovar ou recusar, e a notificacao eh enviada automaticamente para a equipe. NAO precisa de atendente para isso.
 7. NUNCA OFERECA proativamente transferencia para atendente humano. NAO escreva frases como "se preferir, posso transferir", "quer que um atendente te ajude?", "caso prefira falar com um atendente". Espere o cliente PEDIR EXPLICITAMENTE com palavras como "humano", "atendente", "alguem", "pessoa", "passa pra".
 8. Use [TRANSFERIR_HUMANO] APENAS quando: (a) cliente pedir explicitamente humano/atendente; (b) cliente fizer reclamacao GRAVE (mencionar Procon, juridico, processo, denuncia); (c) erro tecnico real que voce nao consegue resolver com os dados disponiveis. Em caso de duvida, NAO transfira — responda com o que voce sabe. AO TRANSFERIR, SEMPRE informe na sua resposta o horario de atendimento humano (esta em [DADOS REAIS DA EMPRESA] -> Horario) pra que o cliente saiba quando entrar em contato. NUNCA prometa retorno do atendente nem prazo ("retornaremos", "em breve", "em ate 1h"). O cliente eh quem entra em contato pelo canal de suporte. Ex: "Vou registrar internamente para nossa equipe. Nosso atendimento humano funciona de Seg a Qui das 08h as 18h e Sex das 08h as 17h — voce pode entrar em contato no horario comercial pelo nosso WhatsApp de suporte."
-9. PAGAMENTO (cliente diz "fiz Pix nao apareceu", "boleto pago", "comprovante", "pagamento nao caiu"): NAO transfira. Responda: "Vou registrar internamente para nossa equipe financeira conferir a compensacao. O sistema atualiza automaticamente em ate 2h uteis. Voce pode acompanhar pelo Portal." Tranquilize o cliente.
+9. PAGAMENTO — voce reconhece DOIS sub-fluxos distintos:
+   (a) PAGAMENTO JA FEITO ("fiz Pix nao apareceu", "boleto pago", "ja paguei", "comprovante", "pagamento nao caiu"): NAO transfira. Responda: "Vou registrar internamente para nossa equipe financeira conferir a compensacao. O sistema atualiza automaticamente em ate 2h uteis. Voce pode acompanhar pelo Portal." Tranquilize o cliente. SEM tag.
+   (b) CLIENTE NAO RECEBEU O LINK ("nao recebi boleto", "nao chegou", "nao veio o boleto", "manda o boleto", "reenvia o boleto", "perdi o link", "manda de novo", "envia novamente", "cade o pix"): NAO transfira. Se a OS estiver no [CONTEXTO DO CLIENTE / OS ativas], AO FINAL inclua [REENVIAR_COBRANCA:NUMERO_OS] (ex: [REENVIAR_COBRANCA:60401]). O sistema vai reenviar automaticamente o link de pagamento existente por WhatsApp + email. Sua resposta deve ser curta: "Acabei de reenviar o link de pagamento da OS #NUMERO pro seu WhatsApp e email cadastrados, [nome]. Caso ainda nao chegue em alguns minutos, me avise." Se a OS NAO esta no contexto, NAO emita a tag — pergunte o numero da OS primeiro ou peca CPF/CNPJ pra localizar.
 10. ENTREGA / LOGISTICA / PRAZO ("preciso da impressora", "quando entrega", "previsao", "ja paguei quero o equipamento", "que horas", "amanha"): NAO transfira. Se o contexto da OS tiver "Previsao entrega: DATA", cite essa data exata na resposta (ex: "A previsao de entrega esta agendada para 15/05/2026"). Se nao houver data ou cliente perguntar HORARIO especifico, diga: "Nossa equipe de logistica entrara em contato no dia anterior para alinhar o horario da entrega/coleta." Nunca prometa horario especifico.
 11. PARCELAMENTO / FORMAS DE PAGAMENTO ("posso parcelar", "no cartao", "vai dividir", "tem desconto", "pix"): NAO transfira. Responda DIRETO: "Sim! Aceitamos cartao de credito em ate 3x sem juros, PIX e dinheiro a vista. Voce pode escolher a melhor forma de pagamento na hora da retirada/entrega." Nunca diga "vou registrar pra equipe financeira" para essa pergunta.
 12. NUNCA INVENTE DADOS — esta e a regra mais critica. Quando o cliente pedir:
@@ -2417,6 +2437,55 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
         }
       } catch (err) {
         console.error('[Bot/Cancel] Excecao:', err instanceof Error ? err.message : err)
+      }
+    }
+
+    // 2026-05-11: handler de REENVIO DE COBRANCA — cliente disse "nao recebi
+    // o boleto / link sumiu". Sistema chama /api/bot/reenviar-cobranca que
+    // busca a Payment PENDING mais recente da OS e reenvia o link existente
+    // via WhatsApp + email (NAO cria cobranca nova no Asaas). Se nao houver
+    // cobranca PENDING (cliente quer link mas OS nao foi cobrada ainda), abre
+    // ticket pra financeiro emitir cobranca manualmente.
+    if (parsed.resendChargeOsNumber) {
+      try {
+        const resendRes = await fetch(`${ERP_BASE_URL}/api/bot/reenviar-cobranca`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Bot-Key': cfg.botApiKey },
+          body: JSON.stringify({ os_numero: parsed.resendChargeOsNumber }),
+        })
+        const resendBody = await resendRes.json().catch(() => ({} as Record<string, unknown>))
+
+        if (resendRes.ok && resendBody.ok) {
+          const channels: string[] = []
+          if (resendBody.sent_whatsapp) channels.push('WhatsApp')
+          if (resendBody.sent_email) channels.push('email')
+          const note = `[BOT] Cliente solicitou reenvio do link de pagamento da OS #${parsed.resendChargeOsNumber}. Marta reenviou via ${channels.join(' + ') || 'nenhum canal'}. Payment id: ${resendBody.payment_id}.`
+          await cwSendMessage(cfg, conversationId, note, true)
+        } else {
+          // Sem cobranca PENDING (404) ou status invalido (409): abre ticket
+          // pra financeiro avaliar e emitir/regenerar cobranca manualmente.
+          const reason = resendBody.reason || 'unknown'
+          const note = reason === 'not_pending'
+            ? `[BOT — REVISAR] Cliente pediu reenvio do boleto da OS #${parsed.resendChargeOsNumber}, mas a cobranca ja esta ${resendBody.payment_status || 'em status nao-PENDING'}. Financeiro: verificar se cliente esta confuso ou se precisa nova cobranca.`
+            : `[BOT — REVISAR] Cliente pediu reenvio do boleto da OS #${parsed.resendChargeOsNumber}, mas a OS nao tem cobranca PENDING ativa. Financeiro: emitir cobranca pra essa OS (ou orientar cliente se cobranca ainda nao foi gerada).`
+          try {
+            await fetch(`${ERP_BASE_URL}/api/bot/criar-ticket`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'X-Bot-Key': cfg.botApiKey },
+              body: JSON.stringify({
+                subject: `Cliente pediu reenvio de cobranca — OS #${parsed.resendChargeOsNumber}`,
+                description: note,
+                priority: 'NORMAL',
+                category: 'COBRANCA_REENVIO',
+              }),
+            })
+          } catch (e) { console.warn('[Bot/Resend] criar-ticket falhou:', e instanceof Error ? e.message : e) }
+          await cwSendMessage(cfg, conversationId, note, true)
+          try { await cwSetLabels(cfg, conversationId, ['cobranca_revisar']) } catch {}
+          console.warn(`[Bot/Resend] OS #${parsed.resendChargeOsNumber} sem cobranca PENDING (reason=${reason}) — ticket COBRANCA_REENVIO aberto`)
+        }
+      } catch (err) {
+        console.error('[Bot/Resend] Excecao:', err instanceof Error ? err.message : err)
       }
     }
 
