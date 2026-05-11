@@ -51,6 +51,50 @@ const EVENT_STATUS_MAP: Record<string, string> = {
 // RECEIVED = funds available — this is the definitive event
 const AUTO_BAIXA_STATUS = 'RECEIVED'
 
+// 2026-05-11: lookup billing-aware pra FiscalEntry. Prioriza categoria
+// especifica "Receita Servicos - PIX/Boleto/Cartao Credito" (seedadas
+// 1.1.05/06/07 pra PontualTech + Imprimitech). Se nao achar, cai pra
+// primeira REVENUE generica (compat antiga). Diferencia DRE por metodo
+// de pagamento — antes todos PIX/Boleto/Cartao caiam na mesma "Receita
+// de Servicos" e relatorio nao mostrava split.
+async function resolveRevenueChart(
+  tx: any,
+  companyId: string,
+  billingType: string | null,
+): Promise<{ id: string } | null> {
+  const map: Record<string, string> = {
+    PIX: 'PIX',
+    BOLETO: 'Boleto',
+    CREDIT_CARD: 'Cartao Credito',
+  }
+  const label = billingType ? map[billingType.toUpperCase()] : null
+  if (label) {
+    const specific = await tx.accountChart.findFirst({
+      where: {
+        company_id: companyId,
+        is_active: true,
+        account_type: 'REVENUE',
+        name: { contains: label, mode: 'insensitive' },
+      },
+      select: { id: true },
+    })
+    if (specific) return specific
+  }
+  return tx.accountChart.findFirst({
+    where: {
+      company_id: companyId,
+      is_active: true,
+      account_type: 'REVENUE',
+      OR: [
+        { name: { contains: 'Servic', mode: 'insensitive' } },
+        { name: { contains: 'Receita', mode: 'insensitive' } },
+      ],
+    },
+    orderBy: { display_order: 'asc' },
+    select: { id: true },
+  })
+}
+
 // GET handler — Asaas tests webhook URL with GET before saving
 export async function GET() {
   return NextResponse.json({ ok: true, message: 'Webhook endpoint active' })
@@ -399,19 +443,7 @@ export async function POST(req: NextRequest) {
           // plano de contas configurado, NAO bloqueia o webhook — apenas
           // loga warning. Gap silencioso vira gap explicito no log.
           try {
-            const chartAccount = await tx.accountChart.findFirst({
-              where: {
-                company_id: fresh.company_id,
-                is_active: true,
-                account_type: 'REVENUE',
-                OR: [
-                  { name: { contains: 'Servic', mode: 'insensitive' } },
-                  { name: { contains: 'Receita', mode: 'insensitive' } },
-                ],
-              },
-              orderBy: { display_order: 'asc' },
-              select: { id: true },
-            })
+            const chartAccount = await resolveRevenueChart(tx, fresh.company_id, billingType)
 
             if (chartAccount) {
               await tx.fiscalEntry.create({
@@ -608,21 +640,11 @@ export async function POST(req: NextRequest) {
             }
           }
 
-          // 3. FiscalEntry estorno (amount negativo) pra DRE refletir refund
+          // 3. FiscalEntry estorno (amount negativo) pra DRE refletir refund.
+          // Usa MESMA categoria do recebimento (billing-aware) pra estorno
+          // bater na linha certa da DRE.
           try {
-            const refundChartAccount = await tx.accountChart.findFirst({
-              where: {
-                company_id: fresh.company_id,
-                is_active: true,
-                account_type: 'REVENUE',
-                OR: [
-                  { name: { contains: 'Servic', mode: 'insensitive' } },
-                  { name: { contains: 'Receita', mode: 'insensitive' } },
-                ],
-              },
-              orderBy: { display_order: 'asc' },
-              select: { id: true },
-            })
+            const refundChartAccount = await resolveRevenueChart(tx, fresh.company_id, fresh.billing_type || fresh.method)
             if (refundChartAccount) {
               await tx.fiscalEntry.create({
                 data: {
@@ -728,21 +750,10 @@ export async function POST(req: NextRequest) {
               }
             }
 
-            // FiscalEntry estorno por chargeback
+            // FiscalEntry estorno por chargeback (mesma categoria do
+            // recebimento via resolveRevenueChart billing-aware)
             try {
-              const cbChartAccount = await tx.accountChart.findFirst({
-                where: {
-                  company_id: fresh.company_id,
-                  is_active: true,
-                  account_type: 'REVENUE',
-                  OR: [
-                    { name: { contains: 'Servic', mode: 'insensitive' } },
-                    { name: { contains: 'Receita', mode: 'insensitive' } },
-                  ],
-                },
-                orderBy: { display_order: 'asc' },
-                select: { id: true },
-              })
+              const cbChartAccount = await resolveRevenueChart(tx, fresh.company_id, fresh.billing_type || fresh.method)
               if (cbChartAccount) {
                 await tx.fiscalEntry.create({
                   data: {
@@ -790,6 +801,81 @@ export async function POST(req: NextRequest) {
               where: { id: fresh.service_order_id },
               data: { internal_notes: notesAtual + novaNota },
             })
+          }
+
+          // 2026-05-11: Ticket priority HIGH automatico pra atendente avaliar
+          // chargeback e contestar dentro do prazo Asaas (geralmente 7-14d).
+          // Idempotente: checa se ja existe ticket category=CHARGEBACK pra essa
+          // OS antes de criar (evita duplicacao se REQUESTED + DISPUTE vierem
+          // em sequencia).
+          try {
+            const existingTicket = await tx.ticket.findFirst({
+              where: {
+                company_id: fresh.company_id,
+                service_order_id: fresh.service_order_id,
+                category: { in: ['CHARGEBACK', 'CHARGEBACK_LOST'] },
+                deleted_at: null,
+              },
+              select: { id: true, category: true },
+            })
+
+            const valorBRL = (fresh.amount / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+            const category = isReversal ? 'CHARGEBACK_LOST' : 'CHARGEBACK'
+            const subject = isReversal
+              ? `⚠️ Chargeback PERDIDO — OS ${fresh.service_order_id ? '' : ''}Asaas ${asaasPayment.id} (${valorBRL})`
+              : `🛡️ Chargeback ABERTO — contestar com Asaas (${valorBRL})`
+            const description = isReversal
+              ? `Asaas reverteu o pagamento. Receita ${valorBRL} estornada do AR + saldo + DRE. Verificar se cabe reabrir disputa ou recuperar valor por outro meio.`
+              : `Cliente abriu disputa no banco contra cobranca ${fresh.billing_type || 'CREDIT_CARD'} ${valorBRL} (Asaas ${asaasPayment.id}). Atendente deve verificar painel Asaas e enviar contestacao DENTRO DO PRAZO (geralmente 7-14 dias). Se perdermos, saldo + DRE sao revertidos automaticamente pelo webhook.`
+
+            if (!existingTicket) {
+              const last = await tx.ticket.findFirst({
+                where: { company_id: fresh.company_id },
+                orderBy: { ticket_number: 'desc' },
+                select: { ticket_number: true },
+              })
+              await tx.ticket.create({
+                data: {
+                  company_id: fresh.company_id,
+                  ticket_number: (last?.ticket_number || 0) + 1,
+                  subject,
+                  description,
+                  status: 'ABERTO',
+                  priority: 'HIGH',
+                  category,
+                  source: 'WEBHOOK',
+                  customer_id: fresh.customer_id,
+                  service_order_id: fresh.service_order_id || null,
+                  created_by: 'system:webhook',
+                  created_by_type: 'SISTEMA',
+                },
+              })
+            } else if (isReversal && existingTicket.category === 'CHARGEBACK') {
+              // Atualiza ticket existente: REQUESTED virou REVERSAL (perdemos)
+              await tx.ticket.update({
+                where: { id: existingTicket.id },
+                data: {
+                  category: 'CHARGEBACK_LOST',
+                  subject,
+                  description,
+                  updated_at: new Date(),
+                },
+              })
+              await tx.ticketMessage.create({
+                data: {
+                  company_id: fresh.company_id,
+                  ticket_id: existingTicket.id,
+                  message: `Atualizacao automatica: Asaas confirmou estorno via AWAITING_CHARGEBACK_REVERSAL. Saldo + DRE ja ajustados.`,
+                  sender_type: 'SISTEMA',
+                  sender_name: 'Sistema (Webhook Asaas)',
+                  is_internal: true,
+                },
+              })
+            }
+          } catch (ticketErr) {
+            // Falha de ticket NAO bloqueia outras acoes (AR ja foi atualizado).
+            // Loga + segue — operador pode criar manualmente.
+            console.error('[Webhook Chargeback Ticket] Falha:', ticketErr instanceof Error ? ticketErr.message : ticketErr)
           }
         }
       }
