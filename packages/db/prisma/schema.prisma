@@ -97,52 +97,53 @@ enum feature_flag_strategy {
 }
 
 model Company {
-  id                  String              @id @default(dbgenerated("(gen_random_uuid())::text"))
-  name                String
-  slug                String              @unique
-  subdomain           String?             @unique
-  custom_domain       String?             @unique
-  logo                String?
-  settings            Json?               @default("{}")
-  is_active           Boolean?            @default(true)
-  created_at          DateTime?           @default(now()) @db.Timestamptz(6)
-  updated_at          DateTime?           @default(now()) @db.Timestamptz(6)
-  accounts            Account[]
-  accounts_payable    AccountPayable[]
-  accounts_receivable AccountReceivable[]
-  apiKeys             ApiKey[]
-  categories          Category[]
-  company_modules     CompanyModule[]
-  cost_centers        CostCenter[]
-  custom_fields       CustomField[]
-  customers           Customer[]
-  dashboard_widgets   DashboardWidget[]
-  field_labels        FieldLabel[]
-  fiscal_configs      FiscalConfig?
-  invoices            Invoice[]
-  message_templates   MessageTemplate[]
-  module_statuses     ModuleStatus[]
-  print_templates     PrintTemplate[]
-  products            Product[]
-  suppliers           Supplier[]
-  purchases           Purchase[]
-  purchase_entries    PurchaseEntry[]
-  quotes              Quote[]
-  roles               Role[]
-  service_orders      ServiceOrder[]
-  companySettings     Setting[]
-  user_profiles       UserProfile[]
-  webhooks            Webhook[]
-  tickets             Ticket[]
-  customer_access     CustomerAccess[]
-  chat_messages       ChatMessage[]
-  announcements       Announcement[]
-  chatbot_logs        ChatbotLog[]
-  contracts           Contract[]
-  price_table         PriceTable[]
-  nps_surveys         NpsSurvey[]
-  payments            Payment[]
-  coupons             Coupon[]
+  id                            String                       @id @default(dbgenerated("(gen_random_uuid())::text"))
+  name                          String
+  slug                          String                       @unique
+  subdomain                     String?                      @unique
+  custom_domain                 String?                      @unique
+  logo                          String?
+  settings                      Json?                        @default("{}")
+  is_active                     Boolean?                     @default(true)
+  created_at                    DateTime?                    @default(now()) @db.Timestamptz(6)
+  updated_at                    DateTime?                    @default(now()) @db.Timestamptz(6)
+  accounts                      Account[]
+  accounts_payable              AccountPayable[]
+  accounts_receivable           AccountReceivable[]
+  apiKeys                       ApiKey[]
+  categories                    Category[]
+  company_modules               CompanyModule[]
+  cost_centers                  CostCenter[]
+  custom_fields                 CustomField[]
+  customers                     Customer[]
+  dashboard_widgets             DashboardWidget[]
+  field_labels                  FieldLabel[]
+  marketing_contacts            MarketingContact[]
+  fiscal_configs                FiscalConfig?
+  invoices                      Invoice[]
+  message_templates             MessageTemplate[]
+  module_statuses               ModuleStatus[]
+  print_templates               PrintTemplate[]
+  products                      Product[]
+  suppliers                     Supplier[]
+  purchases                     Purchase[]
+  purchase_entries              PurchaseEntry[]
+  quotes                        Quote[]
+  roles                         Role[]
+  service_orders                ServiceOrder[]
+  companySettings               Setting[]
+  user_profiles                 UserProfile[]
+  webhooks                      Webhook[]
+  tickets                       Ticket[]
+  customer_access               CustomerAccess[]
+  chat_messages                 ChatMessage[]
+  announcements                 Announcement[]
+  chatbot_logs                  ChatbotLog[]
+  contracts                     Contract[]
+  price_table                   PriceTable[]
+  nps_surveys                   NpsSurvey[]
+  payments                      Payment[]
+  coupons                       Coupon[]
   acquirer_terminal_assignments AcquirerTerminalAssignment[]
   acquirer_transactions         AcquirerTransaction[]
   voip_calls                    VoipCall[]
@@ -152,38 +153,38 @@ model Company {
 }
 
 model UserProfile {
-  id             String         @id
-  company_id     String
-  name           String
-  email          String
-  phone          String?
-  avatar_url     String?
-  role_id        String
-  is_active      Boolean?       @default(true)
-  last_login_at  DateTime?      @db.Timestamptz(6)
-  preferences    Json?          @default("{}")
+  id                            String                       @id
+  company_id                    String
+  name                          String
+  email                         String
+  phone                         String?
+  avatar_url                    String?
+  role_id                       String
+  is_active                     Boolean?                     @default(true)
+  last_login_at                 DateTime?                    @db.Timestamptz(6)
+  preferences                   Json?                        @default("{}")
   // GPS tracking — usado pelo /logistica/live pra ver onde estao os
   // motoristas mesmo SEM rota ativa (ex: entre rotas, tarefa avulsa,
   // inicio do dia antes de pegar rota). Atualizado pelo driver app
   // via /api/driver/location ~1x a cada 10s.
-  last_lat          Decimal?  @db.Decimal(10, 8)
-  last_lng          Decimal?  @db.Decimal(11, 8)
-  last_location_at  DateTime? @db.Timestamptz(6)
-  last_accuracy_m   Int?
+  last_lat                      Decimal?                     @db.Decimal(10, 8)
+  last_lng                      Decimal?                     @db.Decimal(11, 8)
+  last_location_at              DateTime?                    @db.Timestamptz(6)
+  last_accuracy_m               Int?
   // Flag pro motorista. Quando true, sistema notifica admin via WhatsApp/email
   // se ele ficar mais de inactivity_threshold_minutes (default 30) sem GPS
   // durante horario comercial.
-  notify_inactivity Boolean?   @default(false)
-  created_at     DateTime?      @default(now()) @db.Timestamptz(6)
-  updated_at     DateTime?      @default(now()) @db.Timestamptz(6)
-  service_orders    ServiceOrder[]
-  logistics_routes  LogisticsRoute[]
-  location_history  DriverLocationHistory[]
+  notify_inactivity             Boolean?                     @default(false)
+  created_at                    DateTime?                    @default(now()) @db.Timestamptz(6)
+  updated_at                    DateTime?                    @default(now()) @db.Timestamptz(6)
+  service_orders                ServiceOrder[]
+  logistics_routes              LogisticsRoute[]
+  location_history              DriverLocationHistory[]
   acquirer_terminal_assignments AcquirerTerminalAssignment[]
-  voip_calls        VoipCall[]
-  voip_extensions   VoipExtension[]
-  companies      Company        @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  roles          Role           @relation(fields: [role_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  voip_calls                    VoipCall[]
+  voip_extensions               VoipExtension[]
+  companies                     Company                      @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  roles                         Role                         @relation(fields: [role_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([id, company_id])
   @@index([company_id], map: "idx_user_profiles_company")
@@ -201,14 +202,14 @@ model UserProfile {
 // Volume estimado: 6 GPS/min * 8h/dia = 2880 rows/dia/motorista. 10 motoristas
 // * 7 dias = 200k rows max. Index em (driver_id, captured_at) e suficiente.
 model DriverLocationHistory {
-  id           String    @id @default(dbgenerated("(gen_random_uuid())::text"))
-  company_id   String
-  driver_id    String
-  lat          Decimal   @db.Decimal(10, 8)
-  lng          Decimal   @db.Decimal(11, 8)
-  accuracy_m   Int?
-  captured_at  DateTime  @default(now()) @db.Timestamptz(6)
-  driver       UserProfile @relation(fields: [driver_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id          String      @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id  String
+  driver_id   String
+  lat         Decimal     @db.Decimal(10, 8)
+  lng         Decimal     @db.Decimal(11, 8)
+  accuracy_m  Int?
+  captured_at DateTime    @default(now()) @db.Timestamptz(6)
+  driver      UserProfile @relation(fields: [driver_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([driver_id, captured_at(sort: Desc)], map: "idx_driver_loc_history_driver_ts")
   @@index([company_id, captured_at(sort: Desc)], map: "idx_driver_loc_history_company_ts")
@@ -428,17 +429,17 @@ model CompanyModule {
 }
 
 model AuditLog {
-  id          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
-  company_id  String
-  user_id     String
-  module      String
-  action      String
-  entity_id   String?
-  old_value   Json?
-  new_value   Json?
-  ip_address  String?
-  user_agent  String?
-  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+  id         String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id String
+  user_id    String
+  module     String
+  action     String
+  entity_id  String?
+  old_value  Json?
+  new_value  Json?
+  ip_address String?
+  user_agent String?
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
 
   @@index([company_id, created_at(sort: Desc)], map: "idx_audit_logs_company")
   @@index([module])
@@ -517,9 +518,9 @@ model Customer {
   address_zip          String?
   // Coordenadas cacheadas — populadas via Google Geocoding uma vez e reutilizadas
   // pra ordenar rotas por proximidade. Recomputar se o endereço for editado.
-  address_lat          Decimal?  @db.Decimal(10, 8)
-  address_lng          Decimal?  @db.Decimal(11, 8)
-  address_geocoded_at  DateTime? @db.Timestamptz(6)
+  address_lat          Decimal?            @db.Decimal(10, 8)
+  address_lng          Decimal?            @db.Decimal(11, 8)
+  address_geocoded_at  DateTime?           @db.Timestamptz(6)
   state_registration   String?
   city_registration    String?
   notes                String?
@@ -543,6 +544,7 @@ model Customer {
   payments_as_supplier Payment[]           @relation("PaymentSupplier")
   coupons              Coupon[]
   voip_calls           VoipCall[]
+  marketing_contacts   MarketingContact[]
 
   @@unique([company_id, vhsys_id])
   // Partial unique index on (company_id, document_number) WHERE document_number IS NOT NULL AND document_number != ''
@@ -553,62 +555,62 @@ model Customer {
 }
 
 model ServiceOrder {
-  id                    String                @id @default(dbgenerated("(gen_random_uuid())::text"))
-  company_id            String
-  vhsys_id              String?
-  os_number             Int
-  customer_id           String
-  technician_id         String?
-  status_id             String
-  priority              String?               @default("MEDIUM")
-  os_type               String?               @default("BALCAO")
-  os_location           String?
-  equipment_type        String
-  equipment_brand       String?
-  equipment_model       String?
-  serial_number         String?
-  reference             String?
-  reported_issue        String
-  diagnosis             String?
-  reception_notes       String?
-  internal_notes        String?
-  estimated_cost        Int?                  @default(0)
-  approved_cost         Int?                  @default(0)
-  total_parts           Int?                  @default(0)
-  total_services        Int?                  @default(0)
-  discount_amount       Int?                  @default(0)
-  total_cost            Int?                  @default(0)
-  warranty_until        DateTime?             @db.Timestamptz(6)
-  is_warranty           Boolean?              @default(false)
-  warranty_os_id        String?
-  estimated_delivery    DateTime?             @db.Timestamptz(6)
-  actual_delivery       DateTime?             @db.Timestamptz(6)
+  id                     String                @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id             String
+  vhsys_id               String?
+  os_number              Int
+  customer_id            String
+  technician_id          String?
+  status_id              String
+  priority               String?               @default("MEDIUM")
+  os_type                String?               @default("BALCAO")
+  os_location            String?
+  equipment_type         String
+  equipment_brand        String?
+  equipment_model        String?
+  serial_number          String?
+  reference              String?
+  reported_issue         String
+  diagnosis              String?
+  reception_notes        String?
+  internal_notes         String?
+  estimated_cost         Int?                  @default(0)
+  approved_cost          Int?                  @default(0)
+  total_parts            Int?                  @default(0)
+  total_services         Int?                  @default(0)
+  discount_amount        Int?                  @default(0)
+  total_cost             Int?                  @default(0)
+  warranty_until         DateTime?             @db.Timestamptz(6)
+  is_warranty            Boolean?              @default(false)
+  warranty_os_id         String?
+  estimated_delivery     DateTime?             @db.Timestamptz(6)
+  actual_delivery        DateTime?             @db.Timestamptz(6)
   // Marca quando cliente recebeu pedido de avaliacao Google + cupom 10%.
   // Ate 2026-05-05 a flag vivia em logistics_stops.reviews_sent_at, mas isso
   // limitava o trigger a entregas via motorista. Agora a flag esta na OS,
   // disparada pelo cron sempre que status vira "Entregue" — qualquer caller.
-  review_request_sent_at DateTime?            @db.Timestamptz(6)
-  payment_method        String?
-  custom_data           Json?                 @default("{}")
-  warranty_original     ServiceOrder?         @relation("warranty_chain", fields: [warranty_os_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  warranty_children     ServiceOrder[]        @relation("warranty_chain")
-  created_at            DateTime?             @default(now()) @db.Timestamptz(6)
-  updated_at            DateTime?             @default(now()) @db.Timestamptz(6)
-  deleted_at            DateTime?             @db.Timestamptz(6)
-  accounts_receivable   AccountReceivable[]
-  invoices              Invoice[]
-  quotes                Quote[]
-  service_order_history ServiceOrderHistory[]
-  service_order_items   ServiceOrderItem[]
-  service_order_photos  ServiceOrderPhoto[]
-  companies             Company               @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  customers             Customer              @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  module_statuses       ModuleStatus          @relation(fields: [status_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  user_profiles         UserProfile?          @relation(fields: [technician_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  tickets               Ticket[]
-  nps_surveys           NpsSurvey[]
-  payments              Payment[]
-  voip_calls            VoipCall[]
+  review_request_sent_at DateTime?             @db.Timestamptz(6)
+  payment_method         String?
+  custom_data            Json?                 @default("{}")
+  warranty_original      ServiceOrder?         @relation("warranty_chain", fields: [warranty_os_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  warranty_children      ServiceOrder[]        @relation("warranty_chain")
+  created_at             DateTime?             @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime?             @default(now()) @db.Timestamptz(6)
+  deleted_at             DateTime?             @db.Timestamptz(6)
+  accounts_receivable    AccountReceivable[]
+  invoices               Invoice[]
+  quotes                 Quote[]
+  service_order_history  ServiceOrderHistory[]
+  service_order_items    ServiceOrderItem[]
+  service_order_photos   ServiceOrderPhoto[]
+  companies              Company               @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customers              Customer              @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  module_statuses        ModuleStatus          @relation(fields: [status_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user_profiles          UserProfile?          @relation(fields: [technician_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tickets                Ticket[]
+  nps_surveys            NpsSurvey[]
+  payments               Payment[]
+  voip_calls             VoipCall[]
 
   @@unique([company_id, os_number])
   @@index([company_id], map: "idx_os_company")
@@ -738,12 +740,12 @@ model Product {
   reorder_point        Int?
   supplier_id          String?
   location             String?
-  last_purchase_date   DateTime?         @db.Date
-  avg_cost             Int?              @default(0)
+  last_purchase_date   DateTime?           @db.Date
+  avg_cost             Int?                @default(0)
   stock_alerts         StockAlert[]
   stock_movements      StockMovement[]
   purchase_items       PurchaseItem[]
-  default_supplier     Supplier?         @relation(fields: [supplier_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  default_supplier     Supplier?           @relation(fields: [supplier_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   // Partial unique index on (company_id, barcode) WHERE barcode IS NOT NULL AND barcode != ''
   // Applied via raw SQL — see prisma/partial-indexes.sql
@@ -862,7 +864,7 @@ model AccountPayable {
   supplier_id    String?
   category_id    String?
   cost_center_id String?
-  account_id     String?     // Sprint UX-24: conta bancaria de origem do pagamento (Itau, Asaas, etc)
+  account_id     String? // Sprint UX-24: conta bancaria de origem do pagamento (Itau, Asaas, etc)
   description    String
   total_amount   Int
   paid_amount    Int?        @default(0)
@@ -889,36 +891,36 @@ model AccountPayable {
 }
 
 model AccountReceivable {
-  id               String        @id @default(dbgenerated("(gen_random_uuid())::text"))
-  company_id       String
-  vhsys_id         String?
-  customer_id      String?
-  service_order_id String?
-  category_id      String?
-  account_id       String?       // Conta bancaria que gerou a cobranca (Asaas, Inter, etc)
-  description      String
-  total_amount     Int
-  received_amount  Int?          @default(0)
-  due_date         DateTime      @db.Date
-  status           String?       @default("PENDENTE")
-  payment_method   String?
-  boleto_url       String?
-  pix_code         String?
-  receipt_url      String?       // Comprovante do pagamento (PIX screenshot, recibo maquininha, etc)
+  id                 String        @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id         String
+  vhsys_id           String?
+  customer_id        String?
+  service_order_id   String?
+  category_id        String?
+  account_id         String? // Conta bancaria que gerou a cobranca (Asaas, Inter, etc)
+  description        String
+  total_amount       Int
+  received_amount    Int?          @default(0)
+  due_date           DateTime      @db.Date
+  status             String?       @default("PENDENTE")
+  payment_method     String?
+  boleto_url         String?
+  pix_code           String?
+  receipt_url        String? // Comprovante do pagamento (PIX screenshot, recibo maquininha, etc)
   notes              String?
   installment_count  Int?          @default(1)
   card_fee_total     Int?          @default(0)
-  net_amount           Int?
-  anticipated_at       DateTime?     @db.Timestamptz(6)
-  anticipation_fee     Int?          @default(0)
-  anticipated_amount   Int?
-  group_id             String?
-  grouped_into_id      String?
-  charge_id            String?
-  charge_status        String?
-  charge_url           String?
-  charge_sent_at       DateTime?     @db.Timestamptz(6)
-  charge_sent_via      String?
+  net_amount         Int?
+  anticipated_at     DateTime?     @db.Timestamptz(6)
+  anticipation_fee   Int?          @default(0)
+  anticipated_amount Int?
+  group_id           String?
+  grouped_into_id    String?
+  charge_id          String?
+  charge_status      String?
+  charge_url         String?
+  charge_sent_at     DateTime?     @db.Timestamptz(6)
+  charge_sent_via    String?
   created_at         DateTime?     @default(now()) @db.Timestamptz(6)
   updated_at         DateTime?     @default(now()) @db.Timestamptz(6)
   deleted_at         DateTime?     @db.Timestamptz(6)
@@ -985,39 +987,39 @@ model FiscalConfig {
 }
 
 model Invoice {
-  id               String        @id @default(dbgenerated("(gen_random_uuid())::text"))
-  company_id       String
-  vhsys_id         String?
-  invoice_type     String
-  invoice_number   Int?
-  series           String?       @default("1")
-  access_key       String?
-  customer_id      String?
-  service_order_id String?
-  status           String?       @default("DRAFT")
-  provider_ref     String?
-  provider_name    String?
-  xml_url          String?
-  danfe_url        String?
-  total_amount     Int?          @default(0)
-  tax_amount       Int?          @default(0)
-  issued_at        DateTime?     @db.Timestamptz(6)
-  authorized_at    DateTime?     @db.Timestamptz(6)
-  notes            String?
-  created_at       DateTime?     @default(now()) @db.Timestamptz(6)
-  updated_at       DateTime?     @default(now()) @db.Timestamptz(6)
-  nfe_tipo             String?
-  nfe_referenced_keys  Json?         @default("[]")
-  payment_method_nfe   String?       @default("99")
-  payment_indicator    Int?          @default(1)
-  cancelled_at         DateTime?     @db.Timestamptz(6)
-  source_chave         String?
-  fiscal_logs          FiscalLog[]
-  invoice_items        InvoiceItem[]
-  nfe_events           NfeEvent[]
-  companies            Company       @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  customers            Customer?     @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  service_orders       ServiceOrder? @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  id                  String        @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id          String
+  vhsys_id            String?
+  invoice_type        String
+  invoice_number      Int?
+  series              String?       @default("1")
+  access_key          String?
+  customer_id         String?
+  service_order_id    String?
+  status              String?       @default("DRAFT")
+  provider_ref        String?
+  provider_name       String?
+  xml_url             String?
+  danfe_url           String?
+  total_amount        Int?          @default(0)
+  tax_amount          Int?          @default(0)
+  issued_at           DateTime?     @db.Timestamptz(6)
+  authorized_at       DateTime?     @db.Timestamptz(6)
+  notes               String?
+  created_at          DateTime?     @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime?     @default(now()) @db.Timestamptz(6)
+  nfe_tipo            String?
+  nfe_referenced_keys Json?         @default("[]")
+  payment_method_nfe  String?       @default("99")
+  payment_indicator   Int?          @default(1)
+  cancelled_at        DateTime?     @db.Timestamptz(6)
+  source_chave        String?
+  fiscal_logs         FiscalLog[]
+  invoice_items       InvoiceItem[]
+  nfe_events          NfeEvent[]
+  companies           Company       @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customers           Customer?     @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  service_orders      ServiceOrder? @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([access_key], map: "idx_invoices_access_key")
   @@index([company_id], map: "idx_invoices_company")
@@ -1025,22 +1027,22 @@ model Invoice {
 }
 
 model InvoiceItem {
-  id           String   @id @default(dbgenerated("(gen_random_uuid())::text"))
-  invoice_id   String
-  product_id   String?
-  service_code String?
-  description  String
-  quantity     Int      @default(1)
-  unit_price   Int      @default(0)
-  total_price  Int      @default(0)
-  ncm          String?
-  cfop         String?
-  cst          String?
-  taxes        Json?    @default("{}")
-  unidade                String?  @default("UN")
-  codigo_produto_fiscal  String?
-  invoices     Invoice  @relation(fields: [invoice_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  products     Product? @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  id                    String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  invoice_id            String
+  product_id            String?
+  service_code          String?
+  description           String
+  quantity              Int      @default(1)
+  unit_price            Int      @default(0)
+  total_price           Int      @default(0)
+  ncm                   String?
+  cfop                  String?
+  cst                   String?
+  taxes                 Json?    @default("{}")
+  unidade               String?  @default("UN")
+  codigo_produto_fiscal String?
+  invoices              Invoice  @relation(fields: [invoice_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  products              Product? @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@map("invoice_items")
 }
@@ -1062,44 +1064,44 @@ model FiscalLog {
 // ========== TICKETS / COMUNICAÇÃO ==========
 
 model Ticket {
-  id              String          @id @default(dbgenerated("(gen_random_uuid())::text"))
-  company_id      String
-  ticket_number   Int
-  subject         String
-  description     String?
-  status          String?         @default("ABERTO")
-  priority        String?         @default("NORMAL")
-  category        String?
-  source          String?         @default("INTERNO")
-  customer_id     String?
+  id               String          @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id       String
+  ticket_number    Int
+  subject          String
+  description      String?
+  status           String?         @default("ABERTO")
+  priority         String?         @default("NORMAL")
+  category         String?
+  source           String?         @default("INTERNO")
+  customer_id      String?
   service_order_id String?
-  assigned_to     String?
-  created_by      String?
-  created_by_type String?         @default("FUNCIONARIO")
-  closed_at       DateTime?       @db.Timestamptz(6)
-  created_at      DateTime?       @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime?       @default(now()) @db.Timestamptz(6)
-  deleted_at      DateTime?       @db.Timestamptz(6)
-  companies       Company         @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  customers       Customer?       @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  service_orders  ServiceOrder?   @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  ticket_messages TicketMessage[]
+  assigned_to      String?
+  created_by       String?
+  created_by_type  String?         @default("FUNCIONARIO")
+  closed_at        DateTime?       @db.Timestamptz(6)
+  created_at       DateTime?       @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime?       @default(now()) @db.Timestamptz(6)
+  deleted_at       DateTime?       @db.Timestamptz(6)
+  companies        Company         @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customers        Customer?       @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  service_orders   ServiceOrder?   @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  ticket_messages  TicketMessage[]
 
   @@index([company_id], map: "idx_tickets_company")
   @@map("tickets")
 }
 
 model TicketMessage {
-  id              String    @id @default(dbgenerated("(gen_random_uuid())::text"))
-  company_id      String
-  ticket_id       String
-  message         String
-  sender_type     String?   @default("FUNCIONARIO")
-  sender_id       String?
-  sender_name     String?
-  is_internal     Boolean?  @default(false)
-  created_at      DateTime? @default(now()) @db.Timestamptz(6)
-  tickets         Ticket    @relation(fields: [ticket_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id  String
+  ticket_id   String
+  message     String
+  sender_type String?   @default("FUNCIONARIO")
+  sender_id   String?
+  sender_name String?
+  is_internal Boolean?  @default(false)
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+  tickets     Ticket    @relation(fields: [ticket_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([company_id])
   @@index([ticket_id], map: "idx_ticket_messages_ticket")
@@ -1109,45 +1111,45 @@ model TicketMessage {
 // ========== PORTAL DO CLIENTE ==========
 
 model CustomerAccess {
-  id              String    @id @default(dbgenerated("(gen_random_uuid())::text"))
-  company_id      String
-  customer_id     String
-  password_hash   String
-  email_verified  Boolean?  @default(false)
-  verify_token    String?
-  last_login_at   DateTime? @db.Timestamptz(6)
-  created_at      DateTime? @default(now()) @db.Timestamptz(6)
-  companies       Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  customers       Customer  @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  id             String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id     String
+  customer_id    String
+  password_hash  String
+  email_verified Boolean?  @default(false)
+  verify_token   String?
+  last_login_at  DateTime? @db.Timestamptz(6)
+  created_at     DateTime? @default(now()) @db.Timestamptz(6)
+  companies      Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customers      Customer  @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([company_id, customer_id])
   @@map("customer_access")
 }
 
 model Payment {
-  id               String        @id @default(dbgenerated("(gen_random_uuid())::text"))
+  id               String    @id @default(dbgenerated("(gen_random_uuid())::text"))
   company_id       String
   service_order_id String?
   customer_id      String
   receivable_id    String?
-  provider         String        @default("asaas")
+  provider         String    @default("asaas")
   external_id      String?
-  idempotency_key  String        @unique
-  amount           Int           // centavos
-  status           String        @default("PENDING") // PENDING, CONFIRMED, EXPIRED, REFUNDED, FAILED
-  method           String        @default("PIX")
-  billing_type     String?       // PIX, BOLETO, CREDIT_CARD
-  invoice_url      String?       // Asaas payment link
-  bank_slip_url    String?       // Boleto PDF URL
-  qr_code          String?       // PIX copia-e-cola
-  qr_code_image    String?       // base64 QR image
-  paid_at          DateTime?     @db.Timestamptz(6)
-  refunded_at      DateTime?     @db.Timestamptz(6)
-  cancelled_at     DateTime?     @db.Timestamptz(6)
-  expires_at       DateTime?     @db.Timestamptz(6)
-  metadata         Json?         @default("{}")
-  created_at       DateTime?     @default(now()) @db.Timestamptz(6)
-  updated_at       DateTime?     @default(now()) @db.Timestamptz(6)
+  idempotency_key  String    @unique
+  amount           Int // centavos
+  status           String    @default("PENDING") // PENDING, CONFIRMED, EXPIRED, REFUNDED, FAILED
+  method           String    @default("PIX")
+  billing_type     String? // PIX, BOLETO, CREDIT_CARD
+  invoice_url      String? // Asaas payment link
+  bank_slip_url    String? // Boleto PDF URL
+  qr_code          String? // PIX copia-e-cola
+  qr_code_image    String? // base64 QR image
+  paid_at          DateTime? @db.Timestamptz(6)
+  refunded_at      DateTime? @db.Timestamptz(6)
+  cancelled_at     DateTime? @db.Timestamptz(6)
+  expires_at       DateTime? @db.Timestamptz(6)
+  metadata         Json?     @default("{}")
+  created_at       DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime? @default(now()) @db.Timestamptz(6)
 
   // ─── Refactor financeiro v2 (Sprint 1, M-002 expand) ────────────────────────
   // Colunas novas adicionadas pra modelo unificado RECEIVABLE+PAYABLE.
@@ -1156,90 +1158,89 @@ model Payment {
   // Spec: architecture-spec.md §1.2
 
   // Classificação multi-origem
-  kind                 payment_kind?
-  origin_type          String?
-  origin_id            String?
+  kind        payment_kind?
+  origin_type String?
+  origin_id   String?
 
   // Identidade externa estruturada
-  external_provider    payment_provider?
-  external_reference   String?
+  external_provider  payment_provider?
+  external_reference String?
 
   // Partes
-  supplier_id          String?
-  supplier             Customer? @relation("PaymentSupplier", fields: [supplier_id], references: [id], onDelete: NoAction)
+  supplier_id String?
+  supplier    Customer? @relation("PaymentSupplier", fields: [supplier_id], references: [id], onDelete: NoAction)
 
   // Plano de contas (FK ativada quando AccountChart existir)
-  chart_account_id     String?
-  chart_account        AccountChart? @relation(fields: [chart_account_id], references: [id], onDelete: NoAction)
-  cost_center_id       String?
-  cost_center          CostCenter? @relation("PaymentCostCenter", fields: [cost_center_id], references: [id], onDelete: NoAction)
+  chart_account_id String?
+  chart_account    AccountChart? @relation(fields: [chart_account_id], references: [id], onDelete: NoAction)
+  cost_center_id   String?
+  cost_center      CostCenter?   @relation("PaymentCostCenter", fields: [cost_center_id], references: [id], onDelete: NoAction)
 
   // Valores em centavos (bigint)
-  total_amount         BigInt?
-  paid_amount          BigInt? @default(0)
-  fee_amount           BigInt? @default(0)
-  discount_amount      BigInt? @default(0)
-  interest_amount      BigInt? @default(0)
+  total_amount    BigInt?
+  paid_amount     BigInt? @default(0)
+  fee_amount      BigInt? @default(0)
+  discount_amount BigInt? @default(0)
+  interest_amount BigInt? @default(0)
   // net_amount = GENERATED ALWAYS AS — adicionada em M-012 após backfill, via raw SQL
 
   // Datas estruturadas
-  issue_date           DateTime? @db.Date
-  due_date             DateTime? @db.Date
-  expected_date        DateTime? @db.Date
+  issue_date    DateTime? @db.Date
+  due_date      DateTime? @db.Date
+  expected_date DateTime? @db.Date
 
   // Método tipado (paralelo ao `method` text legacy)
-  payment_method       payment_method_kind?
+  payment_method payment_method_kind?
 
   // Asset URLs adicionais
-  pix_payload          String?
-  receipt_url          String?
+  pix_payload String?
+  receipt_url String?
 
   // Parcelamento (P-005)
-  installment_number   Int? @default(1) @db.SmallInt
-  installment_total    Int? @default(1) @db.SmallInt
-  parent_payment_id    String?
-  parent_payment       Payment? @relation("PaymentInstallments", fields: [parent_payment_id], references: [id], onDelete: Cascade)
-  installments         Payment[] @relation("PaymentInstallments")
+  installment_number Int?      @default(1) @db.SmallInt
+  installment_total  Int?      @default(1) @db.SmallInt
+  parent_payment_id  String?
+  parent_payment     Payment?  @relation("PaymentInstallments", fields: [parent_payment_id], references: [id], onDelete: Cascade)
+  installments       Payment[] @relation("PaymentInstallments")
 
   // Conciliação cartão Rede (preserva project_maquininha_rede_status)
-  card_fee_total       BigInt? @default(0)
-  card_brand           String?
-  card_nsu             String?
-  card_authorization   String?
+  card_fee_total     BigInt? @default(0)
+  card_brand         String?
+  card_nsu           String?
+  card_authorization String?
 
   // Antecipação Asaas
-  anticipated_at       DateTime? @db.Timestamptz(6)
-  anticipation_fee     BigInt? @default(0)
-  anticipated_amount   BigInt?
+  anticipated_at     DateTime? @db.Timestamptz(6)
+  anticipation_fee   BigInt?   @default(0)
+  anticipated_amount BigInt?
 
   // Concorrência otimista (P-022)
-  version              Int @default(1)
+  version Int @default(1)
 
   // Metadata estruturado
-  description          String?
-  notes                String?
-  custom_data          Json? @default("{}")
+  description String?
+  notes       String?
+  custom_data Json?   @default("{}")
 
   // Soft delete
-  deleted_at           DateTime? @db.Timestamptz(6)
+  deleted_at DateTime? @db.Timestamptz(6)
 
   // Relations to refactor v2 tables
-  history              PaymentHistory[]
-  webhook_events       WebhookEventLog[] @relation("PaymentWebhookEvents")
-  fiscal_entries       FiscalEntry[]
-  reminders            PaymentReminder[]
+  history        PaymentHistory[]
+  webhook_events WebhookEventLog[] @relation("PaymentWebhookEvents")
+  fiscal_entries FiscalEntry[]
+  reminders      PaymentReminder[]
 
   // ────────────────────────────────────────────────────────────────────────────
 
-  companies        Company       @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  service_orders   ServiceOrder? @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  customers        Customer      @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  companies            Company              @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  service_orders       ServiceOrder?        @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customers            Customer             @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   acquirer_transaction AcquirerTransaction?
 
   @@index([company_id, service_order_id], map: "idx_payments_company_os")
   @@index([external_id], map: "idx_payments_external")
   @@index([receivable_id], map: "idx_payments_receivable")
-
   // Índices novos do refactor financeiro v2 (partial WHERE deleted_at IS NULL
   // não suportado em Prisma — aplicamos via apply-financeiro-extras.sh)
   @@index([company_id, status, due_date], map: "idx_payments_company_status_due")
@@ -1250,7 +1251,6 @@ model Payment {
   @@index([supplier_id], map: "idx_payments_supplier")
   @@index([company_id, due_date], map: "idx_payments_overdue_scan")
   @@index([company_id, expected_date], map: "idx_payments_expected_cashflow")
-
   @@map("payments")
 }
 
@@ -1258,14 +1258,14 @@ model Payment {
 /// Tabela separada do PushSubscription do portal cliente porque user_id
 /// aqui referencia UserProfile (operador/motorista), não Customer.
 model DriverPushSubscription {
-  id          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
-  user_id     String                                  // UserProfile.id
-  endpoint    String    @unique
-  p256dh      String
-  auth        String
-  user_agent  String?
-  last_seen   DateTime? @db.Timestamptz(6)
-  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+  id         String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  user_id    String // UserProfile.id
+  endpoint   String    @unique
+  p256dh     String
+  auth       String
+  user_agent String?
+  last_seen  DateTime? @db.Timestamptz(6)
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
 
   @@index([user_id], map: "idx_driver_push_user")
   @@map("driver_push_subscriptions")
@@ -1286,14 +1286,14 @@ model LoginOtp {
 }
 
 model AiDocument {
-  id          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
-  company_id  String
-  title       String
-  content     String
-  category    String?   // manual, faq, troubleshooting
-  metadata    Json?     @default("{}")
-  created_at  DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at  DateTime? @default(now()) @db.Timestamptz(6)
+  id         String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id String
+  title      String
+  content    String
+  category   String? // manual, faq, troubleshooting
+  metadata   Json?     @default("{}")
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at DateTime? @default(now()) @db.Timestamptz(6)
 
   @@index([company_id], map: "idx_ai_documents_company")
   @@map("ai_documents")
@@ -1314,7 +1314,7 @@ model AiChatSession {
 model AiChatMessage {
   id         String        @id @default(dbgenerated("(gen_random_uuid())::text"))
   session_id String
-  role       String        // user, assistant
+  role       String // user, assistant
   content    String
   sources    Json?         @default("[]")
   created_at DateTime?     @default(now()) @db.Timestamptz(6)
@@ -1354,18 +1354,18 @@ model ChatMessage {
 }
 
 model Announcement {
-  id           String               @id @default(dbgenerated("(gen_random_uuid())::text"))
+  id           String             @id @default(dbgenerated("(gen_random_uuid())::text"))
   company_id   String
   title        String
   message      String
-  priority     String?              @default("NORMAL")
+  priority     String?            @default("NORMAL")
   created_by   String?
   author_name  String?
-  pinned       Boolean?             @default(false)
-  require_read Boolean?             @default(false)
-  expires_at   DateTime?            @db.Timestamptz(6)
-  created_at   DateTime?            @default(now()) @db.Timestamptz(6)
-  companies    Company              @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  pinned       Boolean?           @default(false)
+  require_read Boolean?           @default(false)
+  expires_at   DateTime?          @db.Timestamptz(6)
+  created_at   DateTime?          @default(now()) @db.Timestamptz(6)
+  companies    Company            @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   reads        AnnouncementRead[]
 
   @@index([company_id], map: "idx_announcements_company")
@@ -1444,24 +1444,25 @@ model NfeSerie {
 // ========== LOGISTICA ==========
 
 model LogisticsRoute {
-  id              String    @id @default(dbgenerated("(gen_random_uuid())::text"))
-  company_id      String
-  driver_id       String?
-  date            DateTime  @db.Date
-  status          String?   @default("PLANNED") // PLANNED | IN_PROGRESS | COMPLETED
-  total_stops     Int?      @default(0)
-  completed_stops Int?      @default(0)
-  started_at      DateTime? @db.Timestamptz(6)
-  completed_at    DateTime? @db.Timestamptz(6)
-  notes           String?
+  id               String          @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id       String
+  driver_id        String?
+  date             DateTime        @db.Date
+  status           String?         @default("PLANNED") // PLANNED | IN_PROGRESS | COMPLETED
+  total_stops      Int?            @default(0)
+  completed_stops  Int?            @default(0)
+  started_at       DateTime?       @db.Timestamptz(6)
+  completed_at     DateTime?       @db.Timestamptz(6)
+  notes            String?
   // Live driver location — updated via POST /api/driver/location every ~30s
-  last_lat        Decimal?  @db.Decimal(10, 8)
-  last_lng        Decimal?  @db.Decimal(11, 8)
-  last_location_at DateTime? @db.Timestamptz(6)
-  created_at      DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime? @default(now()) @db.Timestamptz(6)
-  stops           LogisticsStop[]
-  driver          UserProfile? @relation(fields: [driver_id], references: [id])
+  last_lat         Decimal?        @db.Decimal(10, 8)
+  last_lng         Decimal?        @db.Decimal(11, 8)
+  last_location_at DateTime?       @db.Timestamptz(6)
+  created_at       DateTime?       @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime?       @default(now()) @db.Timestamptz(6)
+  stops            LogisticsStop[]
+  driver           UserProfile?    @relation(fields: [driver_id], references: [id])
+
   @@index([date], map: "idx_routes_date")
   @@index([driver_id], map: "idx_routes_driver")
   @@index([company_id], map: "idx_routes_company")
@@ -1469,51 +1470,52 @@ model LogisticsRoute {
 }
 
 model LogisticsStop {
-  id                     String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  id                     String         @id @default(dbgenerated("(gen_random_uuid())::text"))
   company_id             String
   route_id               String
   os_id                  String?
-  type                   String    // COLETA | ENTREGA
+  type                   String // COLETA | ENTREGA
   sequence               Int
-  status                 String?   @default("PENDING") // PENDING | EN_ROUTE | ARRIVED | COMPLETED | FAILED
+  status                 String?        @default("PENDING") // PENDING | EN_ROUTE | ARRIVED | COMPLETED | FAILED
   customer_name          String?
   customer_phone         String?
   address                String
   address_complement     String?
-  lat                    Decimal?  @db.Decimal(10, 8)
-  lng                    Decimal?  @db.Decimal(11, 8)
-  scheduled_window_start DateTime? @db.Time(6)
-  scheduled_window_end   DateTime? @db.Time(6)
-  arrived_at             DateTime? @db.Timestamptz(6)
-  completed_at           DateTime? @db.Timestamptz(6)
+  lat                    Decimal?       @db.Decimal(10, 8)
+  lng                    Decimal?       @db.Decimal(11, 8)
+  scheduled_window_start DateTime?      @db.Time(6)
+  scheduled_window_end   DateTime?      @db.Time(6)
+  arrived_at             DateTime?      @db.Timestamptz(6)
+  completed_at           DateTime?      @db.Timestamptz(6)
   signature_url          String?
   signer_name            String?
-  photo_urls             Json?     @default("[]")
+  photo_urls             Json?          @default("[]")
   notes                  String?
   failure_reason         String?
   // Driver-app collected data
-  checklist              Json?     @default("[]")   // [{key,label,checked}]
+  checklist              Json?          @default("[]") // [{key,label,checked}]
   serial_number          String?
-  serial_source          String?                    // manual | ocr | ocr_corrected
-  payment_method         String?                    // pix | dinheiro | cartao_credito | cartao_debito | boleto
+  serial_source          String? // manual | ocr | ocr_corrected
+  payment_method         String? // pix | dinheiro | cartao_credito | cartao_debito | boleto
   payment_amount_cents   Int?
   payment_receipt_url    String?
-  event_id               String?   @unique          // idempotency key from device
-  completed_lat          Decimal?  @db.Decimal(10, 8)
-  completed_lng          Decimal?  @db.Decimal(11, 8)
+  event_id               String?        @unique // idempotency key from device
+  completed_lat          Decimal?       @db.Decimal(10, 8)
+  completed_lng          Decimal?       @db.Decimal(11, 8)
   // Customer ETA notification — motorista aciona "a caminho" pra avisar cliente
-  visit_notified_at      DateTime? @db.Timestamptz(6)
-  visit_eta_minutes      Int?                        // estimativa em min quando notificou
-  visit_confirm_token    String?   @unique           // HMAC token p/ link público de confirmacao
-  visit_confirmed_at     DateTime? @db.Timestamptz(6)
-  visit_reschedule_at    DateTime? @db.Timestamptz(6)
+  visit_notified_at      DateTime?      @db.Timestamptz(6)
+  visit_eta_minutes      Int? // estimativa em min quando notificou
+  visit_confirm_token    String?        @unique // HMAC token p/ link público de confirmacao
+  visit_confirmed_at     DateTime?      @db.Timestamptz(6)
+  visit_reschedule_at    DateTime?      @db.Timestamptz(6)
   visit_reschedule_note  String?
   // Google Reviews — marcado quando cron envia o link de avaliacao
   // (so pra stops COMPLETED + OS Entregue Reparado). NULL = ainda nao
   // enviado; preenchido = ja foi, evita duplicidade.
-  reviews_sent_at        DateTime? @db.Timestamptz(6)
-  created_at             DateTime? @default(now()) @db.Timestamptz(6)
+  reviews_sent_at        DateTime?      @db.Timestamptz(6)
+  created_at             DateTime?      @default(now()) @db.Timestamptz(6)
   route                  LogisticsRoute @relation(fields: [route_id], references: [id])
+
   @@index([route_id], map: "idx_stops_route")
   @@index([os_id], map: "idx_stops_os")
   @@map("logistics_stops")
@@ -1522,19 +1524,19 @@ model LogisticsStop {
 // ========== CHATBOT / IA ==========
 
 model ChatbotLog {
-  id            String    @id @default(dbgenerated("(gen_random_uuid())::text"))
-  company_id    String
-  customer_name String?
+  id             String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id     String
+  customer_name  String?
   customer_phone String?
-  intent        String?
-  confidence    Decimal?  @db.Decimal(5, 4)
-  message_in    String?
-  message_out   String?
-  provider      String?   // openai | claude | keywords
-  model         String?
-  status        String?   @default("bot") // bot | transferred | error
-  created_at    DateTime? @default(now()) @db.Timestamptz(6)
-  companies     Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  intent         String?
+  confidence     Decimal?  @db.Decimal(5, 4)
+  message_in     String?
+  message_out    String?
+  provider       String? // openai | claude | keywords
+  model          String?
+  status         String?   @default("bot") // bot | transferred | error
+  created_at     DateTime? @default(now()) @db.Timestamptz(6)
+  companies      Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([company_id, created_at], map: "idx_chatbot_logs_company_date")
   @@map("chatbot_logs")
@@ -1600,27 +1602,27 @@ model PurchaseItem {
 // ========== CONTRATOS & MANUTENÇÃO PREVENTIVA ==========
 
 model Contract {
-  id                  String              @id @default(dbgenerated("(gen_random_uuid())::text"))
-  company_id          String
-  customer_id         String
-  number              String?
-  description         String?
-  start_date          DateTime            @db.Date
-  end_date            DateTime            @db.Date
-  monthly_value       Int?                @default(0)
-  billing_day         Int?                @default(1)
-  visit_frequency     String?             @default("MONTHLY")
+  id                    String              @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id            String
+  customer_id           String
+  number                String?
+  description           String?
+  start_date            DateTime            @db.Date
+  end_date              DateTime            @db.Date
+  monthly_value         Int?                @default(0)
+  billing_day           Int?                @default(1)
+  visit_frequency       String?             @default("MONTHLY")
   max_visits_per_period Int?
-  status              String?             @default("ACTIVE")
-  auto_renew          Boolean?            @default(false)
-  renewal_alert_days  Int?                @default(30)
-  notes               String?
-  created_at          DateTime?           @default(now()) @db.Timestamptz(6)
-  updated_at          DateTime?           @default(now()) @db.Timestamptz(6)
-  companies           Company             @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  customers           Customer            @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  contract_equipment  ContractEquipment[]
-  contract_visits     ContractVisit[]
+  status                String?             @default("ACTIVE")
+  auto_renew            Boolean?            @default(false)
+  renewal_alert_days    Int?                @default(30)
+  notes                 String?
+  created_at            DateTime?           @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime?           @default(now()) @db.Timestamptz(6)
+  companies             Company             @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customers             Customer            @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  contract_equipment    ContractEquipment[]
+  contract_visits       ContractVisit[]
 
   @@index([company_id], map: "idx_contracts_company")
   @@index([customer_id], map: "idx_contracts_customer")
@@ -1664,17 +1666,17 @@ model ContractVisit {
 // ========== NPS / PESQUISA DE SATISFAÇÃO ==========
 
 model NpsSurvey {
-  id               String       @id @default(cuid())
+  id               String   @id @default(cuid())
   company_id       String
   service_order_id String
   customer_id      String
-  score            Int          // 0-10
+  score            Int // 0-10
   comment          String?
-  created_at       DateTime     @default(now()) @db.Timestamptz(6)
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
 
-  companies        Company      @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  service_orders   ServiceOrder @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  customers        Customer     @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  companies      Company      @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  service_orders ServiceOrder @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customers      Customer     @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([service_order_id, customer_id])
   @@index([company_id], map: "idx_nps_surveys_company")
@@ -1683,17 +1685,17 @@ model NpsSurvey {
 }
 
 model PriceTable {
-  id                    String    @id @default(dbgenerated("(gen_random_uuid())::text"))
-  company_id            String
-  equipment_type        String?
-  brand                 String?
-  model_pattern         String?
-  service_description   String?
-  default_price         Int?      @default(0)
+  id                     String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id             String
+  equipment_type         String?
+  brand                  String?
+  model_pattern          String?
+  service_description    String?
+  default_price          Int?      @default(0)
   estimated_time_minutes Int?
-  is_active             Boolean?  @default(true)
-  created_at            DateTime? @default(now()) @db.Timestamptz(6)
-  companies             Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  is_active              Boolean?  @default(true)
+  created_at             DateTime? @default(now()) @db.Timestamptz(6)
+  companies              Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([company_id], map: "idx_price_table_company")
   @@map("price_table")
@@ -1702,16 +1704,16 @@ model PriceTable {
 // ========== COBRANÇA / PAGAMENTOS (Asaas) ==========
 
 model WebhookLog {
-  id            String    @id @default(dbgenerated("(gen_random_uuid())::text"))
-  company_id    String
-  event         String                          // PAYMENT_RECEIVED, PAYMENT_OVERDUE, etc.
-  payment_id    String?                         // FK para payments.id (se encontrado)
-  asaas_event_id String?                        // evt_xxx do Asaas
-  payload       Json                            // body raw do webhook
-  status        String    @default("RECEIVED")  // RECEIVED, PROCESSED, FAILED, IGNORED
-  error         String?                         // mensagem de erro se FAILED
-  processed_at  DateTime? @db.Timestamptz(6)
-  created_at    DateTime? @default(now()) @db.Timestamptz(6)
+  id             String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id     String
+  event          String // PAYMENT_RECEIVED, PAYMENT_OVERDUE, etc.
+  payment_id     String? // FK para payments.id (se encontrado)
+  asaas_event_id String? // evt_xxx do Asaas
+  payload        Json // body raw do webhook
+  status         String    @default("RECEIVED") // RECEIVED, PROCESSED, FAILED, IGNORED
+  error          String? // mensagem de erro se FAILED
+  processed_at   DateTime? @db.Timestamptz(6)
+  created_at     DateTime? @default(now()) @db.Timestamptz(6)
 
   @@index([company_id], map: "idx_webhook_logs_company")
   @@index([event], map: "idx_webhook_logs_event")
@@ -1723,8 +1725,8 @@ model WebhookLog {
 model AsaasCustomer {
   id          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
   company_id  String
-  customer_id String                             // FK para customers.id
-  asaas_id    String                             // cus_xxx no Asaas
+  customer_id String // FK para customers.id
+  asaas_id    String // cus_xxx no Asaas
   created_at  DateTime? @default(now()) @db.Timestamptz(6)
   updated_at  DateTime? @default(now()) @db.Timestamptz(6)
 
@@ -1734,45 +1736,45 @@ model AsaasCustomer {
 }
 
 model PaymentConfig {
-  id             String    @id @default(dbgenerated("(gen_random_uuid())::text"))
-  company_id     String    @unique
-  provider       String    @default("asaas")       // asaas, stripe, etc.
-  api_key        String                             // ENCRYPTED com AES-256
-  webhook_token  String?
-  environment    String    @default("production")   // sandbox, production
-  pix_key        String?                            // chave PIX cadastrada
-  enabled        Boolean   @default(true)
-  created_at     DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at     DateTime? @default(now()) @db.Timestamptz(6)
+  id            String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id    String    @unique
+  provider      String    @default("asaas") // asaas, stripe, etc.
+  api_key       String // ENCRYPTED com AES-256
+  webhook_token String?
+  environment   String    @default("production") // sandbox, production
+  pix_key       String? // chave PIX cadastrada
+  enabled       Boolean   @default(true)
+  created_at    DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime? @default(now()) @db.Timestamptz(6)
 
   @@index([company_id], map: "idx_payment_configs_company")
   @@map("payment_configs")
 }
 
 model BotConversation {
-  id                  String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  id                  String    @id @default(dbgenerated("(gen_random_uuid())::text"))
   company_id          String
   chatwoot_conv_id    Int
   chatwoot_contact_id Int?
   customer_id         String?
   customer_phone      String?
   inbox_id            Int?
-  dify_conv_id        String?  // Dify conversation_id for memory continuity
-  step                String   @default("IDLE")
-  data                Json     @default("{}")
-  message_history     Json     @default("[]") // last 20 messages for context
-  human_takeover      Boolean  @default(false)
-  last_message_id     String?  // for idempotency
+  dify_conv_id        String? // Dify conversation_id for memory continuity
+  step                String    @default("IDLE")
+  data                Json      @default("{}")
+  message_history     Json      @default("[]") // last 20 messages for context
+  human_takeover      Boolean   @default(false)
+  last_message_id     String? // for idempotency
   last_user_msg_at    DateTime? @db.Timestamptz(6) // debounce: timestamp of last user message
   processing_lock     DateTime? @db.Timestamptz(6) // debounce lock: NULL=free, timestamp=locked
   pending_messages    Json      @default("[]") // messages queued during debounce window
   // Follow-up system
-  follow_up_count     Int       @default(0)    // how many follow-ups sent so far
+  follow_up_count     Int       @default(0) // how many follow-ups sent so far
   follow_up_next_at   DateTime? @db.Timestamptz(6) // when to send next follow-up (null = none scheduled)
   follow_up_opted_out Boolean   @default(false) // customer said "stop" or similar
   follow_up_paused_at DateTime? @db.Timestamptz(6) // conversation went silent at this time
-  created_at          DateTime @default(now()) @db.Timestamptz(6)
-  updated_at          DateTime @updatedAt     @db.Timestamptz(6)
+  created_at          DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime  @updatedAt @db.Timestamptz(6)
 
   @@unique([chatwoot_conv_id])
   @@index([customer_phone])
@@ -1785,20 +1787,20 @@ model BotConversation {
 // link do template de avaliacao (assume que foi avaliar no Google).
 // Sem prazo de validade — usado na proxima OS para abater do total.
 model Coupon {
-  id              String    @id @default(dbgenerated("(gen_random_uuid())::text"))
-  company_id      String
-  customer_id     String
-  code            String    // e.g. "REVIEW-ABC123"
-  source          String    @default("review") // review | manual | other
-  discount_type   String    @default("percent") // percent | fixed
-  discount_value  Int       // percent: valor inteiro (ex: 10 = 10%). fixed: centavos.
-  used_at         DateTime? @db.Timestamptz(6) // null = disponivel; preenchido = usado
-  used_on_os_id   String?
-  notes           String?
-  issued_at       DateTime? @default(now()) @db.Timestamptz(6)
-  created_at      DateTime? @default(now()) @db.Timestamptz(6)
-  companies       Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  customers       Customer  @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  id             String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id     String
+  customer_id    String
+  code           String // e.g. "REVIEW-ABC123"
+  source         String    @default("review") // review | manual | other
+  discount_type  String    @default("percent") // percent | fixed
+  discount_value Int // percent: valor inteiro (ex: 10 = 10%). fixed: centavos.
+  used_at        DateTime? @db.Timestamptz(6) // null = disponivel; preenchido = usado
+  used_on_os_id  String?
+  notes          String?
+  issued_at      DateTime? @default(now()) @db.Timestamptz(6)
+  created_at     DateTime? @default(now()) @db.Timestamptz(6)
+  companies      Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customers      Customer  @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([company_id, code])
   // Previne 2 cupons de mesma origem pro mesmo cliente (ex: 'review' so
@@ -1821,18 +1823,18 @@ model Coupon {
 //  - DRIVER: candidatos sao OSes com logistics_stop daquele user_id na data
 //  - STORE: candidatos sao OSes com os_location='LOJA' na data
 model AcquirerTerminalAssignment {
-  id              String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  id              String       @id @default(dbgenerated("(gen_random_uuid())::text"))
   company_id      String
-  acquirer        String    @default("rede") // rede | cielo | stone | ...
-  terminal_code   String    // 'SD130361', 'SD261883', etc.
-  assignment_type String    // 'DRIVER' | 'STORE'
-  user_id         String?   // FK pro user_profile (null se STORE)
-  valid_from      DateTime  @db.Date
-  valid_to        DateTime? @db.Date // null = vigente
+  acquirer        String       @default("rede") // rede | cielo | stone | ...
+  terminal_code   String // 'SD130361', 'SD261883', etc.
+  assignment_type String // 'DRIVER' | 'STORE'
+  user_id         String? // FK pro user_profile (null se STORE)
+  valid_from      DateTime     @db.Date
+  valid_to        DateTime?    @db.Date // null = vigente
   notes           String?
-  created_at      DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime? @default(now()) @db.Timestamptz(6)
-  companies       Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  created_at      DateTime?    @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime?    @default(now()) @db.Timestamptz(6)
+  companies       Company      @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   user_profiles   UserProfile? @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([company_id, terminal_code, valid_from])
@@ -1850,40 +1852,40 @@ model AcquirerTerminalAssignment {
 //
 // Quando matched, os AccountPayables de taxa (MDR + RA) ja foram criados.
 model AcquirerTransaction {
-  id                          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
-  company_id                  String
-  acquirer                    String    @default("rede")
-  external_id                 String    // NSU/CV — unico por adquirente
-  authorization_code          String?
-  card_brand                  String?   // mastercard | visa | elo | ...
-  card_last_4                 String?   // 4 ultimos digitos
-  card_masked                 String?   // 522840******9163
-  holder_name                 String?   // raramente disponivel em maquininha
-  modality                    String?   // credit | debit
-  installments                Int       @default(1)
-  gross_amount                Int       // centavos
-  net_amount                  Int       // centavos
-  mdr_fee_amount              Int       @default(0)  // taxa do meio de pagto
-  mdr_fee_percent             Float     @default(0)
-  anticipation_fee_amount     Int       @default(0)  // recebimento automatico (RA)
-  anticipation_fee_percent    Float     @default(0)
-  total_fee_amount            Int       @default(0)
-  transaction_date            DateTime  @db.Date
-  transaction_time            String?   // HH:MM:SS
-  expected_credit_date        DateTime? @db.Date
-  terminal_code               String?   // SD130361 etc — usa pra resolver assignment
-  status                      String    @default("APPROVED") // APPROVED | CANCELLED | CHARGEBACK | EXPIRED
-  matched_payment_id          String?   @unique
-  matched_at                  DateTime?
-  match_method                String?   // 'AUTO' | 'MANUAL' | null
-  match_confidence            Float?    // 0.0-1.0 (so AUTO)
-  raw_data                    Json      @default("{}")
-  imported_at                 DateTime? @default(now()) @db.Timestamptz(6)
-  imported_by                 String?
-  created_at                  DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at                  DateTime? @default(now()) @db.Timestamptz(6)
-  companies                   Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  payments                    Payment?  @relation(fields: [matched_payment_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  id                       String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id               String
+  acquirer                 String    @default("rede")
+  external_id              String // NSU/CV — unico por adquirente
+  authorization_code       String?
+  card_brand               String? // mastercard | visa | elo | ...
+  card_last_4              String? // 4 ultimos digitos
+  card_masked              String? // 522840******9163
+  holder_name              String? // raramente disponivel em maquininha
+  modality                 String? // credit | debit
+  installments             Int       @default(1)
+  gross_amount             Int // centavos
+  net_amount               Int // centavos
+  mdr_fee_amount           Int       @default(0) // taxa do meio de pagto
+  mdr_fee_percent          Float     @default(0)
+  anticipation_fee_amount  Int       @default(0) // recebimento automatico (RA)
+  anticipation_fee_percent Float     @default(0)
+  total_fee_amount         Int       @default(0)
+  transaction_date         DateTime  @db.Date
+  transaction_time         String? // HH:MM:SS
+  expected_credit_date     DateTime? @db.Date
+  terminal_code            String? // SD130361 etc — usa pra resolver assignment
+  status                   String    @default("APPROVED") // APPROVED | CANCELLED | CHARGEBACK | EXPIRED
+  matched_payment_id       String?   @unique
+  matched_at               DateTime?
+  match_method             String? // 'AUTO' | 'MANUAL' | null
+  match_confidence         Float? // 0.0-1.0 (so AUTO)
+  raw_data                 Json      @default("{}")
+  imported_at              DateTime? @default(now()) @db.Timestamptz(6)
+  imported_by              String?
+  created_at               DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime? @default(now()) @db.Timestamptz(6)
+  companies                Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  payments                 Payment?  @relation(fields: [matched_payment_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([company_id, acquirer, external_id])
   @@index([company_id, transaction_date])
@@ -1902,53 +1904,53 @@ model AcquirerTransaction {
 // recording_path: path local após download (volume Docker /var/recordings)
 // =============================================================================
 model VoipCall {
-  id                String    @id @default(dbgenerated("(gen_random_uuid())::text"))
-  company_id        String
+  id         String @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id String
 
   // Sonax call identifier (do webhook)
-  call_id           String    @unique
+  call_id String @unique
 
   // Direção e números (E.164 sem +55, só dígitos: "12997361519")
-  direction         String    // "inbound" | "outbound"
-  from_number       String    @db.VarChar(20)
-  to_number         String    @db.VarChar(20)
-  did_number        String?   @db.VarChar(20)  // pra inbound: qual DID PontualTech foi chamado
+  direction   String // "inbound" | "outbound"
+  from_number String  @db.VarChar(20)
+  to_number   String  @db.VarChar(20)
+  did_number  String? @db.VarChar(20) // pra inbound: qual DID PontualTech foi chamado
 
   // Cliente (lookup por phone normalizado)
-  customer_id       String?
-  agent_user_id     String?   // user que pegou (UserProfile)
-  agent_extension   String?   @db.VarChar(10)  // ramal SIP que atendeu (101..105)
-  service_order_id  String?   // OS vinculada manualmente pelo atendente
+  customer_id      String?
+  agent_user_id    String? // user que pegou (UserProfile)
+  agent_extension  String? @db.VarChar(10) // ramal SIP que atendeu (101..105)
+  service_order_id String? // OS vinculada manualmente pelo atendente
 
   // Tempos (UTC)
-  started_at        DateTime  @db.Timestamptz(6)
-  answered_at       DateTime? @db.Timestamptz(6)
-  ended_at          DateTime? @db.Timestamptz(6)
-  duration_sec      Int?
+  started_at   DateTime  @db.Timestamptz(6)
+  answered_at  DateTime? @db.Timestamptz(6)
+  ended_at     DateTime? @db.Timestamptz(6)
+  duration_sec Int?
 
   // Status: ringing | answered | missed | busy | failed | completed
-  status            String    @default("ringing") @db.VarChar(20)
-  hangup_cause      String?   @db.VarChar(50)
+  status       String  @default("ringing") @db.VarChar(20)
+  hangup_cause String? @db.VarChar(50)
 
   // Gravação
-  recording_url     String?   // URL CDN Sonax (download depois)
-  recording_path    String?   // path local após download (volume /var/recordings)
+  recording_url     String? // URL CDN Sonax (download depois)
+  recording_path    String? // path local após download (volume /var/recordings)
   recording_size_kb Int?
 
   // Anotações pós-call
-  notes             String?
-  tags              String[]  @default([])
+  notes String?
+  tags  String[] @default([])
 
   // Audit
-  raw_webhook       Json?     @default("{}")  // payload original do webhook (debug)
-  created_at        DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at        DateTime? @default(now()) @db.Timestamptz(6)
+  raw_webhook Json?     @default("{}") // payload original do webhook (debug)
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime? @default(now()) @db.Timestamptz(6)
 
   // Relations
-  companies         Company        @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  customers         Customer?      @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  user_profiles     UserProfile?   @relation(fields: [agent_user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  service_orders    ServiceOrder?  @relation(fields: [service_order_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  companies      Company       @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customers      Customer?     @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user_profiles  UserProfile?  @relation(fields: [agent_user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  service_orders ServiceOrder? @relation(fields: [service_order_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   // Indexes pra queries comuns
   @@index([company_id, customer_id, started_at(sort: Desc)], map: "idx_voip_calls_customer_recent")
@@ -1976,24 +1978,24 @@ model VoipCall {
 /// Trigger `trg_payments_audit` insere row aqui em todo INSERT/UPDATE/DELETE
 /// de payments. EXCEPTION-safe — falha de audit não quebra operação principal.
 model PaymentHistory {
-  id              String  @id @default(dbgenerated("(gen_random_uuid())::text"))
-  company_id      String
-  payment_id      String
-  event_type      String  // CREATED, UPDATED, STATUS_CHANGED, PAYMENT_RECEIVED, PAYMENT_REFUNDED, RECONCILED, CANCELLED, DELETED
+  id               String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id       String
+  payment_id       String
+  event_type       String // CREATED, UPDATED, STATUS_CHANGED, PAYMENT_RECEIVED, PAYMENT_REFUNDED, RECONCILED, CANCELLED, DELETED
   // old_status/new_status TEXT (não enum) pra evitar cast issues durante M-006
-  old_status      String?
-  new_status      String?
-  old_value       Json?
-  new_value       Json?
-  amount_delta    BigInt?
-  source          String  // USER, WEBHOOK, CRON, RECONCILIATION, API, TRIGGER
-  user_id         String?
+  old_status       String?
+  new_status       String?
+  old_value        Json?
+  new_value        Json?
+  amount_delta     BigInt?
+  source           String // USER, WEBHOOK, CRON, RECONCILIATION, API, TRIGGER
+  user_id          String?
   webhook_event_id String?
-  metadata        Json? @default("{}")
-  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  metadata         Json?    @default("{}")
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
 
-  payment         Payment           @relation(fields: [payment_id], references: [id], onDelete: Cascade)
-  webhook_event   WebhookEventLog?  @relation(fields: [webhook_event_id], references: [id], onDelete: SetNull)
+  payment       Payment          @relation(fields: [payment_id], references: [id], onDelete: Cascade)
+  webhook_event WebhookEventLog? @relation(fields: [webhook_event_id], references: [id], onDelete: SetNull)
 
   @@index([payment_id, created_at(sort: Desc)], map: "idx_payment_history_payment_created")
   @@index([company_id, event_type, created_at(sort: Desc)], map: "idx_payment_history_company_event")
@@ -2004,22 +2006,22 @@ model PaymentHistory {
 /// Webhook handler insere aqui ANTES de processar. INSERT 2x do mesmo evento
 /// retorna constraint violation → handler ignora replay.
 model WebhookEventLog {
-  id              String  @id @default(dbgenerated("(gen_random_uuid())::text"))
-  company_id      String
-  provider        payment_provider
-  event_id        String
-  event_type      String
-  status          webhook_event_status @default(RECEIVED)
-  raw_payload     Json
-  signature       String?
-  signature_valid Boolean?
-  related_payment_id      String?
-  processing_started_at   DateTime? @db.Timestamptz(6)
-  processing_finished_at  DateTime? @db.Timestamptz(6)
-  attempts        Int     @default(0) @db.SmallInt
-  last_error      String?
-  ip_address      String? @db.Inet
-  received_at     DateTime @default(now()) @db.Timestamptz(6)
+  id                     String               @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id             String
+  provider               payment_provider
+  event_id               String
+  event_type             String
+  status                 webhook_event_status @default(RECEIVED)
+  raw_payload            Json
+  signature              String?
+  signature_valid        Boolean?
+  related_payment_id     String?
+  processing_started_at  DateTime?            @db.Timestamptz(6)
+  processing_finished_at DateTime?            @db.Timestamptz(6)
+  attempts               Int                  @default(0) @db.SmallInt
+  last_error             String?
+  ip_address             String?              @db.Inet
+  received_at            DateTime             @default(now()) @db.Timestamptz(6)
 
   related_payment Payment?         @relation("PaymentWebhookEvents", fields: [related_payment_id], references: [id], onDelete: SetNull)
   histories       PaymentHistory[]
@@ -2034,23 +2036,23 @@ model WebhookEventLog {
 /// Plano de contas hierárquico — base do DRE (M-005 / P-007).
 /// Seed inicial pra PontualTech aplicado via apply-financeiro-extras.sh.
 model AccountChart {
-  id              String  @id @default(dbgenerated("(gen_random_uuid())::text"))
-  company_id      String
-  code            String
-  name            String
-  account_type    chart_account_type
-  parent_id       String?
-  is_synthetic    Boolean @default(false)
-  is_active       Boolean @default(true)
-  display_order   Int     @default(0)
-  notes           String?
-  created_at      DateTime @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime @default(now()) @db.Timestamptz(6)
+  id            String             @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id    String
+  code          String
+  name          String
+  account_type  chart_account_type
+  parent_id     String?
+  is_synthetic  Boolean            @default(false)
+  is_active     Boolean            @default(true)
+  display_order Int                @default(0)
+  notes         String?
+  created_at    DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime           @default(now()) @db.Timestamptz(6)
 
-  parent          AccountChart?  @relation("ChartHierarchy", fields: [parent_id], references: [id], onDelete: NoAction)
-  children        AccountChart[] @relation("ChartHierarchy")
-  payments        Payment[]
-  fiscal_entries  FiscalEntry[]
+  parent         AccountChart?  @relation("ChartHierarchy", fields: [parent_id], references: [id], onDelete: NoAction)
+  children       AccountChart[] @relation("ChartHierarchy")
+  payments       Payment[]
+  fiscal_entries FiscalEntry[]
 
   @@unique([company_id, code], map: "uniq_chart_company_code")
   @@index([company_id, account_type, display_order], map: "idx_chart_company_type")
@@ -2061,29 +2063,29 @@ model AccountChart {
 /// Lançamentos contábeis pra DRE (M-005 / P-007).
 /// Materialized view `dre_monthly` agrega isto por mês — refresh via job.
 model FiscalEntry {
-  id                String  @id @default(dbgenerated("(gen_random_uuid())::text"))
-  company_id        String
-  entry_date        DateTime @db.Date
-  cash_date         DateTime? @db.Date
-  chart_account_id  String
-  cost_center_id    String?
-  payment_id        String?
-  amount            BigInt
-  description       String
-  source            String  // PAYMENT, MANUAL_ADJUSTMENT, TAX_CALC, PROVISIONING
-  is_provisional    Boolean @default(false)
+  id               String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id       String
+  entry_date       DateTime  @db.Date
+  cash_date        DateTime? @db.Date
+  chart_account_id String
+  cost_center_id   String?
+  payment_id       String?
+  amount           BigInt
+  description      String
+  source           String // PAYMENT, MANUAL_ADJUSTMENT, TAX_CALC, PROVISIONING
+  is_provisional   Boolean   @default(false)
   // fiscal_period: derivado de entry_date via trigger BEFORE INSERT/UPDATE.
   // Antes era GENERATED ALWAYS, mas Prisma 5.x não tem syntax declarativa pra
   // GENERATED — db push entrava em conflito com MV dre_monthly. Trigger é
   // equivalente em semântica (sempre derivado), compatível com Prisma.
-  fiscal_period     String?
-  metadata          Json? @default("{}")
-  created_by        String?
-  created_at        DateTime @default(now()) @db.Timestamptz(6)
+  fiscal_period    String?
+  metadata         Json?     @default("{}")
+  created_by       String?
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
 
-  chart_account     AccountChart @relation(fields: [chart_account_id], references: [id], onDelete: NoAction)
-  cost_center       CostCenter?  @relation("FiscalCostCenter", fields: [cost_center_id], references: [id], onDelete: NoAction)
-  payment           Payment?     @relation(fields: [payment_id], references: [id], onDelete: SetNull)
+  chart_account AccountChart @relation(fields: [chart_account_id], references: [id], onDelete: NoAction)
+  cost_center   CostCenter?  @relation("FiscalCostCenter", fields: [cost_center_id], references: [id], onDelete: NoAction)
+  payment       Payment?     @relation(fields: [payment_id], references: [id], onDelete: SetNull)
 
   @@index([company_id, entry_date(sort: Desc)], map: "idx_fiscal_company_entry_date")
   @@index([payment_id], map: "idx_fiscal_payment")
@@ -2108,15 +2110,15 @@ model FiscalEntry {
 /// "B2B grandes valores", "default consumidor final"). Tenant escolhe via
 /// applies_to_segment qual regra se aplica a cada payment.
 model CobrancaRule {
-  id                  String   @id @default(dbgenerated("(gen_random_uuid())::text"))
-  company_id          String
-  name                String
-  is_active           Boolean  @default(true)
-  applies_to_segment  String?  // 'ALL' | 'CUSTOMER_TAG:premium' | 'AMOUNT_GT:100000' | etc.
-  created_at          DateTime @default(now()) @db.Timestamptz(6)
-  updated_at          DateTime @default(now()) @db.Timestamptz(6)
+  id                 String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id         String
+  name               String
+  is_active          Boolean  @default(true)
+  applies_to_segment String? // 'ALL' | 'CUSTOMER_TAG:premium' | 'AMOUNT_GT:100000' | etc.
+  created_at         DateTime @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime @default(now()) @db.Timestamptz(6)
 
-  steps               CobrancaRuleStep[]
+  steps CobrancaRuleStep[]
 
   @@index([company_id, is_active], map: "idx_cobranca_rules_active")
   @@map("cobranca_rules")
@@ -2129,17 +2131,17 @@ model CobrancaRule {
 ///   step 4: +7 dias (SMS + email) "7 dias de atraso, +2% juros mensal"
 ///   step 5: +15 dias (telefone — interno) "escalada — falar com gerente"
 model CobrancaRuleStep {
-  id                          String           @id @default(dbgenerated("(gen_random_uuid())::text"))
-  company_id                  String
-  rule_id                     String
-  step_order                  Int              @db.SmallInt
-  trigger_days_offset         Int              @db.SmallInt  // <0 = pré-vencimento, >=0 = pós
-  channel                     reminder_channel
-  template_id                 String?          // FK lógica pra message_templates
-  apply_fee_pct               Decimal?         @default(0) @db.Decimal(5, 2)
-  apply_interest_pct_monthly  Decimal?         @default(0) @db.Decimal(5, 2)
+  id                         String           @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id                 String
+  rule_id                    String
+  step_order                 Int              @db.SmallInt
+  trigger_days_offset        Int              @db.SmallInt // <0 = pré-vencimento, >=0 = pós
+  channel                    reminder_channel
+  template_id                String? // FK lógica pra message_templates
+  apply_fee_pct              Decimal?         @default(0) @db.Decimal(5, 2)
+  apply_interest_pct_monthly Decimal?         @default(0) @db.Decimal(5, 2)
 
-  rule      CobrancaRule       @relation(fields: [rule_id], references: [id], onDelete: Cascade)
+  rule      CobrancaRule      @relation(fields: [rule_id], references: [id], onDelete: Cascade)
   reminders PaymentReminder[]
 
   @@unique([rule_id, step_order], map: "uniq_rule_step")
@@ -2151,18 +2153,18 @@ model CobrancaRuleStep {
 /// pending/overdue e gera reminders conforme régua aplicável. Status PENDING
 /// é fila; SENT/FAILED é histórico. CHECK attempts < 5 evita loop infinito.
 model PaymentReminder {
-  id              String          @id @default(dbgenerated("(gen_random_uuid())::text"))
-  company_id      String
-  payment_id      String
-  rule_step_id    String?
-  scheduled_for   DateTime        @db.Timestamptz(6)
-  channel         reminder_channel
-  status          reminder_status @default(PENDING)
-  sent_at         DateTime?       @db.Timestamptz(6)
-  delivery_meta   Json?           @default("{}")
-  error_message   String?
-  attempts        Int             @default(0) @db.SmallInt
-  created_at      DateTime        @default(now()) @db.Timestamptz(6)
+  id            String           @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id    String
+  payment_id    String
+  rule_step_id  String?
+  scheduled_for DateTime         @db.Timestamptz(6)
+  channel       reminder_channel
+  status        reminder_status  @default(PENDING)
+  sent_at       DateTime?        @db.Timestamptz(6)
+  delivery_meta Json?            @default("{}")
+  error_message String?
+  attempts      Int              @default(0) @db.SmallInt
+  created_at    DateTime         @default(now()) @db.Timestamptz(6)
 
   payment   Payment           @relation(fields: [payment_id], references: [id], onDelete: Cascade)
   rule_step CobrancaRuleStep? @relation(fields: [rule_step_id], references: [id], onDelete: SetNull)
@@ -2189,7 +2191,7 @@ model PaymentMethodConfig {
   provider        payment_provider
   display_name    String
   is_active       Boolean             @default(true)
-  is_default_in   String              @default("NONE")  // RECEIVABLE | PAYABLE | BOTH | NONE
+  is_default_in   String              @default("NONE") // RECEIVABLE | PAYABLE | BOTH | NONE
   config          Json                @default("{}")
   fee_pct         Decimal             @default(0) @db.Decimal(5, 2)
   fee_fixed_cents BigInt              @default(0)
@@ -2230,21 +2232,21 @@ model PaymentTerm {
 /// Lote de conciliação — representa upload de OFX/CSV/CNAB ou pull de API.
 /// Status fica em counters (matched_auto, matched_manual, unmatched, ignored).
 model ReconciliationBatch {
-  id                  String                 @id @default(dbgenerated("(gen_random_uuid())::text"))
+  id                  String    @id @default(dbgenerated("(gen_random_uuid())::text"))
   company_id          String
-  source              String                 // OFX | CSV | CNAB_RETURN | ASAAS_API | REDE_API | MANUAL
+  source              String // OFX | CSV | CNAB_RETURN | ASAAS_API | REDE_API | MANUAL
   source_filename     String?
-  source_period_start DateTime?              @db.Date
-  source_period_end   DateTime?              @db.Date
-  total_entries       Int                    @default(0)
-  matched_auto        Int                    @default(0)
-  matched_manual      Int                    @default(0)
-  unmatched           Int                    @default(0)
-  ignored             Int                    @default(0)
-  raw_metadata        Json                   @default("{}")
+  source_period_start DateTime? @db.Date
+  source_period_end   DateTime? @db.Date
+  total_entries       Int       @default(0)
+  matched_auto        Int       @default(0)
+  matched_manual      Int       @default(0)
+  unmatched           Int       @default(0)
+  ignored             Int       @default(0)
+  raw_metadata        Json      @default("{}")
   uploaded_by         String?
-  finished_at         DateTime?              @db.Timestamptz(6)
-  created_at          DateTime               @default(now()) @db.Timestamptz(6)
+  finished_at         DateTime? @db.Timestamptz(6)
+  created_at          DateTime  @default(now()) @db.Timestamptz(6)
 
   entries ReconciliationEntry[]
 
@@ -2266,7 +2268,7 @@ model ReconciliationEntry {
   status               reconciliation_status @default(PENDING)
   matched_payment_id   String?
   match_score          Int?                  @db.SmallInt
-  match_rule           String?               // EXACT_AMOUNT_DATE | EXACT_AMOUNT_3DAYS | MANUAL | ...
+  match_rule           String? // EXACT_AMOUNT_DATE | EXACT_AMOUNT_3DAYS | MANUAL | ...
   matched_by           String?
   matched_at           DateTime?             @db.Timestamptz(6)
   raw_data             Json                  @default("{}")
@@ -2312,10 +2314,10 @@ model FeatureFlag {
 /// pra permitir tenant ter override explícito ON/OFF independente do rollout global.
 /// RLS multi-tenant.
 model TenantFeatureFlag {
-  flag_key    String
-  company_id  String
-  enabled     Boolean
-  enabled_at  DateTime @default(now()) @db.Timestamptz(6)
+  flag_key   String
+  company_id String
+  enabled    Boolean
+  enabled_at DateTime @default(now()) @db.Timestamptz(6)
 
   flag FeatureFlag @relation(fields: [flag_key], references: [key], onDelete: Cascade)
 
@@ -2337,41 +2339,74 @@ model TenantFeatureFlag {
 //   Secret rotacionado via UI gera nova senha automaticamente.
 // =============================================================================
 model VoipExtension {
-  id                  String    @id @default(dbgenerated("(gen_random_uuid())::text"))
-  company_id          String
+  id         String @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id String
 
   // Numero do ramal (3 digitos: "101"..."115"). Unico por tenant.
-  number              String    @db.VarChar(10)
-  description         String    @db.VarChar(120)        // "Roberto - Ramal 101"
-  caller_id_internal  String?   @db.VarChar(120)        // exibido em chamadas internas
+  number             String  @db.VarChar(10)
+  description        String  @db.VarChar(120) // "Roberto - Ramal 101"
+  caller_id_internal String? @db.VarChar(120) // exibido em chamadas internas
 
   // Vinculo com user_profile (opcional — ramal pode ser standalone ex: aparelho de fax)
-  user_id             String?
+  user_id String?
 
   // Tipo de cliente que vai registrar
-  webrtc              Boolean   @default(true)          // browser via SIP-WS
-  max_contacts        Int       @default(1)             // 1 pra browser, 3 pra desk phone multi-device
-  call_limit          Int       @default(1)             // chamadas simultaneas
+  webrtc       Boolean @default(true) // browser via SIP-WS
+  max_contacts Int     @default(1) // 1 pra browser, 3 pra desk phone multi-device
+  call_limit   Int     @default(1) // chamadas simultaneas
 
   // Credenciais SIP
-  secret_plain        String    @db.VarChar(64)         // password SIP (rotacionavel via UI)
+  secret_plain String @db.VarChar(64) // password SIP (rotacionavel via UI)
 
   // Dialplan
-  context_tag         String    @default("from-pontualtech") @db.VarChar(60)
+  context_tag String @default("from-pontualtech") @db.VarChar(60)
 
   // Estado
-  is_active           Boolean   @default(true)
+  is_active Boolean @default(true)
 
   // Audit
-  created_at          DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at          DateTime? @default(now()) @db.Timestamptz(6)
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at DateTime? @default(now()) @db.Timestamptz(6)
 
   // Relations
-  companies           Company       @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  user_profiles       UserProfile?  @relation(fields: [user_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  companies     Company      @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user_profiles UserProfile? @relation(fields: [user_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@unique([company_id, number])
   @@index([company_id, is_active], map: "idx_voip_extensions_active")
   @@index([user_id], map: "idx_voip_extensions_user")
   @@map("voip_extensions")
+}
+
+model MarketingContact {
+  id              String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id      String
+  email           String
+  name            String?
+  phone           String?
+  document_number String?
+  origin          String    @default("manual")
+  tags            String[]  @default([])
+  customer_id     String?
+  unsubscribed    Boolean   @default(false)
+  unsubscribed_at DateTime? @db.Timestamptz(6)
+  bounce_count    Int       @default(0)
+  last_sent_at    DateTime? @db.Timestamptz(6)
+  last_opened_at  DateTime? @db.Timestamptz(6)
+  last_clicked_at DateTime? @db.Timestamptz(6)
+  first_seen_at   DateTime  @default(now()) @db.Timestamptz(6)
+  last_seen_at    DateTime? @db.Timestamptz(6)
+  metadata        Json?     @default("{}")
+  created_at      DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime? @default(now()) @db.Timestamptz(6)
+
+  company  Company   @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  customer Customer? @relation(fields: [customer_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([company_id, email], map: "marketing_contacts_company_email_unique")
+  @@index([email], map: "idx_mc_email")
+  @@index([company_id, origin], map: "idx_mc_company_origin")
+  @@index([tags], map: "idx_mc_tags_gin", type: Gin)
+  @@index([customer_id], map: "idx_mc_customer")
+  @@map("marketing_contacts")
 }
