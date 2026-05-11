@@ -1665,7 +1665,16 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
                 const previsao = (o as any).estimated_delivery
                   ? `, Previsao entrega: ${new Date((o as any).estimated_delivery).toLocaleDateString('pt-BR')}`
                   : ''
-                return `OS #${osNum} (${o.equipment}, Status: ${o.status_name}${tecnico}${previsao}${portalLink ? `, Portal: ${portalLink}` : ''})`
+                // 2026-05-11: contexto explicito de cobranca e pagamento online
+                // pra Marta nao prometer/mentir sobre coisas que o sistema nao
+                // suporta. Caso OS 60374 Jussara: Marta disse "reenviei" mas
+                // OS nao tinha cobranca + ofereceu cartao online em status
+                // "Aprovado" que nao libera pagamento antecipado.
+                const cobrancaAtiva = (o as any).has_pending_charge ? 'SIM (link valido pode ser reenviado)' : 'NAO (sem cobranca gerada — financeiro precisa emitir)'
+                const pagamentoOnline = (o as any).payment_online_allowed
+                  ? 'SIM (cliente pode pagar via portal: PIX/Boleto)'
+                  : 'NAO (status nao libera pagamento antecipado online — so presencial na entrega OU via atendente humano)'
+                return `OS #${osNum} (${o.equipment}, Status: ${o.status_name}${tecnico}${previsao}, Cobranca ativa: ${cobrancaAtiva}, Pagamento online permitido: ${pagamentoOnline}${portalLink ? `, Portal: ${portalLink}` : ''})`
               }).join('; ')
               query += `\n[CONTEXTO DO CLIENTE: Nome: ${customer.legal_name || 'N/A'}, Telefone: ${phone}, OS ativas: ${osList}. O cliente JA FOI IDENTIFICADO — NAO pergunte numero da OS, ja informe o status diretamente. SEMPRE inclua na sua resposta a URL "Portal: https://..." COMPLETA da OS relevante (extraida do contexto OS ativas acima). NUNCA escreva apenas "portal.pontualtech.com.br" ou "portal.imprimitech.com.br" sozinho como link — sempre use a URL completa do contexto pra o cliente nao precisar fazer login.]`
               console.log(`[Bot] Auto-identified: ${customer.legal_name} — ${activeOS.length} active OS`)
@@ -1710,11 +1719,19 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
 6. APROVAR ou RECUSAR orcamento: informe que basta acessar o portal do cliente, clicar em aprovar ou recusar, e a notificacao eh enviada automaticamente para a equipe. NAO precisa de atendente para isso.
 7. NUNCA OFERECA proativamente transferencia para atendente humano. NAO escreva frases como "se preferir, posso transferir", "quer que um atendente te ajude?", "caso prefira falar com um atendente". Espere o cliente PEDIR EXPLICITAMENTE com palavras como "humano", "atendente", "alguem", "pessoa", "passa pra".
 8. Use [TRANSFERIR_HUMANO] APENAS quando: (a) cliente pedir explicitamente humano/atendente; (b) cliente fizer reclamacao GRAVE (mencionar Procon, juridico, processo, denuncia); (c) erro tecnico real que voce nao consegue resolver com os dados disponiveis. Em caso de duvida, NAO transfira — responda com o que voce sabe. AO TRANSFERIR, SEMPRE informe na sua resposta o horario de atendimento humano (esta em [DADOS REAIS DA EMPRESA] -> Horario) pra que o cliente saiba quando entrar em contato. NUNCA prometa retorno do atendente nem prazo ("retornaremos", "em breve", "em ate 1h"). O cliente eh quem entra em contato pelo canal de suporte. Ex: "Vou registrar internamente para nossa equipe. Nosso atendimento humano funciona de Seg a Qui das 08h as 18h e Sex das 08h as 17h — voce pode entrar em contato no horario comercial pelo nosso WhatsApp de suporte."
-9. PAGAMENTO — voce reconhece DOIS sub-fluxos distintos:
-   (a) PAGAMENTO JA FEITO ("fiz Pix nao apareceu", "boleto pago", "ja paguei", "comprovante", "pagamento nao caiu"): NAO transfira. Responda: "Vou registrar internamente para nossa equipe financeira conferir a compensacao. O sistema atualiza automaticamente em ate 2h uteis. Voce pode acompanhar pelo Portal." Tranquilize o cliente. SEM tag.
-   (b) CLIENTE NAO RECEBEU O LINK ("nao recebi boleto", "nao chegou", "nao veio o boleto", "manda o boleto", "reenvia o boleto", "perdi o link", "manda de novo", "envia novamente", "cade o pix"): NAO transfira. Se a OS estiver no [CONTEXTO DO CLIENTE / OS ativas], AO FINAL inclua [REENVIAR_COBRANCA:NUMERO_OS] (ex: [REENVIAR_COBRANCA:60401]). O sistema vai reenviar automaticamente o link de pagamento existente por WhatsApp + email. Sua resposta deve ser curta: "Acabei de reenviar o link de pagamento da OS #NUMERO pro seu WhatsApp e email cadastrados, [nome]. Caso ainda nao chegue em alguns minutos, me avise." Se a OS NAO esta no contexto, NAO emita a tag — pergunte o numero da OS primeiro ou peca CPF/CNPJ pra localizar.
+9. PAGAMENTO — voce reconhece TRES sub-fluxos distintos. Em TODOS verifique o campo "Cobranca ativa" e "Pagamento online permitido" da OS no [CONTEXTO DO CLIENTE / OS ativas] antes de prometer/emitir tags:
+   (a) PAGAMENTO JA FEITO ("fiz Pix nao apareceu", "boleto pago", "ja paguei", "comprovante", "pagamento nao caiu"): NAO transfira. Responda: "Vou registrar internamente para nossa equipe financeira conferir a compensacao. O sistema atualiza automaticamente em ate 2h uteis. Voce pode acompanhar pelo Portal." SEM tag.
+   (b) CLIENTE NAO RECEBEU O LINK ("nao recebi boleto", "nao chegou", "manda de novo", "perdi o link", "cade o pix", "reenvia") — AGIR conforme "Cobranca ativa" da OS:
+       - Se "Cobranca ativa: SIM" -> AO FINAL inclua [REENVIAR_COBRANCA:NUMERO_OS]. NUNCA afirme "acabei de reenviar" (voce NAO sabe se o reenvio foi feito ainda). Responda EXATAMENTE: "Vou pedir o reenvio do link de pagamento da OS #NUMERO pro seu WhatsApp e email cadastrados, [nome]. Em alguns minutos chega — caso nao receba, me avise."
+       - Se "Cobranca ativa: NAO" -> NAO emita tag. Responda: "Para essa OS ainda nao temos um link de pagamento ativo, [nome]. Vou registrar internamente pra nossa equipe financeira gerar e te enviar." (sistema abre ticket pra financeiro).
+   (c) CLIENTE QUER PAGAR ANTECIPADO ("posso pagar antes", "quero pagar agora", "tem como adiantar o pagamento", "link pra pagar antes", "pagar antes da entrega") — AGIR conforme "Pagamento online permitido" da OS:
+       - Se "Pagamento online permitido: SIM" (status Entregar Reparado ou Entregue) -> NAO transfira. Diga: "Sim, [nome]! Para essa OS o pagamento antecipado online esta disponivel via PIX ou Boleto." Se houver "Cobranca ativa: SIM", inclua [REENVIAR_COBRANCA:NUMERO_OS] pra reenviar o link existente. Se "Cobranca ativa: NAO", responda: "Vou registrar pra nossa equipe financeira gerar um link pra voce. Em breve chega no seu WhatsApp/email." (sistema abre ticket).
+       - Se "Pagamento online permitido: NAO" (status Aprovado, Em Reparo, Em Bancada, Em Execucao, etc) -> Responda EXATAMENTE: "Para essa OS o pagamento antecipado online ainda nao esta disponivel pelo portal, [nome]. Voce pode pagar normalmente na hora da retirada/entrega (aceitamos PIX, dinheiro e cartao ate 3x sem juros). Se preferir adiantar agora, posso transferir pra nossa equipe pra combinar isso pessoalmente." Se o cliente confirmar que quer adiantar, AO FINAL inclua [TRANSFERIR_HUMANO]. NUNCA emita [REENVIAR_COBRANCA] nesse caso.
 10. ENTREGA / LOGISTICA / PRAZO ("preciso da impressora", "quando entrega", "previsao", "ja paguei quero o equipamento", "que horas", "amanha"): NAO transfira. Se o contexto da OS tiver "Previsao entrega: DATA", cite essa data exata na resposta (ex: "A previsao de entrega esta agendada para 15/05/2026"). Se nao houver data ou cliente perguntar HORARIO especifico, diga: "Nossa equipe de logistica entrara em contato no dia anterior para alinhar o horario da entrega/coleta." Nunca prometa horario especifico.
-11. PARCELAMENTO / FORMAS DE PAGAMENTO ("posso parcelar", "no cartao", "vai dividir", "tem desconto", "pix"): NAO transfira. Responda DIRETO: "Sim! Aceitamos cartao de credito em ate 3x sem juros, PIX e dinheiro a vista. Voce pode escolher a melhor forma de pagamento na hora da retirada/entrega." Nunca diga "vou registrar pra equipe financeira" para essa pergunta.
+11. PARCELAMENTO / FORMAS DE PAGAMENTO ("posso parcelar", "no cartao", "vai dividir", "tem desconto", "pix"): NAO transfira. Responda explicando as 2 modalidades:
+    - PRESENCIAL (na hora da entrega/retirada, em QUALQUER status da OS): PIX, dinheiro a vista E cartao de credito em ate 3x sem juros.
+    - ONLINE via Portal (link de pagamento antecipado, SOMENTE em status "Entregar Reparado" ou "Entregue"): PIX ou Boleto bancario. Cartao online ainda nao esta disponivel — em breve.
+    Frase ex: "Aceitamos PIX, dinheiro e cartao de credito em ate 3x sem juros na hora da retirada/entrega. Se sua OS ja estiver pronta pra retirada, voce tambem pode pagar antecipado online via PIX ou Boleto pelo Portal." Nunca prometa "cartao online via link" porque essa modalidade ainda nao foi habilitada. Nunca diga "vou registrar pra equipe financeira" pra essa pergunta de info geral.
 12. NUNCA INVENTE DADOS — esta e a regra mais critica. Quando o cliente pedir:
     (a) Chave PIX -> use APENAS a "Chave PIX" listada em [DADOS REAIS DA EMPRESA]. NUNCA invente como "pix@empresa.com.br" ou "11999999999".
     (b) Numero de OS -> use APENAS o numero que esta no [CONTEXTO DO CLIENTE / OS ativas]. Se cliente fornecer numero de OS que NAO aparece no contexto, NUNCA invente status/equipamento/prazo/valor pra essa OS. Responda EXATAMENTE: "Nao localizei a OS [numero] no nosso sistema. Pode confirmar o numero, ou me passar seu CPF/CNPJ pra eu localizar?" Se cliente insistir e voce continuar sem dados validos, use [TRANSFERIR_HUMANO]. NUNCA emita tags ([STATUS_CANCELADA], [URGENCIA_*], [DEVOLUCAO_LOGISTICA]) com numero de OS que nao esta validado no contexto. NUNCA invente numeros placeholder como "123456" nem confirme OS ficticias.
@@ -3017,7 +3034,18 @@ interface OsInfo {
   os_id?: string
   has_items?: boolean
   technician_name?: string | null
+  // 2026-05-11: contexto de pagamento pra Marta nao mentir sobre cobrancas
+  has_pending_charge?: boolean    // OS tem Payment status=PENDING (link valido pra reenviar)
+  payment_online_allowed?: boolean // status da OS permite pagamento online no Portal
 }
+
+// 2026-05-11: status onde o cliente pode pagar online via portal (PIX/Boleto
+// e futuramente cartao). Em outros status (Aprovado, Em Reparo, Em Bancada,
+// etc), pagamento antecipado so com atendente humano — Marta NAO deve oferecer.
+const PAYMENT_ONLINE_ALLOWED_STATUSES = new Set([
+  'Entregar Reparado',
+  'Entregue',
+])
 
 /** Send OS status with action buttons */
 async function sendOsStatusButtons(cfg: BotCompanyConfig, conversationId: number, phone: string, os: OsInfo) {
@@ -3272,21 +3300,35 @@ async function getActiveOrders(customerId: string, companyId: string): Promise<O
       service_order_items: { where: { deleted_at: null }, select: { id: true } },
       // 2026-05-09: incluir tecnico responsavel pra contexto do bot
       user_profiles: { select: { name: true } },
+      // 2026-05-11: incluir payments PENDING pra Marta saber se tem link
+      // de pagamento ativo antes de oferecer reenvio. Sem isso ela emite
+      // [REENVIAR_COBRANCA] e diz "acabei de reenviar" mesmo quando nao
+      // ha cobranca gerada — caso real OS 60374 Jussara 11/05.
+      payments: {
+        where: { status: 'PENDING' },
+        select: { id: true },
+        take: 1,
+      },
     },
     orderBy: { created_at: 'desc' },
     take: 10,
   })
 
-  return orders.map(os => ({
-    os_number: os.os_number,
-    status_name: os.module_statuses?.name || 'Desconhecido',
-    equipment: [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' '),
-    estimated_delivery: os.estimated_delivery,
-    total_cost: os.total_cost,
-    os_id: os.id,
-    has_items: (os.service_order_items?.length || 0) > 0,
-    technician_name: os.user_profiles?.name || null,
-  }))
+  return orders.map(os => {
+    const statusName = os.module_statuses?.name || 'Desconhecido'
+    return {
+      os_number: os.os_number,
+      status_name: statusName,
+      equipment: [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' '),
+      estimated_delivery: os.estimated_delivery,
+      total_cost: os.total_cost,
+      os_id: os.id,
+      has_items: (os.service_order_items?.length || 0) > 0,
+      technician_name: os.user_profiles?.name || null,
+      has_pending_charge: (os.payments?.length || 0) > 0,
+      payment_online_allowed: PAYMENT_ONLINE_ALLOWED_STATUSES.has(statusName),
+    }
+  })
 }
 
 // ---------------------------------------------------------------------------
