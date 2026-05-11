@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { CreditCard, Loader2, X, Copy, ExternalLink, Check, Zap, FileText, Wallet, Mail, MessageSquare, Clock, History, Send, XCircle } from 'lucide-react'
+import { CreditCard, Loader2, X, Copy, ExternalLink, Check, Zap, FileText, Wallet, Mail, MessageSquare, Clock, History, Send, XCircle, AlertTriangle } from 'lucide-react'
 
 type Account = {
   id: string
@@ -88,7 +88,14 @@ export function OsChargeModal({ osId, osNumber, totalCost, open, onClose }: {
 
     fetch(`/api/os/${osId}/charge`)
       .then(r => r.json())
-      .then(d => setHistory(d.data || []))
+      .then(d => {
+        const list = (d.data || []) as ChargeHistoryItem[]
+        setHistory(list)
+        // 2026-05-11: auto-expandir historico quando ha cobranca PENDING
+        // pra atendente VER imediatamente as opcoes "reenviar"/"cancelar"
+        // (Karlao reportou "opcao discreta" — agora fica visivel no abre).
+        if (list.some(p => p.status === 'PENDING')) setHistoryOpen(true)
+      })
       .catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, osId])
@@ -269,6 +276,62 @@ export function OsChargeModal({ osId, osNumber, totalCost, open, onClose }: {
             ) : (
               /* =================== FORM STATE =================== */
               <div className="p-6 space-y-5">
+
+                {/* 2026-05-11: Banner destacado + cards de acao quando ha cobranca
+                    PENDING. Karlao reportou "opcao muito discreta" — agora a UX
+                    deixa CLARO que existe cobranca ativa e oferece reenviar OU
+                    cancelar com botoes grandes ANTES do form de criar nova. */}
+                {(() => {
+                  const pendingCharges = history.filter(h => h.status === 'PENDING')
+                  if (pendingCharges.length === 0) return null
+                  return (
+                    <div className="rounded-xl border-2 border-amber-400 bg-amber-50 p-4 space-y-3">
+                      <div className="flex items-start gap-2.5">
+                        <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-bold text-amber-900 text-sm">Esta OS já tem cobrança ativa</p>
+                          <p className="text-xs text-amber-800 mt-0.5">
+                            Não gere uma nova — reenvie o link existente OU cancele antes de trocar a forma de pagamento.
+                          </p>
+                        </div>
+                      </div>
+                      {pendingCharges.map(h => (
+                        <div key={h.id} className="rounded-lg bg-white border border-amber-300 p-3 space-y-2">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-amber-100 text-amber-700">PENDENTE</span>
+                              <span className="text-sm font-semibold text-gray-900">{fmtBRL(h.amount)}</span>
+                              <span className="text-xs text-gray-600">{h.billing_type || h.method}</span>
+                              <span className="text-[10px] text-gray-500">{fmtDateTime(h.created_at)}</span>
+                            </div>
+                            {h.invoice_url && (
+                              <a href={h.invoice_url} target="_blank" rel="noopener noreferrer"
+                                className="text-xs font-medium text-blue-600 hover:underline flex items-center gap-1 shrink-0">
+                                <ExternalLink className="h-3 w-3" /> ver link
+                              </a>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 pt-1">
+                            <button type="button" onClick={() => handleResend(h.id)}
+                              disabled={resendingId === h.id || cancellingId === h.id}
+                              className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors">
+                              {resendingId === h.id
+                                ? <><Loader2 className="h-4 w-4 animate-spin" /> Enviando...</>
+                                : <><Send className="h-4 w-4" /> Reenviar link</>}
+                            </button>
+                            <button type="button" onClick={() => handleCancel(h.id)}
+                              disabled={resendingId === h.id || cancellingId === h.id}
+                              className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors">
+                              {cancellingId === h.id
+                                ? <><Loader2 className="h-4 w-4 animate-spin" /> Cancelando...</>
+                                : <><XCircle className="h-4 w-4" /> Cancelar cobrança</>}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })()}
 
                 {/* VALOR DESTAQUE */}
                 <div className="rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 p-4 text-center">
