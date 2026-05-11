@@ -159,7 +159,23 @@ export async function POST(req: NextRequest) {
     const provider = await getPaymentProviderForAccount(resolved.accountId, portalUser.company_id)
     if (!provider) return NextResponse.json({ error: 'Provider indisponivel' }, { status: 503 })
 
-    const idempotencyKey = `portal_pix_${receivable.id}_${Date.now()}`
+    // 2026-05-11 (V6 bug 6 race fix): idempotency_key ESTÁVEL (sem timestamp)
+    // por AR ativo. Payment.idempotency_key tem @unique no schema — 2º request
+    // concurrent vai cair em P2002 e ser tratado como "reusa o vencedor".
+    // Antes Payment antigo PENDING era reusado via findFirst, mas concurrent
+    // reads dos 2 requests viam "vazio" e criavam 2 Payments diferentes (cada
+    // um com timestamp único). Agora key é fixo por AR — 1 só ganha.
+    //
+    // Para permitir nova cobrança após Payment antigo virar CANCELLED/REFUNDED/etc,
+    // renomeia o key antigo pra archived_<old_id>_<ts> antes de tentar criar novo.
+    const idempotencyKey = `portal_pix_${receivable.id}`
+    const existingByKey = await prisma.payment.findUnique({ where: { idempotency_key: idempotencyKey } })
+    if (existingByKey && existingByKey.status !== 'PENDING') {
+      await prisma.payment.update({
+        where: { id: existingByKey.id },
+        data: { idempotency_key: `archived_${existingByKey.id}_${Date.now()}` },
+      })
+    }
     const charge = await provider.createPixCharge({
       amount: remaining,
       customerName: os.customers.legal_name,
@@ -171,25 +187,48 @@ export async function POST(req: NextRequest) {
       expiresInMinutes: 30,
     })
 
-    const payment = await prisma.payment.create({
-      data: {
-        company_id: portalUser.company_id,
-        service_order_id: os.id,
-        customer_id: portalUser.customer_id,
-        receivable_id: receivable.id,
-        provider: provider.name,
-        external_id: charge.externalId,
-        idempotency_key: idempotencyKey,
-        amount: remaining,
-        status: 'PENDING',
-        method: 'PIX',
-        billing_type: 'PIX',
-        qr_code: charge.qrCode,
-        qr_code_image: charge.qrCodeImage || null,
-        expires_at: charge.expiresAt,
-        metadata: { source: 'portal', account_id: resolved.accountId },
-      },
-    })
+    let payment
+    try {
+      payment = await prisma.payment.create({
+        data: {
+          company_id: portalUser.company_id,
+          service_order_id: os.id,
+          customer_id: portalUser.customer_id,
+          receivable_id: receivable.id,
+          provider: provider.name,
+          external_id: charge.externalId,
+          idempotency_key: idempotencyKey,
+          amount: remaining,
+          status: 'PENDING',
+          method: 'PIX',
+          billing_type: 'PIX',
+          qr_code: charge.qrCode,
+          qr_code_image: charge.qrCodeImage || null,
+          expires_at: charge.expiresAt,
+          metadata: { source: 'portal', account_id: resolved.accountId },
+        },
+      })
+    } catch (err: any) {
+      // P2002 race condition: outro request concurrent ganhou. Retorna o existente.
+      if (err?.code === 'P2002') {
+        const winner = await prisma.payment.findUnique({ where: { idempotency_key: idempotencyKey } })
+        if (winner) {
+          return NextResponse.json({
+            data: {
+              id: winner.id,
+              receivable_id: winner.receivable_id,
+              qr_code: winner.qr_code,
+              qr_code_image: winner.qr_code_image,
+              amount: winner.amount,
+              status: winner.status,
+              expires_at: winner.expires_at,
+              race_winner: true,
+            },
+          })
+        }
+      }
+      throw err
+    }
 
     // Vincula charge no AR
     await prisma.accountReceivable.update({

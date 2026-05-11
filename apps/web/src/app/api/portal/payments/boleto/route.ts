@@ -152,7 +152,15 @@ export async function POST(req: NextRequest) {
     const provider = await getPaymentProviderForAccount(resolved.accountId, portalUser.company_id)
     if (!provider) return NextResponse.json({ error: 'Provider indisponivel' }, { status: 503 })
 
-    const idempotencyKey = `portal_boleto_${receivable.id}_${Date.now()}`
+    // 2026-05-11 (V6 bug 6 race fix): idempotency stable + archive antigo
+    const idempotencyKey = `portal_boleto_${receivable.id}`
+    const existingByKey = await prisma.payment.findUnique({ where: { idempotency_key: idempotencyKey } })
+    if (existingByKey && existingByKey.status !== 'PENDING') {
+      await prisma.payment.update({
+        where: { id: existingByKey.id },
+        data: { idempotency_key: `archived_${existingByKey.id}_${Date.now()}` },
+      })
+    }
     const charge = await provider.createCharge({
       billingType: 'BOLETO',
       amount: remaining,
@@ -164,24 +172,45 @@ export async function POST(req: NextRequest) {
       dueDate: dueDate.toISOString().split('T')[0],
     })
 
-    const payment = await prisma.payment.create({
-      data: {
-        company_id: portalUser.company_id,
-        service_order_id: os.id,
-        customer_id: portalUser.customer_id,
-        receivable_id: receivable.id,
-        provider: provider.name,
-        external_id: charge.externalId,
-        idempotency_key: idempotencyKey,
-        amount: remaining,
-        status: 'PENDING',
-        method: 'BOLETO',
-        billing_type: 'BOLETO',
-        invoice_url: charge.invoiceUrl,
-        bank_slip_url: charge.bankSlipUrl || null,
-        metadata: { source: 'portal', account_id: resolved.accountId, due_days: dueDays },
-      },
-    })
+    let payment
+    try {
+      payment = await prisma.payment.create({
+        data: {
+          company_id: portalUser.company_id,
+          service_order_id: os.id,
+          customer_id: portalUser.customer_id,
+          receivable_id: receivable.id,
+          provider: provider.name,
+          external_id: charge.externalId,
+          idempotency_key: idempotencyKey,
+          amount: remaining,
+          status: 'PENDING',
+          method: 'BOLETO',
+          billing_type: 'BOLETO',
+          invoice_url: charge.invoiceUrl,
+          bank_slip_url: charge.bankSlipUrl || null,
+          metadata: { source: 'portal', account_id: resolved.accountId, due_days: dueDays },
+        },
+      })
+    } catch (err: any) {
+      if (err?.code === 'P2002') {
+        const winner = await prisma.payment.findUnique({ where: { idempotency_key: idempotencyKey } })
+        if (winner) {
+          return NextResponse.json({
+            data: {
+              id: winner.id,
+              receivable_id: winner.receivable_id,
+              invoice_url: winner.invoice_url,
+              bank_slip_url: winner.bank_slip_url,
+              amount: winner.amount,
+              status: winner.status,
+              race_winner: true,
+            },
+          })
+        }
+      }
+      throw err
+    }
 
     await prisma.accountReceivable.update({
       where: { id: receivable.id },
