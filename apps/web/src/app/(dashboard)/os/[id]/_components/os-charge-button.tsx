@@ -593,9 +593,13 @@ export default function OsChargeButton({ osId, osNumber, totalCost }: {
     return (
       <>
         <button type="button" onClick={() => setOpen(true)}
-          className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-100 transition-colors"
-          title="OS já tem cobrança ativa — abra pra reenviar ou cancelar">
-          <Send className="h-4 w-4" /> Reenviar
+          className="relative flex items-center gap-1.5 rounded-lg border border-amber-400 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-800 hover:bg-amber-100 transition-colors cursor-pointer"
+          title="OS já tem cobrança ativa — abra para reenviar o link ou cancelar">
+          <span className="relative inline-flex">
+            <CreditCard className="h-4 w-4" />
+            <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-amber-50" aria-hidden="true" />
+          </span>
+          Cobrança ativa
         </button>
         <OsChargeModal osId={osId} osNumber={osNumber} totalCost={totalCost}
           open={open} onClose={() => setOpen(false)} />
