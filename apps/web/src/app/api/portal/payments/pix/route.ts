@@ -170,10 +170,20 @@ export async function POST(req: NextRequest) {
     // renomeia o key antigo pra archived_<old_id>_<ts> antes de tentar criar novo.
     const idempotencyKey = `portal_pix_${receivable.id}`
     const existingByKey = await prisma.payment.findUnique({ where: { idempotency_key: idempotencyKey } })
-    if (existingByKey && existingByKey.status !== 'PENDING') {
+    // 2026-05-11 (V7 bug 7): archive tambem se PENDING mas EXPIRADO. Antes
+    // PIX expirado virava 'race_winner' mantido — cliente recebia link que
+    // Asaas ja recusou. Agora libera slot pra novo PIX.
+    const isExpiredPending = existingByKey?.status === 'PENDING'
+      && existingByKey?.expires_at !== null
+      && existingByKey?.expires_at !== undefined
+      && new Date(existingByKey.expires_at) < new Date()
+    if (existingByKey && (existingByKey.status !== 'PENDING' || isExpiredPending)) {
       await prisma.payment.update({
         where: { id: existingByKey.id },
-        data: { idempotency_key: `archived_${existingByKey.id}_${Date.now()}` },
+        data: {
+          idempotency_key: `archived_${existingByKey.id}_${Date.now()}`,
+          ...(isExpiredPending && { status: 'EXPIRED' }),
+        },
       })
     }
     const charge = await provider.createPixCharge({
