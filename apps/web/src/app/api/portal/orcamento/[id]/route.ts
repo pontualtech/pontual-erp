@@ -393,8 +393,12 @@ export async function POST(request: NextRequest, { params }: Params) {
 
       // Buscar status "Orçar Negociar" — cliente recusou, mas vamos tentar renegociar
       // Fallback para "Recusado" se Orçar Negociar não existir
+      // IMPORTANTE: usar `equals` em vez de `contains` — `contains: 'Negociar'` casava
+      // ambos "Orcar Negociar" E "Renegociar", e findFirst retornava "Renegociar"
+      // primeiro (não-determinístico, depende da ordem física no banco). Bug histórico
+      // até 11/05/2026 fez 25 OSs irem direto pra Renegociar na 1ª recusa.
       let targetStatus = await prisma.moduleStatus.findFirst({
-        where: { company_id: os.company_id, module: 'os', name: { contains: 'Negociar', mode: 'insensitive' } },
+        where: { company_id: os.company_id, module: 'os', name: { equals: 'Orcar Negociar', mode: 'insensitive' } },
       })
       if (!targetStatus) {
         targetStatus = await prisma.moduleStatus.findFirst({

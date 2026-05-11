@@ -38,12 +38,16 @@ export async function PUT(req: NextRequest) {
     let newStatusId: string | null = null
 
     // Resolve status by name
+    // 2026-05-11: trocado `contains` por `equals` — `contains` casava nomes
+    // ambíguos (ex: passar status='Negociar' casava AMBOS 'Orcar Negociar' e
+    // 'Renegociar'). Como callers do bot já passam nomes completos
+    // ('Orcar Negociar' | 'Renegociar'), `equals` é correto e mais seguro.
     if (status) {
       const targetStatus = await prisma.moduleStatus.findFirst({
         where: {
           company_id: companyId,
           module: 'os',
-          name: { contains: status, mode: 'insensitive' },
+          name: { equals: status, mode: 'insensitive' },
         },
       })
 

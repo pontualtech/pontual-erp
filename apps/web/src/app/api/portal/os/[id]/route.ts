@@ -362,8 +362,11 @@ export async function POST(
       }
       if (!targetStatus) {
         // 1st rejection → "Orçar Negociar"
+        // IMPORTANTE: usar `equals` (não `contains`) — `contains: 'Negociar'` casava
+        // tanto "Orcar Negociar" quanto "Renegociar", e findFirst retornava
+        // "Renegociar" primeiro. Bug histórico fix 2026-05-11.
         targetStatus = await prisma.moduleStatus.findFirst({
-          where: { company_id: portalUser.company_id, module: 'os', name: { contains: 'Negociar', mode: 'insensitive' } },
+          where: { company_id: portalUser.company_id, module: 'os', name: { equals: 'Orcar Negociar', mode: 'insensitive' } },
         })
       }
       if (!targetStatus) {
