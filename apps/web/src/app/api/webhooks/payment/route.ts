@@ -427,24 +427,39 @@ export async function POST(req: NextRequest) {
             creditAccountId = inferred?.id ?? null
           }
           if (creditAccountId) {
-            await tx.transaction.create({
-              data: {
+            // 2026-05-11 (V4 bug 4): idempotência por bank_ref. Antes, se Asaas
+            // mandasse RECEIVED depois de DISPUTED → RECEIVED (comerciante ganha
+            // chargeback), o handler criava Transaction CREDIT de novo —
+            // duplicava o crédito e inflava saldo. Agora checa se já existe
+            // Transaction CREDIT com mesmo bank_ref antes de criar.
+            const existingCredit = await tx.transaction.findFirst({
+              where: {
                 company_id: fresh.company_id,
-                account_id: creditAccountId,
-                transaction_type: 'CREDIT',
-                amount: fresh.amount,
-                description: `Recebimento Asaas (${billingType || 'PIX'}): ${receivable.description}`,
                 bank_ref: asaasPayment.id,
-                transaction_date: new Date(),
+                transaction_type: 'CREDIT',
               },
+              select: { id: true },
             })
-            await tx.account.update({
-              where: { id: creditAccountId },
-              data: {
-                current_balance: { increment: fresh.amount },
-                updated_at: new Date(),
-              },
-            })
+            if (!existingCredit) {
+              await tx.transaction.create({
+                data: {
+                  company_id: fresh.company_id,
+                  account_id: creditAccountId,
+                  transaction_type: 'CREDIT',
+                  amount: fresh.amount,
+                  description: `Recebimento Asaas (${billingType || 'PIX'}): ${receivable.description}`,
+                  bank_ref: asaasPayment.id,
+                  transaction_date: new Date(),
+                },
+              })
+              await tx.account.update({
+                where: { id: creditAccountId },
+                data: {
+                  current_balance: { increment: fresh.amount },
+                  updated_at: new Date(),
+                },
+              })
+            }
           }
 
           // 2026-05-11 Fase 2 (cartao online + fix gap DRE): lancamento contabil
@@ -459,7 +474,22 @@ export async function POST(req: NextRequest) {
           try {
             const chartAccount = await resolveRevenueChart(tx, fresh.company_id, billingType)
 
-            if (chartAccount) {
+            // 2026-05-11 (V4 bug 4): idempotência FiscalEntry positivo. Mesmo
+            // problema do Transaction acima — RECEIVED após DISPUTED criava
+            // FE duplicado. Checa se já existe FE com payment_id + amount
+            // positivo antes de criar.
+            const existingPositive = chartAccount ? await tx.fiscalEntry.findFirst({
+              where: {
+                company_id: fresh.company_id,
+                payment_id: fresh.id,
+                amount: { gt: 0 },
+              },
+              select: { id: true },
+            }) : null
+
+            if (!chartAccount) {
+              console.warn(`[Webhook FiscalEntry] Empresa ${fresh.company_id} sem AccountChart REVENUE configurado — recebimento ${asaasPayment.id} NAO foi lancado no DRE. Configure plano de contas.`)
+            } else if (!existingPositive) {
               await tx.fiscalEntry.create({
                 data: {
                   company_id: fresh.company_id,
@@ -478,9 +508,8 @@ export async function POST(req: NextRequest) {
                   },
                 },
               })
-            } else {
-              console.warn(`[Webhook FiscalEntry] Empresa ${fresh.company_id} sem AccountChart REVENUE configurado — recebimento ${asaasPayment.id} NAO foi lancado no DRE. Configure plano de contas.`)
             }
+            // else: FE positivo ja existe — idempotente, no-op silencioso
           } catch (fiscalErr) {
             // Falha no FiscalEntry NAO deve quebrar a transacao da auto-baixa.
             // Log + segue — operacao manual de ajuste DRE pode ser feita depois.
