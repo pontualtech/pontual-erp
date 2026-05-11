@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json()
     // Accept aliases from n8n/external systems (Dify Ana/Grazi use portuguese aliases)
-    let { nome, documento, telefone, email, cep, endereco, numero, complemento, bairro, cidade, uf, equipamento, marca, modelo, numero_serie, defeito, observacoes, origem } = body
+    let { nome, documento, telefone, email, cep, endereco, numero, complemento, bairro, cidade, uf, equipamento, marca, modelo, numero_serie, defeito, observacoes, origem, gclid, gbraid, wbraid, utm_source, utm_medium, utm_campaign, utm_term, utm_content, fbclid, msclkid } = body
     nome = nome || body.cliente_nome || body.name || body.customer_name
     documento = documento || body.cpf_cnpj || body.cpf || body.cnpj || body.document || body.documento || body.cpfcnpj
     telefone = telefone || body.cliente_telefone || body.phone || body.mobile || body.phone_number || body.celular || body.whatsapp
@@ -300,6 +300,14 @@ export async function POST(req: NextRequest) {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey})`
       const osNumber = await getNextOsNumber(companyId, tx as any)
 
+      const trackingFields = { gclid, gbraid, wbraid, utm_source, utm_medium, utm_campaign, utm_term, utm_content, fbclid, msclkid }
+      const tracking = Object.fromEntries(
+        Object.entries(trackingFields).filter(([, v]) => v != null && v !== ''),
+      )
+      const customData = Object.keys(tracking).length > 0
+        ? { tracking, tracking_captured_at: new Date().toISOString() }
+        : undefined
+
       const created = await tx.serviceOrder.create({
         data: {
           company_id: companyId,
@@ -316,6 +324,7 @@ export async function POST(req: NextRequest) {
           reported_issue: defeito || 'Sem descricao',
           reception_notes: observacoes || undefined,
           internal_notes: `[BOT ANA] OS aberta em ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}. Cliente: ${customer.legal_name}. Tel: ${telefone || 'N/I'}.`,
+          ...(customData ? { custom_data: customData } : {}),
         },
       })
 
