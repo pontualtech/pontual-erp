@@ -3,6 +3,8 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { logAudit } from '@/lib/audit'
 import { getPaymentProviderForAccount } from '@/lib/payments/factory'
+import { sendCompanyEmail } from '@/lib/send-email'
+import { escapeHtml } from '@/lib/escape-html'
 
 /**
  * POST /api/os/[id]/charge/[chargeId]/cancel
@@ -28,6 +30,14 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
 
     const payment = await prisma.payment.findUnique({
       where: { id: params.chargeId },
+      include: {
+        service_orders: {
+          include: {
+            customers: { select: { id: true, legal_name: true, email: true, mobile: true, phone: true } },
+            companies: { select: { name: true } },
+          },
+        },
+      },
     })
     if (!payment) return NextResponse.json({ error: 'Cobranca nao encontrada' }, { status: 404 })
     if (payment.company_id !== auth.companyId) {
@@ -101,6 +111,63 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
       })
     }
 
+    // 2026-05-11: notifica cliente do cancelamento (Karlao reportou que nao
+    // recebia email/WhatsApp). WhatsApp via texto livre (sem template — nao
+    // ha pt_cobranca_cancel template). Fire-and-forget — falha nao bloqueia
+    // resposta ao atendente.
+    const os = payment.service_orders
+    const customer = os?.customers
+    const companyName = os?.companies?.name || 'PontualERP'
+    const osNum = os ? String(os.os_number).padStart(4, '0') : ''
+    const valorBRL = (payment.amount / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+    const metodoLabel: Record<string, string> = {
+      PIX: 'PIX', BOLETO: 'Boleto', CREDIT_CARD: 'Cartao de credito',
+    }
+    const metodo = metodoLabel[payment.billing_type || ''] || payment.billing_type || payment.method || 'cobranca'
+
+    let notifiedEmail = false
+    let notifiedWhatsapp = false
+
+    if (customer && os) {
+      if (customer.email) {
+        const html = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;background:#f4f4f5;padding:20px;">
+          <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;">
+            <div style="background:#dc2626;padding:24px 32px;color:#fff;">
+              <h1 style="margin:0;font-size:20px;">${escapeHtml(companyName)}</h1>
+              <p style="margin:4px 0 0;font-size:14px;">Cobranca cancelada — OS #${osNum}</p>
+            </div>
+            <div style="padding:32px;color:#1f2937;">
+              <p>Ola, <strong>${escapeHtml(customer.legal_name || 'Cliente')}</strong>.</p>
+              <p>Informamos que a cobranca referente a OS #${osNum} foi <strong>cancelada</strong>:</p>
+              <table width="100%" cellpadding="8" style="background:#f9fafb;border-radius:6px;margin:16px 0;">
+                <tr><td>Valor</td><td style="text-align:right;font-weight:bold;">${valorBRL}</td></tr>
+                <tr><td>Forma</td><td style="text-align:right;">${metodo}</td></tr>
+              </table>
+              <p style="margin-top:16px;font-size:13px;color:#6b7280;">O link de pagamento anterior nao tem mais validade. Caso precise de uma nova forma de pagamento, entre em contato com nosso suporte.</p>
+            </div>
+          </div>
+        </body></html>`
+        try {
+          await sendCompanyEmail(payment.company_id, customer.email, `Cobranca cancelada — OS #${osNum} — ${companyName}`, html)
+          notifiedEmail = true
+        } catch (e) {
+          console.warn('[OS Charge Cancel] sendCompanyEmail falhou:', e instanceof Error ? e.message : e)
+        }
+      }
+      const phone = customer.mobile || customer.phone
+      if (phone) {
+        const firstName = (customer.legal_name || 'Cliente').split(' ')[0]
+        const msg = `Ola, ${firstName}. Informamos que a cobranca de ${valorBRL} (${metodo}) referente a OS #${osNum} foi *cancelada*. O link anterior nao e mais valido. Caso precise de nova forma de pagamento, entre em contato com nosso suporte.`
+        try {
+          const { sendWhatsAppCloud } = await import('@/lib/whatsapp/cloud-api')
+          await sendWhatsAppCloud(payment.company_id, phone, msg)
+          notifiedWhatsapp = true
+        } catch (e) {
+          console.warn('[OS Charge Cancel] sendWhatsAppCloud falhou:', e instanceof Error ? e.message : e)
+        }
+      }
+    }
+
     logAudit({
       companyId: auth.companyId,
       userId: auth.id,
@@ -112,6 +179,8 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
         external_id: payment.external_id,
         provider_cancelled: providerCancelled,
         provider_error: providerError,
+        notified_email: notifiedEmail,
+        notified_whatsapp: notifiedWhatsapp,
       },
     })
 
@@ -119,6 +188,8 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
       success: true,
       payment_id: payment.id,
       provider_cancelled: providerCancelled,
+      notified_email: notifiedEmail,
+      notified_whatsapp: notifiedWhatsapp,
       ...(providerError && { provider_warning: 'Cancelamento local feito, mas provider falhou — verifique manualmente no Asaas se a cobranca foi removida.' }),
     })
   } catch (err) {

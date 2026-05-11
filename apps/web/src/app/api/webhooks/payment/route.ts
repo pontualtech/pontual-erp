@@ -9,7 +9,11 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   OVERDUE: ['CONFIRMED', 'RECEIVED', 'DELETED', 'CANCELLED'],
   CONFIRMED: ['RECEIVED', 'REFUNDED', 'PARTIALLY_REFUNDED'],
   RECEIVED: ['REFUNDED', 'PARTIALLY_REFUNDED'],
-  CANCELLED: [], // terminal — log conflict if payment arrives after cancel
+  // 2026-05-11: CANCELLED -> DELETED aceito como idempotente. Cenario:
+  // atendente cancela via /charge/[id]/cancel (Payment local vira CANCELLED
+  // e Asaas tambem cancela). Asaas envia PAYMENT_DELETED webhook depois —
+  // antes caia em "Invalid transition" e logava warning falso. Agora aceita.
+  CANCELLED: ['DELETED'],
 }
 
 // Map Asaas webhook events to internal payment status

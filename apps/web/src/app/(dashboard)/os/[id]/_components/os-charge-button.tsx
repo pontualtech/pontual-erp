@@ -175,10 +175,15 @@ export function OsChargeModal({ osId, osNumber, totalCost, open, onClose }: {
       })
       const data = await res.json()
       if (!res.ok) { toast.error(data.error || 'Falha ao cancelar'); return }
+      const channels: string[] = []
+      if (data.notified_whatsapp) channels.push('WhatsApp')
+      if (data.notified_email) channels.push('E-mail')
       if (data.provider_warning) {
         toast.warning(data.provider_warning)
+      } else if (channels.length > 0) {
+        toast.success(`Cobrança cancelada e cliente avisado por ${channels.join(' + ')}`)
       } else {
-        toast.success('Cobrança cancelada')
+        toast.success('Cobrança cancelada (cliente sem contato cadastrado pra notificar)')
       }
       fetch(`/api/os/${osId}/charge`).then(r => r.json()).then(d => setHistory(d.data || [])).catch(() => {})
     } catch {
