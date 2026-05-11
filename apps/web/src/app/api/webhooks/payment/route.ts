@@ -364,6 +364,58 @@ export async function POST(req: NextRequest) {
             })
           }
 
+          // 2026-05-11 Fase 2 (cartao online + fix gap DRE): lancamento contabil
+          // automatico no recebimento. Antes o webhook so atualizava saldo da
+          // conta — DRE (via MV dre_monthly) nao enxergava nenhum recebimento
+          // PIX/Boleto/Cartao. Agora cria FiscalEntry vinculado ao Payment.
+          //
+          // chart_account_id: usa primeira AccountChart REVENUE da empresa
+          // (preferindo nome contendo "Servic" ou "Receita"). Se nao houver
+          // plano de contas configurado, NAO bloqueia o webhook — apenas
+          // loga warning. Gap silencioso vira gap explicito no log.
+          try {
+            const chartAccount = await tx.accountChart.findFirst({
+              where: {
+                company_id: fresh.company_id,
+                is_active: true,
+                account_type: 'REVENUE',
+                OR: [
+                  { name: { contains: 'Servic', mode: 'insensitive' } },
+                  { name: { contains: 'Receita', mode: 'insensitive' } },
+                ],
+              },
+              orderBy: { display_order: 'asc' },
+              select: { id: true },
+            })
+
+            if (chartAccount) {
+              await tx.fiscalEntry.create({
+                data: {
+                  company_id: fresh.company_id,
+                  entry_date: new Date(),
+                  cash_date: new Date(),
+                  chart_account_id: chartAccount.id,
+                  payment_id: fresh.id,
+                  amount: BigInt(fresh.amount),
+                  description: `Recebimento ${billingType || 'PIX'}: ${receivable.description}`,
+                  source: 'PAYMENT',
+                  is_provisional: false,
+                  metadata: {
+                    asaas_id: asaasPayment.id,
+                    billing_type: billingType || null,
+                    receivable_id: fresh.receivable_id,
+                  },
+                },
+              })
+            } else {
+              console.warn(`[Webhook FiscalEntry] Empresa ${fresh.company_id} sem AccountChart REVENUE configurado — recebimento ${asaasPayment.id} NAO foi lancado no DRE. Configure plano de contas.`)
+            }
+          } catch (fiscalErr) {
+            // Falha no FiscalEntry NAO deve quebrar a transacao da auto-baixa.
+            // Log + segue — operacao manual de ajuste DRE pode ser feita depois.
+            console.error('[Webhook FiscalEntry] Falha ao criar lancamento DRE:', fiscalErr instanceof Error ? fiscalErr.message : fiscalErr)
+          }
+
           // Append nas obs internas da OS — historico visivel pro atendente
           if (fresh.service_order_id) {
             const so = await tx.serviceOrder.findUnique({
@@ -422,6 +474,48 @@ export async function POST(req: NextRequest) {
               updated_at: new Date(),
             },
           })
+
+          // 2026-05-11 Fase 2: criar FiscalEntry de estorno (amount negativo)
+          // pra DRE refletir o refund. Sem isso, a venda fica computada como
+          // receita mesmo apos estorno.
+          try {
+            const refundChartAccount = await tx.accountChart.findFirst({
+              where: {
+                company_id: fresh.company_id,
+                is_active: true,
+                account_type: 'REVENUE',
+                OR: [
+                  { name: { contains: 'Servic', mode: 'insensitive' } },
+                  { name: { contains: 'Receita', mode: 'insensitive' } },
+                ],
+              },
+              orderBy: { display_order: 'asc' },
+              select: { id: true },
+            })
+            if (refundChartAccount) {
+              await tx.fiscalEntry.create({
+                data: {
+                  company_id: fresh.company_id,
+                  entry_date: new Date(),
+                  cash_date: new Date(),
+                  chart_account_id: refundChartAccount.id,
+                  payment_id: fresh.id,
+                  amount: BigInt(-fresh.amount),
+                  description: `ESTORNO ${fresh.billing_type || fresh.method || 'PIX'}: ${receivable.description}`,
+                  source: 'PAYMENT',
+                  is_provisional: false,
+                  metadata: {
+                    asaas_id: asaasPayment.id,
+                    billing_type: fresh.billing_type || null,
+                    receivable_id: fresh.receivable_id,
+                    refund: true,
+                  },
+                },
+              })
+            }
+          } catch (refundFiscalErr) {
+            console.error('[Webhook FiscalEntry Refund] Falha ao lancar estorno DRE:', refundFiscalErr instanceof Error ? refundFiscalErr.message : refundFiscalErr)
+          }
         }
       }
 

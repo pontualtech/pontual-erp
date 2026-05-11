@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { CreditCard, Zap, FileText, Loader2, X, Copy, Check, ExternalLink, Clock, RefreshCw } from 'lucide-react'
+import { CreditCard, Zap, FileText, Loader2, X, Copy, Check, ExternalLink, Clock, RefreshCw, Wallet } from 'lucide-react'
 
 type PixPayment = {
   id: string
@@ -24,6 +24,14 @@ type BoletoPayment = {
   due_date: string | null
 }
 
+type CardPayment = {
+  id: string
+  receivable_id: string
+  invoice_url: string | null
+  amount: number
+  status: string
+}
+
 function fmtBRL(cents: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cents / 100)
 }
@@ -38,9 +46,10 @@ export default function PortalPayBox({ osId, totalCost, alreadyPaid }: {
   totalCost: number
   alreadyPaid: boolean
 }) {
-  const [loading, setLoading] = useState<'pix' | 'boleto' | null>(null)
+  const [loading, setLoading] = useState<'pix' | 'boleto' | 'card' | null>(null)
   const [pix, setPix] = useState<PixPayment | null>(null)
   const [boleto, setBoleto] = useState<BoletoPayment | null>(null)
+  const [card, setCard] = useState<CardPayment | null>(null)
   const [paid, setPaid] = useState(false)
   const [copied, setCopied] = useState(false)
   const [verifying, setVerifying] = useState(false)
@@ -110,6 +119,24 @@ export default function PortalPayBox({ osId, totalCost, alreadyPaid }: {
     } finally { setLoading(null) }
   }
 
+  async function createCard() {
+    setLoading('card')
+    try {
+      const res = await fetch('/api/portal/payments/credit-card', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ service_order_id: osId }),
+      })
+      const j = await res.json()
+      if (!res.ok) { toast.error(j.error || 'Falha ao gerar cobranca cartao'); return }
+      setCard(j.data)
+      if (j.data.invoice_url) window.open(j.data.invoice_url, '_blank')
+      startPolling(j.data.id)
+    } catch {
+      toast.error('Erro de rede')
+    } finally { setLoading(null) }
+  }
+
   function startPolling(paymentId: string) {
     if (pollRef.current) clearInterval(pollRef.current)
     pollRef.current = setInterval(async () => {
@@ -124,7 +151,7 @@ export default function PortalPayBox({ osId, totalCost, alreadyPaid }: {
         } else if (data.status === 'EXPIRED' || data.status === 'CANCELLED') {
           toast.error('Pagamento expirou. Gere um novo.')
           if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
-          setPix(null); setBoleto(null)
+          setPix(null); setBoleto(null); setCard(null)
         }
       } catch { /* retry next tick */ }
     }, 5000)
@@ -150,7 +177,7 @@ export default function PortalPayBox({ osId, totalCost, alreadyPaid }: {
    * botao "Ja paguei?" dispara GET direto no Asaas pra conferir status.
    */
   async function verifyPayment() {
-    const paymentId = pix?.id || boleto?.id
+    const paymentId = pix?.id || boleto?.id || card?.id
     if (!paymentId) return
     setVerifying(true)
     try {
@@ -203,19 +230,26 @@ export default function PortalPayBox({ osId, totalCost, alreadyPaid }: {
           <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{fmtBRL(totalCost)}</p>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <button type="button" onClick={createPix} disabled={loading !== null}
-            className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-emerald-500 bg-white hover:bg-emerald-50 dark:bg-gray-800 dark:hover:bg-emerald-950/30 transition-all disabled:opacity-50">
+            className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-emerald-500 bg-white hover:bg-emerald-50 dark:bg-gray-800 dark:hover:bg-emerald-950/30 transition-all disabled:opacity-50 cursor-pointer">
             {loading === 'pix' ? <Loader2 className="h-6 w-6 animate-spin text-emerald-600" /> : <Zap className="h-6 w-6 text-emerald-600" />}
             <span className="font-bold text-sm text-emerald-700 dark:text-emerald-400">PIX</span>
-            <span className="text-[11px] text-gray-500 text-center">Pague agora, confirmação instantânea</span>
+            <span className="text-[11px] text-gray-500 text-center">Confirmação instantânea</span>
           </button>
 
           <button type="button" onClick={createBoleto} disabled={loading !== null}
-            className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-amber-500 bg-white hover:bg-amber-50 dark:bg-gray-800 dark:hover:bg-amber-950/30 transition-all disabled:opacity-50">
+            className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-amber-500 bg-white hover:bg-amber-50 dark:bg-gray-800 dark:hover:bg-amber-950/30 transition-all disabled:opacity-50 cursor-pointer">
             {loading === 'boleto' ? <Loader2 className="h-6 w-6 animate-spin text-amber-600" /> : <FileText className="h-6 w-6 text-amber-600" />}
             <span className="font-bold text-sm text-amber-700 dark:text-amber-400">Boleto</span>
             <span className="text-[11px] text-gray-500 text-center">À vista (vence hoje)</span>
+          </button>
+
+          <button type="button" onClick={createCard} disabled={loading !== null}
+            className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-indigo-500 bg-white hover:bg-indigo-50 dark:bg-gray-800 dark:hover:bg-indigo-950/30 transition-all disabled:opacity-50 cursor-pointer">
+            {loading === 'card' ? <Loader2 className="h-6 w-6 animate-spin text-indigo-600" /> : <Wallet className="h-6 w-6 text-indigo-600" />}
+            <span className="font-bold text-sm text-indigo-700 dark:text-indigo-400">Cartão</span>
+            <span className="text-[11px] text-gray-500 text-center">À vista (parcelado em breve)</span>
           </button>
         </div>
 
@@ -234,7 +268,29 @@ export default function PortalPayBox({ osId, totalCost, alreadyPaid }: {
               )}
             </div>
             <button type="button" onClick={verifyPayment} disabled={verifying}
-              className="w-full rounded-lg border-2 border-emerald-500 bg-white text-emerald-700 hover:bg-emerald-50 py-2 text-xs font-semibold flex items-center justify-center gap-2 disabled:opacity-50">
+              className="w-full rounded-lg border-2 border-emerald-500 bg-white text-emerald-700 hover:bg-emerald-50 py-2 text-xs font-semibold flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer">
+              {verifying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              Ja paguei — verificar agora
+            </button>
+          </div>
+        )}
+
+        {card && !paid && (
+          <div className="mt-4 rounded-xl border border-indigo-300 bg-indigo-50 dark:bg-indigo-950/30 dark:border-indigo-800 p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4 text-indigo-600" />
+                <p className="text-xs text-indigo-800 dark:text-indigo-300">Cobrança cartão gerada. Aguardando pagamento...</p>
+              </div>
+              {card.invoice_url && (
+                <a href={card.invoice_url} target="_blank" rel="noopener noreferrer"
+                  className="text-xs font-semibold text-indigo-700 hover:underline flex items-center gap-1">
+                  <ExternalLink className="h-3 w-3" /> abrir
+                </a>
+              )}
+            </div>
+            <button type="button" onClick={verifyPayment} disabled={verifying}
+              className="w-full rounded-lg border-2 border-emerald-500 bg-white text-emerald-700 hover:bg-emerald-50 py-2 text-xs font-semibold flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer">
               {verifying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
               Ja paguei — verificar agora
             </button>
