@@ -14,7 +14,11 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   // DISPUTED pode resolver pra (a) RECEIVED (comerciante ganhou disputa) ou
   // (b) REFUNDED via AWAITING_CHARGEBACK_REVERSAL (cliente ganhou, Asaas
   // estorna). REFUND_PENDING e estado transicional do Asaas refund.
-  DISPUTED: ['RECEIVED', 'REFUNDED', 'REFUND_PENDING'],
+  // 2026-05-11: DISPUTED -> DISPUTED aceito pra permitir multiplos eventos
+  // chargeback consecutivos (REQUESTED + DISPUTE + AWAITING_REVERSAL) sem
+  // bloquear no transition check. Cada evento diferencia comportamento via
+  // event name no handler (isReversal).
+  DISPUTED: ['DISPUTED', 'RECEIVED', 'REFUNDED', 'REFUND_PENDING'],
   REFUND_PENDING: ['REFUNDED'],
   // 2026-05-11: CANCELLED -> DELETED aceito como idempotente. Cenario:
   // atendente cancela via /charge/[id]/cancel (Payment local vira CANCELLED
