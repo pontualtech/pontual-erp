@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { CreditCard, Loader2, X, Copy, ExternalLink, Check, Zap, FileText, Wallet, Mail, MessageSquare, Clock, History, Send } from 'lucide-react'
+import { CreditCard, Loader2, X, Copy, ExternalLink, Check, Zap, FileText, Wallet, Mail, MessageSquare, Clock, History, Send, XCircle } from 'lucide-react'
 
 type Account = {
   id: string
@@ -71,6 +71,7 @@ export function OsChargeModal({ osId, osNumber, totalCost, open, onClose }: {
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<{ invoice_url: string; billing_type: string; amount: number } | null>(null)
   const [resendingId, setResendingId] = useState<string | null>(null)
+  const [cancellingId, setCancellingId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -154,6 +155,29 @@ export function OsChargeModal({ osId, osNumber, totalCost, open, onClose }: {
       toast.error('Erro de rede')
     } finally {
       setResendingId(null)
+    }
+  }
+
+  async function handleCancel(chargeId: string) {
+    if (!confirm('Cancelar essa cobrança? A dívida do AR continua, mas o link Asaas é desativado e você pode gerar nova forma de pagamento depois.')) return
+    setCancellingId(chargeId)
+    try {
+      const res = await fetch(`/api/os/${osId}/charge/${chargeId}/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      const data = await res.json()
+      if (!res.ok) { toast.error(data.error || 'Falha ao cancelar'); return }
+      if (data.provider_warning) {
+        toast.warning(data.provider_warning)
+      } else {
+        toast.success('Cobrança cancelada')
+      }
+      fetch(`/api/os/${osId}/charge`).then(r => r.json()).then(d => setHistory(d.data || [])).catch(() => {})
+    } catch {
+      toast.error('Erro de rede')
+    } finally {
+      setCancellingId(null)
     }
   }
 
@@ -422,12 +446,22 @@ export function OsChargeModal({ osId, osNumber, totalCost, open, onClose }: {
                               )}
                               {h.status === 'PENDING' && h.invoice_url && (
                                 <button type="button" onClick={() => handleResend(h.id)}
-                                  disabled={resendingId === h.id}
+                                  disabled={resendingId === h.id || cancellingId === h.id}
                                   className="text-xs font-medium text-emerald-700 hover:text-emerald-800 hover:underline flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                                   title="Reenviar link de pagamento ao cliente">
                                   {resendingId === h.id
                                     ? <><Loader2 className="h-3 w-3 animate-spin" /> enviando...</>
                                     : <><Send className="h-3 w-3" /> reenviar</>}
+                                </button>
+                              )}
+                              {h.status === 'PENDING' && (
+                                <button type="button" onClick={() => handleCancel(h.id)}
+                                  disabled={resendingId === h.id || cancellingId === h.id}
+                                  className="text-xs font-medium text-red-700 hover:text-red-800 hover:underline flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                                  title="Cancelar cobrança (desativa link Asaas — você pode gerar outra forma depois)">
+                                  {cancellingId === h.id
+                                    ? <><Loader2 className="h-3 w-3 animate-spin" /> cancelando...</>
+                                    : <><XCircle className="h-3 w-3" /> cancelar</>}
                                 </button>
                               )}
                             </div>
@@ -461,6 +495,15 @@ export function OsChargeModal({ osId, osNumber, totalCost, open, onClose }: {
  * Botao + Modal integrados. Use esse componente quando quer o botao verde
  * "Cobrar" direto na tela (ex: cabecalho da OS). Pra trigger customizado
  * (ex: item de menu), importe `OsChargeModal` e controle o open externamente.
+ *
+ * 2026-05-11: botão agora é condicional ao estado das cobranças. Se a OS
+ * já tem Payment PENDING ativa (qualquer método), botão muda pra
+ * "Reenviar" (ícone Send) e abre o modal com histórico expandido pra
+ * atendente reusar/cancelar a existente. Sem PENDING, mostra "Cobrar".
+ *
+ * Caso real OS 60471 Karlão: cliente já tinha cobrança Boleto ativa,
+ * atendente clicou "Cobrar" e gerou outra em método diferente — fix
+ * complementa o backend (que agora bloqueia 409) com UX consistente.
  */
 export default function OsChargeButton({ osId, osNumber, totalCost }: {
   osId: string
@@ -468,6 +511,35 @@ export default function OsChargeButton({ osId, osNumber, totalCost }: {
   totalCost: number
 }) {
   const [open, setOpen] = useState(false)
+  const [hasPending, setHasPending] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(`/api/os/${osId}/charge`, { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : { data: [] })
+      .then(d => {
+        if (cancelled) return
+        const list = (d.data || []) as ChargeHistoryItem[]
+        setHasPending(list.some(p => p.status === 'PENDING'))
+      })
+      .catch(() => { if (!cancelled) setHasPending(false) })
+    return () => { cancelled = true }
+  }, [osId, open])
+
+  if (hasPending === true) {
+    return (
+      <>
+        <button type="button" onClick={() => setOpen(true)}
+          className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-100 transition-colors"
+          title="OS já tem cobrança ativa — abra pra reenviar ou cancelar">
+          <Send className="h-4 w-4" /> Reenviar
+        </button>
+        <OsChargeModal osId={osId} osNumber={osNumber} totalCost={totalCost}
+          open={open} onClose={() => setOpen(false)} />
+      </>
+    )
+  }
+
   return (
     <>
       <button type="button" onClick={() => setOpen(true)}

@@ -4,6 +4,7 @@ import { getPortalUserFromRequest } from '@/lib/portal-auth'
 import { getPaymentProviderForAccount } from '@/lib/payments/factory'
 import { resolveDefaultProviderAccount } from '@/lib/payments/resolve-account'
 import { canCustomerPayOS, PAYMENT_BLOCKED_MESSAGE } from '@/lib/os-payment-rules'
+import { findActivePendingPaymentForOs } from '@/lib/payments/find-active-charge'
 
 /**
  * POST /api/portal/payments/credit-card
@@ -53,6 +54,22 @@ export async function POST(req: NextRequest) {
 
     if (!canCustomerPayOS(os.module_statuses?.name)) {
       return NextResponse.json({ error: PAYMENT_BLOCKED_MESSAGE }, { status: 422 })
+    }
+
+    // 2026-05-11: regra "1 OS = 1 Payment PENDING max". Bloqueia geracao se
+    // ja ha cobranca ativa em PIX ou Boleto. Mesmo metodo CREDIT_CARD eh
+    // reusado abaixo via findFirst.
+    const activeCharge = await findActivePendingPaymentForOs(os.id, portalUser.company_id)
+    if (activeCharge && !activeCharge.expired && activeCharge.payment.billing_type && activeCharge.payment.billing_type !== 'CREDIT_CARD') {
+      return NextResponse.json({
+        error: `Voce ja tem cobranca ${activeCharge.payment.billing_type} ativa pra essa OS. Pague pelo link enviado ou aguarde a expiracao pra gerar outra forma.`,
+        reason: 'active_charge_other_method',
+        active_payment: {
+          id: activeCharge.payment.id,
+          billing_type: activeCharge.payment.billing_type,
+          invoice_url: activeCharge.payment.invoice_url,
+        },
+      }, { status: 409 })
     }
 
     const resolved = await resolveDefaultProviderAccount(portalUser.company_id)

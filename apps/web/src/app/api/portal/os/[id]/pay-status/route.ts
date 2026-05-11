@@ -43,6 +43,28 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     const totalPaid = ars.reduce((sum, ar) => sum + (ar.received_amount || 0), 0)
     const isPaid = totalDue > 0 && totalPaid >= totalDue
 
+    // 2026-05-11: include active PENDING payment pra UI decidir se mostra
+    // os 3 botões de pagamento ou ja oferece reenvio direto do existente.
+    // Caso real: cliente clicar PIX e Boleto consecutivamente gerava 2
+    // cobrancas pra mesma OS. Agora UI bloqueia via pre-check.
+    const activePayment = await prisma.payment.findFirst({
+      where: {
+        service_order_id: os.id,
+        company_id: portalUser.company_id,
+        status: 'PENDING',
+      },
+      orderBy: { created_at: 'desc' },
+      select: {
+        id: true,
+        billing_type: true,
+        method: true,
+        amount: true,
+        invoice_url: true,
+        expires_at: true,
+        created_at: true,
+      },
+    })
+
     return NextResponse.json({
       data: {
         total_due: totalDue,
@@ -50,6 +72,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         total_remaining: Math.max(0, totalDue - totalPaid),
         is_paid: isPaid,
         ar_count: ars.length,
+        active_payment: activePayment,
       },
     })
   } catch (err) {

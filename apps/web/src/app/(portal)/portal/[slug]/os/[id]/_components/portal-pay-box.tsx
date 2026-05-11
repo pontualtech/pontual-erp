@@ -32,6 +32,16 @@ type CardPayment = {
   status: string
 }
 
+type ActivePayment = {
+  id: string
+  billing_type: string | null
+  method: string | null
+  amount: number
+  invoice_url: string | null
+  expires_at: string | null
+  created_at: string | null
+}
+
 function fmtBRL(cents: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cents / 100)
 }
@@ -54,6 +64,7 @@ export default function PortalPayBox({ osId, totalCost, alreadyPaid }: {
   const [copied, setCopied] = useState(false)
   const [verifying, setVerifying] = useState(false)
   const [mountChecked, setMountChecked] = useState(false)
+  const [activePayment, setActivePayment] = useState<ActivePayment | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -66,6 +77,7 @@ export default function PortalPayBox({ osId, totalCost, alreadyPaid }: {
       .then(j => {
         if (cancelled) return
         if (j?.data?.is_paid) setPaid(true)
+        if (j?.data?.active_payment) setActivePayment(j.data.active_payment)
         setMountChecked(true)
       })
       .catch(() => { if (!cancelled) setMountChecked(true) })
@@ -230,28 +242,48 @@ export default function PortalPayBox({ osId, totalCost, alreadyPaid }: {
           <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{fmtBRL(totalCost)}</p>
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
-          <button type="button" onClick={createPix} disabled={loading !== null}
-            className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-emerald-500 bg-white hover:bg-emerald-50 dark:bg-gray-800 dark:hover:bg-emerald-950/30 transition-all disabled:opacity-50 cursor-pointer">
-            {loading === 'pix' ? <Loader2 className="h-6 w-6 animate-spin text-emerald-600" /> : <Zap className="h-6 w-6 text-emerald-600" />}
-            <span className="font-bold text-sm text-emerald-700 dark:text-emerald-400">PIX</span>
-            <span className="text-[11px] text-gray-500 text-center">Confirmação instantânea</span>
-          </button>
+        {activePayment ? (
+          <div className="rounded-xl border-2 border-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 dark:border-emerald-800 p-4">
+            <div className="flex items-center gap-3 mb-3">
+              <Check className="h-5 w-5 text-emerald-600 flex-shrink-0" />
+              <p className="text-sm text-emerald-900 dark:text-emerald-200 font-medium">
+                Você já tem cobrança {activePayment.billing_type === 'PIX' ? 'PIX' : activePayment.billing_type === 'BOLETO' ? 'Boleto' : 'Cartão'} ativa pra essa OS.
+              </p>
+            </div>
+            {activePayment.invoice_url && (
+              <a href={activePayment.invoice_url} target="_blank" rel="noopener noreferrer"
+                className="flex items-center justify-center gap-2 w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg py-3 text-sm font-bold transition-colors">
+                <ExternalLink className="h-4 w-4" /> Abrir link de pagamento
+              </a>
+            )}
+            <p className="text-[11px] text-emerald-700 dark:text-emerald-400 text-center mt-2">
+              Caso queira trocar a forma de pagamento, entre em contato com nosso suporte.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 gap-3">
+            <button type="button" onClick={createPix} disabled={loading !== null}
+              className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-emerald-500 bg-white hover:bg-emerald-50 dark:bg-gray-800 dark:hover:bg-emerald-950/30 transition-all disabled:opacity-50 cursor-pointer">
+              {loading === 'pix' ? <Loader2 className="h-6 w-6 animate-spin text-emerald-600" /> : <Zap className="h-6 w-6 text-emerald-600" />}
+              <span className="font-bold text-sm text-emerald-700 dark:text-emerald-400">PIX</span>
+              <span className="text-[11px] text-gray-500 text-center">Confirmação instantânea</span>
+            </button>
 
-          <button type="button" onClick={createBoleto} disabled={loading !== null}
-            className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-amber-500 bg-white hover:bg-amber-50 dark:bg-gray-800 dark:hover:bg-amber-950/30 transition-all disabled:opacity-50 cursor-pointer">
-            {loading === 'boleto' ? <Loader2 className="h-6 w-6 animate-spin text-amber-600" /> : <FileText className="h-6 w-6 text-amber-600" />}
-            <span className="font-bold text-sm text-amber-700 dark:text-amber-400">Boleto</span>
-            <span className="text-[11px] text-gray-500 text-center">À vista (vence hoje)</span>
-          </button>
+            <button type="button" onClick={createBoleto} disabled={loading !== null}
+              className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-amber-500 bg-white hover:bg-amber-50 dark:bg-gray-800 dark:hover:bg-amber-950/30 transition-all disabled:opacity-50 cursor-pointer">
+              {loading === 'boleto' ? <Loader2 className="h-6 w-6 animate-spin text-amber-600" /> : <FileText className="h-6 w-6 text-amber-600" />}
+              <span className="font-bold text-sm text-amber-700 dark:text-amber-400">Boleto</span>
+              <span className="text-[11px] text-gray-500 text-center">À vista (vence hoje)</span>
+            </button>
 
-          <button type="button" onClick={createCard} disabled={loading !== null}
-            className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-indigo-500 bg-white hover:bg-indigo-50 dark:bg-gray-800 dark:hover:bg-indigo-950/30 transition-all disabled:opacity-50 cursor-pointer">
-            {loading === 'card' ? <Loader2 className="h-6 w-6 animate-spin text-indigo-600" /> : <Wallet className="h-6 w-6 text-indigo-600" />}
-            <span className="font-bold text-sm text-indigo-700 dark:text-indigo-400">Cartão</span>
-            <span className="text-[11px] text-gray-500 text-center">À vista (parcelado em breve)</span>
-          </button>
-        </div>
+            <button type="button" onClick={createCard} disabled={loading !== null}
+              className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-indigo-500 bg-white hover:bg-indigo-50 dark:bg-gray-800 dark:hover:bg-indigo-950/30 transition-all disabled:opacity-50 cursor-pointer">
+              {loading === 'card' ? <Loader2 className="h-6 w-6 animate-spin text-indigo-600" /> : <Wallet className="h-6 w-6 text-indigo-600" />}
+              <span className="font-bold text-sm text-indigo-700 dark:text-indigo-400">Cartão</span>
+              <span className="text-[11px] text-gray-500 text-center">À vista (parcelado em breve)</span>
+            </button>
+          </div>
+        )}
 
         {boleto && !paid && (
           <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-3 space-y-2">

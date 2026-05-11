@@ -7,6 +7,7 @@ import type { BillingType } from '@/lib/payments/types'
 import { sendWhatsAppTemplate } from '@/lib/whatsapp/cloud-api'
 import { sendCompanyEmail } from '@/lib/send-email'
 import { escapeHtml } from '@/lib/escape-html'
+import { findActivePendingPaymentForOs } from '@/lib/payments/find-active-charge'
 import { z } from 'zod'
 
 /**
@@ -59,6 +60,43 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const amount = os.total_cost || 0
     if (amount <= 0) {
       return NextResponse.json({ error: 'OS sem valor — defina um orcamento antes de cobrar' }, { status: 400 })
+    }
+
+    // 2026-05-11: regra de dominio "1 OS = 1 Payment PENDING max"
+    // (caso real Karlao OS 60471: clicou Cobrar e gerou 2 cobrancas em
+    // metodos diferentes pra mesma OS). Antes do provider.createCharge,
+    // valida se ja ha cobranca ativa qualquer metodo.
+    const activeCharge = await findActivePendingPaymentForOs(params.id, auth.companyId)
+    if (activeCharge && !activeCharge.expired) {
+      const existingMethod = activeCharge.payment.billing_type || activeCharge.payment.method || 'cobrança'
+      const sameMethod = activeCharge.payment.billing_type === data.billing_type
+      if (sameMethod) {
+        // Mesmo metodo nao-expirado: reusa (consistente com portal endpoints)
+        return NextResponse.json({
+          success: true,
+          reused: true,
+          payment: {
+            id: activeCharge.payment.id,
+            invoice_url: activeCharge.payment.invoice_url,
+            bank_slip_url: activeCharge.payment.bank_slip_url,
+            pix_qr_code: activeCharge.payment.qr_code,
+            billing_type: activeCharge.payment.billing_type,
+            amount: activeCharge.payment.amount,
+            status: 'PENDING',
+          },
+        })
+      }
+      return NextResponse.json({
+        error: `Ja existe cobranca ${existingMethod} ativa pra essa OS. Cancele ou aguarde a expiracao antes de gerar outra forma.`,
+        reason: 'active_charge_exists',
+        active_payment: {
+          id: activeCharge.payment.id,
+          billing_type: activeCharge.payment.billing_type,
+          invoice_url: activeCharge.payment.invoice_url,
+          amount: activeCharge.payment.amount,
+          created_at: activeCharge.payment.created_at,
+        },
+      }, { status: 409 })
     }
 
     // Resolve provider via account
