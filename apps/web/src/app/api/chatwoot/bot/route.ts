@@ -1697,7 +1697,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
 11. PARCELAMENTO / FORMAS DE PAGAMENTO ("posso parcelar", "no cartao", "vai dividir", "tem desconto", "pix"): NAO transfira. Responda DIRETO: "Sim! Aceitamos cartao de credito em ate 3x sem juros, PIX e dinheiro a vista. Voce pode escolher a melhor forma de pagamento na hora da retirada/entrega." Nunca diga "vou registrar pra equipe financeira" para essa pergunta.
 12. NUNCA INVENTE DADOS — esta e a regra mais critica. Quando o cliente pedir:
     (a) Chave PIX -> use APENAS a "Chave PIX" listada em [DADOS REAIS DA EMPRESA]. NUNCA invente como "pix@empresa.com.br" ou "11999999999".
-    (b) Numero de OS -> use APENAS o numero que esta no [CONTEXTO DO CLIENTE / OS ativas] ou que o cliente JA forneceu. NUNCA invente "123456" ou numeros placeholder.
+    (b) Numero de OS -> use APENAS o numero que esta no [CONTEXTO DO CLIENTE / OS ativas]. Se cliente fornecer numero de OS que NAO aparece no contexto, NUNCA invente status/equipamento/prazo/valor pra essa OS. Responda EXATAMENTE: "Nao localizei a OS [numero] no nosso sistema. Pode confirmar o numero, ou me passar seu CPF/CNPJ pra eu localizar?" Se cliente insistir e voce continuar sem dados validos, use [TRANSFERIR_HUMANO]. NUNCA emita tags ([STATUS_CANCELADA], [URGENCIA_*], [DEVOLUCAO_LOGISTICA]) com numero de OS que nao esta validado no contexto. NUNCA invente numeros placeholder como "123456" nem confirme OS ficticias.
     (c) URL do portal -> use APENAS a URL completa do campo "Portal: https://..." dentro de cada OS no contexto. Se nao houver OS especifica, use "Portal do Cliente (base)" do [DADOS REAIS DA EMPRESA]. NUNCA escreva "www.empresa.com.br/portal/123456".
     (d) CNPJ, telefone, email, endereco -> use APENAS o valor de [DADOS REAIS DA EMPRESA].
     Se nao tiver o dado real disponivel, diga: "Vou consultar essa informacao" e use [TRANSFERIR_HUMANO]. NUNCA forneca um valor inventado.
@@ -1707,9 +1707,10 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
     - Frase ex NIVEL ALTA: "Compreendo sua urgencia. Vou notificar nosso laboratorio agora mesmo para priorizar o reparo do seu equipamento e retornar com uma previsao atualizada em breve."
     - Frase ex NIVEL URGENTE: "Estou marcando seu caso como URGENTE em nosso sistema. Nosso supervisor vai acompanhar pessoalmente para acelerar o reparo."
     - Cliente continua sendo atendido por voce — nao transfira pra humano por causa disso. Use [TRANSFERIR_HUMANO] APENAS se cliente PEDIR explicitamente humano.
-14. CANCELAMENTO de OS ("quero cancelar", "cancelar a OS", "desistir do servico", "nao quero mais"): NAO confunda com recusa de orcamento (regra retencao). Cancelamento e quando cliente quer interromper o servico independente de orcamento. Confirme com o cliente: "Confirmando: voce gostaria de cancelar a OS #X e organizar a devolucao do equipamento? Pode confirmar respondendo SIM?". Se ele confirmar, AO FINAL inclua [STATUS_CANCELADA:NUMERO_OS]. O sistema abre ticket interno e atendente faz a baixa formal + agendamento de devolucao.
+14. CANCELAMENTO de OS ("quero cancelar", "cancelar a OS", "desistir do servico", "nao quero mais", "vou buscar a impressora", "quero retirar", "preciso retirar hoje", "vou levar pra outro lugar"): NAO confunda com recusa de orcamento (regra retencao). Cancelamento e quando cliente quer interromper o servico independente de orcamento. VOCE NUNCA CANCELA SOZINHA — apenas atendente humano pode cancelar OS apos avaliar custos de pecas/mao-de-obra ja aplicados. Responda EXATAMENTE: "Entendi seu pedido, [nome]. Vou registrar e transferir pra nossa equipe avaliar e formalizar o cancelamento (precisa verificar custos de pecas/servicos ja aplicados) e agendar a devolucao do equipamento. Em ate 1h util nosso atendente retorna pessoalmente." AO FINAL inclua [STATUS_CANCELADA:NUMERO_OS] E [TRANSFERIR_HUMANO] juntos. NUNCA confirme o cancelamento como "realizado" — diga apenas "registrado para analise". NUNCA prometa horario/local de retirada walk-in — so logistica autoriza retirada. Se o NUMERO da OS NAO esta em [CONTEXTO DO CLIENTE / OS ativas], NAO emita [STATUS_CANCELADA] — pergunte primeiro o numero correto ou CPF/CNPJ pra localizar.
 15. DEVOLUCAO LOGISTICA ("quero meu equipamento de volta", "preciso da devolucao", "quando devolvem", "ja recusei e nao recebi"): se OS ja em status Entregar Recusado/Cancelada e cliente cobra a devolucao fisica, NAO transfira humano. Tranquilize, prometa priorizar a devolucao com a logistica e AO FINAL inclua [DEVOLUCAO_LOGISTICA:NUMERO_OS]. O sistema abre ticket DEVOLUCAO priority HIGH pra equipe agendar.
-16. REAGENDAMENTO ("nao estarei", "ninguem pra receber", "remarcar", "outra data", "hoje nao posso", "nao vou estar"): cliente quer mudar dia de coleta/entrega. NAO transfira automaticamente — colete a NOVA data preferida e o periodo (manha/tarde) na propria conversa. Responda: "Sem problema! Qual nova data e periodo (manha/tarde) seriam melhores para voce? Vou registrar para nossa logistica reagendar." Apos cliente informar, use [TRANSFERIR_HUMANO] com nota interna detalhando os dados pra logistica reagendar.]`
+16. REAGENDAMENTO ("nao estarei", "ninguem pra receber", "remarcar", "outra data", "hoje nao posso", "nao vou estar"): cliente quer mudar dia de coleta/entrega. NAO transfira automaticamente — colete a NOVA data preferida e o periodo (manha/tarde) na propria conversa. Responda: "Sem problema! Qual nova data e periodo (manha/tarde) seriam melhores para voce? Vou registrar para nossa logistica reagendar." Apos cliente informar, use [TRANSFERIR_HUMANO] com nota interna detalhando os dados pra logistica reagendar.
+17. NUNCA INVENTE POLITICAS DA EMPRESA: voce NAO tem autoridade pra criar ou prometer modalidades nao-padrao. NUNCA prometa: retirada walk-in em horario especifico, desconto especial fora dos previstos, parcelamento alem do padrao (cartao 3x), endereco/horario de retirada alternativo, frete gratis fora SP-capital, atendimento aos sabados/feriados, prazo mais curto que a previsao do sistema. Se cliente pedir qualquer modalidade fora do padrao (horario, local, valor, prazo, forma de pagamento), use [TRANSFERIR_HUMANO] com nota interna detalhando o pedido — atendente humano avalia. NUNCA escreva frases tipo "voce pode vir buscar hoje ate as 18h" ou "abrimos sabado especialmente pra voce" — politicas de retirada fisica/horario sao sempre da logistica, nunca da Marta.]`
     }
 
     // Handle OS confirmation flow
@@ -2344,9 +2345,13 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
     // 2026-05-09: handler de CANCELAMENTO — cliente pediu cancelar OS.
     // ERP NAO move status sozinho (atendente confirma com cliente antes
     // e formaliza). Aqui apenas: ticket aberto + nota interna + label.
+    // 2026-05-11: validacao defensiva contra alucinacao — se a OS nao
+    // existir no banco (Marta inventou numero), NAO cria ticket normal
+    // de cancelamento; cria ticket de "OS desconhecida" pra atendente
+    // investigar. Caso reportado: cliente Renato, OSs 202401/202402
+    // (numeros ficticios — PontualTech comeca em 6xxxx).
     if (parsed.cancelOsNumber) {
       try {
-        const noteSummary = `[BOT] Cliente solicitou CANCELAMENTO da OS #${parsed.cancelOsNumber}. Confirmou via bot. Ticket aberto pra atendente formalizar a baixa e agendar devolucao do equipamento.`
         let serviceOrderUuid: string | null = null
         try {
           const osRow = await prisma.serviceOrder.findFirst({
@@ -2355,21 +2360,32 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
           })
           serviceOrderUuid = osRow?.id || null
         } catch {}
+
+        const osFound = serviceOrderUuid !== null
+        const noteSummary = osFound
+          ? `[BOT] Cliente solicitou CANCELAMENTO da OS #${parsed.cancelOsNumber}. Confirmou via bot. Atendente precisa avaliar custos de pecas/servicos ja aplicados antes de formalizar baixa + agendar devolucao do equipamento.`
+          : `[BOT — ATENCAO] Cliente solicitou CANCELAMENTO de OS #${parsed.cancelOsNumber} mas esse numero NAO EXISTE no sistema (possivel alucinacao do bot ou numero errado fornecido pelo cliente). Atendente: confirmar com cliente o numero real da OS antes de tomar qualquer acao.`
+
         try {
           await fetch(`${ERP_BASE_URL}/api/bot/criar-ticket`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-Bot-Key': cfg.botApiKey },
             body: JSON.stringify({
-              subject: `Cliente solicitou cancelamento — OS #${parsed.cancelOsNumber}`,
+              subject: osFound
+                ? `Cliente solicitou cancelamento — OS #${parsed.cancelOsNumber}`
+                : `⚠️ Cancelamento de OS INEXISTENTE #${parsed.cancelOsNumber} — verificar com cliente`,
               description: noteSummary,
               priority: 'HIGH',
-              category: 'CANCELAMENTO',
+              category: osFound ? 'CANCELAMENTO' : 'OS_INEXISTENTE',
               service_order_id: serviceOrderUuid,
             }),
           })
         } catch (e) { console.warn('[Bot/Cancel] criar-ticket falhou:', e instanceof Error ? e.message : e) }
         await cwSendMessage(cfg, conversationId, noteSummary, true)
-        try { await cwSetLabels(cfg, conversationId, ['cancelamento']) } catch {}
+        try { await cwSetLabels(cfg, conversationId, [osFound ? 'cancelamento' : 'cancelamento_os_inexistente']) } catch {}
+        if (!osFound) {
+          console.warn(`[Bot/Cancel] OS #${parsed.cancelOsNumber} INEXISTENTE no banco — ticket OS_INEXISTENTE aberto pra investigacao manual`)
+        }
       } catch (err) {
         console.error('[Bot/Cancel] Excecao:', err instanceof Error ? err.message : err)
       }
