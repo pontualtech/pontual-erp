@@ -520,13 +520,22 @@ export async function POST(req: NextRequest) {
         })
       }
 
-      // Handle REFUNDED: reverse the auto-baixa
+      // Handle REFUNDED: reverte AR + cria Transaction DEBIT + decrementa
+      // saldo conta + FiscalEntry estorno. Estorno completo afeta 3 modelos:
+      //   1. AccountReceivable (received_amount reduzido + status revertido)
+      //   2. Transaction DEBIT + Account.current_balance decremento (extrato)
+      //   3. FiscalEntry negativo (DRE)
+      //
+      // 2026-05-11 (teste profundo Karlao): antes faltava (2) — refund deixava
+      // saldo da conta inflado e extrato sem registro do debito. Gap impactava
+      // chargebacks de cartao (que sao mais comuns que refunds manuais).
       if (newStatus === 'REFUNDED' && fresh.receivable_id) {
         const receivable = await tx.accountReceivable.findFirst({
           where: { id: fresh.receivable_id, company_id: fresh.company_id },
         })
 
         if (receivable) {
+          // 1. AR: reverter received_amount + ajustar status
           const newReceived = Math.max(0, (receivable.received_amount || 0) - fresh.amount)
           await tx.accountReceivable.update({
             where: { id: fresh.receivable_id },
@@ -538,9 +547,54 @@ export async function POST(req: NextRequest) {
             },
           })
 
-          // 2026-05-11 Fase 2: criar FiscalEntry de estorno (amount negativo)
-          // pra DRE refletir o refund. Sem isso, a venda fica computada como
-          // receita mesmo apos estorno.
+          // 2. Transaction DEBIT + decrementa current_balance (mesma logica
+          // do RECEIVED handler mas invertida). Idempotente: se ja existe
+          // Transaction com bank_ref deste refund, nao cria de novo.
+          const billingType = (fresh.billing_type || fresh.method || '').toUpperCase()
+          let debitAccountId: string | null = receivable.account_id || null
+          if (!debitAccountId) {
+            const inferred = await tx.account.findFirst({
+              where: {
+                company_id: fresh.company_id,
+                is_active: true,
+                OR: [
+                  { name: { contains: 'asaas', mode: 'insensitive' } },
+                  { bank_name: { contains: 'asaas', mode: 'insensitive' } },
+                ],
+              },
+              select: { id: true },
+            })
+            debitAccountId = inferred?.id ?? null
+          }
+          if (debitAccountId) {
+            const refundBankRef = `${asaasPayment.id}-refund`
+            const existingDebit = await tx.transaction.findFirst({
+              where: { company_id: fresh.company_id, bank_ref: refundBankRef },
+              select: { id: true },
+            })
+            if (!existingDebit) {
+              await tx.transaction.create({
+                data: {
+                  company_id: fresh.company_id,
+                  account_id: debitAccountId,
+                  transaction_type: 'DEBIT',
+                  amount: fresh.amount,
+                  description: `Estorno Asaas (${billingType || 'PIX'}): ${receivable.description}`,
+                  bank_ref: refundBankRef,
+                  transaction_date: new Date(),
+                },
+              })
+              await tx.account.update({
+                where: { id: debitAccountId },
+                data: {
+                  current_balance: { decrement: fresh.amount },
+                  updated_at: new Date(),
+                },
+              })
+            }
+          }
+
+          // 3. FiscalEntry estorno (amount negativo) pra DRE refletir refund
           try {
             const refundChartAccount = await tx.accountChart.findFirst({
               where: {
