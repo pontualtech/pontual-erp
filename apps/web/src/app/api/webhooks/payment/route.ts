@@ -20,6 +20,11 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   // event name no handler (isReversal).
   DISPUTED: ['DISPUTED', 'RECEIVED', 'REFUNDED', 'REFUND_PENDING'],
   REFUND_PENDING: ['REFUNDED'],
+  // 2026-05-11 (reteste V3): PARTIALLY_REFUNDED pode transitar pra REFUNDED
+  // (refund completo apos parcial), DISPUTED (cliente disputa o restante),
+  // ou REFUND_PENDING (asaas processando outro refund). Antes era source sem
+  // transicoes — qualquer evento subsequente caia em "Invalid transition".
+  PARTIALLY_REFUNDED: ['REFUNDED', 'PARTIALLY_REFUNDED', 'DISPUTED', 'REFUND_PENDING'],
   // 2026-05-11: CANCELLED -> DELETED aceito como idempotente. Cenario:
   // atendente cancela via /charge/[id]/cancel (Payment local vira CANCELLED
   // e Asaas tambem cancela). Asaas envia PAYMENT_DELETED webhook depois —
