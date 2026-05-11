@@ -9,8 +9,13 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   OVERDUE: ['CONFIRMED', 'RECEIVED', 'DELETED', 'CANCELLED'],
   // 2026-05-11 (chargeback): CONFIRMED/RECEIVED podem ir pra DISPUTED quando
   // cliente contesta cartao no banco. Asaas envia PAYMENT_CHARGEBACK_REQUESTED.
-  CONFIRMED: ['RECEIVED', 'REFUNDED', 'PARTIALLY_REFUNDED', 'DISPUTED'],
-  RECEIVED: ['REFUNDED', 'PARTIALLY_REFUNDED', 'DISPUTED'],
+  // 2026-05-11 (V5 bug 5): REFUND_PENDING aceito a partir de CONFIRMED/RECEIVED.
+  // Asaas envia PAYMENT_REFUND_IN_PROGRESS quando cliente pede refund e ele
+  // ainda esta sendo processado pelo gateway — vira REFUND_PENDING local,
+  // depois PAYMENT_REFUNDED finaliza. Antes RECEIVED -> REFUND_PENDING era
+  // 'Invalid transition' e webhook pulava.
+  CONFIRMED: ['RECEIVED', 'REFUNDED', 'PARTIALLY_REFUNDED', 'DISPUTED', 'REFUND_PENDING'],
+  RECEIVED: ['REFUNDED', 'PARTIALLY_REFUNDED', 'DISPUTED', 'REFUND_PENDING'],
   // DISPUTED pode resolver pra (a) RECEIVED (comerciante ganhou disputa) ou
   // (b) REFUNDED via AWAITING_CHARGEBACK_REVERSAL (cliente ganhou, Asaas
   // estorna). REFUND_PENDING e estado transicional do Asaas refund.
