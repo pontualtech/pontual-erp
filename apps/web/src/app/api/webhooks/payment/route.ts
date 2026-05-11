@@ -316,8 +316,13 @@ export async function POST(req: NextRequest) {
       })
       if (!fresh) return { action: 'skip', reason: 'Payment disappeared' }
 
-      // Idempotency: already at this status
-      if (fresh.status === newStatus) {
+      // Idempotency: already at this status — exceto pra AWAITING_CHARGEBACK_REVERSAL
+      // que tem comportamento DISTINTO de REQUESTED/DISPUTE apesar de mapear pra
+      // mesmo Payment.status=DISPUTED (REVERSAL reverte AR/saldo/DRE; REQUESTED só
+      // marca). Reteste V2 detectou: AWAITING_REVERSAL chegando apos REQUESTED ficava
+      // bloqueado aqui e handler de reversao nunca rodava.
+      const isReversalEvent = event === 'PAYMENT_AWAITING_CHARGEBACK_REVERSAL'
+      if (fresh.status === newStatus && !isReversalEvent) {
         return { action: 'skip', reason: 'Already at status' }
       }
 
