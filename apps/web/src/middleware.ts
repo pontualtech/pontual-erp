@@ -64,7 +64,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // Skip auth for webhooks and internal notification endpoints (called by bot routes)
-  if (pathname.startsWith('/api/chatwoot/') || pathname.startsWith('/api/webhook/') || pathname.startsWith('/api/webhooks/') || pathname.startsWith('/api/voip/webhooks/')) {
+  if (pathname.startsWith('/api/chatwoot/') || pathname.startsWith('/api/webhook/') || pathname.startsWith('/api/webhooks/') || pathname.startsWith('/api/voip/webhooks/') || pathname.startsWith('/api/marketing/webhook/')) {
     return NextResponse.next()
   }
   // Public share links (recording downloads via signed token)
