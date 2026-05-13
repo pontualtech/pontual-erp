@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    const { messages, session_id } = await req.json()
+    const { messages, session_id, os_context } = await req.json()
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return new Response(JSON.stringify({ error: 'Mensagens obrigatorias' }), {
@@ -47,7 +47,28 @@ export async function POST(req: NextRequest) {
     )
 
     const context = buildContext(searchResults)
-    const systemPrompt = getSystemPrompt(company?.name || 'Empresa', context)
+    let systemPrompt = getSystemPrompt(company?.name || 'Empresa', context)
+
+    // Cliente veio da pagina da OS — anexa contexto pra IA personalizar
+    // resposta sem precisar perguntar "qual seu equipamento" de novo.
+    // Estrutura validada pelo client (suporte-ia/page.tsx OsContext).
+    if (os_context && typeof os_context === 'object') {
+      const ctx: any = os_context
+      const equip = [ctx.equipment_brand, ctx.equipment_model || ctx.equipment_type]
+        .filter(Boolean).join(' ').trim()
+      const lines = [
+        '',
+        '====== CONTEXTO DA OS ATUAL ======',
+        `O cliente esta vendo a OS #${ctx.os_number} no portal.`,
+        equip ? `Equipamento: ${equip}` : null,
+        ctx.status_name ? `Status atual: ${ctx.status_name}` : null,
+        ctx.total_cost_cents ? `Valor do orcamento: R$ ${(ctx.total_cost_cents / 100).toFixed(2).replace('.', ',')}` : null,
+        ctx.last_rejection_reason ? `IMPORTANTE: cliente recusou esse orcamento antes. Motivo: "${ctx.last_rejection_reason}"` : null,
+        'Use esse contexto pra personalizar a resposta. Nao pergunte de novo o equipamento.',
+        '==================================',
+      ].filter(Boolean).join('\n')
+      systemPrompt = systemPrompt + lines
+    }
 
     // Validate session ownership if session_id provided
     if (session_id) {

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { readPortalCompany, readPortalCustomer } from '@/lib/portal-auth-storage'
@@ -10,6 +10,18 @@ interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
+}
+
+// Contexto leve da OS pra IA usar como dica no prompt
+interface OsContext {
+  id: string
+  os_number: number
+  equipment_type?: string | null
+  equipment_brand?: string | null
+  equipment_model?: string | null
+  status_name?: string | null
+  total_cost_cents?: number | null
+  last_rejection_reason?: string | null
 }
 
 const SUGGESTIONS = [
@@ -23,7 +35,9 @@ const SUGGESTIONS = [
 export default function SuporteIAPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const slug = params.slug as string
+  const osIdParam = searchParams.get('os')
 
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
@@ -31,6 +45,9 @@ export default function SuporteIAPage() {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [company, setCompany] = useState<{ name: string; whatsapp?: string; phone?: string } | null>(null)
   const [customer, setCustomer] = useState<{ name: string }  | null>(null)
+  const [osContext, setOsContext] = useState<OsContext | null>(null)
+  const [showEscalateModal, setShowEscalateModal] = useState(false)
+  const [escalating, setEscalating] = useState(false)
 
   // UX-1 #5: link wa.me pra escapar do bot quando nao resolve
   function buildWhatsappEscape(): string | null {
@@ -53,9 +70,61 @@ export default function SuporteIAPage() {
     if (savedCustomer) { const u = readPortalCustomer(); if (u) setCustomer(u as any) }
   }, [])
 
+  // Carrega contexto da OS quando vem com ?os=<id> (cliente clicou "Tirar
+  // duvida" na pagina da OS). Permite IA personalizar resposta com
+  // equipamento/status atual.
+  useEffect(() => {
+    if (!osIdParam) return
+    fetch(`/api/portal/os/${osIdParam}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(res => {
+        const data = res?.data
+        if (!data) return
+        setOsContext({
+          id: data.id,
+          os_number: data.os_number,
+          equipment_type: data.equipment_type,
+          equipment_brand: data.equipment_brand,
+          equipment_model: data.equipment_model,
+          status_name: data.module_statuses?.name ?? data.status?.name ?? null,
+          total_cost_cents: data.total_cost ?? null,
+          last_rejection_reason: data.custom_data?.last_rejection_reason ?? null,
+        })
+      })
+      .catch(() => {})
+  }, [osIdParam])
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // Escalar pra atendente humano: cria/reusa Ticket vinculado a OS,
+  // copia conversa IA como mensagem do CLIENTE, dispara aviso pro
+  // dashboard e redireciona pra pagina do ticket.
+  async function handleEscalate() {
+    if (!osContext) return
+    setEscalating(true)
+    try {
+      const r = await fetch('/api/portal/ai/escalate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ os_id: osContext.id, session_id: sessionId }),
+      })
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}))
+        toast.error(err.error || 'Erro ao falar com atendente')
+        setEscalating(false)
+        return
+      }
+      const data = await r.json()
+      const ticketId = data?.data?.ticket_id
+      toast.success('Atendente acionado! Redirecionando...')
+      if (ticketId) router.push(`/portal/${slug}/tickets/${ticketId}`)
+    } catch {
+      toast.error('Erro de conexao')
+      setEscalating(false)
+    }
+  }
 
   async function handleSend(text?: string) {
     const msg = (text || input).trim()
@@ -74,6 +143,7 @@ export default function SuporteIAPage() {
         body: JSON.stringify({
           messages: allMessages.map(m => ({ role: m.role, content: m.content })),
           session_id: sessionId,
+          os_context: osContext,
         }),
       })
 
@@ -172,18 +242,20 @@ export default function SuporteIAPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {waEscape && (
-              <a
-                href={waEscape}
-                target="_blank"
-                rel="noopener noreferrer"
+            {/* Quando o cliente entrou pela OS, mostra atalho pra falar com
+                atendente humano com confirmacao leve (deflection: IA tenta
+                primeiro mas botao sempre visivel). */}
+            {osContext && (
+              <button
+                type="button"
+                onClick={() => setShowEscalateModal(true)}
                 className="hidden sm:inline-flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400 font-semibold px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950 hover:bg-emerald-100 dark:hover:bg-emerald-900 transition-colors"
-                aria-label="Falar com atendente humano via WhatsApp"
-                title="Falar com pessoa"
+                aria-label="Falar com atendente humano"
+                title="Falar com atendente"
               >
-                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4l-2-1c-.2-.1-.5-.1-.7.1l-.9 1c-1-.5-2.4-1.9-3-2.9l1-.9c.2-.2.2-.5.1-.7l-1-2c-.2-.4-.7-.6-1.1-.4l-1 .5c-.5.2-.7.7-.5 1.2.6 2 2.7 4.6 4.6 5.6.5.2 1 .1 1.2-.4l.5-1c.2-.4 0-.9-.4-1.1zM12 2C6.5 2 2 6.5 2 12c0 1.7.5 3.4 1.3 4.8L2 22l5.4-1.3c1.3.8 3 1.3 4.6 1.3 5.5 0 10-4.5 10-10S17.5 2 12 2z"/></svg>
-                Falar com pessoa
-              </a>
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z" /></svg>
+                Falar com atendente
+              </button>
             )}
             <button
               type="button"
@@ -326,6 +398,46 @@ export default function SuporteIAPage() {
           </p>
         </div>
       </main>
+
+      {/* Modal: confirmar antes de escalar pra atendente (fricao leve UX
+          recomendada). Cliente apressado consegue escalar mas a confirmacao
+          faz a maioria dar mais uma chance pra IA primeiro. */}
+      {showEscalateModal && osContext && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => !escalating && setShowEscalateModal(false)}>
+          <div className="w-full max-w-md rounded-xl bg-white dark:bg-zinc-900 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-5">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-2">
+                Falar com atendente humano?
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                Sua conversa com a IA será enviada pro atendente sobre a OS #{osContext.os_number}.
+                Ele te responde aqui mesmo no portal — você recebe um WhatsApp avisando.
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-500 italic mb-4">
+                Posso tentar te ajudar primeiro? Muitas dúvidas a IA resolve em segundos.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowEscalateModal(false)}
+                  disabled={escalating}
+                  className="flex-1 px-4 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-zinc-800 hover:bg-gray-200 dark:hover:bg-zinc-700 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  Voltar pra IA
+                </button>
+                <button
+                  type="button"
+                  onClick={handleEscalate}
+                  disabled={escalating}
+                  className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {escalating ? 'Chamando...' : 'Sim, falar com atendente'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
