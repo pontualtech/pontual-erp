@@ -76,6 +76,12 @@ const navGroups: { title: string; items: NavItem[] }[] = [
     ],
   },
   {
+    title: 'Marketing',
+    items: [
+      { label: 'Contatos', href: '/marketing/contatos', icon: Users, adminOnly: true },
+    ],
+  },
+  {
     title: 'Sistema',
     items: [
       { label: 'Log Portal', href: '/portal-log', icon: Activity, adminOnly: true },
