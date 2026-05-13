@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/use-auth'
 import { ArrowLeft, Edit, Camera, History, Info, Package, Plus, Trash2, Loader2, Search, Wrench, CreditCard, X, Printer, Mail, Send, Copy, FilePlus, User, Monitor, FileText, Clock, ChevronDown, ChevronUp, AlertTriangle, Save, Check, Layers, DollarSign, ExternalLink, Receipt, Truck, MessageCircle } from 'lucide-react'
 import { MoneyInput } from '@/app/(dashboard)/components/money-input'
 import OsChargeButton from './_components/os-charge-button'
+import { CustomerMessagesPanel } from './_components/CustomerMessagesPanel'
 import { CallButton } from '@/components/voip/CallButton'
 import { RelatedVoipCalls } from '@/components/voip/RelatedVoipCalls'
 
@@ -2279,6 +2280,9 @@ export default function OSDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* ========== MENSAGENS DO CLIENTE (passo 6/9 feature 2026-05-12) ========== */}
+      <CustomerMessagesPanel osId={os.id} />
 
       {/* ========== CHAMADAS VINCULADAS ========== */}
       <div className="rounded-xl border bg-white p-4 shadow-sm">
