@@ -58,14 +58,16 @@ export function buildMagicLink(opts: {
   companyId: string
   slug: string
   osId?: string
+  redirectPath?: string
   portalUrlOverride?: string
 }): { url: string; token: string } {
-  const { customerId, companyId, slug, osId, portalUrlOverride } = opts
+  const { customerId, companyId, slug, osId, redirectPath: rPath, portalUrlOverride } = opts
   const domain = resolvePortalDomain(slug)
   const portalBase = portalUrlOverride || process.env.PORTAL_URL || `https://${domain}`
   const token = createAccessToken(customerId, companyId)
-  const redirectPath = osId ? `/portal/${slug}/os/${osId}` : `/portal/${slug}`
-  const redirect = encodeURIComponent(redirectPath)
+  // redirectPath explicito tem precedencia (ex: pra ticket); senao osId; senao home.
+  const finalRedirect = rPath || (osId ? `/portal/${slug}/os/${osId}` : `/portal/${slug}`)
+  const redirect = encodeURIComponent(finalRedirect)
   return {
     url: `${portalBase}/portal/${slug}/entrar?t=${token}&r=${redirect}`,
     token,
