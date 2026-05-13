@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { Bell, Check, ChevronRight } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import Link from 'next/link'
 import { useAvisos } from '@/lib/use-avisos'
@@ -13,6 +14,7 @@ interface Announcement {
   priority: string
   author_name: string | null
   created_at: string
+  ticket_id?: string | null
 }
 
 const priorityStyles: Record<string, string> = {
@@ -30,6 +32,7 @@ export function NotificationBell() {
   const { bellAnnouncements: announcements, bellCount: count, removeAnnouncement } = useAvisos()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const router = useRouter()
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -47,6 +50,19 @@ export function NotificationBell() {
       await fetch(`/api/avisos/${id}/read`, { method: 'POST' })
       removeAnnouncement(id)
     } catch {}
+  }
+
+  // Click no card todo: se tiver ticket_id, vai pro ticket (atendente
+  // responde direto). Sem ticket_id, vai pra pagina geral de avisos.
+  // Marca como lido implicitamente — atendente que abriu ja viu.
+  const openAviso = (a: Announcement) => {
+    setOpen(false)
+    markAsRead(a.id)
+    if (a.ticket_id) {
+      router.push(`/tickets/${a.ticket_id}`)
+    } else {
+      router.push('/avisos')
+    }
   }
 
   const formatDate = (dateStr: string) => {
@@ -87,9 +103,12 @@ export function NotificationBell() {
               </div>
             ) : (
               announcements.map(a => (
-                <div
+                <button
                   key={a.id}
-                  className="border-b px-4 py-3 last:border-b-0 hover:bg-gray-50"
+                  type="button"
+                  onClick={() => openAviso(a)}
+                  className="w-full text-left border-b px-4 py-3 last:border-b-0 hover:bg-gray-50 cursor-pointer"
+                  title={a.ticket_id ? 'Abrir ticket pra responder o cliente' : 'Ver aviso'}
                 >
                   <div className="flex items-start gap-2">
                     <div className="flex-1 min-w-0">
@@ -103,19 +122,27 @@ export function NotificationBell() {
                           {a.priority}
                         </span>
                         <span className="text-xs text-gray-400">{formatDate(a.created_at)}</span>
+                        {a.ticket_id && (
+                          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                            Responder
+                          </span>
+                        )}
                       </div>
                       <h4 className="mt-1 text-sm font-medium text-gray-900 truncate">{a.title}</h4>
                       <p className="mt-0.5 text-xs text-gray-500 line-clamp-2">{a.message}</p>
                     </div>
-                    <button
-                      onClick={() => markAsRead(a.id)}
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={e => { e.stopPropagation(); markAsRead(a.id) }}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); markAsRead(a.id) } }}
                       className="flex-shrink-0 rounded p-1.5 text-gray-400 hover:bg-blue-50 hover:text-blue-600"
-                      title="Marcar como lido"
+                      title="Marcar como lido sem abrir"
                     >
                       <Check className="h-4 w-4" />
-                    </button>
+                    </span>
                   </div>
-                </div>
+                </button>
               ))
             )}
           </div>

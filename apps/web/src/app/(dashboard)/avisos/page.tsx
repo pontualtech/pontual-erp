@@ -1,9 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useAuth } from '@/lib/use-auth'
 import { cn } from '@/lib/utils'
-import { Bell, Pin, PinOff, Pencil, Trash2, Plus, X, Eye } from 'lucide-react'
+import { Bell, Pin, PinOff, Pencil, Trash2, Plus, X, Eye, MessageSquare } from 'lucide-react'
 
 interface Aviso {
   id: string
@@ -15,6 +16,7 @@ interface Aviso {
   require_read: boolean
   expires_at: string | null
   created_at: string
+  ticket_id?: string | null
   _count?: { reads: number }
 }
 
@@ -269,6 +271,16 @@ export default function AvisosPage() {
                     )}
                     {isExpired(aviso) && (
                       <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-500">Expirado</span>
+                    )}
+                    {aviso.ticket_id && (
+                      <Link
+                        href={`/tickets/${aviso.ticket_id}`}
+                        className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
+                        title="Abrir ticket pra responder o cliente"
+                      >
+                        <MessageSquare className="h-3 w-3" />
+                        Responder cliente
+                      </Link>
                     )}
                   </div>
                   <p className="mt-1 text-sm text-gray-700 whitespace-pre-wrap">{aviso.message}</p>

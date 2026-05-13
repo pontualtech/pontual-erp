@@ -10,6 +10,7 @@ interface Announcement {
   author_name: string | null
   created_at: string
   require_read?: boolean
+  ticket_id?: string | null
 }
 
 interface AvisosState {
