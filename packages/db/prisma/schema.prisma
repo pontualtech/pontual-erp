@@ -1366,10 +1366,15 @@ model Announcement {
   require_read Boolean?           @default(false)
   expires_at   DateTime?          @db.Timestamptz(6)
   created_at   DateTime?          @default(now()) @db.Timestamptz(6)
+  // Aviso pode ter um ticket vinculado (feature 2026-05-12: clicar no
+  // aviso abre o ticket pra responder cliente). Nullable — avisos sem
+  // contexto cliente (ex: aviso interno do admin) ficam NULL.
+  ticket_id    String?
   companies    Company            @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   reads        AnnouncementRead[]
 
   @@index([company_id], map: "idx_announcements_company")
+  @@index([ticket_id], map: "idx_announcements_ticket")
   @@map("announcements")
 }
 
