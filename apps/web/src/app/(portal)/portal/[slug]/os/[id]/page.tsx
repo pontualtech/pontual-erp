@@ -72,7 +72,6 @@ export default function PortalOSDetailPage() {
 
   const [os, setOs] = useState<OSDetail | null>(null)
   const [loading, setLoading] = useState(true)
-  const [comment, setComment] = useState('')
   const [actionLoading, setActionLoading] = useState(false)
   const [approvePayment, setApprovePayment] = useState<string | null>(null)
   const [company, setCompany] = useState<{ name: string; phone?: string; whatsapp?: string; email?: string; address?: string; cnpj?: string; horario?: string; pix_chave?: string; pix_banco?: string; default_business_days?: string } | null>(null)
@@ -211,7 +210,6 @@ export default function PortalOSDetailPage() {
       }
 
       toast.success(data.data.message)
-      setComment('')
       loadOS()
     } catch {
       toast.error('Erro de conexao')
@@ -1350,27 +1348,10 @@ export default function PortalOSDetailPage() {
           </div>
         </div>
 
-        {/* Comment (legado): textarea simples que vira nota no historico da
-            OS. Mantido por compatibilidade — quem nao usa IA escreve aqui. */}
-        <div className="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-700 p-6" data-print-hide>
-          <h2 className="font-semibold text-gray-900 dark:text-gray-100 mb-4">Enviar Comentario</h2>
-          <textarea
-            value={comment}
-            onChange={e => setComment(e.target.value)}
-            placeholder="Digite sua mensagem..."
-            rows={3}
-            className="w-full px-4 py-3 border border-gray-300 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 resize-none dark:bg-zinc-800/50"
-          />
-          <div className="flex justify-end mt-3">
-            <button
-              onClick={() => handleAction('comment', comment)}
-              disabled={actionLoading || !comment.trim()}
-              className="py-2.5 px-6 bg-blue-600 dark:bg-blue-500 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-zinc-700 text-white font-medium rounded-xl transition-colors"
-            >
-              {actionLoading ? 'Enviando...' : 'Enviar'}
-            </button>
-          </div>
-        </div>
+        {/* Caminho unico de comunicacao cliente↔atendente sobre a OS:
+            o card verde "Tirar duvida agora" acima. Textarea "Enviar
+            Comentario" removida em 2026-05-13 (acabava virando nota
+            invisivel no service_order_history sem alertar atendente). */}
       </main>
 
       {/* UX-9 #11: footer minimalista local removido — layout (portal) ja
