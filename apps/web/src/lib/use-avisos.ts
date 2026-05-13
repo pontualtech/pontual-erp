@@ -22,7 +22,9 @@ interface AvisosState {
 let cachedData: Announcement[] | null = null
 let lastFetchTime = 0
 let fetchPromise: Promise<Announcement[]> | null = null
-const POLL_INTERVAL = 30000 // 30 seconds
+const POLL_INTERVAL = 10000 // 10 seconds (era 30s — apos feature aviso↔ticket
+// avisos chegam em tempo real quando cliente clica no portal. 30s frustra
+// atendente. 10s + listener on-focus mantem servidor leve.)
 const listeners = new Set<(data: Announcement[]) => void>()
 
 async function doFetch(): Promise<Announcement[]> {
@@ -96,7 +98,22 @@ export function useAvisos() {
     // Start global polling
     startPolling()
 
-    return () => { listeners.delete(listener) }
+    // 2026-05-13: refetch quando aba ganha foco. Atendente troca de tab,
+    // resolve algo, volta — quer ver estado atual sem esperar proximo poll.
+    // Combinado com POLL_INTERVAL=10s, da UX quase-instantanea.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        doFetch().then(data => listeners.forEach(fn => fn(data)))
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+
+    return () => {
+      listeners.delete(listener)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+    }
   }, [])
 
   const removeAnnouncement = useCallback((id: string) => {
