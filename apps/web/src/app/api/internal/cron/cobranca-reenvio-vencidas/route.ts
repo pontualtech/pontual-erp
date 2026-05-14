@@ -39,14 +39,16 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // 1. Feature flag — kill switch via Setting (DB sem deploy)
-    const flag = await prisma.setting.findFirst({
-      where: { key: 'cron.cobranca_reenvio_enabled' },
-      select: { value: true, company_id: true },
+    // 1. Feature flag — kill switch via Setting (DB sem deploy).
+    // Audit 14 fix: flag e POR-TENANT. Carregamos o conjunto de companies
+    // com 'false' explicito e usamos pra filtrar candidatos abaixo. Antes
+    // findFirst sem company_id pegava QUALQUER tenant — uma empresa que
+    // desligava o cron derrubava pra todas.
+    const disabledFlags = await prisma.setting.findMany({
+      where: { key: 'cron.cobranca_reenvio_enabled', value: 'false' },
+      select: { company_id: true },
     })
-    if (flag && flag.value === 'false') {
-      return NextResponse.json({ data: { skipped: 'feature_flag_off', processed: 0 } })
-    }
+    const disabledCompanyIds = disabledFlags.map(f => f.company_id)
 
     const now = new Date()
     // Audit fix 2026-05-14 #2: UTC explicito (era TZ local do server).
@@ -64,6 +66,7 @@ export async function POST(req: NextRequest) {
         charge_id: { not: null },
         charge_status: { in: ['PENDING', 'OVERDUE'] },
         due_date: { lt: today },
+        company_id: disabledCompanyIds.length > 0 ? { notIn: disabledCompanyIds } : undefined,
         OR: [
           { charge_sent_at: null },
           { charge_sent_at: { lt: cooldownThreshold } },

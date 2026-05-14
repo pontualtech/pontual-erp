@@ -27,6 +27,17 @@ export async function POST(req: NextRequest) {
 
     if (!subject?.trim()) return botError('Campo "subject" e obrigatorio')
 
+    // Audit 14 fix: IDOR — service_order_id era aceito sem validar tenant.
+    // Bot autenticado da empresa X poderia anexar ticket a uma OS da
+    // empresa Y se conseguisse adivinhar o UUID. Validar agora.
+    if (service_order_id) {
+      const osExists = await prisma.serviceOrder.findFirst({
+        where: { id: service_order_id, company_id: auth.companyId, deleted_at: null },
+        select: { id: true },
+      })
+      if (!osExists) return botError('service_order_id nao pertence ao tenant', 403)
+    }
+
     // Auto-increment ticket_number per company (mesmo padrao do POST /api/tickets)
     const lastTicket = await prisma.ticket.findFirst({
       where: { company_id: auth.companyId },

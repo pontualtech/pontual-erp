@@ -159,6 +159,7 @@ export async function POST(req: NextRequest) {
   const tagsToAdd: string[] = []
   let processed = true
   let skipUpdate = false
+  let bounceAtomic = false
 
   switch (eventType) {
     case 'email.delivered':
@@ -179,13 +180,12 @@ export async function POST(req: NextRequest) {
       break
 
     case 'email.bounced': {
-      const newBounceCount = (contact?.bounce_count || 0) + 1
-      updates.bounce_count = newBounceCount
+      // Audit 14 fix: read-modify-write substituido por SQL atomic abaixo
+      // (bounce_count + 1) com CASE pra setar unsubscribed em >=3. Race
+      // anterior: 2 webhooks simultaneos calculavam mesmo newBounceCount
+      // e gravavam N+1 quando deveria ser N+2.
+      bounceAtomic = true
       tagsToAdd.push('email:bouncing')
-      if (newBounceCount >= 3) {
-        updates.unsubscribed = true
-        updates.unsubscribed_at = new Date()
-      }
       break
     }
 
@@ -207,7 +207,20 @@ export async function POST(req: NextRequest) {
 
   // 6. Aplicar UPDATE em marketing_contacts (se houver contact + updates)
   if (contact && !skipUpdate && processed) {
-    if (tagsToAdd.length > 0) {
+    if (bounceAtomic) {
+      // Audit 14 fix: bounce increment atomico — bounce_count = bounce_count + 1
+      // e unsubscribed pula pra true quando atinge 3 num unico CASE. Evita
+      // race de 2 webhooks simultaneos somando o mesmo valor previo.
+      await prisma.$executeRaw`
+        UPDATE marketing_contacts
+        SET
+          bounce_count = bounce_count + 1,
+          unsubscribed = CASE WHEN bounce_count + 1 >= 3 THEN true ELSE unsubscribed END,
+          unsubscribed_at = CASE WHEN bounce_count + 1 >= 3 AND unsubscribed = false THEN now() ELSE unsubscribed_at END,
+          tags = (SELECT array_agg(DISTINCT t) FROM unnest(tags || ${tagsToAdd}::text[]) t)
+        WHERE id = ${contact.id}
+      `
+    } else if (tagsToAdd.length > 0) {
       // merge tags via SQL nativo (array_agg DISTINCT) pra atomicidade
       await prisma.$executeRaw`
         UPDATE marketing_contacts
@@ -215,7 +228,6 @@ export async function POST(req: NextRequest) {
           tags = (SELECT array_agg(DISTINCT t) FROM unnest(tags || ${tagsToAdd}::text[]) t),
           last_opened_at = COALESCE(${updates.last_opened_at || null}::timestamptz, last_opened_at),
           last_clicked_at = COALESCE(${updates.last_clicked_at || null}::timestamptz, last_clicked_at),
-          bounce_count = COALESCE(${updates.bounce_count ?? null}::int, bounce_count),
           unsubscribed = COALESCE(${updates.unsubscribed ?? null}::boolean, unsubscribed),
           unsubscribed_at = COALESCE(${updates.unsubscribed_at || null}::timestamptz, unsubscribed_at)
         WHERE id = ${contact.id}

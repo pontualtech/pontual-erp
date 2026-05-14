@@ -49,9 +49,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     // Consulta Asaas direto
     const remote = await provider.getStatus(payment.external_id)
 
-    // Mapeia status remoto → interno (mesma tabela do webhook)
+    // Mapeia status remoto → interno (mesma tabela do webhook).
+    // Audit 14 fix: RECEIVED estava faltando — Asaas envia RECEIVED quando
+    // boleto/PIX e pago e CONFIRMED quando cartao auth. Sem map, status
+    // RECEIVED caia em fallback (payment.status original = PENDING) e
+    // is_paid ficava false mesmo com pagamento confirmado no Asaas.
     const REMOTE_TO_INTERNAL: Record<string, string> = {
       PENDING: 'PENDING',
+      RECEIVED: 'CONFIRMED',
       CONFIRMED: 'CONFIRMED',
       EXPIRED: 'EXPIRED',
       REFUNDED: 'REFUNDED',
