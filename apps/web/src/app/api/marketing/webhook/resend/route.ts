@@ -135,18 +135,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'invalid payload shape' }, { status: 400 })
   }
 
-  // Audit 14 fix: resolver companyId via "from" address pra evitar misturar
-  // tenants. Antes hardcoded em RESEND_WEBHOOK_COMPANY_ID, fazia bounce de
-  // email IMP virar marker em contato PT (e vice-versa). Lookup via Setting
-  // `email.from_address` por tenant; fallback pro env var se nao bater.
+  // Audit 14 fix + hardening 14/05: resolver companyId via DOMÍNIO do "from"
+  // address (não email exato). Antes patch4 (audit14) usava match exato no
+  // value do Setting `email.from_address`, mas campanhas usam vários from
+  // distintos por tenant (newsletter@, contato@, vendas@, sac@, etc) e só 1
+  // está cadastrado no Setting. Match por domínio cobre TODOS os from de cada
+  // tenant. Fallback pro env var preserva backward compat.
   let companyId = process.env.RESEND_WEBHOOK_COMPANY_ID || 'pontualtech-001'
   const fromRaw = (payload.data?.from || '').toLowerCase()
   if (fromRaw) {
     const m = fromRaw.match(/<([^>]+)>|([^\s<>]+@[^\s<>]+)/)
     const bareEmail = (m?.[1] || m?.[2] || fromRaw).trim()
-    if (bareEmail) {
+    const domain = bareEmail.split('@')[1] || ''
+    if (domain) {
       const fromSetting = await prisma.setting.findFirst({
-        where: { key: 'email.from_address', value: { contains: bareEmail, mode: 'insensitive' } },
+        where: { key: 'email.from_address', value: { contains: `@${domain}`, mode: 'insensitive' } },
         select: { company_id: true },
       })
       if (fromSetting?.company_id) companyId = fromSetting.company_id
