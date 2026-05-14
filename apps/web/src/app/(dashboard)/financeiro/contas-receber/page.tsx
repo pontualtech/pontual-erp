@@ -567,6 +567,39 @@ export default function ContasReceberPage() {
     }
   }
 
+  // Feature 2026-05-14: reenvia em massa cobrancas das contas selecionadas
+  // que ja tem charge_id. ARs sem cobranca sao skipped (retorno do backend).
+  const [bulkResending, setBulkResending] = useState(false)
+  async function handleBulkResend() {
+    if (bulkResending) return
+    const ids = Array.from(selected)
+    if (ids.length === 0) return
+    const eligible = contas.filter(c => selected.has(c.id) && c.charge_id)
+    if (eligible.length === 0) {
+      toast.error('Nenhuma das contas selecionadas tem cobrança gerada')
+      return
+    }
+    if (!confirm(`Reenviar cobrança de ${eligible.length} conta${eligible.length !== 1 ? 's' : ''}?`)) return
+    setBulkResending(true)
+    try {
+      const res = await fetch('/api/financeiro/cobranca/bulk-resend', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ receivable_ids: eligible.map(c => c.id) }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao reenviar')
+      const ok = data?.data?.ok_count ?? 0
+      const fail = data?.data?.fail_count ?? 0
+      toast.success(`${ok} cobrança${ok !== 1 ? 's' : ''} reenviada${ok !== 1 ? 's' : ''}${fail ? ` · ${fail} falhou` : ''}`)
+      setSelected(new Set())
+      loadContas()
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao reenviar')
+    } finally {
+      setBulkResending(false)
+    }
+  }
+
   function clearFilters() {
     setSearch('')
     setStatusFilter('')
@@ -1525,6 +1558,12 @@ export default function ContasReceberPage() {
               title="Enviar por e-mail"
               className="flex items-center gap-1.5 px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium">
               <Mail className="h-3.5 w-3.5" /> Email
+            </button>
+            {/* Reenviar cobranca em massa (feature 2026-05-14 feat 2/4) */}
+            <button type="button" onClick={handleBulkResend} disabled={bulkResending}
+              title="Reenviar cobrança das contas selecionadas que já têm cobrança gerada"
+              className="flex items-center gap-1.5 px-3 py-1 text-sm bg-emerald-600 text-white rounded-md hover:bg-emerald-700 font-medium disabled:opacity-60">
+              <Send className="h-3.5 w-3.5" /> {bulkResending ? 'Reenviando...' : 'Reenviar cobrança'}
             </button>
             {canGroup && (
               <button type="button" onClick={openAgrupar}
