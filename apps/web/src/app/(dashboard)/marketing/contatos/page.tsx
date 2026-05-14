@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Search, Loader2, Mail, MousePointerClick, MailX, BarChart3 } from 'lucide-react'
+import Link from 'next/link'
+import { Search, Loader2, Mail, MousePointerClick, MailX, BarChart3, ChevronRight } from 'lucide-react'
 
 interface Contact {
   id: string
@@ -201,11 +202,12 @@ export default function MarketingContatosPage() {
                   <th className="px-3 py-2">Tags</th>
                   <th className="px-3 py-2">Último sinal</th>
                   <th className="px-3 py-2">Sinais</th>
+                  <th className="px-3 py-2"><span className="sr-only">Ações</span></th>
                 </tr>
               </thead>
               <tbody>
                 {contacts.map(c => (
-                  <tr key={c.id} className="border-t border-gray-100 dark:border-gray-700">
+                  <tr key={c.id} className="border-t border-gray-100 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-900/40">
                     <td className="px-3 py-2 font-mono text-xs">
                       <span className={c.unsubscribed ? 'line-through text-gray-400' : ''}>{c.email}</span>
                     </td>
@@ -224,6 +226,11 @@ export default function MarketingContatosPage() {
                         {c.bounce_count > 0 && <span title={`${c.bounce_count} bounces`} className="text-red-500">B{c.bounce_count}</span>}
                         {c.unsubscribed && <span title="unsubscribed"><MailX className="inline h-3 w-3 text-orange-500" /></span>}
                       </div>
+                    </td>
+                    <td className="px-3 py-2">
+                      <Link href={`/marketing/contatos/${c.id}`} className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline" title="Ver detalhes">
+                        ver <ChevronRight className="h-3 w-3" />
+                      </Link>
                     </td>
                   </tr>
                 ))}

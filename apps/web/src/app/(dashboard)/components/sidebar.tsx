@@ -79,6 +79,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
     title: 'Marketing',
     items: [
       { label: 'Contatos', href: '/marketing/contatos', icon: Users, adminOnly: true },
+      { label: 'Campanhas', href: '/marketing/campanhas', icon: BarChart3, adminOnly: true },
     ],
   },
   {
