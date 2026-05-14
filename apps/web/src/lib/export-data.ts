@@ -19,6 +19,11 @@ interface ExportOptions {
   title?: string // PDF title
   columns: ExportColumn[]
   data: Record<string, any>[]
+  // Feature 2026-05-14: linhas de totais agregados pra PDF (financeiro).
+  // Cada item vira uma linha "label: value" abaixo da tabela.
+  summary?: { label: string; value: string }[]
+  // Cap de linhas pra PDF (perf). null = sem limite.
+  maxRows?: number | null
 }
 
 /** Format currency from centavos */
@@ -92,6 +97,12 @@ export function exportToCSV(opts: ExportOptions) {
 export function exportToPDF(opts: ExportOptions) {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
 
+  // Cap maxRows (default 500 pra performance). null = sem limite (preserva
+  // comportamento original pra callers que nao definem maxRows).
+  const cap = opts.maxRows === null ? null : (opts.maxRows ?? null)
+  const dataToRender = cap !== null && opts.data.length > cap ? opts.data.slice(0, cap) : opts.data
+  const truncated = cap !== null && opts.data.length > cap
+
   // Title
   doc.setFontSize(14)
   doc.setFont('helvetica', 'bold')
@@ -101,18 +112,37 @@ export function exportToPDF(opts: ExportOptions) {
   doc.setFontSize(9)
   doc.setFont('helvetica', 'normal')
   doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 22)
-  doc.text(`Total: ${opts.data.length} registros`, 14, 27)
+  const totalLine = truncated
+    ? `Mostrando ${dataToRender.length} de ${opts.data.length} registros (cap aplicado)`
+    : `Total: ${opts.data.length} registros`
+  doc.text(totalLine, 14, 27)
 
   // Table
   autoTable(doc, {
     startY: 32,
     head: [opts.columns.map(c => c.label)],
-    body: opts.data.map(row => opts.columns.map(col => getCellValue(row, col))),
+    body: dataToRender.map(row => opts.columns.map(col => getCellValue(row, col))),
     styles: { fontSize: 8, cellPadding: 2 },
     headStyles: { fillColor: [37, 99, 235], textColor: 255, fontStyle: 'bold', fontSize: 8 },
     alternateRowStyles: { fillColor: [248, 250, 252] },
     margin: { left: 14, right: 14 },
   })
+
+  // Summary (linhas de totais) abaixo da tabela — feature 2026-05-14
+  if (opts.summary && opts.summary.length > 0) {
+    const finalY = (doc as any).lastAutoTable?.finalY || 32
+    autoTable(doc, {
+      startY: finalY + 4,
+      body: opts.summary.map(s => [s.label, s.value]),
+      theme: 'plain',
+      styles: { fontSize: 9, cellPadding: 1, fontStyle: 'bold' },
+      columnStyles: {
+        0: { halign: 'right', cellWidth: 60 },
+        1: { halign: 'right', fontStyle: 'bold' },
+      },
+      margin: { left: 14, right: 14 },
+    })
+  }
 
   doc.save(`${opts.filename}.pdf`)
 }

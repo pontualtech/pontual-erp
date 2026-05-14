@@ -123,11 +123,28 @@ const statusConfig: Record<string, { label: string; color: string }> = {
   AGRUPADO: { label: 'Agrupado', color: 'bg-purple-100 text-purple-800' },
 }
 
+// Map charge_status pra label PT-BR (mesma logica do getChargeBadge mas em texto puro).
+function chargeStatusLabel(s: string | null | undefined): string {
+  if (!s) return 'Sem cobrança'
+  const m: Record<string, string> = {
+    PENDING: 'Enviada',
+    RECEIVED: 'Pago',
+    CONFIRMED: 'Pago',
+    OVERDUE: 'Vencida',
+    REFUNDED: 'Estornada',
+    DISPUTED: 'Em disputa',
+    CHARGEBACK_LOST: 'Chargeback',
+    CANCELLED: 'Cancelada',
+  }
+  return m[s] || s
+}
+
 const exportColumns = [
   { key: 'description', label: 'Descrição' },
   { key: 'customer_name', label: 'Cliente' },
   { key: 'total_amount', label: 'Valor', format: (v: number) => v ? (v/100).toFixed(2) : '' },
-  { key: 'status', label: 'Status' },
+  { key: 'status', label: 'Status AR' },
+  { key: 'charge_status_label', label: 'Cobrança Asaas' },
   { key: 'due_date', label: 'Vencimento', format: (v: string) => v ? new Date(v).toLocaleDateString('pt-BR') : '' },
   { key: 'paid_at', label: 'Pago em', format: (v: string) => v ? new Date(v).toLocaleDateString('pt-BR') : '' },
   { key: 'payment_method', label: 'Forma Pagamento' },
@@ -651,6 +668,8 @@ export default function ContasReceberPage() {
       customer_name: c.customers?.legal_name ?? '',
       category_name: c.categories?.name ?? '',
       status: (statusConfig[getDisplayStatus(c)] || statusConfig.PENDENTE).label,
+      // Feature 2026-05-14: charge_status legível no export
+      charge_status_label: chargeStatusLabel(c.charge_status),
     }))
   }
 
@@ -660,7 +679,25 @@ export default function ContasReceberPage() {
     try {
       const allData = await fetchAllReceivables()
       const data = prepareExportData(allData)
-      const opts = { filename: 'contas-receber', title: 'Contas a Receber', columns: exportColumns, data }
+      // Feature 2026-05-14: summary agregado pra PDF (totais).
+      const totalAmount = allData.reduce((s, c) => s + (c.total_amount || 0), 0)
+      const totalReceived = allData.reduce((s, c) => s + (c.received_amount || 0), 0)
+      const pendingAmount = totalAmount - totalReceived
+      const summary = format === 'pdf' ? [
+        { label: 'Total geral', value: formatCurrency(totalAmount) },
+        { label: 'Já recebido', value: formatCurrency(totalReceived) },
+        { label: 'Pendente', value: formatCurrency(pendingAmount) },
+        { label: 'Quantidade', value: `${allData.length} conta${allData.length !== 1 ? 's' : ''}` },
+      ] : undefined
+      const opts = {
+        filename: 'contas-receber',
+        title: 'Contas a Receber',
+        columns: exportColumns,
+        data,
+        // PDF cap 500 (decisao Karlao); Excel/CSV sem cap.
+        maxRows: format === 'pdf' ? 500 : null,
+        summary,
+      }
       if (format === 'excel') exportToExcel(opts)
       else if (format === 'csv') exportToCSV(opts)
       else exportToPDF(opts)
