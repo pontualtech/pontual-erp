@@ -150,7 +150,10 @@ async function buildLinkResponse(
   return NextResponse.json({
     data: {
       url: url.toString(),
-      expires_in_hours: 5 * 365 * 24, // 5 anos
+      // Audit 14 fix: alinhar com TTL real do token (ACCESS_TOKEN_TTL_MS =
+      // 30d em portal-auth.ts). Resposta dizia 5 anos enganando frontend
+      // sobre quando o link expira.
+      expires_in_hours: 30 * 24,
       customer_name: customer.legal_name,
       company_name: company.name,
       wa: waResult,

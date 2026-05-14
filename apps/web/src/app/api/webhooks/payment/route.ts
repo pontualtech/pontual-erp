@@ -1125,7 +1125,11 @@ export async function POST(req: NextRequest) {
             const firstName = (customer.legal_name || 'Cliente').split(' ')[0]
             const msg = `Ola, ${firstName}! Confirmamos o recebimento do pagamento.\n\n*Pagamento confirmado*\nValor: ${valorBRL}\nForma: ${metodo}\nOS #${osNum} — ${equipment}\n\nAcompanhar OS:\n${ml.url}\n\n_Equipe ${companyName}_`
             const { sendWhatsAppCloud } = await import('@/lib/whatsapp/cloud-api')
-            sendWhatsAppCloud(paymentFresh.company_id, phone, msg).catch(() => {})
+            // Audit 14 fix: trocar .catch(()=>{}) por logging. Mantemos
+            // fire-and-forget (nao bloqueia webhook), mas erros viram
+            // visiveis em logs em vez de sumir silenciosamente.
+            sendWhatsAppCloud(paymentFresh.company_id, phone, msg)
+              .catch(err => console.error('[Webhook payment WA confirmacao]', err instanceof Error ? err.message : err))
           }
 
           // Email
@@ -1154,7 +1158,8 @@ export async function POST(req: NextRequest) {
               </div>
             </body></html>`
             const { sendCompanyEmail } = await import('@/lib/send-email')
-            sendCompanyEmail(paymentFresh.company_id, customer.email, `Pagamento confirmado — OS #${osNum} — ${companyName}`, html).catch(() => {})
+            sendCompanyEmail(paymentFresh.company_id, customer.email, `Pagamento confirmado — OS #${osNum} — ${companyName}`, html)
+              .catch(err => console.error('[Webhook payment email confirmacao]', err instanceof Error ? err.message : err))
           }
         } catch (e: any) {
           console.error('[Webhook payment notify] falhou:', e?.message)
