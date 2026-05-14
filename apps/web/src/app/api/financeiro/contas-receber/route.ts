@@ -42,8 +42,19 @@ export async function GET(request: NextRequest) {
     const valueMax = searchParams.get('valueMax')
     const dateType = searchParams.get('dateType') || 'vencimento'
     const bankAccountId = searchParams.get('bankAccountId')
+    // 2026-05-14: filtro por status da cobranca Asaas (charge_status).
+    // Valor especial 'NONE' filtra ARs sem cobranca gerada (charge_status null).
+    const chargeStatus = searchParams.get('chargeStatus')
 
     const where: any = { company_id: user.companyId, deleted_at: null }
+
+    if (chargeStatus) {
+      if (chargeStatus === 'NONE') {
+        where.charge_status = null
+      } else {
+        where.charge_status = chargeStatus
+      }
+    }
 
     if (status) {
       if (status === 'VENCIDO') {

@@ -160,6 +160,8 @@ export default function ContasReceberPage() {
   const [valueMax, setValueMax] = useState('')
   // Sprint UX-23: filtro por banco vinculado (account_id)
   const [bankAccountFilter, setBankAccountFilter] = useState(urlParams.get('bankAccountId') || '')
+  // 2026-05-14: filtro por status da cobranca Asaas (charge_status).
+  const [chargeStatusFilter, setChargeStatusFilter] = useState(urlParams.get('chargeStatus') || '')
   const [showFilters, setShowFilters] = useState(false)
   const [filteredSum, setFilteredSum] = useState(0)
 
@@ -345,6 +347,7 @@ export default function ContasReceberPage() {
     if (valueMax) params.set('valueMax', String(Math.round(Number(valueMax) * 100)))
     if (customerIdFilter) params.set('customerId', customerIdFilter)
     if (bankAccountFilter) params.set('bankAccountId', bankAccountFilter)
+    if (chargeStatusFilter) params.set('chargeStatus', chargeStatusFilter)
 
     fetch(`/api/financeiro/contas-receber?${params}`)
       .then(r => r.json())
@@ -357,7 +360,7 @@ export default function ContasReceberPage() {
       })
       .catch(() => toast.error('Erro ao carregar contas'))
       .finally(() => setLoading(false))
-  }, [page, search, statusFilter, startDate, endDate, paymentMethodFilter, categoryFilter, dateType, valueMin, valueMax, customerIdFilter, bankAccountFilter])
+  }, [page, search, statusFilter, startDate, endDate, paymentMethodFilter, categoryFilter, dateType, valueMin, valueMax, customerIdFilter, bankAccountFilter, chargeStatusFilter])
 
   useEffect(() => { loadContas(); setSelected(new Set()) }, [loadContas])
 
@@ -575,6 +578,7 @@ export default function ContasReceberPage() {
     setValueMin('')
     setValueMax('')
     setBankAccountFilter('')
+    setChargeStatusFilter('')
     setPage(1)
   }
 
@@ -598,6 +602,7 @@ export default function ContasReceberPage() {
       if (valueMax) params.set('valueMax', String(Math.round(Number(valueMax) * 100)))
       if (customerIdFilter) params.set('customerId', customerIdFilter)
       if (bankAccountFilter) params.set('bankAccountId', bankAccountFilter)
+      if (chargeStatusFilter) params.set('chargeStatus', chargeStatusFilter)
       const res = await fetch(`/api/financeiro/contas-receber?${params}`)
       const d = await res.json()
       all.push(...(d.data ?? []))
@@ -821,8 +826,8 @@ export default function ContasReceberPage() {
     }
   }
 
-  const hasFilters = search || statusFilter || startDate || endDate || paymentMethodFilter || categoryFilter || dateType !== 'vencimento' || valueMin || valueMax || bankAccountFilter
-  const activeFilterCount = [statusFilter, paymentMethodFilter, categoryFilter, bankAccountFilter, startDate || endDate ? 'date' : '', valueMin || valueMax ? 'value' : '', dateType !== 'vencimento' ? 'dateType' : ''].filter(Boolean).length
+  const hasFilters = search || statusFilter || startDate || endDate || paymentMethodFilter || categoryFilter || dateType !== 'vencimento' || valueMin || valueMax || bankAccountFilter || chargeStatusFilter
+  const activeFilterCount = [statusFilter, paymentMethodFilter, categoryFilter, bankAccountFilter, chargeStatusFilter, startDate || endDate ? 'date' : '', valueMin || valueMax ? 'value' : '', dateType !== 'vencimento' ? 'dateType' : ''].filter(Boolean).length
   const contaToDelete = contas.find(c => c.id === deleteId)
   const contaBaixa = contas.find(c => c.id === baixaId)
 
@@ -1124,6 +1129,26 @@ export default function ContasReceberPage() {
                 {categories.map(cat => (
                   <option key={cat.id} value={cat.id}>{cat.name}</option>
                 ))}
+              </select>
+            </div>
+            {/* Filtro charge_status (feature 2026-05-14): status da cobranca Asaas */}
+            <div className="min-w-[160px]">
+              <label htmlFor="charge-status-filter" className="block text-xs font-medium text-gray-500 mb-1">Cobrança Asaas</label>
+              <select
+                id="charge-status-filter"
+                value={chargeStatusFilter}
+                onChange={e => { setChargeStatusFilter(e.target.value); setPage(1) }}
+                className="w-full rounded-md border bg-white py-1.5 px-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+              >
+                <option value="">Todos</option>
+                <option value="NONE">Sem cobrança</option>
+                <option value="PENDING">Cobrança enviada</option>
+                <option value="RECEIVED">Pago</option>
+                <option value="CONFIRMED">Pago (confirmado)</option>
+                <option value="OVERDUE">Vencida</option>
+                <option value="REFUNDED">Estornada</option>
+                <option value="DISPUTED">Em disputa</option>
+                <option value="CANCELLED">Cancelada</option>
               </select>
             </div>
             <div className="min-w-[160px]">
