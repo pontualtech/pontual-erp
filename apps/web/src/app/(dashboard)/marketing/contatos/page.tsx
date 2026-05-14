@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { Search, Loader2, Mail, MousePointerClick, MailX, BarChart3, ChevronRight } from 'lucide-react'
+import { Search, Loader2, Mail, MousePointerClick, MailX, BarChart3, ChevronRight, Bookmark } from 'lucide-react'
 
 interface Contact {
   id: string
@@ -115,6 +115,40 @@ export default function MarketingContatosPage() {
     )
   }
 
+  async function handleSaveAsSegment() {
+    const name = prompt('Nome do segmento (ex: "Clientes B2C atendidos 2024"):')?.trim()
+    if (!name) return
+    const description = prompt('Descrição (opcional):')?.trim() || undefined
+
+    // Monta filtros do estado atual
+    const filters: any = {}
+    if (search) filters.search = search
+    if (segment) filters.segment = segment
+    if (stage) filters.stage = stage
+    if (unsub) filters.unsubscribed = unsub
+    if (onlyBounced) filters.onlyBounced = true
+
+    try {
+      const r = await fetch('/api/marketing/segmentos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, description, filters }),
+      })
+      if (r.ok) {
+        const j = await r.json()
+        if (confirm(`Segmento "${name}" criado! Ir para a página de segmentos?`)) {
+          window.location.href = `/marketing/segmentos/${j.data.segment.id}`
+        }
+      } else if (r.status === 409) {
+        alert('Já existe um segmento com este nome.')
+      } else {
+        alert('Erro ao salvar segmento.')
+      }
+    } catch {
+      alert('Erro de rede.')
+    }
+  }
+
   return (
     <div className="p-6">
       <div className="mb-4 flex items-center justify-between">
@@ -124,6 +158,15 @@ export default function MarketingContatosPage() {
             Base de contatos para campanhas de email/SMS. {stats && `${stats.total.toLocaleString('pt-BR')} contatos.`}
           </p>
         </div>
+        <button
+          type="button"
+          onClick={handleSaveAsSegment}
+          className="inline-flex items-center gap-1 rounded-md border border-blue-300 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 dark:border-blue-900/50 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/40"
+          title="Salvar filtros atuais como segmento reutilizável"
+        >
+          <Bookmark className="h-4 w-4" />
+          Salvar como segmento
+        </button>
       </div>
 
       {/* Stats cards */}
