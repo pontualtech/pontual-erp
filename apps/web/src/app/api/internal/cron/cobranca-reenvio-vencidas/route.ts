@@ -49,7 +49,10 @@ export async function POST(req: NextRequest) {
     }
 
     const now = new Date()
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    // Audit fix 2026-05-14 #2: UTC explicito (era TZ local do server).
+    // Server em UTC+0 vs BRT pode causar drift de 3h — cobranca que
+    // vence HOJE pode virar "vencida" antecipadamente.
+    const today = new Date(now.toISOString().slice(0, 10) + 'T00:00:00.000Z')
     const cooldownThreshold = new Date(now.getTime() - COOLDOWN_MS)
 
     // 2. Busca candidatos: ARs com charge ativa (charge_id), vencidos,

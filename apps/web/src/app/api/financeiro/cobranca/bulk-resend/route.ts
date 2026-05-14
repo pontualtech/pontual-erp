@@ -53,22 +53,34 @@ export async function POST(req: NextRequest) {
     }> = []
 
     // Processa serialmente — Asaas tem rate limit. 50 maximo via schema.
+    // Audit fix 2026-05-14 #3: try/catch POR ITEM. Antes uma exception
+    // de rede pra Asaas matava o loop, atendente perdia info dos itens
+    // que ja tinham sido reenviados antes do erro.
     for (const r of receivables) {
       if (!r.charge_id) continue
-      const result = await resendChargeByPaymentId({
-        paymentId: r.charge_id,
-        companyId: auth.companyId,
-        sendWhatsApp: data.send_whatsapp,
-        sendEmail: data.send_email,
-      })
-      results.push({
-        receivable_id: r.id,
-        ok: result.ok,
-        reason: result.ok ? undefined : result.reason,
-        message: result.ok ? undefined : result.message,
-        sent_whatsapp: result.ok ? result.sent_whatsapp : undefined,
-        sent_email: result.ok ? result.sent_email : undefined,
-      })
+      try {
+        const result = await resendChargeByPaymentId({
+          paymentId: r.charge_id,
+          companyId: auth.companyId,
+          sendWhatsApp: data.send_whatsapp,
+          sendEmail: data.send_email,
+        })
+        results.push({
+          receivable_id: r.id,
+          ok: result.ok,
+          reason: result.ok ? undefined : result.reason,
+          message: result.ok ? undefined : result.message,
+          sent_whatsapp: result.ok ? result.sent_whatsapp : undefined,
+          sent_email: result.ok ? result.sent_email : undefined,
+        })
+      } catch (e) {
+        results.push({
+          receivable_id: r.id,
+          ok: false,
+          reason: 'exception',
+          message: e instanceof Error ? e.message : 'erro desconhecido',
+        })
+      }
     }
 
     // ARs solicitados mas nao encontrados/sem cobranca: marca como skipped

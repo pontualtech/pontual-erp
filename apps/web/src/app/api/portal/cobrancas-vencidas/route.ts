@@ -22,8 +22,9 @@ export async function GET(req: NextRequest) {
     // Cobrancas "vencidas" do ponto de vista do cliente:
     // 1. charge_status = OVERDUE (Asaas confirmou que venceu)
     // 2. OU charge_status = PENDING + due_date < hoje
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
+    // Audit fix 2026-05-14 #2: UTC explicito (consistencia com AR.due_date).
+    const now = new Date()
+    const today = new Date(now.toISOString().slice(0, 10) + 'T00:00:00.000Z')
 
     const cobrancas = await prisma.accountReceivable.findMany({
       where: {

@@ -1025,8 +1025,15 @@ export async function POST(req: NextRequest) {
     if (result.action === 'processed' && result.reason && /→ RECEIVED$/.test(result.reason) && payment.receivable_id) {
       ;(async () => {
         try {
+          // Audit fix 2026-05-14 #1: dedup. Re-fetch payment pra valor fresco
+          // (fix #5) + busca AR com totals atualizados.
+          const freshPay = await prisma.payment.findUnique({
+            where: { id: payment.id },
+            select: { amount: true, external_id: true, company_id: true, receivable_id: true },
+          })
+          if (!freshPay || !freshPay.receivable_id) return
           const ar = await prisma.accountReceivable.findUnique({
-            where: { id: payment.receivable_id! },
+            where: { id: freshPay.receivable_id },
             select: {
               total_amount: true,
               service_orders: { select: { os_number: true } },
@@ -1034,14 +1041,29 @@ export async function POST(req: NextRequest) {
             },
           })
           if (!ar) return
-          const valorBRL = (payment.amount / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+
+          // Dedup: se ja existe Announcement deste payment.external_id, skip.
+          // Asaas pode reenviar webhook (retry 3x oficial) ou disparar 2
+          // eventos distintos pra mesmo pagamento (DUNNING_RECEIVED + PAYMENT_RECEIVED).
+          const existing = freshPay.external_id ? await prisma.announcement.findFirst({
+            where: {
+              company_id: freshPay.company_id,
+              created_by: 'webhook-asaas',
+              message: { contains: freshPay.external_id },
+            },
+            select: { id: true },
+          }) : null
+          if (existing) return
+
+          const valorBRL = (freshPay.amount / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
           const osStr = ar.service_orders ? `OS #${ar.service_orders.os_number}` : 'cobrança'
           const customerName = ar.customers?.legal_name || 'Cliente'
           await prisma.announcement.create({
             data: {
-              company_id: payment.company_id,
+              company_id: freshPay.company_id,
               title: `💰 Pagamento recebido — ${osStr} — ${customerName}`,
-              message: `Cliente pagou ${valorBRL} via Asaas. Aguardando confirmacao bancaria pra fundos cairem na conta.`,
+              // external_id na mensagem viabiliza dedup acima.
+              message: `Cliente pagou ${valorBRL} via Asaas. Aguardando confirmacao bancaria pra fundos cairem na conta.${freshPay.external_id ? ` [ref:${freshPay.external_id}]` : ''}`,
               priority: 'IMPORTANTE',
               require_read: false,
               author_name: 'Sistema',

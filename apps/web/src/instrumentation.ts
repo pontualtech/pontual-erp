@@ -167,6 +167,12 @@ function startCronJobs() {
   console.log('  - Billing Reminder: every 1 hour')
   console.log('  - Driver Inactivity: every 10 min')
   console.log('  - Google Reviews: every 5 min')
-  console.log('  - Cobranca Reenvio Vencidas: every 1h (cooldown 20h/AR)')
+  // Audit fix 2026-05-14 #7: log condicional pro cron novo. Antes
+  // imprimia ativo mesmo quando INTERNAL_API_KEY ausente (cron desabilitado).
+  if (INTERNAL_API_KEY) {
+    console.log('  - Cobranca Reenvio Vencidas: every 1h (cooldown 20h/AR)')
+  } else {
+    console.log('  - Cobranca Reenvio Vencidas: DESABILITADO (INTERNAL_API_KEY ausente)')
+  }
   console.log('  - Cleanup Location History: every 24h')
 }

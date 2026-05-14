@@ -21,9 +21,11 @@ export async function GET(_req: NextRequest) {
     if (auth instanceof NextResponse) return auth
 
     const now = new Date()
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    // Audit fix 2026-05-14 #2: UTC explicito (consistencia AR.due_date que
+    // eh armazenado em UTC). TZ local do server podia causar drift de 3h.
+    const today = new Date(now.toISOString().slice(0, 10) + 'T00:00:00.000Z')
     const tomorrow = new Date(today)
-    tomorrow.setDate(tomorrow.getDate() + 1)
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1)
 
     type Row = {
       vencidas_sum: bigint | number; vencidas_count: bigint

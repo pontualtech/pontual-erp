@@ -87,7 +87,12 @@ export async function GET(request: NextRequest) {
     }
 
     // Determine which date field to filter based on dateType
-    if (startDate || endDate) {
+    // Audit fix 2026-05-14 #4: status=VENCIDO ja setou where.status=PENDENTE
+    // e where.due_date={lt:now}. dateType=pagamento sobrescrevia pra
+    // status=RECEBIDO criando query contraditoria. Agora: se status=VENCIDO,
+    // dateType=pagamento eh ignorado (incompativel logicamente).
+    const skipDateTypeForStatus = status === 'VENCIDO' && dateType === 'pagamento'
+    if ((startDate || endDate) && !skipDateTypeForStatus) {
       if (dateType === 'emissao') {
         if (!where.created_at) where.created_at = {}
         if (startDate) where.created_at.gte = new Date(startDate)
