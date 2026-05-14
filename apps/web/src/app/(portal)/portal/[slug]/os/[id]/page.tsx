@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { Printer, Mail, X, CreditCard, Truck, Clock, Banknote, Zap, CheckCircle2, MessageSquare, Loader2 } from 'lucide-react'
 import { PhotoGallery } from '../../../../components/photo-gallery'
 import PortalPayBox from './_components/portal-pay-box'
+import { OverdueChargesBanner } from '../../../../_components/OverdueChargesBanner'
 
 interface OSDetail {
   id: string
@@ -502,6 +503,9 @@ export default function PortalOSDetailPage() {
           </svg>
           <span className="text-gray-900 dark:text-gray-100 font-medium">OS #{os.os_number}</span>
         </div>
+
+        {/* Banner cobranca vencida especifica desta OS (feature 2026-05-14 feat 6/7) */}
+        <OverdueChargesBanner osId={os.id} />
 
         {/* OS Header */}
         <div className="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-700 p-6 mb-6">

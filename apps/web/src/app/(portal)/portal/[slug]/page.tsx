@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import { ThemeToggle } from '../../components/theme-toggle'
 import { readPortalCompany, readPortalCustomer } from '@/lib/portal-auth-storage'
+import { OverdueChargesBanner } from '../../_components/OverdueChargesBanner'
 
 interface PortalOS {
   id: string
@@ -198,6 +199,9 @@ export default function PortalDashboardPage() {
 
       {/* Content */}
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+
+        {/* Banner cobrancas vencidas (feature 2026-05-14 feat 6/7) */}
+        <OverdueChargesBanner />
 
         {/* Priority Banner - Aguardando Aprovacao */}
         {osAguardandoAprovacao.length > 0 && (
