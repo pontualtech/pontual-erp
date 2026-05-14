@@ -4,6 +4,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { resendChargeByPaymentId } from '@/lib/payments/resend-charge'
 import { logAudit } from '@/lib/audit'
+import { handleError } from '@/lib/api-response'
 
 /**
  * POST /api/financeiro/cobranca/bulk-resend
@@ -97,8 +98,6 @@ export async function POST(req: NextRequest) {
       },
     })
   } catch (err) {
-    console.error('[bulk-resend] error:', err)
-    const msg = err instanceof Error ? err.message : 'Erro ao reenviar cobrancas'
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return handleError(err)
   }
 }
