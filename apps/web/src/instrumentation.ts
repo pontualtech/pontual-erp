@@ -135,11 +135,38 @@ function startCronJobs() {
     }, 5 * 60 * 1000) // 5 minutes
   }
 
+  // Cobrança reenvio diario — feature 2026-05-14 feat 7/7
+  // Roda a cada 1h. Cooldown 20h por cobranca (em /api/internal/cron/...)
+  // garante max 1 envio/dia/AR mesmo com 24 execucoes/dia.
+  if (!INTERNAL_API_KEY) {
+    console.warn('[Cron/CobrancaReenvio] INTERNAL_API_KEY ausente — cron desabilitado')
+  } else {
+    setInterval(async () => {
+      try {
+        const res = await fetch(`${BASE_URL}/api/internal/cron/cobranca-reenvio-vencidas`, {
+          method: 'POST',
+          headers: { 'x-internal-key': INTERNAL_API_KEY },
+        })
+        if (res.ok) {
+          const data = await res.json()
+          if (data.data?.ok_count > 0) {
+            console.log(`[Cron/CobrancaReenvio] Reenviadas ${data.data.ok_count}/${data.data.processed} cobrancas`)
+          }
+        } else {
+          console.error(`[Cron/CobrancaReenvio] HTTP ${res.status}`)
+        }
+      } catch (err) {
+        console.error('[Cron/CobrancaReenvio] Error:', err instanceof Error ? err.message : err)
+      }
+    }, 60 * 60 * 1000) // 1 hour
+  }
+
   console.log('[Cron] Internal cron jobs started:')
   console.log('  - Bot Follow-up: every 5 min')
   console.log('  - Quote Reminder: every 30 min')
   console.log('  - Billing Reminder: every 1 hour')
   console.log('  - Driver Inactivity: every 10 min')
   console.log('  - Google Reviews: every 5 min')
+  console.log('  - Cobranca Reenvio Vencidas: every 1h (cooldown 20h/AR)')
   console.log('  - Cleanup Location History: every 24h')
 }
