@@ -1019,6 +1019,41 @@ export async function POST(req: NextRequest) {
       })()
     }
 
+    // Feature 2026-05-14 (feat 4/4): aviso pro sino do dashboard quando
+    // cobranca vira RECEIVED. Atendente ve em ate ~10s (poll do useAvisos).
+    // Fire-and-forget — falha aqui nao reverte a baixa.
+    if (result.action === 'processed' && result.reason && /→ RECEIVED$/.test(result.reason) && payment.receivable_id) {
+      ;(async () => {
+        try {
+          const ar = await prisma.accountReceivable.findUnique({
+            where: { id: payment.receivable_id! },
+            select: {
+              total_amount: true,
+              service_orders: { select: { os_number: true } },
+              customers: { select: { legal_name: true } },
+            },
+          })
+          if (!ar) return
+          const valorBRL = (payment.amount / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+          const osStr = ar.service_orders ? `OS #${ar.service_orders.os_number}` : 'cobrança'
+          const customerName = ar.customers?.legal_name || 'Cliente'
+          await prisma.announcement.create({
+            data: {
+              company_id: payment.company_id,
+              title: `💰 Pagamento recebido — ${osStr} — ${customerName}`,
+              message: `Cliente pagou ${valorBRL} via Asaas. Aguardando confirmacao bancaria pra fundos cairem na conta.`,
+              priority: 'IMPORTANTE',
+              require_read: false,
+              author_name: 'Sistema',
+              created_by: 'webhook-asaas',
+            },
+          })
+        } catch (e) {
+          console.warn('[webhook-payment] erro criando announcement RECEIVED:', e instanceof Error ? e.message : e)
+        }
+      })()
+    }
+
     // Notificar cliente que pagamento foi recebido (fire-and-forget).
     // Dispara em RECEIVED (auto-baixa, fundos disponiveis) — nao em CONFIRMED.
     if (result.action === 'processed' && result.reason && /→ RECEIVED$/.test(result.reason)) {
