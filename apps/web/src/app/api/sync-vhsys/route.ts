@@ -111,6 +111,17 @@ export async function POST(req: NextRequest) {
     const customerIdMap: Record<string, string> = {}
     let cCreated = 0, cUpdated = 0
 
+    // Audit 14 fix: pre-carregar customers existentes em 1 query em vez
+    // de findFirst por cliente (era N+1: 500 clientes = 500 queries serial).
+    const allVhsysClientIds = allClients.map((vc: any) => String(vc.id_cliente))
+    const existingCustomers = await prisma.customer.findMany({
+      where: { company_id: companyId, vhsys_id: { in: allVhsysClientIds } },
+      select: { id: true, vhsys_id: true },
+    })
+    const existingCustomerByVhsys = new Map(
+      existingCustomers.filter(c => c.vhsys_id).map(c => [c.vhsys_id!, c.id])
+    )
+
     for (const vc of allClients) {
       const vhsysId = String(vc.id_cliente)
       const isPJ = vc.tipo_pessoa === 'PJ'
@@ -133,12 +144,10 @@ export async function POST(req: NextRequest) {
       }
 
       try {
-        const existing = await prisma.customer.findFirst({
-          where: { company_id: companyId, vhsys_id: vhsysId },
-        })
-        if (existing) {
-          await prisma.customer.update({ where: { id: existing.id }, data })
-          customerIdMap[vhsysId] = existing.id
+        const existingId = existingCustomerByVhsys.get(vhsysId)
+        if (existingId) {
+          await prisma.customer.update({ where: { id: existingId }, data })
+          customerIdMap[vhsysId] = existingId
           cUpdated++
         } else {
           const created = await prisma.customer.create({
@@ -150,6 +159,7 @@ export async function POST(req: NextRequest) {
             },
           })
           customerIdMap[vhsysId] = created.id
+          existingCustomerByVhsys.set(vhsysId, created.id)
           cCreated++
         }
       } catch {}
@@ -163,6 +173,19 @@ export async function POST(req: NextRequest) {
     })
     const existingNumbers = new Set(existingOS.map(o => o.os_number))
     const existingVhsys = new Map(existingOS.filter(o => o.vhsys_id).map(o => [o.vhsys_id!, o.id]))
+
+    // Audit 14 fix: pre-carregar set de OS-ids que JA tem items. Antes
+    // o loop fazia `serviceOrderItem.count({service_order_id})` POR OS
+    // existente (N+1: 500 OS = 500 queries serial). groupBy em 1 query.
+    const existingOsIds = existingOS.map(o => o.id)
+    const osWithItems = existingOsIds.length > 0
+      ? await prisma.serviceOrderItem.groupBy({
+          by: ['service_order_id'],
+          where: { service_order_id: { in: existingOsIds }, company_id: companyId },
+          _count: { _all: true },
+        })
+      : []
+    const osHasItems = new Set(osWithItems.filter(g => (g._count?._all || 0) > 0).map(g => g.service_order_id))
 
     let osCreated = 0, osUpdated = 0, osSkipped = 0, itemsCreated = 0
 
@@ -223,9 +246,9 @@ export async function POST(req: NextRequest) {
           // adicional protege contra futura colisão de vhsys_id cross-tenant)
           await prisma.serviceOrder.update({ where: { id: existingId, company_id: companyId }, data: osData })
 
-          // Add items if missing
-          const itemCount = await prisma.serviceOrderItem.count({ where: { service_order_id: existingId, company_id: companyId } })
-          if (itemCount === 0 && allItems[String(vos.id_ordem)]) {
+          // Add items if missing — Audit 14 fix: lookup via Set pre-carregado
+          // (groupBy 1x acima) em vez de count() por OS (era N+1).
+          if (!osHasItems.has(existingId) && allItems[String(vos.id_ordem)]) {
             const vItems = allItems[String(vos.id_ordem)]
             for (const s of (vItems.servicos || [])) {
               await prisma.serviceOrderItem.create({ data: {
