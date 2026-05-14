@@ -50,6 +50,13 @@ interface ContaReceber {
   customer_id: string | null
   customers: Customer | null
   categories: Category | null
+  // Feature 2026-05-13: status da cobranca Asaas exibido na listagem.
+  // Campos ja existem em accountReceivable — vinham no payload pelo findMany.
+  charge_id: string | null
+  charge_status: string | null
+  charge_url: string | null
+  charge_sent_at: string | null
+  charge_sent_via: string | null
 }
 
 interface AnticipationInstallment {
@@ -89,6 +96,23 @@ function formatDate(dateStr: string) {
   const d = new Date(dateStr)
   if (isNaN(d.getTime())) return '--'
   return d.toLocaleDateString('pt-BR', { timeZone: 'UTC' })
+}
+
+// Feature 2026-05-13: badge de status da cobranca Asaas exibido na linha
+// da listagem. Mapeia charge_status (enum interno) pra label+cor.
+function getChargeBadge(chargeStatus: string | null) {
+  if (!chargeStatus) return { label: 'Sem cobrança', color: 'bg-gray-100 text-gray-500' }
+  const map: Record<string, { label: string; color: string }> = {
+    PENDING: { label: 'Cobrança enviada', color: 'bg-amber-100 text-amber-800' },
+    RECEIVED: { label: 'Pago', color: 'bg-emerald-100 text-emerald-800' },
+    CONFIRMED: { label: 'Pago', color: 'bg-emerald-100 text-emerald-800' },
+    OVERDUE: { label: 'Cobrança vencida', color: 'bg-red-100 text-red-800' },
+    REFUNDED: { label: 'Estornada', color: 'bg-orange-100 text-orange-800' },
+    DISPUTED: { label: 'Em disputa', color: 'bg-rose-100 text-rose-800' },
+    CHARGEBACK_LOST: { label: 'Chargeback', color: 'bg-rose-100 text-rose-800' },
+    CANCELLED: { label: 'Cancelada', color: 'bg-gray-200 text-gray-600' },
+  }
+  return map[chargeStatus] || { label: chargeStatus, color: 'bg-gray-100 text-gray-600' }
 }
 
 const statusConfig: Record<string, { label: string; color: string }> = {
@@ -173,6 +197,8 @@ export default function ContasReceberPage() {
   const [cobrancaInstallments, setCobrancaInstallments] = useState(1)
   const [cobrancaLoading, setCobrancaLoading] = useState(false)
   const [cobrancaResult, setCobrancaResult] = useState<{ invoice_url: string; billing_type: string } | null>(null)
+  // 2026-05-13: data customizada pra cobranca (default = AR.due_date).
+  const [cobrancaDueDate, setCobrancaDueDate] = useState<string>('')
 
   // Column toggle
   const [showColToggle, setShowColToggle] = useState(false)
@@ -457,6 +483,8 @@ export default function ContasReceberPage() {
     setCobrancaSendEmail(true)
     setCobrancaInstallments(1)
     setCobrancaResult(null)
+    // Pre-preenche com vencimento atual do AR (atendente pode mudar).
+    setCobrancaDueDate(conta.due_date ? conta.due_date.split('T')[0] : '')
   }
 
   async function handleCobranca() {
@@ -464,6 +492,7 @@ export default function ContasReceberPage() {
     setCobrancaLoading(true)
     try {
       const res = await fetch('/api/financeiro/cobranca/charge', {
+        // 2026-05-13: passa due_date customizada no body (campo novo no schema backend)
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -472,6 +501,7 @@ export default function ContasReceberPage() {
           send_whatsapp: cobrancaSendWhatsapp,
           send_email: cobrancaSendEmail,
           installment_count: cobrancaBillingType === 'CREDIT_CARD' ? cobrancaInstallments : undefined,
+          due_date: cobrancaDueDate || undefined,
         }),
       })
       const data = await res.json()
@@ -1238,8 +1268,39 @@ export default function ContasReceberPage() {
                     {isColVisible('description') && (
                     <td className="px-4 py-3">
                       <p className="font-medium text-gray-900">{conta.description}</p>
+                      {/* Feature 2026-05-13: badge status cobranca Asaas + link copy + envio */}
+                      {(() => {
+                        const badge = getChargeBadge(conta.charge_status)
+                        const hasCharge = !!conta.charge_url
+                        return (
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${badge.color}`}>
+                              {badge.label}
+                            </span>
+                            {conta.charge_sent_at && conta.charge_sent_via && (
+                              <span className="text-[10px] text-gray-400">
+                                {conta.charge_sent_via.replace('_', ' ').toLowerCase()} · {formatDate(conta.charge_sent_at)}
+                              </span>
+                            )}
+                            {hasCharge && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  navigator.clipboard.writeText(conta.charge_url!)
+                                  toast.success('Link copiado!')
+                                }}
+                                title="Copiar link da cobrança"
+                                className="text-[10px] text-emerald-700 hover:text-emerald-900 hover:underline"
+                              >
+                                🔗 copiar link
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })()}
                       {conta.notes && (
-                        <p className="text-xs text-gray-400 truncate max-w-[200px]">{conta.notes}</p>
+                        <p className="text-xs text-gray-400 truncate max-w-[200px] mt-1">{conta.notes}</p>
                       )}
                     </td>
                     )}
@@ -1897,6 +1958,22 @@ export default function ContasReceberPage() {
                       </button>
                     ))}
                   </div>
+                </div>
+
+                {/* Vencimento customizado (feature 2026-05-13). Pre-preenche
+                    com AR.due_date; atendente pode mudar. Quando alterado,
+                    atualiza tambem o AR.due_date (decisao Karlao). */}
+                <div>
+                  <label htmlFor="cobranca-due-date" className="block text-sm text-gray-600 mb-1">Vencimento da cobrança</label>
+                  <input
+                    id="cobranca-due-date"
+                    type="date"
+                    value={cobrancaDueDate}
+                    onChange={e => setCobrancaDueDate(e.target.value)}
+                    disabled={cobrancaLoading}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 disabled:bg-gray-50"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">Salva também na conta a receber.</p>
                 </div>
 
                 {/* Parcelamento (só para cartão) */}

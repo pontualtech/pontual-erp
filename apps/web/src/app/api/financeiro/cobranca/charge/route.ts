@@ -15,6 +15,10 @@ const createChargeSchema = z.object({
   send_whatsapp: z.boolean().default(true),
   send_email: z.boolean().default(true),
   installment_count: z.number().min(1).max(12).optional(),
+  // 2026-05-13: atendente pode customizar vencimento da cobranca.
+  // Formato YYYY-MM-DD (input type=date). Quando vier, atualiza tambem
+  // o due_date do AccountReceivable (decisao Karlao: consistencia).
+  due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 })
 
 /**
@@ -108,6 +112,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Sem valor pendente' }, { status: 400 })
     }
 
+    // Vencimento efetivo: prioriza o que veio do form (data customizada);
+    // fallback ao due_date do AR.
+    const effectiveDueDate = data.due_date
+      || (receivable.due_date ? new Date(receivable.due_date).toISOString().split('T')[0] : undefined)
+
     // Create charge via payment provider (Asaas)
     const provider = getPaymentProvider()
     const charge = await provider.createCharge({
@@ -117,9 +126,7 @@ export async function POST(request: NextRequest) {
       customerDocument: customer.document_number,
       customerEmail: customer.email || undefined,
       description: receivable.description || `Cobranca #${receivable.id.slice(0, 8)}`,
-      dueDate: receivable.due_date
-        ? new Date(receivable.due_date).toISOString().split('T')[0]
-        : undefined,
+      dueDate: effectiveDueDate,
       installmentCount: data.billing_type === 'CREDIT_CARD' ? data.installment_count : undefined,
     })
 
@@ -150,13 +157,15 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // Update receivable with charge info
+    // Update receivable with charge info. Se atendente customizou vencimento,
+    // sincroniza AR.due_date pra dashboard refletir mesmo prazo (decisao Karlao).
     await prisma.accountReceivable.update({
       where: { id: data.receivable_id },
       data: {
         charge_id: payment.id,
         charge_status: 'PENDING',
         charge_url: charge.invoiceUrl,
+        ...(data.due_date && { due_date: new Date(data.due_date + 'T00:00:00.000Z') }),
         updated_at: new Date(),
       },
     })
