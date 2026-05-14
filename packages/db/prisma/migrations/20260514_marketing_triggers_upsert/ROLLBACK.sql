@@ -1,0 +1,3 @@
+-- Rollback: restaura função sync_os_status_to_marketing_tag versão anterior (apenas UPDATE).
+-- Arquivo original em RESTORE_POINT_5_sync_os_status_pre_upsert_2026-05-14.sql na raiz.
+-- Executar: psql ... -f RESTORE_POINT_5_sync_os_status_pre_upsert_2026-05-14.sql
