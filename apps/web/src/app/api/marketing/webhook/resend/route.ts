@@ -22,7 +22,11 @@
  *
  * Env vars:
  *   - RESEND_WEBHOOK_SECRET — secret no formato "whsec_..." (base64 do secret real)
- *   - RESEND_WEBHOOK_COMPANY_ID — opcional, default 'pontualtech-001' (multi-tenant futuro: derivar do email)
+ *   - RESEND_WEBHOOK_COMPANY_ID — fallback se lookup por "from" falhar, default 'pontualtech-001'
+ *
+ * Multi-tenant: companyId resolvido via Setting `email.from_address` lookup
+ * com base no payload.data.from. Configurar `email.from_address` em cada
+ * tenant pra webhook achar o company_id correto (audit 14 fix).
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -103,7 +107,6 @@ export async function POST(req: NextRequest) {
   const svixTimestamp = req.headers.get('svix-timestamp') || ''
   const svixSignature = req.headers.get('svix-signature') || ''
   const secret = process.env.RESEND_WEBHOOK_SECRET || ''
-  const companyId = process.env.RESEND_WEBHOOK_COMPANY_ID || 'pontualtech-001'
 
   if (!secret) {
     console.error('[Resend webhook] RESEND_WEBHOOK_SECRET não configurado')
@@ -130,6 +133,24 @@ export async function POST(req: NextRequest) {
   const recipient = (payload.data?.to || [])[0]?.toLowerCase()
   if (!eventType || !emailId || !recipient) {
     return NextResponse.json({ error: 'invalid payload shape' }, { status: 400 })
+  }
+
+  // Audit 14 fix: resolver companyId via "from" address pra evitar misturar
+  // tenants. Antes hardcoded em RESEND_WEBHOOK_COMPANY_ID, fazia bounce de
+  // email IMP virar marker em contato PT (e vice-versa). Lookup via Setting
+  // `email.from_address` por tenant; fallback pro env var se nao bater.
+  let companyId = process.env.RESEND_WEBHOOK_COMPANY_ID || 'pontualtech-001'
+  const fromRaw = (payload.data?.from || '').toLowerCase()
+  if (fromRaw) {
+    const m = fromRaw.match(/<([^>]+)>|([^\s<>]+@[^\s<>]+)/)
+    const bareEmail = (m?.[1] || m?.[2] || fromRaw).trim()
+    if (bareEmail) {
+      const fromSetting = await prisma.setting.findFirst({
+        where: { key: 'email.from_address', value: { contains: bareEmail, mode: 'insensitive' } },
+        select: { company_id: true },
+      })
+      if (fromSetting?.company_id) companyId = fromSetting.company_id
+    }
   }
 
   // 3. Dedup via UNIQUE(provider, event_id) — svix-id é único por evento
