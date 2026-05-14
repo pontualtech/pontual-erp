@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { sendCompanyEmail } from '@/lib/send-email'
 import { escapeHtml } from '@/lib/escape-html'
+import { handleError } from '@/lib/api-response'
 
 /**
  * POST /api/financeiro/boletos/enviar-email
@@ -176,6 +177,6 @@ export async function POST(req: NextRequest) {
       detalhes,
     })
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+    return handleError(e)
   }
 }

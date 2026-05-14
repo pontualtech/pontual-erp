@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
+import { handleError } from '@/lib/api-response'
 
 /**
  * GET /api/financeiro/boletos/print?ids=id1,id2,...
@@ -105,6 +106,6 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ data })
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+    return handleError(e)
   }
 }

@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { logAudit } from '@/lib/audit'
 import { gerarRemessaCNAB400, parsearRetornoCNAB400, type BoletoRemessa400, type CedenteConfig400 } from '@/lib/boleto/cnab/cnab400-inter'
+import { handleError } from '@/lib/api-response'
 
 /**
  * GET /api/financeiro/cnab — Gerar arquivo de remessa CNAB 400
@@ -148,7 +149,7 @@ export async function GET(req: NextRequest) {
     })
   } catch (e: any) {
     console.error('Erro gerar CNAB:', e)
-    return NextResponse.json({ error: e.message }, { status: 500 })
+    return handleError(e)
   }
 }
 
@@ -390,6 +391,6 @@ export async function POST(req: NextRequest) {
     })
   } catch (e: any) {
     console.error('Erro processar retorno CNAB:', e)
-    return NextResponse.json({ error: e.message }, { status: 500 })
+    return handleError(e)
   }
 }
