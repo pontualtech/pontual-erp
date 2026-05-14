@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { VoipDashboardCard } from '@/components/voip/VoipDashboardCard'
+import { ChargesSummaryWidget } from './components/ChargesSummaryWidget'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
@@ -152,6 +153,7 @@ export default function DashboardPage() {
   const [widgetPrefs, setWidgetPrefs] = useState<Array<{ id: string; visible: boolean }>>([
     { id: 'avisos', visible: true },
     { id: 'summary_cards', visible: true },
+    { id: 'charges_summary', visible: true },
     { id: 'chart_os_week', visible: true },
     { id: 'chart_pipeline', visible: true },
     { id: 'metrics', visible: true },
@@ -163,6 +165,7 @@ export default function DashboardPage() {
   const WIDGET_LABELS: Record<string, string> = {
     avisos: 'Avisos',
     summary_cards: 'Cards de Resumo',
+    charges_summary: 'Cobranças Asaas',
     chart_os_week: 'Gráfico OS por Semana',
     chart_pipeline: 'Pipeline de OS',
     metrics: 'Métricas (Tempo Reparo, Aprovação, Ticket)',
@@ -596,6 +599,9 @@ export default function DashboardPage() {
           </div>
         )
       })()}
+
+      {/* ===== Cobranças Asaas (feature 2026-05-14 feat 3/4) ===== */}
+      {isWidgetVisible('charges_summary') && canViewFinanceiro && <ChargesSummaryWidget />}
 
       {/* ===== Voip stats ===== */}
       <VoipDashboardCard />
