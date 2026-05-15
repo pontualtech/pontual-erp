@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Loader2, Send, CheckCheck, Mail, MousePointerClick, AlertTriangle,
-  TrendingUp, Megaphone, Info,
+  TrendingUp, Megaphone,
 } from 'lucide-react'
 import { StatCard } from '@/components/marketing/StatCard'
 import { EmptyState } from '@/components/marketing/EmptyState'
@@ -221,15 +221,6 @@ export default function CampanhasPage() {
             <TrendingUp className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <div>
               <strong>Benchmarks 2026:</strong> Delivery &gt;95% bom · Open &gt;20% bom · Click &gt;3% bom · Bounce &lt;2% bom (Resend pausa em &gt;5%).
-            </div>
-          </div>
-        </div>
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700 dark:border-amber-900/50 dark:bg-amber-500/10 dark:text-amber-300">
-          <div className="flex items-start gap-2">
-            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <div>
-              <strong>Click tracking desabilitado:</strong> auditoria 13/05 desativou click_tracking no domínio Resend (subdomain CNAME pendente).
-              Open ainda funciona via pixel; click rate sempre 0% até reativar.
             </div>
           </div>
         </div>
