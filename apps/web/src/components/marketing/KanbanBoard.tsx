@@ -1,0 +1,160 @@
+'use client'
+
+import { useEffect, useMemo, useState } from 'react'
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core'
+import { Loader2 } from 'lucide-react'
+import { STAGES, type StageKey } from '@/lib/marketing/stages'
+import { KanbanColumn } from './KanbanColumn'
+import { KanbanCard, type KanbanContact } from './KanbanCard'
+import { toast } from 'sonner'
+
+interface Props {
+  /** Filtros aplicados — passados nos query params da API */
+  filters: {
+    search?: string
+    segment?: string
+    unsubscribed?: string
+    onlyBounced?: boolean
+  }
+}
+
+interface ColumnData {
+  contacts: KanbanContact[]
+  total: number
+  loading: boolean
+}
+
+const COLUMN_LIMIT = 50
+
+export function KanbanBoard({ filters }: Props) {
+  const [columns, setColumns] = useState<Record<StageKey, ColumnData>>(() => {
+    const init: any = {}
+    STAGES.forEach(s => { init[s.key] = { contacts: [], total: 0, loading: true } })
+    return init
+  })
+  const [activeCard, setActiveCard] = useState<{ contact: KanbanContact; stage: StageKey } | null>(null)
+  const [initialLoad, setInitialLoad] = useState(true)
+
+  // Sensor com distância mínima de 5px — evita acionar drag em cliques curtos
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+
+  // Constrói URL params para cada coluna
+  function buildParams(stage: StageKey): URLSearchParams {
+    const p = new URLSearchParams()
+    p.set('limit', String(COLUMN_LIMIT))
+    if (filters.search) p.set('search', filters.search)
+    const tags: string[] = [`stage:${stage}`]
+    if (filters.segment) tags.push(`segment:${filters.segment}`)
+    p.set('tags', tags.join(','))
+    if (filters.unsubscribed) p.set('unsubscribed', filters.unsubscribed)
+    if (filters.onlyBounced) p.set('onlyBounced', '1')
+    return p
+  }
+
+  async function fetchColumn(stage: StageKey) {
+    setColumns(prev => ({ ...prev, [stage]: { ...prev[stage], loading: true } }))
+    try {
+      const r = await fetch(`/api/marketing/contatos?${buildParams(stage).toString()}`)
+      if (r.ok) {
+        const j = await r.json()
+        setColumns(prev => ({
+          ...prev,
+          [stage]: { contacts: j.data || [], total: j.total || 0, loading: false },
+        }))
+      } else {
+        setColumns(prev => ({ ...prev, [stage]: { ...prev[stage], loading: false } }))
+      }
+    } catch {
+      setColumns(prev => ({ ...prev, [stage]: { ...prev[stage], loading: false } }))
+    }
+  }
+
+  // Carrega TODAS as colunas em paralelo no mount (e quando filtros mudam)
+  useEffect(() => {
+    Promise.all(STAGES.map(s => fetchColumn(s.key))).then(() => setInitialLoad(false))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.search, filters.segment, filters.unsubscribed, filters.onlyBounced])
+
+  function handleDragStart(event: DragStartEvent) {
+    const data = event.active.data.current as { contact: KanbanContact; stage: StageKey }
+    setActiveCard({ contact: data.contact, stage: data.stage })
+  }
+
+  async function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    setActiveCard(null)
+    if (!over) return
+
+    const fromStage = active.data.current?.stage as StageKey
+    const toStage = over.id as StageKey
+    if (!fromStage || !toStage || fromStage === toStage) return
+
+    const contact = active.data.current?.contact as KanbanContact
+    if (!contact) return
+
+    // Optimistic update: remove da coluna origem, adiciona na destino
+    setColumns(prev => {
+      const fromContacts = prev[fromStage].contacts.filter(c => c.id !== contact.id)
+      const toContacts = [
+        { ...contact, tags: [...contact.tags.filter(t => !t.startsWith('stage:')), `stage:${toStage}`] },
+        ...prev[toStage].contacts,
+      ].slice(0, COLUMN_LIMIT)
+      return {
+        ...prev,
+        [fromStage]: { ...prev[fromStage], contacts: fromContacts, total: prev[fromStage].total - 1 },
+        [toStage]: { ...prev[toStage], contacts: toContacts, total: prev[toStage].total + 1 },
+      }
+    })
+
+    // PATCH API
+    try {
+      const r = await fetch(`/api/marketing/contatos/${contact.id}/stage`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stage: toStage }),
+      })
+      if (!r.ok) throw new Error('PATCH failed')
+      toast.success(`Movido pra ${STAGES.find(s => s.key === toStage)?.label}`)
+    } catch (e) {
+      // Rollback em caso de erro
+      toast.error('Erro ao mover. Recarregando.')
+      Promise.all([fetchColumn(fromStage), fetchColumn(toStage)])
+    }
+  }
+
+  if (initialLoad) {
+    return (
+      <div className="flex h-96 items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+      </div>
+    )
+  }
+
+  return (
+    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+      <div className="flex gap-3 overflow-x-auto pb-2" style={{ minHeight: '600px' }}>
+        {STAGES.map(stage => (
+          <KanbanColumn
+            key={stage.key}
+            stage={stage}
+            contacts={columns[stage.key]?.contacts || []}
+            total={columns[stage.key]?.total || 0}
+            loading={columns[stage.key]?.loading}
+          />
+        ))}
+      </div>
+
+      <DragOverlay>
+        {activeCard ? <KanbanCard contact={activeCard.contact} stage={activeCard.stage} /> : null}
+      </DragOverlay>
+    </DndContext>
+  )
+}

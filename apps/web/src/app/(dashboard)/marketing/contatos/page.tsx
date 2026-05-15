@@ -6,13 +6,17 @@ import { useSearchParams } from 'next/navigation'
 import {
   Search, Loader2, Users, MailX, MailWarning, Bookmark, ChevronRight,
   Mail, MousePointerClick, Inbox, Building2, User as UserIcon,
+  LayoutGrid, List,
 } from 'lucide-react'
 import { TagList } from '@/components/marketing/TagBadge'
 import { ContactAvatar } from '@/components/marketing/ContactAvatar'
 import { StatCard } from '@/components/marketing/StatCard'
 import { EmptyState } from '@/components/marketing/EmptyState'
+import { KanbanBoard } from '@/components/marketing/KanbanBoard'
 import { formatRelative, formatDateAbsolute } from '@/lib/marketing/format'
 import { STAGES } from '@/lib/marketing/stages'
+
+type ViewMode = 'table' | 'kanban'
 
 interface Contact {
   id: string
@@ -52,6 +56,15 @@ export default function MarketingContatosPage() {
   const [onlyBounced, setOnlyBounced] = useState(urlParams.get('onlyBounced') === '1')
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
+  const [view, setView] = useState<ViewMode>(() => {
+    if (typeof window === 'undefined') return 'table'
+    return (localStorage.getItem('marketing.contatos.view') as ViewMode) || 'table'
+  })
+
+  function switchView(v: ViewMode) {
+    setView(v)
+    try { localStorage.setItem('marketing.contatos.view', v) } catch {}
+  }
 
   async function fetchStats() {
     try {
@@ -134,6 +147,28 @@ export default function MarketingContatosPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {/* Toggle vista Tabela / Kanban */}
+          <div className="inline-flex rounded-md border border-gray-300 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800" role="group" aria-label="Modo de visualização">
+            <button
+              type="button"
+              onClick={() => switchView('table')}
+              className={`inline-flex items-center gap-1 rounded-l-md px-3 py-2 text-sm transition ${view === 'table' ? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900' : 'text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700'}`}
+              title={view === 'table' ? 'Visualização em tabela (atual)' : 'Mudar para visualização em tabela'}
+            >
+              <List className="h-4 w-4" />
+              <span className="hidden sm:inline">Tabela</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => switchView('kanban')}
+              className={`inline-flex items-center gap-1 rounded-r-md px-3 py-2 text-sm transition ${view === 'kanban' ? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900' : 'text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700'}`}
+              title={view === 'kanban' ? 'Visualização em Kanban (atual)' : 'Mudar para visualização em Kanban (funil)'}
+            >
+              <LayoutGrid className="h-4 w-4" />
+              <span className="hidden sm:inline">Kanban</span>
+            </button>
+          </div>
+
           <button
             type="button"
             onClick={handleSaveAsSegment}
@@ -142,7 +177,7 @@ export default function MarketingContatosPage() {
             title={hasFilters ? 'Salvar filtros atuais como segmento' : 'Aplique pelo menos 1 filtro pra salvar'}
           >
             <Bookmark className="h-4 w-4" />
-            Salvar como segmento
+            <span className="hidden sm:inline">Salvar como segmento</span>
           </button>
         </div>
       </div>
@@ -265,7 +300,13 @@ export default function MarketingContatosPage() {
         )}
       </div>
 
-      {/* Lista */}
+      {/* KANBAN VIEW (alternativa à tabela) */}
+      {view === 'kanban' && (
+        <KanbanBoard filters={{ search, segment, unsubscribed: unsub, onlyBounced }} />
+      )}
+
+      {/* Lista (tabela) — só renderiza em view=table */}
+      {view === 'table' && (
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
         {loading ? (
           <div className="flex items-center justify-center py-16">
@@ -381,6 +422,7 @@ export default function MarketingContatosPage() {
           </>
         )}
       </div>
+      )}
     </div>
   )
 }
