@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Loader2, Plus, Trash2, Users, FileText, Search, ChevronRight, Sparkles } from 'lucide-react'
+import { Loader2, Plus, Trash2, Users, FileText, Search, ChevronRight, Sparkles, Send } from 'lucide-react'
 import { StatCard } from '@/components/marketing/StatCard'
 import { EmptyState } from '@/components/marketing/EmptyState'
 import { TagList } from '@/components/marketing/TagBadge'
@@ -166,17 +166,28 @@ export default function SegmentosPage() {
               key={s.id}
               className="group relative flex flex-col rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition hover:border-emerald-300 hover:shadow-md dark:border-gray-700 dark:bg-gray-800 dark:hover:border-emerald-500/40"
             >
-              {/* Botão deletar no canto */}
-              <button
-                type="button"
-                onClick={(e) => { e.preventDefault(); handleDelete(s.id, s.name) }}
-                disabled={deletingId === s.id}
-                className="absolute right-2 top-2 rounded-md p-1.5 text-gray-400 opacity-0 transition hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 disabled:opacity-50 dark:hover:bg-red-900/30"
-                aria-label={`Apagar segmento ${s.name}`}
-                title="Apagar segmento"
-              >
-                {deletingId === s.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-              </button>
+              {/* Ações no canto: enviar + deletar */}
+              <div className="absolute right-2 top-2 flex gap-1">
+                <Link
+                  href={`/marketing/segmentos/${s.id}/enviar`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="rounded-md p-1.5 text-gray-400 opacity-0 transition hover:bg-purple-50 hover:text-purple-600 group-hover:opacity-100 dark:hover:bg-purple-900/30"
+                  aria-label={`Enviar campanha para segmento ${s.name}`}
+                  title="Enviar campanha"
+                >
+                  <Send className="h-3.5 w-3.5" />
+                </Link>
+                <button
+                  type="button"
+                  onClick={(e) => { e.preventDefault(); handleDelete(s.id, s.name) }}
+                  disabled={deletingId === s.id}
+                  className="rounded-md p-1.5 text-gray-400 opacity-0 transition hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 disabled:opacity-50 dark:hover:bg-red-900/30"
+                  aria-label={`Apagar segmento ${s.name}`}
+                  title="Apagar segmento"
+                >
+                  {deletingId === s.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                </button>
+              </div>
 
               <Link href={`/marketing/segmentos/${s.id}`} className="flex flex-1 flex-col">
                 {/* Header do card */}

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Loader2, Users, Filter, ExternalLink, Trash2 } from 'lucide-react'
+import { ArrowLeft, Loader2, Users, Filter, ExternalLink, Trash2, Send } from 'lucide-react'
 
 interface Segment {
   id: string
@@ -94,15 +94,23 @@ export default function SegmentDetailPage() {
           <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">{segment.name}</h1>
           {segment.description && <p className="text-sm text-gray-500 dark:text-gray-400">{segment.description}</p>}
         </div>
-        <button
-          type="button"
-          onClick={handleDelete}
-          disabled={deleting}
-          className="inline-flex items-center gap-1 rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-900/50 dark:hover:bg-red-900/20"
-        >
-          {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
-          Apagar
-        </button>
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/marketing/segmentos/${segment.id}/enviar`}
+            className="inline-flex items-center gap-1 rounded-md bg-purple-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-purple-700"
+          >
+            <Send className="h-3 w-3" /> Enviar campanha
+          </Link>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={deleting}
+            className="inline-flex items-center gap-1 rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-900/50 dark:hover:bg-red-900/20"
+          >
+            {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+            Apagar
+          </button>
+        </div>
       </div>
 
       {/* Stats cards */}
