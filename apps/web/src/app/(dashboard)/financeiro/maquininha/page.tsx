@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { Upload, CheckCircle2, AlertCircle, RefreshCw, Loader2, FileText, Users, ListChecks, Zap, BarChart3, Cloud } from 'lucide-react'
+import { Upload, CheckCircle2, AlertCircle, RefreshCw, Loader2, FileText, Users, ListChecks, Zap, BarChart3, Cloud, Settings2 } from 'lucide-react'
 
 interface AcquirerTxn {
   id: string
@@ -13,12 +13,20 @@ interface AcquirerTxn {
   gross_amount: number
   net_amount: number
   mdr_fee_amount: number
+  mdr_fee_percent?: number | null
   anticipation_fee_amount: number
+  anticipation_fee_percent?: number | null
+  total_fee_amount?: number | null
   modality?: string | null
   installments: number
   card_brand?: string | null
   card_last_4?: string | null
+  card_masked?: string | null
+  holder_name?: string | null
+  authorization_code?: string | null
+  expected_credit_date?: string | null
   terminal_code?: string | null
+  acquirer?: string | null
   status: string
   match: {
     payment_id: string
@@ -28,6 +36,31 @@ interface AcquirerTxn {
     matched_at: string
   } | null
 }
+
+// Colunas disponiveis na listagem. `default` controla visibilidade
+// inicial; usuario customiza via dropdown "Colunas" + persistencia localStorage.
+const COLUMN_DEFS: Array<{ key: string; label: string; default: boolean }> = [
+  { key: 'date', label: 'Data/Hora', default: true },
+  { key: 'modality', label: 'Modalidade', default: true },
+  { key: 'installments', label: 'Parcelas', default: false },
+  { key: 'gross', label: 'Bruto', default: true },
+  { key: 'net', label: 'Liquido', default: true },
+  { key: 'mdr', label: 'MDR (taxa)', default: false },
+  { key: 'mdr_pct', label: 'MDR %', default: false },
+  { key: 'antecip', label: 'Antecipacao', default: false },
+  { key: 'antecip_pct', label: 'Antecip. %', default: false },
+  { key: 'total_fee', label: 'Total taxas', default: false },
+  { key: 'card', label: 'Cartao', default: true },
+  { key: 'holder', label: 'Pagador', default: true },
+  { key: 'auth', label: 'Autorizacao', default: false },
+  { key: 'nsu', label: 'NSU', default: false },
+  { key: 'terminal', label: 'Maquininha', default: true },
+  { key: 'credit_date', label: 'Credito previsto', default: true },
+  { key: 'acquirer', label: 'Adquirente', default: false },
+  { key: 'status', label: 'Status', default: false },
+]
+
+const COLUMNS_LS_KEY = 'maquininha_columns_v1'
 
 interface OS {
   id: string
@@ -51,6 +84,41 @@ export default function MaquininhaHubPage() {
   const [syncingRede, setSyncingRede] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const [matchingTxn, setMatchingTxn] = useState<AcquirerTxn | null>(null)
+
+  // Colunas visiveis — persiste em localStorage; SSR sempre renderiza defaults.
+  const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(COLUMN_DEFS.map(c => [c.key, c.default]))
+  )
+  const [colsMenuOpen, setColsMenuOpen] = useState(false)
+  const colsMenuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(COLUMNS_LS_KEY)
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (parsed && typeof parsed === 'object') {
+          setVisibleCols(prev => ({ ...prev, ...parsed }))
+        }
+      }
+    } catch {}
+  }, [])
+
+  useEffect(() => {
+    try { localStorage.setItem(COLUMNS_LS_KEY, JSON.stringify(visibleCols)) } catch {}
+  }, [visibleCols])
+
+  // Fecha menu Colunas ao clicar fora.
+  useEffect(() => {
+    if (!colsMenuOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (colsMenuRef.current && !colsMenuRef.current.contains(e.target as Node)) {
+        setColsMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [colsMenuOpen])
 
   async function load() {
     setLoading(true)
@@ -189,9 +257,32 @@ export default function MaquininhaHubPage() {
               <t.icon className="h-4 w-4" /> {t.label}
             </button>
           ))}
-          <button type="button" onClick={load} className="ml-auto py-3 text-gray-500 hover:text-gray-700 dark:text-gray-400 cursor-pointer" title="Recarregar">
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
+          <div className="ml-auto flex items-center gap-3 py-2">
+            <div className="relative" ref={colsMenuRef}>
+              <button type="button" onClick={() => setColsMenuOpen(o => !o)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-gray-300 dark:border-zinc-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-800 text-xs font-semibold cursor-pointer"
+                title="Mostrar/ocultar colunas da tabela">
+                <Settings2 className="h-3.5 w-3.5" /> Colunas
+              </button>
+              {colsMenuOpen && (
+                <div className="absolute right-0 top-full mt-1 w-56 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg shadow-lg z-30 py-1 max-h-80 overflow-y-auto">
+                  {COLUMN_DEFS.map(c => (
+                    <label key={c.key}
+                      className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-zinc-800 cursor-pointer text-sm text-gray-700 dark:text-gray-300">
+                      <input type="checkbox"
+                        checked={!!visibleCols[c.key]}
+                        onChange={e => setVisibleCols(v => ({ ...v, [c.key]: e.target.checked }))}
+                        className="cursor-pointer" />
+                      {c.label}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button type="button" onClick={load} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 cursor-pointer" title="Recarregar">
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
         </nav>
       </div>
 
@@ -203,16 +294,28 @@ export default function MaquininhaHubPage() {
           {tab === 'pendentes' ? 'Nenhuma transacao a conciliar — importe um CSV pra comecar' : 'Nenhuma transacao conciliada ainda'}
         </div>
       ) : (
-        <div className="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-700 overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-700 overflow-x-auto">
+          <table className="w-full text-sm whitespace-nowrap">
             <thead className="bg-gray-50 dark:bg-zinc-800/50 border-b border-gray-200 dark:border-zinc-700">
               <tr className="text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">
-                <th className="px-4 py-3">Data/Hora</th>
-                <th className="px-4 py-3">Modalidade</th>
-                <th className="px-4 py-3 text-right">Bruto</th>
-                <th className="px-4 py-3 text-right">Liquido</th>
-                <th className="px-4 py-3">Cartao</th>
-                <th className="px-4 py-3">Maquininha</th>
+                {visibleCols.date && <th className="px-4 py-3">Data/Hora</th>}
+                {visibleCols.modality && <th className="px-4 py-3">Modalidade</th>}
+                {visibleCols.installments && <th className="px-4 py-3 text-right">Parcelas</th>}
+                {visibleCols.gross && <th className="px-4 py-3 text-right">Bruto</th>}
+                {visibleCols.net && <th className="px-4 py-3 text-right">Liquido</th>}
+                {visibleCols.mdr && <th className="px-4 py-3 text-right">MDR</th>}
+                {visibleCols.mdr_pct && <th className="px-4 py-3 text-right">MDR %</th>}
+                {visibleCols.antecip && <th className="px-4 py-3 text-right">Antecip.</th>}
+                {visibleCols.antecip_pct && <th className="px-4 py-3 text-right">Antecip. %</th>}
+                {visibleCols.total_fee && <th className="px-4 py-3 text-right">Total taxas</th>}
+                {visibleCols.card && <th className="px-4 py-3">Cartao</th>}
+                {visibleCols.holder && <th className="px-4 py-3">Pagador</th>}
+                {visibleCols.auth && <th className="px-4 py-3">Autorizacao</th>}
+                {visibleCols.nsu && <th className="px-4 py-3">NSU</th>}
+                {visibleCols.terminal && <th className="px-4 py-3">Maquininha</th>}
+                {visibleCols.credit_date && <th className="px-4 py-3">Credito prev.</th>}
+                {visibleCols.acquirer && <th className="px-4 py-3">Adquirente</th>}
+                {visibleCols.status && <th className="px-4 py-3">Status</th>}
                 {tab === 'conciliadas' && <th className="px-4 py-3">OS / Cliente</th>}
                 <th className="px-4 py-3 text-right">Acao</th>
               </tr>
@@ -220,21 +323,39 @@ export default function MaquininhaHubPage() {
             <tbody className="divide-y divide-gray-100 dark:divide-zinc-800">
               {txns.map(t => (
                 <tr key={t.id} className="hover:bg-gray-50 dark:hover:bg-zinc-800/40">
-                  <td className="px-4 py-3 text-gray-900 dark:text-gray-100">
-                    <div>{new Date(t.transaction_date).toLocaleDateString('pt-BR')}</div>
-                    <div className="text-xs text-gray-500">{t.transaction_time || ''}</div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="text-gray-900 dark:text-gray-100">
-                      {t.modality === 'debit' ? 'Debito' : `Credito ${t.installments}x`}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right font-mono text-gray-900 dark:text-gray-100">{fmt(t.gross_amount)}</td>
-                  <td className="px-4 py-3 text-right font-mono text-gray-700 dark:text-gray-300">{fmt(t.net_amount)}</td>
-                  <td className="px-4 py-3 text-xs text-gray-600 dark:text-gray-400">
-                    {t.card_brand?.toUpperCase()} ****{t.card_last_4 || '----'}
-                  </td>
-                  <td className="px-4 py-3 text-xs font-mono text-gray-600 dark:text-gray-400">{t.terminal_code || '—'}</td>
+                  {visibleCols.date && (
+                    <td className="px-4 py-3 text-gray-900 dark:text-gray-100">
+                      <div>{new Date(t.transaction_date).toLocaleDateString('pt-BR')}</div>
+                      <div className="text-xs text-gray-500">{t.transaction_time || ''}</div>
+                    </td>
+                  )}
+                  {visibleCols.modality && (
+                    <td className="px-4 py-3">
+                      <span className="text-gray-900 dark:text-gray-100">
+                        {t.modality === 'debit' ? 'Debito' : `Credito ${t.installments}x`}
+                      </span>
+                    </td>
+                  )}
+                  {visibleCols.installments && <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{t.installments}x</td>}
+                  {visibleCols.gross && <td className="px-4 py-3 text-right font-mono text-gray-900 dark:text-gray-100">{fmt(t.gross_amount)}</td>}
+                  {visibleCols.net && <td className="px-4 py-3 text-right font-mono text-gray-700 dark:text-gray-300">{fmt(t.net_amount)}</td>}
+                  {visibleCols.mdr && <td className="px-4 py-3 text-right font-mono text-xs text-gray-600 dark:text-gray-400">{fmt(t.mdr_fee_amount || 0)}</td>}
+                  {visibleCols.mdr_pct && <td className="px-4 py-3 text-right font-mono text-xs text-gray-600 dark:text-gray-400">{t.mdr_fee_percent != null ? `${t.mdr_fee_percent.toFixed(2)}%` : '—'}</td>}
+                  {visibleCols.antecip && <td className="px-4 py-3 text-right font-mono text-xs text-gray-600 dark:text-gray-400">{fmt(t.anticipation_fee_amount || 0)}</td>}
+                  {visibleCols.antecip_pct && <td className="px-4 py-3 text-right font-mono text-xs text-gray-600 dark:text-gray-400">{t.anticipation_fee_percent != null ? `${t.anticipation_fee_percent.toFixed(2)}%` : '—'}</td>}
+                  {visibleCols.total_fee && <td className="px-4 py-3 text-right font-mono text-xs text-gray-600 dark:text-gray-400">{fmt(t.total_fee_amount || 0)}</td>}
+                  {visibleCols.card && (
+                    <td className="px-4 py-3 text-xs text-gray-600 dark:text-gray-400">
+                      {t.card_masked || `${t.card_brand?.toUpperCase() || ''} ****${t.card_last_4 || '----'}`}
+                    </td>
+                  )}
+                  {visibleCols.holder && <td className="px-4 py-3 text-xs text-gray-700 dark:text-gray-300">{t.holder_name || '—'}</td>}
+                  {visibleCols.auth && <td className="px-4 py-3 text-xs font-mono text-gray-600 dark:text-gray-400">{t.authorization_code || '—'}</td>}
+                  {visibleCols.nsu && <td className="px-4 py-3 text-xs font-mono text-gray-600 dark:text-gray-400">{t.external_id || '—'}</td>}
+                  {visibleCols.terminal && <td className="px-4 py-3 text-xs font-mono text-gray-600 dark:text-gray-400">{t.terminal_code || '—'}</td>}
+                  {visibleCols.credit_date && <td className="px-4 py-3 text-xs text-gray-600 dark:text-gray-400">{t.expected_credit_date ? new Date(t.expected_credit_date).toLocaleDateString('pt-BR') : '—'}</td>}
+                  {visibleCols.acquirer && <td className="px-4 py-3 text-xs uppercase text-gray-600 dark:text-gray-400">{t.acquirer || '—'}</td>}
+                  {visibleCols.status && <td className="px-4 py-3 text-xs text-gray-600 dark:text-gray-400">{t.status}</td>}
                   {tab === 'conciliadas' && (
                     <td className="px-4 py-3 text-xs">
                       {t.match ? (
