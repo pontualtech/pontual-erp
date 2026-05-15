@@ -78,9 +78,17 @@ const navGroups: { title: string; items: NavItem[] }[] = [
   {
     title: 'Marketing',
     items: [
-      { label: 'Contatos', href: '/marketing/contatos', icon: Users, adminOnly: true },
-      { label: 'Campanhas', href: '/marketing/campanhas', icon: BarChart3, adminOnly: true },
-      { label: 'Segmentos', href: '/marketing/segmentos', icon: FileText, adminOnly: true },
+      {
+        label: 'CRM Marketing',
+        href: '/marketing',
+        icon: MessageSquare,
+        adminOnly: true,
+        children: [
+          { label: 'Contatos', href: '/marketing/contatos', icon: Users },
+          { label: 'Campanhas', href: '/marketing/campanhas', icon: BarChart3 },
+          { label: 'Segmentos', href: '/marketing/segmentos', icon: FileText },
+        ],
+      },
     ],
   },
   {

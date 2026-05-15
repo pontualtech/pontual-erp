@@ -9,6 +9,7 @@ import {
   ClipboardList, Wrench, Truck, DollarSign, PackageCheck,
   Bell, Pin, Plus, X, Clock, TrendingUp, Target,
   ArrowRight, Loader2, Settings, Eye, EyeOff, AlertTriangle, User,
+  Megaphone, Users as UsersIcon, BarChart3, FileText,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { VoipDashboardCard } from '@/components/voip/VoipDashboardCard'
@@ -153,6 +154,7 @@ export default function DashboardPage() {
   const [widgetPrefs, setWidgetPrefs] = useState<Array<{ id: string; visible: boolean }>>([
     { id: 'avisos', visible: true },
     { id: 'summary_cards', visible: true },
+    { id: 'marketing_card', visible: true },
     { id: 'charges_summary', visible: true },
     { id: 'chart_os_week', visible: true },
     { id: 'chart_pipeline', visible: true },
@@ -165,6 +167,7 @@ export default function DashboardPage() {
   const WIDGET_LABELS: Record<string, string> = {
     avisos: 'Avisos',
     summary_cards: 'Cards de Resumo',
+    marketing_card: 'CRM Marketing (acesso rápido)',
     charges_summary: 'Cobranças Asaas',
     chart_os_week: 'Gráfico OS por Semana',
     chart_pipeline: 'Pipeline de OS',
@@ -555,6 +558,45 @@ export default function DashboardPage() {
           )
         })}
       </div>}
+
+      {/* ===== CRM Marketing — card de acesso rápido ===== */}
+      {isWidgetVisible('marketing_card') && (isAdmin || user?.isSuperAdmin) && (
+        <Link
+          href="/marketing"
+          aria-label="Acessar módulo CRM Marketing — contatos, campanhas e segmentos"
+          className="group block overflow-hidden rounded-xl border-2 border-transparent bg-gradient-to-r from-blue-50 via-purple-50 to-pink-50 p-5 shadow-sm transition-all hover:border-blue-300 hover:shadow-lg active:scale-[0.995] dark:from-blue-500/10 dark:via-purple-500/10 dark:to-pink-500/10 dark:hover:border-blue-500/40"
+        >
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 p-3 text-white shadow-md transition-transform group-hover:scale-110">
+                <Megaphone className="h-6 w-6" />
+              </div>
+              <div>
+                <h2 className="flex items-center gap-2 text-lg font-bold text-gray-900 dark:text-gray-100">
+                  CRM Marketing
+                  <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-semibold uppercase text-white">NOVO</span>
+                </h2>
+                <p className="mt-0.5 text-sm text-gray-600 dark:text-gray-300">
+                  Contatos, campanhas e segmentos com Kanban funcional
+                </p>
+              </div>
+            </div>
+            <div className="hidden items-center gap-4 md:flex">
+              <div className="flex items-center gap-1.5 rounded-lg bg-white/70 px-3 py-1.5 text-xs text-gray-700 shadow-sm dark:bg-gray-800/70 dark:text-gray-200">
+                <UsersIcon className="h-3.5 w-3.5 text-blue-600" /> Contatos
+              </div>
+              <div className="flex items-center gap-1.5 rounded-lg bg-white/70 px-3 py-1.5 text-xs text-gray-700 shadow-sm dark:bg-gray-800/70 dark:text-gray-200">
+                <BarChart3 className="h-3.5 w-3.5 text-purple-600" /> Campanhas
+              </div>
+              <div className="flex items-center gap-1.5 rounded-lg bg-white/70 px-3 py-1.5 text-xs text-gray-700 shadow-sm dark:bg-gray-800/70 dark:text-gray-200">
+                <FileText className="h-3.5 w-3.5 text-emerald-600" /> Segmentos
+              </div>
+              <ArrowRight className="h-5 w-5 text-gray-400 transition-transform group-hover:translate-x-1 group-hover:text-blue-600" />
+            </div>
+            <ArrowRight className="h-5 w-5 text-gray-400 transition-transform group-hover:translate-x-1 group-hover:text-blue-600 md:hidden" />
+          </div>
+        </Link>
+      )}
 
       {/* ===== Alertas Criticos (UX-2 #6) — derivados dos dados ja carregados ===== */}
       {!loading && stats && (() => {
