@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { Upload, CheckCircle2, AlertCircle, RefreshCw, Loader2, FileText, Users, ListChecks, Zap, BarChart3, Cloud, Settings2 } from 'lucide-react'
+import { Upload, CheckCircle2, AlertCircle, RefreshCw, Loader2, FileText, Users, ListChecks, Zap, BarChart3, Cloud, Settings2, Filter, X, ChevronDown, ChevronUp } from 'lucide-react'
 
 interface AcquirerTxn {
   id: string
@@ -61,6 +61,43 @@ const COLUMN_DEFS: Array<{ key: string; label: string; default: boolean }> = [
 ]
 
 const COLUMNS_LS_KEY = 'maquininha_columns_v1'
+
+interface Filters {
+  // Essenciais (barra sempre visivel)
+  gross_amount: string // "R$ 635,03" — front converte pra centavos antes de mandar
+  card_last_4: string
+  holder_name: string
+  // Avancada (colapsavel)
+  from: string // YYYY-MM-DD
+  to: string
+  terminal: string
+  modality: string // '', 'debit', 'credit'
+  card_brand: string
+  nsu: string
+  authorization_code: string
+}
+
+const EMPTY_FILTERS: Filters = {
+  gross_amount: '',
+  card_last_4: '',
+  holder_name: '',
+  from: '',
+  to: '',
+  terminal: '',
+  modality: '',
+  card_brand: '',
+  nsu: '',
+  authorization_code: '',
+}
+
+// Converte input "635,03" ou "R$ 635,03" pra centavos (63503). Aceita ponto/virgula.
+function parseAmountToCents(input: string): number | null {
+  const cleaned = input.replace(/[^\d,.-]/g, '').replace(',', '.')
+  if (!cleaned) return null
+  const n = parseFloat(cleaned)
+  if (Number.isNaN(n)) return null
+  return Math.round(n * 100)
+}
 
 interface OS {
   id: string
@@ -120,10 +157,37 @@ export default function MaquininhaHubPage() {
     return () => document.removeEventListener('mousedown', onDown)
   }, [colsMenuOpen])
 
+  // Filtros — aplicados via botao "Aplicar" (nao auto-fetch a cada keystroke)
+  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS)
+  const [appliedFilters, setAppliedFilters] = useState<Filters>(EMPTY_FILTERS)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+
+  // Quantos filtros ativos? Conta campos nao vazios em appliedFilters.
+  const activeFilterCount = Object.values(appliedFilters).filter(v => v.trim() !== '').length
+
   async function load() {
     setLoading(true)
     try {
-      const res = await fetch(`/api/financeiro/maquininha/transactions?matched=${tab === 'pendentes' ? 'no' : 'yes'}&limit=100`)
+      const params = new URLSearchParams()
+      params.set('matched', tab === 'pendentes' ? 'no' : 'yes')
+      params.set('limit', '100')
+
+      // Aplicar filtros — converte valor pra centavos antes de mandar
+      if (appliedFilters.gross_amount.trim()) {
+        const cents = parseAmountToCents(appliedFilters.gross_amount)
+        if (cents != null) params.set('gross_amount', String(cents))
+      }
+      if (appliedFilters.card_last_4.trim()) params.set('card_last_4', appliedFilters.card_last_4.trim())
+      if (appliedFilters.holder_name.trim()) params.set('holder_name', appliedFilters.holder_name.trim())
+      if (appliedFilters.from) params.set('from', appliedFilters.from)
+      if (appliedFilters.to) params.set('to', appliedFilters.to)
+      if (appliedFilters.terminal.trim()) params.set('terminal', appliedFilters.terminal.trim())
+      if (appliedFilters.modality) params.set('modality', appliedFilters.modality)
+      if (appliedFilters.card_brand) params.set('card_brand', appliedFilters.card_brand)
+      if (appliedFilters.nsu.trim()) params.set('nsu', appliedFilters.nsu.trim())
+      if (appliedFilters.authorization_code.trim()) params.set('authorization_code', appliedFilters.authorization_code.trim())
+
+      const res = await fetch(`/api/financeiro/maquininha/transactions?${params.toString()}`)
       const j = await res.json()
       setTxns(j.data?.data || [])
     } catch {
@@ -131,7 +195,16 @@ export default function MaquininhaHubPage() {
     } finally { setLoading(false) }
   }
 
-  useEffect(() => { load() }, [tab])
+  useEffect(() => { load() }, [tab, appliedFilters])
+
+  function applyFilters() {
+    setAppliedFilters(filters)
+  }
+
+  function clearFilters() {
+    setFilters(EMPTY_FILTERS)
+    setAppliedFilters(EMPTY_FILTERS)
+  }
 
   async function runSyncRede() {
     setSyncingRede(true)
@@ -284,6 +357,115 @@ export default function MaquininhaHubPage() {
             </button>
           </div>
         </nav>
+      </div>
+
+      {/* Filtros — barra essenciais + busca avancada colapsavel */}
+      <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl p-3 mb-4">
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="flex-1 min-w-[140px]">
+            <label className="block text-[10px] font-semibold uppercase text-gray-500 mb-1">Valor</label>
+            <input type="text" inputMode="decimal" placeholder="R$ 635,03"
+              value={filters.gross_amount}
+              onChange={e => setFilters(f => ({ ...f, gross_amount: e.target.value }))}
+              onKeyDown={e => { if (e.key === 'Enter') applyFilters() }}
+              className="w-full px-2.5 py-1.5 rounded-lg border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm" />
+          </div>
+          <div className="flex-1 min-w-[120px]">
+            <label className="block text-[10px] font-semibold uppercase text-gray-500 mb-1">Final cartao</label>
+            <input type="text" inputMode="numeric" maxLength={4} placeholder="0505"
+              value={filters.card_last_4}
+              onChange={e => setFilters(f => ({ ...f, card_last_4: e.target.value.replace(/\D/g, '').slice(0, 4) }))}
+              onKeyDown={e => { if (e.key === 'Enter') applyFilters() }}
+              className="w-full px-2.5 py-1.5 rounded-lg border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm font-mono" />
+          </div>
+          <div className="flex-1 min-w-[180px]">
+            <label className="block text-[10px] font-semibold uppercase text-gray-500 mb-1">Pagador</label>
+            <input type="text" placeholder="Joao Silva"
+              value={filters.holder_name}
+              onChange={e => setFilters(f => ({ ...f, holder_name: e.target.value }))}
+              onKeyDown={e => { if (e.key === 'Enter') applyFilters() }}
+              className="w-full px-2.5 py-1.5 rounded-lg border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm" />
+          </div>
+          <button type="button" onClick={applyFilters}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold cursor-pointer">
+            <Filter className="h-3.5 w-3.5" /> Aplicar
+          </button>
+          {activeFilterCount > 0 && (
+            <button type="button" onClick={clearFilters}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-gray-300 dark:border-zinc-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-800 text-xs font-semibold cursor-pointer">
+              <X className="h-3.5 w-3.5" /> Limpar ({activeFilterCount})
+            </button>
+          )}
+          <button type="button" onClick={() => setAdvancedOpen(o => !o)}
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-gray-300 dark:border-zinc-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-800 text-xs font-semibold cursor-pointer">
+            {advancedOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            Busca avancada
+          </button>
+        </div>
+
+        {advancedOpen && (
+          <div className="mt-3 pt-3 border-t border-gray-100 dark:border-zinc-800 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+            <div>
+              <label className="block text-[10px] font-semibold uppercase text-gray-500 mb-1">Periodo de</label>
+              <input type="date" aria-label="Periodo de" value={filters.from}
+                onChange={e => setFilters(f => ({ ...f, from: e.target.value }))}
+                className="w-full px-2 py-1.5 rounded-lg border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold uppercase text-gray-500 mb-1">Periodo ate</label>
+              <input type="date" aria-label="Periodo ate" value={filters.to}
+                onChange={e => setFilters(f => ({ ...f, to: e.target.value }))}
+                className="w-full px-2 py-1.5 rounded-lg border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold uppercase text-gray-500 mb-1">Maquininha</label>
+              <input type="text" placeholder="SD261883"
+                value={filters.terminal}
+                onChange={e => setFilters(f => ({ ...f, terminal: e.target.value }))}
+                onKeyDown={e => { if (e.key === 'Enter') applyFilters() }}
+                className="w-full px-2 py-1.5 rounded-lg border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm font-mono" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold uppercase text-gray-500 mb-1">Modalidade</label>
+              <select aria-label="Modalidade" value={filters.modality}
+                onChange={e => setFilters(f => ({ ...f, modality: e.target.value }))}
+                className="w-full px-2 py-1.5 rounded-lg border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm cursor-pointer">
+                <option value="">Todas</option>
+                <option value="debit">Debito</option>
+                <option value="credit">Credito</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold uppercase text-gray-500 mb-1">Bandeira</label>
+              <select aria-label="Bandeira" value={filters.card_brand}
+                onChange={e => setFilters(f => ({ ...f, card_brand: e.target.value }))}
+                className="w-full px-2 py-1.5 rounded-lg border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm cursor-pointer">
+                <option value="">Todas</option>
+                <option value="visa">Visa</option>
+                <option value="mastercard">Mastercard</option>
+                <option value="elo">Elo</option>
+                <option value="amex">Amex</option>
+                <option value="hipercard">Hipercard</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold uppercase text-gray-500 mb-1">NSU</label>
+              <input type="text" placeholder="123456"
+                value={filters.nsu}
+                onChange={e => setFilters(f => ({ ...f, nsu: e.target.value }))}
+                onKeyDown={e => { if (e.key === 'Enter') applyFilters() }}
+                className="w-full px-2 py-1.5 rounded-lg border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm font-mono" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold uppercase text-gray-500 mb-1">Autorizacao</label>
+              <input type="text" placeholder="A1B2C3"
+                value={filters.authorization_code}
+                onChange={e => setFilters(f => ({ ...f, authorization_code: e.target.value }))}
+                onKeyDown={e => { if (e.key === 'Enter') applyFilters() }}
+                className="w-full px-2 py-1.5 rounded-lg border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm font-mono" />
+            </div>
+          </div>
+        )}
       </div>
 
       {loading && txns.length === 0 ? (

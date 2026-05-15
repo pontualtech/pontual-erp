@@ -45,6 +45,26 @@ export async function GET(req: NextRequest) {
       if (to) where.transaction_date.lte = new Date(to)
     }
 
+    // Filtros adicionais (2026-05-15 — busca facilitada conciliacao humana).
+    // Valor em centavos: front converte "635,03" pra 63503 antes de mandar.
+    const grossAmount = sp.get('gross_amount')
+    if (grossAmount) {
+      const n = parseInt(grossAmount, 10)
+      if (!Number.isNaN(n)) where.gross_amount = n
+    }
+    const cardLast4 = sp.get('card_last_4')
+    if (cardLast4) where.card_last_4 = cardLast4
+    const cardBrand = sp.get('card_brand')
+    if (cardBrand) where.card_brand = cardBrand
+    const modality = sp.get('modality')
+    if (modality) where.modality = modality
+    const holderName = sp.get('holder_name')
+    if (holderName) where.holder_name = { contains: holderName, mode: 'insensitive' }
+    const authCode = sp.get('authorization_code')
+    if (authCode) where.authorization_code = authCode
+    const nsu = sp.get('nsu')
+    if (nsu) where.external_id = { contains: nsu }
+
     const [list, total] = await Promise.all([
       prisma.acquirerTransaction.findMany({
         where,
