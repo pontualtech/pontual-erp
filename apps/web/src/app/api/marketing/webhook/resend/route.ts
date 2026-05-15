@@ -148,8 +148,11 @@ export async function POST(req: NextRequest) {
     const bareEmail = (m?.[1] || m?.[2] || fromRaw).trim()
     const domain = bareEmail.split('@')[1] || ''
     if (domain) {
+      // startsWith cobre 'email.from_address' principal + variantes por subdomínio
+      // ('email.from_address.subdomain', '.mkt', etc) cadastradas por tenant.
+      // Necessário porque mkt.imprimitech.com.br ≠ imprimitech.com.br no contains.
       const fromSetting = await prisma.setting.findFirst({
-        where: { key: 'email.from_address', value: { contains: `@${domain}`, mode: 'insensitive' } },
+        where: { key: { startsWith: 'email.from_address' }, value: { contains: `@${domain}`, mode: 'insensitive' } },
         select: { company_id: true },
       })
       if (fromSetting?.company_id) companyId = fromSetting.company_id
