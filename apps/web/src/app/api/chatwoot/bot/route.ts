@@ -127,6 +127,18 @@ const ENV_CONFIGS: Record<string, Partial<BotCompanyConfig> & { settingsPrefix?:
   },
 }
 
+// Cross-tenant lock pairs (R2 — 2026-05-16).
+// Quando cliente contatar tenant A mas ja tem OS ativa em B (par), o bot
+// redireciona ANTES de chamar LLM. Excecao controlada ao feedback
+// "feedback_independent_ecosystems": NAO compartilha dados nem servicos,
+// SO consulta "esse phone tem OS aberta com voces?" pra defender a UX
+// da jornada unificada por cliente. Adicionar tenant novo aqui requer
+// decisao explicita do Karlao.
+const CROSS_TENANT_PAIR: Record<string, string> = {
+  'pontualtech-001': '86c829cf-32ed-4e40-80cd-59ce4178aa1a',  // PT -> IM
+  '86c829cf-32ed-4e40-80cd-59ce4178aa1a': 'pontualtech-001',  // IM -> PT
+}
+
 // DB-loaded config cache (5 min TTL)
 const botConfigCache = new Map<string, { cfg: BotCompanyConfig; ts: number }>()
 const BOT_CFG_TTL = 5 * 60 * 1000
@@ -1760,6 +1772,32 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       return
     }
 
+    // R2 Cross-tenant lock — se cliente ja tem OS ativa na empresa-par
+    // (PT<->IM), redireciona ANTES de chamar LLM. Evita confusao de jornada
+    // e gasto de tokens. Sai cedo com mensagem fixa + encerra conversa.
+    if (CROSS_TENANT_PAIR[cfg.companyId]) {
+      try {
+        const lock = await checkCrossTenantLock(phone, cfg.companyId)
+        if (lock) {
+          const phonePart = lock.company_phone ? `\n\n📞 ${lock.company_phone}` : ''
+          const msg = `Olá! Vimos que você já tem uma OS #${lock.os_number} aberta com a *${lock.company_name}*.\n\nComo seu equipamento está com eles, esse atendimento continua direto com a ${lock.company_name}.${phonePart}`
+          await cwSendMessage(cfg, conversationId, msg)
+          await cwSendMessage(cfg, conversationId, `[BOT] Cross-tenant lock — cliente tem OS #${lock.os_number} em ${lock.company_name}. Redirecionado.`, true)
+          await cwResolve(cfg, conversationId)
+          await prisma.botConversation.update({
+            where: { id: botConv.id },
+            data: { step: 'IDLE', human_takeover: false, data: {} },
+          }).catch(() => {})
+          await releaseLock(botConv.id)
+          return
+        }
+      } catch (lockErr) {
+        // Falha graceful: log + segue fluxo normal (chama LLM).
+        // Nao bloquear atendimento por erro em verificacao defensiva.
+        console.warn('[Bot] checkCrossTenantLock falhou (seguindo normal):', lockErr instanceof Error ? lockErr.message : lockErr)
+      }
+    }
+
     // Call Dify
     try {
       const userIdentifier = phone || contactId?.toString() || `conv_${conversationId}`
@@ -3285,6 +3323,63 @@ async function findCustomerByAnyChannel(
     if (c) return c
   }
   return null
+}
+
+/**
+ * R2 Cross-tenant lock — verifica se o phone do cliente ja tem OS ativa na
+ * empresa-par (PT<->IM, mapeado em CROSS_TENANT_PAIR).
+ *
+ * Quando dispara: cliente liga pra PT mas ja deixou equipamento na IM (ou
+ * vice-versa). Jornada inteira (status/orcamento/pronto/pagamento) precisa
+ * acontecer no tenant da OS — nao pode "atravessar" pelo outro bot. Bot
+ * atual responde redirecionando e encerra sem chamar LLM.
+ *
+ * Retorna info pra mensagem ou null (sem lock — segue fluxo normal).
+ *
+ * Custo: 1 query Prisma por mensagem do bot. Trivial — ja fazemos varias.
+ */
+async function checkCrossTenantLock(
+  phone: string | null,
+  currentCompanyId: string,
+): Promise<{ os_number: number; company_name: string; company_phone: string | null } | null> {
+  if (!phone) return null
+  const otherCompanyId = CROSS_TENANT_PAIR[currentCompanyId]
+  if (!otherCompanyId) return null
+  const cleanPhone = phone.replace(/\D/g, '').slice(-10)
+  if (cleanPhone.length < 10) return null
+
+  // OS ativa (is_final=false) no tenant-par, com phone batendo
+  const otherOS = await prisma.serviceOrder.findFirst({
+    where: {
+      company_id: otherCompanyId,
+      deleted_at: null,
+      module_statuses: { is_final: false },
+      customers: {
+        OR: [
+          { mobile: { contains: cleanPhone } },
+          { phone: { contains: cleanPhone } },
+        ],
+      },
+    },
+    select: {
+      os_number: true,
+      companies: { select: { name: true } },
+    },
+    orderBy: { created_at: 'desc' },
+  })
+  if (!otherOS) return null
+
+  // Telefone de contato da empresa-par (settings company.phone)
+  const phoneSetting = await prisma.setting.findFirst({
+    where: { company_id: otherCompanyId, key: 'company.phone' },
+    select: { value: true },
+  })
+
+  return {
+    os_number: otherOS.os_number,
+    company_name: otherOS.companies?.name || 'Outra unidade',
+    company_phone: phoneSetting?.value || null,
+  }
 }
 
 async function getActiveOrders(customerId: string, companyId: string): Promise<OsInfo[]> {
