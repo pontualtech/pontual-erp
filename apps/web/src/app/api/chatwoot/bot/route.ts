@@ -1695,6 +1695,45 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
               query += `\n[CONTEXTO DO CLIENTE: Nome: ${customer.legal_name || 'N/A'}. NAO tem OS ativa no momento. Se o cliente informou CPF/CNPJ, confirme o nome e pergunte como pode ajudar.]`
               console.log(`[Bot] Customer found but no active OS: ${customer.legal_name}`)
             }
+
+            // R1 Cross-referral info — apenas bots de VENDAS (Ana/Grazi),
+            // nao suporte. Suporte ja tem cliente vinculado, R1 nao se aplica.
+            // Injetamos tag [CROSS_REFERRAL_INFO: ...] no contexto quando
+            // temos coords do cliente (customer.address_lat/lng cached). LLM
+            // usa pra decidir se vale indicar unidade-par quando cliente
+            // quer levar pessoalmente ou equipamento "sem coleta".
+            const isSuporteBotLocal = cfg.slug.includes('suporte')
+              || cfg.botOrigin?.includes('marta') || cfg.botOrigin?.includes('aline')
+            const otherCompanyId = CROSS_TENANT_PAIR[cfg.companyId]
+            if (!isSuporteBotLocal && otherCompanyId) {
+              try {
+                const cAny = customer as any
+                let custCoords: { lat: number; lng: number } | null = null
+                if (cAny?.address_lat != null && cAny?.address_lng != null) {
+                  const la = Number(cAny.address_lat)
+                  const ln = Number(cAny.address_lng)
+                  if (Number.isFinite(la) && Number.isFinite(ln)) custCoords = { lat: la, lng: ln }
+                }
+                if (custCoords) {
+                  const pair = await pickNearestUnit(custCoords, [cfg.companyId, otherCompanyId])
+                  if (pair) {
+                    const names = await prisma.company.findMany({
+                      where: { id: { in: [pair.nearestId, pair.otherId] } },
+                      select: { id: true, name: true },
+                    })
+                    const nameOf = (id: string) => names.find(n => n.id === id)?.name || 'Empresa'
+                    const sameUnit = pair.nearestId === cfg.companyId
+                    const advice = sameUnit
+                      ? 'Cliente esta mais perto da SUA unidade — prossiga atendimento normal.'
+                      : 'Cliente esta mais perto da OUTRA unidade. Se for caso de "levar pessoalmente" ou "equipamento sem coleta", indique a outra unidade. Se cliente preferir voce, prossiga normal.'
+                    query += `\n[CROSS_REFERRAL_INFO: Unidade mais perto do cliente: ${nameOf(pair.nearestId)} (${pair.nearestKm.toFixed(1)} km). Outra unidade: ${nameOf(pair.otherId)} (${pair.otherKm.toFixed(1)} km). ${advice}]`
+                    console.log(`[Bot/R1] customer=${redactName(customer.legal_name)} nearest=${nameOf(pair.nearestId)} (${pair.nearestKm.toFixed(1)}km) other=${nameOf(pair.otherId)} (${pair.otherKm.toFixed(1)}km)`)
+                  }
+                }
+              } catch (refErr) {
+                console.warn('[Bot/R1] cross-referral lookup falhou:', refErr instanceof Error ? refErr.message : refErr)
+              }
+            }
           }
         } catch (e) { console.error('[Bot] Auto-identify error:', e) }
       }
@@ -3326,6 +3365,79 @@ async function findCustomerByAnyChannel(
     if (c) return c
   }
   return null
+}
+
+/**
+ * Distancia em km entre 2 coordenadas via formula Haversine (linha reta).
+ * Zero API calls. Aproximacao suficiente pra "qual ponto e mais perto"
+ * — em SP a diferenca entre Haversine e Distance Matrix do Google e
+ * pequena o bastante pra nao mudar a unidade indicada. Distance Matrix
+ * so importaria se precisasse tempo de carro com trafego.
+ */
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371 // raio da Terra em km
+  const toRad = (d: number) => (d * Math.PI) / 180
+  const dLat = toRad(lat2 - lat1)
+  const dLng = toRad(lng2 - lng1)
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
+  return 2 * R * Math.asin(Math.sqrt(a))
+}
+
+/**
+ * R1 — Decide qual unidade indicar ao cliente baseado em proximidade geografica.
+ *
+ * Usa coords do cliente (cached em customer.address_lat/lng OU geocoda
+ * endereco passado) e HQ de cada empresa (getCompanyHQ — cache em settings).
+ * Retorna a empresa mais perto + a outra com distancias, ou null se nao tem
+ * dados suficientes (sem HQ de pelo menos uma das empresas, ou sem coords
+ * do cliente).
+ *
+ * Quando retorna OK, caller injeta [CROSS_REFERRAL_INFO: ...] no contexto
+ * pro LLM decidir se usa (cliente quer levar pessoalmente / equipamento
+ * sem coleta).
+ */
+async function pickNearestUnit(
+  customerLocation: { lat: number; lng: number } | string,
+  companyIds: string[],
+): Promise<{ nearestId: string; nearestKm: number; otherId: string; otherKm: number } | null> {
+  if (companyIds.length < 2) return null
+
+  // Resolve coordenadas do cliente
+  let custLat: number, custLng: number
+  if (typeof customerLocation === 'string') {
+    const { geocodeAddress } = await import('@/lib/geocoding')
+    const coords = await geocodeAddress(customerLocation)
+    if (!coords) return null
+    custLat = coords.lat
+    custLng = coords.lng
+  } else {
+    custLat = customerLocation.lat
+    custLng = customerLocation.lng
+  }
+  if (!Number.isFinite(custLat) || !Number.isFinite(custLng)) return null
+
+  // Pega HQ de cada empresa (paralelo)
+  const { getCompanyHQ } = await import('@/lib/company-hq')
+  const hqs = await Promise.all(companyIds.map(id => getCompanyHQ(id)))
+  const valid: { id: string; hq: { lat: number; lng: number } }[] = []
+  for (let i = 0; i < hqs.length; i++) {
+    const hq = hqs[i]
+    if (hq) valid.push({ id: companyIds[i], hq })
+  }
+  if (valid.length < 2) return null // precisa das 2 pra comparar
+
+  // Calcula distancia + ordena
+  const distances = valid
+    .map(v => ({ id: v.id, km: haversineKm(custLat, custLng, v.hq.lat, v.hq.lng) }))
+    .sort((a, b) => a.km - b.km)
+
+  return {
+    nearestId: distances[0].id,
+    nearestKm: distances[0].km,
+    otherId: distances[1].id,
+    otherKm: distances[1].km,
+  }
 }
 
 /**
