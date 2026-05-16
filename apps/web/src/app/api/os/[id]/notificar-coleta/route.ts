@@ -57,6 +57,15 @@ export async function POST(req: NextRequest, { params }: Params) {
     const magicTokenColeta = _createAccessTokenColeta(os.customer_id, user.companyId)
     const magicRedirect = encodeURIComponent(`/portal/${portalSlug}/os/${os.id}`)
     const portalUrl = `${portalBase}/entrar?t=${magicTokenColeta}&r=${magicRedirect}`
+    // Versao curta apenas pra texto WhatsApp (Evolution renderiza inline).
+    // Email HTML mantem portalUrl longo — vai dentro de <a href> invisivel.
+    let portalUrlShort = portalUrl
+    try {
+      const { shortenUrl } = await import('@/lib/short-link')
+      portalUrlShort = await shortenUrl(portalUrl, user.companyId, os.customer_id)
+    } catch (shortErr) {
+      console.warn('[notificar-coleta] shortener falhou:', shortErr instanceof Error ? shortErr.message : shortErr)
+    }
     const companyName = os.companies?.name || cc.name
     const companyPhone = cc.phone
     const companyWebsite = cc.website
@@ -118,7 +127,7 @@ Orcamentos:
 Fique de olho no seu e-mail, pois o laudo sera enviado por la.
 
 Acompanhe sua OS online:
-${portalUrl}
+${portalUrlShort}
 Voce pode consultar o status e ate aprovar o orcamento direto pelo site!
 
 ${customerEmail ? `Historico enviado para: ${customerEmail}` : ''}

@@ -75,6 +75,15 @@ export async function POST(req: NextRequest) {
       })
       const magicUrl = ml.url
       const magicToken = ml.token
+      // Versao curta apenas pra texto WhatsApp/templates substitution.
+      // Email HTML mantem magicUrl longo (link clicavel invisivel).
+      let magicUrlShort = magicUrl
+      try {
+        const { shortenUrl } = await import('@/lib/short-link')
+        magicUrlShort = await shortenUrl(magicUrl, user.companyId, os.customer_id!)
+      } catch (shortErr) {
+        console.warn('[bulk-notify] shortener falhou:', shortErr instanceof Error ? shortErr.message : shortErr)
+      }
 
       // Load notification rule for this OS's status
       let notifRule = { email_subject: '', email_message: '', whatsapp_message: '' }
@@ -87,14 +96,15 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Build messages
-      const defaultWhatsApp = `Olá ${customerName}! Sua OS-${osNum} está no status: *${statusName}*.\n\nAcompanhe pelo portal: ${magicUrl}`
+      // Build messages — texto WhatsApp usa magicUrlShort (Evolution/IMP
+      // renderiza inline); email HTML usa magicUrl longo (link clicavel).
+      const defaultWhatsApp = `Olá ${customerName}! Sua OS-${osNum} está no status: *${statusName}*.\n\nAcompanhe pelo portal: ${magicUrlShort}`
       const whatsappMsg = customMessage || notifRule.whatsapp_message
         ?.replace(/\{\{cliente_nome\}\}/g, customerName)
         .replace(/\{\{os_numero\}\}/g, osNum)
         .replace(/\{\{status\}\}/g, statusName)
         .replace(/\{\{empresa\}\}/g, company?.name || '')
-        .replace(/\{\{portal_url\}\}/g, `${magicUrl}`)
+        .replace(/\{\{portal_url\}\}/g, `${magicUrlShort}`)
         || defaultWhatsApp
 
       const defaultSubject = `${company?.name || 'ERP'} — OS-${osNum} — ${statusName}`

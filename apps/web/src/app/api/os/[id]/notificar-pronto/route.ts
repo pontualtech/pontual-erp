@@ -207,7 +207,15 @@ ${companyName}
         const portalDomain = isImpri ? 'portal.imprimitech.com.br' : 'portal.pontualtech.com.br'
         const magicRedirect = encodeURIComponent(`/portal/${slug}/os/${os.id}`)
         const magicLink = `https://${portalDomain}/portal/${slug}/entrar?t=${magicToken}&r=${magicRedirect}`
-        const fallback = `*Equipamento pronto! — OS #${osNum}*\n\nSeu ${equipment || 'equipamento'} esta pronto para retirada!\n\nVer detalhes:\n${magicLink}`
+        // Encurta magic-link no fallback. Botao Cloud usa token cru. Falha graceful.
+        let magicLinkShort = magicLink
+        try {
+          const { shortenUrl } = await import('@/lib/short-link')
+          magicLinkShort = await shortenUrl(magicLink, user.companyId, os.customer_id)
+        } catch (shortErr) {
+          console.warn('[notificar-pronto] shortener falhou:', shortErr instanceof Error ? shortErr.message : shortErr)
+        }
+        const fallback = `*Equipamento pronto! — OS #${osNum}*\n\nSeu ${equipment || 'equipamento'} esta pronto para retirada!\n\nVer detalhes:\n${magicLinkShort}`
         const waResult = await sendWhatsAppTemplate(user.companyId, phone, 'pontualtech_pronto_v2', 'pt_BR', [
           { type: 'body', parameters: [
             { type: 'text', text: osNum },

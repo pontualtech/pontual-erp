@@ -89,9 +89,18 @@ export async function POST(req: NextRequest, { params }: Params) {
           const portalDomain = isImpri ? 'portal.imprimitech.com.br' : 'portal.pontualtech.com.br'
           const magicRedirect = encodeURIComponent(`/portal/${slug}/os/${os.id}`)
           const magicLink = `https://${portalDomain}/portal/${slug}/entrar?t=${magicToken}&r=${magicRedirect}`
+          // Encurta magic-link (~230 chars) pra /s/SLUG no fallback WhatsApp.
+          // Botao Cloud (Meta) continua com token cru. Falha graceful pro original.
+          let magicLinkShort = magicLink
+          try {
+            const { shortenUrl } = await import('@/lib/short-link')
+            magicLinkShort = await shortenUrl(magicLink, user.companyId, os.customer_id)
+          } catch (shortErr) {
+            console.warn('[notificar-aprovacao] shortener falhou:', shortErr instanceof Error ? shortErr.message : shortErr)
+          }
           // v3 (2026-05-06): sem valor no body. Cliente ve detalhes no portal
           // antes de aprovar/recusar — evita rejeicao "as cegas" so pelo numero.
-          const fallback = `*Orcamento pronto — OS #${osNum}*\n\nEquipamento: ${equipment || 'Equipamento'}\n\nOs detalhes do orcamento (valor, pecas, fotos) estao disponiveis no Portal.\nToque para acessar e aprovar ou recusar:\n${magicLink}`
+          const fallback = `*Orcamento pronto — OS #${osNum}*\n\nEquipamento: ${equipment || 'Equipamento'}\n\nOs detalhes do orcamento (valor, pecas, fotos) estao disponiveis no Portal.\nToque para acessar e aprovar ou recusar:\n${magicLinkShort}`
           const waResult = await sendWhatsAppTemplate(user.companyId, phone, 'pontualtech_orcamento_v3', 'pt_BR', [
             { type: 'body', parameters: [
               { type: 'text', text: osNum },
