@@ -1779,8 +1779,11 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       try {
         const lock = await checkCrossTenantLock(phone, cfg.companyId)
         if (lock) {
-          const phonePart = lock.company_phone ? `\n\n📞 ${lock.company_phone}` : ''
-          const msg = `Olá! Vimos que você já tem uma OS #${lock.os_number} aberta com a *${lock.company_name}*.\n\nComo seu equipamento está com eles, esse atendimento continua direto com a ${lock.company_name}.${phonePart}`
+          // Prioriza link wa.me clicavel; fallback telefone humano se nao houver whatsapp.
+          const contactPart = lock.whatsapp_link
+            ? `\n\n💬 Fale com a equipe ${lock.company_name} pelo WhatsApp:\n${lock.whatsapp_link}`
+            : lock.company_phone ? `\n\n📞 ${lock.company_phone}` : ''
+          const msg = `Olá! Vimos que você já tem uma OS #${lock.os_number} aberta com a *${lock.company_name}*.\n\nComo seu equipamento está com eles, esse atendimento continua direto com a ${lock.company_name}.${contactPart}`
           await cwSendMessage(cfg, conversationId, msg)
           await cwSendMessage(cfg, conversationId, `[BOT] Cross-tenant lock — cliente tem OS #${lock.os_number} em ${lock.company_name}. Redirecionado.`, true)
           await cwResolve(cfg, conversationId)
@@ -3341,7 +3344,7 @@ async function findCustomerByAnyChannel(
 async function checkCrossTenantLock(
   phone: string | null,
   currentCompanyId: string,
-): Promise<{ os_number: number; company_name: string; company_phone: string | null } | null> {
+): Promise<{ os_number: number; company_name: string; company_phone: string | null; whatsapp_link: string | null } | null> {
   if (!phone) return null
   const otherCompanyId = CROSS_TENANT_PAIR[currentCompanyId]
   if (!otherCompanyId) return null
@@ -3369,16 +3372,29 @@ async function checkCrossTenantLock(
   })
   if (!otherOS) return null
 
-  // Telefone de contato da empresa-par (settings company.phone)
-  const phoneSetting = await prisma.setting.findFirst({
-    where: { company_id: otherCompanyId, key: 'company.phone' },
-    select: { value: true },
+  // Contatos da empresa-par: tenta whatsapp primeiro (gera link wa.me clicavel),
+  // fallback pro telefone fixo (so exibicao humana).
+  const contactSettings = await prisma.setting.findMany({
+    where: { company_id: otherCompanyId, key: { in: ['company.whatsapp', 'company.phone'] } },
+    select: { key: true, value: true },
   })
+  const sMap = new Map(contactSettings.map(s => [s.key, s.value]))
+  const waRaw = sMap.get('company.whatsapp') || ''
+  const phoneRaw = sMap.get('company.phone') || ''
+
+  // Constroi link wa.me com DDI 55 (BR) — limpa nao-digitos e prefixa se faltar.
+  let whatsappLink: string | null = null
+  const waClean = waRaw.replace(/\D/g, '')
+  if (waClean.length >= 10) {
+    const withDDI = waClean.startsWith('55') ? waClean : '55' + waClean
+    whatsappLink = `https://wa.me/${withDDI}`
+  }
 
   return {
     os_number: otherOS.os_number,
     company_name: otherOS.companies?.name || 'Outra unidade',
-    company_phone: phoneSetting?.value || null,
+    company_phone: phoneRaw || waRaw || null,
+    whatsapp_link: whatsappLink,
   }
 }
 
