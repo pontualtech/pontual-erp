@@ -97,6 +97,11 @@ export async function middleware(request: NextRequest) {
   if (pathname === '/api/health') {
     return NextResponse.next()
   }
+  // Public endpoints — forms dos 6 sites estaticos (substituto formsubmit.co)
+  // Tem CORS proprio + rate limit + honeypot no handler.
+  if (pathname.startsWith('/api/public/')) {
+    return NextResponse.next()
+  }
   // Internal notification routes: exact path prefix match only
   if (pathname.startsWith('/api/os/') && (
     pathname.endsWith('/notificar-abertura') || pathname.endsWith('/notificar-pronto') || pathname.endsWith('/notificar-coleta')
