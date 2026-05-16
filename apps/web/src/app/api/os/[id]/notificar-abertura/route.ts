@@ -290,7 +290,18 @@ export async function POST(req: NextRequest, { params }: Params) {
       const portalDomainMagic = isImpriMagic ? 'portal.imprimitech.com.br' : 'portal.pontualtech.com.br'
       const magicRedirectMagic = encodeURIComponent(`/portal/${slugForMagic}/os/${os.id}`)
       const magicLinkUrl = `https://${portalDomainMagic}/portal/${slugForMagic}/entrar?t=${magicToken}&r=${magicRedirectMagic}`
-      const fallback = `*OS #${osNum} aberta!*\n\nEquipamento: ${equipment || 'Equipamento'}\nProblema: ${os.reported_issue || 'A diagnosticar'}\n\nAcompanhe pelo portal:\n${magicLinkUrl}`
+      // Encurta magic-link (~230 chars) pra /s/SLUG (~40 chars) no texto
+      // fallback. Botao do template Cloud continua usando o token bruto
+      // (Meta exige parametro dinamico no URL button). Falha graceful pro
+      // link original — usuario nunca fica sem URL clicavel.
+      let shortLinkUrl = magicLinkUrl
+      try {
+        const { shortenUrl } = await import('@/lib/short-link')
+        shortLinkUrl = await shortenUrl(magicLinkUrl, companyId, os.customer_id)
+      } catch (shortErr) {
+        console.warn('[notificar-abertura] shortener falhou, usando magic-link original:', shortErr instanceof Error ? shortErr.message : shortErr)
+      }
+      const fallback = `*OS #${osNum} aberta!*\n\nEquipamento: ${equipment || 'Equipamento'}\nProblema: ${os.reported_issue || 'A diagnosticar'}\n\nAcompanhe pelo portal:\n${shortLinkUrl}`
       const result = await sendWhatsAppTemplate(companyId, phone, 'pt_os_aberta_v3', 'pt_BR', [
         { type: 'body', parameters: [
           { type: 'text', text: osNum },
