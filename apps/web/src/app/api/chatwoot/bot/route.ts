@@ -1952,49 +1952,118 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
         if (!documento) console.warn(`[Bot/ABRIR_OS] ⚠️ sem CPF/CNPJ — vhsysData keys: ${Object.keys(vd).join(',')}`)
         if (!telefone) console.warn(`[Bot/ABRIR_OS] ⚠️ sem telefone — sender.phone_number=${sender.phone_number} sender.phone=${sender.phone}`)
 
-        const erpResp = await fetch(`${ERP_BASE_URL}/api/bot/abrir-os`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Bot-Key': cfg.botApiKey },
-          body: JSON.stringify({
-            // Quando o auto-identify ja escolheu o customer correto (priorizando
-            // quem tem mais OS ativas), passa o ID explicito pra evitar que o
-            // endpoint re-lookup e caia em cliente errado quando phone e
-            // compartilhado entre PF e PJ do mesmo dono.
-            customer_id: identifiedCustomerId,
-            nome,
-            documento,
-            telefone,
-            email,
-            cep: pick('cep', 'endereco_cep', 'zip'),
-            endereco: pick('endereco', 'logradouro', 'rua', 'street'),
-            numero: pick('numero', 'endereco_numero', 'number'),
-            complemento: pick('complemento', 'endereco_complemento'),
-            bairro: pick('bairro', 'endereco_bairro', 'neighborhood'),
-            cidade: pick('cidade', 'endereco_cidade', 'localidade', 'municipio', 'city'),
-            uf: pick('uf', 'estado', 'endereco_uf', 'state'),
+        // 2026-05-16: suporte a MULTIPLOS equipamentos numa unica abertura.
+        // vhsysData.equipamentos = array opcional. Quando presente, cria N OS
+        // (1 por item). Quando ausente, usa formato singular (compat antiga).
+        // Cliente real com 3 impressoras Epson L1250+L3250 -> bug critico antes
+        // (so abria 1 OS, perdia 2 impressoras).
+        interface EquipItem { equipamento: string; marca: string; modelo: string; defeito: string }
+        const equipamentosArr: EquipItem[] = []
+        const rawArr = (vd as any).equipamentos
+        if (Array.isArray(rawArr) && rawArr.length > 0) {
+          for (const e of rawArr) {
+            if (!e || typeof e !== 'object') continue
+            const ePick = (...ks: string[]): string => {
+              for (const k of ks) {
+                const r = (e as any)[k]
+                if (r == null) continue
+                const v = String(r).trim()
+                if (!v || isPlaceholder(v)) continue
+                return v
+              }
+              return ''
+            }
+            equipamentosArr.push({
+              equipamento: ePick('equipamento', 'equipment', 'tipo_equipamento') || 'Impressora',
+              marca: ePick('marca', 'brand'),
+              modelo: ePick('modelo', 'model'),
+              defeito: ePick('defeito', 'problema', 'reported_issue', 'issue') || 'Sem descricao',
+            })
+          }
+        }
+        // Fallback singular: se equipamentos[] vazio ou ausente, usa campos no topo
+        if (equipamentosArr.length === 0) {
+          equipamentosArr.push({
             equipamento: pick('equipamento', 'equipment', 'tipo_equipamento') || 'Impressora',
             marca: pick('marca', 'brand'),
             modelo: pick('modelo', 'model'),
             defeito: pick('defeito', 'problema', 'reported_issue', 'issue') || 'Sem descricao',
-            origem: cfg.botOrigin,
-          }),
-        })
-        const erpData = await erpResp.json()
-        const osNum = erpData.os_numero || 0
-        const osId = erpData.os_id as string | undefined
-        const customerId = erpData.cliente_id as string | undefined
-        const clienteNome = erpData.cliente_nome || parsed.vhsysData.nome || 'Cliente'
+          })
+        }
+        console.log(`[Bot/ABRIR_OS] conv=${conversationId} equipamentos count=${equipamentosArr.length}`)
+
+        // Loopa criando 1 OS por equipamento. Captura todas pra mensagem final.
+        interface CreatedOS { osNum: number; osId?: string; customerId?: string; clienteNome: string; marca: string; modelo: string; defeito: string; clienteNovo?: boolean }
+        const createdOSs: CreatedOS[] = []
+        let lastErpData: any = null
+
+        for (const eq of equipamentosArr) {
+          const erpResp = await fetch(`${ERP_BASE_URL}/api/bot/abrir-os`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Bot-Key': cfg.botApiKey },
+            body: JSON.stringify({
+              customer_id: identifiedCustomerId,
+              nome,
+              documento,
+              telefone,
+              email,
+              cep: pick('cep', 'endereco_cep', 'zip'),
+              endereco: pick('endereco', 'logradouro', 'rua', 'street'),
+              numero: pick('numero', 'endereco_numero', 'number'),
+              complemento: pick('complemento', 'endereco_complemento'),
+              bairro: pick('bairro', 'endereco_bairro', 'neighborhood'),
+              cidade: pick('cidade', 'endereco_cidade', 'localidade', 'municipio', 'city'),
+              uf: pick('uf', 'estado', 'endereco_uf', 'state'),
+              equipamento: eq.equipamento,
+              marca: eq.marca,
+              modelo: eq.modelo,
+              defeito: eq.defeito,
+              origem: cfg.botOrigin,
+            }),
+          })
+          const erpData = await erpResp.json()
+          lastErpData = erpData
+          if (erpData?.os_numero) {
+            createdOSs.push({
+              osNum: erpData.os_numero,
+              osId: erpData.os_id,
+              customerId: erpData.cliente_id,
+              clienteNome: erpData.cliente_nome || parsed.vhsysData.nome || 'Cliente',
+              marca: eq.marca, modelo: eq.modelo, defeito: eq.defeito,
+              clienteNovo: !!erpData.cliente_novo,
+            })
+            // Pra criar as proximas OS no MESMO cliente, captura customer_id
+            // retornado e usa-o nas chamadas seguintes — evita criar cliente
+            // duplicado em cada iteracao quando customer ainda nao existia.
+            if (!identifiedCustomerId && erpData.cliente_id) {
+              identifiedCustomerId = erpData.cliente_id
+            }
+          } else {
+            console.error(`[Bot/ABRIR_OS] iteracao falhou (${eq.marca} ${eq.modelo}):`, erpData)
+          }
+        }
+
+        // Compat com codigo abaixo: variaveis usadas pelo flow legado apontam
+        // pra primeira OS criada (cenario singular nao muda nada).
+        const erpData = lastErpData || {}
+        const osNum = createdOSs[0]?.osNum || 0
+        const osId = createdOSs[0]?.osId
+        const customerId = createdOSs[0]?.customerId
+        const clienteNome = createdOSs[0]?.clienteNome || parsed.vhsysData.nome || 'Cliente'
 
         // Generate a one-click magic-link for this customer so the message to them
-        // lands them already authenticated on the new OS. Falls back to the generic
-        // portal URL if token creation fails (missing env, etc).
+        // lands them already authenticated. Quando ha multiplas OS, redirect
+        // vai pro portal home (lista de OS) em vez de OS especifica.
         let magicPortalUrl = `${portalBase(cfg)}/login`
-        if (customerId && osId) {
+        if (customerId) {
           try {
             const { createAccessToken: cat } = await import('@/lib/portal-auth')
             const magicToken = cat(customerId, cfg.companyId)
             const tenantSlug = cfg.slug.replace('-suporte', '').replace('-email', '')
-            const redirectPath = `/portal/${tenantSlug}/os/${osId}`
+            // Multiplas OS -> portal home (lista). Singular -> OS especifica.
+            const redirectPath = createdOSs.length > 1 || !osId
+              ? `/portal/${tenantSlug}`
+              : `/portal/${tenantSlug}/os/${osId}`
             magicPortalUrl = `${portalBase(cfg)}/entrar?t=${magicToken}&r=${encodeURIComponent(redirectPath)}`
           } catch (e) {
             console.warn('[Bot] falha gerando magic-link pos abertura, usando URL de login:', e instanceof Error ? e.message : String(e))
@@ -2026,7 +2095,13 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
             }).catch(e => console.warn('[Bot] failed to link customer_id to botConv:', e instanceof Error ? e.message : e))
           }
 
-          await cwSendMessage(cfg, conversationId, `✅ *OS #${osNum}* aberta para ${clienteNome}!`)
+          // Confirmacao: singular ou plural conforme N de OS criadas.
+          if (createdOSs.length > 1) {
+            const osList = createdOSs.map(o => `*#${o.osNum}* (${[o.marca, o.modelo].filter(Boolean).join(' ')})`).join(', ')
+            await cwSendMessage(cfg, conversationId, `✅ ${createdOSs.length} OS abertas para ${clienteNome}!\n\n${osList}`)
+          } else {
+            await cwSendMessage(cfg, conversationId, `✅ *OS #${osNum}* aberta para ${clienteNome}!`)
+          }
 
           // NOTA: removida a chamada redundante a sendWhatsAppTemplate('pt_os_aberta_v3').
           // Template Cloud API saia pelo phone_number_id GLOBAL (config = suporte
@@ -2062,13 +2137,20 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
           // Reutiliza o telefone JA validado (>=10 digitos ou fallback pro sender)
           // em vez de consultar o payload bruto do Dify, que pode conter "WHATSAPP"/"N/I".
           const telNote = telefone || 'N/I'
+          // Nota privada lista TODAS as OS criadas (atendente humano ve fila certa)
+          const osHeaderLine = createdOSs.length > 1
+            ? `📋 *${createdOSs.length} OSs* — ${clienteNome}${createdOSs[0]?.clienteNovo ? ' (NOVO)' : ''}`
+            : `📋 *OS #${osNum}* — ${clienteNome}${erpData.cliente_novo ? ' (NOVO)' : ''}`
+          const equipLines = createdOSs.map(o =>
+            `🖨️ OS #${o.osNum} — ${[o.marca, o.modelo].filter(Boolean).join(' ')}${o.defeito ? ` — ${o.defeito}` : ''}`
+          )
           const noteLines = [
-            `📋 *OS #${osNum}* — ${clienteNome}${erpData.cliente_novo ? ' (NOVO)' : ''}`,
-            `🖨️ ${String(vdNote.marca || '')} ${String(vdNote.modelo || '')} — ${String(vdNote.defeito || '')}`,
+            osHeaderLine,
+            ...equipLines,
             `📄 Doc: ${docNote} | 📞 ${telNote}`,
             `📧 ${pickNote('email') || 'N/I'} | 📍 ${pickNote('endereco', 'logradouro') || 'N/I'}`,
             ``,
-            `🔗 ERP: ${ERP_BASE_URL}/os/${osNum}`,
+            ...createdOSs.map(o => `🔗 ERP OS #${o.osNum}: ${ERP_BASE_URL}/os/${o.osNum}`),
             `🔗 Portal (curto): ${displayPortalUrl}`,
             `🔗 Portal (magic-link completo): ${magicPortalUrl}`,
           ]
