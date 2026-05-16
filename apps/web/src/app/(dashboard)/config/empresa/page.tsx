@@ -43,6 +43,7 @@ interface EmpresaConfig {
   crt: string
   // OS Settings
   os_default_business_days: string
+  os_next_number: string
 }
 
 const CRT_OPTIONS = [
@@ -62,6 +63,7 @@ export default function ConfigEmpresaPage() {
     quote_url: '', portal_url: '', app_url_env: '',
     nfse_codigo_municipio: '', aliquota_iss: '', codigo_servico: '', crt: '1',
     os_default_business_days: '10',
+    os_next_number: '',
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -216,6 +218,16 @@ export default function ConfigEmpresaPage() {
               onChange={e => upd('os_default_business_days', e.target.value)}
               placeholder="10" className={inp} />
             <p className="text-xs text-gray-400 mt-1">Dias uteis para previsao de entrega ao aprovar OS (padrao: 10)</p>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Proximo numero de OS</label>
+            <input type="number" min="1" value={config.os_next_number}
+              onChange={e => upd('os_next_number', e.target.value)}
+              placeholder="ex: 15000" className={inp} />
+            <p className="text-xs text-gray-400 mt-1">
+              Forca a proxima OS a ter este numero (ou maior). Util pra pular numeracao. Se vazio ou menor que o ultimo,
+              continua de onde parou.
+            </p>
           </div>
         </div>
       </div>

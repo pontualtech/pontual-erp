@@ -22,6 +22,7 @@ const EMPRESA_KEYS = [
   'company.crt',
   // OS Settings
   'os.default_business_days',
+  'os.next_number',
 ]
 
 // Mapa campo do form -> chave no banco
@@ -60,6 +61,7 @@ const FIELD_MAP: Record<string, string> = {
   crt: 'company.crt',
   // OS Settings
   os_default_business_days: 'os.default_business_days',
+  os_next_number: 'os.next_number',
 }
 
 // Inverso
