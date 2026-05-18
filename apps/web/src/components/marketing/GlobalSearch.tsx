@@ -48,7 +48,7 @@ const GROUP_LABELS: Record<keyof Omit<SearchResults, 'total'>, string> = {
   automations: 'Automações',
 }
 
-export function GlobalSearch() {
+export function GlobalSearch({ headless = false }: { headless?: boolean } = {}) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResults>(EMPTY)
@@ -128,6 +128,9 @@ export function GlobalSearch() {
   }
 
   if (!open) {
+    // Modo headless = só registra listener Cmd+K, sem botão visível.
+    // Útil pra plugar em layouts (chamado uma vez por módulo).
+    if (headless) return null
     return (
       <button
         onClick={() => setOpen(true)}
