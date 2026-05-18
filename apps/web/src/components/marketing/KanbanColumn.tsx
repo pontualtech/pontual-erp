@@ -80,10 +80,12 @@ export function KanbanColumn({ stage, contacts, total, loading = false, selected
                 +{selectedInColumn}
               </span>
             )}
-            <span
-              className={`h-1.5 w-1.5 rounded-full ${activityDotClass}`}
-              title={`${activityTitle} (heurística sobre top ${contacts.length})`}
-            />
+            {contacts.length > 0 && (
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${activityDotClass}`}
+                title={`${activityTitle} (heurística sobre top ${contacts.length})`}
+              />
+            )}
             <span className="tabular-nums text-xs font-medium text-gray-500 dark:text-gray-400">
               {formatNumber(total)}
             </span>

@@ -114,9 +114,13 @@ export function KanbanBoard({ filters }: Props) {
   useEffect(() => {
     if (selectedIds.size === 0) return
     function onKey(ev: KeyboardEvent) {
-      // Ignora se estiver digitando em campo editável
+      // Ignora se estiver digitando ou com foco em UI interativa (button/select/menu)
+      // pra não disparar move-to-stage destrutivo ao apertar 1..5 com foco num botão
       const t = ev.target as HTMLElement | null
-      if (t?.matches?.('input,textarea,[contenteditable=true]')) return
+      if (t?.matches?.('input,textarea,select,button,[contenteditable=true],[role=menuitem],[role=combobox]')) {
+        // Esc ainda deve funcionar mesmo com foco em UI — é cancelamento universal
+        if (ev.key !== 'Escape') return
+      }
       if (ev.metaKey || ev.ctrlKey || ev.altKey) return
 
       if (ev.key === 'Escape') { clearSelection(); return }
@@ -231,6 +235,12 @@ export function KanbanBoard({ filters }: Props) {
     }
   }
 
+  /** Refresca todas as colunas — usado após ações em lote */
+  const reloadAll = useCallback(() => {
+    Promise.all(STAGES.map(s => fetchColumn(s.key)))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters])
+
   if (initialLoad) {
     return (
       <div className="flex h-96 items-center justify-center">
@@ -238,12 +248,6 @@ export function KanbanBoard({ filters }: Props) {
       </div>
     )
   }
-
-  /** Refresca todas as colunas — usado após ações em lote */
-  const reloadAll = useCallback(() => {
-    Promise.all(STAGES.map(s => fetchColumn(s.key)))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters])
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>

@@ -39,18 +39,13 @@ export async function GET(req: NextRequest) {
       ]
     }
 
-    // tags AND: todas precisam estar
-    if (tagsAll.length > 0) {
-      where.tags = { ...(where.tags || {}), hasEvery: tagsAll }
-    }
-    // tagsAny OR: pelo menos uma
-    if (tagsAny.length > 0) {
-      where.tags = { ...(where.tags || {}), hasSome: tagsAny }
-    }
-    // tagsNot: nenhuma das listadas
-    if (tagsNot.length > 0) {
-      where.NOT = { ...(where.NOT || {}), tags: { hasSome: tagsNot } }
-    }
+    // tags AND/OR/NOT — usa where.AND pra não colidir entre si
+    // (Prisma colapsa where.tags se setado 2x; AND array preserva os 2 filtros)
+    const tagConditions: any[] = []
+    if (tagsAll.length > 0) tagConditions.push({ tags: { hasEvery: tagsAll } })
+    if (tagsAny.length > 0) tagConditions.push({ tags: { hasSome: tagsAny } })
+    if (tagsNot.length > 0) tagConditions.push({ NOT: { tags: { hasSome: tagsNot } } })
+    if (tagConditions.length > 0) where.AND = tagConditions
 
     if (unsubscribed === 'true') where.unsubscribed = true
     if (unsubscribed === 'false') where.unsubscribed = false

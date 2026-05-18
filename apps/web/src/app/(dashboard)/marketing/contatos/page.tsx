@@ -114,7 +114,7 @@ export default function MarketingContatosPage() {
     function onKey(e: KeyboardEvent) {
       if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return
       const t = e.target as HTMLElement | null
-      if (t?.matches?.('input,textarea,[contenteditable=true]')) return
+      if (t?.matches?.('input,textarea,select,button,[contenteditable=true],[role=menuitem]')) return
       e.preventDefault()
       searchInputRef.current?.focus()
       searchInputRef.current?.select()

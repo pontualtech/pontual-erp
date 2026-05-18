@@ -53,21 +53,25 @@ export function TagFilterChips({ value, onChange }: Props) {
   const [loading, setLoading] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Debounced fetch das sugestões
+  // Debounced fetch das sugestões — AbortController evita race quando o
+  // usuário digita rápido (resposta antiga sobrescrevendo a nova)
   useEffect(() => {
     if (!inputOpen) { setSuggestions([]); return }
     setLoading(true)
+    const ctrl = new AbortController()
     const t = setTimeout(async () => {
       try {
-        const r = await fetch(`/api/marketing/contatos/tags?prefix=${encodeURIComponent(query)}&limit=20`)
+        const r = await fetch(`/api/marketing/contatos/tags?prefix=${encodeURIComponent(query)}&limit=20`, { signal: ctrl.signal })
         if (r.ok) {
           const j = await r.json()
           const existing = new Set(value.map(v => v.tag))
           setSuggestions((j.data?.tags || []).filter((t: any) => !existing.has(t.tag)))
         }
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return
       } finally { setLoading(false) }
     }, 150)
-    return () => clearTimeout(t)
+    return () => { clearTimeout(t); ctrl.abort() }
   }, [query, inputOpen, value])
 
   function addTag(tag: string) {
