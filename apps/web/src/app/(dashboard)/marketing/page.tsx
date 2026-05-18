@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
   Users, BarChart3, FileText, Mail, MousePointerClick, MailX, TrendingUp,
-  ArrowRight, Loader2, Megaphone,
+  ArrowRight, Loader2, Megaphone, Zap,
 } from 'lucide-react'
 import { StatCard } from '@/components/marketing/StatCard'
 import { formatNumber } from '@/lib/marketing/format'
@@ -57,6 +57,15 @@ const MODULES: ModuleCard[] = [
     iconBg: 'bg-emerald-50 dark:bg-emerald-500/10',
     iconColor: 'text-emerald-600 dark:text-emerald-400',
     borderHover: 'hover:border-emerald-300 dark:hover:border-emerald-500/40',
+  },
+  {
+    title: 'Automações',
+    description: 'Dispare email, WhatsApp ou webhook quando contato muda de fase no Kanban',
+    href: '/marketing/automations',
+    icon: Zap,
+    iconBg: 'bg-amber-50 dark:bg-amber-500/10',
+    iconColor: 'text-amber-600 dark:text-amber-400',
+    borderHover: 'hover:border-amber-300 dark:hover:border-amber-500/40',
   },
 ]
 
@@ -172,7 +181,7 @@ export default function MarketingHomePage() {
         <h2 className="mb-3 text-base font-semibold text-gray-900 dark:text-gray-100">
           Módulos
         </h2>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {MODULES.map(mod => {
             const Icon = mod.icon
             return (
