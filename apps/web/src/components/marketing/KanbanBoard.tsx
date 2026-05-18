@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -14,6 +14,7 @@ import { Loader2 } from 'lucide-react'
 import { STAGES, type StageKey } from '@/lib/marketing/stages'
 import { KanbanColumn } from './KanbanColumn'
 import { KanbanCard, type KanbanContact } from './KanbanCard'
+import { BatchToolbar } from './BatchToolbar'
 import { toast } from 'sonner'
 
 interface Props {
@@ -42,6 +43,52 @@ export function KanbanBoard({ filters }: Props) {
   })
   const [activeCard, setActiveCard] = useState<{ contact: KanbanContact; stage: StageKey } | null>(null)
   const [initialLoad, setInitialLoad] = useState(true)
+
+  /** ids de cards selecionados (multi-select pra ações em lote). Set pra O(1) lookup. */
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  /** último id clicado — base do range select com shift */
+  const [lastClickedId, setLastClickedId] = useState<string | null>(null)
+
+  /** Lista flat de TODOS contatos visíveis (em ordem de colunas) — usada pra range select */
+  const flatContacts = useMemo(() => {
+    return STAGES.flatMap(s => columns[s.key]?.contacts || [])
+  }, [columns])
+
+  const handleToggleSelect = useCallback((id: string, modifiers: { shift: boolean; meta: boolean }) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      // Shift-click: seleciona range entre lastClickedId e id (inclusive)
+      if (modifiers.shift && lastClickedId && lastClickedId !== id) {
+        const idxA = flatContacts.findIndex(c => c.id === lastClickedId)
+        const idxB = flatContacts.findIndex(c => c.id === id)
+        if (idxA !== -1 && idxB !== -1) {
+          const [from, to] = idxA < idxB ? [idxA, idxB] : [idxB, idxA]
+          flatContacts.slice(from, to + 1).forEach(c => next.add(c.id))
+          return next
+        }
+      }
+      // Toggle simples
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+    setLastClickedId(id)
+  }, [lastClickedId, flatContacts])
+
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set())
+    setLastClickedId(null)
+  }, [])
+
+  // Esc limpa seleção
+  useEffect(() => {
+    if (selectedIds.size === 0) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') clearSelection()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [selectedIds.size, clearSelection])
 
   // Sensor com distância mínima de 5px — evita acionar drag em cliques curtos
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
@@ -138,6 +185,12 @@ export function KanbanBoard({ filters }: Props) {
     )
   }
 
+  /** Refresca todas as colunas — usado após ações em lote */
+  const reloadAll = useCallback(() => {
+    Promise.all(STAGES.map(s => fetchColumn(s.key)))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters])
+
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="flex gap-3 overflow-x-auto pb-2" style={{ minHeight: '600px' }}>
@@ -148,6 +201,8 @@ export function KanbanBoard({ filters }: Props) {
             contacts={columns[stage.key]?.contacts || []}
             total={columns[stage.key]?.total || 0}
             loading={columns[stage.key]?.loading}
+            selectedIds={selectedIds}
+            onToggleSelect={handleToggleSelect}
           />
         ))}
       </div>
@@ -155,6 +210,12 @@ export function KanbanBoard({ filters }: Props) {
       <DragOverlay>
         {activeCard ? <KanbanCard contact={activeCard.contact} stage={activeCard.stage} /> : null}
       </DragOverlay>
+
+      <BatchToolbar
+        selectedIds={selectedIds}
+        onClear={clearSelection}
+        onAction={() => { clearSelection(); reloadAll() }}
+      />
     </DndContext>
   )
 }

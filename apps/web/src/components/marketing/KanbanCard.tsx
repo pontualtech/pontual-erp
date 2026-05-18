@@ -24,9 +24,15 @@ interface Props {
   contact: KanbanContact
   /** stage atual deste card (pra identificar origem no drag) */
   stage: string
+  /** multi-select: true se card está selecionado */
+  selected?: boolean
+  /** quantos cards estão selecionados no board todo (mostra checkbox sempre se >0) */
+  anySelected?: boolean
+  /** callback de toggle. Recebe modifierKeys pra suportar shift+click range select */
+  onToggleSelect?: (id: string, modifiers: { shift: boolean; meta: boolean }) => void
 }
 
-export function KanbanCard({ contact, stage }: Props) {
+export function KanbanCard({ contact, stage, selected, anySelected, onToggleSelect }: Props) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: contact.id,
     data: { stage, contact },
@@ -37,15 +43,44 @@ export function KanbanCard({ contact, stage }: Props) {
     opacity: isDragging ? 0.4 : 1,
   }
 
+  function handleCheckboxClick(e: React.MouseEvent) {
+    e.stopPropagation()
+    e.preventDefault()
+    onToggleSelect?.(contact.id, { shift: e.shiftKey, meta: e.metaKey || e.ctrlKey })
+  }
+
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className={`group select-none rounded-lg border border-gray-200 bg-white p-3 shadow-sm transition hover:shadow-md dark:border-gray-700 dark:bg-gray-800 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+      className={`group select-none rounded-lg border bg-white p-3 shadow-sm transition hover:shadow-md dark:bg-gray-800 ${
+        selected
+          ? 'border-blue-500 ring-1 ring-blue-500/30 dark:border-blue-400'
+          : 'border-gray-200 dark:border-gray-700'
+      } ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
       {...attributes}
       {...listeners}
     >
       <div className="flex items-start gap-2">
+        {/* Checkbox: sempre visível se algum selecionado OU em hover; clicável sem ativar drag */}
+        {onToggleSelect && (
+          <label
+            className={`flex shrink-0 cursor-pointer items-center justify-center mt-0.5 transition ${
+              selected || anySelected
+                ? 'opacity-100'
+                : 'opacity-0 group-hover:opacity-100'
+            }`}
+            onPointerDown={e => e.stopPropagation()}
+            onClick={handleCheckboxClick}
+          >
+            <input
+              type="checkbox"
+              checked={!!selected}
+              readOnly
+              className="h-4 w-4 cursor-pointer rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+          </label>
+        )}
         <ContactAvatar name={contact.name} email={contact.email} size="sm" />
         <div className="min-w-0 flex-1">
           <Link

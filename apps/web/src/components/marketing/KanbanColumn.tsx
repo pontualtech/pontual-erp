@@ -12,9 +12,14 @@ interface Props {
   /** Total real na coluna (pode ser maior que contacts.length se truncado) */
   total: number
   loading?: boolean
+  /** ids selecionados (multi-select) — passa Set pra ter O(1) lookup */
+  selectedIds?: Set<string>
+  /** callback de toggle (pra KanbanCard repassar) */
+  onToggleSelect?: (id: string, modifiers: { shift: boolean; meta: boolean }) => void
 }
 
-export function KanbanColumn({ stage, contacts, total, loading = false }: Props) {
+export function KanbanColumn({ stage, contacts, total, loading = false, selectedIds, onToggleSelect }: Props) {
+  const anySelected = !!selectedIds && selectedIds.size > 0
   const { setNodeRef, isOver } = useDroppable({
     id: stage.key,
     data: { stage: stage.key },
@@ -58,7 +63,16 @@ export function KanbanColumn({ stage, contacts, total, loading = false }: Props)
             Solte um contato aqui
           </div>
         ) : (
-          contacts.map(c => <KanbanCard key={c.id} contact={c} stage={stage.key} />)
+          contacts.map(c => (
+            <KanbanCard
+              key={c.id}
+              contact={c}
+              stage={stage.key}
+              selected={selectedIds?.has(c.id)}
+              anySelected={anySelected}
+              onToggleSelect={onToggleSelect}
+            />
+          ))
         )}
 
         {showOverflow && (
