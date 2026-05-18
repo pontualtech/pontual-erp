@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { z } from 'zod'
+import { fireStageAutomations } from '@/lib/marketing/automations/executor'
 
 // Stages válidos — bate com STAGES[] em lib/marketing/stages.ts
 const STAGE_KEYS = [
@@ -38,6 +39,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     })
     if (!contact) return error('Contato não encontrado', 404)
 
+    // Extrai stage anterior pra disparar automations matching from→to
+    const previousStageTag = (contact.tags || []).find(t => t.startsWith('stage:'))
+    const fromStage = previousStageTag ? previousStageTag.slice(6) : null
+    const toStage = stage === 'none' ? null : stage
+
     // Remove tags stage:* existentes
     const tagsWithoutStage = (contact.tags || []).filter(t => !t.startsWith('stage:'))
     // Adiciona nova tag stage (a menos que 'none')
@@ -59,6 +65,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         updated_at: true,
       },
     })
+
+    // Dispara automations matching — fire-and-forget (não bloqueia resposta)
+    // Só dispara se stage realmente mudou (evita re-trigger em saves idempotentes)
+    if (fromStage !== toStage) {
+      fireStageAutomations({
+        companyId: user.companyId,
+        contactId: contact.id,
+        fromStage,
+        toStage,
+      }).catch(err => console.error('[stage-automation] fire error:', err))
+    }
 
     return success({ contact: updated, stage })
   } catch (e) {
