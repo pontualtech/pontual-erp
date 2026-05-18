@@ -27,6 +27,35 @@ export function KanbanColumn({ stage, contacts, total, loading = false, selected
 
   const showOverflow = total > contacts.length
 
+  /** Quantos cards desta coluna estão na seleção atual */
+  const selectedInColumn = selectedIds
+    ? contacts.reduce((n, c) => n + (selectedIds.has(c.id) ? 1 : 0), 0)
+    : 0
+
+  /** Última atividade dentre os contatos visíveis (heurística — só top-50) */
+  const lastActivityMs = contacts.reduce((acc, c) => {
+    const t = c.last_seen_at ? new Date(c.last_seen_at).getTime() : 0
+    return t > acc ? t : acc
+  }, 0)
+  const daysSinceActivity = lastActivityMs > 0
+    ? Math.floor((Date.now() - lastActivityMs) / (1000 * 60 * 60 * 24))
+    : null
+
+  let activityDotClass = 'bg-gray-300 dark:bg-gray-600'
+  let activityTitle = 'Sem atividade'
+  if (daysSinceActivity !== null) {
+    if (daysSinceActivity <= 7) {
+      activityDotClass = 'bg-green-500'
+      activityTitle = `Última atividade há ${daysSinceActivity}d`
+    } else if (daysSinceActivity <= 30) {
+      activityDotClass = 'bg-amber-500'
+      activityTitle = `Última atividade há ${daysSinceActivity}d`
+    } else {
+      activityDotClass = 'bg-gray-400 dark:bg-gray-500'
+      activityTitle = `Última atividade há ${daysSinceActivity}d`
+    }
+  }
+
   return (
     <div
       ref={setNodeRef}
@@ -42,9 +71,23 @@ export function KanbanColumn({ stage, contacts, total, loading = false, selected
               {stage.emoji} {stage.label}
             </span>
           </div>
-          <span className="tabular-nums text-xs font-medium text-gray-500 dark:text-gray-400">
-            {formatNumber(total)}
-          </span>
+          <div className="flex items-center gap-1.5">
+            {selectedInColumn > 0 && (
+              <span
+                className="inline-flex items-center rounded-full bg-blue-500 px-1.5 py-0.5 text-[10px] font-semibold text-white"
+                title={`${selectedInColumn} selecionado${selectedInColumn === 1 ? '' : 's'} nesta coluna`}
+              >
+                +{selectedInColumn}
+              </span>
+            )}
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${activityDotClass}`}
+              title={`${activityTitle} (heurística sobre top ${contacts.length})`}
+            />
+            <span className="tabular-nums text-xs font-medium text-gray-500 dark:text-gray-400">
+              {formatNumber(total)}
+            </span>
+          </div>
         </div>
         <p className="mt-0.5 truncate text-[11px] text-gray-500 dark:text-gray-400" title={stage.description}>
           {stage.description}
