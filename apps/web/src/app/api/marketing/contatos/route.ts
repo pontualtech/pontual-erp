@@ -17,8 +17,15 @@ export async function GET(req: NextRequest) {
     const page = Math.max(1, Number(url.get('page') || '1'))
     const limit = Math.min(100, Math.max(1, Number(url.get('limit') || '50')))
     const search = (url.get('search') || '').trim()
-    const tagsParam = url.get('tags') || ''
-    const tagsFilter = tagsParam ? tagsParam.split(',').map(s => s.trim()).filter(Boolean) : []
+    // Bloco 3 — 3 modos de filtro por tags combinados:
+    //   tags     = AND (hasEvery — todas presentes)
+    //   tagsAny  = OR  (hasSome  — pelo menos uma)
+    //   tagsNot  = NOT (NOT hasSome — nenhuma)
+    // Backward compat: `tags=` continua funcionando como AND (era o único modo antes).
+    const parseTags = (p: string) => (p ? p.split(',').map(s => s.trim()).filter(Boolean) : [])
+    const tagsAll = parseTags(url.get('tags') || '')
+    const tagsAny = parseTags(url.get('tagsAny') || '')
+    const tagsNot = parseTags(url.get('tagsNot') || '')
     const unsubscribed = url.get('unsubscribed')
     const onlyBounced = url.get('onlyBounced') === '1'
 
@@ -32,8 +39,17 @@ export async function GET(req: NextRequest) {
       ]
     }
 
-    if (tagsFilter.length > 0) {
-      where.tags = { hasEvery: tagsFilter }
+    // tags AND: todas precisam estar
+    if (tagsAll.length > 0) {
+      where.tags = { ...(where.tags || {}), hasEvery: tagsAll }
+    }
+    // tagsAny OR: pelo menos uma
+    if (tagsAny.length > 0) {
+      where.tags = { ...(where.tags || {}), hasSome: tagsAny }
+    }
+    // tagsNot: nenhuma das listadas
+    if (tagsNot.length > 0) {
+      where.NOT = { ...(where.NOT || {}), tags: { hasSome: tagsNot } }
     }
 
     if (unsubscribed === 'true') where.unsubscribed = true
