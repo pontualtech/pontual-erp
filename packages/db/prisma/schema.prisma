@@ -121,6 +121,8 @@ model Company {
   marketing_contacts            MarketingContact[]
   marketing_webhook_events      MarketingWebhookEvent[]
   marketing_segments            MarketingSegment[]
+  marketing_stage_automations   MarketingStageAutomation[]
+  marketing_automation_runs     MarketingAutomationRun[]
   fiscal_configs                FiscalConfig?
   invoices                      Invoice[]
   message_templates             MessageTemplate[]
@@ -2465,4 +2467,56 @@ model MarketingSegment {
   @@index([company_id], map: "idx_marketing_segments_company")
   @@index([company_id, created_at(sort: Desc)], map: "idx_marketing_segments_created_at")
   @@map("marketing_segments")
+}
+
+/// Automacao disparada quando um contato muda de fase (stage) no Kanban.
+/// from_stage = null  -> dispara em qualquer origem (so importa o destino)
+/// to_stage   = null  -> dispara em qualquer destino (so importa a origem)
+/// Ambos null e' invalido (validado na API).
+/// action_type controla o que executa: email | whatsapp | webhook | task
+/// payload (jsonb) tem campos especificos por action_type.
+model MarketingStageAutomation {
+  id            String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id    String
+  name          String
+  from_stage    String?
+  to_stage      String?
+  action_type   String
+  payload       Json     @default("{}")
+  delay_minutes Int      @default(0)
+  active        Boolean  @default(true)
+  created_by    String?
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  company Company                  @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  runs    MarketingAutomationRun[]
+
+  @@index([company_id], map: "idx_marketing_stage_automations_company")
+  @@index([company_id, active, from_stage, to_stage], map: "idx_marketing_stage_automations_match")
+  @@map("marketing_stage_automations")
+}
+
+/// Log de cada execucao de automacao — pra auditoria e debugging.
+/// status: pending | running | success | failed | skipped
+model MarketingAutomationRun {
+  id            String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id    String
+  automation_id String
+  contact_id    String?
+  from_stage    String?
+  to_stage      String?
+  status        String
+  error         String?
+  result        Json?
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
+  finished_at   DateTime? @db.Timestamptz(6)
+
+  company    Company                  @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  automation MarketingStageAutomation @relation(fields: [automation_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([company_id, created_at(sort: Desc)], map: "idx_marketing_automation_runs_company_created")
+  @@index([automation_id, created_at(sort: Desc)], map: "idx_marketing_automation_runs_automation")
+  @@index([contact_id, created_at(sort: Desc)], map: "idx_marketing_automation_runs_contact")
+  @@map("marketing_automation_runs")
 }
