@@ -24,6 +24,12 @@ interface Props {
     segment?: string
     unsubscribed?: string
     onlyBounced?: boolean
+    /** Tags em AND (CSV) — mescladas com stage:X que o board adiciona */
+    tagsAll?: string
+    /** Tags em OR (CSV) — hasSome no backend */
+    tagsAny?: string
+    /** Tags em NOT (CSV) — NOT hasSome no backend */
+    tagsNot?: string
   }
 }
 
@@ -100,7 +106,10 @@ export function KanbanBoard({ filters }: Props) {
     if (filters.search) p.set('search', filters.search)
     const tags: string[] = [`stage:${stage}`]
     if (filters.segment) tags.push(`segment:${filters.segment}`)
+    if (filters.tagsAll) tags.push(...filters.tagsAll.split(',').filter(Boolean))
     p.set('tags', tags.join(','))
+    if (filters.tagsAny) p.set('tagsAny', filters.tagsAny)
+    if (filters.tagsNot) p.set('tagsNot', filters.tagsNot)
     if (filters.unsubscribed) p.set('unsubscribed', filters.unsubscribed)
     if (filters.onlyBounced) p.set('onlyBounced', '1')
     return p
@@ -128,7 +137,7 @@ export function KanbanBoard({ filters }: Props) {
   useEffect(() => {
     Promise.all(STAGES.map(s => fetchColumn(s.key))).then(() => setInitialLoad(false))
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.search, filters.segment, filters.unsubscribed, filters.onlyBounced])
+  }, [filters.search, filters.segment, filters.unsubscribed, filters.onlyBounced, filters.tagsAll, filters.tagsAny, filters.tagsNot])
 
   function handleDragStart(event: DragStartEvent) {
     const data = event.active.data.current as { contact: KanbanContact; stage: StageKey }

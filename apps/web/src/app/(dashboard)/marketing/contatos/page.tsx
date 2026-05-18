@@ -13,6 +13,7 @@ import { ContactAvatar } from '@/components/marketing/ContactAvatar'
 import { StatCard } from '@/components/marketing/StatCard'
 import { EmptyState } from '@/components/marketing/EmptyState'
 import { KanbanBoard } from '@/components/marketing/KanbanBoard'
+import { TagFilterChips, tagFiltersToParams, type TagFilter } from '@/components/marketing/TagFilterChips'
 import { formatRelative, formatDateAbsolute } from '@/lib/marketing/format'
 import { STAGES } from '@/lib/marketing/stages'
 
@@ -54,6 +55,7 @@ export default function MarketingContatosPage() {
   const [stage, setStage] = useState(urlParams.get('stage') || '')
   const [unsub, setUnsub] = useState(urlParams.get('unsubscribed') || '')
   const [onlyBounced, setOnlyBounced] = useState(urlParams.get('onlyBounced') === '1')
+  const [tagFilters, setTagFilters] = useState<TagFilter[]>([])
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [view, setView] = useState<ViewMode>(() => {
@@ -80,10 +82,14 @@ export default function MarketingContatosPage() {
       params.set('page', String(page))
       params.set('limit', '50')
       if (search) params.set('search', search)
+      const { tags: andFromChips, tagsAny, tagsNot } = tagFiltersToParams(tagFilters)
       const tags: string[] = []
       if (segment) tags.push(`segment:${segment}`)
       if (stage) tags.push(`stage:${stage}`)
+      if (andFromChips) tags.push(...andFromChips.split(','))
       if (tags.length) params.set('tags', tags.join(','))
+      if (tagsAny) params.set('tagsAny', tagsAny)
+      if (tagsNot) params.set('tagsNot', tagsNot)
       if (unsub) params.set('unsubscribed', unsub)
       if (onlyBounced) params.set('onlyBounced', '1')
 
@@ -100,7 +106,7 @@ export default function MarketingContatosPage() {
   }
 
   useEffect(() => { fetchStats() }, [])
-  useEffect(() => { fetchContacts() }, [page, search, segment, stage, unsub, onlyBounced])
+  useEffect(() => { fetchContacts() }, [page, search, segment, stage, unsub, onlyBounced, tagFilters])
 
   async function handleSaveAsSegment() {
     const name = prompt('Nome do segmento (ex: "Clientes B2C atendidos 2024"):')?.trim()
@@ -112,6 +118,7 @@ export default function MarketingContatosPage() {
     if (stage) filters.stage = stage
     if (unsub) filters.unsubscribed = unsub
     if (onlyBounced) filters.onlyBounced = true
+    if (tagFilters.length > 0) filters.tagFilters = tagFilters
 
     try {
       const r = await fetch('/api/marketing/segmentos', {
@@ -131,9 +138,9 @@ export default function MarketingContatosPage() {
     }
   }
 
-  const hasFilters = search || segment || stage || unsub || onlyBounced
+  const hasFilters = Boolean(search || segment || stage || unsub || onlyBounced || tagFilters.length > 0)
   function clearFilters() {
-    setSearch(''); setSegment(''); setStage(''); setUnsub(''); setOnlyBounced(false); setPage(1)
+    setSearch(''); setSegment(''); setStage(''); setUnsub(''); setOnlyBounced(false); setTagFilters([]); setPage(1)
   }
 
   return (
@@ -292,6 +299,18 @@ export default function MarketingContatosPage() {
             Bounce
           </label>
         </div>
+
+        {/* Filtros avançados por tag (AND/OR/NOT) */}
+        <div className="mt-2 flex items-start gap-2 border-t border-gray-100 pt-2 dark:border-gray-700/60">
+          <span className="mt-0.5 shrink-0 text-[11px] font-medium uppercase tracking-wide text-gray-500">Tags</span>
+          <div className="min-w-0 flex-1">
+            <TagFilterChips
+              value={tagFilters}
+              onChange={v => { setPage(1); setTagFilters(v) }}
+            />
+          </div>
+        </div>
+
         {hasFilters && (
           <div className="mt-2 flex items-center justify-between text-xs">
             <span className="text-gray-500">Filtros aplicados — {total.toLocaleString('pt-BR')} resultado{total !== 1 ? 's' : ''}</span>
@@ -301,9 +320,22 @@ export default function MarketingContatosPage() {
       </div>
 
       {/* KANBAN VIEW (alternativa à tabela) */}
-      {view === 'kanban' && (
-        <KanbanBoard filters={{ search, segment, unsubscribed: unsub, onlyBounced }} />
-      )}
+      {view === 'kanban' && (() => {
+        const { tags: kbTagsAll, tagsAny: kbTagsAny, tagsNot: kbTagsNot } = tagFiltersToParams(tagFilters)
+        return (
+          <KanbanBoard
+            filters={{
+              search,
+              segment,
+              unsubscribed: unsub,
+              onlyBounced,
+              tagsAll: kbTagsAll,
+              tagsAny: kbTagsAny,
+              tagsNot: kbTagsNot,
+            }}
+          />
+        )
+      })()}
 
       {/* Lista (tabela) — só renderiza em view=table */}
       {view === 'table' && (
