@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   DndContext,
   DragOverlay,
@@ -42,6 +43,7 @@ interface ColumnData {
 const COLUMN_LIMIT = 50
 
 export function KanbanBoard({ filters }: Props) {
+  const router = useRouter()
   const [columns, setColumns] = useState<Record<StageKey, ColumnData>>(() => {
     const init: any = {}
     STAGES.forEach(s => { init[s.key] = { contacts: [], total: 0, loading: true } })
@@ -86,15 +88,58 @@ export function KanbanBoard({ filters }: Props) {
     setLastClickedId(null)
   }, [])
 
-  // Esc limpa seleção
+  /** Move N contatos selecionados pra uma fase (1..5) via batch endpoint */
+  const batchMoveToStage = useCallback(async (toStage: StageKey) => {
+    const ids = Array.from(selectedIds)
+    if (ids.length === 0) return
+    const stageDef = STAGES.find(s => s.key === toStage)
+    if (!stageDef) return
+    try {
+      const r = await fetch('/api/marketing/contatos/batch', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set_stage', ids, stage: toStage }),
+      })
+      if (!r.ok) throw new Error('batch failed')
+      toast.success(`${ids.length} ${ids.length === 1 ? 'contato movido' : 'contatos movidos'} → ${stageDef.label}`)
+      clearSelection()
+      Promise.all(STAGES.map(s => fetchColumn(s.key)))
+    } catch {
+      toast.error('Erro ao mover contatos.')
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedIds, clearSelection])
+
+  // Atalhos de teclado: Esc limpa seleção; e abre detalhe; 1..5 movem fase
   useEffect(() => {
     if (selectedIds.size === 0) return
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') clearSelection()
+    function onKey(ev: KeyboardEvent) {
+      // Ignora se estiver digitando em campo editável
+      const t = ev.target as HTMLElement | null
+      if (t?.matches?.('input,textarea,[contenteditable=true]')) return
+      if (ev.metaKey || ev.ctrlKey || ev.altKey) return
+
+      if (ev.key === 'Escape') { clearSelection(); return }
+
+      if (ev.key === 'e') {
+        const firstId = Array.from(selectedIds)[0]
+        if (firstId) {
+          ev.preventDefault()
+          router.push(`/marketing/contatos/${firstId}`)
+        }
+        return
+      }
+
+      // 1..5 → STAGES[0..4]
+      const n = parseInt(ev.key, 10)
+      if (!Number.isNaN(n) && n >= 1 && n <= STAGES.length) {
+        ev.preventDefault()
+        batchMoveToStage(STAGES[n - 1].key)
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectedIds.size, clearSelection])
+  }, [selectedIds, clearSelection, router, batchMoveToStage])
 
   // Sensor com distância mínima de 5px — evita acionar drag em cliques curtos
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))

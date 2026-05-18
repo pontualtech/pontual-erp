@@ -79,6 +79,12 @@ export function BatchToolbar({ selectedIds, onClear, onAction }: Props) {
 
   return (
     <div className="fixed bottom-6 left-1/2 z-40 -translate-x-1/2 transform">
+      {/* Dica de atalhos — só faz sentido com seleção ativa */}
+      <div className="mb-1 text-center text-[10px] font-mono text-gray-400 dark:text-gray-500">
+        <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">1</kbd>–<kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">5</kbd> mover ·{' '}
+        <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">e</kbd> abrir ·{' '}
+        <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">Esc</kbd> limpar
+      </div>
       <div className="flex items-center gap-2 rounded-full bg-gray-900 px-4 py-2 text-sm text-white shadow-2xl ring-1 ring-white/10 dark:bg-gray-800">
         {/* Contador */}
         <div className="flex items-center gap-2 pr-2">

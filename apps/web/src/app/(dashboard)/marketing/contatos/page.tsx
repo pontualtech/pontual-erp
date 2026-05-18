@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import {
@@ -57,6 +57,7 @@ export default function MarketingContatosPage() {
   const [onlyBounced, setOnlyBounced] = useState(urlParams.get('onlyBounced') === '1')
   const [tagFilters, setTagFilters] = useState<TagFilter[]>([])
   const [page, setPage] = useState(1)
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const [totalPages, setTotalPages] = useState(1)
   const [view, setView] = useState<ViewMode>(() => {
     if (typeof window === 'undefined') return 'table'
@@ -107,6 +108,20 @@ export default function MarketingContatosPage() {
 
   useEffect(() => { fetchStats() }, [])
   useEffect(() => { fetchContacts() }, [page, search, segment, stage, unsub, onlyBounced, tagFilters])
+
+  // Atalho "/" — foca a busca quando NÃO está digitando em outro campo
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return
+      const t = e.target as HTMLElement | null
+      if (t?.matches?.('input,textarea,[contenteditable=true]')) return
+      e.preventDefault()
+      searchInputRef.current?.focus()
+      searchInputRef.current?.select()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   async function handleSaveAsSegment() {
     const name = prompt('Nome do segmento (ex: "Clientes B2C atendidos 2024"):')?.trim()
@@ -255,8 +270,9 @@ export default function MarketingContatosPage() {
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
               <input
+                ref={searchInputRef}
                 type="text"
-                placeholder="Buscar por email, nome ou telefone…"
+                placeholder="Buscar por email, nome ou telefone…  ( / )"
                 className="w-full rounded-md border border-gray-300 bg-white pl-9 pr-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
                 value={search}
                 onChange={e => { setPage(1); setSearch(e.target.value) }}
