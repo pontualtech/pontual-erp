@@ -59,10 +59,16 @@ export default function MarketingContatosPage() {
   const [page, setPage] = useState(1)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const [totalPages, setTotalPages] = useState(1)
-  const [view, setView] = useState<ViewMode>(() => {
-    if (typeof window === 'undefined') return 'table'
-    return (localStorage.getItem('marketing.contatos.view') as ViewMode) || 'table'
-  })
+  // Inicia sempre 'table' (igual SSR). useEffect lê localStorage no client.
+  // Evita hydration mismatch (React #418/#422) — trade: 1 frame de flash
+  // se o usuário tinha 'kanban' salvo. Melhor que erro de hidratação.
+  const [view, setView] = useState<ViewMode>('table')
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('marketing.contatos.view') as ViewMode | null
+      if (saved === 'kanban') setView('kanban')
+    } catch {}
+  }, [])
 
   function switchView(v: ViewMode) {
     setView(v)
