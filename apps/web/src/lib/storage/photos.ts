@@ -1,6 +1,8 @@
 import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
-import { getS3Client, S3_BUCKET } from './s3-client'
+import { getS3Client, S3_BUCKET, isS3Configured } from './s3-client'
+
+export { isS3Configured }
 
 export type UploadPhotoResult = { storageKey: string; dbUrl: string }
 
