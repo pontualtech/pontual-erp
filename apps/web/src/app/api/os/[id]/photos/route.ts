@@ -3,9 +3,10 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
-import { writeFile, mkdir, unlink } from 'fs/promises'
+import { unlink } from 'fs/promises'
 import { join } from 'path'
 import { existsSync } from 'fs'
+import { uploadPhotoBuffer, deleteS3Object, isS3Url, isS3Configured } from '@/lib/storage/photos'
 
 type Params = { params: { id: string } }
 
@@ -29,9 +30,9 @@ export async function GET(req: NextRequest, { params }: Params) {
       orderBy: { created_at: 'asc' },
     })
 
-    // Fotos do portal gravam `url` como relPath sem prefix /api/ — renderizar
-    // direto via <img src=...> dava 404. Aponta pra endpoint by-id (admin) que
-    // resolve qualquer um dos dois formatos no disco.
+    // Normaliza `url`: admin format (/api/os/.../file/) continua direto;
+    // S3 (s3://) e portal legacy (relPath) apontam pra endpoint by-id que
+    // resolve qualquer formato.
     const photosNormalized = photos.map(p => ({
       ...p,
       url: p.url.startsWith('/api/') || p.url.startsWith('http')
@@ -71,28 +72,24 @@ export async function POST(req: NextRequest, { params }: Params) {
       return error(`Tipo não permitido (.${ext}). Permitidos: ${ALLOWED_EXTENSIONS.join(', ')}`, 400)
     }
 
-    // Salvar no filesystem (/app/uploads no Docker, ./uploads local)
-    const baseDir = existsSync('/app/uploads') ? '/app/uploads' : join(process.cwd(), 'uploads')
-    const uploadsDir = join(baseDir, 'os', params.id)
-    if (!existsSync(uploadsDir)) {
-      await mkdir(uploadsDir, { recursive: true })
+    if (!isS3Configured()) {
+      return error('Storage S3 nao configurado. Configure as envs S3_ENDPOINT/S3_ACCESS_KEY/S3_SECRET_KEY.', 500)
     }
 
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-    const fileName = `${Date.now()}_${safeName}`
-    const filePath = join(uploadsDir, fileName)
     const buffer = Buffer.from(await file.arrayBuffer())
-
-    await writeFile(filePath, buffer)
-
-    // URL servida via API
-    const publicUrl = `/api/os/${params.id}/photos/file/${fileName}`
+    const { dbUrl } = await uploadPhotoBuffer({
+      companyId: user.companyId,
+      serviceOrderId: params.id,
+      fileName: file.name,
+      contentType: file.type || 'application/octet-stream',
+      buffer,
+    })
 
     const photo = await prisma.serviceOrderPhoto.create({
       data: {
         company_id: user.companyId,
         service_order_id: params.id,
-        url: publicUrl,
+        url: dbUrl,
         label: description,
         uploaded_by: user.id,
       },
@@ -127,15 +124,19 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     })
     if (!photo) return error('Arquivo não encontrado', 404)
 
-    // Remover do filesystem
-    try {
-      const fileName = photo.url.split('/').pop()
-      if (fileName) {
-        const baseDir = existsSync('/app/uploads') ? '/app/uploads' : join(process.cwd(), 'uploads')
-        const filePath = join(baseDir, 'os', params.id, fileName)
-        if (existsSync(filePath)) await unlink(filePath)
-      }
-    } catch {} // Best-effort
+    // Remover arquivo (S3 ou filesystem legacy)
+    if (isS3Url(photo.url)) {
+      await deleteS3Object(photo.url)
+    } else {
+      try {
+        const fileName = photo.url.split('/').pop()
+        if (fileName) {
+          const baseDir = existsSync('/app/uploads') ? '/app/uploads' : join(process.cwd(), 'uploads')
+          const filePath = join(baseDir, 'os', params.id, fileName)
+          if (existsSync(filePath)) await unlink(filePath)
+        }
+      } catch {} // Best-effort
+    }
 
     await prisma.serviceOrderPhoto.delete({ where: { id: photoId } })
 

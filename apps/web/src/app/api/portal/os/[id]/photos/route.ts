@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { getPortalUserFromRequest } from '@/lib/portal-auth'
-import { writeFile, mkdir, unlink } from 'fs/promises'
+import { unlink } from 'fs/promises'
 import { existsSync } from 'fs'
 import path from 'path'
+import { uploadPhotoBuffer, isS3Url, deleteS3Object, isS3Configured } from '@/lib/storage/photos'
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf']
@@ -124,28 +125,24 @@ export async function POST(
       )
     }
 
-    // Sanitize filename
-    const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
-    const safeName = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${ext}`
-    const relPath = path.join(portalUser.company_id, params.id, safeName)
-    const fullPath = path.join(UPLOAD_DIR, relPath)
-
-    // Ensure directory exists
-    const dir = path.dirname(fullPath)
-    if (!existsSync(dir)) {
-      await mkdir(dir, { recursive: true })
+    if (!isS3Configured()) {
+      return NextResponse.json({ error: 'Storage S3 nao configurado' }, { status: 500 })
     }
 
-    // Write file to disk
     const buffer = Buffer.from(await file.arrayBuffer())
-    await writeFile(fullPath, buffer)
+    const { dbUrl } = await uploadPhotoBuffer({
+      companyId: portalUser.company_id,
+      serviceOrderId: params.id,
+      fileName: file.name,
+      contentType: file.type || 'application/octet-stream',
+      buffer,
+    })
 
-    // Save to database
     const photo = await prisma.serviceOrderPhoto.create({
       data: {
         company_id: portalUser.company_id,
         service_order_id: params.id,
-        url: relPath,
+        url: dbUrl,
         label,
         uploaded_by: portalUser.customer_id,
       },
@@ -154,7 +151,7 @@ export async function POST(
     return NextResponse.json({
       data: {
         id: photo.id,
-        url: relPath,
+        url: dbUrl,
         signed_url: `/api/portal/os/${params.id}/photos/file/${photo.id}`,
         label,
         created_at: photo.created_at,
@@ -194,8 +191,10 @@ export async function DELETE(
       return NextResponse.json({ error: 'Foto nao encontrada' }, { status: 404 })
     }
 
-    // Delete file from disk
-    if (photo.url && !photo.url.startsWith('http')) {
+    // Delete: S3 ou filesystem legacy
+    if (isS3Url(photo.url)) {
+      await deleteS3Object(photo.url)
+    } else if (photo.url && !photo.url.startsWith('http')) {
       const fullPath = path.join(UPLOAD_DIR, photo.url)
       try { await unlink(fullPath) } catch {}
     }

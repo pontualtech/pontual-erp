@@ -4,6 +4,7 @@ import { getPortalUserFromRequest } from '@/lib/portal-auth'
 import { readFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import path from 'path'
+import { isS3Url, signedUrlForS3 } from '@/lib/storage/photos'
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || '/app/uploads'
 
@@ -45,6 +46,13 @@ export async function GET(
 
     if (photo.url.startsWith('http')) {
       return NextResponse.redirect(photo.url)
+    }
+
+    // S3: redireciona pra signed URL com expiração curta
+    if (isS3Url(photo.url)) {
+      const signed = await signedUrlForS3(photo.url, 600)
+      if (!signed) return NextResponse.json({ error: 'Arquivo nao encontrado' }, { status: 404 })
+      return NextResponse.redirect(signed, 302)
     }
 
     const fullPath = path.resolve(path.join(UPLOAD_DIR, photo.url))

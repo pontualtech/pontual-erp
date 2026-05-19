@@ -4,6 +4,7 @@ import { join, resolve } from 'path'
 import { existsSync } from 'fs'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
+import { isS3Url, signedUrlForS3 } from '@/lib/storage/photos'
 
 type Params = { params: { id: string; photoId: string } }
 
@@ -51,6 +52,14 @@ export async function GET(_req: NextRequest, { params }: Params) {
     })
     if (!photo) return new NextResponse('Not found', { status: 404 })
 
+    // S3: redireciona pra signed URL com expiração curta
+    if (isS3Url(photo.url)) {
+      const signed = await signedUrlForS3(photo.url, 600)
+      if (!signed) return new NextResponse('Not found', { status: 404 })
+      return NextResponse.redirect(signed, 302)
+    }
+
+    // Legacy filesystem (fotos pré-migração — vai dar 404 com volume vazio)
     const baseDir = existsSync('/app/uploads') ? '/app/uploads' : join(process.cwd(), 'uploads')
     const filePath = resolveDiskPath(baseDir, params.id, photo.url)
 
