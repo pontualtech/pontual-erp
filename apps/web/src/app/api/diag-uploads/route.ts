@@ -35,7 +35,6 @@ async function listDir(path: string, limit = 20) {
 }
 
 export async function GET() {
-  // Restrito a admin: usa requirePermission com permissao ampla.
   const result = await requirePermission('config', 'edit')
   if (result instanceof NextResponse) return result
 
