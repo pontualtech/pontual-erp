@@ -29,7 +29,17 @@ export async function GET(req: NextRequest, { params }: Params) {
       orderBy: { created_at: 'asc' },
     })
 
-    return success(photos)
+    // Fotos do portal gravam `url` como relPath sem prefix /api/ — renderizar
+    // direto via <img src=...> dava 404. Aponta pra endpoint by-id (admin) que
+    // resolve qualquer um dos dois formatos no disco.
+    const photosNormalized = photos.map(p => ({
+      ...p,
+      url: p.url.startsWith('/api/') || p.url.startsWith('http')
+        ? p.url
+        : `/api/os/${params.id}/photos/by-id/${p.id}`,
+    }))
+
+    return success(photosNormalized)
   } catch (err) {
     return handleError(err)
   }
