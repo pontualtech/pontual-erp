@@ -2503,7 +2503,9 @@ export default function OSDetailPage() {
             {os.service_order_photos.map(f => {
               const url = (f as any).url || f.photo_url || ''
               const name = (f as any).label || f.description || ''
-              const ext = url.split('.').pop()?.toLowerCase() || ''
+              // Detect ext do label (filename original); fallback: url quando sem label
+              const extSource = name || url
+              const ext = extSource.split('.').pop()?.toLowerCase() || ''
               const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)
 
               return (
@@ -2521,7 +2523,7 @@ export default function OSDetailPage() {
                   )}
                   <div className="flex items-center justify-between p-1.5">
                     <p className="text-xs text-gray-500 truncate flex-1">{name || new Date(f.created_at).toLocaleDateString('pt-BR')}</p>
-                    <button type="button" title="Remover" onClick={async () => {
+                    <button type="button" title="Remover arquivo" aria-label="Remover arquivo" onClick={async () => {
                       if (!confirm('Remover este arquivo?')) return
                       try {
                         const res = await fetch(`/api/os/${id}/photos?photoId=${f.id}`, { method: 'DELETE' })
@@ -2530,7 +2532,7 @@ export default function OSDetailPage() {
                         loadOS()
                       } catch (err: any) { toast.error(err.message) }
                     }}
-                      className="p-1 rounded text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                      className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
