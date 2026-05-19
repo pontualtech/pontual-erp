@@ -130,7 +130,16 @@ export async function GET(req: NextRequest, { params }: Params) {
       changed_by_name: h.changed_by ? userNameMap[h.changed_by] || null : null,
     }))
 
-    return success({ ...os, service_order_history: enrichedHistory, accounts_receivable: enrichedReceivables, _recentOsCount: recentOsCount, logistics_stops: logisticsStops })
+    // Normaliza `url` das fotos: s3:// e portal legacy apontam pra endpoint
+    // by-id que resolve o formato. Admin URL (/api/...) e externa (http) ficam.
+    const normalizedPhotos = os.service_order_photos.map(p => ({
+      ...p,
+      url: p.url.startsWith('/api/') || p.url.startsWith('http')
+        ? p.url
+        : `/api/os/${os.id}/photos/by-id/${p.id}`,
+    }))
+
+    return success({ ...os, service_order_photos: normalizedPhotos, service_order_history: enrichedHistory, accounts_receivable: enrichedReceivables, _recentOsCount: recentOsCount, logistics_stops: logisticsStops })
   } catch (err) {
     return handleError(err)
   }

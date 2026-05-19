@@ -172,7 +172,12 @@ export async function GET(
             created_at: h.created_at,
           }
         }),
-        photos: os.service_order_photos,
+        photos: os.service_order_photos.map(p => ({
+          ...p,
+          url: p.url.startsWith('http')
+            ? p.url
+            : `/api/portal/os/${os.id}/photos/file/${p.id}`,
+        })),
         all_statuses: allStatuses,
       },
     })
