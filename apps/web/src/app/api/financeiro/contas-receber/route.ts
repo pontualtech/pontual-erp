@@ -5,6 +5,16 @@ import { success, paginated, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { z } from 'zod'
 
+// Split = uma forma de pagamento dentro do receivable.
+// Quando cliente paga em formas diferentes (ex: 500 PIX + 200 cartao 2x),
+// cada split vira 1 receivable independente, todos com mesmo group_id.
+const splitSchema = z.object({
+  payment_method: z.string().optional(),
+  account_id: z.string().optional(),
+  amount: z.number().int().positive('Valor do split deve ser positivo'),
+  installment_count: z.number().int().min(1).max(120).optional(),
+})
+
 const createReceivableSchema = z.object({
   customer_id: z.string().optional(),
   service_order_id: z.string().optional(),
@@ -16,6 +26,10 @@ const createReceivableSchema = z.object({
   account_id: z.string().optional(), // Sprint UX-23: pré-vincular conta bancária destino
   payment_method: z.string().optional(),
   installment_count: z.number().int().min(1).max(120).optional(),
+  // Split payment 2026-05-19: se splits[] vier preenchido, criamos N receivables
+  // (um por split) agrupados via group_id. Caso contrario, comportamento atual
+  // (1 receivable com payment_method/account_id/installment_count flat).
+  splits: z.array(splitSchema).optional(),
 })
 
 export async function GET(request: NextRequest) {
@@ -187,6 +201,110 @@ export async function GET(request: NextRequest) {
   }
 }
 
+/**
+ * Cria UM accounts_receivable + suas installments. Encapsula calculo de
+ * card_fee, net_amount e geracao de installments. Usado pelo handler POST
+ * tanto no modo unico (sem splits[]) quanto no modo split (iterado por split).
+ *
+ * Side note: feeSettings e passado pra evitar refetch quando ha varios splits
+ * de cartao no mesmo POST (1 query so).
+ */
+async function createOneReceivable(args: {
+  companyId: string
+  customerId: string | null
+  serviceOrderId: string | null
+  description: string
+  notes?: string
+  dueDate: string
+  categoryId: string | null
+  totalAmount: number
+  paymentMethod?: string
+  accountId?: string | null
+  installmentCount: number
+  groupId?: string | null
+  feeSettings: { key: string; value: string }[]
+}) {
+  const { companyId, customerId, serviceOrderId, description, notes, dueDate,
+          categoryId, totalAmount, paymentMethod, accountId, installmentCount,
+          groupId, feeSettings } = args
+
+  const isCard = !!paymentMethod && (paymentMethod.includes('Cartão') || paymentMethod.includes('Credito') || paymentMethod.includes('Crédito'))
+  let cardFeeTotal = 0
+  let netAmount = totalAmount
+  let daysToReceive = 0
+
+  if (isCard && installmentCount >= 1) {
+    for (const setting of feeSettings) {
+      try {
+        const config = JSON.parse(setting.value)
+        if ((paymentMethod && paymentMethod.includes(config.name)) || feeSettings.length === 1) {
+          daysToReceive = config.days_to_receive || 30
+          if (installmentCount === 1 && paymentMethod?.includes('Débito') && config.debit_fee_pct != null) {
+            cardFeeTotal = Math.round(totalAmount * config.debit_fee_pct / 100)
+          } else if (Array.isArray(config.installments)) {
+            for (const range of config.installments) {
+              if (installmentCount >= range.from && installmentCount <= range.to) {
+                cardFeeTotal = Math.round(totalAmount * range.fee_pct / 100)
+                break
+              }
+            }
+          }
+          netAmount = totalAmount - cardFeeTotal
+          break
+        }
+      } catch { /* skip invalid config */ }
+    }
+  }
+
+  const receivable = await prisma.accountReceivable.create({
+    data: {
+      company_id: companyId,
+      customer_id: customerId,
+      service_order_id: serviceOrderId,
+      description,
+      notes,
+      total_amount: totalAmount,
+      due_date: new Date(dueDate),
+      category_id: categoryId,
+      account_id: accountId || null,
+      payment_method: paymentMethod,
+      installment_count: installmentCount,
+      card_fee_total: cardFeeTotal,
+      net_amount: netAmount,
+      group_id: groupId || null,
+      status: 'PENDENTE',
+    },
+  })
+
+  if (installmentCount > 1) {
+    const baseAmount = Math.floor(netAmount / installmentCount)
+    const remainder = netAmount - baseAmount * installmentCount
+    const installments = []
+    const baseDate = new Date(dueDate)
+    for (let i = 0; i < installmentCount; i++) {
+      const d = new Date(baseDate)
+      if (isCard && daysToReceive > 0) {
+        if (i === 0) d.setDate(d.getDate() + daysToReceive)
+        else d.setDate(d.getDate() + daysToReceive + 30 * i)
+      } else {
+        d.setMonth(d.getMonth() + i)
+      }
+      installments.push({
+        company_id: companyId,
+        parent_type: 'RECEIVABLE',
+        parent_id: receivable.id,
+        installment_number: i + 1,
+        amount: i === 0 ? baseAmount + remainder : baseAmount,
+        due_date: d,
+        status: 'PENDENTE',
+      })
+    }
+    await prisma.installment.createMany({ data: installments })
+  }
+
+  return receivable
+}
+
 export async function POST(request: NextRequest) {
   try {
     const result = await requirePermission('financeiro', 'create')
@@ -196,94 +314,72 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const data = createReceivableSchema.parse(body)
 
-    const installmentCount = data.installment_count || 1
-    const isCard = data.payment_method && (data.payment_method.includes('Cartão') || data.payment_method.includes('Credito') || data.payment_method.includes('Crédito'))
-
-    let cardFeeTotal = 0
-    let netAmount = data.total_amount
-    let daysToReceive = 0
-
-    // Look up card fee config if paying by card with installments
-    if (isCard && installmentCount >= 1) {
-      const feeSettings = await prisma.setting.findMany({
-        where: { company_id: user.companyId, key: { startsWith: 'card_fee.' } },
-      })
-
-      for (const setting of feeSettings) {
-        try {
-          const config = JSON.parse(setting.value)
-          if ((data.payment_method && data.payment_method.includes(config.name)) || feeSettings.length === 1) {
-            daysToReceive = config.days_to_receive || 30
-
-            if (installmentCount === 1 && data.payment_method?.includes('Débito') && config.debit_fee_pct != null) {
-              cardFeeTotal = Math.round(data.total_amount * config.debit_fee_pct / 100)
-            } else if (Array.isArray(config.installments)) {
-              for (const range of config.installments) {
-                if (installmentCount >= range.from && installmentCount <= range.to) {
-                  cardFeeTotal = Math.round(data.total_amount * range.fee_pct / 100)
-                  break
-                }
-              }
-            }
-            netAmount = data.total_amount - cardFeeTotal
-            break
-          }
-        } catch { /* skip invalid config */ }
-      }
-    }
-
-    const receivable = await prisma.accountReceivable.create({
-      data: {
-        company_id: user.companyId,
-        customer_id: data.customer_id || null,
-        service_order_id: data.service_order_id || null,
-        description: data.description,
-        notes: data.notes,
-        total_amount: data.total_amount,
-        due_date: new Date(data.due_date),
-        category_id: data.category_id || null,
-        account_id: data.account_id || null, // Sprint UX-23: banco que receberá
-        payment_method: data.payment_method,
-        installment_count: installmentCount,
-        card_fee_total: cardFeeTotal,
-        net_amount: netAmount,
-        status: 'PENDENTE',
-      },
+    // Refetch card_fee settings 1x (compartilhado entre todos splits de cartao)
+    const feeSettings = await prisma.setting.findMany({
+      where: { company_id: user.companyId, key: { startsWith: 'card_fee.' } },
+      select: { key: true, value: true },
     })
 
-    // Auto-generate installments if count > 1
-    if (installmentCount > 1) {
-      const baseAmount = Math.floor(netAmount / installmentCount)
-      const remainder = netAmount - baseAmount * installmentCount
-      const installments = []
-      const baseDate = new Date(data.due_date)
+    const hasSplits = Array.isArray(data.splits) && data.splits.length > 0
 
-      for (let i = 0; i < installmentCount; i++) {
-        const dueDate = new Date(baseDate)
-        if (isCard && daysToReceive > 0) {
-          // Card: first installment after days_to_receive, then +30 days each
-          if (i === 0) {
-            dueDate.setDate(dueDate.getDate() + daysToReceive)
-          } else {
-            dueDate.setDate(dueDate.getDate() + daysToReceive + 30 * i)
-          }
-        } else {
-          // Non-card: monthly from due date
-          dueDate.setMonth(dueDate.getMonth() + i)
-        }
-        installments.push({
-          company_id: user.companyId,
-          parent_type: 'RECEIVABLE',
-          parent_id: receivable.id,
-          installment_number: i + 1,
-          amount: i === 0 ? baseAmount + remainder : baseAmount,
-          due_date: dueDate,
-          status: 'PENDENTE',
-        })
+    if (hasSplits) {
+      // Modo SPLIT: cria N receivables agrupados via group_id
+      const splits = data.splits!
+      const splitsSum = splits.reduce((s, x) => s + x.amount, 0)
+      if (splitsSum !== data.total_amount) {
+        return error(`Soma dos splits (${splitsSum}) deve ser igual ao total (${data.total_amount})`, 400)
       }
 
-      await prisma.installment.createMany({ data: installments })
+      const groupId = crypto.randomUUID()
+      const created = []
+      for (let i = 0; i < splits.length; i++) {
+        const sp = splits[i]
+        const rec = await createOneReceivable({
+          companyId: user.companyId,
+          customerId: data.customer_id || null,
+          serviceOrderId: data.service_order_id || null,
+          description: splits.length > 1 ? `${data.description} [${i + 1}/${splits.length}]` : data.description,
+          notes: data.notes,
+          dueDate: data.due_date,
+          categoryId: data.category_id || null,
+          totalAmount: sp.amount,
+          paymentMethod: sp.payment_method,
+          accountId: sp.account_id || null,
+          installmentCount: sp.installment_count || 1,
+          groupId,
+          feeSettings,
+        })
+        created.push(rec)
+      }
+
+      logAudit({
+        companyId: user.companyId,
+        userId: user.id,
+        module: 'financeiro',
+        action: 'receivable.create_split',
+        entityId: groupId,
+        newValue: { description: data.description, total_amount: data.total_amount, splits_count: splits.length, group_id: groupId },
+      })
+
+      return success({ group_id: groupId, receivables: created }, 201)
     }
+
+    // Modo UNICO (retrocompat): comportamento atual
+    const receivable = await createOneReceivable({
+      companyId: user.companyId,
+      customerId: data.customer_id || null,
+      serviceOrderId: data.service_order_id || null,
+      description: data.description,
+      notes: data.notes,
+      dueDate: data.due_date,
+      categoryId: data.category_id || null,
+      totalAmount: data.total_amount,
+      paymentMethod: data.payment_method,
+      accountId: data.account_id || null,
+      installmentCount: data.installment_count || 1,
+      groupId: null,
+      feeSettings,
+    })
 
     logAudit({
       companyId: user.companyId,
@@ -291,7 +387,7 @@ export async function POST(request: NextRequest) {
       module: 'financeiro',
       action: 'receivable.create',
       entityId: receivable.id,
-      newValue: { description: receivable.description, total_amount: receivable.total_amount, installments: installmentCount },
+      newValue: { description: receivable.description, total_amount: receivable.total_amount, installments: data.installment_count || 1 },
     })
 
     return success(receivable, 201)

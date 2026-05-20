@@ -3,8 +3,17 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
+
+// Split payment 2026-05-19: cada linha = uma forma de pagamento dentro do payable
+interface Split {
+  payment_method: string
+  account_id: string
+  amount_str: string
+  installment_count: string
+}
+const emptySplit = (): Split => ({ payment_method: '', account_id: '', amount_str: '', installment_count: '1' })
 
 interface SearchResult {
   id: string
@@ -47,16 +56,26 @@ export default function NovaContaPagarPage() {
     notes: '',
     total_amount: '',
     due_date: '',
-    payment_method: '',
     category_id: '',
     cost_center_id: '',
-    account_id: '', // Sprint UX-23: pré-vincular banco que pagará
-    installment_count: '1',
   })
+
+  const [splits, setSplits] = useState<Split[]>([emptySplit()])
 
   function updateForm(field: string, value: string) {
     setForm(prev => ({ ...prev, [field]: value }))
   }
+  function updateSplit(idx: number, field: keyof Split, value: string) {
+    setSplits(prev => prev.map((sp, i) => i === idx ? { ...sp, [field]: value } : sp))
+  }
+  function addSplit() { setSplits(prev => [...prev, emptySplit()]) }
+  function removeSplit(idx: number) { setSplits(prev => prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev) }
+
+  const isSingleSplit = splits.length === 1
+  const splitsSum = splits.reduce((s, sp) => s + (Number(sp.amount_str.replace(',', '.')) || 0), 0)
+  const totalNum = Number(form.total_amount.replace(',', '.')) || 0
+  const sumValid = isSingleSplit ? true : Math.abs(splitsSum - totalNum) < 0.005
+  const sumDiff = totalNum - splitsSum
 
   // Load categories, cost centers, bank accounts
   useEffect(() => {
@@ -102,34 +121,51 @@ export default function NovaContaPagarPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.description) { toast.error('Descricao e obrigatoria'); return }
-    if (!form.total_amount || Number(form.total_amount) <= 0) { toast.error('Valor deve ser maior que zero'); return }
+    if (!form.total_amount || Number(form.total_amount.replace(',', '.')) <= 0) { toast.error('Valor deve ser maior que zero'); return }
     if (!form.due_date) { toast.error('Data de vencimento e obrigatoria'); return }
+    if (!sumValid) { toast.error(`Soma das formas (R$ ${splitsSum.toFixed(2)}) deve ser igual ao total (R$ ${totalNum.toFixed(2)})`); return }
 
     setLoading(true)
     try {
-      const amountInCents = Math.round(Number(form.total_amount) * 100)
-      const installmentCount = Number(form.installment_count) || 1
+      const amountInCents = Math.round(totalNum * 100)
+      const splitsPayload = splits.map(sp => ({
+        payment_method: sp.payment_method || undefined,
+        account_id: sp.account_id || undefined,
+        amount: Math.round((Number(sp.amount_str.replace(',', '.')) || (isSingleSplit ? totalNum : 0)) * 100),
+        installment_count: Number(sp.installment_count) > 1 ? Number(sp.installment_count) : undefined,
+      }))
+      const sumCents = splitsPayload.reduce((s, x) => s + x.amount, 0)
+      if (sumCents !== amountInCents) {
+        if (isSingleSplit) splitsPayload[0].amount = amountInCents
+        else { toast.error(`Soma exata em centavos diverge`); setLoading(false); return }
+      }
+
+      const body: any = {
+        description: form.description,
+        total_amount: amountInCents,
+        due_date: form.due_date,
+        supplier_id: form.supplier_id || undefined,
+        category_id: form.category_id || undefined,
+        cost_center_id: form.cost_center_id || undefined,
+        notes: form.notes || undefined,
+      }
+      if (splits.length > 1) {
+        body.splits = splitsPayload
+      } else {
+        body.payment_method = splits[0].payment_method || undefined
+        body.account_id = splits[0].account_id || undefined
+        body.installment_count = Number(splits[0].installment_count) > 1 ? Number(splits[0].installment_count) : undefined
+      }
 
       const res = await fetch('/api/financeiro/contas-pagar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          description: form.description,
-          total_amount: amountInCents,
-          due_date: form.due_date,
-          supplier_id: form.supplier_id || undefined,
-          category_id: form.category_id || undefined,
-          cost_center_id: form.cost_center_id || undefined,
-          account_id: form.account_id || undefined, // Sprint UX-24: banco origem
-          payment_method: form.payment_method || undefined,
-          notes: form.notes || undefined,
-          installment_count: installmentCount > 1 ? installmentCount : undefined,
-        }),
+        body: JSON.stringify(body),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Erro ao cadastrar')
 
-      toast.success('Conta a pagar cadastrada!')
+      toast.success(splits.length > 1 ? `${splits.length} contas a pagar cadastradas (grupo)!` : 'Conta a pagar cadastrada!')
       router.push('/financeiro/contas-pagar')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao cadastrar')
@@ -237,39 +273,121 @@ export default function NovaContaPagarPage() {
               />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label htmlFor="payment_method" className="block text-sm text-gray-600 mb-1">Forma de Pagamento</label>
-              <select
-                id="payment_method"
-                value={form.payment_method}
-                onChange={e => updateForm('payment_method', e.target.value)}
-                className="w-full px-3 py-2 border rounded-md text-sm"
-              >
-                <option value="">Selecione...</option>
-                <option value="DINHEIRO">Dinheiro</option>
-                <option value="PIX">Pix</option>
-                <option value="CARTAO_CREDITO">Cartao de Credito</option>
-                <option value="CARTAO_DEBITO">Cartao de Debito</option>
-                <option value="BOLETO">Boleto</option>
-                <option value="TRANSFERENCIA">Transferencia</option>
-                <option value="CHEQUE">Cheque</option>
-              </select>
-            </div>
-            <div>
-              <label htmlFor="installment_count" className="block text-sm text-gray-600 mb-1">Parcelas</label>
-              <select
-                id="installment_count"
-                value={form.installment_count}
-                onChange={e => updateForm('installment_count', e.target.value)}
-                className="w-full px-3 py-2 border rounded-md text-sm"
-              >
-                {Array.from({ length: 24 }, (_, i) => i + 1).map(n => (
-                  <option key={n} value={String(n)}>{n}x{form.total_amount && Number(form.total_amount) > 0 ? ` de R$ ${(Number(form.total_amount) / n).toFixed(2)}` : ''}</option>
-                ))}
-              </select>
-            </div>
+        </div>
+
+        {/* Formas de Pagamento (split) */}
+        <div className="rounded-lg border bg-white p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="font-semibold text-gray-900">Formas de Pagamento</h2>
+            <button
+              type="button"
+              onClick={addSplit}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 cursor-pointer"
+            >
+              <Plus className="h-3.5 w-3.5" /> Adicionar forma
+            </button>
           </div>
+
+          {splits.map((sp, idx) => {
+            const showHeader = splits.length > 1
+            const displayAmount = isSingleSplit && totalNum > 0 ? totalNum.toFixed(2).replace('.', ',') : sp.amount_str
+            return (
+              <div key={idx} className={`${showHeader ? 'border rounded-lg p-3 space-y-2 bg-gray-50' : 'space-y-2'}`}>
+                {showHeader && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-gray-700">Forma {idx + 1}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeSplit(idx)}
+                      className="text-gray-400 hover:text-red-600 cursor-pointer"
+                      title="Remover esta forma"
+                      aria-label={`Remover forma ${idx + 1}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Forma</label>
+                    <select
+                      aria-label={`Forma de pagamento ${idx + 1}`}
+                      value={sp.payment_method}
+                      onChange={e => updateSplit(idx, 'payment_method', e.target.value)}
+                      className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                    >
+                      <option value="">Selecione...</option>
+                      <option value="DINHEIRO">Dinheiro</option>
+                      <option value="PIX">Pix</option>
+                      <option value="CARTAO_CREDITO">Cartao de Credito</option>
+                      <option value="CARTAO_DEBITO">Cartao de Debito</option>
+                      <option value="BOLETO">Boleto</option>
+                      <option value="TRANSFERENCIA">Transferencia</option>
+                      <option value="CHEQUE">Cheque</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Parcelas</label>
+                    <select
+                      aria-label={`Parcelas da forma ${idx + 1}`}
+                      value={sp.installment_count}
+                      onChange={e => updateSplit(idx, 'installment_count', e.target.value)}
+                      className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                    >
+                      {Array.from({ length: 12 }, (_, i) => i + 1).map(n => (
+                        <option key={n} value={String(n)}>{n}x</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Banco origem</label>
+                    <select
+                      aria-label={`Banco origem da forma ${idx + 1}`}
+                      value={sp.account_id}
+                      onChange={e => updateSplit(idx, 'account_id', e.target.value)}
+                      className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                    >
+                      <option value="">Nenhum (definir na baixa)</option>
+                      {bankAccounts.map(acc => (
+                        <option key={acc.id} value={acc.id}>
+                          {acc.name}{acc.bank_name ? ` — ${acc.bank_name}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {showHeader && (
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Valor desta forma (R$)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={displayAmount}
+                        onChange={e => updateSplit(idx, 'amount_str', e.target.value)}
+                        placeholder="0,00"
+                        className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+
+          {splits.length > 1 && (
+            <div className={`rounded-md border p-2.5 text-xs flex items-center justify-between ${sumValid ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
+              <span>Soma das formas:</span>
+              <span className="font-bold">
+                R$ {splitsSum.toFixed(2)} / R$ {totalNum.toFixed(2)}
+                {!sumValid && sumDiff !== 0 && <span className="ml-2 font-normal">(falta R$ {sumDiff.toFixed(2)})</span>}
+                {sumValid && ' ✓'}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Classificacao */}
@@ -305,26 +423,9 @@ export default function NovaContaPagarPage() {
               </select>
             </div>
           </div>
-          {/* Sprint UX-24: dropdown banco origem (account_id) */}
-          <div>
-            <label htmlFor="account_id" className="block text-sm text-gray-600 mb-1">Conta bancária (origem)</label>
-            <select
-              id="account_id"
-              value={form.account_id}
-              onChange={e => updateForm('account_id', e.target.value)}
-              className="w-full px-3 py-2 border rounded-md text-sm"
-            >
-              <option value="">Selecione (opcional)...</option>
-              {bankAccounts.map(acc => (
-                <option key={acc.id} value={acc.id}>
-                  {acc.bank_name ? `${acc.bank_name} — ${acc.name}` : acc.name}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-gray-400 mt-1">
-              Banco que efetuará o pagamento. Pode ser definido depois na hora de pagar.
-            </p>
-          </div>
+          <p className="text-xs text-gray-400 mt-1">
+            Conta bancária origem agora é definida em cada forma de pagamento (acima).
+          </p>
         </div>
 
         {/* Observacoes */}

@@ -5,6 +5,13 @@ import { success, paginated, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { z } from 'zod'
 
+const splitSchema = z.object({
+  payment_method: z.string().optional(),
+  account_id: z.string().optional(),
+  amount: z.number().int().positive('Valor do split deve ser positivo'),
+  installment_count: z.number().int().min(1).max(120).optional(),
+})
+
 const createPayableSchema = z.object({
   supplier_id: z.string().optional(),
   description: z.string().min(1, 'Descrição é obrigatória'),
@@ -16,6 +23,8 @@ const createPayableSchema = z.object({
   account_id: z.string().optional(), // Sprint UX-24: banco origem do pagamento (Itau, Asaas, etc)
   payment_method: z.string().optional(),
   installment_count: z.number().int().min(1).max(120).optional(),
+  // Split payment 2026-05-19: se splits[] vier, cria N payables agrupados via group_id
+  splits: z.array(splitSchema).optional(),
 })
 
 export async function GET(request: NextRequest) {
@@ -170,6 +179,69 @@ export async function GET(request: NextRequest) {
   }
 }
 
+/**
+ * Cria UM accounts_payable + installments. Usado pelo handler POST tanto no
+ * modo unico quanto no modo split (iterado por split).
+ */
+async function createOnePayable(args: {
+  companyId: string
+  supplierId: string | null
+  description: string
+  notes?: string
+  dueDate: string
+  categoryId: string | null
+  costCenterId: string | null
+  totalAmount: number
+  paymentMethod?: string
+  accountId?: string | null
+  installmentCount: number
+  groupId?: string | null
+}) {
+  const { companyId, supplierId, description, notes, dueDate, categoryId,
+          costCenterId, totalAmount, paymentMethod, accountId, installmentCount,
+          groupId } = args
+
+  const payable = await prisma.accountPayable.create({
+    data: {
+      company_id: companyId,
+      supplier_id: supplierId,
+      description,
+      notes,
+      total_amount: totalAmount,
+      due_date: new Date(dueDate),
+      category_id: categoryId,
+      cost_center_id: costCenterId,
+      account_id: accountId || null,
+      payment_method: paymentMethod,
+      group_id: groupId || null,
+      status: 'PENDENTE',
+    },
+  })
+
+  if (installmentCount > 1) {
+    const baseAmount = Math.floor(totalAmount / installmentCount)
+    const remainder = totalAmount - baseAmount * installmentCount
+    const installments = []
+    const baseDate = new Date(dueDate)
+    for (let i = 0; i < installmentCount; i++) {
+      const d = new Date(baseDate)
+      d.setMonth(d.getMonth() + i)
+      installments.push({
+        company_id: companyId,
+        parent_type: 'PAYABLE',
+        parent_id: payable.id,
+        installment_number: i + 1,
+        amount: i === 0 ? baseAmount + remainder : baseAmount,
+        due_date: d,
+        status: 'PENDENTE',
+      })
+    }
+    await prisma.installment.createMany({ data: installments })
+  }
+
+  return payable
+}
+
 export async function POST(request: NextRequest) {
   try {
     const result = await requirePermission('financeiro', 'create')
@@ -179,47 +251,63 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const data = createPayableSchema.parse(body)
 
-    const installmentCount = data.installment_count || 1
+    const hasSplits = Array.isArray(data.splits) && data.splits.length > 0
 
-    const payable = await prisma.accountPayable.create({
-      data: {
-        company_id: user.companyId,
-        supplier_id: data.supplier_id || null,
-        description: data.description,
-        notes: data.notes,
-        total_amount: data.total_amount,
-        due_date: new Date(data.due_date),
-        category_id: data.category_id || null,
-        cost_center_id: data.cost_center_id || null,
-        account_id: data.account_id || null, // Sprint UX-24: banco origem
-        payment_method: data.payment_method,
-        status: 'PENDENTE',
-      },
-    })
-
-    // Auto-generate installments if count > 1
-    if (installmentCount > 1) {
-      const baseAmount = Math.floor(data.total_amount / installmentCount)
-      const remainder = data.total_amount - baseAmount * installmentCount
-      const installments = []
-      const baseDate = new Date(data.due_date)
-
-      for (let i = 0; i < installmentCount; i++) {
-        const dueDate = new Date(baseDate)
-        dueDate.setMonth(dueDate.getMonth() + i)
-        installments.push({
-          company_id: user.companyId,
-          parent_type: 'PAYABLE',
-          parent_id: payable.id,
-          installment_number: i + 1,
-          amount: i === 0 ? baseAmount + remainder : baseAmount,
-          due_date: dueDate,
-          status: 'PENDENTE',
-        })
+    if (hasSplits) {
+      const splits = data.splits!
+      const splitsSum = splits.reduce((s, x) => s + x.amount, 0)
+      if (splitsSum !== data.total_amount) {
+        return error(`Soma dos splits (${splitsSum}) deve ser igual ao total (${data.total_amount})`, 400)
       }
 
-      await prisma.installment.createMany({ data: installments })
+      const groupId = crypto.randomUUID()
+      const created = []
+      for (let i = 0; i < splits.length; i++) {
+        const sp = splits[i]
+        const pay = await createOnePayable({
+          companyId: user.companyId,
+          supplierId: data.supplier_id || null,
+          description: splits.length > 1 ? `${data.description} [${i + 1}/${splits.length}]` : data.description,
+          notes: data.notes,
+          dueDate: data.due_date,
+          categoryId: data.category_id || null,
+          costCenterId: data.cost_center_id || null,
+          totalAmount: sp.amount,
+          paymentMethod: sp.payment_method,
+          accountId: sp.account_id || null,
+          installmentCount: sp.installment_count || 1,
+          groupId,
+        })
+        created.push(pay)
+      }
+
+      logAudit({
+        companyId: user.companyId,
+        userId: user.id,
+        module: 'financeiro',
+        action: 'payable.create_split',
+        entityId: groupId,
+        newValue: { description: data.description, total_amount: data.total_amount, splits_count: splits.length, group_id: groupId },
+      })
+
+      return success({ group_id: groupId, payables: created }, 201)
     }
+
+    // Modo UNICO (retrocompat)
+    const payable = await createOnePayable({
+      companyId: user.companyId,
+      supplierId: data.supplier_id || null,
+      description: data.description,
+      notes: data.notes,
+      dueDate: data.due_date,
+      categoryId: data.category_id || null,
+      costCenterId: data.cost_center_id || null,
+      totalAmount: data.total_amount,
+      paymentMethod: data.payment_method,
+      accountId: data.account_id || null,
+      installmentCount: data.installment_count || 1,
+      groupId: null,
+    })
 
     logAudit({
       companyId: user.companyId,
@@ -227,7 +315,7 @@ export async function POST(request: NextRequest) {
       module: 'financeiro',
       action: 'payable.create',
       entityId: payable.id,
-      newValue: { description: payable.description, total_amount: payable.total_amount, installments: installmentCount },
+      newValue: { description: payable.description, total_amount: payable.total_amount, installments: data.installment_count || 1 },
     })
 
     return success(payable, 201)
