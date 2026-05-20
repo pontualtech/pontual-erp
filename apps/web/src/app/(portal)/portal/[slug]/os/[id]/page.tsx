@@ -60,6 +60,9 @@ interface OSDetail {
     color: string
     order?: number
   }>
+  // 2026-05-20: URL pra /cupom-avaliacao/<token> que gera cupom 10% + redireciona pro Google.
+  // Backend so retorna quando OS esta Entregue E company tem google_reviews.url configurado.
+  review_url?: string | null
 }
 
 export default function PortalOSDetailPage() {
@@ -77,11 +80,10 @@ export default function PortalOSDetailPage() {
   const [approvePayment, setApprovePayment] = useState<string | null>(null)
   const [company, setCompany] = useState<{ name: string; phone?: string; whatsapp?: string; email?: string; address?: string; cnpj?: string; horario?: string; pix_chave?: string; pix_banco?: string; default_business_days?: string } | null>(null)
   const [customer, setCustomer] = useState<{ id: string; name: string } | null>(null)
-  const [npsScore, setNpsScore] = useState<number | null>(null)
-  const [npsComment, setNpsComment] = useState('')
-  const [npsSubmitted, setNpsSubmitted] = useState(false)
+  // NPS antigo (0-10): substituido 2026-05-20 por card "Avalie no Google".
+  // Mantemos npsExisting display pra preservar avaliacoes ja submetidas no
+  // sistema legado (cliente que avaliou no formato antigo continua vendo).
   const [npsExisting, setNpsExisting] = useState<{ score: number; comment?: string } | null>(null)
-  const [npsLoading, setNpsLoading] = useState(false)
   const [showEmailModal, setShowEmailModal] = useState(false)
   const [emailTo, setEmailTo] = useState('')
   const [emailSending, setEmailSending] = useState(false)
@@ -129,33 +131,6 @@ export default function PortalOSDetailPage() {
       .catch(() => {})
   }
 
-  async function handleNpsSubmit() {
-    if (npsScore === null) return
-    setNpsLoading(true)
-    try {
-      const res = await fetch('/api/portal/nps', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          service_order_id: osId,
-          score: npsScore,
-          comment: npsComment.trim() || undefined,
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        toast.error(data.error || 'Erro ao enviar avaliacao')
-        return
-      }
-      toast.success(data.data.message)
-      setNpsSubmitted(true)
-    } catch {
-      toast.error('Erro de conexao')
-    } finally {
-      setNpsLoading(false)
-    }
-  }
-
   useEffect(() => {
     const savedCompany = localStorage.getItem('portal_company')
     const savedCustomer = localStorage.getItem('portal_customer')
@@ -179,16 +154,16 @@ export default function PortalOSDetailPage() {
           }
           // Load OS regardless (cookie was set by auto-login)
           loadOS()
-          if (showNps) loadNps()
+          loadNps()
         })
         .catch(() => {
           // Token failed — try loading anyway (might have existing cookie)
           loadOS()
-          if (showNps) loadNps()
+          loadNps()
         })
     } else {
       loadOS()
-      if (showNps) loadNps()
+      loadNps()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [osId])
@@ -271,10 +246,6 @@ export default function PortalOSDetailPage() {
     os?.status.name.toLowerCase().includes('entregue')
 
   const isEntregue = os?.status.name.toLowerCase().includes('entregue')
-  // UX-4 #3: NPS reativado (estava hardcoded false). Pesquisa pos-entrega
-  // gera signal valioso de qualidade e abre janela pra CTA "review Google".
-  const showNps = true
-  const showNpsSurvey = showNps && isEntregue && !npsExisting && !npsSubmitted
 
   if (loading) {
     return (
@@ -1194,8 +1165,10 @@ export default function PortalOSDetailPage() {
           </div>
         )}
 
-        {/* NPS Survey - OCULTO TEMPORARIAMENTE */}
-        {showNps && isEntregue && npsExisting && (
+        {/* Display de avaliacao antiga NPS 0-10 (sistema legado pre 2026-05-20).
+            Mantido pra preservar visualizacao de notas ja submetidas. Nao da
+            mais pra enviar nova nota — agora o CTA e Google (abaixo). */}
+        {isEntregue && npsExisting && (
           <div className="bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-900 rounded-xl p-6 mb-6" data-print-hide>
             <div className="flex items-center gap-3 mb-2">
               <div className="w-10 h-10 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center">
@@ -1204,8 +1177,8 @@ export default function PortalOSDetailPage() {
                 </svg>
               </div>
               <div>
-                <h3 className="font-semibold text-green-900 dark:text-green-300">Obrigado pela sua avaliacao!</h3>
-                <p className="text-green-700 dark:text-green-400 text-sm">Voce deu nota <strong>{npsExisting.score}</strong> para esta OS.</p>
+                <h3 className="font-semibold text-green-900 dark:text-green-300">Obrigado pela sua avaliação!</h3>
+                <p className="text-green-700 dark:text-green-400 text-sm">Você deu nota <strong>{npsExisting.score}</strong> para esta OS.</p>
               </div>
             </div>
             {npsExisting.comment && (
@@ -1214,82 +1187,44 @@ export default function PortalOSDetailPage() {
           </div>
         )}
 
-        {/* NPS Survey - Submitted just now - OCULTO TEMPORARIAMENTE */}
-        {showNps && isEntregue && npsSubmitted && !npsExisting && (
-          <div className="bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-900 rounded-xl p-6 mb-6 text-center" data-print-hide>
-            <div className="w-12 h-12 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center mx-auto mb-3">
-              <svg className="w-6 h-6 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            <h3 className="font-semibold text-green-900 dark:text-green-300 text-lg">Obrigado!</h3>
-            <p className="text-green-700 dark:text-green-400 mt-1">Sua avaliacao foi registrada com sucesso.</p>
-          </div>
-        )}
-
-        {/* NPS Survey Widget - OCULTO TEMPORARIAMENTE */}
-        {showNpsSurvey && (
-          <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-900 rounded-xl p-6 mb-6" data-print-hide>
-            <h3 className="font-semibold text-blue-900 dark:text-blue-300 text-lg mb-2">Como foi sua experiencia?</h3>
-            <p className="text-blue-700 dark:text-blue-400 text-sm mb-4">
-              Avalie de 0 a 10: qual a probabilidade de voce recomendar nossos servicos?
+        {/* 2026-05-20: Avalie no Google (substitui o NPS 0-10 interno).
+            So aparece quando OS esta Entregue (isEntregue) e backend retornou review_url
+            (depende de Setting google_reviews.url configurada). Link leva pra
+            /cupom-avaliacao/<token> que gera cupom 10% e redireciona pro GBP.
+            Esconde se cliente ja avaliou pelo sistema legado (npsExisting). */}
+        {isEntregue && os.review_url && !npsExisting && (
+          <div className="bg-gradient-to-br from-amber-50 to-yellow-50 dark:from-amber-950 dark:to-yellow-950 border border-amber-200 dark:border-amber-900 rounded-xl p-6 mb-6 text-center" data-print-hide>
+            <h3 className="font-semibold text-amber-900 dark:text-amber-200 text-lg mb-1">
+              Como foi sua experiência?
+            </h3>
+            <p className="text-amber-800 dark:text-amber-300 text-sm mb-4">
+              Se gostou do nosso atendimento, avalie no Google! Sua opinião nos ajuda muito.
             </p>
 
-            {/* Score buttons */}
-            <div className="flex flex-wrap gap-2 mb-4">
-              {Array.from({ length: 11 }, (_, i) => {
-                let btnColor = 'bg-red-100 text-red-700 hover:bg-red-200 border-red-200'
-                if (i >= 7 && i <= 8) btnColor = 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200 border-yellow-200'
-                if (i >= 9) btnColor = 'bg-green-100 text-green-700 hover:bg-green-200 border-green-200'
-
-                let selectedColor = 'bg-red-600 text-white border-red-600'
-                if (i >= 7 && i <= 8) selectedColor = 'bg-yellow-500 text-white border-yellow-500'
-                if (i >= 9) selectedColor = 'bg-green-600 text-white border-green-600'
-
-                const isSelected = npsScore === i
-
-                return (
-                  <button
-                    key={i}
-                    onClick={() => setNpsScore(i)}
-                    className={`w-11 h-11 rounded-lg border-2 font-bold text-sm transition-all ${
-                      isSelected ? selectedColor : btnColor
-                    }`}
-                  >
-                    {i}
-                  </button>
-                )
-              })}
+            {/* 5 estrelas visuais (decorativas) */}
+            <div className="flex justify-center gap-1 mb-4" aria-hidden="true">
+              {[1, 2, 3, 4, 5].map(i => (
+                <svg key={i} className="w-10 h-10 text-yellow-400 drop-shadow-sm" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                </svg>
+              ))}
             </div>
 
-            <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-4 px-1">
-              <span>Nada provavel</span>
-              <span>Muito provavel</span>
-            </div>
+            <a
+              href={os.review_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 w-full py-3 px-6 bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-xl transition-colors shadow-sm"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+              </svg>
+              Avaliar com 5 estrelas no Google
+            </a>
 
-            {/* Comment */}
-            {npsScore !== null && (
-              <div className="mb-4">
-                <textarea
-                  value={npsComment}
-                  onChange={e => setNpsComment(e.target.value)}
-                  placeholder="Deixe um comentario (opcional)..."
-                  rows={2}
-                  className="w-full px-4 py-3 border border-blue-200 dark:border-blue-900 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 resize-none bg-white dark:bg-zinc-900"
-                />
-              </div>
-            )}
-
-            {/* Submit */}
-            {npsScore !== null && (
-              <button
-                onClick={handleNpsSubmit}
-                disabled={npsLoading}
-                className="w-full py-3 px-6 bg-blue-600 dark:bg-blue-500 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold rounded-xl transition-colors"
-              >
-                {npsLoading ? 'Enviando...' : 'Enviar Avaliacao'}
-              </button>
-            )}
+            <p className="text-xs text-amber-700 dark:text-amber-400 mt-3">
+              🎁 Ao avaliar, você ganha <strong>10% de desconto</strong> na próxima OS!
+            </p>
           </div>
         )}
 

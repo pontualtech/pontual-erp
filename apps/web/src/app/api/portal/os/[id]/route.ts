@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { getPortalUserFromRequest } from '@/lib/portal-auth'
 import { isAllowedOrigin } from '@/lib/csrf-origin'
 import { canCustomerPayOS } from '@/lib/os-payment-rules'
+import { buildCouponToken } from '@/lib/coupon-token'
 
 export async function GET(
   req: NextRequest,
@@ -126,10 +127,30 @@ export async function GET(
         ? { ...os.module_statuses, name: PORTAL_LABEL[fallbackKey], color: PORTAL_COLOR[fallbackKey] }
         : { ...os.module_statuses, name: tcStatus(currentStatusName), color: os.module_statuses?.color || '#F59E0B' }
 
+    // 2026-05-20: review_url so quando OS esta Entregue. UI portal exibe
+    // card "Avalie 5 estrelas no Google" → leva pra /cupom-avaliacao/<token>
+    // que gera cupom 10% e redireciona pro GBP. Demais status nao recebem url.
+    let reviewUrl: string | null = null
+    if (currentStatusName.toLowerCase().includes('entregue')) {
+      const reviewSetting = await prisma.setting.findFirst({
+        where: { company_id: portalUser.company_id, key: 'google_reviews.url' },
+        select: { value: true },
+      })
+      if (reviewSetting?.value) {
+        try {
+          const token = buildCouponToken(portalUser.company_id, portalUser.customer_id)
+          reviewUrl = `/cupom-avaliacao/${token}`
+        } catch {
+          // ERP_TOKEN_SECRET ausente — skip silently, UI nao mostra o card
+        }
+      }
+    }
+
     const { toTitleCase } = await import('@/lib/format-text')
     return NextResponse.json({
       data: {
         id: os.id,
+        review_url: reviewUrl,
         os_number: os.os_number,
         equipment_type: toTitleCase(os.equipment_type || ''),
         equipment_brand: toTitleCase(os.equipment_brand || ''),
