@@ -84,11 +84,11 @@ export default function MarketingHomePage() {
   return (
     <div className="mx-auto max-w-7xl p-6 lg:p-8">
       {/* Header */}
-      <div className="mb-6 flex items-center gap-3">
+      <div className="mb-6 flex items-center gap-3 flex-wrap">
         <div className="rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 p-2.5 text-white shadow-sm">
           <Megaphone className="h-6 w-6" />
         </div>
-        <div>
+        <div className="flex-1 min-w-0">
           <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
             Marketing
           </h1>
@@ -96,6 +96,13 @@ export default function MarketingHomePage() {
             CRM, campanhas e segmentação de contatos
           </p>
         </div>
+        <Link
+          href="/marketing/dashboard"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 transition-colors cursor-pointer"
+        >
+          <BarChart3 className="h-4 w-4" />
+          Dashboard de Métricas
+        </Link>
       </div>
 
       {/* Stat cards resumo */}
