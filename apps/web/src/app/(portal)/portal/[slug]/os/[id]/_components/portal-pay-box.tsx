@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { CreditCard, Zap, FileText, Loader2, X, Copy, Check, ExternalLink, Clock, RefreshCw, Wallet } from 'lucide-react'
+import { CreditCard, Zap, FileText, Loader2, X, Copy, Check, ExternalLink, Clock, RefreshCw, Wallet, Layers } from 'lucide-react'
+import SplitPaymentModal from './split-payment-modal'
 
 type PixPayment = {
   id: string
@@ -65,6 +66,8 @@ export default function PortalPayBox({ osId, totalCost, alreadyPaid }: {
   const [verifying, setVerifying] = useState(false)
   const [mountChecked, setMountChecked] = useState(false)
   const [activePayment, setActivePayment] = useState<ActivePayment | null>(null)
+  // 2026-05-20 Fase C-light: toggle split modal
+  const [showSplitModal, setShowSplitModal] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -285,6 +288,19 @@ export default function PortalPayBox({ osId, totalCost, alreadyPaid }: {
           </div>
         )}
 
+        {/* 2026-05-20 Fase C-light: opcao "dividir em multiplas formas" quando nao ha cobranca ativa */}
+        {!activePayment && (
+          <button
+            type="button"
+            onClick={() => setShowSplitModal(true)}
+            disabled={loading !== null}
+            className="w-full mt-3 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border-2 border-dashed border-purple-400 dark:border-purple-700 bg-purple-50/50 dark:bg-purple-950/20 hover:bg-purple-100/70 dark:hover:bg-purple-950/40 text-purple-700 dark:text-purple-300 font-semibold text-sm disabled:opacity-50 transition-all cursor-pointer"
+          >
+            <Layers className="h-4 w-4" />
+            Dividir pagamento em múltiplas formas
+          </button>
+        )}
+
         {boleto && !paid && (
           <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-3 space-y-2">
             <div className="flex items-center justify-between gap-2">
@@ -338,6 +354,14 @@ export default function PortalPayBox({ osId, totalCost, alreadyPaid }: {
           onClose={closePix}
           onCopy={copyPix}
           onVerify={verifyPayment}
+        />
+      )}
+
+      {showSplitModal && (
+        <SplitPaymentModal
+          osId={osId}
+          totalCost={totalCost}
+          onClose={() => setShowSplitModal(false)}
         />
       )}
     </>
