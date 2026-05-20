@@ -378,8 +378,8 @@ function buildTemplateVars(os: any, settings: Record<string, string>, approvalLi
     ? recalcDiscountPercent
     : (hasNormalDiscount ? Math.round((dbDiscount / subtotal) * 100) : 0)
 
-  // Installment info — 5x for recalculated, configurable for normal
-  const maxInstallments = isRecalculado ? 5 : (parseInt(settings['quote.max_installments'] || '3') || 3)
+  // Installment info — 3x sempre (era 5x recalculado, ajustado pra 3x conforme regra de cartao)
+  const maxInstallments = parseInt(settings['quote.max_installments'] || '3') || 3
   let installmentInfo = ''
   if (totalCost > 0 && maxInstallments > 1) {
     const installmentValue = fmtCents(Math.ceil(totalCost / maxInstallments))

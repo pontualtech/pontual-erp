@@ -101,7 +101,7 @@ export async function GET(request: NextRequest, { params }: Params) {
     const subtotal = (os.total_parts ?? 0) + (os.total_services ?? 0)
     const hasNormalDiscount = !hasRecalcDiscount && dbDiscount > 0 && subtotal > 0
     const hasDiscount = hasRecalcDiscount || hasNormalDiscount
-    const maxInstallments = isRecalculado ? 5 : parseInt(settingsMap['quote.max_installments'] || '3') || 3
+    const maxInstallments = parseInt(settingsMap['quote.max_installments'] || '3') || 3
 
     const { toTitleCase } = await import('@/lib/format-text')
 

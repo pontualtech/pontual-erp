@@ -781,7 +781,7 @@ export default function PortalOSDetailPage() {
             { value: 'Cartao Debito', label: 'Cartão de Débito', icon: '💳', desc: 'À vista na entrega' },
             { value: 'Boleto', label: 'Boleto Bancario', icon: '📄', desc: 'Somente PJ (7 dias)' },
           ]
-          const maxParcelas = isRecalculado ? 5 : 3
+          const maxParcelas = 3
           const parcelaValor = fmt(Math.ceil((os.total_cost || 0) / maxParcelas))
           const hasDesconto = (os.discount_amount ?? 0) > 0 || (isRecalculado && (os.custom_data as any)?.original_cost > 0)
           const originalVal = (os.custom_data as any)?.original_cost || ((os.total_services || 0) + (os.total_parts || 0))
@@ -821,12 +821,28 @@ export default function PortalOSDetailPage() {
                   </div>
                 )}
 
-                {/* Value + installments — destaque do valor */}
-                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 mb-4 border border-amber-200 dark:border-amber-900/50 text-center">
-                  <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 font-semibold">Valor total</p>
-                  <p className="text-3xl sm:text-4xl font-extrabold text-gray-900 dark:text-gray-50 mt-1">{fmt(os.total_cost || 0)}</p>
-                  <p className="text-sm text-emerald-700 dark:text-emerald-400 font-semibold mt-2">ou {maxParcelas}x de {parcelaValor} sem juros</p>
-                </div>
+                {/* Value + installments
+                    - Orcamento 1a vez (nao recalculado): destaque no VALOR TOTAL (ancora psicologica)
+                    - Orcamento RECALCULADO (apos "achei caro"): destaque nas PARCELAS
+                      (ancora de acessibilidade — preco/mes vira mais palatavel) */}
+                {isRecalculado ? (
+                  <div className="bg-white dark:bg-gray-800 rounded-xl p-4 mb-4 border border-amber-200 dark:border-amber-900/50 text-center">
+                    <p className="text-xs uppercase tracking-wide text-emerald-700 dark:text-emerald-400 font-bold">Em ate</p>
+                    <p className="text-3xl sm:text-4xl font-extrabold text-emerald-700 dark:text-emerald-400 mt-1">
+                      {maxParcelas}x de {parcelaValor}
+                    </p>
+                    <p className="text-xs text-emerald-600 dark:text-emerald-500 font-semibold">sem juros no cartao</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-3">
+                      Valor total: <span className="font-semibold text-gray-700 dark:text-gray-300">{fmt(os.total_cost || 0)}</span>
+                    </p>
+                  </div>
+                ) : (
+                  <div className="bg-white dark:bg-gray-800 rounded-xl p-4 mb-4 border border-amber-200 dark:border-amber-900/50 text-center">
+                    <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 font-semibold">Valor total</p>
+                    <p className="text-3xl sm:text-4xl font-extrabold text-gray-900 dark:text-gray-50 mt-1">{fmt(os.total_cost || 0)}</p>
+                    <p className="text-sm text-emerald-700 dark:text-emerald-400 font-semibold mt-2">ou {maxParcelas}x de {parcelaValor} sem juros</p>
+                  </div>
+                )}
 
                 {!approvePayment ? (
                   <div className="space-y-3">
