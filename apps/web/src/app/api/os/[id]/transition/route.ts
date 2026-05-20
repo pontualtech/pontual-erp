@@ -8,6 +8,7 @@ import { sendWhatsAppCloud, sendWhatsAppTemplate } from '@/lib/whatsapp/cloud-ap
 import { whatsappTemplates, getTemplateForStatus } from '@/lib/whatsapp/templates'
 import { createAccessToken } from '@/lib/portal-auth'
 import { buildMagicLink } from '@/lib/portal-magic-url'
+import { createReceivableOrSplit } from '@/lib/financeiro/receivables'
 
 type Params = { params: { id: string } }
 
@@ -19,6 +20,14 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     const body = await req.json()
     const { toStatusId, notes, payment_method, installment_count: rawInstallmentCount, technician_id: bodyTechnicianId, notify_whatsapp, notify_email, _resend_notify_only, account_id: bodyAccountId } = body
+    // 2026-05-20 Fase D split balcao:
+    // - splits[]: array { payment_method, amount_cents, installments?, account_id? } pra registrar
+    //   pagamento dividido em multiplas formas (ex: 500 PIX + 200 cartao 2x). Quando presente
+    //   e length > 1, usa createReceivableOrSplit em vez do create direto.
+    // - received_now: quando true, AR(s) viram status=PAGO + reconciled=false (declaracao manual
+    //   admin balcao). Quando false/undefined, status=PENDENTE (comportamento atual backward-compat).
+    const splitsInput: Array<{ payment_method: string; amount_cents: number; installments?: number; account_id?: string }> | undefined = Array.isArray(body.splits) && body.splits.length > 0 ? body.splits : undefined
+    const receivedNow: boolean = body.received_now === true
     // Notification flags: default true for backward compat, but frontend can set false
     const shouldNotifyWhatsApp = notify_whatsapp !== false
     const shouldNotifyEmail = notify_email !== false
@@ -150,8 +159,17 @@ export async function POST(req: NextRequest, { params }: Params) {
     }) : null
     const needsNewReceivable = isFinalDelivery && !existingActiveAR
 
-    if (needsNewReceivable && !payment_method) {
+    if (needsNewReceivable && !payment_method && !splitsInput) {
       return error('Forma de pagamento é obrigatória para finalizar a OS', 400)
+    }
+
+    // 2026-05-20: valida soma dos splits quando passado
+    if (needsNewReceivable && splitsInput) {
+      const splitsSum = splitsInput.reduce((s, x) => s + (x.amount_cents || 0), 0)
+      const expectedTotal = os.total_cost || 0
+      if (splitsSum !== expectedTotal) {
+        return error(`Soma dos splits (${splitsSum}) deve ser igual ao total da OS (${expectedTotal})`, 400)
+      }
     }
 
     const effectiveTechnicianId = os.technician_id || bodyTechnicianId || null
@@ -239,7 +257,51 @@ export async function POST(req: NextRequest, { params }: Params) {
 
       // 3. Auto-criar AccountReceivable quando é entrega final E ainda não existe
       //    (portal pode ter criado previamente via pagamento antecipado)
-      if (needsNewReceivable) {
+      if (needsNewReceivable && splitsInput) {
+        // 2026-05-20 Fase D split balcao: usa lib compartilhada quando body trouxe splits[].
+        // Lib cuida de N receivables com group_id, parcelas, card fee, etc.
+        // received_now: true (default no balcao) => status=PAGO + reconciled=false.
+        const category = await tx.category.findFirst({
+          where: { company_id: user.companyId, module: 'financeiro_receita' },
+          orderBy: { name: 'asc' },
+        })
+        const totalAmount = os.total_cost ?? 0
+        const splitStatus = receivedNow ? 'PAGO' : 'PENDENTE'
+        const result = await createReceivableOrSplit({
+          companyId: user.companyId,
+          customerId: os.customer_id,
+          serviceOrderId: os.id,
+          description: `OS-${String(os.os_number).padStart(4, '0')} — ${os.equipment_type || 'Serviço'} ${os.equipment_brand || ''} ${os.equipment_model || ''}`.trim(),
+          dueDate: new Date(),
+          categoryId: category?.id || null,
+          totalAmount,
+          status: splitStatus,
+          receivedAmount: receivedNow ? totalAmount : 0,
+          reconciled: false, // declaracao manual admin balcao
+          splits: splitsInput.map(s => ({
+            payment_method: s.payment_method,
+            account_id: s.account_id || null,
+            amount: s.amount_cents,
+            installment_count: s.installments || 1,
+          })),
+        })
+        receivableCreated = true
+        logAudit({
+          companyId: user.companyId,
+          userId: user.id,
+          module: 'financeiro',
+          action: 'auto_receivable_split',
+          entityId: params.id,
+          newValue: {
+            os_number: os.os_number,
+            total_cost: os.total_cost,
+            splits_count: splitsInput.length,
+            group_id: result.groupId,
+            received_now: receivedNow,
+            customer: os.customers?.legal_name,
+          },
+        })
+      } else if (needsNewReceivable) {
         const category = await tx.category.findFirst({
           where: { company_id: user.companyId, module: 'financeiro_receita' },
           orderBy: { name: 'asc' },
@@ -310,11 +372,14 @@ export async function POST(req: NextRequest, { params }: Params) {
             customer_id: os.customer_id,
             service_order_id: os.id,
             category_id: category?.id || null,
+            account_id: defaultAccountId,
             description: `OS-${String(os.os_number).padStart(4, '0')} — ${os.equipment_type || 'Serviço'} ${os.equipment_brand || ''} ${os.equipment_model || ''}`.trim(),
             total_amount: totalAmount,
-            received_amount: 0,
+            // 2026-05-20: received_now=true (admin balcao default) => AR vira PAGO + reconciled=false
+            received_amount: receivedNow ? totalAmount : 0,
             due_date: dueDate,
-            status: 'PENDENTE',
+            status: receivedNow ? 'PAGO' : 'PENDENTE',
+            reconciled: false, // declaracao manual; conciliacao OFX/CNAB depois marca true
             payment_method: payment_method,
             installment_count: installment_count,
             card_fee_total: cardFeeTotal,

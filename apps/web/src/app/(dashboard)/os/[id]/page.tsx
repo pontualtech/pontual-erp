@@ -211,6 +211,13 @@ export default function OSDetailPage() {
   const [bankAccounts, setBankAccounts] = useState<{ id: string; name: string; bank_name: string | null }[]>([])
   const [paymentAccountId, setPaymentAccountId] = useState('')
   const [defaultAccountMap, setDefaultAccountMap] = useState<Record<string, string>>({})
+  // 2026-05-20 Fase D split balcao:
+  // - receivedNow: admin marca que cliente pagou ao retirar (default true). False = vai cobrar depois (PENDENTE).
+  // - useSplit: divide o pagamento em multiplas formas (ex: 500 PIX + 200 cartao 2x).
+  // - splits: array de formas com valor em string BR (vai converter pra centavos no submit).
+  const [receivedNow, setReceivedNow] = useState(true)
+  const [useSplit, setUseSplit] = useState(false)
+  const [splits, setSplits] = useState<Array<{ method: string; amount_str: string; installments: number; account_id: string }>>([])
 
   // Print/Email modal
   const [showPrintModal, setShowPrintModal] = useState(false)
@@ -818,6 +825,10 @@ export default function OSDetailPage() {
       setPaymentMethod('')
       setPaymentNotes('')
       setInstallmentCount(1)
+      // 2026-05-20 Fase D split balcao: reseta estado pra cada nova entrega
+      setReceivedNow(true)
+      setUseSplit(false)
+      setSplits([{ method: '', amount_str: ((os.total_cost ?? 0) / 100).toFixed(2).replace('.', ','), installments: 1, account_id: '' }])
       setPendingStatusId(target.id)
       if (!paymentMethodsLoaded) {
         fetch('/api/financeiro/formas-pagamento').then(r => r.json()).then(d => {
@@ -842,7 +853,7 @@ export default function OSDetailPage() {
     openTransitionFor(next)
   }
 
-  async function doTransition(toStatusId: string, payment_method?: string, notes?: string, installments?: number) {
+  async function doTransition(toStatusId: string, payment_method?: string, notes?: string, installments?: number, opts?: { splits?: Array<{ payment_method: string; amount_cents: number; installments?: number; account_id?: string }>; receivedNow?: boolean }) {
     setTransitioning(true)
     try {
       const body: any = { toStatusId }
@@ -852,6 +863,9 @@ export default function OSDetailPage() {
       if (editTechnicianId) body.technician_id = editTechnicianId
       if (paymentAccountId) body.account_id = paymentAccountId
       if (customBusinessDays) body.business_days = parseInt(customBusinessDays)
+      // 2026-05-20 Fase D split balcao: enviar splits[] quando ativo + received_now
+      if (opts?.splits && opts.splits.length > 0) body.splits = opts.splits
+      if (opts?.receivedNow !== undefined) body.received_now = opts.receivedNow
 
       // If manual mode, do transition WITHOUT notification first, then ask
       if (!notifyAuto) {
@@ -920,10 +934,37 @@ export default function OSDetailPage() {
   }
 
   async function handleConfirmDelivery() {
-    if (!paymentMethod) { toast.error('Selecione a forma de pagamento'); return }
     const targetId = pendingStatusId || getNextStatus()?.id
-    if (!targetId) return
-    doTransition(targetId, paymentMethod, paymentNotes || undefined, installmentCount)
+    if (!targetId || !os) return
+
+    // 2026-05-20 Fase D split balcao
+    if (useSplit) {
+      if (splits.length < 1) { toast.error('Adicione ao menos 1 forma de pagamento'); return }
+      const totalCents = os.total_cost || 0
+      let sumCents = 0
+      const splitsPayload: Array<{ payment_method: string; amount_cents: number; installments?: number; account_id?: string }> = []
+      for (const s of splits) {
+        if (!s.method) { toast.error('Escolha forma de pagamento em cada split'); return }
+        const valueNumber = parseFloat(s.amount_str.replace('.', '').replace(',', '.'))
+        if (!isFinite(valueNumber) || valueNumber <= 0) { toast.error('Valor invalido em algum split'); return }
+        const cents = Math.round(valueNumber * 100)
+        sumCents += cents
+        splitsPayload.push({
+          payment_method: s.method,
+          amount_cents: cents,
+          installments: s.installments > 1 ? s.installments : 1,
+          account_id: s.account_id || undefined,
+        })
+      }
+      if (sumCents !== totalCents) {
+        toast.error(`Soma dos splits (R$ ${(sumCents / 100).toFixed(2)}) precisa ser igual ao total da OS (R$ ${(totalCents / 100).toFixed(2)})`)
+        return
+      }
+      doTransition(targetId, undefined, paymentNotes || undefined, undefined, { splits: splitsPayload, receivedNow })
+    } else {
+      if (!paymentMethod) { toast.error('Selecione a forma de pagamento'); return }
+      doTransition(targetId, paymentMethod, paymentNotes || undefined, installmentCount, { receivedNow })
+    }
   }
 
   // Check if selected payment method is a card type
@@ -3142,6 +3183,138 @@ export default function OSDetailPage() {
                 Ao confirmar, uma <strong>conta a receber</strong> sera gerada automaticamente no financeiro.
               </p>
 
+              {/* 2026-05-20 Fase D split balcao: toggle recebido agora */}
+              <div className="rounded-lg border border-gray-200 p-3 space-y-2">
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={receivedNow}
+                    onChange={e => setReceivedNow(e.target.checked)}
+                    className="mt-0.5 rounded text-green-600 focus:ring-green-500"
+                  />
+                  <div className="flex-1">
+                    <span className="text-sm font-medium text-gray-800">Cliente já pagou agora</span>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {receivedNow
+                        ? 'AR criada como Pago. Aguarda conciliação no extrato bancário.'
+                        : 'AR criada como Pendente. Cobrar depois via /financeiro/contas-receber.'}
+                    </p>
+                  </div>
+                </label>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={useSplit}
+                    onChange={e => setUseSplit(e.target.checked)}
+                    className="mt-0.5 rounded text-green-600 focus:ring-green-500"
+                  />
+                  <div className="flex-1">
+                    <span className="text-sm font-medium text-gray-800">Dividir em múltiplas formas</span>
+                    <p className="text-xs text-gray-500 mt-0.5">Ex: parte PIX + parte cartão. Cada forma gera 1 conta a receber.</p>
+                  </div>
+                </label>
+              </div>
+
+              {useSplit ? (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-gray-700">Formas de pagamento *</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const totalCents = os.total_cost || 0
+                        const sumCents = splits.reduce((s, x) => {
+                          const v = parseFloat((x.amount_str || '0').replace('.', '').replace(',', '.'))
+                          return s + (isFinite(v) ? Math.round(v * 100) : 0)
+                        }, 0)
+                        const remaining = Math.max(0, totalCents - sumCents)
+                        setSplits([...splits, { method: '', amount_str: (remaining / 100).toFixed(2).replace('.', ','), installments: 1, account_id: '' }])
+                      }}
+                      className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      <Plus className="h-3.5 w-3.5" /> Adicionar forma
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {splits.map((s, idx) => (
+                      <div key={idx} className="rounded-lg border border-gray-200 p-3 space-y-2 bg-gray-50">
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={s.method}
+                            onChange={e => {
+                              const next = [...splits]
+                              next[idx] = { ...next[idx], method: e.target.value }
+                              setSplits(next)
+                            }}
+                            title="Forma de pagamento"
+                            className="flex-1 px-2 py-1.5 border rounded text-sm bg-white"
+                          >
+                            <option value="">Forma...</option>
+                            {paymentMethods.map(pm => (
+                              <option key={pm.id} value={pm.name}>{pm.icon} {pm.name}</option>
+                            ))}
+                          </select>
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={s.amount_str}
+                            onChange={e => {
+                              const next = [...splits]
+                              next[idx] = { ...next[idx], amount_str: e.target.value }
+                              setSplits(next)
+                            }}
+                            placeholder="0,00"
+                            title="Valor em reais"
+                            className="w-28 px-2 py-1.5 border rounded text-sm text-right bg-white"
+                          />
+                          {splits.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => setSplits(splits.filter((_, i) => i !== idx))}
+                              title="Remover forma"
+                              className="p-1.5 text-red-500 hover:bg-red-50 rounded"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                        {/cart[aã]o|cr[eé]dito|credito/i.test(s.method) && (
+                          <select
+                            value={s.installments}
+                            onChange={e => {
+                              const next = [...splits]
+                              next[idx] = { ...next[idx], installments: parseInt(e.target.value) || 1 }
+                              setSplits(next)
+                            }}
+                            title="Parcelas"
+                            className="w-full px-2 py-1.5 border rounded text-sm bg-white"
+                          >
+                            {Array.from({ length: 12 }, (_, i) => i + 1).map(n => (
+                              <option key={n} value={n}>{n}x</option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {(() => {
+                    const totalCents = os.total_cost || 0
+                    const sumCents = splits.reduce((s, x) => {
+                      const v = parseFloat((x.amount_str || '0').replace('.', '').replace(',', '.'))
+                      return s + (isFinite(v) ? Math.round(v * 100) : 0)
+                    }, 0)
+                    const diff = totalCents - sumCents
+                    if (diff === 0) {
+                      return <p className="text-xs text-green-700 mt-2 flex items-center gap-1"><Check className="h-3 w-3" /> Soma confere: {fmt(totalCents)}</p>
+                    }
+                    return (
+                      <p className="text-xs text-amber-700 mt-2">
+                        {diff > 0 ? `Faltam ${fmt(diff)}` : `Excedeu ${fmt(-diff)}`} (total da OS: {fmt(totalCents)})
+                      </p>
+                    )
+                  })()}
+                </div>
+              ) : (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">1. Forma de pagamento *</label>
                 {paymentMethods.length > 0 ? (
@@ -3171,9 +3344,10 @@ export default function OSDetailPage() {
                   </div>
                 )}
               </div>
+              )}
 
-              {/* Installment selector for card payments */}
-              {isCardPayment && (
+              {/* Installment selector for card payments (apenas no modo single) */}
+              {!useSplit && isCardPayment && (
                 <div className="space-y-3">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Parcelas</label>
@@ -3241,8 +3415,8 @@ export default function OSDetailPage() {
                 )}
               </div>
 
-              {/* 2. Conta bancária destino — aparece após selecionar forma de pagamento */}
-              {bankAccounts.length > 0 && paymentMethod && (
+              {/* 2. Conta bancária destino — apenas no modo single. No split, cada forma usa sua conta padrao. */}
+              {!useSplit && bankAccounts.length > 0 && paymentMethod && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     2. Conta bancaria destino {paymentAccountId && defaultAccountMap[paymentMethod] === paymentAccountId && (
@@ -3289,7 +3463,8 @@ export default function OSDetailPage() {
             <div className="flex gap-3 mt-6">
               <button type="button" onClick={() => { setShowPaymentModal(false); setPendingStatusId(null) }}
                 className="px-4 py-2.5 text-sm border rounded-lg hover:bg-gray-50 flex-1">Cancelar</button>
-              <button type="button" onClick={handleConfirmDelivery} disabled={transitioning || !paymentMethod || (!editTechnicianId && !os.technician_id)}
+              <button type="button" onClick={handleConfirmDelivery}
+                disabled={transitioning || (useSplit ? splits.length === 0 || splits.some(s => !s.method) : !paymentMethod) || (!editTechnicianId && !os.technician_id)}
                 className="px-4 py-2.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex-1 font-medium flex items-center justify-center gap-2">
                 {transitioning && <Loader2 className="h-4 w-4 animate-spin" />}
                 {transitioning ? 'Finalizando...' : 'Confirmar Entrega'}
