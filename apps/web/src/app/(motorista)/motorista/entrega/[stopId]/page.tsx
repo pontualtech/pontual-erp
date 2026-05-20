@@ -3,12 +3,21 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { ArrowLeft, Check, X, Camera } from 'lucide-react'
+import { ArrowLeft, Check, X, Camera, Plus, Trash2 } from 'lucide-react'
 import SignatureCanvas from '../../../components/signature-canvas'
 import CameraCapture from '../../../components/camera-capture'
 import { enqueueSubmission } from '../../../lib/offline-queue'
 
 type PaymentMethod = 'pix' | 'dinheiro' | 'cartao_credito' | 'cartao_debito' | 'boleto'
+
+// Split payment 2026-05-20: cliente paga em formas diferentes
+// (ex: 500 PIX + 200 cartao 2x). Cada split vira receivable independente.
+interface Split {
+  method: PaymentMethod | ''
+  amount_str: string // valor em reais "500.00"
+  installments: number // so para cartao_credito
+}
+const emptySplit = (): Split => ({ method: '', amount_str: '', installments: 1 })
 
 const PAYMENT_OPTIONS: { value: PaymentMethod; label: string; icon: string; needsReceipt: boolean }[] = [
   { value: 'pix',              label: 'PIX',              icon: '⚡', needsReceipt: true  },
@@ -48,6 +57,9 @@ export default function EntregaPage() {
   const [paymentNotes, setPaymentNotes] = useState('')
   // Parcelas — so aparece quando cartao_credito. Cliente escolhe 1-12x.
   const [installments, setInstallments] = useState<number>(1)
+  // Split payment 2026-05-20: cliente paga em formas diferentes
+  const [useSplit, setUseSplit] = useState(false)
+  const [splits, setSplits] = useState<Split[]>([emptySplit(), emptySplit()])
   // Dias ate vencimento do boleto — so aparece quando payment=boleto. Default 7, editavel 1-60.
   const [boletoDueDays, setBoletoDueDays] = useState<number>(7)
   const [receiptPhoto, setReceiptPhoto] = useState<string | null>(null)
@@ -79,6 +91,18 @@ export default function EntregaPage() {
   const selectedPayment = PAYMENT_OPTIONS.find(p => p.value === paymentMethod)
   const needsReceipt = selectedPayment?.needsReceipt && amountCents > 0
 
+  // Split helpers
+  function updateSplit(idx: number, field: keyof Split, value: string | number) {
+    setSplits(prev => prev.map((s, i) => i === idx ? { ...s, [field]: value } : s))
+  }
+  function addSplit() { setSplits(prev => [...prev, emptySplit()]) }
+  function removeSplit(idx: number) { setSplits(prev => prev.length > 2 ? prev.filter((_, i) => i !== idx) : prev) }
+
+  const splitsSumCents = splits.reduce((s, sp) => s + Math.round((Number(sp.amount_str.replace(',', '.')) || 0) * 100), 0)
+  const splitsValid = splitsSumCents === amountCents && splits.every(s => s.method && Number(s.amount_str.replace(',', '.')) > 0)
+  // Split precisa comprovante se algum split tem PIX/cartao
+  const splitNeedsReceipt = useSplit && splits.some(s => s.method && PAYMENT_OPTIONS.find(p => p.value === s.method)?.needsReceipt)
+
   async function getCurrentLocation(): Promise<{ lat: number; lng: number } | null> {
     return new Promise(resolve => {
       if (typeof navigator === 'undefined' || !navigator.geolocation) return resolve(null)
@@ -96,8 +120,13 @@ export default function EntregaPage() {
     if (outcome === 'recusado_sem_conserto' && !refusalReason.trim())
       return toast.error('Informe o motivo da recusa')
     if (outcome === 'entregue_aprovado') {
-      if (!paymentMethod) return toast.error('Selecione a forma de pagamento')
-      if (needsReceipt && !receiptPhoto) return toast.error('Tire foto do comprovante')
+      if (useSplit) {
+        if (!splitsValid) return toast.error(`Verifique formas: soma R$ ${(splitsSumCents/100).toFixed(2)} (deve ser R$ ${(amountCents/100).toFixed(2)}) e cada forma com valor`)
+        if (splitNeedsReceipt && !receiptPhoto) return toast.error('Tire foto do comprovante (uma das formas precisa)')
+      } else {
+        if (!paymentMethod) return toast.error('Selecione a forma de pagamento')
+        if (needsReceipt && !receiptPhoto) return toast.error('Tire foto do comprovante')
+      }
       // UX-4 #9: foto da entrega física obrigatória (proteção em disputas)
       if (!deliveredPhoto) return toast.error('Tire foto do equipamento entregue (porta, recepção, etc)')
     }
@@ -116,13 +145,32 @@ export default function EntregaPage() {
         location,
       }
       if (outcome === 'entregue_aprovado') {
-        payload.payment = {
-          method: paymentMethod,
-          amount_cents: amountCents,
-          installments: paymentMethod === 'cartao_credito' ? installments : 1,
-          due_days: paymentMethod === 'boleto' ? boletoDueDays : null,
-          receipt_photo_base64: receiptPhoto,
-          notes: paymentNotes.trim() || null,
+        if (useSplit) {
+          // Modo split: usa metodo do primeiro split como label "principal"
+          // (Payment record + LogisticsStop tem 1 method field). Cada split
+          // vira receivable independente via lib createReceivableOrSplit.
+          payload.payment = {
+            method: splits[0].method || 'pix',
+            amount_cents: amountCents,
+            installments: 1,
+            due_days: null,
+            receipt_photo_base64: receiptPhoto,
+            notes: paymentNotes.trim() || `Split em ${splits.length} formas`,
+            splits: splits.map(s => ({
+              method: s.method as PaymentMethod,
+              amount_cents: Math.round(Number(s.amount_str.replace(',', '.')) * 100),
+              installments: s.method === 'cartao_credito' ? s.installments : 1,
+            })),
+          }
+        } else {
+          payload.payment = {
+            method: paymentMethod,
+            amount_cents: amountCents,
+            installments: paymentMethod === 'cartao_credito' ? installments : 1,
+            due_days: paymentMethod === 'boleto' ? boletoDueDays : null,
+            receipt_photo_base64: receiptPhoto,
+            notes: paymentNotes.trim() || null,
+          }
         }
         // UX-4 #9: foto da entrega física no payload
         payload.delivered_photo_base64 = deliveredPhoto
@@ -303,22 +351,122 @@ export default function EntregaPage() {
         {/* Pagamento */}
         {outcome === 'entregue_aprovado' && (
           <>
+            {/* Toggle split: cliente paga em formas diferentes */}
             <section>
-              <h2 className="font-semibold text-gray-900 mb-2">Forma de pagamento</h2>
-              <div className="grid grid-cols-2 gap-2">
-                {PAYMENT_OPTIONS.map(p => (
-                  <button key={p.value} onClick={() => setPaymentMethod(p.value)}
-                    className={`py-3 px-4 rounded-lg border-2 text-left transition ${
-                      paymentMethod === p.value
-                        ? 'border-emerald-600 bg-emerald-50'
-                        : 'border-gray-300 bg-white'
-                    }`}>
-                    <span className="text-lg">{p.icon}</span>
-                    <span className="ml-2 font-medium">{p.label}</span>
-                  </button>
-                ))}
-              </div>
+              <label className="flex items-center gap-2 cursor-pointer bg-amber-50 border-2 border-amber-200 rounded-lg p-3">
+                <input
+                  type="checkbox"
+                  checked={useSplit}
+                  onChange={e => setUseSplit(e.target.checked)}
+                  className="w-5 h-5 cursor-pointer"
+                />
+                <span className="font-medium text-amber-900">💰 Cliente paga em formas diferentes</span>
+              </label>
             </section>
+
+            {/* Modo SPLIT — array de formas */}
+            {useSplit && (
+              <section>
+                <div className="flex items-center justify-between mb-2">
+                  <h2 className="font-semibold text-gray-900">Formas de pagamento</h2>
+                  <button
+                    type="button"
+                    onClick={addSplit}
+                    className="inline-flex items-center gap-1 text-sm font-medium text-emerald-700 cursor-pointer"
+                  >
+                    <Plus className="h-4 w-4" /> Adicionar
+                  </button>
+                </div>
+                <div className="space-y-3">
+                  {splits.map((sp, idx) => (
+                    <div key={idx} className="border-2 border-gray-200 rounded-lg p-3 bg-white space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-gray-700">Forma {idx + 1}</span>
+                        {splits.length > 2 && (
+                          <button
+                            type="button"
+                            onClick={() => removeSplit(idx)}
+                            className="text-red-500 cursor-pointer"
+                            aria-label={`Remover forma ${idx + 1}`}
+                            title={`Remover forma ${idx + 1}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                      <select
+                        aria-label={`Metodo forma ${idx + 1}`}
+                        value={sp.method}
+                        onChange={e => updateSplit(idx, 'method', e.target.value)}
+                        className="w-full border-2 border-gray-300 rounded-lg px-3 py-2 bg-white text-sm"
+                      >
+                        <option value="">Selecione...</option>
+                        {PAYMENT_OPTIONS.map(p => (
+                          <option key={p.value} value={p.value}>{p.icon} {p.label}</option>
+                        ))}
+                      </select>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-500">R$</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          inputMode="decimal"
+                          value={sp.amount_str}
+                          onChange={e => updateSplit(idx, 'amount_str', e.target.value)}
+                          placeholder="0,00"
+                          aria-label={`Valor forma ${idx + 1}`}
+                          className="flex-1 border-2 border-gray-300 rounded-lg px-3 py-2 text-base font-semibold"
+                        />
+                      </div>
+                      {sp.method === 'cartao_credito' && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-500">Parcelas:</span>
+                          <select
+                            aria-label={`Parcelas forma ${idx + 1}`}
+                            value={sp.installments}
+                            onChange={e => updateSplit(idx, 'installments', Number(e.target.value))}
+                            className="border-2 border-gray-300 rounded-lg px-2 py-1.5 bg-white text-sm"
+                          >
+                            {[1,2,3,4,5,6,7,8,9,10,11,12].map(n => (
+                              <option key={n} value={n}>{n}x</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {/* Validador soma */}
+                <div className={`mt-3 rounded-lg border-2 p-2.5 text-sm flex items-center justify-between ${splitsValid ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-red-50 border-red-300 text-red-800'}`}>
+                  <span>Soma:</span>
+                  <span className="font-bold">
+                    {fmtBRL(splitsSumCents)} / {fmtBRL(amountCents)}
+                    {splitsValid && ' ✓'}
+                  </span>
+                </div>
+              </section>
+            )}
+
+            {/* Modo UNICO — botoes de forma */}
+            {!useSplit && (
+              <section>
+                <h2 className="font-semibold text-gray-900 mb-2">Forma de pagamento</h2>
+                <div className="grid grid-cols-2 gap-2">
+                  {PAYMENT_OPTIONS.map(p => (
+                    <button key={p.value} onClick={() => setPaymentMethod(p.value)}
+                      className={`py-3 px-4 rounded-lg border-2 text-left transition ${
+                        paymentMethod === p.value
+                          ? 'border-emerald-600 bg-emerald-50'
+                          : 'border-gray-300 bg-white'
+                      }`}>
+                      <span className="text-lg">{p.icon}</span>
+                      <span className="ml-2 font-medium">{p.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
 
             {/* Vencimento do boleto — so pra boleto. Default 7 dias, editavel 1-60. */}
             {paymentMethod === 'boleto' && amountCents > 0 && (
@@ -374,7 +522,7 @@ export default function EntregaPage() {
               </section>
             )}
 
-            {needsReceipt && (
+            {(needsReceipt || splitNeedsReceipt) && (
               <section>
                 <h2 className="font-semibold text-gray-900 mb-2">Comprovante</h2>
                 {receiptPhoto ? (
