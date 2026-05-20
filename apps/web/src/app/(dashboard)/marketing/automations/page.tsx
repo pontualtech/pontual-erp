@@ -186,6 +186,16 @@ function AutomationForm({ editing, onClose, onSaved }: {
   const [active, setActive] = useState(editing?.active ?? true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [users, setUsers] = useState<{ id: string; name: string }[]>([])
+
+  // Carrega lista de usuários (pra dropdown Atribuir a) apenas se actionType=task
+  useEffect(() => {
+    if (actionType !== 'task' || users.length > 0) return
+    fetch('/api/users?simple=true')
+      .then(r => r.ok ? r.json() : { data: [] })
+      .then(j => setUsers(j.data ?? j ?? []))
+      .catch(() => setUsers([]))
+  }, [actionType, users.length])
 
   function defaultPayload(type: string): any {
     switch (type) {
@@ -370,8 +380,35 @@ function AutomationForm({ editing, onClose, onSaved }: {
           )}
 
           {actionType === 'task' && (
-            <div className="rounded-md border border-amber-300 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-400">
-              ⚠️ Ação <strong>{ACTION_META[actionType].label}</strong> está em fase de planejamento. A automação será salva mas as execuções ficam como &quot;skipped&quot; até implementarmos o canal.
+            <div className="space-y-3 rounded-md border border-gray-200 dark:border-gray-700 p-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Título do ticket</label>
+                <input type="text" value={payload.title || ''} onChange={e => setPayload({ ...payload, title: e.target.value })}
+                  placeholder="Ligar pra {{nome}} sobre orçamento" maxLength={200}
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm" />
+                <p className="text-xs text-gray-500 mt-1">Suporta <code>{`{{nome}}`}</code>, <code>{`{{email}}`}</code>, <code>{`{{telefone}}`}</code>, <code>{`{{to_stage}}`}</code>.</p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Descrição (opcional)</label>
+                <textarea rows={3} value={payload.description || ''} onChange={e => setPayload({ ...payload, description: e.target.value })}
+                  placeholder="Cliente saiu do funil — verificar motivo." maxLength={1500}
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm" />
+                <p className="text-xs text-gray-500 mt-1">O contexto da automação (contato + transição de fase) será anexado automaticamente.</p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Atribuir a (opcional)</label>
+                <select value={payload.assignToUserId || ''} onChange={e => setPayload({ ...payload, assignToUserId: e.target.value || undefined })}
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm">
+                  <option value="">— Sem responsável (fila aberta) —</option>
+                  {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Prazo (dias a partir da criação)</label>
+                <input type="number" min={0} max={365} value={payload.dueDays || 0} onChange={e => setPayload({ ...payload, dueDays: parseInt(e.target.value) || 0 })}
+                  className="w-32 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm" />
+                <p className="text-xs text-gray-500 mt-1">0 = sem prazo. Anotado na descrição do ticket (Ticket model atual não tem campo due_date).</p>
+              </div>
             </div>
           )}
 

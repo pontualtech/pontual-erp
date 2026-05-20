@@ -100,12 +100,8 @@ async function runOneAutomation(
         result = await executeWebhook(automation.payload, contact, opts)
         break
       case 'task':
-        result = { stub: true, message: 'Task não implementado no MVP' }
-        await prisma.marketingAutomationRun.update({
-          where: { id: run.id },
-          data: { status: 'skipped', result: result as any, finished_at: new Date() },
-        })
-        return
+        result = await executeTask(automation.payload, contact, opts)
+        break
       default:
         throw new Error(`action_type desconhecido: ${automation.action_type}`)
     }
@@ -236,6 +232,92 @@ async function executeWhatsapp(
     language: templateLanguage,
     messageId: res.messageId,
     variablesCount: renderedVars.length,
+  }
+}
+
+/**
+ * Cria Ticket interno no ERP quando contato muda de fase.
+ *
+ * Payload esperado (taskPayloadSchema em /api/marketing/automations):
+ *   { title, description?, assignToUserId?, dueDays? }
+ *
+ * Comportamento:
+ * - Auto-increment ticket_number per company (mesmo pattern do POST /api/tickets)
+ * - title → subject (suporta {{nome}}/{{email}}/{{telefone}}/{{to_stage}})
+ * - description → description (suporta mesmos placeholders) + bloco
+ *   automático com contato + transição de fase pra dar contexto ao atendente
+ * - customer_id herdado do contact.customer_id se houver
+ * - assigned_to do payload OU null (entra na fila não-atribuída)
+ * - source='AUTOMATION_MARKETING' pra distinguir de tickets manuais
+ * - dueDays vira "Prazo: X dia(s)" no fim da description (Ticket model não
+ *   tem campo due_date — solução low-tech até refactor de schema)
+ */
+async function executeTask(
+  payload: any,
+  contact: ContactSnapshot,
+  opts: FireOptions,
+): Promise<any> {
+  const rawTitle = String(payload?.title || '').trim()
+  if (!rawTitle) throw new Error('payload.title ausente ou vazio')
+
+  const subject = renderTemplate(rawTitle, contact, opts).slice(0, 200)
+
+  const userDesc = String(payload?.description || '').trim()
+  const renderedDesc = userDesc ? renderTemplate(userDesc, contact, opts) : ''
+
+  const contextLines = [
+    `Contato: ${contact.name || '(sem nome)'} <${contact.email}>${contact.phone ? ` · ${contact.phone}` : ''}`,
+    `Transição: ${opts.fromStage || '(qualquer)'} → ${opts.toStage || '(qualquer)'}`,
+  ]
+
+  const dueDays = Number(payload?.dueDays || 0)
+  if (dueDays > 0) {
+    contextLines.push(`Prazo: ${dueDays} dia${dueDays > 1 ? 's' : ''} a partir de hoje`)
+  }
+
+  const fullDescription = [
+    renderedDesc,
+    renderedDesc ? '' : null,
+    '— Contexto da automação —',
+    ...contextLines,
+  ].filter(l => l !== null).join('\n').slice(0, 2000)
+
+  // Busca customer_id se o contact tiver vinculação ao Customer table
+  const contactRecord = await prisma.marketingContact.findUnique({
+    where: { id: opts.contactId },
+    select: { customer_id: true },
+  })
+
+  // Auto-increment ticket_number per company (mesmo pattern do POST /api/tickets)
+  const lastTicket = await prisma.ticket.findFirst({
+    where: { company_id: opts.companyId },
+    orderBy: { ticket_number: 'desc' },
+    select: { ticket_number: true },
+  })
+
+  const ticket = await prisma.ticket.create({
+    data: {
+      company_id: opts.companyId,
+      ticket_number: (lastTicket?.ticket_number || 0) + 1,
+      subject,
+      description: fullDescription,
+      priority: 'NORMAL',
+      category: 'AUTOMATION_MARKETING',
+      source: 'AUTOMATION_MARKETING',
+      customer_id: contactRecord?.customer_id || null,
+      assigned_to: payload?.assignToUserId || null,
+      created_by: null,
+      created_by_type: 'AUTOMATION',
+      status: 'ABERTO',
+    },
+    select: { id: true, ticket_number: true },
+  })
+
+  return {
+    created: true,
+    ticket_id: ticket.id,
+    ticket_number: ticket.ticket_number,
+    assigned: !!payload?.assignToUserId,
   }
 }
 
