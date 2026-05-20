@@ -5,6 +5,7 @@ import { findStatusByName } from '@/lib/module-status'
 import { sendCompanyEmail } from '@/lib/send-email'
 import { getReciboEmail } from '@/lib/email-templates/recibo'
 import { buildMagicLink } from '@/lib/portal-magic-url'
+import { createReceivableOrSplit } from '@/lib/financeiro/receivables'
 
 function fmtBRL(cents: number): string {
   return (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -109,6 +110,15 @@ type Body = {
     due_days?: number | null      // dias ate vencimento (so boleto, default 7)
     receipt_photo_base64?: string | null
     notes?: string | null
+    // Split payment 2026-05-20: cliente paga em formas diferentes
+    // (ex: 500 PIX + 200 cartao 2x). Se preenchido, cria N receivables
+    // agrupados via group_id. O `method` acima eh o "principal" pro Payment
+    // record e LogisticsStop — mantemos um label simples ('SPLIT' ou 1o split).
+    splits?: Array<{
+      method: 'pix' | 'dinheiro' | 'cartao_credito' | 'cartao_debito' | 'boleto'
+      amount_cents: number
+      installments?: number | null
+    }>
   } | null
   location?: { lat: number; lng: number } | null
 }
@@ -420,51 +430,84 @@ export async function POST(
                 ? `data:image/jpeg;base64,${body.payment.receipt_photo_base64}`
                 : null
 
-              const ar = await prisma.accountReceivable.create({
-                data: {
-                  company_id: auth.companyId,
-                  customer_id: os.customer_id,
-                  service_order_id: os.id,
-                  category_id: serviceRevenueCategoryId,
-                  description: arDescription,
-                  total_amount: amount,
-                  received_amount: isOnSite ? amount : 0,
-                  due_date: dueDate,
-                  status: isOnSite ? 'PAGO' : 'PENDENTE',
-                  payment_method: paymentMethodMapped,
-                  receipt_url: receiptUrl,
-                  installment_count: installmentCount,
-                  card_fee_total: cardFeeTotal,
-                  net_amount: netAmount,
-                  notes: isBoleto
-                    ? `Boleto a ser enviado ao cliente. Vencimento em ${Math.round((dueDate.getTime() - Date.now()) / 86400000)} dias. Motorista: ${auth.name}`
-                    : isCard
-                      ? `Cartao ${installmentCount}x via motorista ${auth.name}. Taxa R$ ${(cardFeeTotal / 100).toFixed(2)}, Liquido R$ ${(netAmount / 100).toFixed(2)}, Recebe D+${daysToReceive}`
-                      : `Recebido via motorista ${auth.name}`,
-                },
-              })
+              // Modo SPLIT — cliente paga em formas diferentes (ex: PIX + cartao)
+              // Cada split vira 1 receivable independente, agrupados via group_id.
+              // Modo UNICO (default) preserva comportamento atual: 1 AR.
+              const splitsInput = body.payment?.splits
+              const hasSplits = Array.isArray(splitsInput) && splitsInput.length > 1
 
-              // Parcelas (so quando > 1)
-              if (installmentCount > 1) {
-                const baseAmount = Math.floor(amount / installmentCount)
-                const remainder = amount - baseAmount * installmentCount
-                const intervalDias = (isCard && daysToReceive > 0) ? daysToReceive : 30
-                const installments = []
-                const baseDate = new Date()
-                for (let i = 0; i < installmentCount; i++) {
-                  const instDue = new Date(baseDate)
-                  instDue.setDate(instDue.getDate() + intervalDias * (i + 1))
-                  installments.push({
-                    company_id: auth.companyId,
-                    parent_type: 'RECEIVABLE',
-                    parent_id: ar.id,
-                    installment_number: i + 1,
-                    amount: i === 0 ? baseAmount + remainder : baseAmount,
-                    due_date: instDue,
-                    status: 'PENDENTE',
+              if (hasSplits) {
+                const splitsPayload = splitsInput!.map(sp => ({
+                  payment_method: PAYMENT_METHOD_MAP[sp.method],
+                  amount: sp.amount_cents,
+                  installment_count: Math.max(1, Number(sp.installments || 1)),
+                }))
+                try {
+                  await createReceivableOrSplit({
+                    companyId: auth.companyId,
+                    customerId: os.customer_id,
+                    serviceOrderId: os.id,
+                    categoryId: serviceRevenueCategoryId,
+                    description: arDescription,
+                    dueDate,
+                    totalAmount: amount,
+                    receiptUrl,
+                    status: isOnSite ? 'PAGO' : 'PENDENTE',
+                    receivedAmount: isOnSite ? amount : 0,
+                    notes: `Recebido via motorista ${auth.name} (split em ${splitsPayload.length} formas)`,
+                    splits: splitsPayload,
                   })
+                } catch (err) {
+                  console.warn('[driver/entrega] split create falhou:', err instanceof Error ? err.message : String(err))
+                  throw err
                 }
-                await prisma.installment.createMany({ data: installments })
+              } else {
+                const ar = await prisma.accountReceivable.create({
+                  data: {
+                    company_id: auth.companyId,
+                    customer_id: os.customer_id,
+                    service_order_id: os.id,
+                    category_id: serviceRevenueCategoryId,
+                    description: arDescription,
+                    total_amount: amount,
+                    received_amount: isOnSite ? amount : 0,
+                    due_date: dueDate,
+                    status: isOnSite ? 'PAGO' : 'PENDENTE',
+                    payment_method: paymentMethodMapped,
+                    receipt_url: receiptUrl,
+                    installment_count: installmentCount,
+                    card_fee_total: cardFeeTotal,
+                    net_amount: netAmount,
+                    notes: isBoleto
+                      ? `Boleto a ser enviado ao cliente. Vencimento em ${Math.round((dueDate.getTime() - Date.now()) / 86400000)} dias. Motorista: ${auth.name}`
+                      : isCard
+                        ? `Cartao ${installmentCount}x via motorista ${auth.name}. Taxa R$ ${(cardFeeTotal / 100).toFixed(2)}, Liquido R$ ${(netAmount / 100).toFixed(2)}, Recebe D+${daysToReceive}`
+                        : `Recebido via motorista ${auth.name}`,
+                  },
+                })
+
+                // Parcelas (so quando > 1)
+                if (installmentCount > 1) {
+                  const baseAmount = Math.floor(amount / installmentCount)
+                  const remainder = amount - baseAmount * installmentCount
+                  const intervalDias = (isCard && daysToReceive > 0) ? daysToReceive : 30
+                  const installments = []
+                  const baseDate = new Date()
+                  for (let i = 0; i < installmentCount; i++) {
+                    const instDue = new Date(baseDate)
+                    instDue.setDate(instDue.getDate() + intervalDias * (i + 1))
+                    installments.push({
+                      company_id: auth.companyId,
+                      parent_type: 'RECEIVABLE',
+                      parent_id: ar.id,
+                      installment_number: i + 1,
+                      amount: i === 0 ? baseAmount + remainder : baseAmount,
+                      due_date: instDue,
+                      status: 'PENDENTE',
+                    })
+                  }
+                  await prisma.installment.createMany({ data: installments })
+                }
               }
 
               // Despesa da taxa do cartao (AccountPayable)
