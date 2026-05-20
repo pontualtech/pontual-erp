@@ -28,6 +28,10 @@ export interface CreateReceivableCommonArgs {
   status?: string // default 'PENDENTE'
   receivedAmount?: number // pra cobranca presencial paga na hora
   receiptUrl?: string | null
+  // 2026-05-20: true quando origem da confirmacao e confiavel (webhook Asaas, OFX match).
+  // false (default) pra declaracao manual (motorista, balcao, cadastro admin) — AR vira
+  // PAGO mas fica marcado "aguardando conciliacao" ate financeiro bater o extrato.
+  reconciled?: boolean
   // Modo unico
   paymentMethod?: string
   accountId?: string | null
@@ -53,11 +57,12 @@ async function createOneReceivableInternal(args: {
   accountId?: string | null
   installmentCount: number
   groupId?: string | null
+  reconciled: boolean
   feeSettings: { key: string; value: string }[]
 }) {
   const { companyId, customerId, serviceOrderId, description, notes, dueDate,
           categoryId, totalAmount, status, receivedAmount, receiptUrl,
-          paymentMethod, accountId, installmentCount, groupId, feeSettings } = args
+          paymentMethod, accountId, installmentCount, groupId, reconciled, feeSettings } = args
 
   const isCard = !!paymentMethod && /cart[aã]o|credito|crédito|cartao_cred/i.test(paymentMethod)
   let cardFeeTotal = 0
@@ -104,6 +109,7 @@ async function createOneReceivableInternal(args: {
       card_fee_total: cardFeeTotal,
       net_amount: netAmount,
       group_id: groupId || null,
+      reconciled,
       receipt_url: receiptUrl || undefined,
       status,
     },
@@ -156,6 +162,8 @@ export async function createReceivableOrSplit(args: CreateReceivableCommonArgs):
   const dueDateObj = args.dueDate instanceof Date ? args.dueDate : new Date(args.dueDate)
   const status = args.status || 'PENDENTE'
   const receivedAmount = args.receivedAmount ?? 0
+  // Default: declaracao manual (false). Webhook Asaas / conciliacao OFX passam reconciled=true explicito.
+  const reconciled = args.reconciled === true
 
   // Modo SPLIT
   if (args.splits && args.splits.length > 0) {
@@ -187,6 +195,7 @@ export async function createReceivableOrSplit(args: CreateReceivableCommonArgs):
         accountId: sp.account_id || null,
         installmentCount: sp.installment_count || 1,
         groupId,
+        reconciled,
         feeSettings,
       })
       created.push(rec)
@@ -211,6 +220,7 @@ export async function createReceivableOrSplit(args: CreateReceivableCommonArgs):
     accountId: args.accountId || null,
     installmentCount: args.installmentCount || 1,
     groupId: null,
+    reconciled,
     feeSettings,
   })
   return { receivables: [rec], groupId: null }

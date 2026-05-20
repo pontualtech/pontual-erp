@@ -46,6 +46,7 @@ interface ContaReceber {
   anticipated_amount: number | null
   group_id: string | null
   grouped_into_id: string | null
+  reconciled: boolean | null
   boleto_url: string | null
   customer_id: string | null
   customers: Customer | null
@@ -1431,6 +1432,16 @@ export default function ContasReceberPage() {
                         <span className={cn('inline-block rounded-full px-2.5 py-0.5 text-xs font-medium', config.color)}>
                           {config.label}
                         </span>
+                        {/* 2026-05-20: badge "Aguardando conciliacao" quando AR esta RECEBIDO mas
+                            ainda nao foi confirmado no extrato bancario (declaracao manual). */}
+                        {conta.status === 'RECEBIDO' && conta.reconciled !== true && (
+                          <span
+                            className="inline-block rounded-full px-2.5 py-0.5 text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200"
+                            title="Pagamento declarado mas ainda nao confirmado no extrato bancario. Conciliar em /financeiro/conciliacao."
+                          >
+                            Aguardando conciliação
+                          </span>
+                        )}
                         {conta.anticipated_at && (
                           <span className="inline-block rounded-full px-2.5 py-0.5 text-xs font-medium bg-purple-100 text-purple-800">
                             Antecipado

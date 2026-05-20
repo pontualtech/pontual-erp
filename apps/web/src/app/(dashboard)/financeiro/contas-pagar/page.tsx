@@ -44,6 +44,7 @@ interface ContaPagar {
   status: string
   payment_method: string | null
   notes: string | null
+  reconciled: boolean | null
   customers: Supplier | null
   categories: Category | null
   cost_centers: CostCenter | null
@@ -769,9 +770,21 @@ export default function ContasPagarPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <span className={cn('inline-block rounded-full px-2.5 py-0.5 text-xs font-medium', config.color)}>
-                        {config.label}
-                      </span>
+                      <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                        <span className={cn('inline-block rounded-full px-2.5 py-0.5 text-xs font-medium', config.color)}>
+                          {config.label}
+                        </span>
+                        {/* 2026-05-20: badge "Aguardando conciliacao" quando AP esta PAGO mas
+                            ainda nao foi confirmado no extrato bancario (declaracao manual). */}
+                        {conta.status === 'PAGO' && conta.reconciled !== true && (
+                          <span
+                            className="inline-block rounded-full px-2.5 py-0.5 text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200"
+                            title="Pagamento declarado mas ainda nao confirmado no extrato bancario. Conciliar em /financeiro/conciliacao."
+                          >
+                            Aguardando conciliação
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

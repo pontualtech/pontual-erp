@@ -109,6 +109,8 @@ export async function POST(request: NextRequest) {
           data: {
             paid_amount: newPaidTotal,
             status: isPaidInFull ? 'PAGO' : 'PENDENTE',
+            // 2026-05-20: match com extrato bancario marca AP como conciliado (origem confiavel).
+            ...(isPaidInFull ? { reconciled: true } : {}),
             updated_at: new Date(),
           },
         })
@@ -164,6 +166,8 @@ export async function POST(request: NextRequest) {
           data: {
             received_amount: newReceivedTotal,
             status: isReceivedInFull ? 'RECEBIDO' : 'PENDENTE',
+            // 2026-05-20: match com extrato bancario marca AR como conciliado (origem confiavel).
+            ...(isReceivedInFull ? { reconciled: true } : {}),
             updated_at: new Date(),
           },
         })
@@ -250,7 +254,13 @@ export async function PUT(request: NextRequest) {
           await prisma.$transaction([
             prisma.accountPayable.update({
               where: { id: match.record_id },
-              data: { paid_amount: newPaidTotal, status: isPaidInFull ? 'PAGO' : 'PENDENTE', updated_at: new Date() },
+              // 2026-05-20: bulk match marca AP reconciled=true junto com PAGO.
+              data: {
+                paid_amount: newPaidTotal,
+                status: isPaidInFull ? 'PAGO' : 'PENDENTE',
+                ...(isPaidInFull ? { reconciled: true } : {}),
+                updated_at: new Date(),
+              },
             }),
             prisma.transaction.update({
               where: { id: match.transaction_id },
@@ -273,7 +283,13 @@ export async function PUT(request: NextRequest) {
           await prisma.$transaction([
             prisma.accountReceivable.update({
               where: { id: match.record_id },
-              data: { received_amount: newReceivedTotal, status: isReceivedInFull ? 'RECEBIDO' : 'PENDENTE', updated_at: new Date() },
+              // 2026-05-20: bulk match marca AR reconciled=true junto com RECEBIDO.
+              data: {
+                received_amount: newReceivedTotal,
+                status: isReceivedInFull ? 'RECEBIDO' : 'PENDENTE',
+                ...(isReceivedInFull ? { reconciled: true } : {}),
+                updated_at: new Date(),
+              },
             }),
             prisma.transaction.update({
               where: { id: match.transaction_id },
@@ -368,6 +384,9 @@ export async function DELETE(request: NextRequest) {
               data: {
                 paid_amount: newPaidAmount,
                 status: newStatus,
+                // 2026-05-20: UNDO match desconcilia. Se ainda PAGO (multi-match), mantem
+                // reconciled=true; se voltou PENDENTE, desconcilia tambem.
+                ...(newStatus === 'PENDENTE' ? { reconciled: false } : {}),
                 updated_at: new Date(),
               },
             })
@@ -388,6 +407,8 @@ export async function DELETE(request: NextRequest) {
               data: {
                 received_amount: newReceivedAmount,
                 status: newStatus,
+                // 2026-05-20: UNDO match desconcilia se AR voltou pra PENDENTE.
+                ...(newStatus === 'PENDENTE' ? { reconciled: false } : {}),
                 updated_at: new Date(),
               },
             })

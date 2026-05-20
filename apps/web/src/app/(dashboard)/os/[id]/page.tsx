@@ -1306,15 +1306,36 @@ export default function OSDetailPage() {
         </div>
       </div>
 
-      {/* ========== PAID BANNER (if OS is paid) ========== */}
+      {/* ========== PAID BANNER (if OS is paid) ==========
+          3 estados:
+          - Verde: TODAS ARs pagas E TODAS conciliadas (confirmado no extrato bancario)
+          - Ambar: pagas mas alguma nao conciliada (declaracao manual aguardando bater extrato)
+          - sem banner: pendente
+       */}
       {(() => {
-        const ar = (os.accounts_receivable ?? [])[0]
-        if (!ar || (ar.status !== 'RECEBIDO' && ar.status !== 'PAGO')) return null
-        const paidDate = ar.updated_at ? new Date(ar.updated_at).toLocaleDateString('pt-BR') : ''
+        const ars = (os.accounts_receivable ?? []).filter((ar: any) => ar.status === 'RECEBIDO' || ar.status === 'PAGO')
+        if (ars.length === 0) return null
+        const totalPaid = ars.reduce((s: number, ar: any) => s + (ar.total_amount || 0), 0)
+        // reconciled === true e estrito: null/undefined/false tratam como nao-conciliado (defensivo)
+        const allReconciled = ars.every((ar: any) => ar.reconciled === true)
+        const methods = Array.from(new Set(ars.map((ar: any) => ar.payment_method).filter(Boolean))).join(' + ')
+        const lastAr = ars[0]
+        const paidDate = lastAr?.updated_at ? new Date(lastAr.updated_at).toLocaleDateString('pt-BR') : ''
+        if (allReconciled) {
+          return (
+            <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 flex items-center gap-2 text-sm font-medium text-green-800">
+              <Check className="h-5 w-5 text-green-600 shrink-0" />
+              <span>OS paga e conciliada {methods ? `\u2014 ${methods}` : ''} {fmt(totalPaid)} {paidDate ? `em ${paidDate}` : ''}</span>
+            </div>
+          )
+        }
         return (
-          <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 flex items-center gap-2 text-sm font-medium text-green-800">
-            <Check className="h-5 w-5 text-green-600 shrink-0" />
-            <span>OS paga {ar.payment_method ? `\u2014 ${ar.payment_method}` : ''} {fmt(ar.total_amount)} {paidDate ? `em ${paidDate}` : ''}</span>
+          <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 flex items-start gap-2 text-sm text-amber-900">
+            <Clock className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <div className="font-medium">Pago {methods ? `\u2014 ${methods}` : ''} {fmt(totalPaid)} {paidDate ? `em ${paidDate}` : ''}</div>
+              <div className="text-xs mt-0.5 text-amber-800">Aguardando confirma\u00e7\u00e3o no extrato banc\u00e1rio. Conciliar em /financeiro/concilia\u00e7\u00e3o para confirmar entrada do valor.</div>
+            </div>
           </div>
         )
       })()}

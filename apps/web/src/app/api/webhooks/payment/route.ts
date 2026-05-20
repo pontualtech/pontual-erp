@@ -394,6 +394,10 @@ export async function POST(req: NextRequest) {
               data: {
                 received_amount: newReceived,
                 status: isFullyPaid ? 'RECEBIDO' : 'PENDENTE',
+                // 2026-05-20: webhook Asaas e origem confiavel — dinheiro ja esta na conta Asaas.
+                // Marca reconciled=true junto com RECEBIDO. Pagamento parcial fica PENDENTE
+                // (reconciled fica como esta — sera marcado true so quando virar RECEBIDO).
+                ...(isFullyPaid ? { reconciled: true } : {}),
                 charge_status: newStatus,
                 payment_method: fresh.billing_type || fresh.method || receivable.payment_method,
                 updated_at: new Date(),
@@ -401,9 +405,10 @@ export async function POST(req: NextRequest) {
             })
           } else {
             // AR ja RECEBIDO (CONFIRMED veio antes). So atualiza charge_status.
+            // Garante reconciled=true caso CONFIRMED tenha vindo de fluxo manual antes.
             await tx.accountReceivable.update({
               where: { id: fresh.receivable_id },
-              data: { charge_status: newStatus, updated_at: new Date() },
+              data: { charge_status: newStatus, reconciled: true, updated_at: new Date() },
             })
           }
 
@@ -563,6 +568,9 @@ export async function POST(req: NextRequest) {
             data: {
               received_amount: newReceived,
               status: isFullyPaid ? 'RECEBIDO' : 'PENDENTE',
+              // 2026-05-20: Asaas CONFIRMED ja garante que dinheiro vai cair (PIX instantaneo,
+              // boleto compensado, cartao autorizado). Marca reconciled=true junto com RECEBIDO.
+              ...(isFullyPaid ? { reconciled: true } : {}),
               charge_status: 'CONFIRMED',
               payment_method: fresh.billing_type || fresh.method || receivable.payment_method,
               updated_at: new Date(),

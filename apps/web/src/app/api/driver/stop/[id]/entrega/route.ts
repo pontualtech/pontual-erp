@@ -473,6 +473,9 @@ export async function POST(
                     received_amount: isOnSite ? amount : 0,
                     due_date: dueDate,
                     status: isOnSite ? 'PAGO' : 'PENDENTE',
+                    // 2026-05-20: motorista presencial e declaracao manual. AR vira PAGO mas
+                    // reconciled=false ate financeiro bater no extrato bancario.
+                    reconciled: false,
                     payment_method: paymentMethodMapped,
                     receipt_url: receiptUrl,
                     installment_count: installmentCount,
