@@ -339,9 +339,39 @@ function AutomationForm({ editing, onClose, onSaved }: {
             </div>
           )}
 
-          {(actionType === 'whatsapp' || actionType === 'task') && (
+          {actionType === 'whatsapp' && (
+            <div className="space-y-3 rounded-md border border-gray-200 dark:border-gray-700 p-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Nome do template (Meta Cloud API)</label>
+                <input type="text" value={payload.templateName || ''} onChange={e => setPayload({ ...payload, templateName: e.target.value })}
+                  placeholder="orcamento_pronto" maxLength={120}
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm" />
+                <p className="text-xs text-gray-500 mt-1">O template precisa estar <strong>aprovado</strong> na WABA do tenant.</p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Idioma do template</label>
+                <select value={payload.templateLanguage || 'pt_BR'} onChange={e => setPayload({ ...payload, templateLanguage: e.target.value })}
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm">
+                  <option value="pt_BR">pt_BR</option>
+                  <option value="en">en</option>
+                  <option value="es">es</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Variáveis (uma por linha, máx 10)</label>
+                <textarea rows={3}
+                  value={Array.isArray(payload.variables) ? payload.variables.join('\n') : ''}
+                  onChange={e => setPayload({ ...payload, variables: e.target.value.split('\n').map(s => s.trim()).filter(Boolean).slice(0, 10) })}
+                  placeholder={`{{nome}}\n{{email}}\nValor literal qualquer`}
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-xs font-mono" />
+                <p className="text-xs text-gray-500 mt-1">Cada linha vira parâmetro posicional do template. Suporta <code>{`{{nome}}`}</code>, <code>{`{{email}}`}</code>, <code>{`{{telefone}}`}</code>.</p>
+              </div>
+            </div>
+          )}
+
+          {actionType === 'task' && (
             <div className="rounded-md border border-amber-300 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-400">
-              ⚠️ Ação <strong>{ACTION_META[actionType].label}</strong> está em fase de planejamento. A automação será salva mas as execuções ficam como "skipped" até implementarmos o canal.
+              ⚠️ Ação <strong>{ACTION_META[actionType].label}</strong> está em fase de planejamento. A automação será salva mas as execuções ficam como &quot;skipped&quot; até implementarmos o canal.
             </div>
           )}
 

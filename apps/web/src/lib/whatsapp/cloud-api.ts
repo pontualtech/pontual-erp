@@ -172,6 +172,79 @@ export async function sendWhatsAppTemplate(
   }
 }
 
+/**
+ * sendWhatsAppTemplateMetaOnly — versão STRICT de sendWhatsAppTemplate.
+ *
+ * Identica ao sendWhatsAppTemplate na chamada à Meta Cloud API, mas SEM
+ * fallback pra Evolution quando a Cloud não está configurada. Pra uso em
+ * features novas (ex: marketing automations) onde Evolution foi
+ * descontinuada e fallback silencioso causaria comportamento inesperado.
+ *
+ * Falha aberta (`success: false, error: 'not_configured'`) se o tenant
+ * não tiver `whatsapp.cloud.phone_number_id` + `whatsapp.cloud.access_token`.
+ */
+export async function sendWhatsAppTemplateMetaOnly(
+  companyId: string,
+  phone: string,
+  templateName: string,
+  languageCode: string = 'pt_BR',
+  components?: any[],
+): Promise<CloudSendResult> {
+  const config = await getCloudConfig(companyId)
+  if (!config) {
+    return { success: false, error: 'not_configured' }
+  }
+
+  const cleanPhone = phone.replace(/\D/g, '')
+  const formattedPhone = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`
+
+  try {
+    const body: any = {
+      messaging_product: 'whatsapp',
+      to: formattedPhone,
+      type: 'template',
+      template: {
+        name: templateName,
+        language: { code: languageCode },
+      },
+    }
+
+    if (components) {
+      body.template.components = components
+    }
+
+    const res = await fetch(
+      `https://graph.facebook.com/v21.0/${config.phoneNumberId}/messages`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(10000),
+      }
+    )
+
+    const data = await res.json()
+
+    if (!res.ok) {
+      console.error('[WhatsApp Cloud MetaOnly] Error:', {
+        template: templateName,
+        phone: formattedPhone,
+        status: res.status,
+        error: data.error,
+      })
+      return { success: false, error: data.error?.message || `HTTP ${res.status}` }
+    }
+
+    const messageId = data.messages?.[0]?.id
+    return { success: true, messageId }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Interactive Messages — Reply Buttons, List Messages, CTA URL
 // ---------------------------------------------------------------------------

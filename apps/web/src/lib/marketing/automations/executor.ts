@@ -94,12 +94,8 @@ async function runOneAutomation(
         result = await executeEmail(automation.payload, contact, opts.companyId)
         break
       case 'whatsapp':
-        result = { stub: true, message: 'WhatsApp não implementado no MVP' }
-        await prisma.marketingAutomationRun.update({
-          where: { id: run.id },
-          data: { status: 'skipped', result: result as any, finished_at: new Date() },
-        })
-        return
+        result = await executeWhatsapp(automation.payload, contact, opts.companyId)
+        break
       case 'webhook':
         result = await executeWebhook(automation.payload, contact, opts)
         break
@@ -169,6 +165,78 @@ async function executeEmail(
     throw new Error(body?.message || `HTTP ${r.status}`)
   }
   return { resend_id: body.id, to: contact.email }
+}
+
+/**
+ * Envia template WhatsApp via Meta Cloud API (SOMENTE oficial — Evolution
+ * descontinuada). Renderiza variáveis posicionais com {{nome}} / {{email}} /
+ * {{telefone}} antes de mandar como `components.body.parameters[]`.
+ *
+ * Payload esperado (whatsappPayloadSchema em /api/marketing/automations):
+ *   { templateName: string, templateLanguage: string='pt_BR', variables: string[] }
+ *
+ * Falha com status='failed' se:
+ * - Contato sem telefone cadastrado
+ * - Cloud API não configurada no tenant (whatsapp.cloud.*)
+ * - Template não aprovado / não existe na WABA
+ * - Janela 24h fechada e template não-utility
+ * - Rate limit Meta
+ */
+async function executeWhatsapp(
+  payload: any,
+  contact: ContactSnapshot,
+  companyId: string,
+): Promise<any> {
+  const phone = contact.phone
+  if (!phone || phone.trim().length < 8) {
+    throw new Error('Contato sem telefone cadastrado (campo phone vazio)')
+  }
+
+  const templateName = payload?.templateName as string | undefined
+  const templateLanguage = (payload?.templateLanguage as string) || 'pt_BR'
+  const variables: string[] = Array.isArray(payload?.variables) ? payload.variables : []
+
+  if (!templateName) {
+    throw new Error('payload.templateName ausente')
+  }
+
+  // Renderiza variáveis posicionais. Cada item do array vira parâmetro 1,2,3...
+  // do template. Suporta {{nome}}, {{email}}, {{telefone}} dentro de cada var.
+  const renderedVars = variables.map(v =>
+    String(v)
+      .replaceAll('{{nome}}', pickFirstName(contact.name))
+      .replaceAll('{{email}}', contact.email)
+      .replaceAll('{{telefone}}', contact.phone || '')
+  )
+
+  const components = renderedVars.length > 0
+    ? [{
+        type: 'body',
+        parameters: renderedVars.map(text => ({ type: 'text', text })),
+      }]
+    : undefined
+
+  const { sendWhatsAppTemplateMetaOnly } = await import('@/lib/whatsapp/cloud-api')
+  const res = await sendWhatsAppTemplateMetaOnly(
+    companyId,
+    phone,
+    templateName,
+    templateLanguage,
+    components,
+  )
+
+  if (!res.success) {
+    throw new Error(`WhatsApp Meta Cloud falhou: ${res.error || 'unknown'}`)
+  }
+
+  return {
+    sent: true,
+    channel: 'whatsapp_cloud',
+    template: templateName,
+    language: templateLanguage,
+    messageId: res.messageId,
+    variablesCount: renderedVars.length,
+  }
 }
 
 /** Dispara webhook com payload renderizado. Timeout 5s. */
