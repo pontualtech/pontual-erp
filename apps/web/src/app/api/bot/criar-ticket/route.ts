@@ -38,6 +38,53 @@ export async function POST(req: NextRequest) {
       if (!osExists) return botError('service_order_id nao pertence ao tenant', 403)
     }
 
+    // 2026-05-21: dedup — se ja existe ticket BOT aberto pra mesma OS, NAO cria
+    // outro. Append uma TicketMessage no existente e retorna ele. Antes do fix
+    // caso OS-60615 tinha 2 tickets BOT criados em 1min ("Cliente cobrando atraso"
+    // + "URGENTE — Cliente insiste em cobrar atraso") = poluicao na fila.
+    if (service_order_id) {
+      const existingBotTicket = await prisma.ticket.findFirst({
+        where: {
+          company_id: auth.companyId,
+          service_order_id,
+          source: 'BOT',
+          status: { not: 'FECHADO' },
+          deleted_at: null,
+        },
+        orderBy: { created_at: 'desc' },
+        select: { id: true, ticket_number: true, priority: true, subject: true },
+      })
+      if (existingBotTicket) {
+        // Eleva priority se a nova chamada e mais urgente (URGENT > HIGH > NORMAL)
+        const priorityRank: Record<string, number> = { NORMAL: 0, HIGH: 1, URGENT: 2 }
+        const newRank = priorityRank[priority || 'NORMAL'] ?? 0
+        const curRank = priorityRank[existingBotTicket.priority || 'NORMAL'] ?? 0
+        const updatedPriority = newRank > curRank ? priority : existingBotTicket.priority
+        await prisma.ticket.update({
+          where: { id: existingBotTicket.id },
+          data: { priority: updatedPriority, updated_at: new Date() },
+        })
+        await prisma.ticketMessage.create({
+          data: {
+            company_id: auth.companyId,
+            ticket_id: existingBotTicket.id,
+            message: `[BOT] ${String(subject).trim()}${description ? '\n\n' + String(description).trim() : ''}`,
+            sender_type: 'BOT',
+            sender_id: null,
+            sender_name: 'Bot',
+            is_internal: true,
+          },
+        })
+        return botSuccess({
+          ticket_id: existingBotTicket.id,
+          ticket_number: existingBotTicket.ticket_number,
+          priority: updatedPriority,
+          message: `Ticket #${existingBotTicket.ticket_number} reaproveitado (dedup)`,
+          deduplicated: true,
+        })
+      }
+    }
+
     // Auto-increment ticket_number per company (mesmo padrao do POST /api/tickets)
     const lastTicket = await prisma.ticket.findFirst({
       where: { company_id: auth.companyId },

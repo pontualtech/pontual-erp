@@ -142,10 +142,17 @@ export async function GET(
     const firstStepLabel = isPickup ? 'Coletar' : 'Recebido'
 
     // Mapeamento: status interno (lowercase) → nome que o cliente vê
+    // 2026-05-21: ordem importa — chaves mais especificas ANTES das genericas
+    // (`Object.keys().find(k => rawName.includes(k))` pega a 1a match). Antes
+    // do fix: 'orcar negociar' caia em 'orcar' (substring) → label "Em Analise"
+    // (confuso pro cliente que estava em negociacao). Agora separa em "Aguardando
+    // sua resposta" pra cliente saber que esta no campo dele.
     const PORTAL_LABEL: Record<string, string> = {
       'coletar': firstStepLabel,
-      'orcar': 'Em Analise',
+      'renegociar': 'Aguardando sua resposta',
+      'orcar negociar': 'Aguardando sua resposta',
       'aguardando aprov': 'Aguardando Aprovacao',
+      'orcar': 'Em Analise',
       'aprovado': 'Em Reparo',
       'em execu': 'Em Reparo',
       'aguardando pe': 'Em Reparo',
@@ -156,8 +163,10 @@ export async function GET(
     }
     const PORTAL_COLOR: Record<string, string> = {
       'coletar': '#7C3AED',
-      'orcar': '#F59E0B',
+      'renegociar': '#F59E0B',
+      'orcar negociar': '#F59E0B',
       'aguardando aprov': '#EF4444',
+      'orcar': '#F59E0B',
       'aprovado': '#3B82F6',
       'em execu': '#3B82F6',
       'aguardando pe': '#F59E0B',

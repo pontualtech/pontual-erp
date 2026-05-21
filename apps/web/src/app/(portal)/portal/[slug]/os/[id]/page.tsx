@@ -716,16 +716,9 @@ export default function PortalOSDetailPage() {
                 <p className="text-gray-500 dark:text-gray-400 text-sm">S/N: {os.serial_number}</p>
               )}
             </div>
-            <div>
-              <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 capitalize mb-2">Problema Relatado</h3>
-              <p className="text-gray-700 dark:text-gray-300">{os.reported_issue}</p>
-            </div>
-            {os.diagnosis && (
-              <div className="sm:col-span-2">
-                <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 capitalize mb-2">Diagnostico</h3>
-                <p className="text-gray-700 dark:text-gray-300">{os.diagnosis}</p>
-              </div>
-            )}
+            {/* 2026-05-21: Problema/Diagnostico removidos daqui — apareciam
+                duplicados (mesmo conteudo dentro do bloco "Laudo Tecnico" mais
+                abaixo). Mantemos so equipamento + previsao + garantia neste topo. */}
             {os.estimated_delivery && (
               <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-900 rounded-lg p-4">
                 <h3 className="text-sm font-semibold text-blue-700 dark:text-blue-400 capitalize mb-2">Previsao de Entrega</h3>
