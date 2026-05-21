@@ -5,6 +5,29 @@ import { isAllowedOrigin } from '@/lib/csrf-origin'
 import { canCustomerPayOS } from '@/lib/os-payment-rules'
 import { buildCouponToken } from '@/lib/coupon-token'
 
+// 2026-05-21: cliente pode aprovar OS mesmo em status 'Renegociar' ou
+// 'Orcar Negociar' DESDE QUE ja tenha passado por 'Aguardando Aprovacao'
+// no historico (ou seja, ja viu o orcamento alguma vez). Caso comum:
+// cliente recusou 1x, atendente recalculou ou nao mexeu, cliente decidiu
+// aprovar mesmo assim. Antes do patch: cliente tinha que pedir admin pra
+// mudar status pra 'Aguardando Aprovacao' de novo (fricção desnecessária).
+function canApproveBudget(currentStatusName: string, historyStatusNames: string[]): boolean {
+  const cur = (currentStatusName || '').toLowerCase()
+  // Caso original: cliente em "Aguardando Aprovacao" ou "...Recalculado"
+  if (cur.includes('aguardando') && cur.includes('aprov')) return true
+  // Caso novo: status de negociacao, mas orcamento ja foi enviado
+  const isNegotiationStatus = cur.includes('renegociar')
+    || cur.includes('orcar negociar')
+    || cur.includes('orçar negociar')
+  if (isNegotiationStatus) {
+    return historyStatusNames.some(n => {
+      const ln = (n || '').toLowerCase()
+      return ln.includes('aguardando') && ln.includes('aprov')
+    })
+  }
+  return false
+}
+
 // 2026-05-21: cliente recusar ou comentar OS via portal vira Ticket vinculado
 // pra atendente poder responder de dentro da tela da OS (OsTicketsPanel).
 // History.notes continua sendo gravado pro audit trail.
@@ -230,6 +253,12 @@ export async function GET(
         // INTERNO do status (currentStatusName), nao o label do portal.
         // Frontend apenas consome — single source of truth.
         can_pay: canCustomerPayOS(currentStatusName),
+        // 2026-05-21: regra "aprovar com 1 click mesmo em Renegociar/Orcar Negociar"
+        // se OS ja passou por Aguardando Aprovacao no historico.
+        can_approve: canApproveBudget(
+          currentStatusName,
+          os.service_order_history.map(h => h.module_statuses_service_order_history_to_status_idTomodule_statuses?.name || '')
+        ),
         items: os.service_order_items,
         history: os.service_order_history.map(h => {
           const rawStatus = h.module_statuses_service_order_history_to_status_idTomodule_statuses
@@ -289,6 +318,11 @@ export async function POST(
       include: {
         module_statuses: true,
         customers: { select: { legal_name: true } },
+        service_order_history: {
+          select: {
+            module_statuses_service_order_history_to_status_idTomodule_statuses: { select: { name: true } },
+          },
+        },
       },
     })
 
@@ -297,11 +331,15 @@ export async function POST(
     }
 
     if (action === 'approve') {
-      // Verificar se status atual permite aprovacao
-      const currentStatus = os.module_statuses.name.toLowerCase()
-      if (!currentStatus.includes('aguardando') || !currentStatus.includes('aprov')) {
+      // 2026-05-21: gate atualizado — aceita 'Aguardando Aprovacao' OU status
+      // de negociacao (Renegociar/Orcar Negociar) se OS ja passou por
+      // Aguardando Aprovacao antes (cliente ja viu o orcamento).
+      const historyNames = os.service_order_history.map(h =>
+        h.module_statuses_service_order_history_to_status_idTomodule_statuses?.name || ''
+      )
+      if (!canApproveBudget(os.module_statuses.name, historyNames)) {
         return NextResponse.json(
-          { error: 'Esta OS nao esta aguardando aprovacao' },
+          { error: 'Esta OS nao esta em fase de aprovacao' },
           { status: 400 }
         )
       }

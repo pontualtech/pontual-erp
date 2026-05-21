@@ -232,8 +232,12 @@ export default function PortalOSDetailPage() {
       .finally(() => router.push(`/portal/${slug}/login${docParam ? `?doc=${docParam}` : ''}`))
   }
 
-  const isAguardandoAprovacao = os?.status.name.toLowerCase().includes('aguardando') &&
-    os?.status.name.toLowerCase().includes('aprov')
+  // 2026-05-21: usa can_approve calculado no backend. True em "Aguardando
+  // Aprovacao" (caso original) E em Renegociar/Orcar Negociar se OS ja
+  // passou por aprovacao no historico (cliente ja viu o orcamento).
+  const isAguardandoAprovacao = (os as any)?.can_approve === true
+    || (os?.status.name.toLowerCase().includes('aguardando') &&
+      os?.status.name.toLowerCase().includes('aprov'))
 
   const isRecalculado = os?.is_recalculado || os?.status.name.toLowerCase().includes('recalculad') || false
 
