@@ -126,7 +126,9 @@ export async function POST(req: NextRequest, { params }: Params) {
       data: { updated_at: new Date() },
     })
 
-    // Dispara WhatsApp pra cliente — mesmo padrao do /api/tickets/[id]/messages
+    // Dispara WhatsApp pra cliente — mesmo padrao do /api/tickets/[id]/messages.
+    // 2026-05-21: encurta magic-link via /lib/short-link (mesmo padrao bot Marta).
+    // URL fica `portal.X.com.br/s/aBc123` em vez de string de 350+ chars.
     if (os.customers && os.companies) {
       const customerPhone = (os.customers.mobile || os.customers.phone || '').replace(/\D/g, '')
       if (customerPhone) {
@@ -137,8 +139,15 @@ export async function POST(req: NextRequest, { params }: Params) {
             slug: os.companies.slug,
             osId: os.id,
           })
+          let displayUrl = url
+          try {
+            const { shortenUrl } = await import('@/lib/short-link')
+            displayUrl = await shortenUrl(url, user.companyId, os.customers.id)
+          } catch (e) {
+            console.warn('[os-chat] shorten falhou, usando URL completa:', e instanceof Error ? e.message : e)
+          }
           const osLabel = `OS #${String(os.os_number).padStart(4, '0')}`
-          const waText = `Voce tem uma nova mensagem sobre ${osLabel}:\n\n"${text.slice(0, 300)}${text.length > 300 ? '...' : ''}"\n\nVer no portal:\n${url}`
+          const waText = `Voce tem uma nova mensagem sobre ${osLabel}:\n\n"${text.slice(0, 300)}${text.length > 300 ? '...' : ''}"\n\nVer no portal:\n${displayUrl}`
           sendWhatsAppCloud(user.companyId, customerPhone, waText)
             .then(r => { if (!r.success) console.warn('[os-chat] WA falhou:', r.error) })
             .catch(e => console.warn('[os-chat] WA exception:', e instanceof Error ? e.message : e))
