@@ -217,10 +217,45 @@ export async function POST(
     targetStatus = await findStatusByName(auth.companyId, 'os', 'Cancelada', 'Cancelado')
   }
 
-  // Atualiza stop
-  const photoUrls: string[] = [`data:image/png;base64,${body.signature_png_base64!}`]
-  if (body.payment?.receipt_photo_base64)
-    photoUrls.push(`data:image/jpeg;base64,${body.payment.receipt_photo_base64}`)
+  // 2026-05-21: upload S3 ao inves de gravar data:base64 inline (inflava DB).
+  // Fallback data: se S3 falhar — motorista no campo offline-first nao pode
+  // ser bloqueado. /api/os/[id] normaliza s3:// pra signed URL HTTPS no GET.
+  const { uploadPhotoBuffer: upS3, isS3Configured: cfgS3 } = await import('@/lib/storage/photos')
+  let signatureUrl: string
+  let receiptUrl: string | null = null
+  const photoUrls: string[] = []
+  try {
+    if (!cfgS3()) throw new Error('S3 nao configurado')
+    const sigRes = await upS3({
+      companyId: auth.companyId,
+      serviceOrderId: stop.os_id || stop.id,
+      fileName: `entrega-sig-${Date.now()}.png`,
+      contentType: 'image/png',
+      buffer: Buffer.from(body.signature_png_base64!, 'base64'),
+    })
+    signatureUrl = sigRes.dbUrl
+    photoUrls.push(signatureUrl)
+    if (body.payment?.receipt_photo_base64) {
+      const recRes = await upS3({
+        companyId: auth.companyId,
+        serviceOrderId: stop.os_id || stop.id,
+        fileName: `entrega-recibo-${Date.now()}.jpg`,
+        contentType: 'image/jpeg',
+        buffer: Buffer.from(body.payment.receipt_photo_base64, 'base64'),
+      })
+      receiptUrl = recRes.dbUrl
+      photoUrls.push(receiptUrl)
+    }
+  } catch (e) {
+    console.warn(`[driver/entrega] S3 upload falhou stop=${params.id}, usando data:base64 fallback:`, e instanceof Error ? e.message : e)
+    signatureUrl = `data:image/png;base64,${body.signature_png_base64!}`
+    photoUrls.length = 0
+    photoUrls.push(signatureUrl)
+    if (body.payment?.receipt_photo_base64) {
+      receiptUrl = `data:image/jpeg;base64,${body.payment.receipt_photo_base64}`
+      photoUrls.push(receiptUrl)
+    }
+  }
 
   // Compare-and-set: so consegue atualizar se completed_at ainda for
   // NULL. Se 2 requests concorrentes tentarem finalizar a mesma entrega,
@@ -231,15 +266,13 @@ export async function POST(
       data: {
         status: isApproved ? 'COMPLETED' : 'FAILED',
         completed_at: new Date(),
-        signature_url: `data:image/png;base64,${body.signature_png_base64!}`,
+        signature_url: signatureUrl,
         signer_name: body.signer_name!,
         event_id: body.event_id!,
         failure_reason: isRefused ? body.refusal_reason!.trim() : null,
         payment_method: isApproved ? body.payment!.method : null,
         payment_amount_cents: isApproved ? body.payment!.amount_cents : null,
-        payment_receipt_url: body.payment?.receipt_photo_base64
-          ? `data:image/jpeg;base64,${body.payment.receipt_photo_base64}`
-          : null,
+        payment_receipt_url: receiptUrl,
         completed_lat: body.location?.lat ?? null,
         completed_lng: body.location?.lng ?? null,
         photo_urls: photoUrls as any,

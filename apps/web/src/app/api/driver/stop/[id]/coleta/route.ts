@@ -186,17 +186,49 @@ export async function POST(
     return NextResponse.json({ error: 'Coleta atribuida a outro motorista' }, { status: 403 })
   }
 
-  // Update stop with collected data
-  const photoUrls = [
-    `data:image/png;base64,${body.signature_png_base64!}`,
-    ...(body.photos_base64 || []).map(b => `data:image/jpeg;base64,${b}`),
-  ]
+  // 2026-05-21: upload S3 ao inves de gravar data:base64 inline (inflava o
+  // DB ~250KB/stop). Stops antigas com data: continuam OK no admin — frontend
+  // aceita ambos formatos. /api/os/[id] normaliza s3:// pra signed URL HTTPS
+  // na response. uploadPhotoBuffer pula sub-otimizado-se S3 falhar, mantemos
+  // fallback data: pra nao quebrar a entrega no campo (motorista offline-first).
+  const { uploadPhotoBuffer, isS3Configured } = await import('@/lib/storage/photos')
+  let signatureUrl: string
+  const photoUrls: string[] = []
+  try {
+    if (!isS3Configured()) throw new Error('S3 nao configurado')
+    const sigRes = await uploadPhotoBuffer({
+      companyId: auth.companyId,
+      serviceOrderId: stop.os_id || stop.id,
+      fileName: `coleta-sig-${Date.now()}.png`,
+      contentType: 'image/png',
+      buffer: Buffer.from(body.signature_png_base64!, 'base64'),
+    })
+    signatureUrl = sigRes.dbUrl
+    photoUrls.push(signatureUrl)
+    for (const b64 of (body.photos_base64 || [])) {
+      const res = await uploadPhotoBuffer({
+        companyId: auth.companyId,
+        serviceOrderId: stop.os_id || stop.id,
+        fileName: `coleta-${Date.now()}.jpg`,
+        contentType: 'image/jpeg',
+        buffer: Buffer.from(b64, 'base64'),
+      })
+      photoUrls.push(res.dbUrl)
+    }
+  } catch (e) {
+    console.warn(`[driver/coleta] S3 upload falhou stop=${params.id}, usando data:base64 fallback:`, e instanceof Error ? e.message : e)
+    signatureUrl = `data:image/png;base64,${body.signature_png_base64!}`
+    photoUrls.length = 0
+    photoUrls.push(signatureUrl)
+    for (const b of (body.photos_base64 || [])) photoUrls.push(`data:image/jpeg;base64,${b}`)
+  }
+
   await prisma.logisticsStop.update({
     where: { id: params.id },
     data: {
       status: 'COMPLETED',
       completed_at: new Date(),
-      signature_url: `data:image/png;base64,${body.signature_png_base64!}`,
+      signature_url: signatureUrl,
       signer_name: body.signer_name!,
       serial_number: body.serial_number!.trim().toUpperCase(),
       serial_source: body.serial_source!,

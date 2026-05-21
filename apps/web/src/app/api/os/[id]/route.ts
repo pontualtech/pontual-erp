@@ -139,7 +139,27 @@ export async function GET(req: NextRequest, { params }: Params) {
         : `/api/os/${os.id}/photos/by-id/${p.id}`,
     }))
 
-    return success({ ...os, service_order_photos: normalizedPhotos, service_order_history: enrichedHistory, accounts_receivable: enrichedReceivables, _recentOsCount: recentOsCount, logistics_stops: logisticsStops })
+    // 2026-05-21: stops do motorista agora gravam s3:// no signature_url e
+    // photo_urls/payment_receipt_url. Transforma em signed URLs HTTPS aqui
+    // pra o <img> do admin funcionar sem mudanca no frontend. Stops antigas
+    // com `data:image/...base64,...` passam batido (frontend renderiza direto).
+    const { isS3Url, signedUrlForS3 } = await import('@/lib/storage/photos')
+    const resolveStopUrl = async (u: string | null | undefined): Promise<string | null> => {
+      if (!u) return null
+      if (!isS3Url(u)) return u
+      const signed = await signedUrlForS3(u, 3600)
+      return signed || u
+    }
+    const normalizedStops = await Promise.all(logisticsStops.map(async s => ({
+      ...s,
+      signature_url: await resolveStopUrl(s.signature_url),
+      payment_receipt_url: await resolveStopUrl((s as any).payment_receipt_url),
+      photo_urls: Array.isArray(s.photo_urls)
+        ? await Promise.all((s.photo_urls as string[]).map(u => resolveStopUrl(u)))
+        : s.photo_urls,
+    })))
+
+    return success({ ...os, service_order_photos: normalizedPhotos, service_order_history: enrichedHistory, accounts_receivable: enrichedReceivables, _recentOsCount: recentOsCount, logistics_stops: normalizedStops })
   } catch (err) {
     return handleError(err)
   }
