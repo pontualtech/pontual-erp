@@ -271,6 +271,27 @@ function cwHeaders(cfg: BotCompanyConfig) {
   }
 }
 
+// 2026-05-21: deleta msg do Chatwoot — usado quando capturamos [ref:...] da
+// tag GTM CWT e queremos esconder o token raw do atendente.
+async function cwDeleteMessage(cfg: BotCompanyConfig, conversationId: number, messageId: number | string): Promise<boolean> {
+  try {
+    const res = await fetch(`${cwBase(cfg)}/conversations/${conversationId}/messages/${messageId}`, {
+      method: 'DELETE',
+      headers: cwHeaders(cfg),
+      signal: AbortSignal.timeout(10000),
+    })
+    if (!res.ok) {
+      const body = await res.text()
+      console.warn(`[Bot/CWT] Delete msg ${messageId} failed ${res.status}: ${body.slice(0, 200)}`)
+      return false
+    }
+    return true
+  } catch (err) {
+    console.warn(`[Bot/CWT] Delete msg ${messageId} error:`, err instanceof Error ? err.message : err)
+    return false
+  }
+}
+
 async function cwSendMessage(cfg: BotCompanyConfig, conversationId: number, content: string, isPrivate = false): Promise<boolean> {
   try {
     const res = await fetch(`${cwBase(cfg)}/conversations/${conversationId}/messages`, {
@@ -1221,6 +1242,27 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
             },
           })
           console.log(`[Bot/CWT] Attribution captured for conv ${conversationId}: ${JSON.stringify(attribution)}`)
+
+          // 2026-05-21: posta nota privada legivel + tenta deletar msg original
+          // pra atendente nao ver o [ref:...] raw. Se delete falhar (chatwoot
+          // pode restringir delete de msg incoming), nota privada ja da contexto.
+          const srcLabel = (() => {
+            const src = attribution.src || attribution.utm_source || ''
+            const m: Record<string, string> = { google: 'Google Ads', bing: 'Microsoft Ads', meta: 'Meta Ads', facebook: 'Meta Ads', instagram: 'Instagram', direct: 'Direto' }
+            return m[src.toLowerCase()] || (src ? src.charAt(0).toUpperCase() + src.slice(1) : 'Origem desconhecida')
+          })()
+          const cleanedContent = content.replace(/\s*\[ref:[^\]]+\]\s*/gi, '').trim()
+          const noteLines = [`📊 *Origem: ${srcLabel}*`]
+          if (attribution.kw || attribution.utm_term) noteLines.push(`🔎 Palavra-chave: ${attribution.kw || attribution.utm_term}`)
+          if (attribution.utm_campaign) noteLines.push(`📣 Campanha: ${attribution.utm_campaign}`)
+          if (attribution.gclid) noteLines.push(`gclid: ${attribution.gclid.slice(0, 20)}...`)
+          if (cleanedContent) noteLines.push('', `💬 Mensagem do cliente:`, `"${cleanedContent}"`)
+          await cwSendMessage(cfg, conversationId, noteLines.join('\n'), true)
+
+          if (messageId) {
+            const deleted = await cwDeleteMessage(cfg, conversationId, messageId)
+            if (!deleted) console.warn(`[Bot/CWT] msg ${messageId} nao deletada — atendente vai ver [ref:...] raw`)
+          }
         }
       } catch (e: any) {
         console.warn(`[Bot/CWT] Failed to persist attribution: ${e?.message}`)
