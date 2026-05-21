@@ -3,13 +3,15 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  LayoutDashboard, Building2, ArrowLeft, Shield, Flag,
+  LayoutDashboard, Building2, ArrowLeft, Shield, Flag, Activity, AlertCircle,
 } from 'lucide-react'
 
 const navItems = [
   { label: 'Dashboard', href: '/admin', icon: LayoutDashboard },
   { label: 'Empresas', href: '/admin/empresas', icon: Building2 },
   { label: 'Feature Flags', href: '/admin/feature-flags', icon: Flag },
+  { label: 'Health', href: '/admin/health', icon: Activity },
+  { label: 'Erros', href: '/admin/errors', icon: AlertCircle },
 ]
 
 export default function AdminInnerLayout({
