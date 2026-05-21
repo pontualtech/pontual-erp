@@ -136,7 +136,8 @@ export async function GET(request: NextRequest) {
           const primeiroNome = (os.customers.legal_name || 'Cliente').split(' ')[0]
           const equipamentoCompleto = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ') || 'Equipamento'
 
-          // Magic link pro portal (auto-login)
+          // Magic link pro portal (auto-login) + encurtado via /lib/short-link
+          // (URL crua tem 350+ chars). Mesmo padrao do chat OS e tickets msgs.
           let linkPortal = `https://portal.pontualtech.com.br`
           try {
             const ml = buildMagicLink({
@@ -146,6 +147,12 @@ export async function GET(request: NextRequest) {
               osId: os.id,
             })
             linkPortal = ml.url
+            try {
+              const { shortenUrl } = await import('@/lib/short-link')
+              linkPortal = await shortenUrl(ml.url, company.id, os.customers.id)
+            } catch (e: any) {
+              console.warn(`[cron/atraso] shorten falhou OS-${os.os_number}, usando URL completa:`, e?.message)
+            }
           } catch { /* fallback ja setado */ }
 
           const linkSuporte = `https://wa.me/551126263841`
