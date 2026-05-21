@@ -461,8 +461,9 @@ async function cwResolve(cfg: BotCompanyConfig, conversationId: number) {
  * Clean and send bot response to client.
  *
  * Robust output filter — no matter what the AI returns:
- * 1. Removes duplicate/similar paragraphs (>60% word overlap)
- * 2. Hard cap at 500 chars (truncates cleanly at sentence boundary)
+ * 1. Removes duplicate/similar paragraphs (>35% word overlap)
+ * 2. Cap 6 paragrafos (2026-05-21: era 3, cortava listas) + 1500 chars hard cap
+ *    com truncate na ultima frase completa.
  * 3. Always sends as 1 single message (no splitting)
  * 4. Strips excessive emoji sequences
  */
@@ -488,13 +489,31 @@ function cleanBotResponse(text: string): string {
   }
   paragraphs = unique
 
-  // Step 3: Hard cap at 3 paragraphs — forces conciseness
-  if (paragraphs.length > 3) {
-    paragraphs = paragraphs.slice(0, 3)
+  // Step 3: Cap at 6 paragraphs (2026-05-21 bumped from 3) — antes cortava listas
+  // numeradas no meio. Caso Ana p/ Joao Fernando: "tem 3 jeitos faceis:" + 3
+  // itens + fecho = 5 paragrafos, slice(0,3) deixava so o teaser sem os itens.
+  if (paragraphs.length > 6) {
+    console.warn('[bot/cleanBotResponse] truncado: ' + paragraphs.length + ' paragrafos -> 6')
+    paragraphs = paragraphs.slice(0, 6)
   }
 
   // Step 4: Join
   let result = paragraphs.join('\n\n')
+
+  // Step 4b: Hard cap 1500 chars — trunca na ULTIMA frase completa antes do
+  // limite (evita cortar frase no meio). Mensagem WhatsApp ate 4096 chars,
+  // mas 1500 ja e bem mais que o usual e mantem UX legivel.
+  if (result.length > 1500) {
+    console.warn('[bot/cleanBotResponse] truncado: ' + result.length + ' chars -> 1500')
+    const truncated = result.slice(0, 1500)
+    const lastSentence = Math.max(
+      truncated.lastIndexOf('. '),
+      truncated.lastIndexOf('! '),
+      truncated.lastIndexOf('? '),
+      truncated.lastIndexOf('\n'),
+    )
+    result = lastSentence > 800 ? truncated.slice(0, lastSentence + 1) : truncated
+  }
 
   // Step 5: Strip excessive emojis (max 4 per message)
   let emojiCount = 0
