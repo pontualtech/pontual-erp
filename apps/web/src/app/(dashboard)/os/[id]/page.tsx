@@ -7,7 +7,7 @@ import { cn, formatDocument } from '@/lib/utils'
 import { toTitleCase as tc } from '@/lib/format-text'
 import { toast } from 'sonner'
 import { useAuth } from '@/lib/use-auth'
-import { ArrowLeft, Edit, Camera, History, Info, Package, Plus, Trash2, Loader2, Search, Wrench, CreditCard, X, Printer, Mail, Send, Copy, FilePlus, User, Monitor, FileText, Clock, ChevronDown, ChevronUp, AlertTriangle, Save, Check, Layers, DollarSign, ExternalLink, Receipt, Truck, MessageCircle } from 'lucide-react'
+import { ArrowLeft, Edit, Camera, History, Info, Package, Plus, Trash2, Loader2, Search, Wrench, CreditCard, X, Printer, Mail, Send, Copy, FilePlus, User, Monitor, FileText, Clock, ChevronDown, ChevronUp, AlertTriangle, Save, Check, Layers, DollarSign, ExternalLink, Receipt, Truck, MessageCircle, MoreHorizontal, ShieldCheck } from 'lucide-react'
 import { MoneyInput } from '@/app/(dashboard)/components/money-input'
 import OsChargeButton from './_components/os-charge-button'
 import OsChatPanel from '@/components/os/OsChatPanel'
@@ -192,6 +192,17 @@ export default function OSDetailPage() {
   const [showAberturaModal, setShowAberturaModal] = useState(false)
   const [aberturaChannels, setAberturaChannels] = useState<Set<string>>(new Set(['email', 'whatsapp']))
   const [sendingAbertura, setSendingAbertura] = useState(false)
+  // 2026-05-21 UI cleanup: dropdown "Mais acoes" pra reduzir poluicao visual
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false)
+  const moreMenuRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!moreMenuOpen) return
+    function onClickOutside(e: MouseEvent) {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) setMoreMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onClickOutside)
+    return () => document.removeEventListener('mousedown', onClickOutside)
+  }, [moreMenuOpen])
   // Magic link modal — generate one-click access URL for the customer
   const [showMagicLinkModal, setShowMagicLinkModal] = useState(false)
   const [magicLinkUrl, setMagicLinkUrl] = useState<string | null>(null)
@@ -1157,7 +1168,7 @@ export default function OSDetailPage() {
               </span>
             )
           })()}
-          {/* Notification mode toggle */}
+          {/* 2026-05-21 UI cleanup: toggle compacto, icon-only com tooltip explicativo */}
           <button
             type="button"
             onClick={() => {
@@ -1167,19 +1178,19 @@ export default function OSDetailPage() {
               toast.info(next ? 'Notificações automáticas ATIVADAS' : 'Notificações manuais — você decide antes de enviar')
             }}
             className={cn(
-              'flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium border transition-colors',
+              'flex items-center justify-center w-7 h-7 rounded-full border transition-colors',
               notifyAuto
                 ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
-                : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                : 'bg-gray-50 text-gray-400 border-gray-200 hover:bg-gray-100'
             )}
-            title={notifyAuto ? 'Clique para mudar para modo manual (pergunta antes de notificar)' : 'Clique para ativar notificacoes automaticas'}
+            title={notifyAuto ? 'Notificações automáticas ATIVADAS — clique para modo manual' : 'Notificações MANUAIS — clique para ativar automáticas'}
+            aria-label={notifyAuto ? 'Notificações automáticas ativadas' : 'Notificações manuais'}
           >
             {notifyAuto ? (
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
             ) : (
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" /></svg>
             )}
-            {notifyAuto ? 'Auto' : 'Manual'}
           </button>
           {/* Overdue badge */}
           {(() => {
@@ -1194,56 +1205,78 @@ export default function OSDetailPage() {
               </span>
             )
           })()}
-          {/* Canal de Entrada */}
-          {canEditType ? (
-            <select value={editCanal} title="Canal de entrada"
-              onChange={e => handleSaveCanal(e.target.value)}
-              className="rounded-full px-3 py-1 text-xs font-medium border bg-indigo-50 text-indigo-700">
-              <option value="">Canal...</option>
-              {CANAL_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-          ) : editCanal ? (
-            <span className="rounded-full px-2.5 py-0.5 text-xs font-medium bg-indigo-100 text-indigo-700 border border-indigo-200">{editCanal}</span>
-          ) : null}
-          {canEditType ? (
-            <select value={os.os_type || 'BALCAO'} title="Tipo de OS"
-              onChange={async e => {
-                await fetch(`/api/os/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ os_type: e.target.value }) })
-                loadOS()
-              }}
-              className="rounded-full px-3 py-1 text-xs font-medium border bg-gray-100 text-gray-700">
-              {tiposOS.length > 0 ? tiposOS.map(t => (
-                <option key={t.key} value={t.key}>{t.label}</option>
-              )) : (
-                <>
-                  <option value="BALCAO">Balcao</option>
-                  <option value="COLETA">Coleta</option>
-                </>
-              )}
-            </select>
-          ) : (
-            <span className="rounded-full px-3 py-1 text-xs font-medium bg-gray-100 text-gray-700">{os.os_type || 'BALCAO'}</span>
-          )}
-          {canEditType ? (
-            <select value={(os as any).os_location || ''} title="Local da OS"
-              onChange={async e => {
-                await fetch(`/api/os/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ os_location: e.target.value }) })
-                loadOS()
-              }}
-              className="rounded-full px-3 py-1 text-xs font-medium border bg-blue-50 text-blue-700">
-              <option value="">Sem local</option>
-              {locaisOS.length > 0 ? locaisOS.map(l => (
-                <option key={l.key} value={l.key}>{l.label}</option>
-              )) : (
-                <>
-                  <option value="LOJA">Loja</option>
-                  <option value="EXTERNO">Externo</option>
-                </>
-              )}
-            </select>
-          ) : (os as any).os_location ? (
-            <span className="rounded-full px-3 py-1 text-xs font-medium bg-blue-50 text-blue-700">{(os as any).os_location}</span>
-          ) : null}
+          {/* 2026-05-21 UI cleanup: Canal/Tipo/Local agrupados em 1 chip "Origem".
+              Clique abre popover com os 3 selects. Mais limpo quando read-only,
+              mantém edição rápida quando expandido. */}
+          {(() => {
+            const tipoLabel = (tiposOS.find(t => t.key === (os.os_type || 'BALCAO'))?.label) || os.os_type || 'Balcão'
+            const localLabel = (os as any).os_location ? ((locaisOS.find(l => l.key === (os as any).os_location)?.label) || (os as any).os_location) : null
+            const parts = [editCanal, tipoLabel, localLabel].filter(Boolean)
+            const summary = parts.length > 0 ? parts.join(' • ') : 'Origem...'
+            if (!canEditType) {
+              return (
+                <span className="rounded-full px-3 py-1 text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200" title={`Canal: ${editCanal || '—'} | Tipo: ${tipoLabel} | Local: ${localLabel || '—'}`}>
+                  {summary}
+                </span>
+              )
+            }
+            return (
+              <details className="relative">
+                <summary className="list-none cursor-pointer rounded-full px-3 py-1 text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200 transition-colors flex items-center gap-1.5">
+                  {summary}
+                  <ChevronDown className="h-3 w-3 opacity-60" />
+                </summary>
+                <div className="absolute left-0 top-full mt-1 z-30 w-64 rounded-lg border border-gray-200 bg-white shadow-lg p-3 space-y-2">
+                  <div>
+                    <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-0.5">Canal de entrada</label>
+                    <select value={editCanal} title="Canal de entrada"
+                      onChange={e => handleSaveCanal(e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs">
+                      <option value="">Canal...</option>
+                      {CANAL_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-0.5">Tipo de OS</label>
+                    <select value={os.os_type || 'BALCAO'} title="Tipo de OS"
+                      onChange={async e => {
+                        await fetch(`/api/os/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ os_type: e.target.value }) })
+                        loadOS()
+                      }}
+                      className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs">
+                      {tiposOS.length > 0 ? tiposOS.map(t => (
+                        <option key={t.key} value={t.key}>{t.label}</option>
+                      )) : (
+                        <>
+                          <option value="BALCAO">Balcao</option>
+                          <option value="COLETA">Coleta</option>
+                        </>
+                      )}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-0.5">Local da OS</label>
+                    <select value={(os as any).os_location || ''} title="Local da OS"
+                      onChange={async e => {
+                        await fetch(`/api/os/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ os_location: e.target.value }) })
+                        loadOS()
+                      }}
+                      className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs">
+                      <option value="">Sem local</option>
+                      {locaisOS.length > 0 ? locaisOS.map(l => (
+                        <option key={l.key} value={l.key}>{l.label}</option>
+                      )) : (
+                        <>
+                          <option value="LOJA">Loja</option>
+                          <option value="EXTERNO">Externo</option>
+                        </>
+                      )}
+                    </select>
+                  </div>
+                </div>
+              </details>
+            )
+          })()}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {(currentStatus?.name?.toLowerCase().includes('oletar') || /^orcar$/i.test(currentStatus?.name || '')) && (
@@ -1270,19 +1303,7 @@ export default function OSDetailPage() {
               <Check className="h-4 w-4" /> Notificar Cliente — Pronto
             </button>
           )}
-          {canEditOs && (
-            <button type="button" onClick={openQuoteModal}
-              className="flex items-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors">
-              <Send className="h-4 w-4" /> Enviar Orçamento
-            </button>
-          )}
-          {canEditOs && (os as any).customer_id && (
-            <button type="button" onClick={() => setShowMagicLinkModal(true)}
-              className="flex items-center gap-1.5 rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-100 transition-colors"
-              title="Gera link de acesso direto ao portal (sem senha) e envia pro cliente">
-              <ExternalLink className="h-4 w-4" /> Enviar Acesso
-            </button>
-          )}
+          {/* Cobrar fica visivel inline — fluxo financeiro frequente */}
           {canCharge && (
             <OsChargeButton
               osId={os.id}
@@ -1290,59 +1311,105 @@ export default function OSDetailPage() {
               totalCost={os.total_cost || 0}
             />
           )}
-          {canCreateFiscal && (
-            <button type="button" onClick={openNfseModal}
-              className="flex items-center gap-1.5 rounded-lg border border-purple-300 bg-purple-50 px-3 py-1.5 text-sm font-medium text-purple-700 hover:bg-purple-100 transition-colors">
-              <Receipt className="h-4 w-4" /> Emitir NFS-e
+          {/* 2026-05-21: dropdown "Mais acoes" pra reduzir poluicao visual.
+              Notificar* (acima) ja eh contextual ao status — mantem visivel.
+              Cobrar (acima) eh financeiro frequente — mantem visivel. */}
+          <div ref={moreMenuRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setMoreMenuOpen(v => !v)}
+              className="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+              title="Mais ações"
+              aria-haspopup="true"
+              aria-expanded={moreMenuOpen ? 'true' : 'false'}
+            >
+              <MoreHorizontal className="h-4 w-4" /> Mais ações
+              <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', moreMenuOpen && 'rotate-180')} />
             </button>
-          )}
-          <button type="button" onClick={openPrintModal}
-            className="flex items-center gap-1.5 rounded-lg border border-green-300 bg-green-50 px-3 py-1.5 text-sm font-medium text-green-700 hover:bg-green-100 transition-colors">
-            <Printer className="h-4 w-4" /> Imprimir
+            {moreMenuOpen && (
+              <div className="absolute right-0 top-full mt-1 w-60 rounded-lg border border-gray-200 bg-white shadow-lg z-30 py-1 text-sm">
+                {canEditOs && (
+                  <button type="button" onClick={() => { setMoreMenuOpen(false); openQuoteModal() }}
+                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-blue-50 text-left text-blue-700 cursor-pointer transition-colors">
+                    <Send className="h-4 w-4" /> Enviar Orçamento
+                  </button>
+                )}
+                {canEditOs && (os as any).customer_id && (
+                  <button type="button" onClick={() => { setMoreMenuOpen(false); setShowMagicLinkModal(true) }}
+                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-indigo-50 text-left text-indigo-700 cursor-pointer transition-colors">
+                    <ExternalLink className="h-4 w-4" /> Enviar Acesso ao Portal
+                  </button>
+                )}
+                {canCreateFiscal && (
+                  <button type="button" onClick={() => { setMoreMenuOpen(false); openNfseModal() }}
+                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-purple-50 text-left text-purple-700 cursor-pointer transition-colors">
+                    <Receipt className="h-4 w-4" /> Emitir NFS-e
+                  </button>
+                )}
+                <button type="button" onClick={() => { setMoreMenuOpen(false); openPrintModal() }}
+                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-green-50 text-left text-green-700 cursor-pointer transition-colors">
+                  <Printer className="h-4 w-4" /> Imprimir
+                </button>
+                <div className="my-1 border-t border-gray-100" />
+                {canCreateOs && (
+                  <Link href={`/os/novo?cliente=${os.customer_id || ''}`}
+                    onClick={() => setMoreMenuOpen(false)}
+                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left text-gray-700 cursor-pointer transition-colors">
+                    <FilePlus className="h-4 w-4" /> Nova OS para este cliente
+                  </Link>
+                )}
+                {canCreateOs && (
+                  <Link href={`/os/novo?clonar=${id}`}
+                    onClick={() => setMoreMenuOpen(false)}
+                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left text-gray-700 cursor-pointer transition-colors">
+                    <Copy className="h-4 w-4" /> Clonar esta OS
+                  </Link>
+                )}
+                {canEditOs && (
+                  <Link href={`/os/${id}/editar`}
+                    onClick={() => setMoreMenuOpen(false)}
+                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left text-gray-700 cursor-pointer transition-colors">
+                    <Edit className="h-4 w-4" /> Editar
+                  </Link>
+                )}
+                {canCreateOs && currentStatus?.is_final && currentStatus.name !== 'Cancelada' && !os.is_warranty && (
+                  <>
+                    <div className="my-1 border-t border-gray-100" />
+                    <button type="button" onClick={async () => {
+                      setMoreMenuOpen(false)
+                      const issue = prompt('Descreva o problema (garantia):')
+                      if (!issue) return
+                      try {
+                        const res = await fetch(`/api/os/${id}/garantia`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ reported_issue: issue }),
+                        })
+                        const data = await res.json()
+                        if (!res.ok) throw new Error(data.error || 'Erro')
+                        toast.success(`OS de garantia #${data.data.os_number} criada!`)
+                        router.push(`/os/${data.data.id}`)
+                      } catch (err: any) { toast.error(err.message) }
+                    }}
+                      className="w-full flex items-center gap-2 px-3 py-2 hover:bg-red-50 text-left text-red-700 cursor-pointer transition-colors">
+                      <ShieldCheck className="h-4 w-4" /> Reabrir em Garantia
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+          {/* 2026-05-21: Salvar OS promovido pro action bar topo (era duplicado no rodape).
+              Voltar fica como link discreto no fim — header ja tinha icone-text identico. */}
+          <button type="button" onClick={handleSaveAll} disabled={savingAll}
+            className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm"
+            title="Salvar alteracoes da OS">
+            {savingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            {savingAll ? 'Salvando...' : 'Salvar OS'}
           </button>
-          {canCreateOs && (
-            <Link href={`/os/novo?cliente=${os.customer_id || ''}`}
-              className="flex items-center gap-1.5 rounded-lg border border-green-300 bg-green-50 px-3 py-1.5 text-sm font-medium text-green-700 hover:bg-green-100 transition-colors"
-              title="Criar nova OS para o mesmo cliente">
-              <FilePlus className="h-4 w-4" /> Nova OS
-            </Link>
-          )}
-          {canCreateOs && (
-            <Link href={`/os/novo?clonar=${id}`}
-              className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-100 transition-colors"
-              title="Clonar esta OS com todos os dados">
-              <Copy className="h-4 w-4" /> Clonar
-            </Link>
-          )}
-          {canCreateOs && currentStatus?.is_final && currentStatus.name !== 'Cancelada' && !os.is_warranty && (
-            <button type="button" onClick={async () => {
-              const issue = prompt('Descreva o problema (garantia):')
-              if (!issue) return
-              try {
-                const res = await fetch(`/api/os/${id}/garantia`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ reported_issue: issue }),
-                })
-                const data = await res.json()
-                if (!res.ok) throw new Error(data.error || 'Erro')
-                toast.success(`OS de garantia #${data.data.os_number} criada!`)
-                router.push(`/os/${data.data.id}`)
-              } catch (err: any) { toast.error(err.message) }
-            }}
-              className="flex items-center gap-1.5 rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100 transition-colors"
-              title="Reabrir OS em garantia">
-              <AlertTriangle className="h-4 w-4" /> Garantia
-            </button>
-          )}
-          {canEditOs && (
-            <Link href={`/os/${id}/editar`}
-              className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-gray-50 transition-colors">
-              <Edit className="h-4 w-4" /> Editar
-            </Link>
-          )}
           <button type="button" onClick={() => { if (confirmLeave()) router.push('/os') }}
-            className="rounded-lg border px-3 py-1.5 hover:bg-gray-100 transition-colors flex items-center gap-1.5 text-sm text-gray-600">
+            className="rounded-lg border px-3 py-1.5 hover:bg-gray-100 transition-colors flex items-center gap-1.5 text-sm text-gray-600"
+            title="Voltar para lista de OSs">
             <ArrowLeft className="h-4 w-4" /> Voltar
           </button>
         </div>
@@ -1815,18 +1882,21 @@ export default function OSDetailPage() {
         const totalFinal = Math.max(0, subtotal - discountAmt)
         return (
           <div className="rounded-xl border-2 border-blue-200 bg-gradient-to-r from-blue-50 to-white p-4 shadow-sm space-y-3">
-            <div className="flex flex-wrap items-end justify-between gap-4">
-              <div className="flex flex-wrap gap-6">
-                <div className="text-center">
-                  <p className="text-xs text-gray-500 uppercase font-medium">Serviços</p>
-                  <p className="text-lg font-bold text-amber-700">{fmt(os.total_services)}</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-xs text-gray-500 uppercase font-medium">Peças</p>
-                  <p className="text-lg font-bold text-blue-700">{fmt(os.total_parts)}</p>
-                </div>
+            {/* 2026-05-21 UI cleanup: TOTAL em destaque + breakdown inline. */}
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] text-blue-600 uppercase font-semibold tracking-wide">Total da OS</p>
+                <p className="text-3xl font-extrabold text-blue-700 leading-tight">{fmt(totalFinal)}</p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Serviços <span className="font-semibold text-amber-700">{fmt(os.total_services)}</span>
+                  {' + '}
+                  Peças <span className="font-semibold text-blue-700">{fmt(os.total_parts)}</span>
+                  {discountAmt > 0 && <> {' − '} Desconto <span className="font-semibold text-red-600">{fmt(discountAmt)}</span></>}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
                 <div>
-                  <p className="text-xs text-gray-500 uppercase font-medium mb-1">Desconto</p>
+                  <label className="block text-[10px] text-gray-500 uppercase font-semibold tracking-wide mb-0.5">Desconto</label>
                   <div className="flex items-center gap-1">
                     <input type="number" min="0" step="0.01" value={discountValue}
                       onChange={e => setDiscountValue(e.target.value)}
@@ -1837,33 +1907,34 @@ export default function OSDetailPage() {
                       <option value="percent">%</option>
                     </select>
                   </div>
-                  {discountAmt > 0 && <p className="text-xs text-red-500 mt-0.5">-{fmt(discountAmt)}</p>}
                   <CouponBadge osId={id} onApplied={() => loadOS()} />
                 </div>
               </div>
-              <div className="text-right">
-                <p className="text-xs text-blue-600 uppercase font-semibold">Total da OS</p>
-                <p className="text-3xl font-extrabold text-blue-700">{fmt(totalFinal)}</p>
-              </div>
             </div>
 
-            {/* Técnico + Forma Pagamento + Data Execução */}
-            <div className="border-t border-blue-100 pt-3 grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* Técnico + Forma Pagamento + Datas em grid 2x compacto */}
+            <div className="border-t border-blue-100 pt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <div>
-                <label className="block text-xs text-gray-500 uppercase font-medium mb-1">Técnico Responsável</label>
-                <select value={editTechnicianId} title="Técnico"
+                <label className="block text-[10px] text-gray-500 uppercase font-semibold tracking-wide mb-0.5">Técnico</label>
+                <select value={editTechnicianId} title="Técnico responsável"
                   onChange={e => setEditTechnicianId(e.target.value)}
-                  className="w-full px-2 py-1.5 border rounded text-sm bg-white">
-                  <option value="">Não atribuído</option>
+                  className={cn(
+                    'w-full px-2 py-1.5 border rounded text-sm bg-white',
+                    !editTechnicianId && 'text-gray-400'
+                  )}>
+                  <option value="">Sem técnico ↗</option>
                   {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-gray-500 uppercase font-medium mb-1">Forma de Pagamento</label>
+                <label className="block text-[10px] text-gray-500 uppercase font-semibold tracking-wide mb-0.5">Forma de pagamento</label>
                 <select value={editPaymentMethod} title="Forma de pagamento"
                   onChange={e => setEditPaymentMethod(e.target.value)}
-                  className="w-full px-2 py-1.5 border rounded text-sm bg-white">
-                  <option value="">—</option>
+                  className={cn(
+                    'w-full px-2 py-1.5 border rounded text-sm bg-white',
+                    !editPaymentMethod && 'text-gray-400'
+                  )}>
+                  <option value="">Definir ↗</option>
                   {paymentMethods.map(pm => <option key={pm.id} value={pm.name}>{pm.icon} {pm.name}</option>)}
                   {editPaymentMethod && !paymentMethods.some(pm => pm.name === editPaymentMethod) && (
                     <option value={editPaymentMethod}>{editPaymentMethod}</option>
@@ -1871,25 +1942,25 @@ export default function OSDetailPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-gray-500 uppercase font-medium mb-1">Data Execução</label>
+                <label className="block text-[10px] text-gray-500 uppercase font-semibold tracking-wide mb-0.5">Execução</label>
                 <input type="date" value={editActualDelivery} title="Data de execução"
                   onChange={e => setEditActualDelivery(e.target.value)}
                   className="w-full px-2 py-1.5 border rounded text-sm" />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 uppercase font-medium mb-1">Data Previsão</label>
-                <input type="date" value={editEstimatedDelivery} title="Data de previsão"
-                  onChange={e => setEditEstimatedDelivery(e.target.value)}
-                  className="w-full px-2 py-1.5 border rounded text-sm" />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 uppercase font-medium mb-1">Prazo (dias úteis)</label>
-                <input type="number" min="1" max="90" value={customBusinessDays}
-                  onChange={e => setCustomBusinessDays(e.target.value)}
-                  placeholder="10"
-                  title="Dias uteis para previsao (padrao: 10)"
-                  className="w-full px-2 py-1.5 border rounded text-sm" />
-                <p className="text-xs text-gray-400 mt-0.5">Usado ao aprovar OS</p>
+                <label className="block text-[10px] text-gray-500 uppercase font-semibold tracking-wide mb-0.5">
+                  Previsão <span className="text-gray-400 normal-case font-normal">· prazo {customBusinessDays || 10}d</span>
+                </label>
+                <div className="flex items-center gap-1">
+                  <input type="date" value={editEstimatedDelivery} title="Data de previsão"
+                    onChange={e => setEditEstimatedDelivery(e.target.value)}
+                    className="flex-1 px-2 py-1.5 border rounded text-sm" />
+                  <input type="number" min="1" max="90" value={customBusinessDays}
+                    onChange={e => setCustomBusinessDays(e.target.value)}
+                    placeholder="10"
+                    title="Dias úteis para previsão (usado ao aprovar OS, padrão: 10)"
+                    className="w-12 px-1 py-1.5 border rounded text-sm text-center" />
+                </div>
               </div>
             </div>
           </div>
@@ -2013,19 +2084,6 @@ export default function OSDetailPage() {
         }
         return null
       })()}
-
-      {/* ========== SAVE + BACK BUTTONS ========== */}
-      <div className="flex items-center justify-between gap-3">
-        <button type="button" onClick={() => { if (confirmLeave()) router.push('/os') }}
-          className="px-5 py-2.5 border rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-colors flex items-center gap-2">
-          <ArrowLeft className="h-4 w-4" /> Voltar para lista
-        </button>
-        <button type="button" onClick={handleSaveAll} disabled={savingAll}
-          className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium transition-colors flex items-center gap-2 shadow-sm">
-          {savingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          {savingAll ? 'Salvando...' : 'Salvar OS'}
-        </button>
-      </div>
 
       {/* ========== FINANCEIRO ========== */}
       {canViewFinanceiro && (os.accounts_receivable ?? []).length > 0 && (
@@ -2278,15 +2336,19 @@ export default function OSDetailPage() {
               )}
             </DetailRow>
             <DetailRow label="Técnico">
-              <span className="text-sm text-gray-900">{os.user_profiles?.name || '--'}</span>
+              {os.user_profiles?.name
+                ? <span className="text-sm text-gray-900">{os.user_profiles.name}</span>
+                : <span className="text-xs italic text-gray-400">Sem técnico atribuído</span>}
             </DetailRow>
-            {os.payment_method && (
-              <DetailRow label="Pagamento">
-                <span className="text-sm font-medium text-blue-700 bg-blue-50 rounded px-2 py-0.5">{os.payment_method}</span>
-              </DetailRow>
-            )}
-            <DetailRow label="Previsao">
-              <span className="text-sm text-gray-900">{os.estimated_delivery ? new Date(os.estimated_delivery).toLocaleDateString('pt-BR') : '--'}</span>
+            <DetailRow label="Pagamento">
+              {os.payment_method
+                ? <span className="text-sm font-medium text-blue-700 bg-blue-50 rounded px-2 py-0.5">{os.payment_method}</span>
+                : <span className="text-xs italic text-gray-400">A definir</span>}
+            </DetailRow>
+            <DetailRow label="Previsão">
+              {os.estimated_delivery
+                ? <span className="text-sm text-gray-900">{new Date(os.estimated_delivery).toLocaleDateString('pt-BR')}</span>
+                : <span className="text-xs italic text-gray-400">Não estimada</span>}
             </DetailRow>
             <DetailRow label="Criada em">
               <span className="text-sm text-gray-900">{new Date(os.created_at).toLocaleDateString('pt-BR')}</span>
