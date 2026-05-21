@@ -1445,7 +1445,7 @@ export default function OSDetailPage() {
             <Clock className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
             <div>
               <div className="font-medium">Pago {methods ? `\u2014 ${methods}` : ''} {fmt(totalPaid)} {paidDate ? `em ${paidDate}` : ''}</div>
-              <div className="text-xs mt-0.5 text-amber-800">Aguardando confirma\u00e7\u00e3o no extrato banc\u00e1rio. Conciliar em /financeiro/concilia\u00e7\u00e3o para confirmar entrada do valor.</div>
+              <div className="text-xs mt-0.5 text-amber-800">Aguardando confirmação no extrato bancário. Conciliar em /financeiro/conciliação para confirmar entrada do valor.</div>
             </div>
           </div>
         )

@@ -267,7 +267,30 @@ export async function POST(
         select: { id: true, os_number: true, customer_id: true, total_cost: true },
       })
       if (os) {
-        const shouldCreateFinancial = isApproved && body.payment!.amount_cents > 0
+        let shouldCreateFinancial = isApproved && body.payment!.amount_cents > 0
+
+        // 2026-05-21: guard contra AR duplicada. Caso OS-60587 (real): cliente
+        // pagou pelo portal (Asaas cartao = AR RECEBIDO), motorista marcou
+        // tambem como pago PIX na entrega → sistema criou AR fake R$ X duplicada.
+        // Patch: se OS ja tem alguma AR completamente paga (PAGO ou RECEBIDO),
+        // NAO cria nova AR de entrega. Split parcial (Asaas PENDING + parte
+        // motorista) continua funcionando — guarda so dispara em AR ja paga.
+        if (shouldCreateFinancial) {
+          const existingPaidAR = await prisma.accountReceivable.findFirst({
+            where: {
+              service_order_id: os.id,
+              company_id: auth.companyId,
+              deleted_at: null,
+              status: { in: ['PAGO', 'RECEBIDO'] },
+            },
+            select: { id: true, status: true, payment_method: true, description: true },
+          })
+          if (existingPaidAR) {
+            console.warn(`[driver/entrega] OS-${os.os_number}: ja existe AR paga (${existingPaidAR.id} status=${existingPaidAR.status} method=${existingPaidAR.payment_method}). Pulando criacao financeiro pra evitar duplicata.`)
+            shouldCreateFinancial = false
+          }
+        }
+
         const amount = shouldCreateFinancial ? body.payment!.amount_cents : 0
         const paymentMethodMapped = shouldCreateFinancial ? PAYMENT_METHOD_MAP[body.payment!.method] : ''
         const installmentCount = shouldCreateFinancial ? Math.max(1, Number(body.payment!.installments || 1)) : 1
