@@ -8,6 +8,7 @@ import { Printer, Mail, X, CreditCard, Truck, Clock, Banknote, Zap, CheckCircle2
 import { PhotoGallery } from '../../../../components/photo-gallery'
 import PortalPayBox from './_components/portal-pay-box'
 import { OverdueChargesBanner } from '../../../../_components/OverdueChargesBanner'
+import OsChatPanel from '@/components/os/OsChatPanel'
 
 interface OSDetail {
   id: string
@@ -1225,6 +1226,13 @@ export default function PortalOSDetailPage() {
             <p className="text-xs text-amber-700 dark:text-amber-400 mt-3">
               🎁 Ao avaliar, você ganha <strong>10% de desconto</strong> na próxima OS!
             </p>
+          </div>
+        )}
+
+        {/* Chat com equipe (2026-05-21) */}
+        {os && (
+          <div className="mb-6">
+            <OsChatPanel osId={os.id} variant="portal" currentUserName={customer?.name} />
           </div>
         )}
 

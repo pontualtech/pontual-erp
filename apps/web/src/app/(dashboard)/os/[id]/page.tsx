@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/use-auth'
 import { ArrowLeft, Edit, Camera, History, Info, Package, Plus, Trash2, Loader2, Search, Wrench, CreditCard, X, Printer, Mail, Send, Copy, FilePlus, User, Monitor, FileText, Clock, ChevronDown, ChevronUp, AlertTriangle, Save, Check, Layers, DollarSign, ExternalLink, Receipt, Truck, MessageCircle } from 'lucide-react'
 import { MoneyInput } from '@/app/(dashboard)/components/money-input'
 import OsChargeButton from './_components/os-charge-button'
+import OsChatPanel from '@/components/os/OsChatPanel'
 import { CustomerMessagesPanel } from './_components/CustomerMessagesPanel'
 import { CallButton } from '@/components/voip/CallButton'
 import { RelatedVoipCalls } from '@/components/voip/RelatedVoipCalls'
@@ -2227,6 +2228,13 @@ export default function OSDetailPage() {
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ========== CHAT INLINE COM CLIENTE (2026-05-21) ========== */}
+      {os && (
+        <div className="mb-4">
+          <OsChatPanel osId={os.id} variant="admin" currentUserName={tc(os.customers?.legal_name || '').split(' ')[0]} />
         </div>
       )}
 
