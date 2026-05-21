@@ -74,6 +74,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     // Hook 2026-05-12 (passo 7/9 Fase 1): notifica cliente via WhatsApp
     // quando atendente posta resposta publica. Cliente abre o portal e ve
     // a resposta no auto-refresh. Graceful: erra -> log, nao quebra POST.
+    // 2026-05-21: encurta magic-link via /lib/short-link (era 350+ chars).
     if (!isInternal && ticket.customers && ticket.companies) {
       const customerPhone = (ticket.customers.mobile || ticket.customers.phone || '').replace(/\D/g, '')
       if (customerPhone) {
@@ -84,8 +85,15 @@ export async function POST(req: NextRequest, { params }: Params) {
             slug: ticket.companies.slug,
             redirectPath: `/portal/${ticket.companies.slug}/tickets/${ticket.id}`,
           })
+          let displayUrl = url
+          try {
+            const { shortenUrl } = await import('@/lib/short-link')
+            displayUrl = await shortenUrl(url, ticket.company_id, ticket.customers.id)
+          } catch (e) {
+            console.warn('[ticket-msg-hook] shorten falhou, usando URL completa:', e instanceof Error ? e.message : e)
+          }
           const osLabel = ticket.service_orders ? `OS #${ticket.service_orders.os_number}` : `seu atendimento`
-          const text = `Voce tem uma nova resposta sobre ${osLabel}. Veja no portal:\n${url}`
+          const text = `Voce tem uma nova resposta sobre ${osLabel}. Veja no portal:\n${displayUrl}`
           // sendWhatsAppCloud retorna { success, error? } e nao joga exception
           sendWhatsAppCloud(ticket.company_id, customerPhone, text)
             .then(r => {
