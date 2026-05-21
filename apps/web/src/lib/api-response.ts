@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { ZodError } from 'zod'
+import { logError, type ErrorContext } from './observability'
 
 export function success<T>(data: T, status = 200) {
   return NextResponse.json({ data }, { status })
@@ -19,7 +20,14 @@ export function error(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status })
 }
 
-export function handleError(err: unknown) {
+/**
+ * Centraliza tratamento de erros de handlers. Opcionalmente recebe um contexto
+ * (request_id, user_id, company_id, url, method) que vai pra error_logs.
+ *
+ * O log é fire-and-forget: nunca bloqueia a resposta nem propaga falha.
+ * ZodError e P2002 são tratados como expected (não logam — são validação).
+ */
+export function handleError(err: unknown, context?: ErrorContext) {
   if (err instanceof ZodError) {
     return NextResponse.json(
       { error: 'Dados inválidos', details: err.errors },
@@ -42,6 +50,9 @@ export function handleError(err: unknown) {
 
   if (err instanceof Error) {
     console.error('[API Error]', err.stack || err.message)
+    // Observability: persiste pra UI /admin/errors. Fire-and-forget — nunca
+    // bloqueia o response nem lança (helper é fail-soft).
+    void logError(err, context || {})
     // Em produção, não expor detalhes do erro interno
     const message = process.env.NODE_ENV === 'production'
       ? 'Erro interno do servidor'
@@ -52,6 +63,7 @@ export function handleError(err: unknown) {
     )
   }
 
+  void logError(err, context || {})
   return NextResponse.json(
     { error: 'Erro interno do servidor' },
     { status: 500 }
