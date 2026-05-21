@@ -152,6 +152,10 @@ export async function GET(
       'renegociar': 'Aguardando sua resposta',
       'orcar negociar': 'Aguardando sua resposta',
       'aguardando aprov': 'Aguardando Aprovacao',
+      // 2026-05-21: 'laudo' e status INTERNO (revisao tecnica) — cliente
+      // ve como 'Em Analise' mesmo. Sem isso virava branch e disparava
+      // banner amarelo "Atencao: OS em Laudo / pendencia fora do fluxo".
+      'laudo': 'Em Analise',
       'orcar': 'Em Analise',
       'aprovado': 'Em Reparo',
       'em execu': 'Em Reparo',
@@ -166,6 +170,7 @@ export async function GET(
       'renegociar': '#F59E0B',
       'orcar negociar': '#F59E0B',
       'aguardando aprov': '#EF4444',
+      'laudo': '#F59E0B',
       'orcar': '#F59E0B',
       'aprovado': '#3B82F6',
       'em execu': '#3B82F6',
