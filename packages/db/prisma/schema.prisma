@@ -2523,3 +2523,51 @@ model MarketingAutomationRun {
   @@index([contact_id, created_at(sort: Desc)], map: "idx_marketing_automation_runs_contact")
   @@map("marketing_automation_runs")
 }
+
+/// Observability — error tracking visual (2026-05-21)
+/// Captura exceptions do handleError global. Sem FK pra Company/User
+/// pra evitar bloqueio de delete cascade — usar lookup soft via company_id/user_id.
+model ErrorLog {
+  id           String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  ts           DateTime @default(now()) @db.Timestamptz(6)
+  level        String   @default("error") // 'error' | 'warning' | 'info'
+  message      String
+  stack        String?
+  context_json Json     @default("{}")
+  user_id      String?
+  company_id   String?
+  request_id   String?
+
+  @@index([ts(sort: Desc)], map: "idx_error_logs_ts_desc")
+  @@index([company_id, ts(sort: Desc)], map: "idx_error_logs_company_ts")
+  @@index([level, ts(sort: Desc)], map: "idx_error_logs_level_ts")
+  @@map("error_logs")
+}
+
+/// Observability — série temporal de /api/health snapshots (2026-05-21)
+/// Cron grava 1 row a cada 5min. Retention 30d via cleanup cron separado.
+model HealthSnapshot {
+  id          String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  snapshot_at DateTime @default(now()) @db.Timestamptz(6)
+  status      String
+  elapsed_ms  Int
+  data_json   Json
+
+  @@index([snapshot_at(sort: Desc)], map: "idx_health_snapshots_at_desc")
+  @@map("health_snapshots")
+}
+
+/// Observability — anti-flood pra alertas (2026-05-21)
+/// Sentinel '__global__' em company_id pra alertas de infra (DB down afeta todos).
+/// UNIQUE (alert_type, company_id) garante 1 row por par.
+model AlertState {
+  id               String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  alert_type       String
+  company_id       String   @default("__global__")
+  last_sent_at     DateTime @default(now()) @db.Timestamptz(6)
+  last_detected_at DateTime @default(now()) @db.Timestamptz(6)
+  occurrence_count Int      @default(1)
+
+  @@unique([alert_type, company_id], map: "idx_alert_state_type_company")
+  @@map("alert_state")
+}
