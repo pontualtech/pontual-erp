@@ -1188,6 +1188,47 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
   // Extract content and handle audio
   let content = body.content?.trim() || ''
 
+  // 2026-05-21 CWT: detecta [ref:gclid=X|src=Y|...] injetado pelos sites
+  // (tag GTM PT WhatsApp CWT). Salva atribuicao em botConversation.data
+  // pra correlacao posterior com Google Ads/MS Ads offline conversion upload,
+  // e remove do content pra Dify nao ver o token.
+  const refMatch = content.match(/\[ref:([^\]]+)\]/i)
+  if (refMatch) {
+    const attribution: Record<string, string> = {}
+    refMatch[1].split('|').forEach(pair => {
+      const [k, ...rest] = pair.split('=')
+      const v = rest.join('=').trim()
+      if (k && v) attribution[k.trim()] = v
+    })
+    if (Object.keys(attribution).length > 0) {
+      try {
+        const existing = await prisma.botConversation.findUnique({
+          where: { chatwoot_conv_id: conversationId },
+        })
+        const existingData: Record<string, any> =
+          existing?.data && typeof existing.data === 'object' && !Array.isArray(existing.data)
+            ? { ...(existing.data as Record<string, any>) }
+            : {}
+        if (!existingData.attribution) {
+          existingData.attribution = { ...attribution, captured_at: new Date().toISOString() }
+          await prisma.botConversation.upsert({
+            where: { chatwoot_conv_id: conversationId },
+            update: { data: existingData },
+            create: {
+              chatwoot_conv_id: conversationId,
+              company_id: cfg.companyId,
+              data: existingData,
+            },
+          })
+          console.log(`[Bot/CWT] Attribution captured for conv ${conversationId}: ${JSON.stringify(attribution)}`)
+        }
+      } catch (e: any) {
+        console.warn(`[Bot/CWT] Failed to persist attribution: ${e?.message}`)
+      }
+    }
+    content = content.replace(/\s*\[ref:[^\]]+\]\s*/gi, '').trim()
+  }
+
   // 2026-05-06 BUG FIX: emails do Outlook/Gmail vem com HTML completo no
   // body.content (<p>, <a>, smart quotes). Marta no Dify recebia HTML cru
   // como query e Gemini retornava vazio. Converte HTML->plain antes de

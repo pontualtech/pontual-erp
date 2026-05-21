@@ -294,6 +294,41 @@ export async function POST(req: NextRequest) {
 
     if (!initialStatus) return botError('Status de OS nao configurado', 500)
 
+    // 2026-05-21 CWT fallback: se nenhum tracking field veio no body mas existe
+    // botConversation com attribution (capturada via [ref:...] na 1a msg WhatsApp,
+    // vide /api/chatwoot/bot/route.ts), usar como fallback. Body sempre vence
+    // se ambos existirem — fonte mais especifica/recente.
+    const hasAnyTracking = !!(gclid || gbraid || wbraid || utm_source || utm_medium || utm_campaign || utm_term || utm_content || fbclid || msclkid)
+    if (!hasAnyTracking && telefone) {
+      try {
+        const phoneEnd = telefone.replace(/\D/g, '').slice(-10)
+        const conv = phoneEnd.length >= 10
+          ? await prisma.botConversation.findFirst({
+              where: {
+                company_id: companyId,
+                customer_phone: { endsWith: phoneEnd },
+              },
+              orderBy: { created_at: 'desc' },
+            })
+          : null
+        const attrRaw = conv?.data && typeof conv.data === 'object' && !Array.isArray(conv.data)
+          ? ((conv.data as Record<string, any>).attribution as Record<string, string> | undefined)
+          : undefined
+        if (attrRaw) {
+          if (attrRaw.gclid) gclid = attrRaw.gclid
+          if (attrRaw.msclkid) msclkid = attrRaw.msclkid
+          if (attrRaw.src) utm_source = attrRaw.src
+          if (attrRaw.med) utm_medium = attrRaw.med
+          if (attrRaw.camp) utm_campaign = attrRaw.camp
+          if (attrRaw.kw) utm_term = attrRaw.kw
+          if (attrRaw.cont) utm_content = attrRaw.cont
+          console.log(`[Bot abrir-os] CWT fallback: tracking recuperado de botConversation ${conv?.id} (phone ${phoneEnd})`)
+        }
+      } catch (e: any) {
+        console.warn(`[Bot abrir-os] CWT fallback falhou (segue sem tracking): ${e?.message}`)
+      }
+    }
+
     // 4. Create OS with atomic number
     const os = await prisma.$transaction(async (tx) => {
       const lockKey = Buffer.from(companyId).reduce((acc, b) => acc + b, 0)
