@@ -11,7 +11,6 @@ import { ArrowLeft, Edit, Camera, History, Info, Package, Plus, Trash2, Loader2,
 import { MoneyInput } from '@/app/(dashboard)/components/money-input'
 import OsChargeButton from './_components/os-charge-button'
 import OsChatPanel from '@/components/os/OsChatPanel'
-import { CustomerMessagesPanel } from './_components/CustomerMessagesPanel'
 import { CallButton } from '@/components/voip/CallButton'
 import { RelatedVoipCalls } from '@/components/voip/RelatedVoipCalls'
 
@@ -1303,6 +1302,27 @@ export default function OSDetailPage() {
               <Check className="h-4 w-4" /> Notificar Cliente — Pronto
             </button>
           )}
+          {/* 2026-05-21 revert: Karlao pediu Enviar Orcamento, Acesso Portal e Imprimir
+              VISIVEIS no action bar (eram inline antes). Mais acoes guarda so menos frequentes. */}
+          {canEditOs && (
+            <button type="button" onClick={openQuoteModal}
+              className="flex items-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors"
+              title="Enviar orçamento pro cliente">
+              <Send className="h-4 w-4" /> Enviar Orçamento
+            </button>
+          )}
+          {canEditOs && (os as any).customer_id && (
+            <button type="button" onClick={() => setShowMagicLinkModal(true)}
+              className="flex items-center gap-1.5 rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-100 transition-colors"
+              title="Enviar magic link pro portal do cliente">
+              <ExternalLink className="h-4 w-4" /> Enviar Acesso
+            </button>
+          )}
+          <button type="button" onClick={openPrintModal}
+            className="flex items-center gap-1.5 rounded-lg border border-green-300 bg-green-50 px-3 py-1.5 text-sm font-medium text-green-700 hover:bg-green-100 transition-colors"
+            title="Imprimir OS">
+            <Printer className="h-4 w-4" /> Imprimir
+          </button>
           {/* Cobrar fica visivel inline — fluxo financeiro frequente */}
           {canCharge && (
             <OsChargeButton
@@ -1311,9 +1331,8 @@ export default function OSDetailPage() {
               totalCost={os.total_cost || 0}
             />
           )}
-          {/* 2026-05-21: dropdown "Mais acoes" pra reduzir poluicao visual.
-              Notificar* (acima) ja eh contextual ao status — mantem visivel.
-              Cobrar (acima) eh financeiro frequente — mantem visivel. */}
+          {/* Dropdown "Mais acoes" agora so com itens menos frequentes:
+              NFS-e (fiscal), Nova OS, Clonar, Editar, Garantia. */}
           <div ref={moreMenuRef} className="relative">
             <button
               type="button"
@@ -1328,29 +1347,12 @@ export default function OSDetailPage() {
             </button>
             {moreMenuOpen && (
               <div className="absolute right-0 top-full mt-1 w-60 rounded-lg border border-gray-200 bg-white shadow-lg z-30 py-1 text-sm">
-                {canEditOs && (
-                  <button type="button" onClick={() => { setMoreMenuOpen(false); openQuoteModal() }}
-                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-blue-50 text-left text-blue-700 cursor-pointer transition-colors">
-                    <Send className="h-4 w-4" /> Enviar Orçamento
-                  </button>
-                )}
-                {canEditOs && (os as any).customer_id && (
-                  <button type="button" onClick={() => { setMoreMenuOpen(false); setShowMagicLinkModal(true) }}
-                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-indigo-50 text-left text-indigo-700 cursor-pointer transition-colors">
-                    <ExternalLink className="h-4 w-4" /> Enviar Acesso ao Portal
-                  </button>
-                )}
                 {canCreateFiscal && (
                   <button type="button" onClick={() => { setMoreMenuOpen(false); openNfseModal() }}
                     className="w-full flex items-center gap-2 px-3 py-2 hover:bg-purple-50 text-left text-purple-700 cursor-pointer transition-colors">
                     <Receipt className="h-4 w-4" /> Emitir NFS-e
                   </button>
                 )}
-                <button type="button" onClick={() => { setMoreMenuOpen(false); openPrintModal() }}
-                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-green-50 text-left text-green-700 cursor-pointer transition-colors">
-                  <Printer className="h-4 w-4" /> Imprimir
-                </button>
-                <div className="my-1 border-t border-gray-100" />
                 {canCreateOs && (
                   <Link href={`/os/novo?cliente=${os.customer_id || ''}`}
                     onClick={() => setMoreMenuOpen(false)}
@@ -2413,8 +2415,8 @@ export default function OSDetailPage() {
         </div>
       </div>
 
-      {/* ========== MENSAGENS DO CLIENTE (passo 6/9 feature 2026-05-12) ========== */}
-      <CustomerMessagesPanel osId={os.id} />
+      {/* 2026-05-21: CustomerMessagesPanel removido — duplicava o OsChatPanel acima
+          (ambos liam o mesmo Ticket CHAT_OS). OsChatPanel substitui (mostra msgs + input). */}
 
       {/* ========== CHAMADAS VINCULADAS ========== */}
       <div className="rounded-xl border bg-white p-4 shadow-sm">
