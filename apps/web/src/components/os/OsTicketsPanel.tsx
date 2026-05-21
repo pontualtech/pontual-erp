@@ -8,7 +8,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { MessageSquare, Send, Loader2, RefreshCw, ChevronDown, ChevronRight, User, Bot } from 'lucide-react'
+import { MessageSquare, Send, Loader2, RefreshCw, ChevronDown, ChevronRight, User, Bot, Check, Lock, RotateCcw, Play } from 'lucide-react'
 
 interface TicketSummary {
   id: string
@@ -88,7 +88,31 @@ export default function OsTicketsPanel({ osId }: Props) {
   const [loadingMsgs, setLoadingMsgs] = useState<string | null>(null)
   const [replyText, setReplyText] = useState<Record<string, string>>({})
   const [sending, setSending] = useState<string | null>(null)
+  const [changingStatus, setChangingStatus] = useState<string | null>(null)
   const scrollRefs = useRef<Record<string, HTMLDivElement | null>>({})
+
+  async function changeStatus(ticketId: string, status: string) {
+    setChangingStatus(ticketId)
+    try {
+      const r = await fetch(`/api/tickets/${ticketId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      })
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}))
+        toast.error(e.error || 'Falha ao atualizar status')
+        return
+      }
+      const labels: Record<string, string> = { ABERTO: 'Reaberto', EM_ANDAMENTO: 'Em andamento', RESOLVIDO: 'Resolvido', FECHADO: 'Fechado' }
+      toast.success(`Ticket ${labels[status] || status}`)
+      await loadTickets(true)
+    } catch {
+      toast.error('Erro de rede')
+    } finally {
+      setChangingStatus(null)
+    }
+  }
 
   async function loadTickets(silent = false) {
     if (!silent) setLoading(true)
@@ -244,6 +268,35 @@ export default function OsTicketsPanel({ osId }: Props) {
                 )}
                 {expanded && (
                   <div className="border-t border-gray-200 dark:border-gray-700 p-3 bg-white dark:bg-gray-900">
+                    {/* Action bar: mudar status do ticket */}
+                    <div className="flex flex-wrap items-center gap-1.5 mb-3 pb-2 border-b border-gray-100 dark:border-gray-800">
+                      <span className="text-[10px] uppercase font-semibold text-gray-500 mr-1">Status:</span>
+                      {t.status !== 'EM_ANDAMENTO' && t.status !== 'RESOLVIDO' && t.status !== 'FECHADO' && (
+                        <button type="button" disabled={changingStatus === t.id} onClick={() => changeStatus(t.id, 'EM_ANDAMENTO')}
+                          className="flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50 transition-colors">
+                          <Play className="h-3 w-3" /> Em andamento
+                        </button>
+                      )}
+                      {t.status !== 'RESOLVIDO' && t.status !== 'FECHADO' && (
+                        <button type="button" disabled={changingStatus === t.id} onClick={() => changeStatus(t.id, 'RESOLVIDO')}
+                          className="flex items-center gap-1 rounded-md border border-green-300 bg-green-50 px-2 py-1 text-[11px] font-medium text-green-700 hover:bg-green-100 disabled:opacity-50 transition-colors">
+                          <Check className="h-3 w-3" /> Marcar resolvido
+                        </button>
+                      )}
+                      {t.status !== 'FECHADO' && (
+                        <button type="button" disabled={changingStatus === t.id} onClick={() => changeStatus(t.id, 'FECHADO')}
+                          className="flex items-center gap-1 rounded-md border border-gray-300 bg-gray-50 px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 transition-colors">
+                          <Lock className="h-3 w-3" /> Fechar
+                        </button>
+                      )}
+                      {(t.status === 'RESOLVIDO' || t.status === 'FECHADO') && (
+                        <button type="button" disabled={changingStatus === t.id} onClick={() => changeStatus(t.id, 'ABERTO')}
+                          className="flex items-center gap-1 rounded-md border border-blue-300 bg-blue-50 px-2 py-1 text-[11px] font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50 transition-colors">
+                          <RotateCcw className="h-3 w-3" /> Reabrir
+                        </button>
+                      )}
+                      {changingStatus === t.id && <Loader2 className="h-3 w-3 animate-spin text-gray-500" />}
+                    </div>
                     <div
                       ref={el => { scrollRefs.current[t.id] = el }}
                       className="max-h-72 overflow-y-auto mb-3 space-y-2 pr-1"

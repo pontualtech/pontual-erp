@@ -219,7 +219,7 @@ export default function PortalTicketDetailPage() {
             </div>
           </div>
 
-          {ticket.description && (
+          {ticket.description && !/^Ticket criado automaticamente/i.test(ticket.description.trim()) && !/^Conversa /i.test(ticket.description.trim()) && (
             <p className="text-gray-700 dark:text-gray-300 mt-4 text-sm">{ticket.description}</p>
           )}
 

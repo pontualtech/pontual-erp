@@ -39,12 +39,13 @@ async function getOrCreateOsTicket(
     select: { ticket_number: true },
   })
   const padded = String(args.osNumber).padStart(4, '0')
+  // description: null — evita linha redundante "ticket criado pelo portal" na UI
+  // do cliente. Subject + source + link da OS ja deixam claro o contexto.
   ticket = await tx.ticket.create({
     data: {
       company_id: args.companyId,
       ticket_number: (lastTicket?.ticket_number || 0) + 1,
       subject: `${args.subjectPrefix} OS-${padded}`,
-      description: `Ticket criado automaticamente pelo portal do cliente.`,
       status: 'ABERTO',
       priority: 'NORMAL',
       source: args.source,
