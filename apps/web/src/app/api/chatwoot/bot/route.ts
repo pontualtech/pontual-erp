@@ -1195,7 +1195,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
   const refMatch = content.match(/\[ref:([^\]]+)\]/i)
   if (refMatch) {
     const attribution: Record<string, string> = {}
-    refMatch[1].split('|').forEach(pair => {
+    refMatch[1].split('|').forEach((pair: string) => {
       const [k, ...rest] = pair.split('=')
       const v = rest.join('=').trim()
       if (k && v) attribution[k.trim()] = v

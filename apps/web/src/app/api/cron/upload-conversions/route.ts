@@ -235,12 +235,12 @@ export async function GET(request: NextRequest) {
   // Candidatos: OS criadas no período + OS com quotes aprovadas no período
   const osCreatedRecent = await prisma.serviceOrder.findMany({
     where: { created_at: { gte: since }, deleted_at: null },
-    include: { customer: true },
+    include: { customers: true },
     take: 500,
   })
   const quotesApprovedRecent = await prisma.quote.findMany({
     where: { approved_at: { gte: since }, status: { not: 'DRAFT' } },
-    include: { service_orders: { include: { customer: true } } },
+    include: { service_orders: { include: { customers: true } } },
     take: 500,
   })
 
@@ -269,7 +269,7 @@ export async function GET(request: NextRequest) {
     const needApproved = entry.needApproved && !uploaded.approved_at
     if (!needLead && !needApproved) continue
 
-    const attribution = await recoverAttribution(os, os.customer)
+    const attribution = await recoverAttribution(os, os.customers)
     if (attribution.source === 'none' || (!attribution.gclid && !attribution.msclkid)) {
       if (needLead) leadsSkipped++
       if (needApproved) approvedSkipped++
