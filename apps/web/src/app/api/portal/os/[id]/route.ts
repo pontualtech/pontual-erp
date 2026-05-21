@@ -5,6 +5,57 @@ import { isAllowedOrigin } from '@/lib/csrf-origin'
 import { canCustomerPayOS } from '@/lib/os-payment-rules'
 import { buildCouponToken } from '@/lib/coupon-token'
 
+// 2026-05-21: cliente recusar ou comentar OS via portal vira Ticket vinculado
+// pra atendente poder responder de dentro da tela da OS (OsTicketsPanel).
+// History.notes continua sendo gravado pro audit trail.
+async function getOrCreateOsTicket(
+  tx: any,
+  args: {
+    osId: string
+    osNumber: number
+    companyId: string
+    customerId: string | null
+    source: 'NEGOCIACAO_OS' | 'COMENTARIO_OS'
+    subjectPrefix: string
+  }
+): Promise<{ id: string; ticket_number: number }> {
+  // Reusa ticket aberto da MESMA categoria pra OS (evita poluir com varios tickets
+  // se cliente recusou e depois comentou na mesma rodada).
+  let ticket = await tx.ticket.findFirst({
+    where: {
+      service_order_id: args.osId,
+      company_id: args.companyId,
+      source: args.source,
+      status: { not: 'FECHADO' },
+      deleted_at: null,
+    },
+    orderBy: { created_at: 'desc' },
+  })
+  if (ticket) return ticket
+
+  const lastTicket = await tx.ticket.findFirst({
+    where: { company_id: args.companyId },
+    orderBy: { ticket_number: 'desc' },
+    select: { ticket_number: true },
+  })
+  const padded = String(args.osNumber).padStart(4, '0')
+  ticket = await tx.ticket.create({
+    data: {
+      company_id: args.companyId,
+      ticket_number: (lastTicket?.ticket_number || 0) + 1,
+      subject: `${args.subjectPrefix} OS-${padded}`,
+      description: `Ticket criado automaticamente pelo portal do cliente.`,
+      status: 'ABERTO',
+      priority: 'NORMAL',
+      source: args.source,
+      customer_id: args.customerId,
+      service_order_id: args.osId,
+      created_by_type: 'CLIENTE',
+    },
+  })
+  return ticket
+}
+
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
@@ -430,6 +481,36 @@ export async function POST(
             notes: `Orcamento RECUSADO pelo cliente via portal${message ? ' — Motivo: ' + message : ''}`,
           },
         })
+
+        // 2026-05-21: cria/append ticket NEGOCIACAO_OS pra atendente responder
+        // pela tela da OS (painel OsTicketsPanel). Cliente vê resposta no portal.
+        const ticket = await getOrCreateOsTicket(tx, {
+          osId: os.id,
+          osNumber: os.os_number,
+          companyId: portalUser.company_id,
+          customerId: portalUser.customer_id,
+          source: 'NEGOCIACAO_OS',
+          subjectPrefix: 'Negociação',
+        })
+        const ticketMsg = message?.trim()
+          || (isSecondRejection
+            ? 'Cliente recusou o orcamento pela SEGUNDA vez (sem motivo informado).'
+            : 'Cliente recusou o orcamento (sem motivo informado).')
+        await tx.ticketMessage.create({
+          data: {
+            company_id: portalUser.company_id,
+            ticket_id: ticket.id,
+            message: ticketMsg,
+            sender_type: 'CLIENTE',
+            sender_id: portalUser.customer_id,
+            sender_name: customerName,
+            is_internal: false,
+          },
+        })
+        await tx.ticket.update({
+          where: { id: ticket.id },
+          data: { updated_at: new Date(), status: 'ABERTO' },
+        })
       })
 
       // Create internal announcement
@@ -473,15 +554,44 @@ export async function POST(
         return NextResponse.json({ error: 'Mensagem e obrigatoria' }, { status: 400 })
       }
 
-      await prisma.serviceOrderHistory.create({
-        data: {
-          company_id: portalUser.company_id,
-          service_order_id: os.id,
-          from_status_id: os.status_id,
-          to_status_id: os.status_id,
-          changed_by: 'CLIENTE',
-          notes: `[Comentario do cliente] ${message}`,
-        },
+      const customerName = os.customers?.legal_name || 'Cliente'
+      await prisma.$transaction(async (tx) => {
+        await tx.serviceOrderHistory.create({
+          data: {
+            company_id: portalUser.company_id,
+            service_order_id: os.id,
+            from_status_id: os.status_id,
+            to_status_id: os.status_id,
+            changed_by: 'CLIENTE',
+            notes: `[Comentario do cliente] ${message}`,
+          },
+        })
+
+        // 2026-05-21: comentario do cliente vira Ticket COMENTARIO_OS pra atendente
+        // poder responder direto pela tela da OS.
+        const ticket = await getOrCreateOsTicket(tx, {
+          osId: os.id,
+          osNumber: os.os_number,
+          companyId: portalUser.company_id,
+          customerId: portalUser.customer_id,
+          source: 'COMENTARIO_OS',
+          subjectPrefix: 'Comentário',
+        })
+        await tx.ticketMessage.create({
+          data: {
+            company_id: portalUser.company_id,
+            ticket_id: ticket.id,
+            message: message.trim(),
+            sender_type: 'CLIENTE',
+            sender_id: portalUser.customer_id,
+            sender_name: customerName,
+            is_internal: false,
+          },
+        })
+        await tx.ticket.update({
+          where: { id: ticket.id },
+          data: { updated_at: new Date(), status: 'ABERTO' },
+        })
       })
 
       return NextResponse.json({ data: { success: true, message: 'Comentario adicionado!' } })

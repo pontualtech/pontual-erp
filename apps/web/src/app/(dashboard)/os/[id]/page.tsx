@@ -10,7 +10,7 @@ import { useAuth } from '@/lib/use-auth'
 import { ArrowLeft, Edit, Camera, History, Info, Package, Plus, Trash2, Loader2, Search, Wrench, CreditCard, X, Printer, Mail, Send, Copy, FilePlus, User, Monitor, FileText, Clock, ChevronDown, ChevronUp, AlertTriangle, Save, Check, Layers, DollarSign, ExternalLink, Receipt, Truck, MessageCircle, MoreHorizontal, ShieldCheck } from 'lucide-react'
 import { MoneyInput } from '@/app/(dashboard)/components/money-input'
 import OsChargeButton from './_components/os-charge-button'
-import OsChatPanel from '@/components/os/OsChatPanel'
+import OsTicketsPanel from '@/components/os/OsTicketsPanel'
 import { CallButton } from '@/components/voip/CallButton'
 import { RelatedVoipCalls } from '@/components/voip/RelatedVoipCalls'
 
@@ -2291,10 +2291,13 @@ export default function OSDetailPage() {
         </div>
       )}
 
-      {/* ========== CHAT INLINE COM CLIENTE (2026-05-21) ========== */}
+      {/* ========== TICKETS DA OS (2026-05-21) ==========
+          Substitui o OsChatPanel: mostra todos os tickets vinculados a esta OS
+          como cards expandiveis. Quando cliente recusa/comenta no portal vira
+          ticket aqui — atendente responde inline + cliente recebe WhatsApp. */}
       {os && (
         <div className="mb-4">
-          <OsChatPanel osId={os.id} variant="admin" currentUserName={tc(os.customers?.legal_name || '').split(' ')[0]} />
+          <OsTicketsPanel osId={os.id} />
         </div>
       )}
 
