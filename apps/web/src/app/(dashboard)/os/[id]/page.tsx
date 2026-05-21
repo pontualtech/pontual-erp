@@ -1432,11 +1432,32 @@ export default function OSDetailPage() {
         const methods = Array.from(new Set(ars.map((ar: any) => ar.payment_method).filter(Boolean))).join(' + ')
         const lastAr = ars[0]
         const paidDate = lastAr?.updated_at ? new Date(lastAr.updated_at).toLocaleDateString('pt-BR') : ''
+        // 2026-05-21: mostra link Asaas pra operador confirmar visualmente que
+        // a cobranca foi recebida pela operadora (status CONFIRMED/RECEIVED).
+        const charges = ars.filter((ar: any) => ar.charge_id && ar.charge_url)
+        const renderCharges = (textTone: string) => charges.length === 0 ? null : (
+          <div className={`flex flex-col gap-1 mt-1.5 text-xs ${textTone}`}>
+            {charges.map((ar: any) => (
+              <div key={ar.id} className="flex items-center gap-2 flex-wrap">
+                <span className="opacity-70">Cobrança Asaas</span>
+                {ar.charge_status && (
+                  <span className="rounded px-1.5 py-0.5 bg-white/60 border border-current/20 font-medium uppercase text-[10px]">
+                    {ar.charge_status}
+                  </span>
+                )}
+                <a href={ar.charge_url} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 underline hover:opacity-70 font-medium">
+                  <ExternalLink className="h-3 w-3" /> Abrir link de pagamento
+                </a>
+              </div>
+            ))}
+          </div>
+        )
         if (allReconciled) {
           return (
-            <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 flex items-center gap-2 text-sm font-medium text-green-800">
-              <Check className="h-5 w-5 text-green-600 shrink-0" />
-              <span>OS paga e conciliada {methods ? `\u2014 ${methods}` : ''} {fmt(totalPaid)} {paidDate ? `em ${paidDate}` : ''}</span>
+            <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 flex items-start gap-2 text-sm font-medium text-green-800">
+              <Check className="h-5 w-5 text-green-600 shrink-0 mt-0.5" />
+              <div className="flex-1"><div>OS paga e conciliada {methods ? `\u2014 ${methods}` : ''} {fmt(totalPaid)} {paidDate ? `em ${paidDate}` : ''}</div>{renderCharges('text-green-700')}</div>
             </div>
           )
         }
@@ -1445,7 +1466,7 @@ export default function OSDetailPage() {
             <Clock className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
             <div>
               <div className="font-medium">Pago {methods ? `\u2014 ${methods}` : ''} {fmt(totalPaid)} {paidDate ? `em ${paidDate}` : ''}</div>
-              <div className="text-xs mt-0.5 text-amber-800">Aguardando confirmação no extrato bancário. Conciliar em /financeiro/conciliação para confirmar entrada do valor.</div>
+              <div className="text-xs mt-0.5 text-amber-800">Aguardando confirmação no extrato bancário. Conciliar em /financeiro/conciliação para confirmar entrada do valor.</div>{renderCharges('text-amber-800')}
             </div>
           </div>
         )
