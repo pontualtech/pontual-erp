@@ -2518,6 +2518,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
                     priority: 'HIGH',
                     category: 'RENEGOCIACAO_GERENCIA',
                     service_order_id: serviceOrderUuid,
+                    customer_message: content,
                   }),
                 })
               } catch (e) { console.warn('[Bot/Renegociar] criar-ticket gerencia falhou:', e instanceof Error ? e.message : e) }
@@ -2534,6 +2535,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
                     priority: 'NORMAL',
                     category: 'DEVOLUCAO_PENDENTE',
                     service_order_id: serviceOrderUuid,
+                    customer_message: content,
                   }),
                 })
               } catch (e) { console.warn('[Bot/Renegociar] criar-ticket logistica falhou:', e instanceof Error ? e.message : e) }
@@ -2624,6 +2626,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
               priority: isUrgent ? 'URGENT' : 'HIGH',
               category: 'ATRASO_REPARO',
               service_order_id: serviceOrderUuid,
+              customer_message: content,
             }),
           })
           if (ticketRes.ok) {
@@ -2706,6 +2709,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
               priority: 'HIGH',
               category,
               service_order_id: serviceOrderUuid,
+              customer_message: content,
             }),
           })
         } catch (e) { console.warn('[Bot/Cancel] criar-ticket falhou:', e instanceof Error ? e.message : e) }
@@ -2758,6 +2762,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
                 description: note,
                 priority: 'NORMAL',
                 category: 'COBRANCA_REENVIO',
+                customer_message: content,
               }),
             })
           } catch (e) { console.warn('[Bot/Resend] criar-ticket falhou:', e instanceof Error ? e.message : e) }
@@ -2822,6 +2827,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
               priority: 'NORMAL',
               category: 'DESCONTO_NEGOCIACAO',
               service_order_id: serviceOrderUuid,
+              customer_message: content,
             }),
           })
           if (tRes.ok) {
@@ -2859,6 +2865,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
               priority: 'HIGH',
               category: 'CLIENTE_IRRITADO',
               service_order_id: null,
+              customer_message: content,
             }),
           })
           if (tRes.ok) {
@@ -2902,6 +2909,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
               priority: 'HIGH',
               category: 'DEVOLUCAO_LOGISTICA',
               service_order_id: serviceOrderUuid,
+              customer_message: content,
             }),
           })
         } catch (e) { console.warn('[Bot/Devolucao] criar-ticket falhou:', e instanceof Error ? e.message : e) }

@@ -23,9 +23,17 @@ export async function POST(req: NextRequest) {
     if (auth instanceof NextResponse) return auth
 
     const body = await req.json()
-    const { subject, description, priority, category, service_order_id } = body
+    const { subject, description, priority, category, service_order_id, customer_message } = body
 
     if (!subject?.trim()) return botError('Campo "subject" e obrigatorio')
+
+    // Mensagem ORIGINAL do cliente (vinda do WhatsApp via Chatwoot). Quando
+    // presente, e gravada como TicketMessage sender_type=CLIENTE pra operador
+    // ver no OsTicketsPanel o que o cliente realmente escreveu — nao so o
+    // resumo do bot. Trim + cap defensivo.
+    const customerMessage = customer_message
+      ? String(customer_message).trim().slice(0, 5000)
+      : null
 
     // Audit 14 fix: IDOR — service_order_id era aceito sem validar tenant.
     // Bot autenticado da empresa X poderia anexar ticket a uma OS da
@@ -64,6 +72,21 @@ export async function POST(req: NextRequest) {
           where: { id: existingBotTicket.id },
           data: { priority: updatedPriority, updated_at: new Date() },
         })
+        // 2026-05-22: gravar mensagem ORIGINAL do cliente antes do summary do bot
+        // pra operador ver no painel o que o cliente escreveu (nao so observacao).
+        if (customerMessage) {
+          await prisma.ticketMessage.create({
+            data: {
+              company_id: auth.companyId,
+              ticket_id: existingBotTicket.id,
+              message: customerMessage,
+              sender_type: 'CLIENTE',
+              sender_id: null,
+              sender_name: 'Cliente',
+              is_internal: false,
+            },
+          })
+        }
         await prisma.ticketMessage.create({
           data: {
             company_id: auth.companyId,
@@ -109,6 +132,37 @@ export async function POST(req: NextRequest) {
         status: 'ABERTO',
       },
     })
+
+    // 2026-05-22: gravar mensagem ORIGINAL do cliente + observacao do bot
+    // como TicketMessage pra aparecer no OsTicketsPanel (last_message + count).
+    // Antes, ticket BOT ficava 0 msg e operador so via subject sem o que
+    // o cliente realmente escreveu.
+    if (customerMessage) {
+      await prisma.ticketMessage.create({
+        data: {
+          company_id: auth.companyId,
+          ticket_id: ticket.id,
+          message: customerMessage,
+          sender_type: 'CLIENTE',
+          sender_id: null,
+          sender_name: 'Cliente',
+          is_internal: false,
+        },
+      })
+    }
+    if (description) {
+      await prisma.ticketMessage.create({
+        data: {
+          company_id: auth.companyId,
+          ticket_id: ticket.id,
+          message: `[BOT] ${String(description).trim()}`,
+          sender_type: 'BOT',
+          sender_id: null,
+          sender_name: 'Bot',
+          is_internal: true,
+        },
+      })
+    }
 
     return botSuccess({
       ticket_id: ticket.id,

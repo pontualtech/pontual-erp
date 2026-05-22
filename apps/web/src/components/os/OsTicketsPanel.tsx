@@ -8,7 +8,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { MessageSquare, Send, Loader2, RefreshCw, ChevronDown, ChevronRight, User, Bot, Check, Lock, RotateCcw, Play } from 'lucide-react'
+import { MessageSquare, Send, Loader2, RefreshCw, ChevronDown, ChevronRight, ChevronUp, User, Bot, Check, Lock, RotateCcw, Play } from 'lucide-react'
 
 interface TicketSummary {
   id: string
@@ -24,6 +24,10 @@ interface TicketSummary {
     sender_name: string | null
     created_at: string
     is_internal: boolean | null
+  } | null
+  customer_message: {
+    message: string
+    created_at: string
   } | null
   message_count: number
 }
@@ -80,6 +84,11 @@ function statusColor(status: string | null) {
   }
 }
 
+// Estado de collapse do painel root: persiste por OS no localStorage.
+// Default inteligente: recolhido se nao tem ticket ativo (so FECHADO/RESOLVIDO).
+// Se usuario clicar e mudar, o estado dele wins (LocalStorage persiste).
+const PANEL_STATE_KEY = (osId: string) => `os-tickets-panel:${osId}`
+
 export default function OsTicketsPanel({ osId }: Props) {
   const [tickets, setTickets] = useState<TicketSummary[]>([])
   const [loading, setLoading] = useState(true)
@@ -89,6 +98,8 @@ export default function OsTicketsPanel({ osId }: Props) {
   const [replyText, setReplyText] = useState<Record<string, string>>({})
   const [sending, setSending] = useState<string | null>(null)
   const [changingStatus, setChangingStatus] = useState<string | null>(null)
+  const [panelCollapsed, setPanelCollapsed] = useState<boolean>(false)
+  const [panelStateLoaded, setPanelStateLoaded] = useState<boolean>(false)
   const scrollRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   async function changeStatus(ticketId: string, status: string) {
@@ -160,6 +171,34 @@ export default function OsTicketsPanel({ osId }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [osId, expandedId])
 
+  // Carrega estado collapse do localStorage. Se nao tem preferencia salva,
+  // aplica default inteligente apos os tickets carregarem (1x):
+  //   - tem ticket ativo (ABERTO/EM_ANDAMENTO) -> expandido
+  //   - so tem RESOLVIDO/FECHADO ou nenhum -> recolhido
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (panelStateLoaded) return
+    if (loading) return
+    const saved = localStorage.getItem(PANEL_STATE_KEY(osId))
+    if (saved === '1') {
+      setPanelCollapsed(true)
+    } else if (saved === '0') {
+      setPanelCollapsed(false)
+    } else {
+      const hasActive = tickets.some(t => t.status !== 'RESOLVIDO' && t.status !== 'FECHADO')
+      setPanelCollapsed(!hasActive)
+    }
+    setPanelStateLoaded(true)
+  }, [loading, tickets, osId, panelStateLoaded])
+
+  function togglePanel() {
+    const next = !panelCollapsed
+    setPanelCollapsed(next)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(PANEL_STATE_KEY(osId), next ? '1' : '0')
+    }
+  }
+
   function toggleExpand(ticketId: string) {
     if (expandedId === ticketId) {
       setExpandedId(null)
@@ -196,33 +235,58 @@ export default function OsTicketsPanel({ osId }: Props) {
     }
   }
 
+  const activeCount = tickets.filter(t => t.status !== 'RESOLVIDO' && t.status !== 'FECHADO').length
+  const totalCount = tickets.length
+
   return (
     <div className="rounded-xl border-2 border-blue-200 dark:border-blue-900 bg-white dark:bg-gray-900 p-4 shadow-sm">
       <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-950 flex items-center justify-center">
-            <MessageSquare className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-          </div>
-          <div>
-            <h3 className="font-bold text-sm text-gray-900 dark:text-gray-100">
-              Mensagens do cliente
-            </h3>
-            <p className="text-[10px] text-gray-500 dark:text-gray-400">
-              Tickets vinculados a esta OS. Respostas vão pelo WhatsApp + portal.
-            </p>
-          </div>
-        </div>
         <button
           type="button"
-          onClick={() => loadTickets()}
-          className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500"
-          title="Atualizar"
+          onClick={togglePanel}
+          className="flex items-center gap-2 -m-1 p-1 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50 text-left transition-colors flex-1 min-w-0"
+          aria-expanded={panelCollapsed ? 'false' : 'true'}
+          title={panelCollapsed ? 'Expandir mensagens' : 'Recolher mensagens'}
         >
-          <RefreshCw className="h-3.5 w-3.5" />
+          <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-950 flex items-center justify-center shrink-0">
+            <MessageSquare className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h3 className="font-bold text-sm text-gray-900 dark:text-gray-100 flex items-center gap-2">
+              Mensagens do cliente
+              {totalCount > 0 && (
+                <span className={`text-[10px] font-medium rounded-full px-1.5 py-0.5 ${
+                  activeCount > 0
+                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200'
+                    : 'bg-gray-200 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+                }`}>
+                  {activeCount > 0 ? `${activeCount} ativo${activeCount > 1 ? 's' : ''}` : `${totalCount} fechado${totalCount > 1 ? 's' : ''}`}
+                </span>
+              )}
+            </h3>
+            {!panelCollapsed && (
+              <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                Tickets vinculados a esta OS. Respostas vão pelo WhatsApp + portal.
+              </p>
+            )}
+          </div>
+          {panelCollapsed
+            ? <ChevronDown className="h-4 w-4 text-gray-500 shrink-0" />
+            : <ChevronUp className="h-4 w-4 text-gray-500 shrink-0" />}
         </button>
+        {!panelCollapsed && (
+          <button
+            type="button"
+            onClick={() => loadTickets()}
+            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 ml-2 shrink-0"
+            title="Atualizar"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
 
-      {loading ? (
+      {panelCollapsed ? null : loading ? (
         <div className="text-center py-6 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin inline mr-2" />Carregando...</div>
       ) : tickets.length === 0 ? (
         <div className="text-center py-6 text-sm text-gray-400 italic">
@@ -259,11 +323,37 @@ export default function OsTicketsPanel({ osId }: Props) {
                     {t.message_count} msg
                   </span>
                 </button>
-                {!expanded && t.last_message && (
-                  <div className="px-3 pb-2 text-xs text-gray-500 dark:text-gray-400 truncate pl-9">
-                    <span className="font-medium">{t.last_message.sender_type === 'CLIENTE' ? 'Cliente' : t.last_message.sender_name || 'Atendente'}:</span>{' '}
-                    {t.last_message.message.slice(0, 120)}
-                    <span className="ml-2 text-[10px]">{formatTime(t.last_message.created_at)}</span>
+                {!expanded && (t.customer_message || t.last_message) && (
+                  <div className="px-3 pb-2 pl-9 space-y-1">
+                    {/* Queixa original do cliente — sempre destaca em azul, mesmo
+                        que o bot/atendente ja tenha respondido depois. */}
+                    {t.customer_message && (
+                      <div className="text-xs text-gray-800 dark:text-gray-100 line-clamp-2">
+                        <span className="font-semibold text-blue-700 dark:text-blue-300">💬 Cliente:</span>{' '}
+                        {t.customer_message.message.slice(0, 200)}
+                      </div>
+                    )}
+                    {/* Ultima atividade quando NAO e o proprio cliente (resposta
+                        do bot/atendente) — mostra so resumo bem curto. */}
+                    {t.last_message && t.last_message.sender_type !== 'CLIENTE' && (() => {
+                      const isBot = t.last_message.sender_type === 'BOT'
+                      const senderLabel = isBot ? 'Bot' : (t.last_message.sender_name || 'Atendente')
+                      return (
+                        <div className="text-[11px] text-gray-500 dark:text-gray-400 truncate">
+                          <span className="font-medium">↳ {senderLabel}:</span>{' '}
+                          {t.last_message.message.slice(0, 100)}
+                          <span className="ml-2 text-[10px] text-gray-400">{formatTime(t.last_message.created_at)}</span>
+                        </div>
+                      )
+                    })()}
+                    {/* Se a ultima msg É do cliente (sem resposta ainda), mostra so timestamp */}
+                    {t.last_message && t.last_message.sender_type === 'CLIENTE' && !t.customer_message && (
+                      <div className="text-[11px] text-gray-500 dark:text-gray-400 truncate">
+                        <span className="font-medium text-blue-700 dark:text-blue-300">💬 Cliente:</span>{' '}
+                        {t.last_message.message.slice(0, 150)}
+                        <span className="ml-2 text-[10px] text-gray-400">{formatTime(t.last_message.created_at)}</span>
+                      </div>
+                    )}
                   </div>
                 )}
                 {expanded && (

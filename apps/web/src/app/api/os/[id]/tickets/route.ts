@@ -47,25 +47,49 @@ export async function GET(req: NextRequest, { params }: Params) {
     })
     const countMap = new Map(counts.map(c => [c.ticket_id, c._count._all]))
 
-    const payload = tickets.map(t => ({
-      id: t.id,
-      ticket_number: t.ticket_number,
-      subject: t.subject,
-      status: t.status,
-      source: t.source,
-      created_at: t.created_at,
-      updated_at: t.updated_at,
-      last_message: t.ticket_messages[0]
-        ? {
-            message: t.ticket_messages[0].message,
-            sender_type: t.ticket_messages[0].sender_type,
-            sender_name: t.ticket_messages[0].sender_name,
-            created_at: t.ticket_messages[0].created_at,
-            is_internal: t.ticket_messages[0].is_internal,
-          }
-        : null,
-      message_count: countMap.get(t.id) || 0,
-    }))
+    // Mensagem ORIGINAL do cliente (1a msg sender_type=CLIENTE em cada ticket).
+    // Permite mostrar no card colapsado "o que o cliente realmente escreveu",
+    // mesmo que a ultima mensagem ja seja resposta do bot/atendente.
+    const ticketIds = tickets.map((t: { id: string }) => t.id)
+    const customerMsgs = ticketIds.length
+      ? await prisma.ticketMessage.findMany({
+          where: { ticket_id: { in: ticketIds }, sender_type: 'CLIENTE' },
+          orderBy: { created_at: 'asc' },
+          select: { ticket_id: true, message: true, created_at: true },
+        })
+      : []
+    const customerMap = new Map<string, { message: string; created_at: Date }>()
+    for (const m of customerMsgs) {
+      if (!customerMap.has(m.ticket_id)) {
+        customerMap.set(m.ticket_id, { message: m.message, created_at: m.created_at })
+      }
+    }
+
+    const payload = tickets.map(t => {
+      const cm = customerMap.get(t.id)
+      return {
+        id: t.id,
+        ticket_number: t.ticket_number,
+        subject: t.subject,
+        status: t.status,
+        source: t.source,
+        created_at: t.created_at,
+        updated_at: t.updated_at,
+        last_message: t.ticket_messages[0]
+          ? {
+              message: t.ticket_messages[0].message,
+              sender_type: t.ticket_messages[0].sender_type,
+              sender_name: t.ticket_messages[0].sender_name,
+              created_at: t.ticket_messages[0].created_at,
+              is_internal: t.ticket_messages[0].is_internal,
+            }
+          : null,
+        customer_message: cm
+          ? { message: cm.message, created_at: cm.created_at }
+          : null,
+        message_count: countMap.get(t.id) || 0,
+      }
+    })
 
     return success({ tickets: payload })
   } catch (err) {
