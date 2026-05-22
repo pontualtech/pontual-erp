@@ -85,6 +85,15 @@ const MODULES: ModuleCard[] = [
     iconColor: 'text-emerald-600 dark:text-emerald-400',
     borderHover: 'hover:border-emerald-300 dark:hover:border-emerald-500/40',
   },
+  {
+    title: 'Nurture pós-recusa',
+    description: 'Lead que disse "não" ao orçamento entra em sequência perpétua de email + WhatsApp',
+    href: '/marketing/nurture',
+    icon: Activity,
+    iconBg: 'bg-pink-50 dark:bg-pink-500/10',
+    iconColor: 'text-pink-600 dark:text-pink-400',
+    borderHover: 'hover:border-pink-300 dark:hover:border-pink-500/40',
+  },
 ]
 
 export default function MarketingHomePage() {
