@@ -2415,6 +2415,7 @@ model MarketingContact {
   company        Company                 @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   customer       Customer?               @relation(fields: [customer_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
   webhook_events MarketingWebhookEvent[]
+  journeys       MarketingJourney[]
 
   @@unique([company_id, email], map: "marketing_contacts_company_email_unique")
   @@index([email], map: "idx_mc_email")
@@ -2602,4 +2603,27 @@ model AlertState {
 
   @@unique([alert_type, company_id], map: "idx_alert_state_type_company")
   @@map("alert_state")
+}
+
+/// Nurture journey — perpétuo follow-up de leads que recusaram OS (2026-05-22)
+/// 1 row por (contact_id, journey_type). current_step incrementa a cada envio.
+/// ended_at NULL = ativa.
+model MarketingJourney {
+  id            String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  contact_id    String
+  company_id    String
+  journey_type  String    @default("recused_os")
+  current_step  Int       @default(0)
+  started_at    DateTime  @default(now()) @db.Timestamptz(6)
+  last_step_at  DateTime? @db.Timestamptz(6)
+  ended_at      DateTime? @db.Timestamptz(6)
+  outcome       String?
+  source_data   Json      @default("{}")
+
+  contact MarketingContact @relation(fields: [contact_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([contact_id, journey_type], map: "idx_mj_unique_contact_type")
+  @@index([started_at(sort: Desc)], map: "idx_mj_started_at_desc")
+  @@index([company_id, started_at(sort: Desc)], map: "idx_mj_company_started")
+  @@map("marketing_journeys")
 }
