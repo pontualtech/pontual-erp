@@ -3,12 +3,30 @@ import { sendWhatsAppEvolution } from './evolution'
 
 /**
  * Send WhatsApp message via Meta Cloud API (official).
- * Uses company-specific settings from DB:
- *   - whatsapp.cloud.phone_number_id
- *   - whatsapp.cloud.access_token
  *
- * Falls back to env vars: META_WHATSAPP_PHONE_ID, META_WHATSAPP_TOKEN
+ * Channel routing (2026-05-22): a empresa pode ter 2 WABAs/numeros
+ * cadastrados — um pra RELACIONAMENTO (notif de OS, ticket, magic link,
+ * cobranca) e outro pra VENDAS (marketing, prospeccao). Cada notificacao
+ * passa o canal correto; default = 'suporte'.
+ *
+ * Settings por canal (preferencial):
+ *   - whatsapp.cloud.suporte.phone_number_id + .access_token
+ *   - whatsapp.cloud.vendas.phone_number_id  + .access_token
+ *
+ * Settings legacy (fallback APENAS pro canal 'suporte', mantido pra
+ * compat com instalacoes antigas):
+ *   - whatsapp.cloud.phone_number_id + .access_token
+ *
+ * Env vars como ultimo fallback APENAS pro canal 'suporte':
+ *   META_WHATSAPP_PHONE_ID + META_WHATSAPP_TOKEN
+ *
+ * Canal 'vendas' SEM .vendas.* configurado retorna `cloud_not_configured`
+ * — nunca cai no legacy pra evitar vazamento (o bug 2026-05-22 quando
+ * Karlao cadastrou 3136/vendas no setting global e TODAS notificacoes
+ * de relacionamento comecaram a sair pelo numero de vendas).
  */
+
+export type WhatsAppChannel = 'suporte' | 'vendas'
 
 interface CloudSendResult {
   success: boolean
@@ -16,27 +34,46 @@ interface CloudSendResult {
   error?: string
 }
 
-// Cache per company (TTL 5 min)
+// Cache per (company, channel) — TTL 5 min
 const configCache = new Map<string, { data: { phoneNumberId: string; token: string }; expires: number }>()
 
-async function getCloudConfig(companyId: string): Promise<{ phoneNumberId: string; token: string } | null> {
-  const cached = configCache.get(companyId)
+async function getCloudConfig(companyId: string, channel: WhatsAppChannel = 'suporte'): Promise<{ phoneNumberId: string; token: string } | null> {
+  const cacheKey = `${companyId}:${channel}`
+  const cached = configCache.get(cacheKey)
   if (cached && cached.expires > Date.now()) return cached.data
 
   const settings = await prisma.setting.findMany({
     where: { company_id: companyId, key: { startsWith: 'whatsapp.cloud.' } },
   })
 
-  const get = (key: string) => settings.find(s => s.key === key)?.value || ''
+  const get = (key: string) => settings.find((s: { key: string; value: string }) => s.key === key)?.value || ''
 
-  const phoneNumberId = get('whatsapp.cloud.phone_number_id') || process.env.META_WHATSAPP_PHONE_ID || ''
-  const token = get('whatsapp.cloud.access_token') || process.env.META_WHATSAPP_TOKEN || ''
+  // 1. Tenta a chave especifica do canal
+  let phoneNumberId = get(`whatsapp.cloud.${channel}.phone_number_id`)
+  let token = get(`whatsapp.cloud.${channel}.access_token`)
+
+  // 2. Fallback APENAS pro canal 'suporte' — legacy keys + env vars
+  if (channel === 'suporte') {
+    if (!phoneNumberId) phoneNumberId = get('whatsapp.cloud.phone_number_id') || process.env.META_WHATSAPP_PHONE_ID || ''
+    if (!token) token = get('whatsapp.cloud.access_token') || process.env.META_WHATSAPP_TOKEN || ''
+  }
 
   if (!phoneNumberId || !token) return null
 
   const data = { phoneNumberId, token }
-  configCache.set(companyId, { data, expires: Date.now() + 5 * 60 * 1000 })
+  configCache.set(cacheKey, { data, expires: Date.now() + 5 * 60 * 1000 })
   return data
+}
+
+/** Limpa cache de config (apos setting update via setup-webhook ou UI admin) */
+export function invalidateWhatsAppCloudConfigCache(companyId?: string) {
+  if (!companyId) {
+    configCache.clear()
+    return
+  }
+  for (const k of Array.from(configCache.keys())) {
+    if (k.startsWith(`${companyId}:`)) configCache.delete(k)
+  }
 }
 
 /**
@@ -47,9 +84,10 @@ async function getCloudConfig(companyId: string): Promise<{ phoneNumberId: strin
 export async function sendWhatsAppCloud(
   companyId: string,
   phone: string,
-  text: string
+  text: string,
+  channel: WhatsAppChannel = 'suporte'
 ): Promise<CloudSendResult> {
-  const config = await getCloudConfig(companyId)
+  const config = await getCloudConfig(companyId, channel)
   if (!config) {
     // PontualTech / Imprimitech operam APENAS via Meta Cloud API oficial
     // (decisao Karlao 2026-05-05). Sem fallback Evolution.
@@ -109,9 +147,10 @@ export async function sendWhatsAppTemplate(
   templateName: string,
   languageCode: string = 'pt_BR',
   components?: any[],
-  fallbackText?: string
+  fallbackText?: string,
+  channel: WhatsAppChannel = 'suporte'
 ): Promise<CloudSendResult> {
-  const config = await getCloudConfig(companyId)
+  const config = await getCloudConfig(companyId, channel)
   if (!config) {
     // Cloud API not configured — fallback to Evolution API with plain text
     const text = fallbackText || buildFallbackText(templateName, components)
@@ -189,8 +228,9 @@ export async function sendWhatsAppTemplateMetaOnly(
   templateName: string,
   languageCode: string = 'pt_BR',
   components?: any[],
+  channel: WhatsAppChannel = 'suporte'
 ): Promise<CloudSendResult> {
-  const config = await getCloudConfig(companyId)
+  const config = await getCloudConfig(companyId, channel)
   if (!config) {
     return { success: false, error: 'not_configured' }
   }
@@ -275,13 +315,14 @@ export async function sendWhatsAppButtons(
   body: string,
   buttons: ReplyButton[],
   header?: string,
-  footer?: string
+  footer?: string,
+  channel: WhatsAppChannel = 'suporte'
 ): Promise<CloudSendResult> {
-  const config = await getCloudConfig(companyId)
+  const config = await getCloudConfig(companyId, channel)
   if (!config) {
     // Fallback: send as text with numbered options
     const btnText = buttons.map((b, i) => `${i + 1}. ${b.title}`).join('\n')
-    return sendWhatsAppCloud(companyId, phone, `${header ? `*${header}*\n\n` : ''}${body}\n\n${btnText}${footer ? `\n\n_${footer}_` : ''}`)
+    return sendWhatsAppCloud(companyId, phone, `${header ? `*${header}*\n\n` : ''}${body}\n\n${btnText}${footer ? `\n\n_${footer}_` : ''}`, channel)
   }
 
   const cleanPhone = phone.replace(/\D/g, '')
@@ -314,14 +355,15 @@ export async function sendWhatsAppList(
   buttonText: string,
   sections: ListSection[],
   header?: string,
-  footer?: string
+  footer?: string,
+  channel: WhatsAppChannel = 'suporte'
 ): Promise<CloudSendResult> {
-  const config = await getCloudConfig(companyId)
+  const config = await getCloudConfig(companyId, channel)
   if (!config) {
     // Fallback: send as numbered text list
     const items = sections.flatMap(s => s.rows)
     const listText = items.map((r, i) => `${i + 1}. ${r.title}${r.description ? ` — ${r.description}` : ''}`).join('\n')
-    return sendWhatsAppCloud(companyId, phone, `${body}\n\n${listText}`)
+    return sendWhatsAppCloud(companyId, phone, `${body}\n\n${listText}`, channel)
   }
 
   const cleanPhone = phone.replace(/\D/g, '')
@@ -359,12 +401,13 @@ export async function sendWhatsAppCtaUrl(
   buttonText: string,
   url: string,
   header?: string,
-  footer?: string
+  footer?: string,
+  channel: WhatsAppChannel = 'suporte'
 ): Promise<CloudSendResult> {
-  const config = await getCloudConfig(companyId)
+  const config = await getCloudConfig(companyId, channel)
   if (!config) {
     // Fallback: send URL in text
-    return sendWhatsAppCloud(companyId, phone, `${body}\n\n${url}`)
+    return sendWhatsAppCloud(companyId, phone, `${body}\n\n${url}`, channel)
   }
 
   const cleanPhone = phone.replace(/\D/g, '')

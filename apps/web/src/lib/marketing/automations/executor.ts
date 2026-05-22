@@ -213,12 +213,15 @@ async function executeWhatsapp(
     : undefined
 
   const { sendWhatsAppTemplateMetaOnly } = await import('@/lib/whatsapp/cloud-api')
+  // Marketing/prospecao sai pelo numero de VENDAS (3136-0415) — separado
+  // de notif de relacionamento (cobranca, OS, ticket) que vao pelo suporte.
   const res = await sendWhatsAppTemplateMetaOnly(
     companyId,
     phone,
     templateName,
     templateLanguage,
     components,
+    'vendas',
   )
 
   if (!res.success) {
