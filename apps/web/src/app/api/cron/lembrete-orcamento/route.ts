@@ -4,6 +4,9 @@ import { prisma } from '@pontual/db'
 import { success, error, handleError } from '@/lib/api-response'
 import { sendQuoteReminders } from '@/app/api/os/lembrete-orcamento/route'
 
+// Next 14: route depende de cookies/headers/searchParams — força runtime
+export const dynamic = 'force-dynamic'
+
 /**
  * GET /api/cron/lembrete-orcamento
  * Endpoint para cron externo (n8n, crontab, etc.) disparar lembretes de orçamento.

@@ -4,6 +4,9 @@ import { getServerUser } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { createClient } from '@/lib/supabase/server'
 
+// Next 14: route depende de cookies/headers/searchParams — força runtime
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   try {
     const supabase = createClient()

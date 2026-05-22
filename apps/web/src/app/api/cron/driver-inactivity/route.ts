@@ -4,6 +4,9 @@ import { prisma } from '@pontual/db'
 import { success, error, handleError } from '@/lib/api-response'
 import { sendWhatsAppCloud } from '@/lib/whatsapp/cloud-api'
 
+// Next 14: route depende de cookies/headers/searchParams — força runtime
+export const dynamic = 'force-dynamic'
+
 /**
  * GET /api/cron/driver-inactivity
  *

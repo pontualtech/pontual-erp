@@ -20,12 +20,26 @@ export function error(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status })
 }
 
+// Mensagens de auth/validação que NÃO devem virar 500 nem poluir error_logs.
+// Análise 2026-05-22: 32 de 153 erros capturados eram "Não autenticado" jogado
+// como Error — isso é validação, não bug. Devolver 401 silencioso.
+const AUTH_ERROR_PATTERNS = [
+  /^n[aã]o autenticado$/i,
+  /^unauthorized$/i,
+  /^unauthenticated$/i,
+  /^sess[aã]o expirada$/i,
+]
+
+function isAuthError(msg: string): boolean {
+  return AUTH_ERROR_PATTERNS.some(re => re.test(msg.trim()))
+}
+
 /**
  * Centraliza tratamento de erros de handlers. Opcionalmente recebe um contexto
  * (request_id, user_id, company_id, url, method) que vai pra error_logs.
  *
  * O log é fire-and-forget: nunca bloqueia a resposta nem propaga falha.
- * ZodError e P2002 são tratados como expected (não logam — são validação).
+ * ZodError, P2002 e auth errors são tratados como expected (não logam — são validação).
  */
 export function handleError(err: unknown, context?: ErrorContext) {
   if (err instanceof ZodError) {
@@ -46,6 +60,12 @@ export function handleError(err: unknown, context?: ErrorContext) {
       ? 'Já existe outro cadastro com esse CPF/CNPJ.'
       : `Já existe um registro com esse valor${fields.length ? ` (${fields.join(', ')})` : ''}.`
     return NextResponse.json({ error: message }, { status: 409 })
+  }
+
+  // Auth errors: 401 sem logar. Caller deveria ter retornado 401 direto,
+  // mas alguns ainda usam throw new Error('Não autenticado') por hábito.
+  if (err instanceof Error && isAuthError(err.message)) {
+    return NextResponse.json({ error: err.message }, { status: 401 })
   }
 
   if (err instanceof Error) {

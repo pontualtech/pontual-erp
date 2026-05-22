@@ -4,6 +4,9 @@ import { prisma } from '@pontual/db'
 import { success, error, handleError } from '@/lib/api-response'
 import { sendOverdueReminders } from '@/app/api/financeiro/cobranca/route'
 
+// Next 14: route depende de cookies/headers/searchParams — força runtime
+export const dynamic = 'force-dynamic'
+
 /**
  * GET /api/cron/cobranca
  * Endpoint para cron externo (n8n, crontab, etc.) disparar cobranças automáticas.

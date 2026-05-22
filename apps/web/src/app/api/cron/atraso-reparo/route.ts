@@ -21,6 +21,9 @@ import { sendCompanyEmail } from '@/lib/send-email'
 import { buildMagicLink } from '@/lib/portal-magic-url'
 import { buildAtrasoEmail, addBusinessDays, businessDaysUntil, type AtrasoOverride } from '@/lib/email-templates/atraso-reparo'
 
+// Next 14: route depende de cookies/headers/searchParams — força runtime
+export const dynamic = 'force-dynamic'
+
 async function loadCompanyOverrides(companyId: string): Promise<Record<string, AtrasoOverride>> {
   const settings = await prisma.setting.findMany({
     where: { company_id: companyId, key: { startsWith: 'notif.atraso_reparo.' } },

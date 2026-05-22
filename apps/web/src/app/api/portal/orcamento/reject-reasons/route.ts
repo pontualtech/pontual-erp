@@ -2,6 +2,9 @@ import { NextRequest } from 'next/server'
 import { prisma } from '@pontual/db'
 import { success, handleError } from '@/lib/api-response'
 
+// Next 14: route depende de cookies/headers/searchParams — força runtime
+export const dynamic = 'force-dynamic'
+
 const DEFAULT_REASONS = [
   'O valor nao compensa o conserto',
   'Estou sem recursos no momento',

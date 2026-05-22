@@ -3,6 +3,9 @@ import { timingSafeEqual } from 'crypto'
 import { prisma } from '@pontual/db'
 import { success, error, handleError } from '@/lib/api-response'
 
+// Next 14: route depende de cookies/headers/searchParams — força runtime
+export const dynamic = 'force-dynamic'
+
 // GET /api/cron/payment-reminders-v2
 // Worker da régua de cobrança v2:
 //   1. SCHEDULER: scaneia AR PENDENTE em todas as empresas; pra cada
