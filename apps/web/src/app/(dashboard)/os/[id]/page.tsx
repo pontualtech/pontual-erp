@@ -222,6 +222,9 @@ export default function OSDetailPage() {
   const [bankAccounts, setBankAccounts] = useState<{ id: string; name: string; bank_name: string | null }[]>([])
   const [paymentAccountId, setPaymentAccountId] = useState('')
   const [defaultAccountMap, setDefaultAccountMap] = useState<Record<string, string>>({})
+  // 2026-05-22 fix Karlao OS-60549: BOLETO precisa de dias de vencimento.
+  // Default 10 (combinado com cliente). Atendente edita conforme acordo.
+  const [boletoDueDays, setBoletoDueDays] = useState(10)
   // 2026-05-20 Fase D split balcao:
   // - receivedNow: admin marca que cliente pagou ao retirar (default true). False = vai cobrar depois (PENDENTE).
   // - useSplit: divide o pagamento em multiplas formas (ex: 500 PIX + 200 cartao 2x).
@@ -874,6 +877,10 @@ export default function OSDetailPage() {
       if (editTechnicianId) body.technician_id = editTechnicianId
       if (paymentAccountId) body.account_id = paymentAccountId
       if (customBusinessDays) body.business_days = parseInt(customBusinessDays)
+      // 2026-05-22 fix Karlao OS-60549: due_days quando BOLETO (cliente paga depois)
+      if (payment_method && /boleto/i.test(payment_method) && boletoDueDays > 0) {
+        body.due_days = boletoDueDays
+      }
       // 2026-05-20 Fase D split balcao: enviar splits[] quando ativo + received_now
       if (opts?.splits && opts.splits.length > 0) body.splits = opts.splits
       if (opts?.receivedNow !== undefined) body.received_now = opts.receivedNow
@@ -980,6 +987,8 @@ export default function OSDetailPage() {
 
   // Check if selected payment method is a card type
   const isCardPayment = /cart[aã]o|cr[eé]dito|credito/i.test(paymentMethod)
+  // Bug Karlao 22/05: boleto precisa de dias de vencimento explicito
+  const isBoletoPayment = /boleto/i.test(paymentMethod)
 
   // Calculate card fee for current installment selection
   function getCardFeePct(): number {
@@ -3440,6 +3449,35 @@ export default function OSDetailPage() {
                   </div>
                 )}
               </div>
+              )}
+
+              {/* Boleto: campo dias até vencimento (fix Karlao 22/05 OS-60549) */}
+              {!useSplit && isBoletoPayment && (
+                <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Vencimento do boleto (dias)
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      max={90}
+                      value={boletoDueDays}
+                      onChange={e => setBoletoDueDays(Math.max(0, Math.min(90, parseInt(e.target.value) || 0)))}
+                      title="Dias ate vencimento"
+                      className="w-24 px-3 py-2 border rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-200"
+                    />
+                    <span className="text-xs text-gray-600">
+                      Vence em {(() => {
+                        const d = new Date(); d.setDate(d.getDate() + boletoDueDays)
+                        return d.toLocaleDateString('pt-BR')
+                      })()}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-gray-500">
+                    Cliente recebe o boleto e paga no prazo combinado. Default 10 dias.
+                  </p>
+                </div>
               )}
 
               {/* Installment selector for card payments (apenas no modo single) */}

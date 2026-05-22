@@ -117,16 +117,33 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       return NextResponse.json({ error: 'Conta bancaria nao encontrada ou sem configuracao valida' }, { status: 400 })
     }
 
-    // Busca ou cria AR — pro AR ja existir, o usuario pode ter criado manual antes
-    let receivable = await prisma.accountReceivable.findFirst({
+    // Busca AR ativa da OS (qualquer status nao-CANCELADO/AGRUPADO).
+    // 2026-05-22 fix caso OS-60549: antes filtrava so PENDENTE/PARCIAL e
+    // se ja havia AR PAGO (criado pela transition Entregue), criava DUPLICATA.
+    // Agora detecta AR PAGO sem charge — bloqueia ou converte (depende
+    // do contexto).
+    const anyActiveAR = await prisma.accountReceivable.findFirst({
       where: {
         company_id: auth.companyId,
         service_order_id: os.id,
-        status: { in: ['PENDENTE', 'PARCIAL'] },
         deleted_at: null,
+        status: { notIn: ['CANCELADO', 'AGRUPADO'] },
       },
       orderBy: { created_at: 'desc' },
     })
+
+    if (anyActiveAR && anyActiveAR.status === 'PAGO' && !anyActiveAR.charge_id) {
+      // AR PAGO declarada manual sem Transaction reversao — provavelmente
+      // bug da transition (Boleto marcado PAGO sem ser pago). Avisa atendente
+      // pra estornar primeiro via POST /api/financeiro/contas-receber/[id]/estornar.
+      return NextResponse.json({
+        error: 'OS ja tem AR marcada como PAGA sem cobranca emitida. Estorne a AR antes (use /financeiro/contas-receber/[id]/estornar) ou cancele-a, depois emita a cobranca.',
+        existing_ar_id: anyActiveAR.id,
+        existing_ar_status: anyActiveAR.status,
+      }, { status: 409 })
+    }
+
+    let receivable: any = (anyActiveAR && anyActiveAR.status !== 'PAGO') ? anyActiveAR : null
 
     const due = new Date()
     due.setDate(due.getDate() + (data.due_days || 7))

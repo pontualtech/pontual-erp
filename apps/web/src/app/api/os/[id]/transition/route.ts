@@ -20,6 +20,10 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     const body = await req.json()
     const { toStatusId, notes, payment_method, installment_count: rawInstallmentCount, technician_id: bodyTechnicianId, notify_whatsapp, notify_email, _resend_notify_only, account_id: bodyAccountId } = body
+    // 2026-05-22 fix Karlao OS-60549: ao finalizar OS com BOLETO, atendente
+    // pode informar `due_days` (dias até vencimento, default 0 = hoje).
+    // Caso BB acordou 10 dias previamente, atendente passa due_days=10.
+    const bodyDueDays: number | null = body.due_days != null ? Math.max(0, parseInt(String(body.due_days)) || 0) : null
     // 2026-05-20 Fase D split balcao:
     // - splits[]: array { payment_method, amount_cents, installments?, account_id? } pra registrar
     //   pagamento dividido em multiplas formas (ex: 500 PIX + 200 cartao 2x). Quando presente
@@ -27,7 +31,14 @@ export async function POST(req: NextRequest, { params }: Params) {
     // - received_now: quando true, AR(s) viram status=PAGO + reconciled=false (declaracao manual
     //   admin balcao). Quando false/undefined, status=PENDENTE (comportamento atual backward-compat).
     const splitsInput: Array<{ payment_method: string; amount_cents: number; installments?: number; account_id?: string }> | undefined = Array.isArray(body.splits) && body.splits.length > 0 ? body.splits : undefined
-    const receivedNow: boolean = body.received_now === true
+    // 2026-05-22 fix Karlao caso OS-60549: BOLETO NUNCA pode ser receivedNow=true.
+    // Cliente leva o boleto e paga depois — recebimento so quando OFX/CNAB
+    // confirma. Se frontend mandar received_now=true com payment_method=BOLETO,
+    // forca pra false. Caso 22/05: gerou 1 AR PAGO falso + 1 AR PENDENTE real
+    // (duplicata) porque transition marcou PAGO antes do boleto ser pago.
+    const pmStrLower = String(payment_method || '').toLowerCase()
+    const isBoletoMethod = pmStrLower.includes('boleto')
+    const receivedNow: boolean = body.received_now === true && !isBoletoMethod
     // Notification flags: default true for backward compat, but frontend can set false
     const shouldNotifyWhatsApp = notify_whatsapp !== false
     const shouldNotifyEmail = notify_email !== false
@@ -353,18 +364,29 @@ export async function POST(req: NextRequest, { params }: Params) {
           }
         }
 
-        // Data de vencimento: para cartão com recebimento rápido (D+1), vence amanhã
-        // Para boleto/PIX/dinheiro, vence hoje (recebimento imediato)
+        // Data de vencimento:
+        //   - Cartao: D + days_to_receive da config (dias uteis)
+        //   - Boleto/PIX/Dinheiro com due_days no body: HOJE + due_days (corridos)
+        //     Caso 22/05: Karlao acertou BB pra 10 dias com cliente OS-60549.
+        //   - Senao: HOJE (recebimento imediato — balcao)
+        const isBoletoPmt = pmLower.includes('boleto')
         const dueDate = new Date()
         if (daysToReceive > 0) {
-          // Calcular próximo dia útil
+          // Cartao — dias uteis
           let dias = 0
           while (dias < daysToReceive) {
             dueDate.setDate(dueDate.getDate() + 1)
             const dow = dueDate.getDay()
             if (dow !== 0 && dow !== 6) dias++
           }
+        } else if (bodyDueDays != null && bodyDueDays > 0 && !receivedNow) {
+          // Boleto/PIX/Dinheiro com vencimento futuro acordado com cliente
+          dueDate.setDate(dueDate.getDate() + bodyDueDays)
         }
+        // Default boleto sem due_days: vence hoje — atendente pode editar AR depois
+        // se esqueceu de passar. Mas a UI ja deve oferecer o campo (UX fix).
+        // Variavel isBoletoPmt usada abaixo para nota explicativa
+        void isBoletoPmt
 
         const receivable = await tx.accountReceivable.create({
           data: {
