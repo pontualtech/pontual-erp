@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import {
@@ -85,6 +85,10 @@ const statusConfig: Record<string, { bg: string; text: string; dot: string; labe
 export default function ContaReceberDetalhePage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  // Quando AR foi aberta a partir do /extrato (link com ?from=extrato),
+  // o botao Voltar retorna pro extrato em vez da listagem geral. Caso 22/05.
+  const backHref = searchParams.get('from') === 'extrato' ? '/financeiro/extrato' : '/financeiro/contas-receber'
   const { isAdmin, hasPermission } = useAuth()
   const canEdit = isAdmin || hasPermission('financeiro', 'edit')
 
@@ -197,11 +201,12 @@ export default function ContaReceberDetalhePage() {
 
   // ─── Actions ───────────────────────────────
   async function handleBaixa() {
+    if (!baixaAccountId) { toast.error('Selecione a conta bancaria/caixa'); return }
     setBaixaSaving(true)
     try {
       const res = await fetch(`/api/financeiro/contas-receber/${id}/baixa`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ received_amount: Math.round(parseFloat(baixaAmount) * 100), received_at: baixaDate, account_id: baixaAccountId || undefined }),
+        body: JSON.stringify({ received_amount: Math.round(parseFloat(baixaAmount) * 100), received_at: baixaDate, account_id: baixaAccountId }),
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Erro')
@@ -276,7 +281,7 @@ export default function ContaReceberDetalhePage() {
       {/* ─── Header ──────────────────────────── */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Link href="/financeiro/contas-receber" className="rounded-xl border border-gray-200 dark:border-gray-700 p-2.5 hover:bg-gray-50 dark:hover:bg-gray-800">
+          <Link href={backHref} className="rounded-xl border border-gray-200 dark:border-gray-700 p-2.5 hover:bg-gray-50 dark:hover:bg-gray-800">
             <ArrowLeft className="h-4 w-4 text-gray-500" />
           </Link>
           <div>

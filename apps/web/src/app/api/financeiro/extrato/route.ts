@@ -95,7 +95,8 @@ export async function GET(request: NextRequest) {
     if (paymentMethod) apWhere.payment_method = paymentMethod
     if (search) apWhere.OR = [
       { description: { contains: search, mode: 'insensitive' } },
-      { suppliers: { legal_name: { contains: search, mode: 'insensitive' } } },
+      // AccountPayable.supplier_id aponta pra Customer — relation Prisma chama-se "customers"
+      { customers: { legal_name: { contains: search, mode: 'insensitive' } } },
     ]
 
     const payables = skipPagar ? [] : await prisma.accountPayable.findMany({
@@ -134,6 +135,10 @@ export async function GET(request: NextRequest) {
     payables.forEach(p => p.payment_method && paymentMethods.add(p.payment_method))
 
     // === MONTAR EXTRATO UNIFICADO ===
+    // status: o estado REAL do lancamento (RECEBIDO/PAGO/PENDENTE/CANCELADO).
+    // Diferente de `origem` (que e so o tipo do lancamento: receber/pagar/transacao).
+    // UI usa `status` pra cor/label corretos — antes label vinha de origem e
+    // mostrava "A Receber" em verde mesmo se o AR ja estava RECEBIDO. Fix 22/05.
     type ExtratoItem = {
       id: string
       data: string
@@ -146,6 +151,7 @@ export async function GET(request: NextRequest) {
       valor: number
       tipo: 'ENTRADA' | 'SAIDA'
       origem: 'receber' | 'pagar' | 'transacao'
+      status: string  // RECEBIDO|PAGO|PENDENTE|CANCELADO|null (transacao bancaria nao tem status)
       reconciliado?: boolean
     }
 
@@ -165,6 +171,7 @@ export async function GET(request: NextRequest) {
         valor: r.received_amount || r.total_amount,
         tipo: 'ENTRADA',
         origem: 'receber',
+        status: r.status,
       })
     }
 
@@ -182,6 +189,7 @@ export async function GET(request: NextRequest) {
         valor: p.paid_amount || p.total_amount,
         tipo: 'SAIDA',
         origem: 'pagar',
+        status: p.status,
       })
     }
 
@@ -201,6 +209,7 @@ export async function GET(request: NextRequest) {
           valor: t.amount,
           tipo: t.transaction_type === 'CREDIT' ? 'ENTRADA' : 'SAIDA',
           origem: 'transacao',
+          status: t.reconciled ? 'CONCILIADO' : 'NAO_CONCILIADO',
           reconciliado: t.reconciled,
         })
       }

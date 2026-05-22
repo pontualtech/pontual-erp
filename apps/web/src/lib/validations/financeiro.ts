@@ -8,10 +8,16 @@ const dateStringOptional = z.string().optional().transform((v) => {
 })
 
 /**
- * Schema para baixa de conta a receber
+ * Schema para baixa de conta a receber.
+ *
+ * 2026-05-22: account_id passou a ser OBRIGATORIO. Antes era optional e
+ * permitia AR marcado RECEBIDO sem nenhuma Transaction associada — dinheiro
+ * "entrava" no sistema sem ir pra conta nenhuma, quebrando DRE, extrato,
+ * fluxo de caixa e conciliacao. ARs antigos sem account_id continuam
+ * existindo mas nao da pra fazer NOVA baixa parcial sem informar conta.
  */
 export const baixaSchema = z.object({
   received_amount: z.number().int().positive('Valor recebido deve ser positivo'),
   received_at: dateStringOptional,
-  account_id: z.string().uuid().optional(),
+  account_id: z.string().uuid('Conta bancaria/caixa obrigatoria'),
 })

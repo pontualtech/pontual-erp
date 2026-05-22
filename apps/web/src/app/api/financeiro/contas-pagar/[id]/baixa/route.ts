@@ -7,10 +7,13 @@ import { z } from 'zod'
 
 type Params = { params: { id: string } }
 
+// 2026-05-22: account_id agora OBRIGATORIO (antes era optional). Sem ele,
+// AP ficava PAGO sem nenhuma Transaction DEBIT e saldo da conta nao
+// diminuia — empresa "pagava" R$ 10k de boletos mas saldo continuava cheio.
 const baixaSchema = z.object({
   paid_amount: z.number().int().positive('Valor pago deve ser positivo'),
   paid_at: z.string().optional(),
-  account_id: z.string().optional(),
+  account_id: z.string().uuid('Conta bancaria/caixa obrigatoria'),
 })
 
 export async function POST(req: NextRequest, { params }: Params) {
@@ -29,13 +32,12 @@ export async function POST(req: NextRequest, { params }: Params) {
     const body = await req.json()
     const data = baixaSchema.parse(body)
 
-    // Validate account ownership if provided
-    if (data.account_id) {
-      const account = await prisma.account.findFirst({
-        where: { id: data.account_id, company_id: user.companyId },
-      })
-      if (!account) return error('Conta bancaria nao pertence a esta empresa', 403)
-    }
+    // Validate account ownership AND ativa
+    const account = await prisma.account.findFirst({
+      where: { id: data.account_id, company_id: user.companyId },
+    })
+    if (!account) return error('Conta bancaria nao pertence a esta empresa', 403)
+    if (!account.is_active) return error('Conta bancaria desativada — escolha outra', 400)
 
     const previousPaid = existing.paid_amount || 0
     const newPaidTotal = previousPaid + data.paid_amount
@@ -53,26 +55,30 @@ export async function POST(req: NextRequest, { params }: Params) {
         },
       })
 
-      if (data.account_id) {
-        await tx.transaction.create({
-          data: {
-            company_id: user.companyId,
-            account_id: data.account_id,
-            transaction_type: 'DEBIT',
-            amount: data.paid_amount,
-            description: `Pgto: ${existing.description}`,
-            transaction_date: data.paid_at ? new Date(data.paid_at) : new Date(),
-          },
-        })
+      // account_id e obrigatorio (schema), entao SEMPRE criamos Transaction
+      // e debitamos saldo. C1 fix: bank_ref + reconciled=true marca a Transaction
+      // como ja conciliada com o lancamento — quando OFX importar a mesma
+      // transferencia, dedup por bank_ref evita DOUBLE COUNT do saldo.
+      await tx.transaction.create({
+        data: {
+          company_id: user.companyId,
+          account_id: data.account_id,
+          transaction_type: 'DEBIT',
+          amount: data.paid_amount,
+          description: `Pgto: ${existing.description}`,
+          transaction_date: data.paid_at ? new Date(data.paid_at) : new Date(),
+          bank_ref: `AP:${params.id}`,
+          reconciled: true,
+        },
+      })
 
-        await tx.account.update({
-          where: { id: data.account_id },
-          data: {
-            current_balance: { decrement: data.paid_amount },
-            updated_at: new Date(),
-          },
-        })
-      }
+      await tx.account.update({
+        where: { id: data.account_id },
+        data: {
+          current_balance: { decrement: data.paid_amount },
+          updated_at: new Date(),
+        },
+      })
 
       return updated
     })

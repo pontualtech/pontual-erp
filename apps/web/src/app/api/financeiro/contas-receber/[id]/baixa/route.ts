@@ -23,13 +23,12 @@ export async function POST(req: NextRequest, { params }: Params) {
     const body = await req.json()
     const data = baixaSchema.parse(body)
 
-    // Validate account ownership if provided
-    if (data.account_id) {
-      const account = await prisma.account.findFirst({
-        where: { id: data.account_id, company_id: user.companyId },
-      })
-      if (!account) return error('Conta bancaria nao pertence a esta empresa', 403)
-    }
+    // account_id obrigatorio (fix 22/05). Validar tenant + ativa.
+    const account = await prisma.account.findFirst({
+      where: { id: data.account_id, company_id: user.companyId },
+    })
+    if (!account) return error('Conta bancaria nao pertence a esta empresa', 403)
+    if (!account.is_active) return error('Conta bancaria desativada — escolha outra', 400)
 
     const previousReceived = existing.received_amount || 0
     const newReceivedTotal = previousReceived + data.received_amount
@@ -46,28 +45,31 @@ export async function POST(req: NextRequest, { params }: Params) {
         },
       })
 
-      // Registrar transação na conta bancária se especificada
-      if (data.account_id) {
-        await tx.transaction.create({
-          data: {
-            company_id: user.companyId,
-            account_id: data.account_id,
-            transaction_type: 'CREDIT',
-            amount: data.received_amount,
-            description: `Recebimento: ${existing.description}`,
-            transaction_date: data.received_at ? new Date(data.received_at) : new Date(),
-          },
-        })
+      // account_id e obrigatorio agora — sempre cria Transaction + ajusta saldo.
+      // bank_ref+reconciled=true (C1 fix 22/05): marca a transacao como ja
+      // conciliada com o lancamento do ERP. Quando OFX bancario importar
+      // a mesma entrada, dedup por bank_ref evita DOUBLE COUNT no saldo.
+      await tx.transaction.create({
+        data: {
+          company_id: user.companyId,
+          account_id: data.account_id,
+          transaction_type: 'CREDIT',
+          amount: data.received_amount,
+          description: `Recebimento: ${existing.description}`,
+          transaction_date: data.received_at ? new Date(data.received_at) : new Date(),
+          bank_ref: `AR:${params.id}`,
+          reconciled: true,
+        },
+      })
 
-        // Atualizar saldo da conta bancária
-        await tx.account.update({
-          where: { id: data.account_id },
-          data: {
-            current_balance: { increment: data.received_amount },
-            updated_at: new Date(),
-          },
-        })
-      }
+      // Atualizar saldo da conta bancária
+      await tx.account.update({
+        where: { id: data.account_id },
+        data: {
+          current_balance: { increment: data.received_amount },
+          updated_at: new Date(),
+        },
+      })
 
       // Auto-pay card fee when receivable is fully paid
       if (isReceivedInFull && existing.card_fee_total && existing.card_fee_total > 0 && existing.service_order_id) {
@@ -84,23 +86,24 @@ export async function POST(req: NextRequest, { params }: Params) {
             where: { id: cardFeePayable.id },
             data: { status: 'PAGO', paid_amount: cardFeePayable.total_amount, updated_at: new Date() },
           })
-          // Create debit transaction for card fee if account specified
-          if (data.account_id) {
-            await tx.transaction.create({
-              data: {
-                company_id: user.companyId,
-                account_id: data.account_id,
-                transaction_type: 'DEBIT',
-                amount: existing.card_fee_total,
-                description: `Taxa cartão: ${existing.description}`,
-                transaction_date: data.received_at ? new Date(data.received_at) : new Date(),
-              },
-            })
-            await tx.account.update({
-              where: { id: data.account_id },
-              data: { current_balance: { decrement: existing.card_fee_total }, updated_at: new Date() },
-            })
-          }
+          // account_id sempre presente agora. Cria transacao DEBIT da taxa
+          // marcada como conciliada (bank_ref aponta pra AP de taxa).
+          await tx.transaction.create({
+            data: {
+              company_id: user.companyId,
+              account_id: data.account_id,
+              transaction_type: 'DEBIT',
+              amount: existing.card_fee_total,
+              description: `Taxa cartão: ${existing.description}`,
+              transaction_date: data.received_at ? new Date(data.received_at) : new Date(),
+              bank_ref: `AP:${cardFeePayable.id}`,
+              reconciled: true,
+            },
+          })
+          await tx.account.update({
+            where: { id: data.account_id },
+            data: { current_balance: { decrement: existing.card_fee_total }, updated_at: new Date() },
+          })
         }
       }
 

@@ -44,7 +44,7 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
   })
   if (!os) return { ok: false, error: 'OS nao encontrada' }
 
-  const [catMdr, catRa] = await Promise.all([
+  const [catMdr, catRa, acquirerAccountSetting, fallbackAccount] = await Promise.all([
     prisma.category.findFirst({
       where: { company_id: companyId, module: 'financeiro_despesa', name: { contains: 'Cartao', mode: 'insensitive' } },
       select: { id: true },
@@ -53,7 +53,20 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
       where: { company_id: companyId, module: 'financeiro_despesa', name: { contains: 'Antecipacao', mode: 'insensitive' } },
       select: { id: true },
     }),
+    // C2 fix 22/05: conta destino do credito da maquininha. Karlao configura
+    // via setting `acquirer.{acquirer}.account_id`. Se nao configurou, fallback
+    // pra primeira conta CHECKING ativa.
+    prisma.setting.findFirst({
+      where: { company_id: companyId, key: `acquirer.${txn.acquirer}.account_id` },
+      select: { value: true },
+    }),
+    prisma.account.findFirst({
+      where: { company_id: companyId, is_active: true, account_type: 'CHECKING' },
+      select: { id: true },
+      orderBy: { created_at: 'asc' },
+    }),
   ])
+  const acquirerAccountId = acquirerAccountSetting?.value || fallbackAccount?.id || null
 
   const billingType = txn.modality === 'debit' ? 'DEBIT_CARD' : 'CREDIT_CARD'
   const osNum = String(os.os_number).padStart(4, '0')
@@ -179,6 +192,52 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
               fee_type: 'ANTICIPATION',
               fee_percent: txn.anticipation_fee_percent,
             }),
+          },
+        })
+      }
+
+      // C2 fix 22/05: cria Transaction CREDIT pelo LIQUIDO (gross - mdr - antecipacao)
+      // na conta destino da maquininha. Antes o match nao tocava em Account/Transaction —
+      // saldo bancario nao incrementava e DRE nao cruzava com extrato bancario.
+      // bank_ref=acquirer:{external_id} + reconciled=true: dedup futuro com OFX bancario
+      // (Rede credita liquido D+1 e essa Transaction representa o credito antecipado).
+      if (acquirerAccountId) {
+        const netAmount = txn.net_amount > 0 ? txn.net_amount : (txn.gross_amount - txn.total_fee_amount)
+        await tx.transaction.create({
+          data: {
+            company_id: companyId,
+            account_id: acquirerAccountId,
+            transaction_type: 'CREDIT',
+            amount: netAmount,
+            description: `Maquininha ${txn.acquirer} — OS-${osNum} — ${billingType === 'DEBIT_CARD' ? 'debito' : `credito ${txn.installments}x`}`,
+            transaction_date: txn.expected_credit_date || txn.transaction_date,
+            bank_ref: `acquirer:${txn.acquirer}:${txn.external_id}`,
+            reconciled: true,
+          },
+        })
+        await tx.account.update({
+          where: { id: acquirerAccountId },
+          data: { current_balance: { increment: netAmount }, updated_at: new Date() },
+        })
+      }
+
+      // Bug 3 fix 22/05: marca TODAS as Installments do AR como RECEBIDO
+      // quando a transacao foi antecipada (anticipation_fee_amount > 0) OU
+      // expected_credit_date e proximo (D+1/D+2). Antes, parcelas 2x/3x
+      // ficavam PENDENTE eternamente porque match-auto so atualizava o AR pai.
+      const isAnticipated = txn.anticipation_fee_amount > 0
+        || (txn.expected_credit_date && txn.transaction_date
+            && (new Date(txn.expected_credit_date).getTime() - new Date(txn.transaction_date).getTime()) <= 3 * 24 * 60 * 60 * 1000)
+      if (isAnticipated && receivable) {
+        await tx.installment.updateMany({
+          where: {
+            parent_type: 'RECEIVABLE',
+            parent_id: receivable.id,
+            status: 'PENDENTE',
+          },
+          data: {
+            status: 'RECEBIDO',
+            paid_at: txn.expected_credit_date || txn.transaction_date,
           },
         })
       }

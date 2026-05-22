@@ -19,7 +19,7 @@ interface ExtratoItem {
   id: string; data: string; descricao: string; entidade: string
   conta_bancaria: string; centro_custo: string; categoria: string
   forma_pagamento: string; valor: number; tipo: 'ENTRADA' | 'SAIDA'
-  origem: string; reconciliado?: boolean
+  origem: string; status?: string; reconciliado?: boolean
 }
 
 interface Resumo {
@@ -720,12 +720,22 @@ export default function ExtratoPage() {
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{editItem.descricao}</p>
               </div>
               <div className="flex items-center gap-2">
-                <span className={cn('text-xs px-2 py-0.5 rounded font-medium',
-                  editItem.origem === 'receber' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'
-                )}>
-                  {editItem.origem === 'receber' ? 'A Receber' : 'A Pagar'}
-                </span>
-                <a href={editItem.origem === 'receber' ? `/financeiro/contas-receber/${editItem.id}` : `/financeiro/contas-pagar/${editItem.id}`}
+                {(() => {
+                  // Label reflete o STATUS REAL do lancamento, nao apenas o tipo.
+                  // Antes: AR ja RECEBIDO mostrava "A Receber" verde (fix 22/05).
+                  const s = editItem.status
+                  const isReceber = editItem.origem === 'receber'
+                  const isPagar = editItem.origem === 'pagar'
+                  let label = isReceber ? 'A Receber' : isPagar ? 'A Pagar' : 'Transação'
+                  let cls = isReceber ? 'bg-amber-50 text-amber-700' : isPagar ? 'bg-amber-50 text-amber-700' : 'bg-gray-50 text-gray-700'
+                  if (s === 'RECEBIDO') { label = 'Recebido'; cls = 'bg-green-50 text-green-700' }
+                  else if (s === 'PAGO') { label = 'Pago'; cls = 'bg-green-50 text-green-700' }
+                  else if (s === 'CANCELADO') { label = 'Cancelado'; cls = 'bg-gray-100 text-gray-500' }
+                  else if (s === 'CONCILIADO') { label = 'Conciliado'; cls = 'bg-blue-50 text-blue-700' }
+                  else if (s === 'NAO_CONCILIADO') { label = 'Não conciliado'; cls = 'bg-amber-50 text-amber-700' }
+                  return <span className={cn('text-xs px-2 py-0.5 rounded font-medium', cls)}>{label}</span>
+                })()}
+                <a href={editItem.origem === 'receber' ? `/financeiro/contas-receber/${editItem.id}?from=extrato` : `/financeiro/contas-pagar/${editItem.id}?from=extrato`}
                   target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-blue-600 transition-colors" title="Abrir detalhe completo">
                   <ExternalLink className="h-4 w-4" />
                 </a>

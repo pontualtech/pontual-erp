@@ -101,6 +101,18 @@ export async function POST(req: NextRequest, { params }: Params) {
     // Confirm mode — execute anticipation atomically
     const now = new Date()
 
+    // C3 fix 22/05: antecipacao agora EXIGE account_id no body pra criar
+    // Transaction CREDIT + atualizar saldo da conta. Antes marcava AR=RECEBIDO
+    // sem nenhuma Transaction — saldo bancario nao incrementava e DRE/extrato
+    // nao viam a receita.
+    const requestedAccountId = (body as any)?.account_id as string | undefined
+    if (!requestedAccountId) return error('Conta bancaria/caixa obrigatoria pra antecipacao', 400)
+    const account = await prisma.account.findFirst({
+      where: { id: requestedAccountId, company_id: user.companyId },
+    })
+    if (!account) return error('Conta bancaria nao pertence a esta empresa', 403)
+    if (!account.is_active) return error('Conta bancaria desativada — escolha outra', 400)
+
     const updated = await prisma.$transaction(async (tx) => {
       // Mark all pending installments as received with fee deducted
       for (const inst of installmentDetails) {
@@ -114,6 +126,25 @@ export async function POST(req: NextRequest, { params }: Params) {
         })
       }
 
+      // Transaction CREDIT pelo valor LIQUIDO antecipado.
+      // bank_ref+reconciled=true: dedup com OFX bancario futuro.
+      await tx.transaction.create({
+        data: {
+          company_id: user.companyId,
+          account_id: requestedAccountId,
+          transaction_type: 'CREDIT',
+          amount: anticipatedAmount,
+          description: `Antecipacao: ${receivable.description}`,
+          transaction_date: now,
+          bank_ref: `AR:${params.id}:anticipation`,
+          reconciled: true,
+        },
+      })
+      await tx.account.update({
+        where: { id: requestedAccountId },
+        data: { current_balance: { increment: anticipatedAmount }, updated_at: now },
+      })
+
       // Update receivable
       return tx.accountReceivable.update({
         where: { id: params.id, company_id: user.companyId },
@@ -123,6 +154,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           anticipated_at: now,
           anticipation_fee: totalFee,
           anticipated_amount: anticipatedAmount,
+          account_id: requestedAccountId,
           updated_at: now,
         },
       })
