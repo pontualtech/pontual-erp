@@ -7,6 +7,9 @@ import { z } from 'zod'
 
 type Params = { params: { id: string } }
 
+// C11 fix 22/05: status NAO aceita RECEBIDO via PATCH — RECEBIDO so via /baixa
+// (que cria Transaction e atualiza saldo). PATCH com status=RECEBIDO seria
+// bypass do fluxo financeiro (dinheiro "entra" sem Transaction).
 const updateReceivableSchema = z.object({
   customer_id: z.string().nullable().optional(),
   service_order_id: z.string().nullable().optional(),
@@ -15,9 +18,10 @@ const updateReceivableSchema = z.object({
   total_amount: z.number().int().positive().optional(),
   due_date: z.string().optional(),
   category_id: z.string().nullable().optional(),
-  account_id: z.string().nullable().optional(), // Sprint UX-23: editar banco vinculado
+  account_id: z.string().nullable().optional(),
   payment_method: z.string().nullable().optional(),
-  status: z.enum(['PENDENTE', 'RECEBIDO', 'CANCELADO']).optional(),
+  // RECEBIDO/AGRUPADO so via endpoints dedicados (/baixa, /agrupar)
+  status: z.enum(['PENDENTE', 'CANCELADO']).optional(),
 })
 
 export async function GET(req: NextRequest, { params }: Params) {
@@ -116,6 +120,16 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
     const body = await req.json()
     const data = updateReceivableSchema.parse(body)
+
+    // A5 fix 22/05: invariante total_amount >= received_amount. Antes,
+    // AR PENDENTE com received_amount>0 aceitava reduzir total → AR ficava
+    // "super-pago" (received > total) sem disparar status RECEBIDO.
+    if (data.total_amount !== undefined) {
+      const currentReceived = existing.received_amount || 0
+      if (data.total_amount < currentReceived) {
+        return error(`Total (${data.total_amount}) menor que o ja recebido (${currentReceived}). Estorne primeiro se quer reduzir.`, 400)
+      }
+    }
 
     const updateData: any = { ...data, updated_at: new Date() }
     if (data.due_date) updateData.due_date = new Date(data.due_date)

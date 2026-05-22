@@ -35,6 +35,12 @@ export async function POST(req: NextRequest) {
     if (grouped.status === 'RECEBIDO') {
       return error('Nao e possivel desagrupar uma conta ja recebida', 400)
     }
+    // A11 fix 22/05: bloqueia desagrupar se group ja teve recebimento parcial.
+    // Antes, originais voltavam pra PENDENTE mas o received_amount do group
+    // sumia — atendente perdia rastro do dinheiro.
+    if ((grouped.received_amount || 0) > 0) {
+      return error('Conta agrupada ja tem recebimento parcial. Estorne primeiro (/estornar) e depois desagrupe.', 400)
+    }
 
     // Find all originals that point to this grouped receivable
     const originals = await prisma.accountReceivable.findMany({

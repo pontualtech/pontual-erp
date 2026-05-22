@@ -30,12 +30,21 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!account) return error('Conta bancaria nao pertence a esta empresa', 403)
     if (!account.is_active) return error('Conta bancaria desativada — escolha outra', 400)
 
-    const previousReceived = existing.received_amount || 0
-    const newReceivedTotal = previousReceived + data.received_amount
-    const isReceivedInFull = newReceivedTotal >= existing.total_amount
-
-    // Operação atômica: atualizar status + criar transação + atualizar saldo
+    // C4 fix 22/05: race em baixa concorrente. Relemos o AR DENTRO da $transaction
+    // pra evitar 2 baixas simultaneas somarem ao mesmo received_amount. Tambem
+    // re-checa status — se outra baixa ja completou, retorna erro em vez de
+    // criar received_amount > total.
     const receivable = await prisma.$transaction(async (tx) => {
+      const fresh = await tx.accountReceivable.findFirst({
+        where: { id: params.id, company_id: user.companyId, deleted_at: null },
+      })
+      if (!fresh) throw new Error('AR sumiu durante a baixa')
+      if (fresh.status === 'RECEBIDO') throw new Error('Conta ja foi recebida (outra baixa em paralelo)')
+      if (fresh.status === 'CANCELADO') throw new Error('Conta cancelada durante a baixa')
+      const previousReceived = fresh.received_amount || 0
+      const newReceivedTotal = previousReceived + data.received_amount
+      const isReceivedInFull = newReceivedTotal >= fresh.total_amount
+
       const updated = await tx.accountReceivable.update({
         where: { id: params.id, company_id: user.companyId },
         data: {
@@ -72,13 +81,15 @@ export async function POST(req: NextRequest, { params }: Params) {
       })
 
       // Auto-pay card fee when receivable is fully paid
-      if (isReceivedInFull && existing.card_fee_total && existing.card_fee_total > 0 && existing.service_order_id) {
+      // Audit 14 fix: usa service_order_id (nao description regex frágil)
+      if (isReceivedInFull && fresh.card_fee_total && fresh.card_fee_total > 0 && fresh.service_order_id) {
         const cardFeePayable = await tx.accountPayable.findFirst({
           where: {
             company_id: user.companyId,
-            description: { contains: `OS-${String(existing.description).split('OS-')[1]?.split(' ')[0] || ''}` },
-            total_amount: existing.card_fee_total,
+            service_order_id: fresh.service_order_id,
+            total_amount: fresh.card_fee_total,
             status: 'PENDENTE',
+            deleted_at: null,
           },
         })
         if (cardFeePayable) {
@@ -86,15 +97,13 @@ export async function POST(req: NextRequest, { params }: Params) {
             where: { id: cardFeePayable.id },
             data: { status: 'PAGO', paid_amount: cardFeePayable.total_amount, updated_at: new Date() },
           })
-          // account_id sempre presente agora. Cria transacao DEBIT da taxa
-          // marcada como conciliada (bank_ref aponta pra AP de taxa).
           await tx.transaction.create({
             data: {
               company_id: user.companyId,
               account_id: data.account_id,
               transaction_type: 'DEBIT',
-              amount: existing.card_fee_total,
-              description: `Taxa cartão: ${existing.description}`,
+              amount: fresh.card_fee_total,
+              description: `Taxa cartão: ${fresh.description}`,
               transaction_date: data.received_at ? new Date(data.received_at) : new Date(),
               bank_ref: `AP:${cardFeePayable.id}`,
               reconciled: true,
@@ -102,19 +111,21 @@ export async function POST(req: NextRequest, { params }: Params) {
           })
           await tx.account.update({
             where: { id: data.account_id },
-            data: { current_balance: { decrement: existing.card_fee_total }, updated_at: new Date() },
+            data: { current_balance: { decrement: fresh.card_fee_total }, updated_at: new Date() },
           })
         }
       }
 
-      return updated
+      return { updated, previousReceived, newReceivedTotal, isReceivedInFull, freshStatus: fresh.status, group_id: fresh.group_id }
     })
 
+    const { updated: receivableData, previousReceived, newReceivedTotal, isReceivedInFull, freshStatus, group_id } = receivable as any
+
     // If this is a GROUPED receivable that was fully paid, mark all originals as RECEBIDO
-    if (isReceivedInFull && existing.group_id) {
+    if (isReceivedInFull && group_id) {
       const originals = await prisma.accountReceivable.findMany({
         where: {
-          grouped_into_id: existing.id,
+          grouped_into_id: receivableData.id,
           company_id: user.companyId,
           deleted_at: null,
         },
@@ -122,7 +133,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
       if (originals.length > 0) {
         await prisma.accountReceivable.updateMany({
-          where: { grouped_into_id: existing.id },
+          where: { grouped_into_id: receivableData.id },
           data: {
             status: 'RECEBIDO',
             received_amount: undefined, // keep original amounts
@@ -137,12 +148,12 @@ export async function POST(req: NextRequest, { params }: Params) {
       userId: user.id,
       module: 'financeiro',
       action: 'receivable.baixa',
-      entityId: receivable.id,
+      entityId: receivableData.id,
       oldValue: { received_amount: previousReceived, status: existing.status },
-      newValue: { received_amount: newReceivedTotal, status: receivable.status, account_id: data.account_id },
+      newValue: { received_amount: newReceivedTotal, status: receivableData.status, account_id: data.account_id },
     })
 
-    return success(receivable)
+    return success(receivableData)
   } catch (err) {
     return handleError(err)
   }

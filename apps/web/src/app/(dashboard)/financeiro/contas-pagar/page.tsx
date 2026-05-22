@@ -182,11 +182,12 @@ export default function ContasPagarPage() {
   }, [])
 
   function getDisplayStatus(conta: ContaPagar): string {
-    const today = new Date(); today.setHours(0, 0, 0, 0)
-    if (conta.status === 'PENDENTE' && new Date(conta.due_date) < today) {
-      return 'VENCIDO'
-    }
-    return conta.status || 'PENDENTE'
+    // A1 fix 22/05: comparar Y-M-D direto evita TZ drift. Antes `new Date(due_date) < today`
+    // dava "vencido" a partir das 21h BRT (UTC midnight do dia seguinte).
+    if (conta.status !== 'PENDENTE') return conta.status || 'PENDENTE'
+    const todayYMD = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` })()
+    const dueYMD = String(conta.due_date).substring(0, 10)
+    return dueYMD < todayYMD ? 'VENCIDO' : 'PENDENTE'
   }
 
   function toggleSelect(id: string) {
@@ -795,7 +796,8 @@ export default function ContasPagarPage() {
                         >
                           <Eye className="h-4 w-4" />
                         </button>
-                        {conta.status === 'PENDENTE' && (
+                        {/* M12 fix 22/05: VENCIDO tambem pode ser pago (era oculto antes) */}
+                        {(conta.status === 'PENDENTE' || displayStatus === 'VENCIDO') && (
                           <button
                             onClick={() => openBaixa(conta)}
                             title="Registrar pagamento"

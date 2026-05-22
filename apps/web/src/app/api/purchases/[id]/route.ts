@@ -55,9 +55,33 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const body = await request.json()
     const data = updatePurchaseSchema.parse(body)
 
-    // If changing status to RECEIVED, process stock + financeiro
+    // A8 fix 22/05: race em PATCH concorrente — re-lock por status atomico.
+    // Antes, 2 PATCHs passavam pelo gate `existing.status !== 'RECEIVED'`
+    // simultaneamente, chamando receivePurchase 2x → dobrava AP + dobrava estoque.
+    // Agora marca como RECEIVING via updateMany filtrado por status anterior;
+    // se ja foi marcado por outra request, updateMany retorna 0 e pulamos.
     if (data.status === 'RECEIVED' && existing.status !== 'RECEIVED') {
-      await receivePurchase(existing, user)
+      const lock = await prisma.purchase.updateMany({
+        where: {
+          id: params.id,
+          company_id: user.companyId,
+          status: { not: 'RECEIVED' },
+        },
+        data: { status: 'RECEIVING', updated_at: new Date() },
+      })
+      if (lock.count === 0) {
+        return error('Compra ja recebida por outra acao concorrente', 409)
+      }
+      try {
+        await receivePurchase(existing, user)
+      } catch (e) {
+        // Rollback do lock se receivePurchase falhar
+        await prisma.purchase.updateMany({
+          where: { id: params.id, company_id: user.companyId, status: 'RECEIVING' },
+          data: { status: existing.status, updated_at: new Date() },
+        })
+        throw e
+      }
     }
 
     const purchase = await prisma.purchase.update({

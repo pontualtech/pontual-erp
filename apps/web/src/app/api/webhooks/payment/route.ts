@@ -937,16 +937,32 @@ export async function POST(req: NextRequest) {
       }
 
       // Handle DELETED/CANCELLED: clear charge info from receivable
+      // A6 fix 22/05: NAO apaga charge_id se AR ja tem received_amount>0
+      // (recebimento parcial). Manter rastro pra auditoria fiscal — sem
+      // charge_id seria impossivel ligar a OS ao Payment original.
       if ((newStatus === 'DELETED' || newStatus === 'CANCELLED') && fresh.receivable_id) {
-        await tx.accountReceivable.update({
+        const arNow = await tx.accountReceivable.findFirst({
           where: { id: fresh.receivable_id },
-          data: {
-            charge_id: null,
-            charge_status: null,
-            charge_url: null,
-            updated_at: new Date(),
-          },
+          select: { received_amount: true },
         })
+        const hasPartial = (arNow?.received_amount || 0) > 0
+        if (hasPartial) {
+          // So marca o charge_status, mantem charge_id/charge_url
+          await tx.accountReceivable.update({
+            where: { id: fresh.receivable_id },
+            data: { charge_status: newStatus, updated_at: new Date() },
+          })
+        } else {
+          await tx.accountReceivable.update({
+            where: { id: fresh.receivable_id },
+            data: {
+              charge_id: null,
+              charge_status: null,
+              charge_url: null,
+              updated_at: new Date(),
+            },
+          })
+        }
       }
 
       // Audit log — use 'system:webhook' instead of customer_id

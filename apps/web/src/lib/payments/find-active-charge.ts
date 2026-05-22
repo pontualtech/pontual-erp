@@ -66,13 +66,26 @@ export async function findActivePendingPaymentForOs(
 
   if (!payment) return null
 
-  // Expiração: PIX usa expires_at (30min). Boleto: due_date no AR vinculado
-  // (mas ler isso requer outra query). Por simplicidade, "expired" so true
-  // se PIX tem expires_at no passado. Boleto vencido continua valido (Asaas
-  // aceita pagamento pos-vencimento — atendente cancela manualmente se
-  // quiser nova).
+  // Expiração:
+  //   PIX: expires_at (30min)
+  //   Boleto: due_date do AR vinculado (apos 30 dias do vencimento)
+  // A15 fix 22/05: antes boleto vencido bloqueava nova cobranca eternamente
+  // — cliente ficava preso, atendente forcado a cancelar manualmente.
+  // Agora apos 30 dias do vencimento, considera expired e libera nova
+  // cobranca (PIX/cartao). Boleto recente ainda continua valido pra pagamento.
   const now = new Date()
-  const expired = payment.method === 'PIX' && !!payment.expires_at && payment.expires_at < now
+  let expired = payment.method === 'PIX' && !!payment.expires_at && payment.expires_at < now
+  if (!expired && payment.method === 'BOLETO' && payment.receivable_id) {
+    const ar = await prisma.accountReceivable.findFirst({
+      where: { id: payment.receivable_id },
+      select: { due_date: true },
+    })
+    if (ar?.due_date) {
+      const cutoff = new Date(ar.due_date)
+      cutoff.setDate(cutoff.getDate() + 30)
+      if (cutoff < now) expired = true
+    }
+  }
 
   return { payment, expired }
 }

@@ -403,11 +403,11 @@ export default function ContasReceberPage() {
   }, [])
 
   function getDisplayStatus(conta: ContaReceber): string {
-    const today = new Date(); today.setHours(0, 0, 0, 0)
-    if (conta.status === 'PENDENTE' && new Date(conta.due_date) < today) {
-      return 'VENCIDO'
-    }
-    return conta.status || 'PENDENTE'
+    // A1 fix 22/05: comparar Y-M-D direto evita TZ drift.
+    if (conta.status !== 'PENDENTE') return conta.status || 'PENDENTE'
+    const todayYMD = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` })()
+    const dueYMD = String(conta.due_date).substring(0, 10)
+    return dueYMD < todayYMD ? 'VENCIDO' : 'PENDENTE'
   }
 
   function toggleSelect(id: string) {

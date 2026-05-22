@@ -46,12 +46,21 @@ export async function POST(
     // Update payment and receivable atomically (only if Asaas succeeded)
     // A11 fix (audit): where filter inclui company_id pra defesa em camadas
     // contra TOCTOU + futura refatoração que retire o check externo.
+    // C12 fix 22/05: arquiva idempotency_key ao cancelar — antes o key
+    // ficava intacto e qualquer nova cobranca no mesmo AR retornava 409
+    // eternamente (`charge_<receivable_id>` ja existia). Agora vira
+    // `charge_<id>_cancelled_<ts>` liberando o key original.
+    const archivedKey = payment.idempotency_key
+      ? `${payment.idempotency_key}_cancelled_${Date.now()}`
+      : null
+
     await prisma.$transaction(async (tx) => {
       await tx.payment.update({
         where: { id: payment.id, company_id: user.companyId },
         data: {
           status: 'CANCELLED',
           cancelled_at: new Date(),
+          ...(archivedKey ? { idempotency_key: archivedKey } : {}),
           updated_at: new Date(),
         },
       })

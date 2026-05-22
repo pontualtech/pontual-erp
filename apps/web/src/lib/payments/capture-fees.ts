@@ -101,6 +101,23 @@ export async function captureFeesForPayment(payment: {
     fees[0].occurredAt,
   )
 
+  // A14 fix 22/05: idempotencia por external_id. Antes, webhook Asaas
+  // retentado + reconcile manual disparavam 2 capturas → 2 APs de taxa
+  // pro mesmo evento.
+  if (payment.external_id) {
+    const existingFeeAp = await prisma.accountPayable.findFirst({
+      where: {
+        company_id: payment.company_id,
+        notes: { contains: `"external_id":"${payment.external_id}"` },
+        deleted_at: null,
+      },
+      select: { id: true },
+    })
+    if (existingFeeAp) {
+      return { ok: false, reason: 'duplicate_capture', existing_ap_id: existingFeeAp.id } as any
+    }
+  }
+
   const ap = await prisma.accountPayable.create({
     data: {
       company_id: payment.company_id,

@@ -96,12 +96,23 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Nenhuma conta com cliente válido (CPF/CNPJ)' }, { status: 400 })
     }
 
-    // Gerar sequencial
-    const seqAtual = parseInt(cfg['cnab.sequencial'] || '0') + 1
-    await prisma.setting.upsert({
-      where: { company_id_key: { company_id: user.companyId, key: 'cnab.sequencial' } },
-      create: { company_id: user.companyId, key: 'cnab.sequencial', value: String(seqAtual), type: 'number' },
-      update: { value: String(seqAtual) },
+    // C13 fix 22/05: gera sequencial dentro de transacao com lock pra evitar
+    // race condition (2 GETs concorrentes pegavam mesmo sequencial → Inter
+    // rejeita 1 silenciosamente). pg_advisory_xact_lock serializa por company.
+    const seqAtual = await prisma.$transaction(async (tx) => {
+      // hash determinístico do company_id → 32-bit int (Postgres advisory lock key)
+      const hash = Array.from(user.companyId).reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 7)
+      await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(${hash})`)
+      const setting = await tx.setting.findFirst({
+        where: { company_id: user.companyId, key: 'cnab.sequencial' },
+      })
+      const next = parseInt(setting?.value || '0') + 1
+      await tx.setting.upsert({
+        where: { company_id_key: { company_id: user.companyId, key: 'cnab.sequencial' } },
+        create: { company_id: user.companyId, key: 'cnab.sequencial', value: String(next), type: 'number' },
+        update: { value: String(next) },
+      })
+      return next
     })
 
     const cedente: CedenteConfig400 = {
@@ -277,6 +288,24 @@ export async function POST(req: NextRequest) {
       }
 
       if (ret.status === 'PAGO') {
+        // C14 fix 22/05: idempotencia — se ja existe Transaction com
+        // bank_ref=cnab:{nossoNumero} OU AR ja esta RECEBIDO, pula.
+        // Antes, reimport do .ret criava 2 CREDIT + saldo 2x.
+        if (receivable.status === 'RECEBIDO') {
+          console.log(`[CNAB] AR ${receivable.id} ja RECEBIDO, pulando duplicata`)
+          continue
+        }
+        if (ret.nossoNumero) {
+          const dup = await prisma.transaction.findFirst({
+            where: { company_id: user.companyId, bank_ref: `cnab:${ret.nossoNumero}` },
+            select: { id: true },
+          })
+          if (dup) {
+            console.log(`[CNAB] Transaction cnab:${ret.nossoNumero} ja existe, pulando`)
+            continue
+          }
+        }
+
         const valorRecebido = ret.valorPago || receivable.total_amount
         const dataCredito = ret.dataCredito || new Date()
 
@@ -289,6 +318,7 @@ export async function POST(req: NextRequest) {
               status: 'RECEBIDO',
               received_amount: valorRecebido,
               payment_method: 'Boleto',
+              account_id: interAccountId || undefined,
               updated_at: new Date(),
               pix_code: JSON.stringify({
                 ...(receivable.pix_code ? JSON.parse(receivable.pix_code) : {}),
@@ -309,7 +339,8 @@ export async function POST(req: NextRequest) {
                 transaction_type: 'CREDIT',
                 amount: valorRecebido,
                 description: `Recebimento boleto: ${receivable.description}`,
-                bank_ref: ret.nossoNumero || undefined,
+                bank_ref: ret.nossoNumero ? `cnab:${ret.nossoNumero}` : `AR:${receivable.id}`,
+                reconciled: true,
                 transaction_date: dataCredito,
               },
             })

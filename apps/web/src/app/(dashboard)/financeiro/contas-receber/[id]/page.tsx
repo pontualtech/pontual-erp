@@ -268,9 +268,10 @@ export default function ContaReceberDetalhePage() {
   const isPaid = conta.status === 'RECEBIDO' || conta.status === 'PAGO'
   const isEditable = !isPaid && conta.status !== 'CANCELADO' && conta.status !== 'AGRUPADO'
   const isGroupParent = conta.group_id && !conta.grouped_into_id
-  const today = new Date(); today.setHours(0, 0, 0, 0)
-  const dueDay = new Date(String(conta.due_date).substring(0, 10) + 'T00:00:00')
-  const isOverdue = conta.status === 'PENDENTE' && dueDay < today
+  // A1 fix 22/05: comparacao Y-M-D direto evita TZ drift.
+  const todayYMD_AR = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` })()
+  const dueYMD_AR = String(conta.due_date).substring(0, 10)
+  const isOverdue = conta.status === 'PENDENTE' && dueYMD_AR < todayYMD_AR
   const sc = statusConfig[isOverdue ? 'VENCIDO' : conta.status] || statusConfig.PENDENTE
 
   const selectedTotal = Array.from(selectedIds).reduce((sum, sid) => sum + (otherPending.find(p => p.id === sid)?.total_amount || 0), 0) + conta.total_amount

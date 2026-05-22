@@ -22,6 +22,10 @@ const transferSchema = z.object({
   amount: z.number().int().positive('Valor deve ser positivo'),
   transfer_date: z.string().optional(),
   description: z.string().optional(),
+  // C6 fix 22/05: por padrao bloqueia transferencia que deixaria conta origem
+  // negativa. Cliente que quiser explicito assumir o negativo (ex: cheque
+  // especial) passa allow_negative=true.
+  allow_negative: z.boolean().optional(),
 })
 
 export async function POST(req: NextRequest) {
@@ -49,9 +53,17 @@ export async function POST(req: NextRequest) {
     if (!fromAccount) return error('Conta origem não encontrada ou inativa', 404)
     if (!toAccount) return error('Conta destino não encontrada ou inativa', 404)
 
-    // Validar saldo suficiente (warning — não bloqueia, registra mesmo
-    // negativo pra permitir conciliação posterior)
+    // C6 fix 22/05: por padrao BLOQUEIA transferencia que deixaria saldo
+    // negativo. Cliente passa allow_negative=true pra forcar (ex: cheque
+    // especial confirmado). Antes era so warning — saldos viraram -100k
+    // sem ninguem perceber.
     const insufficient = (fromAccount.current_balance ?? 0) < data.amount
+    if (insufficient && !data.allow_negative) {
+      return error(
+        `Saldo insuficiente em ${fromAccount.name}: R$ ${((fromAccount.current_balance ?? 0)/100).toFixed(2)} disponivel, transferencia de R$ ${(data.amount/100).toFixed(2)}. Use allow_negative=true se for intencional.`,
+        400
+      )
+    }
 
     const transferDate = data.transfer_date ? new Date(data.transfer_date) : new Date()
     const description = data.description?.trim() ||

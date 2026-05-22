@@ -7,6 +7,7 @@ import { z } from 'zod'
 
 type Params = { params: { id: string } }
 
+// C11 fix 22/05: status NAO aceita PAGO via PATCH — PAGO so via /baixa.
 const updatePayableSchema = z.object({
   supplier_id: z.string().nullable().optional(),
   description: z.string().min(1).optional(),
@@ -15,9 +16,9 @@ const updatePayableSchema = z.object({
   due_date: z.string().optional(),
   category_id: z.string().nullable().optional(),
   cost_center_id: z.string().nullable().optional(),
-  account_id: z.string().nullable().optional(), // Sprint UX-24: editar banco vinculado
+  account_id: z.string().nullable().optional(),
   payment_method: z.string().nullable().optional(),
-  status: z.enum(['PENDENTE', 'PAGO', 'CANCELADO']).optional(),
+  status: z.enum(['PENDENTE', 'CANCELADO']).optional(),
 })
 
 export async function GET(req: NextRequest, { params }: Params) {
@@ -72,6 +73,23 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
     const body = await req.json()
     const data = updatePayableSchema.parse(body)
+
+    // C15 fix 22/05: valida supplier_id pertence ao tenant
+    if (data.supplier_id) {
+      const supplier = await prisma.customer.findFirst({
+        where: { id: data.supplier_id, company_id: user.companyId, deleted_at: null },
+        select: { id: true },
+      })
+      if (!supplier) return error('Fornecedor nao pertence a esta empresa', 403)
+    }
+
+    // A5 fix 22/05: invariante total_amount >= paid_amount.
+    if (data.total_amount !== undefined) {
+      const currentPaid = existing.paid_amount || 0
+      if (data.total_amount < currentPaid) {
+        return error(`Total (${data.total_amount}) menor que o ja pago (${currentPaid}). Estorne primeiro se quer reduzir.`, 400)
+      }
+    }
 
     const updateData: any = { ...data, updated_at: new Date() }
     if (data.due_date) updateData.due_date = new Date(data.due_date)

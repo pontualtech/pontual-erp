@@ -39,18 +39,24 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!account) return error('Conta bancaria nao pertence a esta empresa', 403)
     if (!account.is_active) return error('Conta bancaria desativada — escolha outra', 400)
 
-    const previousPaid = existing.paid_amount || 0
-    const newPaidTotal = previousPaid + data.paid_amount
-    const isPaidInFull = newPaidTotal >= existing.total_amount
-
-    // Atomic transaction: update payable + record bank transaction + update balance
+    // C4 fix 22/05: race em baixa concorrente — rele fresh dentro da tx.
     const payable = await prisma.$transaction(async (tx) => {
+      const fresh = await tx.accountPayable.findFirst({
+        where: { id: params.id, company_id: user.companyId, deleted_at: null },
+      })
+      if (!fresh) throw new Error('AP sumiu durante a baixa')
+      if (fresh.status === 'PAGO') throw new Error('Conta ja paga (outra baixa em paralelo)')
+      if (fresh.status === 'CANCELADO') throw new Error('Conta cancelada durante a baixa')
+      const previousPaid = fresh.paid_amount || 0
+      const newPaidTotal = previousPaid + data.paid_amount
+      const isPaidInFull = newPaidTotal >= fresh.total_amount
+
       const updated = await tx.accountPayable.update({
         where: { id: params.id, company_id: user.companyId },
         data: {
           paid_amount: newPaidTotal,
           status: isPaidInFull ? 'PAGO' : 'PENDENTE',
-          payment_method: existing.payment_method,
+          payment_method: fresh.payment_method,
           updated_at: new Date(),
         },
       })
@@ -65,7 +71,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           account_id: data.account_id,
           transaction_type: 'DEBIT',
           amount: data.paid_amount,
-          description: `Pgto: ${existing.description}`,
+          description: `Pgto: ${fresh.description}`,
           transaction_date: data.paid_at ? new Date(data.paid_at) : new Date(),
           bank_ref: `AP:${params.id}`,
           reconciled: true,
@@ -80,20 +86,22 @@ export async function POST(req: NextRequest, { params }: Params) {
         },
       })
 
-      return updated
+      return { updated, previousPaid, newPaidTotal }
     })
+
+    const { updated: payableData, previousPaid, newPaidTotal } = payable as any
 
     logAudit({
       companyId: user.companyId,
       userId: user.id,
       module: 'financeiro',
       action: 'payable.baixa',
-      entityId: payable.id,
+      entityId: payableData.id,
       oldValue: { paid_amount: previousPaid, status: existing.status },
-      newValue: { paid_amount: newPaidTotal, status: payable.status, account_id: data.account_id },
+      newValue: { paid_amount: newPaidTotal, status: payableData.status, account_id: data.account_id },
     })
 
-    return success(payable)
+    return success(payableData)
   } catch (err) {
     return handleError(err)
   }

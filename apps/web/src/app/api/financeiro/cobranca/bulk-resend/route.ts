@@ -33,12 +33,15 @@ export async function POST(req: NextRequest) {
     const data = bodySchema.parse(body)
 
     // Carrega ARs validos do tenant com charge_id presente
+    // M8 fix 22/05: exclui RECEBIDO/CANCELADO — antes spam pra cliente
+    // que ja pagou ("pague aqui" depois de quitado).
     const receivables = await prisma.accountReceivable.findMany({
       where: {
         id: { in: data.receivable_ids },
         company_id: auth.companyId,
         deleted_at: null,
         charge_id: { not: null },
+        status: { notIn: ['RECEBIDO', 'CANCELADO', 'AGRUPADO'] },
       },
       select: { id: true, charge_id: true, description: true },
     })

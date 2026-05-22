@@ -58,8 +58,12 @@ export async function GET(request: NextRequest) {
     })
 
     // === LANÇAMENTOS (Contas a Receber RECEBIDO) ===
-    // Quando filtra por conta bancária ou centro de custo, exclui receivables pois não possuem esses campos
-    const skipReceber = tipo === 'SAIDA' || origem === 'pagar' || origem === 'transacao' || !!accountId || !!costCenterId
+    // C9 fix 22/05: AR e AP agora tem account_id (apos baixa exigir conta).
+    // Quando filtra por accountId, INCLUI AR/AP com aquele account_id (antes
+    // o skipReceber=true escondia 100% dos AR — usuario achava que nao tinha
+    // recebimento na conta). Mantem skip quando filtro por centro de custo
+    // (AR nao tem cost_center_id no schema).
+    const skipReceber = tipo === 'SAIDA' || origem === 'pagar' || origem === 'transacao' || !!costCenterId
     const arWhere: any = {
       company_id: user.companyId,
       deleted_at: null,
@@ -68,6 +72,7 @@ export async function GET(request: NextRequest) {
     }
     if (categoryId) arWhere.category_id = categoryId
     if (paymentMethod) arWhere.payment_method = paymentMethod
+    if (accountId) arWhere.account_id = accountId
     if (search) arWhere.OR = [
       { description: { contains: search, mode: 'insensitive' } },
       { customers: { legal_name: { contains: search, mode: 'insensitive' } } },
@@ -83,7 +88,7 @@ export async function GET(request: NextRequest) {
     })
 
     // === LANÇAMENTOS (Contas a Pagar PAGO) ===
-    const skipPagar = tipo === 'ENTRADA' || origem === 'receber' || origem === 'transacao' || !!accountId
+    const skipPagar = tipo === 'ENTRADA' || origem === 'receber' || origem === 'transacao'
     const apWhere: any = {
       company_id: user.companyId,
       deleted_at: null,
@@ -93,6 +98,7 @@ export async function GET(request: NextRequest) {
     if (categoryId) apWhere.category_id = categoryId
     if (costCenterId) apWhere.cost_center_id = costCenterId
     if (paymentMethod) apWhere.payment_method = paymentMethod
+    if (accountId) apWhere.account_id = accountId
     if (search) apWhere.OR = [
       { description: { contains: search, mode: 'insensitive' } },
       // AccountPayable.supplier_id aponta pra Customer — relation Prisma chama-se "customers"

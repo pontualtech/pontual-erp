@@ -47,8 +47,11 @@ export async function POST(req: NextRequest) {
       return error('Uma ou mais contas ja estao agrupadas', 400)
     }
 
-    // Calculate total
+    // A10 fix 22/05: tambem soma received_amount dos originais (antes
+    // group nascia com received=0 mesmo com originais ja parcialmente
+    // pagos → cobrava o cliente de novo pelo valor cheio).
     const totalAmount = receivables.reduce((sum, r) => sum + r.total_amount, 0)
+    const totalReceived = receivables.reduce((sum, r) => sum + (r.received_amount || 0), 0)
 
     // Build description from OS numbers or descriptions
     const descriptions = receivables.map(r => {
@@ -74,8 +77,8 @@ export async function POST(req: NextRequest) {
           company_id: user.companyId,
           description: groupDescription,
           total_amount: totalAmount,
-          received_amount: 0,
-          status: 'PENDENTE',
+          received_amount: totalReceived,
+          status: totalReceived >= totalAmount ? 'RECEBIDO' : 'PENDENTE',
           payment_method: paymentMethod,
           customer_id: customerId,
           group_id: groupId,

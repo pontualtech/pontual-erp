@@ -205,9 +205,10 @@ export default function ContaPagarDetalhePage() {
   const pctPaid = conta.total_amount > 0 ? ((conta.paid_amount || 0) / conta.total_amount) * 100 : 0
   const isPaid = conta.status === 'PAGO'
   const isEditable = !isPaid && conta.status !== 'CANCELADO'
-  const today = new Date(); today.setHours(0, 0, 0, 0)
-  const dueDay = new Date(String(conta.due_date).substring(0, 10) + 'T00:00:00')
-  const isOverdue = conta.status === 'PENDENTE' && dueDay < today
+  // A1 fix 22/05: comparacao Y-M-D direto evita TZ drift.
+  const todayYMD_AP = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` })()
+  const dueYMD_AP = String(conta.due_date).substring(0, 10)
+  const isOverdue = conta.status === 'PENDENTE' && dueYMD_AP < todayYMD_AP
   const sc = statusConfig[isOverdue ? 'VENCIDO' : conta.status] || statusConfig.PENDENTE
   const currentPM = PAYMENT_METHODS.find(p => p.value === (editing ? editForm.payment_method : conta.payment_method))
 

@@ -52,6 +52,7 @@ export async function POST(req: NextRequest) {
     let inserted = 0
     let duplicates = 0
     let skipped = parseErrors.length
+    let updated = 0
 
     for (const t of parsed) {
       try {
@@ -85,8 +86,26 @@ export async function POST(req: NextRequest) {
         })
         inserted++
       } catch (e: any) {
-        // Unique violation = ja existe (mesma external_id) — conta e segue
+        // Unique violation = ja existe (mesma external_id)
         if (e?.code === 'P2002') {
+          // M3 fix 22/05: se a transacao existente tem status APPROVED
+          // mas nova vem com CHARGEBACK/CANCELLED, ATUALIZA status pra
+          // refletir a mudanca. Antes ignorava silenciosamente → chargeback
+          // virava dinheiro fantasma no DRE.
+          if (t.status && (t.status === 'CHARGEBACK' || t.status === 'CANCELLED' || t.status === 'EXPIRED')) {
+            const existing = await prisma.acquirerTransaction.findFirst({
+              where: { company_id: user.companyId, acquirer: t.acquirer, external_id: t.externalId },
+              select: { id: true, status: true },
+            })
+            if (existing && existing.status !== t.status) {
+              await prisma.acquirerTransaction.update({
+                where: { id: existing.id },
+                data: { status: t.status, raw_data: t.rawData },
+              })
+              updated++
+              continue
+            }
+          }
           duplicates++
         } else {
           parseErrors.push({ row: -1, error: e?.message || 'insert falhou' })
@@ -103,6 +122,7 @@ export async function POST(req: NextRequest) {
       inserted,
       duplicates,
       errors: parseErrors.slice(0, 50),
+      ...({ updated } as any),
     }
 
     logAudit({

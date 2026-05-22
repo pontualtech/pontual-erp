@@ -73,7 +73,13 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
 
   try {
     const linked = await prisma.$transaction(async (tx) => {
-      const idempotencyKey = `${matchMethod === 'AUTO' ? 'rede_auto' : 'rede_match'}_${txn.id}_${Date.now()}`
+      // A13 fix 22/05: chave determinística baseada em txn.id (nao Date.now)
+      // pra impedir 2 cliques rapidos no botao Match Manual gerarem 2 Payments.
+      // O `matched_payment_id` ja e @unique no schema, entao o segundo
+      // create falha — mas com Date.now os Payments sao criados antes do
+      // unique trigger, deixando 1 orfao. Com key determinística, o segundo
+      // create falha em P2002 no Payment.idempotency_key.
+      const idempotencyKey = `acquirer_${txn.acquirer}_${txn.id}_${matchMethod.toLowerCase()}`
       const payment = await tx.payment.create({
         data: {
           company_id: companyId,

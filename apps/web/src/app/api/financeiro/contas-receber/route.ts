@@ -12,7 +12,7 @@ const splitSchema = z.object({
   payment_method: z.string().optional(),
   account_id: z.string().optional(),
   amount: z.number().int().positive('Valor do split deve ser positivo'),
-  installment_count: z.number().int().min(1).max(120).optional(),
+  installment_count: z.number().int().min(1).max(60).optional(), // M7 fix 22/05: cap 60 (era 120)
 })
 
 const createReceivableSchema = z.object({
@@ -25,7 +25,7 @@ const createReceivableSchema = z.object({
   category_id: z.string().optional(),
   account_id: z.string().optional(), // Sprint UX-23: pré-vincular conta bancária destino
   payment_method: z.string().optional(),
-  installment_count: z.number().int().min(1).max(120).optional(),
+  installment_count: z.number().int().min(1).max(60).optional(), // M7 fix 22/05: cap 60 (era 120)
   // Split payment 2026-05-19: se splits[] vier preenchido, criamos N receivables
   // (um por split) agrupados via group_id. Caso contrario, comportamento atual
   // (1 receivable com payment_method/account_id/installment_count flat).

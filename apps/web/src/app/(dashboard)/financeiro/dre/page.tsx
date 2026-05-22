@@ -251,9 +251,13 @@ export default function DREPage() {
     ? ((dre.lucro_bruto / dre.receita_bruta) * 100).toFixed(1)
     : '0.0'
 
-  const margemLiquida = dre && dre.receita_bruta > 0
-    ? ((dre.lucro_liquido / dre.receita_bruta) * 100).toFixed(1)
-    : '0.0'
+  // M11 fix 22/05: margem liquida calculada sobre receita LIQUIDA (padrao contabil),
+  // nao receita bruta. Antes subestimava a margem quando havia deducoes (impostos, etc).
+  const margemLiquida = dre && (dre as any).receita_liquida && (dre as any).receita_liquida > 0
+    ? ((dre.lucro_liquido / (dre as any).receita_liquida) * 100).toFixed(1)
+    : (dre && dre.receita_bruta > 0
+      ? ((dre.lucro_liquido / dre.receita_bruta) * 100).toFixed(1)
+      : '0.0')
 
   function exportCSV() {
     if (!dre) return

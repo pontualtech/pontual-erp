@@ -94,45 +94,51 @@ export async function GET(request: NextRequest) {
       monthMap[m] = { entradas: 0, saidas: 0 }
     }
 
-    if (transactions.length > 0) {
-      // Usar transacoes bancarias (mais preciso)
-      for (const t of transactions) {
-        const d = new Date(t.transaction_date)
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-        if (monthMap[key]) {
-          if (t.transaction_type === 'CREDIT') {
-            monthMap[key].entradas += t.amount
-          } else {
-            monthMap[key].saidas += t.amount
-          }
+    // A3 fix 22/05: combina Transactions (realizado) + AR/AP PENDENTE (projetado).
+    // Antes era if/else: ter 1 Transaction no periodo escondia TODOS os pendentes
+    // → quebrava a funcao primaria de "previsto vs realizado". Agora soma:
+    //   - Transactions reconciliadas = realizado de fato
+    //   - AR/AP nao-baixados = projecao
+    // Evita double-count: AR/AP ja baixados nao entram (filtro status).
+    for (const t of transactions) {
+      const d = new Date(t.transaction_date)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      if (monthMap[key]) {
+        if (t.transaction_type === 'CREDIT') {
+          monthMap[key].entradas += t.amount
+        } else {
+          monthMap[key].saidas += t.amount
         }
       }
-    } else {
-      // Fallback: usar receivables/payables (inclui pendentes como projeção)
-      for (const r of receivables) {
-        const d = new Date(r.due_date)
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-        if (monthMap[key]) {
-          monthMap[key].entradas += r.status === 'RECEBIDO' ? (r.received_amount ?? r.total_amount) : r.total_amount
-        }
+    }
+    // AR/AP ainda PENDENTE (projetados — Transactions nao existem pra eles ainda)
+    for (const r of receivables) {
+      if (r.status !== 'PENDENTE') continue
+      const d = new Date(r.due_date)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      if (monthMap[key]) {
+        monthMap[key].entradas += r.total_amount - (r.received_amount || 0)
       }
-
-      for (const p of payables) {
-        const d = new Date(p.due_date)
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-        if (monthMap[key]) {
-          monthMap[key].saidas += p.status === 'PAGO' ? (p.paid_amount ?? p.total_amount) : p.total_amount
-        }
+    }
+    for (const p of payables) {
+      if (p.status !== 'PENDENTE') continue
+      const d = new Date(p.due_date)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      if (monthMap[key]) {
+        monthMap[key].saidas += p.total_amount - (p.paid_amount || 0)
       }
     }
 
     // Build result with accumulated balance
+    // A4 fix 22/05: acumulado parte do saldo bancario DE HOJE menos o que vai
+    // entrar/sair no futuro (PENDENTE) e mais o que ja saiu/entrou (Transactions).
+    // Antes, acumulado = saldoAtual + entradas_passadas → duplicava o caixa
+    // (entradas passadas ja estavam no saldo atual).
+    //
+    // Estrategia: parte do saldo atual e PROJETA pra frente somando movimentos.
+    // Para meses passados, mostra fluxo do mes (entradas - saidas) sem acumular
+    // o saldo do dia (que ja inclui esses movimentos).
     let acumulado = saldoBancarioAtual
-    const totalEntradasAll = Object.values(monthMap).reduce((s, m) => s + m.entradas, 0)
-    const totalSaidasAll = Object.values(monthMap).reduce((s, m) => s + m.saidas, 0)
-    if (transactions.length > 0) {
-      acumulado = saldoBancarioAtual - (totalEntradasAll - totalSaidasAll)
-    }
 
     const data = months.map(month => {
       const { entradas, saidas } = monthMap[month]

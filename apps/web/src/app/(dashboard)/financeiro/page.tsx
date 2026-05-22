@@ -29,11 +29,19 @@ export default function FinanceiroPage() {
       .finally(() => setLoading(false))
   }, [])
 
+  // A2 fix 22/05: cards Vencidos separados em "A receber vencidos" e
+  // "A pagar vencidos". Antes somava entrada+saida no mesmo card — nao
+  // fazia sentido financeiro (nao e saldo nem exposicao).
+  const overdueRecv = data?.receivable?.overdueCents ?? 0
+  const overduePay = data?.payable?.overdueCents ?? 0
+  const overdueRecvCount = data?.receivable?.overdueCount ?? 0
+  const overduePayCount = data?.payable?.overdueCount ?? 0
   const cards = [
     { label: 'Saldo Total', value: formatCurrency(data?.totalBalanceCents ?? 0), icon: DollarSign, color: 'text-emerald-600 bg-emerald-50' },
     { label: 'A Receber', value: formatCurrency(data?.receivable?.openCents ?? 0), sub: data?.receivable?.openCount ? `${data.receivable.openCount} titulo(s)` : null, icon: TrendingUp, color: 'text-green-600 bg-green-50' },
     { label: 'A Pagar', value: formatCurrency(data?.payable?.openCents ?? 0), sub: data?.payable?.openCount ? `${data.payable.openCount} titulo(s)` : null, icon: TrendingDown, color: 'text-red-600 bg-red-50' },
-    { label: 'Vencidos', value: formatCurrency((data?.payable?.overdueCents ?? 0) + (data?.receivable?.overdueCents ?? 0)), sub: ((data?.payable?.overdueCount ?? 0) + (data?.receivable?.overdueCount ?? 0)) > 0 ? `${(data?.payable?.overdueCount ?? 0) + (data?.receivable?.overdueCount ?? 0)} titulo(s)` : null, icon: ((data?.payable?.overdueCents ?? 0) + (data?.receivable?.overdueCents ?? 0)) > 0 ? AlertTriangle : DollarSign, color: ((data?.payable?.overdueCents ?? 0) + (data?.receivable?.overdueCents ?? 0)) > 0 ? 'text-orange-600 bg-orange-50' : 'text-gray-400 bg-gray-50' },
+    { label: 'Recebimentos Vencidos', value: formatCurrency(overdueRecv), sub: overdueRecvCount > 0 ? `${overdueRecvCount} titulo(s)` : null, icon: overdueRecv > 0 ? AlertTriangle : DollarSign, color: overdueRecv > 0 ? 'text-amber-600 bg-amber-50' : 'text-gray-400 bg-gray-50' },
+    { label: 'Pagamentos Vencidos', value: formatCurrency(overduePay), sub: overduePayCount > 0 ? `${overduePayCount} titulo(s)` : null, icon: overduePay > 0 ? AlertTriangle : DollarSign, color: overduePay > 0 ? 'text-orange-600 bg-orange-50' : 'text-gray-400 bg-gray-50' },
   ]
 
   return (
@@ -50,7 +58,7 @@ export default function FinanceiroPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {cards.map(card => {
           const Icon = card.icon
           return (
