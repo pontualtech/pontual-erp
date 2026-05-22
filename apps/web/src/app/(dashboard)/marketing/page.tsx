@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
   Users, BarChart3, FileText, Mail, MousePointerClick, MailX, TrendingUp,
-  ArrowRight, Loader2, Megaphone, Zap,
+  ArrowRight, Loader2, Megaphone, Zap, Activity, Target,
 } from 'lucide-react'
 import { StatCard } from '@/components/marketing/StatCard'
 import { formatNumber } from '@/lib/marketing/format'
@@ -66,6 +66,24 @@ const MODULES: ModuleCard[] = [
     iconBg: 'bg-amber-50 dark:bg-amber-500/10',
     iconColor: 'text-amber-600 dark:text-amber-400',
     borderHover: 'hover:border-amber-300 dark:hover:border-amber-500/40',
+  },
+  {
+    title: 'Tráfego ao vivo',
+    description: 'Cliques de Google Ads, MS Ads, orgânico e email por site — atualiza a cada 60s',
+    href: '/marketing/trafego',
+    icon: Activity,
+    iconBg: 'bg-cyan-50 dark:bg-cyan-500/10',
+    iconColor: 'text-cyan-600 dark:text-cyan-400',
+    borderHover: 'hover:border-cyan-300 dark:hover:border-cyan-500/40',
+  },
+  {
+    title: 'Atribuição de Receita',
+    description: 'OS criadas e quotes aprovadas por canal — Google Ads, MS Ads, orgânico, etc',
+    href: '/marketing/atribuicao',
+    icon: Target,
+    iconBg: 'bg-emerald-50 dark:bg-emerald-500/10',
+    iconColor: 'text-emerald-600 dark:text-emerald-400',
+    borderHover: 'hover:border-emerald-300 dark:hover:border-emerald-500/40',
   },
 ]
 

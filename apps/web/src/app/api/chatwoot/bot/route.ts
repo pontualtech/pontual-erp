@@ -1271,6 +1271,87 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
     content = content.replace(/\s*\[ref:[^\]]+\]\s*/gi, '').trim()
   }
 
+  // 2026-05-22 CWT fingerprint fallback: cliente apagou o texto pré-preenchido?
+  // Tag CWT gravou marketing_whatsapp_redirect ANTES do click. Buscamos o
+  // redirect não-consumido mais recente da company na janela de 30min.
+  // Em multi-inbox/multi-número, isso pode ter ambiguidade em pico — aceitável
+  // pra MVP (alternativa exige mapping inbox→phone).
+  if (!refMatch) {
+    try {
+      const isWhatsappChannel = /Channel::Api|Whatsapp/i.test(channelType)
+      if (isWhatsappChannel) {
+        const existing = await prisma.botConversation.findUnique({
+          where: { chatwoot_conv_id: conversationId },
+          select: { data: true },
+        })
+        const existingData: Record<string, any> =
+          existing?.data && typeof existing.data === 'object' && !Array.isArray(existing.data)
+            ? { ...(existing.data as Record<string, any>) }
+            : {}
+        if (!existingData.attribution) {
+          const redirect = await prisma.marketingWhatsappRedirect.findFirst({
+            where: {
+              OR: [
+                { company_id: cfg.companyId },
+                { company_id: null }, // tag CWT pode não enviar company_id
+              ],
+              consumed_at: null,
+              expires_at: { gt: new Date() },
+            },
+            orderBy: { click_at: 'desc' },
+          })
+          if (redirect) {
+            const attribution: Record<string, string> = {}
+            if (redirect.gclid) attribution.gclid = redirect.gclid
+            if (redirect.msclkid) attribution.msclkid = redirect.msclkid
+            if (redirect.gbraid) attribution.gbraid = redirect.gbraid
+            if (redirect.utm_source) attribution.utm_source = redirect.utm_source
+            if (redirect.utm_medium) attribution.utm_medium = redirect.utm_medium
+            if (redirect.utm_campaign) attribution.utm_campaign = redirect.utm_campaign
+            if (redirect.utm_term) attribution.utm_term = redirect.utm_term
+            if (redirect.utm_content) attribution.utm_content = redirect.utm_content
+            if (Object.keys(attribution).length > 0) {
+              existingData.attribution = {
+                ...attribution,
+                source: 'cwt_fingerprint',
+                captured_at: new Date().toISOString(),
+                redirect_id: redirect.id,
+              }
+              await prisma.botConversation.upsert({
+                where: { chatwoot_conv_id: conversationId },
+                update: { data: existingData },
+                create: {
+                  chatwoot_conv_id: conversationId,
+                  company_id: cfg.companyId,
+                  data: existingData,
+                },
+              })
+              await prisma.marketingWhatsappRedirect.update({
+                where: { id: redirect.id },
+                data: { consumed_at: new Date(), consumed_by_conv_id: conversationId },
+              })
+              console.log(`[Bot/CWT/Fingerprint] Attribution matched conv ${conversationId} via redirect ${redirect.id}: ${JSON.stringify(attribution)}`)
+
+              // Posta nota privada igual ao path do [ref:]
+              const srcLabel = (() => {
+                const src = attribution.utm_source || ''
+                const m: Record<string, string> = { google: 'Google Ads', bing: 'Microsoft Ads', meta: 'Meta Ads', facebook: 'Meta Ads', instagram: 'Instagram', direct: 'Direto' }
+                return m[src.toLowerCase()] || (src ? src.charAt(0).toUpperCase() + src.slice(1) : 'Origem desconhecida')
+              })()
+              const noteLines = [`📊 *Origem: ${srcLabel}* (via fingerprint)`]
+              if (attribution.utm_term) noteLines.push(`🔎 Palavra-chave: ${attribution.utm_term}`)
+              if (attribution.utm_campaign) noteLines.push(`📣 Campanha: ${attribution.utm_campaign}`)
+              if (attribution.gclid) noteLines.push(`gclid: ${attribution.gclid.slice(0, 20)}...`)
+              await cwSendMessage(cfg, conversationId, noteLines.join('\n'), true)
+            }
+          }
+        }
+      }
+    } catch (e: any) {
+      console.warn(`[Bot/CWT/Fingerprint] Failed: ${e?.message}`)
+    }
+  }
+
   // 2026-05-06 BUG FIX: emails do Outlook/Gmail vem com HTML completo no
   // body.content (<p>, <a>, smart quotes). Marta no Dify recebia HTML cru
   // como query e Gemini retornava vazio. Converte HTML->plain antes de
