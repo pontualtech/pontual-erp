@@ -19,6 +19,8 @@ import { requireInternalKey } from '@/lib/internal-auth'
  *   - _trigger_failures: 30d
  *   - voip_audit_log: 90d
  *   - chatbot_logs: 60d
+ *   - error_logs: 90d (column=ts)
+ *   - health_snapshots: 30d (column=snapshot_at)
  *
  * N5: advisory lock pra evitar 2 réplicas rodando simultâneo.
  * Retorna counts deletados por tabela.
@@ -44,11 +46,23 @@ export async function GET(req: NextRequest) {
       { table: '_trigger_failures', days: 30 },
       { table: 'voip_audit_log', days: 90 },
       { table: 'chatbot_logs', days: 60 },
+      // Observability — colunas customizadas (não usam created_at)
+      { table: 'error_logs', days: 90, column: 'ts' },
+      { table: 'health_snapshots', days: 30, column: 'snapshot_at' },
     ]
+
+    // Whitelist de colunas válidas pra evitar SQL injection via policy.column.
+    // Necessário porque o nome da coluna não dá pra parametrizar via $1.
+    const VALID_COLUMNS = new Set(['created_at', 'ts', 'snapshot_at'])
 
     const results: Record<string, { deleted: number; cutoff: string }> = {}
     for (const p of policies) {
       const cutoff = new Date(Date.now() - p.days * 24 * 60 * 60 * 1000)
+      const col = p.column || 'created_at'
+      if (!VALID_COLUMNS.has(col)) {
+        results[p.table] = { deleted: -3, cutoff: `invalid_column: ${col}` }
+        continue
+      }
       try {
         // Verifica se tabela existe antes
         const tblExists = await prisma.$queryRawUnsafe<any[]>(
@@ -61,13 +75,13 @@ export async function GET(req: NextRequest) {
         }
         if (dryRun) {
           const cnt = await prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
-            `SELECT COUNT(*)::bigint AS count FROM ${p.table} WHERE created_at < $1`,
+            `SELECT COUNT(*)::bigint AS count FROM ${p.table} WHERE ${col} < $1`,
             cutoff,
           )
           results[p.table] = { deleted: Number(cnt[0]?.count ?? 0), cutoff: cutoff.toISOString() }
         } else {
           const deleted = await prisma.$executeRawUnsafe(
-            `DELETE FROM ${p.table} WHERE created_at < $1`,
+            `DELETE FROM ${p.table} WHERE ${col} < $1`,
             cutoff,
           )
           results[p.table] = { deleted: Number(deleted) || 0, cutoff: cutoff.toISOString() }
