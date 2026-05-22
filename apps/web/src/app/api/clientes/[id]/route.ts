@@ -72,6 +72,53 @@ export async function PUT(req: NextRequest, { params }: Params) {
     // Validar com Zod strict — rejeita campos não permitidos
     const validatedData = updateCustomerSchema.parse(body)
 
+    // 2026-05-22 fix incidente Sonia/Ludmila (OSs 60605/60607/60608):
+    // Atendente editou customer existente trocando dados pra OUTRO cliente
+    // (mobile/email/CPF que ja pertenciam a outro customer cadastrado),
+    // sobrescrevendo o primeiro. Agora PATCH detecta conflito e bloqueia,
+    // a nao ser que caller passe `_allow_overwrite_other: true` confirmando
+    // que sabe o que esta fazendo (ex: merge intencional).
+    const allowOverwrite = (body as any)?._allow_overwrite_other === true
+    if (!allowOverwrite) {
+      const newDoc = (validatedData as any).document_number || ''
+      const newMobile = (validatedData as any).mobile ? String((validatedData as any).mobile).replace(/\D/g, '') : ''
+      const newEmail = (validatedData as any).email ? String((validatedData as any).email).trim().toLowerCase() : ''
+      const docChanged = newDoc && newDoc !== (existing.document_number || '')
+      const mobileChanged = newMobile && newMobile !== ((existing.mobile || '').replace(/\D/g, ''))
+      const emailChanged = newEmail && newEmail !== ((existing.email || '').trim().toLowerCase())
+
+      if (docChanged || mobileChanged || emailChanged) {
+        const conflictConditions: any[] = []
+        if (docChanged && newDoc.length >= 11) conflictConditions.push({ document_number: newDoc })
+        if (mobileChanged && newMobile.length >= 10) conflictConditions.push({ mobile: { contains: newMobile.slice(-10) } })
+        if (emailChanged) conflictConditions.push({ email: { equals: newEmail, mode: 'insensitive' as const } })
+
+        if (conflictConditions.length > 0) {
+          const conflictWith = await prisma.customer.findFirst({
+            where: {
+              company_id: user.companyId,
+              deleted_at: null,
+              id: { not: params.id },
+              OR: conflictConditions,
+            },
+            select: { id: true, legal_name: true, email: true, mobile: true, document_number: true },
+          })
+          if (conflictWith) {
+            const reasons: string[] = []
+            if (docChanged && conflictWith.document_number === newDoc) reasons.push('CPF/CNPJ')
+            if (mobileChanged && conflictWith.mobile?.includes(newMobile.slice(-10))) reasons.push('celular')
+            if (emailChanged && conflictWith.email?.toLowerCase() === newEmail) reasons.push('email')
+            return NextResponse.json({
+              error: `Outro cliente ja tem ${reasons.join(', ')} igual. Edite o cliente correto ou confirme a sobrescrita explicitamente.`,
+              conflict_with: conflictWith,
+              match_fields: reasons,
+              hint: 'Se realmente quer fazer merge, envie _allow_overwrite_other=true no body.',
+            }, { status: 409 })
+          }
+        }
+      }
+    }
+
     await prisma.customer.updateMany({
       where: { id: params.id, company_id: user.companyId },
       data: validatedData as any,
