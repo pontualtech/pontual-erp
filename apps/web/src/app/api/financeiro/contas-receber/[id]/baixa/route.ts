@@ -133,7 +133,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
       if (originals.length > 0) {
         await prisma.accountReceivable.updateMany({
-          where: { grouped_into_id: receivableData.id },
+          where: { grouped_into_id: receivableData.id, company_id: user.companyId },
           data: {
             status: 'RECEBIDO',
             received_amount: undefined, // keep original amounts

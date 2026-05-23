@@ -63,7 +63,10 @@ export async function GET(_req: NextRequest) {
     }
 
     // ─── Insight 2: Técnico sobrecarregado ────────────────────────────
-    const techWorkload = await prisma.serviceOrder.groupBy({
+    // Sprint UX-16 fix (2026-05-23): `having: { id: { _count: { gt: 10 } } } as any` não
+    // era suportado pelo Prisma e o .catch silenciava — insight nunca aparecia.
+    // Agora: groupBy retorna top 5 técnicos com mais OS abertas, filtramos > 10 em JS.
+    const techGroups = await prisma.serviceOrder.groupBy({
       by: ['technician_id'],
       where: {
         company_id: user.companyId,
@@ -71,18 +74,20 @@ export async function GET(_req: NextRequest) {
         technician_id: { not: null },
         module_statuses: { is_final: false },
       },
-      _count: true,
-      having: { id: { _count: { gt: 10 } } } as any,
-      orderBy: { _count: { id: 'desc' } },
-      take: 1,
-    }).catch(() => [])
+      _count: { _all: true },
+      orderBy: { _count: { technician_id: 'desc' } },
+      take: 5,
+    }).catch(() => [] as Array<{ technician_id: string | null; _count: { _all: number } }>)
 
-    if (techWorkload.length > 0 && techWorkload[0].technician_id) {
+    type TechGroup = { technician_id: string | null; _count: { _all: number } }
+    const overloaded = (techGroups as TechGroup[]).filter(t => t.technician_id && t._count._all > 10)
+
+    if (overloaded.length > 0 && overloaded[0].technician_id) {
       const tech = await prisma.userProfile.findUnique({
-        where: { id: techWorkload[0].technician_id },
+        where: { id: overloaded[0].technician_id },
         select: { name: true },
       }).catch(() => null)
-      const count = techWorkload[0]._count
+      const count = overloaded[0]._count._all
       insights.push({
         id: 'tech_overloaded',
         severity: 'warning',

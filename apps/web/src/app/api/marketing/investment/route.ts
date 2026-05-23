@@ -50,7 +50,15 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json()
     const channel = String(body.channel || '').trim()
-    const amountCents = Math.max(0, Math.round(Number(body.amount_cents) || 0))
+    const rawAmount = Number(body.amount_cents)
+    if (!Number.isFinite(rawAmount)) {
+      return error('amount_cents deve ser um número finito', 400)
+    }
+    const amountCents = Math.max(0, Math.round(rawAmount))
+    // R$ 100mi/mês cap (centavos) — investimento mensal além disso é claramente input errado
+    if (amountCents > 10_000_000_000) {
+      return error('amount_cents acima do limite razoável (R$ 100M/mês)', 400)
+    }
 
     if (!channel || !ALLOWED_CHANNELS.includes(channel)) {
       return error(`Canal inválido. Permitidos: ${ALLOWED_CHANNELS.join(', ')}`, 400)

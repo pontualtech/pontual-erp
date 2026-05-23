@@ -25,6 +25,10 @@ type ChannelStats = {
   approved_revenue_cents: number
   total_revenue_cents: number
   top_orders: OrderRef[]
+  // Sprint UX-16: CAC/ROI por canal (anexados no backend via /api/marketing/attribution)
+  investment_cents?: number
+  cac_cents?: number | null
+  roi_pct?: number | null
 }
 
 type TimelineRow = {
@@ -488,26 +492,26 @@ export default function MarketingAttributionPage() {
                           <td className="px-4 py-3 text-right">
                             <button
                               type="button"
-                              onClick={e => { e.stopPropagation(); editInvestment(b.channel, (b as any).investment_cents || 0) }}
+                              onClick={e => { e.stopPropagation(); editInvestment(b.channel, b.investment_cents || 0) }}
                               className="text-xs font-mono text-gray-600 hover:text-blue-600 underline decoration-dotted"
                               title="Clique pra editar investimento mensal"
                             >
-                              {(b as any).investment_cents > 0 ? fmtBRL((b as any).investment_cents) : '— set'}
+                              {b.investment_cents && b.investment_cents > 0 ? fmtBRL(b.investment_cents) : '— set'}
                             </button>
                           </td>
                           {/* CAC */}
                           <td className="px-4 py-3 text-right text-xs">
-                            {(b as any).cac_cents != null ? (
-                              <span className={(b as any).cac_cents <= 50000 ? 'text-emerald-700 font-medium' : (b as any).cac_cents <= 150000 ? 'text-amber-600' : 'text-red-600 font-medium'}>
-                                {fmtBRL((b as any).cac_cents)}
+                            {b.cac_cents != null ? (
+                              <span className={b.cac_cents <= 50000 ? 'text-emerald-700 font-medium' : b.cac_cents <= 150000 ? 'text-amber-600' : 'text-red-600 font-medium'}>
+                                {fmtBRL(b.cac_cents)}
                               </span>
                             ) : <span className="text-gray-300">—</span>}
                           </td>
                           {/* ROI */}
                           <td className="px-4 py-3 text-right text-xs">
-                            {(b as any).roi_pct != null ? (
-                              <span className={(b as any).roi_pct >= 100 ? 'text-emerald-700 font-medium' : (b as any).roi_pct >= 0 ? 'text-amber-600' : 'text-red-600 font-medium'}>
-                                {(b as any).roi_pct > 0 ? '+' : ''}{(b as any).roi_pct}%
+                            {b.roi_pct != null ? (
+                              <span className={b.roi_pct >= 100 ? 'text-emerald-700 font-medium' : b.roi_pct >= 0 ? 'text-amber-600' : 'text-red-600 font-medium'}>
+                                {b.roi_pct > 0 ? '+' : ''}{b.roi_pct}%
                               </span>
                             ) : <span className="text-gray-300">—</span>}
                           </td>

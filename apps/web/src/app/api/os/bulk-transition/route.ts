@@ -71,10 +71,12 @@ export async function POST(req: NextRequest) {
         }
 
         await prisma.$transaction(async (tx) => {
-          await tx.serviceOrder.update({
-            where: { id: osId },
+          // Defense-in-depth: scope update ao tenant via updateMany (suporta where composto)
+          const upd = await tx.serviceOrder.updateMany({
+            where: { id: osId, company_id: user.companyId, deleted_at: null },
             data: updateData,
           })
+          if (upd.count === 0) throw new Error(`OS ${osId} não pertence à empresa`)
           await tx.serviceOrderHistory.create({
             data: {
               company_id: user.companyId,
