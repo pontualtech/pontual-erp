@@ -52,6 +52,14 @@ export async function GET(req: NextRequest) {
         if (deliveryStatuses.length > 0) {
           where.status_id = { in: deliveryStatuses.map(s => s.id) }
         }
+      } else if (role === 'técnico' || role === 'tecnico') {
+        // Wave Q fix P3c (2026-05-23): técnico via TODAS as 683 OS (incluindo de
+        // outros técnicos). Agora vê só SUAS + pool sem técnico (pegar próxima).
+        // ?showAll=true bypassa pra casos administrativos.
+        where.OR = [
+          { technician_id: user.id },
+          { technician_id: null },
+        ]
       }
       // admin, atendente, financeiro -> no filter (see all)
     }

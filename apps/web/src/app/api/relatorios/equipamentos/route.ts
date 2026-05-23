@@ -32,6 +32,17 @@ export async function GET(req: NextRequest) {
     const dateFrom = url.get('dateFrom') || new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
     const dateTo = url.get('dateTo') || now.toISOString().split('T')[0]
 
+    // Wave Q fix P3b (2026-05-23): valida formato + ordem das datas. Antes:
+    //  - datas invertidas (from > to) retornavam silent 0 results
+    //  - datas inválidas ('abc') retornavam 500
+    // Agora: 400 com mensagem clara.
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateFrom) || !/^\d{4}-\d{2}-\d{2}$/.test(dateTo)) {
+      return NextResponse.json({ error: 'dateFrom e dateTo devem estar no formato YYYY-MM-DD' }, { status: 400 })
+    }
+    if (dateFrom > dateTo) {
+      return NextResponse.json({ error: `dateFrom (${dateFrom}) não pode ser maior que dateTo (${dateTo})` }, { status: 400 })
+    }
+
     // Top equipamentos por receita — limita 50 pra UI ficar rápida
     const rows: Array<{
       equipment_brand: string | null

@@ -14,7 +14,11 @@ export async function GET(req: NextRequest) {
     const url = req.nextUrl.searchParams
     const page = Math.max(1, Number(url.get('page') || '1'))
     const limit = Math.min(100, Math.max(1, Number(url.get('limit') || '20')))
-    const search = url.get('search') || ''
+    // Wave Q fix P3a (2026-05-23): NULL byte e chars de controle crashavam
+    // Postgres com "invalid byte sequence". Regex construida via string evita
+    // chars literais no source. Preserva UTF-8 printable + acentos.
+    const CTRL_CHARS_RE = new RegExp('[\\u0000-\\u001F\\u007F]', 'g')
+    const search = (url.get('search') || '').replace(CTRL_CHARS_RE, '').trim()
     const personType = url.get('personType') as 'PF' | 'PJ' | null
     const customerType = url.get('customerType') || null
     const city = url.get('city') || null
