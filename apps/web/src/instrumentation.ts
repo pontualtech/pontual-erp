@@ -136,30 +136,43 @@ function startCronJobs() {
   }
 
   // M4-pt2 (audit 2026-05-23) — one-shot ensure _trigger_failures table.
-  // Roda 30s após boot pra dar tempo do Next servir requests. Resolve o
-  // healthcheck flag `trigger_failures_unavailable=true` que ocorria porque
-  // o ensure-financeiro-extras.sh falhava antes de criar essa tabela.
-  // Endpoint é idempotente (CREATE IF NOT EXISTS) — pode rodar todo boot.
-  if (INTERNAL_API_KEY) {
-    setTimeout(async () => {
-      try {
-        const res = await fetch(`${BASE_URL}/api/admin/diag/trigger-failures`, {
-          method: 'POST',
-          headers: { 'x-internal-key': INTERNAL_API_KEY },
-        })
-        if (res.ok) {
-          const data = await res.json()
-          if (data.data?.created) {
-            console.log(`[Boot/EnsureTriggerFailures] OK — table_exists=${data.data.table_exists}`)
-          }
-        } else {
-          console.warn(`[Boot/EnsureTriggerFailures] HTTP ${res.status}`)
-        }
-      } catch (err) {
-        console.warn('[Boot/EnsureTriggerFailures] Error:', err instanceof Error ? err.message : err)
-      }
-    }, 30 * 1000)
-  }
+  // SQL direto via Prisma (sem fetch/auth) pra eliminar timing+auth issues.
+  // Resolve healthcheck `trigger_failures_unavailable=true`.
+  // Idempotente: CREATE TABLE IF NOT EXISTS.
+  ;(async () => {
+    try {
+      const { prisma } = await import('@pontual/db')
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS _trigger_failures (
+          id serial primary key,
+          trigger_name text NOT NULL,
+          payload jsonb,
+          error_msg text,
+          error_state text,
+          created_at timestamptz DEFAULT NOW()
+        )
+      `)
+      await prisma.$executeRawUnsafe(`
+        CREATE INDEX IF NOT EXISTS idx_trigger_failures_recent
+          ON _trigger_failures (created_at DESC)
+      `)
+      await prisma.$executeRawUnsafe(`
+        CREATE OR REPLACE FUNCTION fn_record_trigger_failure(
+          p_trigger text, p_payload jsonb, p_msg text, p_state text
+        ) RETURNS void AS $rec$
+        BEGIN
+          INSERT INTO _trigger_failures (trigger_name, payload, error_msg, error_state)
+          VALUES (p_trigger, p_payload, p_msg, p_state);
+        EXCEPTION WHEN OTHERS THEN
+          RAISE WARNING 'fn_record_trigger_failure ITSELF failed for %: % (%)', p_trigger, SQLERRM, SQLSTATE;
+        END;
+        $rec$ LANGUAGE plpgsql
+      `)
+      console.log('[Boot/EnsureTriggerFailures] OK — table+index+function criados (idempotente)')
+    } catch (err) {
+      console.error('[Boot/EnsureTriggerFailures] FAIL:', err instanceof Error ? err.message : err)
+    }
+  })()
 
   // M4 (audit 2026-05-23) — DRE materialized view refresh a cada 30min
   // dre_monthly era refrescada só por UI admin → healthcheck dre_mv_stale=true
