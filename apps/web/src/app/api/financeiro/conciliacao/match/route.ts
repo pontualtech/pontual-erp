@@ -88,28 +88,29 @@ export async function POST(request: NextRequest) {
     // increment'a balance — fix M1) ou de CNAB (que já incrementa). Tocar
     // aqui também causaria DOUBLE-COUNT do mesmo dinheiro.
     if (data.type === 'payable') {
-      const payable = await prisma.accountPayable.findFirst({
-        where: {
-          id: data.record_id,
-          company_id: user.companyId,
-          deleted_at: null,
-        },
-      })
-      if (!payable) return error('Conta a pagar nao encontrada', 404)
-      if (payable.status === 'PAGO') return error('Conta a pagar ja esta paga', 400)
-      if (payable.status === 'CANCELADO') return error('Conta a pagar cancelada', 400)
+      // Audit fix P2.6 (2026-05-23): leitura fora da $transaction permitia race em
+      // 2 operadores fazendo match simultâneo. Agora relê DENTRO da tx (padrão baixa).
+      const matchResult = await prisma.$transaction(async (tx) => {
+        const payable = await tx.accountPayable.findFirst({
+          where: {
+            id: data.record_id,
+            company_id: user.companyId,
+            deleted_at: null,
+          },
+        })
+        if (!payable) throw new Error('NOT_FOUND_AP')
+        if (payable.status === 'PAGO') throw new Error('AP_ALREADY_PAID')
+        if (payable.status === 'CANCELADO') throw new Error('AP_CANCELLED')
 
-      const previousPaid = payable.paid_amount || 0
-      const newPaidTotal = previousPaid + absAmount
-      const isPaidInFull = newPaidTotal >= payable.total_amount
+        const previousPaid = payable.paid_amount || 0
+        const newPaidTotal = previousPaid + absAmount
+        const isPaidInFull = newPaidTotal >= payable.total_amount
 
-      await prisma.$transaction(async (tx) => {
         await tx.accountPayable.update({
           where: { id: data.record_id, company_id: user.companyId },
           data: {
             paid_amount: newPaidTotal,
             status: isPaidInFull ? 'PAGO' : 'PENDENTE',
-            // 2026-05-20: match com extrato bancario marca AP como conciliado (origem confiavel).
             ...(isPaidInFull ? { reconciled: true } : {}),
             updated_at: new Date(),
           },
@@ -118,7 +119,16 @@ export async function POST(request: NextRequest) {
           where: { id: data.transaction_id, company_id: user.companyId },
           data: { reconciled: true },
         })
+
+        return { payable, previousPaid, newPaidTotal, isPaidInFull }
+      }).catch((e: Error) => {
+        if (e.message === 'NOT_FOUND_AP') return { _err: error('Conta a pagar nao encontrada', 404) }
+        if (e.message === 'AP_ALREADY_PAID') return { _err: error('Conta a pagar ja esta paga (race?)', 409) }
+        if (e.message === 'AP_CANCELLED') return { _err: error('Conta a pagar cancelada', 400) }
+        throw e
       })
+      if ('_err' in matchResult) return matchResult._err
+      const { payable, previousPaid, newPaidTotal, isPaidInFull } = matchResult
 
       logAudit({
         companyId: user.companyId,
@@ -145,28 +155,29 @@ export async function POST(request: NextRequest) {
         paid_total: newPaidTotal,
       })
     } else {
-      const receivable = await prisma.accountReceivable.findFirst({
-        where: {
-          id: data.record_id,
-          company_id: user.companyId,
-          deleted_at: null,
-        },
-      })
-      if (!receivable) return error('Conta a receber nao encontrada', 404)
-      if (receivable.status === 'RECEBIDO') return error('Conta a receber ja foi recebida', 400)
-      if (receivable.status === 'CANCELADO') return error('Conta a receber cancelada', 400)
+      // Audit fix P2.6 (2026-05-23): leitura fora da $transaction permitia race
+      // — relê AR DENTRO da tx, fail-fast em caso de double-match.
+      const matchResult = await prisma.$transaction(async (tx) => {
+        const receivable = await tx.accountReceivable.findFirst({
+          where: {
+            id: data.record_id,
+            company_id: user.companyId,
+            deleted_at: null,
+          },
+        })
+        if (!receivable) throw new Error('NOT_FOUND_AR')
+        if (receivable.status === 'RECEBIDO') throw new Error('AR_ALREADY_RECEIVED')
+        if (receivable.status === 'CANCELADO') throw new Error('AR_CANCELLED')
 
-      const previousReceived = receivable.received_amount || 0
-      const newReceivedTotal = previousReceived + absAmount
-      const isReceivedInFull = newReceivedTotal >= receivable.total_amount
+        const previousReceived = receivable.received_amount || 0
+        const newReceivedTotal = previousReceived + absAmount
+        const isReceivedInFull = newReceivedTotal >= receivable.total_amount
 
-      await prisma.$transaction(async (tx) => {
         await tx.accountReceivable.update({
           where: { id: data.record_id, company_id: user.companyId },
           data: {
             received_amount: newReceivedTotal,
             status: isReceivedInFull ? 'RECEBIDO' : 'PENDENTE',
-            // 2026-05-20: match com extrato bancario marca AR como conciliado (origem confiavel).
             ...(isReceivedInFull ? { reconciled: true } : {}),
             updated_at: new Date(),
           },
@@ -175,7 +186,16 @@ export async function POST(request: NextRequest) {
           where: { id: data.transaction_id, company_id: user.companyId },
           data: { reconciled: true },
         })
+
+        return { receivable, previousReceived, newReceivedTotal, isReceivedInFull }
+      }).catch((e: Error) => {
+        if (e.message === 'NOT_FOUND_AR') return { _err: error('Conta a receber nao encontrada', 404) }
+        if (e.message === 'AR_ALREADY_RECEIVED') return { _err: error('Conta a receber ja foi recebida (race?)', 409) }
+        if (e.message === 'AR_CANCELLED') return { _err: error('Conta a receber cancelada', 400) }
+        throw e
       })
+      if ('_err' in matchResult) return matchResult._err
+      const { receivable, previousReceived, newReceivedTotal, isReceivedInFull } = matchResult
 
       logAudit({
         companyId: user.companyId,

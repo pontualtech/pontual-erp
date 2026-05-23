@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 /**
  * SlashCommandTextarea — Sprint UX-16 (2026-05-23)
@@ -79,6 +79,18 @@ export function SlashCommandTextarea({ templateKey = 'laudo', defaults = DEFAULT
   const [activeIdx, setActiveIdx] = useState(0)
   const [templates, setTemplates] = useState<Template[]>(defaults)
   const [slashStartPos, setSlashStartPos] = useState<number | null>(null)
+  // Audit fix P3.13 (2026-05-23): cursor pendente p/ reposicionar após re-render
+  // controlled. useLayoutEffect aplica setSelectionRange depois do React render
+  // mas antes da pintura — evita race com re-render que sobrescrevia a posição.
+  const [pendingCursor, setPendingCursor] = useState<number | null>(null)
+
+  useLayoutEffect(() => {
+    if (pendingCursor != null && ref.current) {
+      ref.current.focus()
+      ref.current.setSelectionRange(pendingCursor, pendingCursor)
+      setPendingCursor(null)
+    }
+  }, [pendingCursor, value])
 
   // Carrega user templates do localStorage
   useEffect(() => {
@@ -138,19 +150,16 @@ export function SlashCommandTextarea({ templateKey = 'laudo', defaults = DEFAULT
     const before = cur.substring(0, slashStartPos)
     const after = cur.substring(endPos)
     const next = before + t.content + after
-    // Fire onChange sintético
     const newPos = before.length + t.content.length
+    // Fire onChange sintético — pai atualiza state, React re-render acontece,
+    // useLayoutEffect dispara setSelectionRange c/ pendingCursor. Mais robusto
+    // que requestAnimationFrame porque RAF pode rodar antes do re-render
+    // controlled, e setSelectionRange direto em controlled value é sobrescrito.
     const fake = { target: { value: next, selectionStart: newPos } } as any
     onChange?.(fake)
     setShowMenu(false)
     setSlashStartPos(null)
-    // Refoca + reposiciona cursor
-    requestAnimationFrame(() => {
-      if (ref.current) {
-        ref.current.focus()
-        ref.current.setSelectionRange(newPos, newPos)
-      }
-    })
+    setPendingCursor(newPos)
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {

@@ -188,17 +188,27 @@ export async function POST(request: NextRequest) {
     // contada). Net effect: balance é consistente independente do path.
     let netBalanceDelta = 0
     if (newTransactions.length > 0) {
-      // CREDIT soma, DEBIT subtrai — net delta no saldo
-      netBalanceDelta = newTransactions.reduce((acc, t) => {
-        return acc + (t.amount >= 0 ? Math.abs(t.amount) : -Math.abs(t.amount))
-      }, 0)
+      // Audit fix P3.12 (2026-05-23): antes a classificação CREDIT/DEBIT vinha
+      // apenas do sinal de t.amount. Alguns bancos exportam DEBIT como positivo
+      // com <TRNTYPE>DEBIT — gerava saldo inflado silenciosamente.
+      // Agora: trnType é fonte primária; sinal só como fallback quando trnType
+      // é OTHER/ausente. Lógica aplicada tanto no delta quanto no insert.
+      const debitTypes = new Set(['DEBIT', 'PAYMENT', 'CHECK', 'FEE', 'SRVCHG', 'XFER_OUT'])
+      const creditTypes = new Set(['CREDIT', 'DEP', 'DEPOSIT', 'INT', 'DIRECTDEP', 'XFER_IN'])
+      function classify(t: { trnType: string; amount: number }): { type: 'CREDIT' | 'DEBIT'; signed: number } {
+        const abs = Math.abs(t.amount)
+        if (creditTypes.has(t.trnType)) return { type: 'CREDIT', signed: abs }
+        if (debitTypes.has(t.trnType)) return { type: 'DEBIT', signed: -abs }
+        return t.amount >= 0 ? { type: 'CREDIT', signed: abs } : { type: 'DEBIT', signed: -abs }
+      }
+      netBalanceDelta = newTransactions.reduce((acc, t) => acc + classify(t).signed, 0)
 
       await prisma.$transaction(async (tx) => {
         await tx.transaction.createMany({
           data: newTransactions.map(t => ({
             company_id: user.companyId,
             account_id: accountId,
-            transaction_type: t.amount >= 0 ? 'CREDIT' : 'DEBIT',
+            transaction_type: classify(t).type,
             amount: Math.abs(t.amount),
             description: t.memo || `${t.trnType}`,
             bank_ref: t.fitId,

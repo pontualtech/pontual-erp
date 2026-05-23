@@ -151,6 +151,7 @@ async function processInterWebhook(body: any) {
   // Process based on situacao
   if (situacao === 'PAGO' || situacao === 'PAGA') {
     const paidAmountCents = Math.round((valorPago || 0) * 100)
+    const finalAmount = paidAmountCents || receivable.total_amount
 
     let boletoMeta: any = {}
     try {
@@ -161,16 +162,59 @@ async function processInterWebhook(body: any) {
     boletoMeta.paidAt = dataPagamento || new Date().toISOString()
     boletoMeta.paidAmount = paidAmountCents
 
-    await prisma.accountReceivable.update({
-      where: { id: receivable.id },
-      data: {
-        status: 'RECEBIDO',
-        received_amount: paidAmountCents || receivable.total_amount,
-        pix_code: JSON.stringify(boletoMeta),
-      },
+    // Audit fix P1.1 (2026-05-23): antes só fazia update sem criar Transaction
+    // nem atualizar account.current_balance. Saldo bancário ficava errado e
+    // quando OFX importava a mesma entrada, double-count silencioso.
+    // Agora: $transaction atômica + bank_ref `AR:<id>` (dedup OFX).
+    const bankRef = `AR:${receivable.id}`
+    const txDate = dataPagamento ? new Date(dataPagamento) : new Date()
+
+    await prisma.$transaction(async (tx) => {
+      await tx.accountReceivable.update({
+        where: { id: receivable.id },
+        data: {
+          status: 'RECEBIDO',
+          received_amount: finalAmount,
+          pix_code: JSON.stringify(boletoMeta),
+          reconciled: true,
+          updated_at: new Date(),
+        },
+      })
+
+      // Só cria Transaction + ajusta saldo se receivable tem account_id vinculado.
+      // Caso contrário, log warn (AR antigo sem account_id — fluxo legado).
+      // Dedup adicional: skipa create se já existe Transaction com mesmo bank_ref
+      // (idempotência reforçada além do WebhookEventLog).
+      if (receivable.account_id) {
+        const existingTx = await tx.transaction.findFirst({
+          where: { bank_ref: bankRef, company_id: receivable.company_id },
+        })
+        if (!existingTx) {
+          await tx.transaction.create({
+            data: {
+              company_id: receivable.company_id,
+              account_id: receivable.account_id,
+              transaction_type: 'CREDIT',
+              amount: finalAmount,
+              description: `Recebimento boleto Inter: ${receivable.description}`,
+              transaction_date: txDate,
+              bank_ref: bankRef,
+              reconciled: true,
+            },
+          })
+          await tx.account.update({
+            where: { id: receivable.account_id },
+            data: { current_balance: { increment: finalAmount }, updated_at: new Date() },
+          })
+        } else {
+          console.log(`[INTER WEBHOOK] Transaction ${bankRef} já existia — saldo não duplicado`)
+        }
+      } else {
+        console.warn(`[INTER WEBHOOK] Receivable ${receivable.id} sem account_id — saldo não atualizado`)
+      }
     })
 
-    console.log(`[INTER WEBHOOK] Boleto ${nossoNumero} marked as PAID for receivable ${receivable.id}`)
+    console.log(`[INTER WEBHOOK] Boleto ${nossoNumero} PAID for AR ${receivable.id} (R$ ${finalAmount/100})`)
   } else if (situacao === 'CANCELADA' || situacao === 'EXPIRADA') {
     let boletoMeta: any = {}
     try {
