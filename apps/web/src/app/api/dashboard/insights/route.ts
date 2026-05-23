@@ -78,7 +78,7 @@ export async function GET(_req: NextRequest) {
     }).catch(() => [])
 
     if (techWorkload.length > 0 && techWorkload[0].technician_id) {
-      const tech = await prisma.user.findUnique({
+      const tech = await prisma.userProfile.findUnique({
         where: { id: techWorkload[0].technician_id },
         select: { name: true },
       }).catch(() => null)
