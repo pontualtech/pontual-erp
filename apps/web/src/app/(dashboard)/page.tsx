@@ -145,6 +145,16 @@ export default function DashboardPage() {
 
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [avisos, setAvisos] = useState<Aviso[]>([])
+  // Sprint UX-16 (2026-05-23): Insights automaticos (Linear pattern)
+  const [insights, setInsights] = useState<Array<{
+    id: string
+    severity: 'info' | 'warning' | 'critical'
+    icon: string
+    title: string
+    description: string
+    action_label?: string
+    action_url?: string
+  }>>([])
   const [loading, setLoading] = useState(true)
   const [showAvisoModal, setShowAvisoModal] = useState(false)
   const [avisoForm, setAvisoForm] = useState({ title: '', message: '', priority: 'NORMAL', pinned: false, expires_at: '' })
@@ -155,6 +165,7 @@ export default function DashboardPage() {
     { id: 'avisos', visible: true },
     { id: 'summary_cards', visible: true },
     { id: 'marketing_card', visible: true },
+    { id: 'insights', visible: true },
     { id: 'charges_summary', visible: true },
     { id: 'chart_os_week', visible: true },
     { id: 'chart_pipeline', visible: true },
@@ -168,6 +179,7 @@ export default function DashboardPage() {
     avisos: 'Avisos',
     summary_cards: 'Cards de Resumo',
     marketing_card: 'CRM Marketing (acesso rápido)',
+    insights: 'Insights automáticos (alertas acionáveis)',
     charges_summary: 'Cobranças Asaas',
     chart_os_week: 'Gráfico OS por Semana',
     chart_pipeline: 'Pipeline de OS',
@@ -228,6 +240,7 @@ export default function DashboardPage() {
 
   const loadAvisos = () => {
     fetch('/api/avisos').then(r => r.json()).then(d => setAvisos(d.data ?? [])).catch(() => {})
+    fetch('/api/dashboard/insights').then(r => r.json()).then(d => setInsights(d.data?.insights ?? [])).catch(() => {})
   }
 
   // Redirect if no dashboard permission
@@ -549,6 +562,47 @@ export default function DashboardPage() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== Insights automáticos (Sprint UX-16) — Linear/ProfitWell pattern ===== */}
+      {isWidgetVisible('insights') && insights.length > 0 && (
+        <div className="rounded-xl border-2 border-blue-200 dark:border-blue-900 bg-gradient-to-br from-blue-50/40 via-white to-purple-50/30 dark:from-blue-950/20 dark:via-gray-900 dark:to-purple-950/20 p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+              <span className="text-base">💡</span> Insights — pontos de atenção hoje
+            </h3>
+            <span className="text-[10px] text-gray-400">{insights.length} alerta(s)</span>
+          </div>
+          <div className="space-y-2">
+            {insights.slice(0, 5).map(ins => (
+              <Link
+                key={ins.id}
+                href={ins.action_url || '#'}
+                className={cn(
+                  'flex items-start gap-3 p-3 rounded-lg border transition-colors',
+                  ins.severity === 'critical' && 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900 hover:bg-red-100 dark:hover:bg-red-950/50',
+                  ins.severity === 'warning' && 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-900 hover:bg-amber-100 dark:hover:bg-amber-950/50',
+                  ins.severity === 'info' && 'bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-900 hover:bg-blue-100 dark:hover:bg-blue-950/50',
+                )}
+              >
+                <span className="text-xl shrink-0 leading-none">{ins.icon}</span>
+                <div className="flex-1 min-w-0">
+                  <p className={cn('text-sm font-semibold',
+                    ins.severity === 'critical' && 'text-red-900 dark:text-red-100',
+                    ins.severity === 'warning' && 'text-amber-900 dark:text-amber-100',
+                    ins.severity === 'info' && 'text-blue-900 dark:text-blue-100',
+                  )}>{ins.title}</p>
+                  <p className="text-xs text-gray-600 dark:text-gray-300 mt-0.5">{ins.description}</p>
+                </div>
+                {ins.action_label && (
+                  <span className="text-xs font-medium text-gray-600 dark:text-gray-300 shrink-0 flex items-center gap-1">
+                    {ins.action_label} →
+                  </span>
+                )}
+              </Link>
+            ))}
           </div>
         </div>
       )}

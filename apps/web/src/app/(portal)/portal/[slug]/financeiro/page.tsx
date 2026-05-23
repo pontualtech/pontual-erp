@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
+import { PortalBottomTabBar } from '../../../components/portal-bottom-tab-bar'
 
 interface FinanceItem {
   os_id: string
@@ -79,7 +80,10 @@ export default function FinanceiroPage() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-6">
+      {/* Bottom-tab-bar fixa mobile (Sprint UX-16) */}
+      <PortalBottomTabBar slug={slug} current="financeiro" />
+
+      <main className="max-w-4xl mx-auto px-4 py-6 pb-24 sm:pb-6">
         {loading ? (
           <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 dark:border-blue-400" /></div>
         ) : !data || data.items.length === 0 ? (

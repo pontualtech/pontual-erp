@@ -11,6 +11,7 @@ import { ArrowLeft, Edit, Camera, History, Info, Package, Plus, Trash2, Loader2,
 import { MoneyInput } from '@/app/(dashboard)/components/money-input'
 import OsChargeButton from './_components/os-charge-button'
 import OsTicketsPanel from '@/components/os/OsTicketsPanel'
+import { SlashCommandTextarea } from '@/components/slash-command-textarea'
 import { CallButton } from '@/components/voip/CallButton'
 import { RelatedVoipCalls } from '@/components/voip/RelatedVoipCalls'
 
@@ -1866,11 +1867,16 @@ export default function OSDetailPage() {
             <label className="flex items-center gap-1.5 text-xs font-medium text-gray-400 uppercase mb-1">
               Laudo Técnico
               {savingField === 'diagnosis' && <Loader2 className="h-3 w-3 animate-spin text-blue-500" />}
+              <span className="ml-auto normal-case text-[10px] text-gray-400 font-normal">digite <kbd className="px-1 bg-gray-100 dark:bg-gray-800 rounded">/</kbd> pra templates</span>
             </label>
-            <textarea
+            {/* Onda 16.5 UX (2026-05-23): SlashCommandTextarea — técnico digita
+                "/" pra inserir laudo padrão (Notion pattern). 8 templates default
+                + custom em localStorage. */}
+            <SlashCommandTextarea
+              templateKey="laudo"
               value={editDiagnosis}
               onChange={e => setEditDiagnosis(e.target.value)}
-              placeholder="Descreva o laudo tecnico..."
+              placeholder="Descreva o laudo técnico... ou digite / pra templates"
               rows={4}
               className="w-full px-3 py-2 border rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-200 resize-y transition-colors"
             />

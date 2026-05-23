@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { readPortalCompany, readPortalCustomer } from '@/lib/portal-auth-storage'
+import { PortalBottomTabBar } from '../../../components/portal-bottom-tab-bar'
 
 interface PortalTicket {
   id: string
@@ -153,15 +154,13 @@ export default function PortalTicketsPage() {
             <button onClick={handleLogout} className="text-sm text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 font-medium">Sair</button>
           </div>
         </div>
-        <div className="sm:hidden border-t border-gray-100 dark:border-zinc-800 px-4 py-2 flex gap-4">
-          <Link href={`/portal/${slug}`} className="text-gray-600 text-sm">Inicio</Link>
-          <Link href={`/portal/${slug}/os`} className="text-gray-600 text-sm">Minhas OS</Link>
-          <Link href={`/portal/${slug}/tickets`} className="text-blue-600 dark:text-blue-400 font-medium text-sm">Tickets</Link>
-        </div>
       </header>
 
+      {/* Bottom-tab-bar fixa mobile (Sprint UX-16) */}
+      <PortalBottomTabBar slug={slug} current="tickets" />
+
       {/* Content */}
-      <main className="max-w-5xl mx-auto px-4 py-6">
+      <main className="max-w-5xl mx-auto px-4 py-6 pb-24 sm:pb-6">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Meus Tickets</h1>
           <button
