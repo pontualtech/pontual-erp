@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requireSuperAdmin } from '@/lib/auth'
+import { requireInternalKey } from '@/lib/internal-auth'
 import { success, handleError } from '@/lib/api-response'
 
 /**
@@ -99,10 +100,19 @@ export async function GET(req: NextRequest) {
  * Body opcional: nenhum. Cria SOMENTE _trigger_failures (não o resto do ensure).
  * Idempotente — CREATE TABLE IF NOT EXISTS + CREATE INDEX IF NOT EXISTS.
  */
-export async function POST(_req: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
-    const result = await requireSuperAdmin()
-    if (result instanceof NextResponse) return result
+    // Audit fix 2026-05-23: aceita 2 caminhos de auth — super-admin (cookie)
+    // OU x-internal-key (caminho recovery script/cron). Padrão dos demais
+    // endpoints internos. Se header presente, usa internal-key; senão tenta
+    // super-admin via cookie.
+    if (req.headers.get('x-internal-key')) {
+      const guard = requireInternalKey(req)
+      if (guard) return guard
+    } else {
+      const result = await requireSuperAdmin()
+      if (result instanceof NextResponse) return result
+    }
 
     // 1. Tabela
     await prisma.$executeRawUnsafe(`

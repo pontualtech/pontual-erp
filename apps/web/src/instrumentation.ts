@@ -135,6 +135,32 @@ function startCronJobs() {
     }, 5 * 60 * 1000) // 5 minutes
   }
 
+  // M4-pt2 (audit 2026-05-23) — one-shot ensure _trigger_failures table.
+  // Roda 30s após boot pra dar tempo do Next servir requests. Resolve o
+  // healthcheck flag `trigger_failures_unavailable=true` que ocorria porque
+  // o ensure-financeiro-extras.sh falhava antes de criar essa tabela.
+  // Endpoint é idempotente (CREATE IF NOT EXISTS) — pode rodar todo boot.
+  if (INTERNAL_API_KEY) {
+    setTimeout(async () => {
+      try {
+        const res = await fetch(`${BASE_URL}/api/admin/diag/trigger-failures`, {
+          method: 'POST',
+          headers: { 'x-internal-key': INTERNAL_API_KEY },
+        })
+        if (res.ok) {
+          const data = await res.json()
+          if (data.data?.created) {
+            console.log(`[Boot/EnsureTriggerFailures] OK — table_exists=${data.data.table_exists}`)
+          }
+        } else {
+          console.warn(`[Boot/EnsureTriggerFailures] HTTP ${res.status}`)
+        }
+      } catch (err) {
+        console.warn('[Boot/EnsureTriggerFailures] Error:', err instanceof Error ? err.message : err)
+      }
+    }, 30 * 1000)
+  }
+
   // M4 (audit 2026-05-23) — DRE materialized view refresh a cada 30min
   // dre_monthly era refrescada só por UI admin → healthcheck dre_mv_stale=true
   // permanente. Endpoint /api/internal/cron/dre-mv-refresh já existia mas
