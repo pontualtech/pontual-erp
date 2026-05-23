@@ -238,20 +238,32 @@ export default function OSListPage() {
   const [savingStatus, setSavingStatus] = useState<string | null>(null)
 
   // W4 — Aplica mudança de status via bulk-transition (1 OS, com validações server-side).
+  // Bug-hunt #2 fix (2026-05-23): captura snapshot via setOsList callback (prev) ao invés
+  // de fechar sobre oldOs via closure — evita revert com state stale se loadOS rodar em
+  // paralelo entre o clique e a resposta do PATCH.
   async function setOsStatusInline(osId: string, newStatusId: string) {
     if (savingStatus) return
-    const oldOs = osList.find(o => o.id === osId)
-    if (!oldOs) return
-    const oldStatusId = oldOs.status_id
-    if (oldStatusId === newStatusId) { setEditingStatusFor(null); return }
+    if (osList.find(o => o.id === osId)?.status_id === newStatusId) {
+      setEditingStatusFor(null)
+      return
+    }
 
     setSavingStatus(osId)
-    // Optimistic update
-    setOsList(prev => prev.map(o => o.id === osId
-      ? { ...o, status_id: newStatusId, module_statuses: { id: newStatusId, ...(statusMap[newStatusId] || { name: 'Carregando...', color: '#999' }) } as any }
-      : o
-    ))
+    // Optimistic update — snapshot capturado DENTRO do setter (sempre fresh)
+    let snapshot: OS | null = null
+    setOsList(prev => prev.map(o => {
+      if (o.id !== osId) return o
+      snapshot = o
+      return { ...o, status_id: newStatusId, module_statuses: { id: newStatusId, ...(statusMap[newStatusId] || { name: 'Carregando...', color: '#999' }) } as any }
+    }))
     setEditingStatusFor(null)
+
+    const revert = () => {
+      if (!snapshot) return
+      const fresh = snapshot
+      setOsList(prev => prev.map(o => o.id === osId ? fresh : o))
+    }
+
     try {
       const res = await fetch('/api/os/bulk-transition', {
         method: 'POST',
@@ -260,20 +272,19 @@ export default function OSListPage() {
       })
       const data = await res.json()
       if (!res.ok) {
-        // Revert
-        setOsList(prev => prev.map(o => o.id === osId ? { ...oldOs } : o))
+        revert()
         toast.error(data.error || 'Erro ao mudar status')
         return
       }
       const failed = (data.data?.results ?? []).filter((r: any) => !r.success)
       if (failed.length > 0) {
-        setOsList(prev => prev.map(o => o.id === osId ? { ...oldOs } : o))
+        revert()
         toast.error(failed[0].error || 'Transição não permitida')
         return
       }
       toast.success(`Status atualizado`, { duration: 3000 })
     } catch {
-      setOsList(prev => prev.map(o => o.id === osId ? { ...oldOs } : o))
+      revert()
       toast.error('Erro de rede ao atualizar status')
     } finally {
       setSavingStatus(null)

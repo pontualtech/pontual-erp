@@ -85,12 +85,15 @@ export function SlashCommandTextarea({ templateKey = 'laudo', defaults = DEFAULT
   const [pendingCursor, setPendingCursor] = useState<number | null>(null)
 
   useLayoutEffect(() => {
+    // Bug-hunt #2 fix (2026-05-23): removido `value` das deps — efeito rodava em
+    // cada keystroke causando 2 renders por aplicação de template (no-op + reset).
+    // Agora dispara só quando pendingCursor é setado pelo applyTemplate.
     if (pendingCursor != null && ref.current) {
       ref.current.focus()
       ref.current.setSelectionRange(pendingCursor, pendingCursor)
       setPendingCursor(null)
     }
-  }, [pendingCursor, value])
+  }, [pendingCursor])
 
   // Carrega user templates do localStorage
   useEffect(() => {

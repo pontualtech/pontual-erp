@@ -148,7 +148,14 @@ export default function ClienteDetalhePage() {
     const now = Date.now()
     const oneYearAgo = now - 365 * 24 * 60 * 60 * 1000
     const finalStatuses = new Set(['entregue', 'cancelada', 'cancelado', 'finalizado', 'finalizada'])
-    const isFinal = (os: OS) => finalStatuses.has((os.module_statuses?.name || '').toLowerCase())
+    // Bug-hunt #2 fix (2026-05-23): OS sem module_statuses (legadas, sem nome de status)
+    // contava como "aberta" inflando o card. Agora considera UNKNOWN também como final
+    // pra não exibir falsos positivos — atendente pode consultar a OS individualmente.
+    const isFinal = (os: OS) => {
+      const name = (os.module_statuses?.name || '').toLowerCase()
+      if (!name) return true // sem status conhecido — não conta como aberta
+      return finalStatuses.has(name)
+    }
 
     const last12m = ordens.filter(o => new Date(o.created_at).getTime() >= oneYearAgo)
     const totalGasto12m = last12m.reduce((acc, o) => acc + (o.total_cost || 0), 0)

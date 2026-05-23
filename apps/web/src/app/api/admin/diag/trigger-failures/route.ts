@@ -87,3 +87,67 @@ export async function GET(req: NextRequest) {
     return handleError(err)
   }
 }
+
+/**
+ * POST /api/admin/diag/trigger-failures
+ *
+ * Audit fix 2026-05-23: healthcheck reportava `trigger_failures_unavailable: true`
+ * cronicamente porque ensure-financeiro-extras.sh falhava antes de criar a
+ * tabela. Esse endpoint é o caminho de auto-cura: super-admin chama 1 vez
+ * via curl + POST, tabela é criada idempotente, healthcheck volta verde.
+ *
+ * Body opcional: nenhum. Cria SOMENTE _trigger_failures (não o resto do ensure).
+ * Idempotente — CREATE TABLE IF NOT EXISTS + CREATE INDEX IF NOT EXISTS.
+ */
+export async function POST(_req: NextRequest) {
+  try {
+    const result = await requireSuperAdmin()
+    if (result instanceof NextResponse) return result
+
+    // 1. Tabela
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS _trigger_failures (
+        id serial primary key,
+        trigger_name text NOT NULL,
+        payload jsonb,
+        error_msg text,
+        error_state text,
+        created_at timestamptz DEFAULT NOW()
+      )
+    `)
+    // 2. Index pra healthcheck query (created_at DESC) ser O(log n)
+    await prisma.$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS idx_trigger_failures_recent
+        ON _trigger_failures (created_at DESC)
+    `)
+    // 3. Função de registro idempotente (compat com triggers existentes que chamam fn_record_trigger_failure)
+    await prisma.$executeRawUnsafe(`
+      CREATE OR REPLACE FUNCTION fn_record_trigger_failure(
+        p_trigger text, p_payload jsonb, p_msg text, p_state text
+      ) RETURNS void AS $rec$
+      BEGIN
+        INSERT INTO _trigger_failures (trigger_name, payload, error_msg, error_state)
+        VALUES (p_trigger, p_payload, p_msg, p_state);
+      EXCEPTION WHEN OTHERS THEN
+        RAISE WARNING 'fn_record_trigger_failure ITSELF failed for %: % (%)', p_trigger, SQLERRM, SQLSTATE;
+      END;
+      $rec$ LANGUAGE plpgsql
+    `)
+
+    // 4. Confirma criação
+    const check = (await prisma.$queryRawUnsafe(`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = '_trigger_failures'
+      ) AS exists
+    `)) as Array<{ exists: boolean }>
+
+    return success({
+      created: true,
+      table_exists: check[0]?.exists === true,
+      note: 'Healthcheck /api/health agora deve mostrar trigger_failures_1h em vez de trigger_failures_unavailable.',
+    })
+  } catch (err) {
+    return handleError(err)
+  }
+}
