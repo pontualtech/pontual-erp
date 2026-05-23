@@ -7,7 +7,7 @@ import {
   Truck, Plus, Loader2, ArrowLeft, MapPin, Clock,
   Play, CheckCircle2, Eye, Route, CircleDot, Calendar,
   MessageCircle, Trash2, Users, BarChart3, ArrowRightLeft,
-  AlertTriangle,
+  AlertTriangle, ChevronDown,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -204,7 +204,10 @@ export default function LogisticaPage() {
           </Link>
           <h1 className="text-2xl font-bold text-gray-900">Logística</h1>
         </div>
-        <div className="flex items-center gap-3">
+        {/* F-UX-CEO #5 fix 23/05: 8 botoes inline quebravam em mobile.
+            Mobile: Date + Nova Rota visiveis + menu "Mais ações" agrupa o resto.
+            Desktop (lg+): mantem layout horizontal expandido. */}
+        <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             <Calendar className="h-4 w-4 text-gray-400" />
             <input
@@ -214,58 +217,60 @@ export default function LogisticaPage() {
               className="rounded-lg border px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
             />
           </div>
-          <Link
-            href="/logistica/historico"
-            className="flex items-center gap-2 rounded-lg border border-indigo-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-50 transition-colors"
-            title="Histórico de rotas + dashboard de produtividade"
-          >
-            <BarChart3 className="h-4 w-4" />
-            Histórico
-          </Link>
-          <Link
-            href="/logistica/chat"
-            className="flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-          >
-            <MessageCircle className="h-4 w-4" />
-            Chat
-          </Link>
-          <Link
-            href="/logistica/live"
-            className="flex items-center gap-2 rounded-lg border border-blue-600 px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 transition-colors"
-          >
-            <MapPin className="h-4 w-4" />
-            Ao Vivo
-          </Link>
-          <Link
-            href="/logistica/alertas"
-            className="flex items-center gap-2 rounded-lg border border-amber-300 bg-white px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50 transition-colors"
-            title="Histórico de alertas de inatividade dos motoristas"
-          >
-            <AlertTriangle className="h-4 w-4" />
-            Alertas
-          </Link>
-          <Link
-            href="/logistica/distribuir"
-            className="flex items-center gap-2 rounded-lg border border-purple-300 bg-white px-4 py-2 text-sm font-medium text-purple-700 hover:bg-purple-50 transition-colors"
-            title="Distribuir OS entre varios motoristas automaticamente"
-          >
-            <Users className="h-4 w-4" />
-            Distribuir
-          </Link>
-          <Link
-            href={`/logistica/redistribuir?date=${date}`}
-            className="flex items-center gap-2 rounded-lg border border-indigo-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-50 transition-colors"
-            title="Mover paradas entre motoristas do mesmo dia"
-          >
-            <ArrowRightLeft className="h-4 w-4" />
-            Redistribuir
-          </Link>
-          <Link
-            href="/logistica/nova"
-            className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
-          >
-            <Plus className="h-4 w-4" />
-            Nova Rota
+
+          {/* Mobile menu (<lg): dropdown "Mais ações" */}
+          <details className="lg:hidden relative">
+            <summary className="flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 cursor-pointer list-none">
+              <span>Ações</span>
+              <ChevronDown className="h-4 w-4" />
+            </summary>
+            <div className="absolute right-0 mt-2 w-56 rounded-lg border bg-white shadow-lg z-20 py-1">
+              <Link href="/logistica/historico" className="flex items-center gap-2 px-4 py-2 text-sm text-indigo-700 hover:bg-indigo-50">
+                <BarChart3 className="h-4 w-4" /> Histórico
+              </Link>
+              <Link href="/logistica/chat" className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                <MessageCircle className="h-4 w-4" /> Chat
+              </Link>
+              <Link href="/logistica/live" className="flex items-center gap-2 px-4 py-2 text-sm text-blue-600 hover:bg-blue-50">
+                <MapPin className="h-4 w-4" /> Ao Vivo
+              </Link>
+              <Link href="/logistica/alertas" className="flex items-center gap-2 px-4 py-2 text-sm text-amber-700 hover:bg-amber-50">
+                <AlertTriangle className="h-4 w-4" /> Alertas
+              </Link>
+              <Link href="/logistica/distribuir" className="flex items-center gap-2 px-4 py-2 text-sm text-purple-700 hover:bg-purple-50">
+                <Users className="h-4 w-4" /> Distribuir
+              </Link>
+              <Link href={`/logistica/redistribuir?date=${date}`} className="flex items-center gap-2 px-4 py-2 text-sm text-indigo-700 hover:bg-indigo-50">
+                <ArrowRightLeft className="h-4 w-4" /> Redistribuir
+              </Link>
+            </div>
+          </details>
+
+          {/* Desktop (lg+): botoes inline */}
+          <div className="hidden lg:flex items-center gap-3 flex-wrap">
+            <Link href="/logistica/historico" className="flex items-center gap-2 rounded-lg border border-indigo-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-50 transition-colors" title="Histórico de rotas + dashboard de produtividade">
+              <BarChart3 className="h-4 w-4" /> Histórico
+            </Link>
+            <Link href="/logistica/chat" className="flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+              <MessageCircle className="h-4 w-4" /> Chat
+            </Link>
+            <Link href="/logistica/live" className="flex items-center gap-2 rounded-lg border border-blue-600 px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 transition-colors">
+              <MapPin className="h-4 w-4" /> Ao Vivo
+            </Link>
+            <Link href="/logistica/alertas" className="flex items-center gap-2 rounded-lg border border-amber-300 bg-white px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50 transition-colors" title="Histórico de alertas de inatividade dos motoristas">
+              <AlertTriangle className="h-4 w-4" /> Alertas
+            </Link>
+            <Link href="/logistica/distribuir" className="flex items-center gap-2 rounded-lg border border-purple-300 bg-white px-4 py-2 text-sm font-medium text-purple-700 hover:bg-purple-50 transition-colors" title="Distribuir OS entre varios motoristas automaticamente">
+              <Users className="h-4 w-4" /> Distribuir
+            </Link>
+            <Link href={`/logistica/redistribuir?date=${date}`} className="flex items-center gap-2 rounded-lg border border-indigo-300 bg-white px-4 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-50 transition-colors" title="Mover paradas entre motoristas do mesmo dia">
+              <ArrowRightLeft className="h-4 w-4" /> Redistribuir
+            </Link>
+          </div>
+
+          {/* Nova Rota sempre visivel (acao primaria) */}
+          <Link href="/logistica/nova" className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors">
+            <Plus className="h-4 w-4" /> Nova Rota
           </Link>
         </div>
       </div>

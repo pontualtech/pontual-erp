@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { PortalBottomTabBar } from '../../../components/portal-bottom-tab-bar'
 
 interface PortalOS {
   id: string
@@ -180,15 +181,13 @@ export default function PortalOSListPage() {
             </button>
           </div>
         </div>
-        <div className="sm:hidden border-t border-gray-100 dark:border-zinc-800 px-4 py-2 flex gap-4">
-          <Link href={`/portal/${slug}`} className="text-gray-600 dark:text-gray-400 text-sm">Início</Link>
-          <Link href={`/portal/${slug}/os`} className="text-blue-600 dark:text-blue-400 font-medium text-sm">Minhas OS</Link>
-          <Link href={`/portal/${slug}/tickets`} className="text-gray-600 dark:text-gray-400 text-sm">Tickets</Link>
-        </div>
       </header>
 
+      {/* Bottom-tab-bar fixa mobile (Onda 6.2 UX-15) */}
+      <PortalBottomTabBar slug={slug} current="os" />
+
       {/* Content */}
-      <main className="max-w-5xl mx-auto px-4 py-6">
+      <main className="max-w-5xl mx-auto px-4 py-6 pb-24 sm:pb-6">
         {/* Title + Nova OS */}
         <div className="flex items-center justify-between mb-5">
           <div>

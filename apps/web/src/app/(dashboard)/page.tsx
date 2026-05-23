@@ -177,7 +177,26 @@ export default function DashboardPage() {
     tech_workload: 'Carga por Técnico',
   }
 
-  const isWidgetVisible = (id: string) => widgetPrefs.find(w => w.id === id)?.visible ?? true
+  // F18 fix 23/05: Modo CEO (toggle Operacional vs Estratégico).
+  // Inspirado em Apple Health Summary + Linear Insights + Stripe Atlas.
+  // Operacional: tudo visível (default). Estratégico: foco em KPIs do CEO
+  // (charges_summary, marketing_card, metrics) — esconde ruído operacional
+  // (recent_os, tech_workload, receivables granular).
+  const [ceoMode, setCeoMode] = useState(false)
+  useEffect(() => {
+    try { setCeoMode(localStorage.getItem('dashboard_ceo_mode') === '1') } catch {}
+  }, [])
+  function toggleCeoMode() {
+    const next = !ceoMode
+    setCeoMode(next)
+    try { localStorage.setItem('dashboard_ceo_mode', next ? '1' : '0') } catch {}
+  }
+  const CEO_HIDDEN = new Set(['recent_os', 'tech_workload', 'receivables'])
+
+  const isWidgetVisible = (id: string) => {
+    if (ceoMode && CEO_HIDDEN.has(id)) return false
+    return widgetPrefs.find(w => w.id === id)?.visible ?? true
+  }
 
   const toggleWidget = (id: string) => {
     setWidgetPrefs(prev => prev.map(w => w.id === id ? { ...w, visible: !w.visible } : w))
@@ -323,6 +342,21 @@ export default function DashboardPage() {
               </button>
             ))}
           </div>
+          {/* F18 fix 23/05: Modo CEO toggle */}
+          <button
+            type="button"
+            onClick={toggleCeoMode}
+            className={cn(
+              'flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm shadow-sm transition-colors',
+              ceoMode
+                ? 'bg-amber-100 border-amber-300 text-amber-900 hover:bg-amber-200'
+                : 'bg-white text-gray-600 hover:bg-gray-50'
+            )}
+            title={ceoMode ? 'Voltar para Modo Operacional' : 'Ativar Modo CEO (foco em KPIs estratégicos)'}
+          >
+            <span className="text-base leading-none">{ceoMode ? '👔' : '⚙️'}</span>
+            {ceoMode ? 'Modo CEO' : 'Modo Operacional'}
+          </button>
           <button
             type="button"
             onClick={() => setShowCustomize(true)}

@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { ThemeToggle } from '../../components/theme-toggle'
 import { readPortalCompany, readPortalCustomer } from '@/lib/portal-auth-storage'
 import { OverdueChargesBanner } from '../../_components/OverdueChargesBanner'
+import { PortalBottomTabBar } from '../../components/portal-bottom-tab-bar'
 
 interface PortalOS {
   id: string
@@ -167,38 +168,16 @@ export default function PortalDashboardPage() {
             </div>
           </div>
 
-          {/* Mobile Nav */}
-          <div className="sm:hidden border-t border-gray-100 dark:border-zinc-800 flex gap-1 py-1.5 -mx-1">
-            <Link
-              href={`/portal/${slug}`}
-              className="flex-1 text-center px-2 py-1.5 rounded-md text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950"
-            >
-              Início
-            </Link>
-            <Link
-              href={`/portal/${slug}/os`}
-              className="flex-1 text-center px-2 py-1.5 rounded-md text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-zinc-800"
-            >
-              Minhas OS
-            </Link>
-            <Link
-              href={`/portal/${slug}/tickets`}
-              className="flex-1 text-center px-2 py-1.5 rounded-md text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-zinc-800"
-            >
-              Tickets
-            </Link>
-            <Link
-              href={`/portal/${slug}/financeiro`}
-              className="flex-1 text-center px-2 py-1.5 rounded-md text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-zinc-800"
-            >
-              Financeiro
-            </Link>
-          </div>
+          {/* F-UX-16 fix 23/05: Mobile nav removida daqui — bottom-tab-bar fixa no rodape
+              (renderizada fora do header). Padrao iFood/Magalu/Uber. */}
         </div>
       </header>
 
+      {/* Bottom-tab-bar fixa (mobile) — Roberto #16 fix 23/05 */}
+      <PortalBottomTabBar slug={slug} current="home" />
+
       {/* Content */}
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 pb-24 sm:pb-6 space-y-6">
 
         {/* Banner cobrancas vencidas (feature 2026-05-14 feat 6/7) */}
         <OverdueChargesBanner />
