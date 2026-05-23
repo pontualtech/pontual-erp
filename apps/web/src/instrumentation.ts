@@ -135,6 +135,32 @@ function startCronJobs() {
     }, 5 * 60 * 1000) // 5 minutes
   }
 
+  // M4 (audit 2026-05-23) — DRE materialized view refresh a cada 30min
+  // dre_monthly era refrescada só por UI admin → healthcheck dre_mv_stale=true
+  // permanente. Endpoint /api/internal/cron/dre-mv-refresh já existia mas
+  // ninguém chamava. Agora cron interno fecha o loop.
+  if (!INTERNAL_API_KEY) {
+    console.warn('[Cron/DreMvRefresh] INTERNAL_API_KEY ausente — cron desabilitado')
+  } else {
+    setInterval(async () => {
+      try {
+        const res = await fetch(`${BASE_URL}/api/internal/cron/dre-mv-refresh`, {
+          headers: { 'x-internal-key': INTERNAL_API_KEY },
+        })
+        if (res.ok) {
+          const data = await res.json()
+          if (data.data?.ok && !data.data?.skipped) {
+            console.log(`[Cron/DreMvRefresh] refreshed (${data.data.mode}) in ${data.data.elapsed_ms}ms — ${data.data.mv_rows} rows`)
+          }
+        } else {
+          console.error(`[Cron/DreMvRefresh] HTTP ${res.status}`)
+        }
+      } catch (err) {
+        console.error('[Cron/DreMvRefresh] Error:', err instanceof Error ? err.message : err)
+      }
+    }, 30 * 60 * 1000) // 30 minutes
+  }
+
   // Cobrança reenvio diario — feature 2026-05-14 feat 7/7
   // Roda a cada 1h. Cooldown 20h por cobranca (em /api/internal/cron/...)
   // garante max 1 envio/dia/AR mesmo com 24 execucoes/dia.
@@ -171,8 +197,10 @@ function startCronJobs() {
   // imprimia ativo mesmo quando INTERNAL_API_KEY ausente (cron desabilitado).
   if (INTERNAL_API_KEY) {
     console.log('  - Cobranca Reenvio Vencidas: every 1h (cooldown 20h/AR)')
+    console.log('  - DRE MV Refresh: every 30min')
   } else {
     console.log('  - Cobranca Reenvio Vencidas: DESABILITADO (INTERNAL_API_KEY ausente)')
+    console.log('  - DRE MV Refresh: DESABILITADO (INTERNAL_API_KEY ausente)')
   }
   console.log('  - Cleanup Location History: every 24h')
 }
