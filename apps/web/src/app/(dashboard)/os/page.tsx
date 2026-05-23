@@ -232,6 +232,54 @@ export default function OSListPage() {
   // UX-5 #2: smart filter chip ativo
   const [smartChip, setSmartChip] = useState<'today' | 'overdue_mine' | 'approved_pending' | 'no_tech' | null>(null)
 
+  // W4 (audit 2026-05-23): edição inline de status — Linear/Notion pattern.
+  // Popover quando atendente clica no chip de status na linha.
+  const [editingStatusFor, setEditingStatusFor] = useState<string | null>(null)
+  const [savingStatus, setSavingStatus] = useState<string | null>(null)
+
+  // W4 — Aplica mudança de status via bulk-transition (1 OS, com validações server-side).
+  async function setOsStatusInline(osId: string, newStatusId: string) {
+    if (savingStatus) return
+    const oldOs = osList.find(o => o.id === osId)
+    if (!oldOs) return
+    const oldStatusId = oldOs.status_id
+    if (oldStatusId === newStatusId) { setEditingStatusFor(null); return }
+
+    setSavingStatus(osId)
+    // Optimistic update
+    setOsList(prev => prev.map(o => o.id === osId
+      ? { ...o, status_id: newStatusId, module_statuses: { id: newStatusId, ...(statusMap[newStatusId] || { name: 'Carregando...', color: '#999' }) } as any }
+      : o
+    ))
+    setEditingStatusFor(null)
+    try {
+      const res = await fetch('/api/os/bulk-transition', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [osId], toStatusId: newStatusId }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        // Revert
+        setOsList(prev => prev.map(o => o.id === osId ? { ...oldOs } : o))
+        toast.error(data.error || 'Erro ao mudar status')
+        return
+      }
+      const failed = (data.data?.results ?? []).filter((r: any) => !r.success)
+      if (failed.length > 0) {
+        setOsList(prev => prev.map(o => o.id === osId ? { ...oldOs } : o))
+        toast.error(failed[0].error || 'Transição não permitida')
+        return
+      }
+      toast.success(`Status atualizado`, { duration: 3000 })
+    } catch {
+      setOsList(prev => prev.map(o => o.id === osId ? { ...oldOs } : o))
+      toast.error('Erro de rede ao atualizar status')
+    } finally {
+      setSavingStatus(null)
+    }
+  }
+
   // W2 (audit 2026-05-23): filtros salvos por usuário (Linear/Superhuman pattern).
   // Persiste em localStorage o conjunto de filtros + nome. Aplicar = restaura todos
   // os setters com 1 clique. Max 8 filtros pra evitar UI list infinita.
@@ -1523,14 +1571,19 @@ export default function OSListPage() {
                           <td className="px-3 py-2.5 text-gray-600 text-xs">{os.os_location || '\u2014'}</td>
                         )}
                         {effectiveColumns.includes('status') && (
-                          <td className="px-3 py-2.5">
+                          <td className="px-3 py-2.5 relative">
                             <div className="flex items-center gap-1.5">
-                              <span
-                                className="rounded-full px-2 py-0.5 text-xs font-medium text-nowrap"
+                              {/* W4 (audit): clique no chip abre mini-popover de mudança rápida */}
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setEditingStatusFor(editingStatusFor === os.id ? null : os.id) }}
+                                disabled={savingStatus === os.id}
+                                className="rounded-full px-2 py-0.5 text-xs font-medium text-nowrap hover:ring-2 hover:ring-blue-300 disabled:opacity-50 cursor-pointer transition"
                                 style={st ? { backgroundColor: st.color + '20', color: st.color } : {}}
+                                title="Clique pra mudar status"
                               >
-                                {st?.name ?? os.status_id}
-                              </span>
+                                {savingStatus === os.id ? '...' : (st?.name ?? os.status_id)}
+                              </button>
                               {dlColor === 'red' && (
                                 <span className="rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-600 flex items-center gap-0.5 text-nowrap">
                                   <Clock className="h-2.5 w-2.5" /> Atrasado
@@ -1542,6 +1595,32 @@ export default function OSListPage() {
                                 </span>
                               )}
                             </div>
+                            {/* W4 — Popover de status */}
+                            {editingStatusFor === os.id && (
+                              <div
+                                className="absolute z-30 left-2 top-full mt-1 w-52 rounded-lg border border-gray-200 bg-white shadow-lg py-1 max-h-64 overflow-y-auto"
+                                onClick={(e) => e.stopPropagation()}
+                                onMouseLeave={() => setEditingStatusFor(null)}
+                              >
+                                <div className="px-3 py-1 text-[10px] font-semibold uppercase text-gray-400 border-b">Mudar status</div>
+                                {kanbanColumns.map(col => (
+                                  <button
+                                    key={col.id}
+                                    type="button"
+                                    onClick={() => setOsStatusInline(os.id, col.id)}
+                                    disabled={col.id === os.status_id}
+                                    className={cn(
+                                      'w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-blue-50 disabled:opacity-40 disabled:bg-gray-50 disabled:cursor-default',
+                                      col.id === os.status_id && 'font-semibold'
+                                    )}
+                                  >
+                                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: col.color }} />
+                                    <span className="flex-1 truncate">{col.name}</span>
+                                    {col.id === os.status_id && <span className="text-[10px] text-gray-400">atual</span>}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                           </td>
                         )}
                         {effectiveColumns.includes('total_cost') && (
