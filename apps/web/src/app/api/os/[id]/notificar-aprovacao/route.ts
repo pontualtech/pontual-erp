@@ -23,6 +23,13 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (result instanceof NextResponse) return result
     const user = result
 
+    // Wave R fix (2026-05-23): aprovação de orçamento é fluxo atendente/admin.
+    // Motorista tinha `os:edit` mas não devia notificar cliente sobre aprovação.
+    const role = (user.roleName || '').toLowerCase()
+    if (!['admin', 'atendente', 'financeiro'].includes(role)) {
+      return NextResponse.json({ error: 'Sem permissão para notificar aprovação' }, { status: 403 })
+    }
+
     const os = await prisma.serviceOrder.findFirst({
       where: { id: params.id, company_id: user.companyId, deleted_at: null },
       include: { customers: true, companies: true },

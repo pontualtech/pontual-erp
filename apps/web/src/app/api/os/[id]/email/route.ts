@@ -115,9 +115,17 @@ function replaceTemplateVars(template: string, vars: Record<string, string>): st
 
 export async function POST(req: NextRequest, { params }: Params) {
   try {
-    const result = await requirePermission('os', 'view')
+    // Wave R fix (2026-05-23): era 'os:view' — qualquer um com leitura podia
+    // disparar email arbitrário (vetor de spam/phishing). Agora exige 'os:edit'
+    // + role admin/atendente/financeiro (motorista bloqueado).
+    const result = await requirePermission('os', 'edit')
     if (result instanceof NextResponse) return result
     const user = result
+
+    const role = (user.roleName || '').toLowerCase()
+    if (!['admin', 'atendente', 'financeiro'].includes(role)) {
+      return NextResponse.json({ error: 'Sem permissão para enviar email' }, { status: 403 })
+    }
 
     const body = await req.json().catch(() => ({}))
     const { to, subject } = body as { to?: string; subject?: string }

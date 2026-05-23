@@ -541,6 +541,14 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (result instanceof NextResponse) return result
     const user = result
 
+    // Wave R fix (2026-05-23): só admin/atendente/financeiro dispara orçamento.
+    // Motorista tinha `os:edit` (precisa atualizar status coleta) MAS não devia
+    // disparar email financeiro pra cliente — vetor de spam + leak de dados.
+    const role = (user.roleName || '').toLowerCase()
+    if (!['admin', 'atendente', 'financeiro'].includes(role)) {
+      return NextResponse.json({ error: 'Sem permissão para enviar orçamento' }, { status: 403 })
+    }
+
     const body = await req.json().catch(() => ({}))
     const { to } = body as { to?: string }
 
