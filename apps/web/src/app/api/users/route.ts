@@ -16,9 +16,25 @@ export async function GET(request: NextRequest) {
       const result = await requirePermission('os', 'view')
       if (result instanceof NextResponse) return result
       const user = result
+
+      // Audit fix bug #1 (2026-05-23): opt-in `?withRole=true` retorna role.name
+      // pra frontend filtrar técnicos. Backward compat — default sem roles.
+      // Opcional `?role=tecnico` filtra direto no servidor (case-insensitive).
+      const withRole = request.nextUrl.searchParams.get('withRole') === 'true'
+      const roleFilter = request.nextUrl.searchParams.get('role')
+
+      const whereUsers: any = { company_id: user.companyId, is_active: true }
+      if (roleFilter) {
+        whereUsers.roles = { name: { contains: roleFilter, mode: 'insensitive' } }
+      }
+
       const users = await prisma.userProfile.findMany({
-        where: { company_id: user.companyId, is_active: true },
-        select: { id: true, name: true },
+        where: whereUsers,
+        select: {
+          id: true,
+          name: true,
+          ...(withRole || roleFilter ? { roles: { select: { id: true, name: true } } } : {}),
+        },
         orderBy: { name: 'asc' },
       })
       return success(users)

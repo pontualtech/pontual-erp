@@ -33,6 +33,10 @@ export async function GET(req: NextRequest, { params }: Params) {
       include: {
         customers: true,
         user_profiles: { select: { id: true, name: true } },
+        // Audit fix bug #2 (2026-05-23): relation module_statuses faltava no include
+        // → response retornava `module_statuses: undefined`. Componentes que dependem
+        // do nome do status (header da OS, badge, breadcrumb) mostravam status_id raw.
+        module_statuses: { select: { id: true, name: true, color: true, is_final: true } },
         service_order_items: { where: { deleted_at: null }, orderBy: { created_at: 'asc' }, take: 100 },
         service_order_photos: { orderBy: { created_at: 'asc' }, take: 50 },
         service_order_history: { orderBy: { created_at: 'desc' }, take: 30 },

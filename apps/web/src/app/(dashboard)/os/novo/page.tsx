@@ -122,10 +122,20 @@ export default function NovaOSPage() {
   }, [])
 
   // Load technicians on mount
+  // Bug fix audit (2026-05-23): antes carregava TODOS users (atendente,
+  // motorista, admin) no dropdown de técnico. Agora ?role=tecnico filtra
+  // server-side. Fallback p/ todos se 0 técnicos cadastrados.
   useEffect(() => {
-    fetch('/api/users?simple=true')
+    fetch('/api/users?simple=true&role=tec')
       .then(r => r.json())
-      .then(d => setTecnicos(d.data ?? []))
+      .then(d => {
+        if (d.data?.length > 0) {
+          setTecnicos(d.data)
+        } else {
+          // Fallback: nenhum tech cadastrado — mostra todos pra não bloquear fluxo
+          fetch('/api/users?simple=true').then(r => r.json()).then(d2 => setTecnicos(d2.data ?? [])).catch(() => {})
+        }
+      })
       .catch(() => {})
   }, [])
 
