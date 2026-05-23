@@ -67,6 +67,11 @@ export async function middleware(request: NextRequest) {
   if (pathname.startsWith('/api/chatwoot/') || pathname.startsWith('/api/webhook/') || pathname.startsWith('/api/webhooks/') || pathname.startsWith('/api/voip/webhooks/') || pathname.startsWith('/api/marketing/webhook/')) {
     return NextResponse.next()
   }
+  // CWT server-side fingerprint — tag GTM dos sites posta antes de redirecionar
+  // pro wa.me. Tem CORS allowlist + sem dados sensíveis no body.
+  if (pathname === '/api/marketing/whatsapp-redirect') {
+    return NextResponse.next()
+  }
   // Public share links (recording downloads via signed token)
   if (pathname.startsWith('/api/voip/share/')) {
     return NextResponse.next()
