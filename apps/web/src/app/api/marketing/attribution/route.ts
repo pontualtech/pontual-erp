@@ -219,9 +219,12 @@ export async function GET(req: NextRequest) {
     }
 
     // Anexa CAC em cada item do breakdown
+    // Bug-hunt humano (2026-05-23): se investment === 0, CAC era 0 (matematicamente
+    // correto mas semanticamente errado — usuário lia "R$ 0,00" como custo zero).
+    // Agora CAC é null quando investment===0 OU approved===0. Renderiza "—" na UI.
     const breakdownWithCac = breakdown.map(b => {
       const investment = investments[b.channel] || 0
-      const cac = b.approved_count > 0 ? Math.round(investment / b.approved_count) : null
+      const cac = (investment > 0 && b.approved_count > 0) ? Math.round(investment / b.approved_count) : null
       const roi = investment > 0 ? Math.round((b.approved_revenue_cents - investment) / investment * 100) : null
       return { ...b, investment_cents: investment, cac_cents: cac, roi_pct: roi }
     })
