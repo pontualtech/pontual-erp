@@ -69,7 +69,7 @@ export async function GET(_req: NextRequest) {
         company_id: user.companyId,
         deleted_at: null,
         technician_id: { not: null },
-        statuses: { is_final: false } as any,
+        module_statuses: { is_final: false },
       },
       _count: true,
       having: { id: { _count: { gt: 10 } } } as any,
@@ -171,7 +171,7 @@ export async function GET(_req: NextRequest) {
         company_id: user.companyId,
         deleted_at: null,
         estimated_delivery: { lt: now },
-        statuses: { is_final: false } as any,
+        module_statuses: { is_final: false },
       },
     }).catch(() => 0)
 
