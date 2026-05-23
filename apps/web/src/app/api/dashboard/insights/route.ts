@@ -188,7 +188,7 @@ export async function GET(_req: NextRequest) {
         title: `${atrasadas} OS atrasadas`,
         description: `OS cujo prazo de entrega já passou. Cliente espera retorno — risco de reclamação.`,
         action_label: 'Ver OS atrasadas',
-        action_url: '/os?status_filter=overdue',
+        action_url: '/os?overdue=1',
       })
     }
 
