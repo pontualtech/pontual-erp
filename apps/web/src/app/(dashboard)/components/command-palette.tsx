@@ -1,13 +1,71 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useMemo, useState, useCallback } from 'react'
+import { useRouter, usePathname } from 'next/navigation'
 import { Command } from 'cmdk'
 import {
   Search, Wrench, Users, Package, Plus, BarChart3, DollarSign,
   Truck, Settings, FileText, Phone, MessageCircle, Home, Loader2,
+  Send, FileCheck, Receipt, Eye,
 } from 'lucide-react'
 import { toast } from 'sonner'
+
+// Sprint UX-16 (2026-05-23): ações contextuais — padrão Linear.
+// Match path → retorna lista de ações relevantes pra mostrar NO TOPO do palette.
+type ContextualAction = {
+  label: string
+  icon: React.ComponentType<{ className?: string }>
+  href: string
+  synonyms?: string[]
+}
+
+function getContextualActions(pathname: string): { title: string; actions: ContextualAction[] } | null {
+  // /os/[id] (não /os, não /os/novo) → ações da OS aberta
+  const osMatch = pathname.match(/^\/os\/([^\/]+)$/)
+  if (osMatch && osMatch[1] !== 'novo') {
+    const id = osMatch[1]
+    return {
+      title: 'Nesta OS',
+      actions: [
+        { label: 'Adicionar item ao orçamento', icon: Plus, href: `/os/${id}?action=add-item`, synonyms: ['add', 'item', 'orcamento', 'peca'] },
+        { label: 'Enviar orçamento por WhatsApp', icon: Send, href: `/os/${id}?action=send-quote`, synonyms: ['enviar', 'wpp', 'whats', 'cliente'] },
+        { label: 'Imprimir laudo / recibo', icon: FileCheck, href: `/os/${id}?action=print`, synonyms: ['imprimir', 'laudo', 'recibo', 'pdf'] },
+      ],
+    }
+  }
+  // /clientes/[id] → ações do cliente
+  const cliMatch = pathname.match(/^\/clientes\/([^\/]+)$/)
+  if (cliMatch && cliMatch[1] !== 'novo') {
+    const id = cliMatch[1]
+    return {
+      title: 'Neste cliente',
+      actions: [
+        { label: 'Nova OS pra este cliente', icon: Plus, href: `/os/novo?customer_id=${id}`, synonyms: ['nova os', 'criar os', 'abrir'] },
+        { label: 'Ver financeiro deste cliente', icon: DollarSign, href: `/financeiro/contas-receber?customer_id=${id}`, synonyms: ['financeiro', 'cobranca', 'titulos'] },
+      ],
+    }
+  }
+  // /financeiro/contas-receber → ações financeiras
+  if (pathname.startsWith('/financeiro/contas-receber')) {
+    return {
+      title: 'Em Contas a Receber',
+      actions: [
+        { label: 'Nova cobrança manual', icon: Plus, href: '/financeiro/contas-receber?action=new', synonyms: ['nova', 'cobranca', 'manual'] },
+        { label: 'Aging Report (vencidas)', icon: Receipt, href: '/financeiro/relatorios/aging', synonyms: ['aging', 'vencidas', 'atrasadas'] },
+      ],
+    }
+  }
+  // /marketing/atribuicao → ações marketing
+  if (pathname.startsWith('/marketing/atribuicao')) {
+    return {
+      title: 'Em Atribuição',
+      actions: [
+        { label: 'Ver tráfego em tempo real', icon: Eye, href: '/marketing/trafego', synonyms: ['trafego', 'realtime', 'ga4'] },
+      ],
+    }
+  }
+  return null
+}
 
 /**
  * UX-5 #1: Command palette de ações (não só busca).
@@ -29,9 +87,13 @@ type SearchResults = { os: SearchOS[]; clientes: SearchCustomer[]; produtos: Sea
 
 export function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
   const router = useRouter()
+  const pathname = usePathname()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResults | null>(null)
   const [loading, setLoading] = useState(false)
+
+  // Sprint UX-16: ações contextuais baseadas na página atual
+  const contextual = useMemo(() => getContextualActions(pathname || ''), [pathname])
 
   // Body scroll lock + reset state when closed
   useEffect(() => {
@@ -124,6 +186,14 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
             const matches = (synonyms: string[]) => !q || synonyms.some(s => s.toLowerCase().includes(q))
             return (
               <>
+                {/* UX-16: Ações contextuais (Linear-style) — só aparece se pathname mapeado */}
+                {contextual && contextual.actions.some(a => matches([a.label, ...(a.synonyms || [])])) && (
+                  <Command.Group heading={contextual.title} className="px-2 pt-2 pb-1 text-[11px] font-semibold uppercase text-blue-600 dark:text-blue-400">
+                    {contextual.actions.filter(a => matches([a.label, ...(a.synonyms || [])])).map(a => (
+                      <PaletteItem key={a.href + a.label} icon={a.icon} label={a.label} onSelect={() => runAction(a.label, () => router.push(a.href))} />
+                    ))}
+                  </Command.Group>
+                )}
                 <Command.Group heading="Ações rápidas" className="px-2 pt-2 pb-1 text-[11px] font-semibold uppercase text-gray-500 dark:text-gray-400">
                   {matches(['Nova OS', 'Criar OS', 'Abrir OS', 'Novo serviço', 'Nova ordem']) && (
                     <PaletteItem icon={Plus} label="Nova OS" shortcut="N" onSelect={() => runAction('Nova OS', () => router.push('/os/novo'))} />

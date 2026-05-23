@@ -152,6 +152,7 @@ export default function MarketingAttributionPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [reloadKey, setReloadKey] = useState(0)
 
   const toggleExpand = (ch: string) => {
     setExpanded(prev => {
@@ -181,7 +182,39 @@ export default function MarketingAttributionPage() {
       .catch(e => !cancelled && setError(e instanceof Error ? e.message : 'Erro ao carregar'))
       .finally(() => !cancelled && setLoading(false))
     return () => { cancelled = true }
-  }, [range, emailWindow])
+  }, [range, emailWindow, reloadKey])
+
+  // Sprint UX-16: editar investimento mensal por canal (CAC/ROI)
+  async function editInvestment(channel: string, currentCents: number) {
+    const currentBRL = currentCents > 0 ? (currentCents / 100).toFixed(2).replace('.', ',') : ''
+    const input = window.prompt(
+      `Investimento MENSAL no canal "${channel}" (R$).\n\nEx: 1500 ou 1500,50\nDeixe vazio pra zerar.`,
+      currentBRL,
+    )
+    if (input === null) return // cancelou
+    const normalized = input.trim().replace(/\./g, '').replace(',', '.')
+    const valor = normalized === '' ? 0 : parseFloat(normalized)
+    if (!Number.isFinite(valor) || valor < 0) {
+      alert('Valor inválido. Use formato 1500 ou 1500,50.')
+      return
+    }
+    const amountCents = Math.round(valor * 100)
+    try {
+      const res = await fetch('/api/marketing/investment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channel, amount_cents: amountCents }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(`Erro ao salvar: ${err.error || res.statusText}`)
+        return
+      }
+      setReloadKey(k => k + 1)
+    } catch (e) {
+      alert(`Erro de rede: ${e instanceof Error ? e.message : 'desconhecido'}`)
+    }
+  }
 
   // Constrói funil cruzando GA4 (clicks WhatsApp) com ERP (OS + aprovadas)
   // Usa last30d do GA4 quando range é 30d ou maior; last7d quando é 7d
@@ -405,6 +438,10 @@ export default function MarketingAttributionPage() {
                     <th className="text-right px-4 py-3 font-medium text-gray-700">Aprovadas</th>
                     <th className="text-right px-4 py-3 font-medium text-gray-700">Tx aprovação</th>
                     <th className="text-right px-4 py-3 font-medium text-gray-700">Receita aprovada</th>
+                    {/* Sprint UX-16: CAC + ROI por canal */}
+                    <th className="text-right px-4 py-3 font-medium text-gray-700" title="Investimento mensal — clique pra editar">Invest.</th>
+                    <th className="text-right px-4 py-3 font-medium text-gray-700" title="CAC = investimento / aprovadas">CAC</th>
+                    <th className="text-right px-4 py-3 font-medium text-gray-700" title="ROI = (receita - investimento) / investimento">ROI</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -447,10 +484,37 @@ export default function MarketingAttributionPage() {
                             ) : '—'}
                           </td>
                           <td className="px-4 py-3 text-right font-mono text-emerald-700">{b.approved_revenue_cents > 0 ? fmtBRL(b.approved_revenue_cents) : '—'}</td>
+                          {/* Investimento manual (clique pra editar) */}
+                          <td className="px-4 py-3 text-right">
+                            <button
+                              type="button"
+                              onClick={e => { e.stopPropagation(); editInvestment(b.channel, (b as any).investment_cents || 0) }}
+                              className="text-xs font-mono text-gray-600 hover:text-blue-600 underline decoration-dotted"
+                              title="Clique pra editar investimento mensal"
+                            >
+                              {(b as any).investment_cents > 0 ? fmtBRL((b as any).investment_cents) : '— set'}
+                            </button>
+                          </td>
+                          {/* CAC */}
+                          <td className="px-4 py-3 text-right text-xs">
+                            {(b as any).cac_cents != null ? (
+                              <span className={(b as any).cac_cents <= 50000 ? 'text-emerald-700 font-medium' : (b as any).cac_cents <= 150000 ? 'text-amber-600' : 'text-red-600 font-medium'}>
+                                {fmtBRL((b as any).cac_cents)}
+                              </span>
+                            ) : <span className="text-gray-300">—</span>}
+                          </td>
+                          {/* ROI */}
+                          <td className="px-4 py-3 text-right text-xs">
+                            {(b as any).roi_pct != null ? (
+                              <span className={(b as any).roi_pct >= 100 ? 'text-emerald-700 font-medium' : (b as any).roi_pct >= 0 ? 'text-amber-600' : 'text-red-600 font-medium'}>
+                                {(b as any).roi_pct > 0 ? '+' : ''}{(b as any).roi_pct}%
+                              </span>
+                            ) : <span className="text-gray-300">—</span>}
+                          </td>
                         </tr>
                         {isOpen && hasOrders && (
                           <tr className="bg-gray-50 border-b border-gray-200">
-                            <td colSpan={6} className="px-4 py-3">
+                            <td colSpan={9} className="px-4 py-3">
                               <div className="text-xs text-gray-500 mb-2 font-medium">
                                 Top {b.top_orders.length} OS de {b.label} (ordenadas por valor aprovado)
                               </div>

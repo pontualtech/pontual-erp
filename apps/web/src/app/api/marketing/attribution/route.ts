@@ -205,13 +205,35 @@ export async function GET(req: NextRequest) {
       timeline.push(row)
     }
 
+    // Sprint UX-16 (2026-05-23): CAC por canal — investimento manual configurado
+    // em settings `marketing.investment.{channel}` (centavos por mês).
+    // CAC_canal = investimento / approved_count.
+    const investmentSettings = await prisma.setting.findMany({
+      where: { company_id: user.companyId, key: { startsWith: 'marketing.investment.' } },
+      select: { key: true, value: true },
+    })
+    const investments: Record<string, number> = {}
+    for (const s of investmentSettings) {
+      const channel = s.key.replace('marketing.investment.', '')
+      investments[channel] = parseInt(s.value) || 0
+    }
+
+    // Anexa CAC em cada item do breakdown
+    const breakdownWithCac = breakdown.map(b => {
+      const investment = investments[b.channel] || 0
+      const cac = b.approved_count > 0 ? Math.round(investment / b.approved_count) : null
+      const roi = investment > 0 ? Math.round((b.approved_revenue_cents - investment) / investment * 100) : null
+      return { ...b, investment_cents: investment, cac_cents: cac, roi_pct: roi }
+    })
+
     return success({
       range,
       since: since.toISOString(),
       totals,
-      breakdown,
+      breakdown: breakdownWithCac,
       timeline,
       coverage_pct: totals.os_count > 0 ? (totals.tracked_count / totals.os_count) * 100 : 0,
+      investments,
     })
   } catch (e) {
     return handleError(e)
