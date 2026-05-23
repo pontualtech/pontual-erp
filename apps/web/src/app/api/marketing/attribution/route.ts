@@ -70,7 +70,9 @@ const CHANNEL_META: Record<ChannelKey, { label: string; emoji: string; order: nu
 
 export async function GET(req: NextRequest) {
   try {
-    const result = await requirePermission('dashboard', 'view')
+    // Wave O privacy fix (2026-05-23): trocado de 'dashboard:view' (todos roles)
+    // para 'marketing:view' pra esconder receita+CAC+ROI de motorista/técnico.
+    const result = await requirePermission('marketing', 'view')
     if (result instanceof NextResponse) return result
     const user = result
 

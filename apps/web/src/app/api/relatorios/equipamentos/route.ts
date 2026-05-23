@@ -21,7 +21,9 @@ import { success, handleError } from '@/lib/api-response'
  */
 export async function GET(req: NextRequest) {
   try {
-    const result = await requirePermission('dashboard', 'view')
+    // Wave O privacy fix (2026-05-23): receita por modelo é info estratégica
+    // (CEO + atendente OK ver, motorista/técnico não). Troca pra marketing:view.
+    const result = await requirePermission('marketing', 'view')
     if (result instanceof NextResponse) return result
     const user = result
 

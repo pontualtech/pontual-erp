@@ -25,6 +25,16 @@ export async function GET(_req: NextRequest) {
     if (result instanceof NextResponse) return result
     const user = result
 
+    // Wave O privacy fix (2026-05-23): insights são role-aware.
+    // - admin/atendente/financeiro: veem TODOS (CEO + operacional + alerta tech)
+    // - técnico: vê só insight de SUA workload + OS atrasadas suas
+    // - motorista: vê só insights de logística (nenhum dos atuais — array vazio)
+    // Logs antes: motorista via "Luiz: 24 OS" + faturamento — privacy leak.
+    const role = (user.roleName || '').toLowerCase()
+    const isAdminLike = role === 'admin' || role === 'atendente' || role === 'financeiro'
+    const isTech = role === 'técnico' || role === 'tecnico'
+    const isMotorista = role === 'motorista'
+
     const insights: Array<{
       id: string
       severity: 'info' | 'warning' | 'critical'
@@ -33,6 +43,7 @@ export async function GET(_req: NextRequest) {
       description: string
       action_label?: string
       action_url?: string
+      audience?: 'admin' | 'tech' | 'all'  // marca pra filtragem final
     }> = []
 
     const now = new Date()
@@ -52,6 +63,7 @@ export async function GET(_req: NextRequest) {
     const aging90Sum = (aging90._sum.total_amount || 0) - (aging90._sum.received_amount || 0)
     if (aging90Sum > 0 && aging90._count > 0) {
       insights.push({
+        audience: 'admin', // dados financeiros sensíveis
         id: 'aging_90',
         severity: 'critical',
         icon: '⚠️',
@@ -89,6 +101,7 @@ export async function GET(_req: NextRequest) {
       }).catch(() => null)
       const count = overloaded[0]._count._all
       insights.push({
+        audience: 'admin', // mostrar SÓ pro gestor — constrangedor pro próprio téc
         id: 'tech_overloaded',
         severity: 'warning',
         icon: '👷',
@@ -123,6 +136,7 @@ export async function GET(_req: NextRequest) {
       const deltaPct = Math.round(((mtdR - lyR) / lyR) * 100)
       if (deltaPct >= 20) {
         insights.push({
+          audience: 'admin', // receita YoY — privacidade CEO
           id: 'yoy_growth',
           severity: 'info',
           icon: '🚀',
@@ -133,6 +147,7 @@ export async function GET(_req: NextRequest) {
         })
       } else if (deltaPct <= -20) {
         insights.push({
+          audience: 'admin', // receita YoY — privacidade CEO
           id: 'yoy_decline',
           severity: 'warning',
           icon: '📉',
@@ -160,6 +175,7 @@ export async function GET(_req: NextRequest) {
     const venceHojeSum = (venceHoje._sum.total_amount || 0) - (venceHoje._sum.received_amount || 0)
     if (venceHoje._count >= 3 && venceHojeSum > 0) {
       insights.push({
+        audience: 'admin', // cobranças financeiras — non-admin não vê
         id: 'due_today',
         severity: 'info',
         icon: '📅',
@@ -182,6 +198,7 @@ export async function GET(_req: NextRequest) {
 
     if (atrasadas >= 5) {
       insights.push({
+        audience: 'all', // operacional — útil pra todos os roles
         id: 'os_atrasadas',
         severity: atrasadas >= 10 ? 'critical' : 'warning',
         icon: '⏰',
@@ -192,12 +209,30 @@ export async function GET(_req: NextRequest) {
       })
     }
 
+    // Wave O privacy filter (2026-05-23): aplica audience por role.
+    // - 'admin' (financeiro, YoY, workload): só admin/atendente/financeiro veem
+    // - 'all' (operacional, OS atrasadas): todos veem
+    // - 'tech' (futuro): só técnicos
+    const filtered = insights.filter(i => {
+      const aud = i.audience || 'all'
+      if (aud === 'all') return true
+      if (aud === 'admin') return isAdminLike
+      if (aud === 'tech') return isTech
+      return false
+    })
+    // Remove o campo 'audience' do output (interno only)
+    const publicInsights = filtered.map(({ audience: _a, ...rest }) => rest)
+
     // Ordena: critical → warning → info
     const severityRank: Record<string, number> = { critical: 0, warning: 1, info: 2 }
-    insights.sort((a, b) => severityRank[a.severity] - severityRank[b.severity])
+    publicInsights.sort((a, b) => severityRank[a.severity] - severityRank[b.severity])
+
+    // Logs role pra observabilidade (sem PII)
+    console.log(`[Insights] role=${role}, total=${insights.length}, after_filter=${publicInsights.length}`)
+    void isMotorista // suprime warning (reservado pra futuro)
 
     return success({
-      insights,
+      insights: publicInsights,
       generated_at: now.toISOString(),
     })
   } catch (err) {

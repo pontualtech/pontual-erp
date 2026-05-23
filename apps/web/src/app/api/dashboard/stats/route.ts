@@ -292,6 +292,11 @@ export async function GET(req: NextRequest) {
     // Check if user has financial permissions
     const canViewFinanceiro = user.roleName === 'admin' || await hasPermission(user.id, user.companyId, 'financeiro', 'view')
 
+    // Wave O privacy fix (2026-05-23): gerencial = vê approvalRate + techWorkload.
+    // Motorista/técnico NÃO devem ver workload de outros tecs nem KPI gerencial.
+    const role = (user.roleName || '').toLowerCase()
+    const canViewGerencial = ['admin', 'atendente', 'financeiro'].includes(role)
+
     return success({
       cards: {
         osAbertasHoje,
@@ -317,7 +322,8 @@ export async function GET(req: NextRequest) {
       pipeline: pipelineData,
       metrics: {
         avgRepairDays: avgRepair[0]?.avg_days ? Number(avgRepair[0].avg_days) : null,
-        approvalRate: quotesTotal > 0 ? Math.round((quotesApproved / quotesTotal) * 100) : 0,
+        // Wave O: approvalRate é KPI gerencial — esconde de motorista/técnico
+        ...(canViewGerencial ? { approvalRate: quotesTotal > 0 ? Math.round((quotesApproved / quotesTotal) * 100) : 0 } : {}),
         ...(canViewFinanceiro ? { avgTicketCents: avgTicket[0]?.avg_ticket ? Number(avgTicket[0].avg_ticket) : null } : {}),
       },
       recentOs: recentOs.map(o => ({
@@ -336,13 +342,14 @@ export async function GET(req: NextRequest) {
         status: r.status,
         due_date: r.due_date,
       })),
-      techWorkload: techWorkload.map(t => ({
+      // Wave O: workload de outros técnicos é info gerencial — esconde de motorista/técnico
+      techWorkload: canViewGerencial ? techWorkload.map(t => ({
         id: t.technician_id,
         name: t.tech_name || 'Sem nome',
         total: Number(t.total),
         em_execucao: Number(t.em_execucao),
         atrasadas: Number(t.atrasadas),
-      })),
+      })) : [],
       semTecnico,
       osAtrasadas,
     })
