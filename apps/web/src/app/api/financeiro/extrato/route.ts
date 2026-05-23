@@ -157,7 +157,7 @@ export async function GET(request: NextRequest) {
       valor: number
       tipo: 'ENTRADA' | 'SAIDA'
       origem: 'receber' | 'pagar' | 'transacao'
-      status: string  // RECEBIDO|PAGO|PENDENTE|CANCELADO|null (transacao bancaria nao tem status)
+      status: string | null  // RECEBIDO|PAGO|PENDENTE|CANCELADO|null (transacao bancaria nao tem status)
       reconciliado?: boolean
     }
 

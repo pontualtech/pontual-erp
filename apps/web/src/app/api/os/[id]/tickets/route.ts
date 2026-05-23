@@ -58,7 +58,7 @@ export async function GET(req: NextRequest, { params }: Params) {
           select: { ticket_id: true, message: true, created_at: true },
         })
       : []
-    const customerMap = new Map<string, { message: string; created_at: Date }>()
+    const customerMap = new Map<string, { message: string; created_at: Date | null }>()
     for (const m of customerMsgs) {
       if (!customerMap.has(m.ticket_id)) {
         customerMap.set(m.ticket_id, { message: m.message, created_at: m.created_at })

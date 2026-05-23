@@ -92,7 +92,7 @@ export async function GET(req: NextRequest) {
         approved_cost: true,
         total_cost: true,
         created_at: true,
-        customers: { select: { name: true } },
+        customers: { select: { legal_name: true } },
       },
     })
 
@@ -139,7 +139,7 @@ export async function GET(req: NextRequest) {
       allByChannel[channel].push({
         os_id: os.id,
         os_number: os.os_number,
-        customer_name: os.customers?.name ?? null,
+        customer_name: os.customers?.legal_name ?? null,
         approved_cost: approved,
         total_cost: totalCost,
         created_at: (os.created_at ?? new Date()).toISOString(),

@@ -59,9 +59,10 @@ export async function createOrUpdateJourney(input: CaptureInput): Promise<{
   }
 
   // 1. Upsert do contato
+  // Composite unique key no Prisma: nome é <field1>_<field2> (não o `map` do schema)
   const contact = await prisma.marketingContact.upsert({
     where: {
-      marketing_contacts_company_email_unique: {
+      company_id_email: {
         company_id: input.company_id,
         email,
       },
@@ -86,7 +87,7 @@ export async function createOrUpdateJourney(input: CaptureInput): Promise<{
   // 2. Upsert da journey — UNIQUE(contact_id, journey_type) garante 1 ativa
   const existing = await prisma.marketingJourney.findUnique({
     where: {
-      idx_mj_unique_contact_type: {
+      contact_id_journey_type: {
         contact_id: contact.id,
         journey_type: journeyType,
       },
@@ -118,7 +119,7 @@ export async function createOrUpdateJourney(input: CaptureInput): Promise<{
       company_id: input.company_id,
       journey_type: journeyType,
       current_step: 0,
-      source_data: input.source_data || {},
+      source_data: (input.source_data || {}) as any,
     },
   })
 

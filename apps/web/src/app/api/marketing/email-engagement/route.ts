@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
         last_opened_at: true,
         last_clicked_at: true,
         customer_id: true,
-        customer: { select: { id: true, name: true } },
+        customer: { select: { id: true, legal_name: true } },
       },
       orderBy: [
         { last_clicked_at: { sort: 'desc', nulls: 'last' } },
@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
 
     const items = contacts.map(c => ({
       id: c.id,
-      name: c.name || c.customer?.name || c.email.split('@')[0],
+      name: c.name || c.customer?.legal_name || c.email.split('@')[0],
       email: c.email,
       phone: c.phone,
       tags: c.tags || [],
@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
         ? 'clicked'
         : 'opened',
       customer_id: c.customer_id || null,
-      customer_name: c.customer?.name || null,
+      customer_name: c.customer?.legal_name || null,
     }))
 
     const counts = {

@@ -67,7 +67,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           company_id: user.companyId,
           status: { not: 'RECEIVED' },
         },
-        data: { status: 'RECEIVING', updated_at: new Date() },
+        data: { status: 'RECEIVING' }, // schema Purchase nao tem updated_at
       })
       if (lock.count === 0) {
         return error('Compra ja recebida por outra acao concorrente', 409)
@@ -78,7 +78,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         // Rollback do lock se receivePurchase falhar
         await prisma.purchase.updateMany({
           where: { id: params.id, company_id: user.companyId, status: 'RECEIVING' },
-          data: { status: existing.status, updated_at: new Date() },
+          data: { status: existing.status }, // sem updated_at (schema nao tem)
         })
         throw e
       }
