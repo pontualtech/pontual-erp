@@ -22,7 +22,9 @@ export function PhotoGallery({ osId, customerId, initialPhotos = [] }: PhotoGall
   const [photos, setPhotos] = useState<Photo[]>(initialPhotos)
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
-  const [lightbox, setLightbox] = useState<string | null>(null)
+  // F-UX (Roberto #18) fix 23/05: lightbox guarda index em vez de url
+  // pra suportar swipe lateral (prev/next entre fotos).
+  const [lightboxIdx, setLightboxIdx] = useState<number | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -180,12 +182,12 @@ export function PhotoGallery({ osId, customerId, initialPhotos = [] }: PhotoGall
       {/* Gallery grid */}
       {photos.length > 0 ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-          {photos.map(photo => (
+          {photos.map((photo, idx) => (
             <div key={photo.id} className="group relative aspect-square rounded-lg overflow-hidden bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700">
               {isImage(photo) ? (
                 <PhotoThumb
                   src={getPhotoUrl(photo)}
-                  onClick={() => setLightbox(getPhotoUrl(photo))}
+                  onClick={() => setLightboxIdx(idx)}
                 />
               ) : (
                 <div
@@ -198,15 +200,18 @@ export function PhotoGallery({ osId, customerId, initialPhotos = [] }: PhotoGall
                   <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">PDF</span>
                 </div>
               )}
-              {/* Delete button (only own uploads) */}
+              {/* Delete button (only own uploads).
+                  F-UX (Roberto #17) fix 23/05: mobile sempre visivel (sem hover),
+                  desktop continua revelando no hover */}
               {photo.uploaded_by === customerId && (
                 <button
                   type="button"
                   onClick={e => { e.stopPropagation(); handleDelete(photo.id) }}
-                  className="absolute top-1.5 right-1.5 w-7 h-7 bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md hover:bg-red-700"
+                  className="absolute top-1.5 right-1.5 w-8 h-8 bg-red-600 text-white rounded-full flex items-center justify-center sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shadow-md hover:bg-red-700 min-w-[32px] min-h-[32px]"
                   title="Excluir"
+                  aria-label="Excluir foto"
                 >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
@@ -224,8 +229,14 @@ export function PhotoGallery({ osId, customerId, initialPhotos = [] }: PhotoGall
         <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-4">Nenhuma foto enviada</p>
       ) : null}
 
-      {/* Lightbox com zoom (UX-1 #4) */}
-      {lightbox && <Lightbox src={lightbox} onClose={() => setLightbox(null)} />}
+      {/* Lightbox com zoom (UX-1 #4) + swipe navegação entre fotos (Onda 3 UX-15) */}
+      {lightboxIdx !== null && (
+        <Lightbox
+          photos={photos.filter(isImage).map(getPhotoUrl)}
+          initialIdx={Math.min(lightboxIdx, photos.filter(isImage).length - 1)}
+          onClose={() => setLightboxIdx(null)}
+        />
+      )}
     </div>
   )
 }
@@ -266,15 +277,27 @@ function PhotoThumb({ src, onClick }: { src: string; onClick: () => void }) {
  * Lightbox com zoom (1×, 2×, 3×) + pan via overflow + ESC fechar.
  * Click/double-tap na imagem cicla zoom. Pinch nativo funciona via
  * touch-action: pinch-zoom no contêiner scrollável.
+ *
+ * Onda 3 UX-15 (2026-05-23): suporta navegação prev/next entre fotos
+ * via setas teclado, botões laterais e swipe touch (Apple Photos pattern).
  */
-function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
+function Lightbox({ photos, initialIdx, onClose }: { photos: string[]; initialIdx: number; onClose: () => void }) {
+  const [idx, setIdx] = useState(initialIdx)
   const [zoom, setZoom] = useState(1)
+  const src = photos[idx]
+  const hasPrev = idx > 0
+  const hasNext = idx < photos.length - 1
+
+  const goPrev = useCallback(() => { if (hasPrev) { setIdx(i => i - 1); setZoom(1) } }, [hasPrev])
+  const goNext = useCallback(() => { if (hasNext) { setIdx(i => i + 1); setZoom(1) } }, [hasNext])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
-      if (e.key === '+' || e.key === '=') setZoom((z) => Math.min(3, z + 1))
-      if (e.key === '-') setZoom((z) => Math.max(1, z - 1))
+      else if (e.key === '+' || e.key === '=') setZoom((z) => Math.min(3, z + 1))
+      else if (e.key === '-') setZoom((z) => Math.max(1, z - 1))
+      else if (e.key === 'ArrowLeft') goPrev()
+      else if (e.key === 'ArrowRight') goNext()
     }
     document.addEventListener('keydown', onKey)
     const prev = document.body.style.overflow
@@ -283,7 +306,22 @@ function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
       document.removeEventListener('keydown', onKey)
       document.body.style.overflow = prev
     }
-  }, [onClose])
+  }, [onClose, goPrev, goNext])
+
+  // Swipe touch (apenas quando zoom=1 — zoom>1 deixa scroll/pan funcionar)
+  const touchStartX = useRef<number | null>(null)
+  function onTouchStart(e: React.TouchEvent) {
+    if (zoom > 1) return
+    touchStartX.current = e.touches[0].clientX
+  }
+  function onTouchEnd(e: React.TouchEvent) {
+    if (zoom > 1 || touchStartX.current === null) return
+    const dx = e.changedTouches[0].clientX - touchStartX.current
+    touchStartX.current = null
+    if (Math.abs(dx) < 50) return
+    if (dx < 0) goNext()
+    else goPrev()
+  }
 
   function cycleZoom() {
     setZoom((z) => (z >= 3 ? 1 : z + 1))
@@ -334,10 +372,12 @@ function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
         </button>
       </div>
 
-      {/* Container com scroll quando zoom > 1 */}
+      {/* Container com scroll quando zoom > 1 + swipe lateral entre fotos quando zoom=1 */}
       <div
-        className="w-full h-full overflow-auto flex items-center justify-center p-4 touch-pinch-zoom"
+        className="w-full h-full overflow-auto flex items-center justify-center p-4 touch-pinch-zoom relative"
         onClick={(e) => e.stopPropagation()}
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
       >
         <img
           src={src}
@@ -349,10 +389,35 @@ function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
         />
       </div>
 
-      {/* Hint mobile */}
-      <p className="absolute bottom-4 left-0 right-0 text-center text-white/60 text-xs px-4">
-        Toque na foto para ampliar · pinch para zoom livre
-      </p>
+      {/* Setas laterais navegacao (desktop e mobile) */}
+      {hasPrev && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); goPrev() }}
+          aria-label="Foto anterior"
+          className="absolute left-2 top-1/2 -translate-y-1/2 w-12 h-12 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center text-white"
+        >
+          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+        </button>
+      )}
+      {hasNext && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); goNext() }}
+          aria-label="Proxima foto"
+          className="absolute right-2 top-1/2 -translate-y-1/2 w-12 h-12 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center text-white"
+        >
+          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+        </button>
+      )}
+
+      {/* Indicador de posicao + hint mobile */}
+      <div className="absolute bottom-4 left-0 right-0 text-center text-white/80 text-xs px-4 space-y-1">
+        {photos.length > 1 && (
+          <p className="font-semibold">{idx + 1} / {photos.length}</p>
+        )}
+        <p className="text-white/60">Toque pra ampliar · arraste pra trocar foto</p>
+      </div>
     </div>
   )
 }

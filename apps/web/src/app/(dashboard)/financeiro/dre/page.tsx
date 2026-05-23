@@ -203,6 +203,18 @@ export default function DREPage() {
   const [engine, setEngine] = useState<'live' | 'mv'>('live')
   const [refreshing, setRefreshing] = useState(false)
 
+  // Onda 4 (UX-15): Pulse — MTD + Run-rate + MoM + YoY + sparkline 6m
+  const [pulse, setPulse] = useState<any>(null)
+  const [pulseLoading, setPulseLoading] = useState(true)
+  useEffect(() => {
+    setPulseLoading(true)
+    fetch('/api/financeiro/dre/pulse')
+      .then(r => r.json())
+      .then(d => setPulse(d.data ?? null))
+      .catch(() => {})
+      .finally(() => setPulseLoading(false))
+  }, [])
+
   const loadData = useCallback(() => {
     setLoading(true)
     const params = new URLSearchParams()
@@ -344,6 +356,11 @@ export default function DREPage() {
           </div>
         </div>
       </div>
+
+      {/* DRE Pulse (Onda 4 UX-15): responde "estou ganhando dinheiro AGORA?" */}
+      {!pulseLoading && pulse && (
+        <PulseCard pulse={pulse} />
+      )}
 
       {/* Filters */}
       <div className="rounded-lg border bg-white p-4 shadow-sm">
@@ -661,6 +678,130 @@ export default function DREPage() {
           )}
         </>
       )}
+    </div>
+  )
+}
+
+/**
+ * PulseCard — Onda 4 UX-15 (2026-05-23)
+ *
+ * Responde "estou ganhando dinheiro AGORA?" em 4 KPIs lado a lado:
+ *   - MTD (Mes ate Hoje) com run-rate fim de mes
+ *   - vs Mes passado mesmo dia util (%)
+ *   - vs Mesmo periodo Ano Passado (%)
+ *   - Sparkline ultimos 6 meses (lucro liquido)
+ *
+ * Inspiracao: ProfitWell Daily MRR Pulse + Stripe Atlas Overview + Apple Health Summary.
+ */
+function PulseCard({ pulse }: { pulse: any }) {
+  const mtd = pulse.mtd
+  const rr = pulse.run_rate
+  const mom = pulse.mom
+  const yoy = pulse.yoy
+  const spark = pulse.sparkline as Array<{ month: string; lucro: number; partial: boolean }>
+
+  const sparkMax = Math.max(1, ...spark.map(s => Math.abs(s.lucro)))
+
+  function DeltaBadge({ pct, label }: { pct: number | null; label: string }) {
+    if (pct === null) return <span className="text-xs text-gray-400">{label}: sem base</span>
+    const positive = pct > 0
+    const cls = positive ? 'text-emerald-700 bg-emerald-50' : pct < 0 ? 'text-red-700 bg-red-50' : 'text-gray-600 bg-gray-50'
+    const arrow = positive ? '↑' : pct < 0 ? '↓' : '→'
+    return (
+      <span className={cn('inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-semibold', cls)}>
+        {arrow} {Math.abs(pct)}% <span className="font-normal opacity-70">{label}</span>
+      </span>
+    )
+  }
+
+  return (
+    <div className="rounded-xl border-2 border-blue-200 dark:border-blue-900 bg-gradient-to-br from-blue-50/60 via-white to-emerald-50/40 dark:from-blue-950/30 dark:via-gray-900 dark:to-emerald-950/20 p-5 shadow-sm">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            Pulse — Como está o mês AGORA?
+          </h2>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Dia {pulse.day_of_month} de {pulse.days_in_month} — atualizado em tempo real
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {/* MTD */}
+        <div className="rounded-lg bg-white dark:bg-gray-800 p-4 border shadow-sm">
+          <p className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">Mês até hoje</p>
+          <p className={cn('text-2xl font-bold mt-1', mtd.lucro >= 0 ? 'text-emerald-700' : 'text-red-700')}>
+            {(mtd.lucro / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+          </p>
+          <p className="text-xs text-gray-500 mt-1">
+            Receita {(mtd.receita / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+          </p>
+          <p className="text-xs text-gray-500">
+            Despesa {(mtd.despesa / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+          </p>
+        </div>
+
+        {/* Run-rate */}
+        <div className="rounded-lg bg-white dark:bg-gray-800 p-4 border shadow-sm">
+          <p className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">Projeção fim do mês</p>
+          <p className={cn('text-2xl font-bold mt-1', rr.lucro >= 0 ? 'text-emerald-700' : 'text-red-700')}>
+            {(rr.lucro / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+          </p>
+          <p className="text-xs text-gray-500 mt-1">
+            Se manter o ritmo atual
+          </p>
+        </div>
+
+        {/* MoM */}
+        <div className="rounded-lg bg-white dark:bg-gray-800 p-4 border shadow-sm">
+          <p className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">vs Mês passado</p>
+          <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
+            {(mom.lucro / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+            <span className="text-xs text-gray-400 block">(mesmo dia)</span>
+          </p>
+          <div className="mt-2 space-y-1">
+            <DeltaBadge pct={mom.delta_lucro_pct} label="lucro" />
+          </div>
+        </div>
+
+        {/* YoY */}
+        <div className="rounded-lg bg-white dark:bg-gray-800 p-4 border shadow-sm">
+          <p className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">vs Ano passado</p>
+          <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
+            {(yoy.lucro / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+            <span className="text-xs text-gray-400 block">(mesmo período)</span>
+          </p>
+          <div className="mt-2 space-y-1">
+            <DeltaBadge pct={yoy.delta_lucro_pct} label="lucro" />
+          </div>
+        </div>
+      </div>
+
+      {/* Sparkline 6 meses */}
+      <div className="mt-4 pt-4 border-t">
+        <p className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-2">Lucro líquido — últimos 6 meses</p>
+        <div className="flex items-end gap-1 h-16">
+          {spark.map(s => {
+            const h = Math.max(2, Math.round((Math.abs(s.lucro) / sparkMax) * 100))
+            const positive = s.lucro >= 0
+            return (
+              <div key={s.month} className="flex-1 flex flex-col items-center justify-end gap-1" title={`${s.month}: ${(s.lucro/100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}${s.partial ? ' (parcial)' : ''}`}>
+                <div
+                  className={cn(
+                    'w-full rounded-t transition-all',
+                    positive ? 'bg-emerald-500' : 'bg-red-500',
+                    s.partial && 'opacity-60 border-t-2 border-dashed border-emerald-700'
+                  )}
+                  style={{ height: `${h}%` }}
+                />
+                <span className="text-[9px] text-gray-500 truncate">{s.month.substring(5)}</span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
     </div>
   )
 }
