@@ -10,6 +10,7 @@ import {
   MessageSquare, Lock, ChevronRight,
 } from 'lucide-react'
 import { useAuth } from '@/lib/use-auth'
+import { SnippetPicker } from '../../components/snippet-picker'
 
 interface TicketMessage {
   id: string
@@ -314,6 +315,14 @@ export default function TicketDetailPage() {
                   (visivel apenas para a equipe)
                 </span>
               )}
+              {/* W7 (audit) — respostas rápidas reutilizando SnippetPicker existente */}
+              <div className="ml-auto">
+                <SnippetPicker
+                  category="ticket"
+                  compact
+                  onPick={(text) => setNewMessage(prev => prev ? prev + '\n' + text : text)}
+                />
+              </div>
             </div>
             <div className="flex gap-2">
               <textarea

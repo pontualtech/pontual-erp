@@ -27,6 +27,12 @@ const DEFAULT_SNIPPETS: Snippet[] = [
   { key: 'pronto_retirar', title: 'Equipamento pronto', body: 'Equipamento já está pronto para retirada! Funcionamento de seg a sex 8h-18h. Sábado 8h-12h.', category: 'entrega' },
   { key: 'aguardando_peca', title: 'Aguardando peça', body: 'Estamos aguardando a chegada da peça. Previsão: X dias úteis. Avisamos assim que chegar.', category: 'reparo' },
   { key: 'agradecimento', title: 'Agradecimento pós-OS', body: 'Obrigado pela confiança! Se precisar de algo, é só chamar. Pode dar uma estrelinha pra gente no Google? Ajuda muito! 🙏', category: 'geral' },
+  // W7 (audit 2026-05-23): respostas rápidas para tickets de suporte
+  { key: 'ticket_recebido', title: 'Recebemos seu ticket', body: 'Olá! Recebemos seu chamado e nossa equipe vai analisar. Retornaremos com uma resposta em até 24h úteis.', category: 'ticket' },
+  { key: 'ticket_analisando', title: 'Estamos analisando', body: 'Estamos analisando seu caso. Pediremos mais informações se necessário. Obrigado pela paciência.', category: 'ticket' },
+  { key: 'ticket_solicita_info', title: 'Solicita informações', body: 'Para prosseguir, poderia nos enviar: 1) número da OS (se houver), 2) print/foto do problema, 3) modelo do equipamento. Obrigado!', category: 'ticket' },
+  { key: 'ticket_resolvido', title: 'Ticket resolvido', body: 'Verificamos e seu problema foi resolvido. Estou marcando o ticket como concluído. Qualquer dúvida adicional é só responder essa mesma conversa.', category: 'ticket' },
+  { key: 'ticket_acompanhamento', title: 'Em acompanhamento', body: 'Estamos acompanhando sua solicitação junto à equipe técnica. Daremos retorno assim que tivermos novidades.', category: 'ticket' },
 ]
 
 function loadSnippets(): Snippet[] {

@@ -6,8 +6,9 @@ import { ArrowLeft, TrendingUp, TrendingDown, DollarSign, Loader2, Filter } from
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import {
-  BarChart,
   Bar,
+  Line,
+  ComposedChart,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -102,12 +103,33 @@ export default function FluxoCaixaPage() {
 
   useEffect(() => { loadData() }, [loadData])
 
-  const chartData = (data?.data ?? []).map(item => ({
-    name: formatMonthLabel(item.month),
-    Entradas: item.entradas / 100,
-    Saidas: item.saidas / 100,
-    month: item.month,
-  }))
+  // W8 (audit 2026-05-23): projeção de fluxo de caixa — padrão ChartMogul/Baremetrics.
+  // Linha tracejada de previsão = média dos últimos 3 meses fechados (passado),
+  // estendida sobre meses futuros do gráfico. Karlão vê se vai sobrar caixa sem
+  // montar planilha. Calculo no client, zero backend novo.
+  const rawData = data?.data ?? []
+  const todayProj = new Date()
+  const currentMonthKey = `${todayProj.getFullYear()}-${String(todayProj.getMonth() + 1).padStart(2, '0')}`
+  // Últimos 3 meses FECHADOS (anteriores ao corrente) com dados não-zero
+  const closedMonths = rawData.filter(m => m.month < currentMonthKey && (m.entradas > 0 || m.saidas > 0))
+  const last3 = closedMonths.slice(-3)
+  const avgEntradas = last3.length > 0 ? last3.reduce((a, m) => a + m.entradas, 0) / last3.length : 0
+  const avgSaidas = last3.length > 0 ? last3.reduce((a, m) => a + m.saidas, 0) / last3.length : 0
+
+  const chartData = rawData.map(item => {
+    const isFuture = item.month >= currentMonthKey
+    return {
+      name: formatMonthLabel(item.month),
+      Entradas: item.entradas / 100,
+      Saidas: item.saidas / 100,
+      // Projeção: só nos meses futuros — desenha linha tracejada estimando média
+      'Entradas (proj)': isFuture && avgEntradas > 0 ? avgEntradas / 100 : null,
+      'Saidas (proj)': isFuture && avgSaidas > 0 ? avgSaidas / 100 : null,
+      month: item.month,
+    }
+  })
+
+  const hasProjection = last3.length >= 2 && chartData.some(c => c['Entradas (proj)'] != null)
 
   const totais = data?.totais
 
@@ -286,8 +308,9 @@ export default function FluxoCaixaPage() {
             Nenhum dado para o periodo selecionado
           </div>
         ) : (
+          <>
           <ResponsiveContainer width="100%" height={350}>
-            <BarChart data={chartData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
+            <ComposedChart data={chartData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="name" tick={{ fontSize: 12 }} />
               <YAxis
@@ -300,8 +323,36 @@ export default function FluxoCaixaPage() {
               <Legend />
               <Bar dataKey="Entradas" fill="#22c55e" radius={[4, 4, 0, 0]} />
               <Bar dataKey="Saidas" fill="#ef4444" radius={[4, 4, 0, 0]} />
-            </BarChart>
+              {hasProjection && (
+                <>
+                  <Line
+                    type="monotone"
+                    dataKey="Entradas (proj)"
+                    stroke="#22c55e"
+                    strokeWidth={2}
+                    strokeDasharray="5 5"
+                    dot={{ r: 3 }}
+                    connectNulls={false}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="Saidas (proj)"
+                    stroke="#ef4444"
+                    strokeWidth={2}
+                    strokeDasharray="5 5"
+                    dot={{ r: 3 }}
+                    connectNulls={false}
+                  />
+                </>
+              )}
+            </ComposedChart>
           </ResponsiveContainer>
+          {hasProjection && (
+            <p className="text-[11px] text-gray-400 mt-2">
+              ⓘ Linhas tracejadas = projeção baseada na média dos últimos {last3.length} {last3.length === 1 ? 'mês' : 'meses'} fechado(s). Aproximação — não considera sazonalidade.
+            </p>
+          )}
+          </>
         )}
       </div>
 
