@@ -122,18 +122,21 @@ export default function NovaOSPage() {
   }, [])
 
   // Load technicians on mount
-  // Bug fix audit (2026-05-23): antes carregava TODOS users (atendente,
-  // motorista, admin) no dropdown de técnico. Agora ?role=tecnico filtra
-  // server-side. Fallback p/ todos se 0 técnicos cadastrados.
+  // Bug fix audit (2026-05-23): antes carregava TODOS users (atendente, motorista,
+  // admin) no dropdown de técnico. Agora ?withRole=true retorna roles inline e
+  // filtramos no client (mais robusto que server contains que falha com acentos
+  // — "Técnico" vs "tec" não bate por causa do `é`). Fallback p/ todos se 0 techs.
   useEffect(() => {
-    fetch('/api/users?simple=true&role=tec')
+    fetch('/api/users?simple=true&withRole=true')
       .then(r => r.json())
       .then(d => {
-        if (d.data?.length > 0) {
-          setTecnicos(d.data)
+        const all = d.data ?? []
+        const techs = all.filter((u: any) => /tec|téc/i.test(u.roles?.name || ''))
+        if (techs.length > 0) {
+          setTecnicos(techs)
         } else {
           // Fallback: nenhum tech cadastrado — mostra todos pra não bloquear fluxo
-          fetch('/api/users?simple=true').then(r => r.json()).then(d2 => setTecnicos(d2.data ?? [])).catch(() => {})
+          setTecnicos(all)
         }
       })
       .catch(() => {})
