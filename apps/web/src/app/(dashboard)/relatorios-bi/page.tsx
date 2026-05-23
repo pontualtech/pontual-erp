@@ -7,7 +7,7 @@ import {
   Cell, Legend, PieChart, Pie,
 } from 'recharts'
 import {
-  BarChart3, Download, Users, Clock, TrendingUp, Filter, ChevronDown,
+  BarChart3, Download, Users, Clock, TrendingUp, Filter, ChevronDown, Printer,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -54,6 +54,8 @@ const TABS = [
   { id: 'margem', label: 'Margem', icon: TrendingUp },
   { id: 'comissao', label: 'Comissão', icon: BarChart3 },
   { id: 'funil', label: 'Funil', icon: Filter },
+  // M3 (audit 2026-05-23): aba Equipamentos — receita por marca/modelo (NetSuite/SAP pattern)
+  { id: 'equipamentos', label: 'Equipamentos', icon: Printer },
 ] as const
 
 type TabId = typeof TABS[number]['id']
@@ -73,6 +75,7 @@ export default function RelatoriosBIPage() {
   const [margemData, setMargemData] = useState<any>(null)
   const [comissaoData, setComissaoData] = useState<any>(null)
   const [funilData, setFunilData] = useState<any>(null)
+  const [equipamentosData, setEquipamentosData] = useState<any>(null)
   const [commissionPct, setCommissionPct] = useState(10)
 
   const fetchTab = useCallback(async (t: TabId) => {
@@ -90,6 +93,7 @@ export default function RelatoriosBIPage() {
         case 'margem': setMargemData(data); break
         case 'comissao': setComissaoData(data); break
         case 'funil': setFunilData(data); break
+        case 'equipamentos': setEquipamentosData(data); break
       }
     } catch (e: any) {
       toast.error(e.message || 'Erro ao carregar relatorio')
@@ -159,6 +163,114 @@ export default function RelatoriosBIPage() {
         <ComissaoTab data={comissaoData} commissionPct={commissionPct} setCommissionPct={setCommissionPct} onRefresh={() => fetchTab('comissao')} />
       )}
       {!loading && tab === 'funil' && funilData && <FunilTab data={funilData} />}
+      {!loading && tab === 'equipamentos' && equipamentosData && <EquipamentosTab data={equipamentosData} />}
+    </div>
+  )
+}
+
+// ─── M3 Equipamentos Tab — Receita por marca/modelo ─────────────────────────
+
+function EquipamentosTab({ data }: { data: any }) {
+  const items: Array<{
+    equipment_brand: string
+    equipment_model: string
+    equipment_type: string
+    os_count: number
+    total_revenue_cents: number
+    avg_total_cost_cents: number
+    warranty_count: number
+    warranty_rate_pct: number
+  }> = data.items || []
+  const totals = data.totals || { os_count: 0, total_revenue_cents: 0, warranty_count: 0, distinct_models: 0 }
+  const top10 = items.slice(0, 10)
+
+  function exportCSV() {
+    downloadCSV(items.map(i => ({
+      Marca: i.equipment_brand,
+      Modelo: i.equipment_model,
+      Tipo: i.equipment_type,
+      'OS': i.os_count,
+      'Receita': formatCurrency(i.total_revenue_cents),
+      'Ticket médio': formatCurrency(i.avg_total_cost_cents || 0),
+      'Garantias': i.warranty_count,
+      'Taxa garantia %': i.warranty_rate_pct,
+    })), 'equipamentos')
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <StatCard label="Modelos distintos" value={String(totals.distinct_models)} color="text-gray-900 dark:text-gray-100" />
+        <StatCard label="OS no período" value={String(totals.os_count)} color="text-blue-600" />
+        <StatCard label="Receita total" value={formatCurrency(totals.total_revenue_cents)} color="text-emerald-600" />
+        <StatCard label="Garantias" value={String(totals.warranty_count)} color={totals.warranty_count > 5 ? 'text-red-600' : 'text-amber-600'}
+          sub={totals.os_count > 0 ? `${((totals.warranty_count / totals.os_count) * 100).toFixed(1)}% do total` : ''} />
+      </div>
+
+      {/* Chart top 10 por receita */}
+      {top10.length > 0 && (
+        <div className="rounded-lg border bg-white dark:bg-gray-800 dark:border-gray-700 p-5 shadow-sm">
+          <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-4">Top 10 por receita</h2>
+          <ResponsiveContainer width="100%" height={320}>
+            <BarChart data={top10.map(i => ({ name: `${i.equipment_brand} ${i.equipment_model}`.slice(0, 30), receita: i.total_revenue_cents / 100, os: i.os_count }))} layout="vertical" margin={{ left: 100 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)} />
+              <YAxis dataKey="name" type="category" width={150} tick={{ fontSize: 10 }} />
+              <Tooltip formatter={(v: number, n: string) => n === 'receita' ? formatCurrency(v * 100) : `${v} OS`} />
+              <Bar dataKey="receita" fill="#10b981" radius={[0, 4, 4, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Tabela completa */}
+      <div className="rounded-lg border bg-white dark:bg-gray-800 dark:border-gray-700 shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between p-3 border-b dark:border-gray-700">
+          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200">Detalhe por modelo ({items.length})</h3>
+          <button type="button" onClick={exportCSV} className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-gray-700">
+            <Download className="h-3.5 w-3.5" /> CSV
+          </button>
+        </div>
+        {items.length === 0 ? (
+          <div className="py-12 text-center text-sm text-gray-400">Nenhuma OS no período selecionado</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 dark:bg-gray-900 text-xs uppercase text-gray-500">
+                <tr>
+                  <th className="px-3 py-2 text-left font-semibold">Marca</th>
+                  <th className="px-3 py-2 text-left font-semibold">Modelo</th>
+                  <th className="px-3 py-2 text-left font-semibold">Tipo</th>
+                  <th className="px-3 py-2 text-right font-semibold">OS</th>
+                  <th className="px-3 py-2 text-right font-semibold">Receita</th>
+                  <th className="px-3 py-2 text-right font-semibold">Ticket médio</th>
+                  <th className="px-3 py-2 text-right font-semibold">Garantia</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                {items.map((i, idx) => (
+                  <tr key={`${i.equipment_brand}-${i.equipment_model}-${idx}`} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                    <td className="px-3 py-2 text-gray-900 dark:text-gray-100 font-medium">{i.equipment_brand}</td>
+                    <td className="px-3 py-2 text-gray-700 dark:text-gray-200">{i.equipment_model}</td>
+                    <td className="px-3 py-2 text-gray-500 text-xs">{i.equipment_type}</td>
+                    <td className="px-3 py-2 text-right font-mono text-gray-900 dark:text-gray-100">{i.os_count}</td>
+                    <td className="px-3 py-2 text-right font-mono text-emerald-700 dark:text-emerald-400 font-medium">{formatCurrency(i.total_revenue_cents)}</td>
+                    <td className="px-3 py-2 text-right font-mono text-gray-600 text-xs">{formatCurrency(i.avg_total_cost_cents)}</td>
+                    <td className="px-3 py-2 text-right text-xs">
+                      {i.warranty_count > 0 ? (
+                        <span className={i.warranty_rate_pct >= 10 ? 'text-red-600 font-medium' : i.warranty_rate_pct >= 5 ? 'text-amber-600' : 'text-gray-500'}>
+                          {i.warranty_count} ({i.warranty_rate_pct}%)
+                        </span>
+                      ) : <span className="text-gray-300">—</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
