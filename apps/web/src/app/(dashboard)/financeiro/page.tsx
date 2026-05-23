@@ -136,6 +136,7 @@ export default function FinanceiroPage() {
             { label: 'Relatórios', href: '/financeiro/relatorios', icon: BarChart3, desc: 'Resumo e análises', color: 'text-blue-600 bg-blue-50' },
             { label: 'Fluxo de Caixa', href: '/financeiro/fluxo-caixa', icon: BarChart3, desc: 'Entradas e saídas', color: 'text-cyan-600 bg-cyan-50' },
             { label: 'DRE', href: '/financeiro/dre', icon: FileSpreadsheet, desc: 'Demonstrativo de resultados', color: 'text-indigo-600 bg-indigo-50' },
+            { label: 'Aging A/R', href: '/financeiro/relatorios/aging', icon: AlertTriangle, desc: 'Inadimplência por faixa etária', color: 'text-rose-600 bg-rose-50' },
             { label: 'Conciliação', href: '/financeiro/conciliacao', icon: Receipt, desc: 'Importar OFX', color: 'text-teal-600 bg-teal-50' },
             { label: 'Boletos', href: '/financeiro/boletos', icon: Receipt, desc: 'Emitir e gerenciar', color: 'text-orange-600 bg-orange-50' },
             { label: 'CNAB Inter', href: '/financeiro/cnab', icon: FileSpreadsheet, desc: 'Remessa e retorno CNAB 400', color: 'text-amber-600 bg-amber-50' },

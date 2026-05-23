@@ -606,52 +606,58 @@ export default function DREPage() {
             </div>
           )}
 
-          {/* Monthly Table (for full year) */}
+          {/* Monthly Table — F-UX (CEO #5) fix 23/05: tabela em desktop, cards
+              empilhados em mobile (overflow-x-auto era doloroso em <md) */}
           {monthly.length > 1 && (
-            <div className="overflow-x-auto rounded-lg border bg-white shadow-sm">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
-                    <th className="px-4 py-3">Mês</th>
-                    <th className="px-4 py-3 text-right">Receita Bruta</th>
-                    <th className="px-4 py-3 text-right">Custos</th>
-                    <th className="px-4 py-3 text-right">Lucro Bruto</th>
-                    <th className="px-4 py-3 text-right">Despesas</th>
-                    <th className="px-4 py-3 text-right">Lucro Líquido</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {monthly.map(m => (
-                    <tr key={m.month} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 font-medium text-gray-900">
-                        {formatMonthLabel(m.month)}
-                      </td>
-                      <td className="px-4 py-3 text-right text-gray-700">
-                        {formatCurrency(m.receita_bruta)}
-                      </td>
-                      <td className="px-4 py-3 text-right text-red-600">
-                        {formatCurrency(-(m.receita_bruta - m.lucro_bruto))}
-                      </td>
-                      <td className={cn(
-                        'px-4 py-3 text-right font-medium',
-                        m.lucro_bruto >= 0 ? 'text-green-600' : 'text-red-600'
-                      )}>
-                        {formatCurrency(m.lucro_bruto)}
-                      </td>
-                      <td className="px-4 py-3 text-right text-red-600">
-                        {formatCurrency(-(m.lucro_bruto - m.resultado_operacional))}
-                      </td>
-                      <td className={cn(
-                        'px-4 py-3 text-right font-semibold',
-                        m.lucro_liquido >= 0 ? 'text-green-700' : 'text-red-700'
-                      )}>
-                        {formatCurrency(m.lucro_liquido)}
-                      </td>
+            <>
+              {/* Desktop: tabela */}
+              <div className="hidden md:block overflow-x-auto rounded-lg border bg-white shadow-sm">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
+                      <th className="px-4 py-3">Mês</th>
+                      <th className="px-4 py-3 text-right">Receita Bruta</th>
+                      <th className="px-4 py-3 text-right">Custos</th>
+                      <th className="px-4 py-3 text-right">Lucro Bruto</th>
+                      <th className="px-4 py-3 text-right">Despesas</th>
+                      <th className="px-4 py-3 text-right">Lucro Líquido</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y">
+                    {monthly.map(m => (
+                      <tr key={m.month} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 font-medium text-gray-900">{formatMonthLabel(m.month)}</td>
+                        <td className="px-4 py-3 text-right text-gray-700">{formatCurrency(m.receita_bruta)}</td>
+                        <td className="px-4 py-3 text-right text-red-600">{formatCurrency(-(m.receita_bruta - m.lucro_bruto))}</td>
+                        <td className={cn('px-4 py-3 text-right font-medium', m.lucro_bruto >= 0 ? 'text-green-600' : 'text-red-600')}>{formatCurrency(m.lucro_bruto)}</td>
+                        <td className="px-4 py-3 text-right text-red-600">{formatCurrency(-(m.lucro_bruto - m.resultado_operacional))}</td>
+                        <td className={cn('px-4 py-3 text-right font-semibold', m.lucro_liquido >= 0 ? 'text-green-700' : 'text-red-700')}>{formatCurrency(m.lucro_liquido)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile: cards stacked */}
+              <div className="md:hidden space-y-3">
+                {monthly.map(m => (
+                  <div key={m.month} className="rounded-lg border bg-white shadow-sm p-4">
+                    <div className="flex items-center justify-between mb-3 pb-2 border-b">
+                      <span className="font-semibold text-gray-900">{formatMonthLabel(m.month)}</span>
+                      <span className={cn('text-base font-bold', m.lucro_liquido >= 0 ? 'text-green-700' : 'text-red-700')}>
+                        {formatCurrency(m.lucro_liquido)}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div><span className="text-gray-500 block">Receita</span><span className="font-medium">{formatCurrency(m.receita_bruta)}</span></div>
+                      <div><span className="text-gray-500 block">Custos</span><span className="font-medium text-red-600">{formatCurrency(-(m.receita_bruta - m.lucro_bruto))}</span></div>
+                      <div><span className="text-gray-500 block">Lucro Bruto</span><span className={cn('font-medium', m.lucro_bruto >= 0 ? 'text-green-600' : 'text-red-600')}>{formatCurrency(m.lucro_bruto)}</span></div>
+                      <div><span className="text-gray-500 block">Despesas</span><span className="font-medium text-red-600">{formatCurrency(-(m.lucro_bruto - m.resultado_operacional))}</span></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </>
       )}

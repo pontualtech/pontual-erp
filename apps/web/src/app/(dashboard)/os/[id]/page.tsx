@@ -293,7 +293,10 @@ export default function OSDetailPage() {
       editTechnicianId !== originalValues.technicianId ||
       editPaymentMethod !== originalValues.paymentMethod ||
       editEstimatedDelivery !== originalValues.estimatedDelivery ||
-      editActualDelivery !== originalValues.actualDelivery
+      editActualDelivery !== originalValues.actualDelivery ||
+      // F-UX (Daniela #3) fix 23/05: edicao inline de item (qty/preco) tambem
+      // conta como mudanca nao-salva. Antes navegava-se silenciosamente e perdia.
+      editingItem !== null
   }
 
   function confirmLeave(): boolean {

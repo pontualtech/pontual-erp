@@ -393,33 +393,54 @@ export default function NovaOSPage() {
             </button>
           </div>
           <div>
-            <label className="block text-sm text-gray-600 mb-1">Buscar cliente</label>
-            <input
-              type="text"
-              value={searchCliente}
-              onChange={e => { setSearchCliente(e.target.value); setForm(p => ({...p, customer_id: ''})) }}
-              placeholder="Digite o nome do cliente..."
-              className="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            />
-            {clientes.length > 0 && !form.customer_id && (
-              <div className="mt-1 border rounded-md max-h-40 overflow-y-auto bg-white shadow-sm">
-                {clientes.map(c => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => { setForm(p => ({...p, customer_id: c.id})); setSearchCliente(c.legal_name) }}
-                    className="w-full text-left px-3 py-2 hover:bg-blue-50 text-sm"
-                  >
-                    <span className="font-medium">{c.legal_name}</span>
-                    {c.trade_name && <span className="text-gray-500 ml-2">({c.trade_name})</span>}
-                  </button>
-                ))}
+            <label className="block text-sm text-gray-600 mb-1">Cliente</label>
+            {/* F-UX-10 fix 23/05: quando cliente selecionado, chip read-only
+                com X explicito (Pipedrive/Linear pattern). Antes ao re-digitar
+                customer_id era zerado silenciosamente — atendente perdia selecao
+                sem perceber. */}
+            {form.customer_id && selectedCliente ? (
+              <div className="flex items-center gap-2 px-3 py-2 border-2 border-emerald-500 bg-emerald-50 rounded-md">
+                <CheckCircle className="h-4 w-4 text-emerald-600 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <span className="font-medium text-sm text-emerald-900 truncate block">{selectedCliente.legal_name}</span>
+                  {selectedCliente.trade_name && (
+                    <span className="text-xs text-emerald-700 block truncate">{selectedCliente.trade_name}</span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setForm(p => ({...p, customer_id: ''})); setSearchCliente('') }}
+                  className="text-emerald-700 hover:text-emerald-900 px-2 py-1 rounded hover:bg-emerald-100 text-xs font-medium shrink-0"
+                  title="Trocar cliente"
+                >
+                  Trocar
+                </button>
               </div>
-            )}
-            {selectedCliente && (
-              <p className="mt-1 text-sm text-green-600 flex items-center gap-1">
-                <CheckCircle className="h-3.5 w-3.5" /> {selectedCliente.legal_name}
-              </p>
+            ) : (
+              <>
+                <input
+                  type="text"
+                  value={searchCliente}
+                  onChange={e => setSearchCliente(e.target.value)}
+                  placeholder="Digite o nome do cliente..."
+                  className="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                />
+                {clientes.length > 0 && (
+                  <div className="mt-1 border rounded-md max-h-40 overflow-y-auto bg-white shadow-sm">
+                    {clientes.map(c => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => { setForm(p => ({...p, customer_id: c.id})); setSearchCliente(c.legal_name) }}
+                        className="w-full text-left px-3 py-2 hover:bg-blue-50 text-sm"
+                      >
+                        <span className="font-medium">{c.legal_name}</span>
+                        {c.trade_name && <span className="text-gray-500 ml-2">({c.trade_name})</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
             {errors.customer_id && <p className="mt-1 text-sm text-red-500">{errors.customer_id}</p>}
           </div>
