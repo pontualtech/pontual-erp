@@ -141,6 +141,30 @@ export default function ClienteDetalhePage() {
     cliente.address_zip,
   ].filter(Boolean).join(', ')
 
+  // W5 (audit 2026-05-23): Scorecard "Saúde do Cliente" — padrão Pipedrive/HubSpot.
+  // Métricas agregadas calculadas no client a partir das OS + contas já carregadas.
+  // Zero backend novo. Daniela qualifica cliente antes de atender; Karlão vê top clientes.
+  const scorecard = (() => {
+    const now = Date.now()
+    const oneYearAgo = now - 365 * 24 * 60 * 60 * 1000
+    const finalStatuses = new Set(['entregue', 'cancelada', 'cancelado', 'finalizado', 'finalizada'])
+    const isFinal = (os: OS) => finalStatuses.has((os.module_statuses?.name || '').toLowerCase())
+
+    const last12m = ordens.filter(o => new Date(o.created_at).getTime() >= oneYearAgo)
+    const totalGasto12m = last12m.reduce((acc, o) => acc + (o.total_cost || 0), 0)
+    const aprovadas = ordens.filter(o => (o.total_cost || 0) > 0)
+    const ticketMedio = aprovadas.length > 0
+      ? Math.round(aprovadas.reduce((a, o) => a + (o.total_cost || 0), 0) / aprovadas.length)
+      : 0
+    const osAbertas = ordens.filter(o => !isFinal(o)).length
+    const ultimaVisita = ordens.length > 0
+      ? ordens.reduce((mx, o) => Math.max(mx, new Date(o.created_at).getTime()), 0)
+      : 0
+    const diasUltimaVisita = ultimaVisita > 0 ? Math.floor((now - ultimaVisita) / (24 * 60 * 60 * 1000)) : null
+
+    return { totalGasto12m, ticketMedio, osAbertas, diasUltimaVisita, totalOs: ordens.length }
+  })()
+
   return (
     <div className="space-y-6">
       {/* Header with actions */}
@@ -165,6 +189,36 @@ export default function ClienteDetalhePage() {
           </button>
         </div>
       </div>
+
+      {/* W5 (audit) — Scorecard Saúde do Cliente */}
+      {scorecard.totalOs > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="rounded-lg border bg-white p-4">
+            <div className="text-[11px] uppercase font-semibold text-gray-500">Gasto últimos 12m</div>
+            <div className="text-xl font-semibold text-emerald-700 mt-1">{formatCurrency(scorecard.totalGasto12m)}</div>
+            <div className="text-[10px] text-gray-400 mt-0.5">Soma OS últimos 365 dias</div>
+          </div>
+          <div className="rounded-lg border bg-white p-4">
+            <div className="text-[11px] uppercase font-semibold text-gray-500">Ticket médio</div>
+            <div className="text-xl font-semibold text-gray-900 mt-1">{formatCurrency(scorecard.ticketMedio)}</div>
+            <div className="text-[10px] text-gray-400 mt-0.5">Média OS com valor &gt; 0</div>
+          </div>
+          <div className="rounded-lg border bg-white p-4">
+            <div className="text-[11px] uppercase font-semibold text-gray-500">OS em aberto</div>
+            <div className={`text-xl font-semibold mt-1 ${scorecard.osAbertas > 0 ? 'text-amber-600' : 'text-gray-400'}`}>
+              {scorecard.osAbertas}
+            </div>
+            <div className="text-[10px] text-gray-400 mt-0.5">Não finalizadas/canceladas</div>
+          </div>
+          <div className="rounded-lg border bg-white p-4">
+            <div className="text-[11px] uppercase font-semibold text-gray-500">Última visita</div>
+            <div className={`text-xl font-semibold mt-1 ${scorecard.diasUltimaVisita == null ? 'text-gray-400' : scorecard.diasUltimaVisita > 365 ? 'text-red-600' : scorecard.diasUltimaVisita > 180 ? 'text-amber-600' : 'text-gray-900'}`}>
+              {scorecard.diasUltimaVisita == null ? '—' : `${scorecard.diasUltimaVisita}d`}
+            </div>
+            <div className="text-[10px] text-gray-400 mt-0.5">Atrás (última OS)</div>
+          </div>
+        </div>
+      )}
 
       {/* Client data */}
       <div className="grid gap-4 sm:grid-cols-2">

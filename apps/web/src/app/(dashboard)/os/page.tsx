@@ -231,6 +231,22 @@ export default function OSListPage() {
   const [myOsFilter, setMyOsFilter] = useState(false) // "Minhas OS" toggle, default set after auth loads
   // UX-5 #2: smart filter chip ativo
   const [smartChip, setSmartChip] = useState<'today' | 'overdue_mine' | 'approved_pending' | 'no_tech' | null>(null)
+
+  // W2 (audit 2026-05-23): filtros salvos por usuário (Linear/Superhuman pattern).
+  // Persiste em localStorage o conjunto de filtros + nome. Aplicar = restaura todos
+  // os setters com 1 clique. Max 8 filtros pra evitar UI list infinita.
+  type SavedFilter = {
+    name: string
+    data: Record<string, string | string[]>
+  }
+  const [savedFilters, setSavedFilters] = useState<SavedFilter[]>(() => {
+    if (typeof window === 'undefined') return []
+    try {
+      const raw = localStorage.getItem('os_saved_filters')
+      return raw ? JSON.parse(raw) : []
+    } catch { return [] }
+  })
+  const [showSavedFilters, setShowSavedFilters] = useState(false)
   const [visibilityLoaded, setVisibilityLoaded] = useState(false)
   const [hiddenByUser, setHiddenByUser] = useState<Set<string>>(new Set())
   const [showColToggle, setShowColToggle] = useState(false)
@@ -1000,6 +1016,71 @@ export default function OSListPage() {
     setPage(1)
   }
 
+  // W2 (audit) — Salva o conjunto atual de filtros com um nome amigável
+  function saveCurrentFilters() {
+    if (savedFilters.length >= 8) {
+      toast.error('Máximo 8 filtros salvos. Apague algum antes de salvar mais.')
+      return
+    }
+    const name = window.prompt('Nome do filtro (ex: "Minha fila", "Externas pendentes"):', '')
+    if (!name || !name.trim()) return
+    const trimmed = name.trim().slice(0, 40)
+    if (savedFilters.some(f => f.name === trimmed)) {
+      if (!window.confirm(`Já existe um filtro "${trimmed}". Sobrescrever?`)) return
+    }
+    const data: SavedFilter['data'] = {}
+    if (debouncedSearch) data.q = debouncedSearch
+    if (statusFilter.length) data.statusList = statusFilter
+    if (typeFilter) data.type = typeFilter
+    if (locationFilter) data.location = locationFilter
+    if (equipFilter) data.equip = equipFilter
+    if (brandFilter) data.brand = brandFilter
+    if (modelFilter) data.model = modelFilter
+    if (dateFrom) data.from = dateFrom
+    if (dateTo) data.to = dateTo
+    if (overdueFilter) data.overdue = '1'
+    if (noTechFilter) data.no_tech = '1'
+    if (myOsFilter) data.my_os = '1'
+    if (showCancelled) data.show_cancelled = '1'
+    if (showDelivered) data.show_delivered = '1'
+    const next = [...savedFilters.filter(f => f.name !== trimmed), { name: trimmed, data }]
+    setSavedFilters(next)
+    try { localStorage.setItem('os_saved_filters', JSON.stringify(next)) } catch {}
+    toast.success(`Filtro "${trimmed}" salvo`)
+    setShowSavedFilters(false)
+  }
+
+  // W2 (audit) — Aplica um filtro salvo restaurando todos os setters
+  function applySavedFilter(f: SavedFilter) {
+    const d = f.data
+    setSearch(typeof d.q === 'string' ? d.q : '')
+    setStatusFilter(Array.isArray(d.statusList) ? d.statusList : [])
+    setTypeFilter(typeof d.type === 'string' ? d.type : '')
+    setLocationFilter(typeof d.location === 'string' ? d.location : '')
+    setEquipFilter(typeof d.equip === 'string' ? d.equip : '')
+    setBrandFilter(typeof d.brand === 'string' ? d.brand : '')
+    setModelFilter(typeof d.model === 'string' ? d.model : '')
+    setDateFrom(typeof d.from === 'string' ? d.from : '')
+    setDateTo(typeof d.to === 'string' ? d.to : '')
+    setOverdueFilter(d.overdue === '1')
+    setNoTechFilter(d.no_tech === '1')
+    setMyOsFilter(d.my_os === '1')
+    setShowCancelled(d.show_cancelled === '1')
+    setShowDelivered(d.show_delivered === '1')
+    setSmartChip(null)
+    setPage(1)
+    setShowSavedFilters(false)
+    toast.success(`Filtro "${f.name}" aplicado`)
+  }
+
+  // W2 (audit) — Apaga um filtro salvo
+  function deleteSavedFilter(name: string) {
+    if (!window.confirm(`Apagar filtro "${name}"?`)) return
+    const next = savedFilters.filter(f => f.name !== name)
+    setSavedFilters(next)
+    try { localStorage.setItem('os_saved_filters', JSON.stringify(next)) } catch {}
+  }
+
   // UX-5 #2: chips smart filter
   const smartChips = [
     { key: 'today' as const, label: 'Hoje', icon: '🗓️' },
@@ -1056,6 +1137,61 @@ export default function OSListPage() {
             <Plus className="h-4 w-4" /> Nova OS
           </Link>
         )}
+      </div>
+
+      {/* W2 (audit): filtros salvos por usuário — Linear/Superhuman pattern */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-[11px] font-semibold uppercase text-gray-400">Meus filtros:</span>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setShowSavedFilters(s => !s)}
+            className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-700 hover:border-blue-300 hover:bg-blue-50/50"
+            title="Filtros salvos por você"
+          >
+            <span aria-hidden>📁</span>
+            {savedFilters.length === 0 ? 'Nenhum salvo' : `${savedFilters.length} salvo${savedFilters.length > 1 ? 's' : ''}`}
+          </button>
+          {showSavedFilters && (
+            <div className="absolute z-20 mt-1 w-64 rounded-md border border-gray-200 bg-white shadow-lg">
+              {savedFilters.length === 0 ? (
+                <div className="px-3 py-2 text-xs text-gray-400">Nenhum filtro salvo</div>
+              ) : (
+                <ul className="max-h-64 overflow-y-auto py-1">
+                  {savedFilters.map(f => (
+                    <li key={f.name} className="flex items-center justify-between hover:bg-gray-50">
+                      <button
+                        type="button"
+                        onClick={() => applySavedFilter(f)}
+                        className="flex-1 text-left px-3 py-1.5 text-xs text-gray-800 truncate"
+                      >
+                        {f.name}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteSavedFilter(f.name)}
+                        className="px-2 py-1.5 text-gray-400 hover:text-red-600 text-xs"
+                        title={`Apagar "${f.name}"`}
+                        aria-label={`Apagar filtro ${f.name}`}
+                      >
+                        ✕
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="border-t border-gray-100 px-2 py-1.5">
+                <button
+                  type="button"
+                  onClick={saveCurrentFilters}
+                  className="w-full text-left text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded px-2 py-1"
+                >
+                  + Salvar filtros atuais...
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* UX-5 #2: Smart filter chips — combinações pré-cozidas */}
