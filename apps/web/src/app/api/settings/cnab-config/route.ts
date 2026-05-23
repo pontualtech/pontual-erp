@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
-import { getServerUser, requirePermission } from '@/lib/auth'
+import { requirePermission } from '@/lib/auth'
 
 const KEYS = ['cnab.cnpj', 'cnab.razao_social', 'cnab.agencia', 'cnab.conta', 'cnab.convenio', 'cnab.carteira', 'inter.client_id', 'inter.client_secret', 'stone.api_key', 'stone.account_id']
 const KEY_MAP: Record<string, string> = {
@@ -17,8 +17,13 @@ const KEY_MAP: Record<string, string> = {
 }
 
 export async function GET() {
-  const user = await getServerUser()
-  if (!user) return NextResponse.json({ error: 'Nao autenticado' }, { status: 401 })
+  // Wave P security fix (2026-05-23): GET expunha stone_api_key + inter_client_secret
+  // + dados bancarios pra QUALQUER user autenticado (motorista, atendente, etc).
+  // Trocado getServerUser() puro por requirePermission('config', 'edit') — apenas
+  // quem pode editar config tambem pode LER (paridade com PUT na linha 36).
+  const auth = await requirePermission('config', 'edit')
+  if (auth instanceof NextResponse) return auth
+  const user = auth
 
   const settings = await prisma.setting.findMany({
     where: { company_id: user.companyId, key: { in: KEYS } },

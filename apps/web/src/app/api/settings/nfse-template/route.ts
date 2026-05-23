@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
-import { getServerUser } from '@/lib/auth'
 import { requirePermission } from '@/lib/auth'
 
 const DEFAULT_TEMPLATE = 'Reparo em {{equipamento}} marca {{marca}} modelo {{modelo}}, numero de serie {{serie}}, conforme ordem de servico numero {{os_number}}. Garantia {{garantia}} dias.'
 const DEFAULT_GARANTIA = '90'
 
 export async function GET() {
-  const user = await getServerUser()
-  if (!user) return NextResponse.json({ error: 'Nao autenticado' }, { status: 401 })
+  // Wave P security fix (2026-05-23): paridade com PUT — config:edit pra ler.
+  // Template fiscal nao deve vazar pra motorista/tecnico.
+  const auth = await requirePermission('config', 'edit')
+  if (auth instanceof NextResponse) return auth
+  const user = auth
 
   const setting = await prisma.setting.findUnique({
     where: { company_id_key: { company_id: user.companyId, key: 'nfse_discriminacao_template' } },
