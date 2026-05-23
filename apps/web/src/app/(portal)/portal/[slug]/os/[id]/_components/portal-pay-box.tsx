@@ -264,26 +264,36 @@ export default function PortalPayBox({ osId, totalCost, alreadyPaid }: {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-3">
+          // F-UX-03 fix 23/05: 1 botao por linha em mobile (era cols-3 apertado em 375px),
+          // PIX como destacado (recomendado). sm:cols-3 mantem layout desktop.
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <button type="button" onClick={createPix} disabled={loading !== null}
-              className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-emerald-500 bg-white hover:bg-emerald-50 dark:bg-gray-800 dark:hover:bg-emerald-950/30 transition-all disabled:opacity-50 cursor-pointer">
-              {loading === 'pix' ? <Loader2 className="h-6 w-6 animate-spin text-emerald-600" /> : <Zap className="h-6 w-6 text-emerald-600" />}
-              <span className="font-bold text-sm text-emerald-700 dark:text-emerald-400">PIX</span>
-              <span className="text-[11px] text-gray-500 text-center">Confirmação instantânea</span>
+              className="flex flex-row sm:flex-col items-center gap-3 sm:gap-2 p-4 rounded-xl border-2 border-emerald-500 bg-emerald-50/50 sm:bg-white hover:bg-emerald-50 dark:bg-gray-800 dark:hover:bg-emerald-950/30 transition-all disabled:opacity-50 cursor-pointer relative min-h-[60px]">
+              <span className="hidden sm:inline absolute top-1 right-2 text-[10px] font-semibold text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded">Recomendado</span>
+              {loading === 'pix' ? <Loader2 className="h-6 w-6 animate-spin text-emerald-600 shrink-0" /> : <Zap className="h-6 w-6 text-emerald-600 shrink-0" />}
+              <div className="text-left sm:text-center flex-1 sm:flex-none">
+                <span className="block font-bold text-base sm:text-sm text-emerald-700 dark:text-emerald-400">PIX</span>
+                <span className="block text-xs sm:text-[11px] text-gray-500">Confirmação instantânea</span>
+              </div>
+              <span className="sm:hidden ml-auto text-[10px] font-semibold text-emerald-600 bg-emerald-100 px-2 py-1 rounded">Recomendado</span>
             </button>
 
             <button type="button" onClick={createBoleto} disabled={loading !== null}
-              className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-amber-500 bg-white hover:bg-amber-50 dark:bg-gray-800 dark:hover:bg-amber-950/30 transition-all disabled:opacity-50 cursor-pointer">
-              {loading === 'boleto' ? <Loader2 className="h-6 w-6 animate-spin text-amber-600" /> : <FileText className="h-6 w-6 text-amber-600" />}
-              <span className="font-bold text-sm text-amber-700 dark:text-amber-400">Boleto</span>
-              <span className="text-[11px] text-gray-500 text-center">À vista (vence hoje)</span>
+              className="flex flex-row sm:flex-col items-center gap-3 sm:gap-2 p-4 rounded-xl border-2 border-amber-500 bg-white hover:bg-amber-50 dark:bg-gray-800 dark:hover:bg-amber-950/30 transition-all disabled:opacity-50 cursor-pointer min-h-[60px]">
+              {loading === 'boleto' ? <Loader2 className="h-6 w-6 animate-spin text-amber-600 shrink-0" /> : <FileText className="h-6 w-6 text-amber-600 shrink-0" />}
+              <div className="text-left sm:text-center flex-1 sm:flex-none">
+                <span className="block font-bold text-base sm:text-sm text-amber-700 dark:text-amber-400">Boleto</span>
+                <span className="block text-xs sm:text-[11px] text-gray-500">À vista (vence hoje)</span>
+              </div>
             </button>
 
             <button type="button" onClick={createCard} disabled={loading !== null}
-              className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-indigo-500 bg-white hover:bg-indigo-50 dark:bg-gray-800 dark:hover:bg-indigo-950/30 transition-all disabled:opacity-50 cursor-pointer">
-              {loading === 'card' ? <Loader2 className="h-6 w-6 animate-spin text-indigo-600" /> : <Wallet className="h-6 w-6 text-indigo-600" />}
-              <span className="font-bold text-sm text-indigo-700 dark:text-indigo-400">Cartão</span>
-              <span className="text-[11px] text-gray-500 text-center">À vista (parcelado em breve)</span>
+              className="flex flex-row sm:flex-col items-center gap-3 sm:gap-2 p-4 rounded-xl border-2 border-indigo-500 bg-white hover:bg-indigo-50 dark:bg-gray-800 dark:hover:bg-indigo-950/30 transition-all disabled:opacity-50 cursor-pointer min-h-[60px]">
+              {loading === 'card' ? <Loader2 className="h-6 w-6 animate-spin text-indigo-600 shrink-0" /> : <Wallet className="h-6 w-6 text-indigo-600 shrink-0" />}
+              <div className="text-left sm:text-center flex-1 sm:flex-none">
+                <span className="block font-bold text-base sm:text-sm text-indigo-700 dark:text-indigo-400">Cartão</span>
+                <span className="block text-xs sm:text-[11px] text-gray-500">À vista</span>
+              </div>
             </button>
           </div>
         )}

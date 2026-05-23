@@ -197,6 +197,26 @@ export default function ContaPagarDetalhePage() {
     finally { setDeleting(false) }
   }
 
+  // F-UX-01 fix 23/05: Estornar AP ja PAGA
+  const [showEstornar, setShowEstornar] = useState(false)
+  const [estornarMotivo, setEstornarMotivo] = useState('')
+  const [estornarSaving, setEstornarSaving] = useState(false)
+  async function handleEstornar() {
+    if (!estornarMotivo.trim()) { toast.error('Informe o motivo do estorno'); return }
+    setEstornarSaving(true)
+    try {
+      const res = await fetch(`/api/financeiro/contas-pagar/${id}/estornar`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ motivo: estornarMotivo.trim() }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Erro ao estornar')
+      toast.success('Pagamento estornado. Status voltou pra PENDENTE.')
+      setShowEstornar(false); setEstornarMotivo(''); loadConta()
+    } catch (err) { toast.error(err instanceof Error ? err.message : 'Erro') }
+    finally { setEstornarSaving(false) }
+  }
+
   // ─── Render ────────────────────────────────
   if (loading) return <div className="flex items-center justify-center py-20 gap-2 text-gray-400"><Loader2 className="h-5 w-5 animate-spin" /> Carregando...</div>
   if (!conta) return <div className="py-20 text-center text-red-500">Conta nao encontrada</div>
@@ -247,6 +267,12 @@ export default function ContaPagarDetalhePage() {
           {isEditable && !editing && (
             <button type="button" onClick={() => setShowBaixa(true)} className="flex items-center gap-2 px-4 py-2.5 text-sm bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 font-medium shadow-sm transition-colors">
               <CheckCircle className="h-4 w-4" /> Pagar
+            </button>
+          )}
+          {/* F-UX-01 fix 23/05: botao Estornar quando AP PAGA */}
+          {conta.status === 'PAGO' && conta.account_id && !editing && (
+            <button type="button" title="Estornar pagamento" onClick={() => setShowEstornar(true)} className="flex items-center gap-1.5 px-3 py-2.5 text-sm border border-amber-200 dark:border-amber-800 rounded-xl text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950 transition-colors">
+              <Undo2 className="h-4 w-4" /> Estornar
             </button>
           )}
           {isAdmin && !editing && (
@@ -494,6 +520,33 @@ export default function ContaPagarDetalhePage() {
               <button type="button" onClick={handleBaixa} disabled={baixaSaving}
                 className="px-4 py-2.5 text-sm bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-2 font-medium">
                 {baixaSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Estornar (F-UX-01 fix 23/05) */}
+      {showEstornar && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowEstornar(false)}>
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-bold mb-1 flex items-center gap-2">
+              <Undo2 className="h-5 w-5 text-amber-600" /> Estornar pagamento
+            </h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              Vai reverter <strong>{fmt(conta.paid_amount || 0)}</strong> pagos. AP volta para <strong>PENDENTE</strong>, conta bancaria sera creditada de volta.
+            </p>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Motivo (obrigatorio)</label>
+            <textarea value={estornarMotivo} onChange={e => setEstornarMotivo(e.target.value)} rows={3} maxLength={500}
+              placeholder="Ex: pagamento duplicado, lancamento errado, devolucao recebida..."
+              className="w-full px-3 py-2 border rounded-xl text-sm bg-white dark:bg-gray-800 dark:border-gray-700"
+              autoFocus />
+            <div className="flex gap-3 mt-4 justify-end">
+              <button type="button" onClick={() => { setShowEstornar(false); setEstornarMotivo('') }}
+                className="px-4 py-2.5 text-sm border rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800">Cancelar</button>
+              <button type="button" onClick={handleEstornar} disabled={estornarSaving || !estornarMotivo.trim()}
+                className="px-4 py-2.5 text-sm bg-amber-600 text-white rounded-xl hover:bg-amber-700 disabled:opacity-50 flex items-center gap-2 font-medium">
+                {estornarSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Confirmar estorno
               </button>
             </div>
           </div>
