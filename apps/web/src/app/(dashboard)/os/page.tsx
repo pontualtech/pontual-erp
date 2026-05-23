@@ -25,6 +25,7 @@ interface OS {
   os_number: number
   customer_id: string | null
   status_id: string
+  technician_id: string | null
   priority: string
   os_type: string
   os_location: string | null
@@ -613,17 +614,28 @@ export default function OSListPage() {
 
   async function bulkChangeStatus(targetStatusId: string) {
     setBulkChanging(true)
+    // W1 (audit) — snapshot anterior pra undo via toast.action (padrão Gmail/Superhuman)
+    const selectedIds = Array.from(selected)
+    const undoSnapshot = osList
+      .filter(o => selectedIds.includes(o.id) && o.status_id !== targetStatusId)
+      .map(o => ({ id: o.id, from_status_id: o.status_id }))
     try {
       const res = await fetch('/api/os/bulk-transition', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: Array.from(selected), toStatusId: targetStatusId }),
+        body: JSON.stringify({ ids: selectedIds, toStatusId: targetStatusId }),
       })
       const data = await res.json()
       if (res.ok) {
         const ok = data.data?.ok ?? 0
         const fail = data.data?.fail ?? 0
-        toast.success(`${ok} OS alterada(s)${fail ? `, ${fail} erro(s)` : ''}`)
+        toast.success(`${ok} OS alterada(s)${fail ? `, ${fail} erro(s)` : ''}`, {
+          duration: 8000,
+          action: ok > 0 && undoSnapshot.length > 0 ? {
+            label: 'Desfazer',
+            onClick: () => undoBulkStatus(undoSnapshot),
+          } : undefined,
+        })
         if (fail > 0) {
           const errors = (data.data?.results ?? []).filter((r: any) => !r.success)
           errors.forEach((r: any) => toast.error(`OS-${String(r.os_number).padStart(4, '0')}: ${r.error}`))
@@ -637,17 +649,59 @@ export default function OSListPage() {
     setShowBulkStatus(false); setBulkChanging(false); setSelected(new Set()); loadOS()
   }
 
+  // W1 (audit 2026-05-23) — Desfazer bulk de status. Agrupa por status_id original
+  // e dispara N bulk-transitions paralelas pra restaurar cada grupo. Inspirado em
+  // Gmail/Superhuman: toast com action "Desfazer" + 8s de janela.
+  async function undoBulkStatus(snapshot: Array<{ id: string; from_status_id: string }>) {
+    if (snapshot.length === 0) return
+    const groups = new Map<string, string[]>()
+    for (const s of snapshot) {
+      const list = groups.get(s.from_status_id) || []
+      list.push(s.id)
+      groups.set(s.from_status_id, list)
+    }
+    try {
+      const results = await Promise.all(
+        Array.from(groups.entries()).map(([statusId, ids]) =>
+          fetch('/api/os/bulk-transition', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids, toStatusId: statusId }),
+          }).then(r => r.json()).catch(() => null)
+        )
+      )
+      const totalOk = results.reduce((acc, r) => acc + (r?.data?.ok ?? 0), 0)
+      toast.success(`↶ ${totalOk} OS restaurada(s)`)
+      loadOS()
+    } catch {
+      toast.error('Erro ao desfazer — recarregue manualmente')
+    }
+  }
+
   async function bulkAssignTechnician(technicianId: string) {
     setBulkAssigning(true)
+    // W1 (audit) — snapshot anterior do technician_id pra undo.
+    // Limita a OS que tinham técnico atribuído antes (bulk-assign exige non-null).
+    const selectedIds = Array.from(selected)
+    const undoSnapshot = osList
+      .filter(o => selectedIds.includes(o.id) && o.technician_id !== technicianId && !!o.technician_id)
+      .map(o => ({ id: o.id, from_technician_id: o.technician_id as string }))
     try {
       const res = await fetch('/api/os/bulk-assign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: Array.from(selected), technician_id: technicianId }),
+        body: JSON.stringify({ ids: selectedIds, technician_id: technicianId }),
       })
       const data = await res.json()
       if (res.ok) {
-        toast.success(`${data.data?.updated ?? 0} OS atribuída(s) para ${data.data?.technician ?? 'técnico'}`)
+        const updated = data.data?.updated ?? 0
+        toast.success(`${updated} OS atribuída(s) para ${data.data?.technician ?? 'técnico'}`, {
+          duration: 8000,
+          action: updated > 0 && undoSnapshot.length > 0 ? {
+            label: 'Desfazer',
+            onClick: () => undoBulkAssign(undoSnapshot),
+          } : undefined,
+        })
       } else {
         toast.error(data.error || 'Erro ao atribuir técnico')
       }
@@ -655,6 +709,34 @@ export default function OSListPage() {
       toast.error('Erro ao atribuir técnico em massa')
     }
     setShowBulkAssign(false); setBulkAssigning(false); setSelected(new Set()); loadOS()
+  }
+
+  // W1 (audit) — Desfazer bulk de técnico. Agrupa por technician_id original
+  // (incluindo null pra "sem atribuição") e restaura cada grupo via bulk-assign.
+  async function undoBulkAssign(snapshot: Array<{ id: string; from_technician_id: string }>) {
+    if (snapshot.length === 0) return
+    const groups = new Map<string, string[]>()
+    for (const s of snapshot) {
+      const list = groups.get(s.from_technician_id) || []
+      list.push(s.id)
+      groups.set(s.from_technician_id, list)
+    }
+    try {
+      const results = await Promise.all(
+        Array.from(groups.entries()).map(([techId, ids]) =>
+          fetch('/api/os/bulk-assign', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids, technician_id: techId }),
+          }).then(r => r.json()).catch(() => null)
+        )
+      )
+      const totalOk = results.reduce((acc, r) => acc + (r?.data?.updated ?? 0), 0)
+      toast.success(`↶ ${totalOk} OS restaurada(s)`)
+      loadOS()
+    } catch {
+      toast.error('Erro ao desfazer — recarregue manualmente')
+    }
   }
 
   // Bulk print individual OS documents using templates
