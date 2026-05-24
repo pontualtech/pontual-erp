@@ -22,10 +22,23 @@ import { MockProvider } from './adapters/mock'
  *   }
  */
 export function getPaymentProvider(): PaymentProvider {
-  const name = process.env.PAYMENT_PROVIDER || 'mock'
+  // Auditoria 24/05: fallback silencioso pra 'mock' em prod era catastrófico
+  // (cobrança "ok" mas sem cobrar de verdade). Em prod exige PAYMENT_PROVIDER
+  // setado explicitamente; mock continua disponível em dev/test.
+  const name = process.env.PAYMENT_PROVIDER
+  if (!name) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('PAYMENT_PROVIDER obrigatório em produção (set asaas|inter|mock)')
+    }
+    return new MockProvider()
+  }
   if (name === 'asaas') return new AsaasProvider()
   if (name === 'mock') return new MockProvider()
-  console.warn(`[Payment] Provider "${name}" not found, using mock`)
+  // Provider desconhecido configurado: em prod throw, em dev fallback pra mock
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(`PAYMENT_PROVIDER inválido em produção: "${name}"`)
+  }
+  console.warn(`[Payment] Provider "${name}" not found, using mock (dev only)`)
   return new MockProvider()
 }
 

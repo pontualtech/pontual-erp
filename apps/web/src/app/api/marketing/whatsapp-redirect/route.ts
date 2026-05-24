@@ -71,7 +71,15 @@ function digitsOnly(s: string): string {
 }
 
 function hashIp(ip: string): string {
-  const salt = process.env.WHATSAPP_REDIRECT_SALT || 'pt-default-salt-CHANGE-ME'
+  // Auditoria 24/05: salt fixo 'pt-default-salt-CHANGE-ME' removido (CWT
+  // fingerprint era previsível sem env). Fail-closed em prod.
+  const salt = process.env.WHATSAPP_REDIRECT_SALT
+  if (!salt) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('WHATSAPP_REDIRECT_SALT obrigatório em produção')
+    }
+    return crypto.createHash('sha256').update(`${ip}:dev-salt-local-only`).digest('hex').slice(0, 32)
+  }
   return crypto.createHash('sha256').update(`${ip}:${salt}`).digest('hex').slice(0, 32)
 }
 

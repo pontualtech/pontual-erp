@@ -16,7 +16,17 @@ import crypto from 'crypto'
  * OAuth complexo; o ganho operacional nao compensa.
  */
 
-const SECRET = process.env.ERP_TOKEN_SECRET || process.env.CRON_SECRET || 'fallback-dev-secret'
+// Auditoria 24/05: fallback-dev-secret removido. Sprint Auth NOTA 10 removeu
+// em outros endpoints; este sobreviveu. Sem env, atacante forjaria cupons.
+// Em prod fail-closed; em dev usa fallback ainda pra permitir testes locais.
+function getSecret(): string {
+  const s = process.env.ERP_TOKEN_SECRET || process.env.CRON_SECRET
+  if (s) return s
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('ERP_TOKEN_SECRET (ou CRON_SECRET) obrigatório em produção')
+  }
+  return 'fallback-dev-secret-local-only'
+}
 const DEFAULT_PERCENT = 10
 // Token expira em 90 dias — evita reutilizacao indefinida se cliente
 // re-encaminhar o link apos meses. 90d e folga confortavel pra cliente
@@ -27,7 +37,7 @@ function verifyToken(token: string): { companyId: string; customerId: string } |
   try {
     const [payloadB64, sig] = token.split('.')
     if (!payloadB64 || !sig) return null
-    const expectedSig = crypto.createHmac('sha256', SECRET).update(payloadB64).digest('base64url')
+    const expectedSig = crypto.createHmac('sha256', getSecret()).update(payloadB64).digest('base64url')
     // timingSafeEqual pra nao vazar info por tempo (defense in depth)
     const a = Buffer.from(expectedSig); const b = Buffer.from(sig)
     if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null
