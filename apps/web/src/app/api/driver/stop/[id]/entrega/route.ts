@@ -486,6 +486,19 @@ export async function POST(
                 ? `data:image/jpeg;base64,${body.payment.receipt_photo_base64}`
                 : null
 
+              // Wave AB (2026-05-24): motorista app agora vincula banco automaticamente
+              // via Setting account_default.{payment_method}. Karlão pediu: AR vinda do
+              // motorista cai numa conta bancária default da empresa (mesmo padrão do
+              // /transition do balcão). Antes ficava account_id=NULL e admin não tinha
+              // botão "Conferi no extrato" no detalhe.
+              let driverDefaultAccountId: string | null = null
+              try {
+                const defaultAccSetting = await prisma.setting.findFirst({
+                  where: { company_id: auth.companyId, key: `account_default.${paymentMethodMapped}` },
+                })
+                driverDefaultAccountId = defaultAccSetting?.value || null
+              } catch { /* silent — AR cai sem banco e admin precisa vincular manual */ }
+
               // Modo SPLIT — cliente paga em formas diferentes (ex: PIX + cartao)
               // Cada split vira 1 receivable independente, agrupados via group_id.
               // Modo UNICO (default) preserva comportamento atual: 1 AR.
@@ -504,6 +517,7 @@ export async function POST(
                     customerId: os.customer_id,
                     serviceOrderId: os.id,
                     categoryId: serviceRevenueCategoryId,
+                    accountId: driverDefaultAccountId,
                     description: arDescription,
                     dueDate,
                     totalAmount: amount,
@@ -524,6 +538,7 @@ export async function POST(
                     customer_id: os.customer_id,
                     service_order_id: os.id,
                     category_id: serviceRevenueCategoryId,
+                    account_id: driverDefaultAccountId,
                     description: arDescription,
                     total_amount: amount,
                     received_amount: isOnSite ? amount : 0,

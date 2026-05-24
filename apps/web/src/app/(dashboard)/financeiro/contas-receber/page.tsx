@@ -1593,30 +1593,32 @@ export default function ContasReceberPage() {
                     {isColVisible('status') && (
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-1.5 flex-wrap">
-                        <span className={cn('inline-block rounded-full px-2.5 py-0.5 text-xs font-medium', config.color)}>
-                          {config.label}
-                        </span>
-                        {/* 2026-05-20 + Wave U (2026-05-24): badge "Aguardando conciliação"
-                            quando AR está PAGO (balcão) ou RECEBIDO (baixa) mas reconciled=false.
-                            Antes só RECEBIDO — caso OS 60154 (PAGO via PIX foto) ficava sem badge.
-                            Karlão pediu pra ficar claro em cada linha qual precisa conferir. */}
-                        {(conta.status === 'RECEBIDO' || conta.status === 'PAGO') && conta.reconciled !== true && (
-                          <span
-                            className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200"
-                            title="Pagamento declarado mas ainda não confirmado no extrato bancário. Use o chip 'Aguardando conferência bancária' no topo para listar todos e marcar em massa após conferir."
-                          >
-                            <span aria-hidden>🏦</span>
-                            Aguardando conciliação
-                          </span>
-                        )}
-                        {/* Wave U: badge positivo "Conciliado" pra contraste visual */}
-                        {(conta.status === 'RECEBIDO' || conta.status === 'PAGO') && conta.reconciled === true && (
-                          <span
-                            className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200"
-                            title="Pagamento confirmado no extrato bancário."
-                          >
-                            <span aria-hidden>✓</span>
-                            Conciliado
+                        {/* Wave AB (2026-05-24): badge ÚNICO + auto-explicativo no lugar
+                            de "Recebido" + "Aguardando conciliação" lado a lado (confuso).
+                            - RECEBIDO/PAGO + reconciled=true → "✓ Pago e conciliado" (verde)
+                            - RECEBIDO/PAGO + reconciled=false → "Pago, falta conferir" (âmbar)
+                            - Demais status → badge original (Pendente/Vencido/Cancelado/Agrupado) */}
+                        {(conta.status === 'RECEBIDO' || conta.status === 'PAGO') ? (
+                          conta.reconciled === true ? (
+                            <span
+                              className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-800 border border-emerald-200"
+                              title="Pagamento confirmado no extrato bancário pelo admin."
+                            >
+                              <span aria-hidden>✓</span>
+                              Pago e conciliado
+                            </span>
+                          ) : (
+                            <span
+                              className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200"
+                              title="Cliente já pagou (declarado) mas admin ainda não confirmou no extrato bancário. Use o chip 'Aguardando conferência bancária' no topo para listar todos."
+                            >
+                              <span aria-hidden>🏦</span>
+                              Pago, falta conferir
+                            </span>
+                          )
+                        ) : (
+                          <span className={cn('inline-block rounded-full px-2.5 py-0.5 text-xs font-medium', config.color)}>
+                            {config.label}
                           </span>
                         )}
                         {conta.anticipated_at && (

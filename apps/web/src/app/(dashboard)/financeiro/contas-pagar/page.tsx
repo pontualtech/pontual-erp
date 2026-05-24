@@ -833,17 +833,28 @@ export default function ContasPagarPage() {
                     </td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-1.5 flex-wrap">
-                        <span className={cn('inline-block rounded-full px-2.5 py-0.5 text-xs font-medium', config.color)}>
-                          {config.label}
-                        </span>
-                        {/* 2026-05-20: badge "Aguardando conciliacao" quando AP esta PAGO mas
-                            ainda nao foi confirmado no extrato bancario (declaracao manual). */}
-                        {conta.status === 'PAGO' && conta.reconciled !== true && (
-                          <span
-                            className="inline-block rounded-full px-2.5 py-0.5 text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200"
-                            title="Pagamento declarado mas ainda nao confirmado no extrato bancario. Conciliar em /financeiro/conciliacao."
-                          >
-                            Aguardando conciliação
+                        {/* Wave AB (2026-05-24): badge ÚNICO. PAGO+reconciled=true → "Pago e conciliado"
+                            (verde). PAGO+reconciled=false → "Pago, falta conferir" (âmbar).
+                            Demais status → badge original. Mais claro que duas badges sobrepostas. */}
+                        {conta.status === 'PAGO' ? (
+                          conta.reconciled === true ? (
+                            <span
+                              className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-800 border border-emerald-200"
+                              title="Pagamento confirmado no extrato bancário pelo admin."
+                            >
+                              <span aria-hidden>✓</span> Pago e conciliado
+                            </span>
+                          ) : (
+                            <span
+                              className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200"
+                              title="Pagamento declarado mas admin ainda não confirmou no extrato bancário."
+                            >
+                              <span aria-hidden>🏦</span> Pago, falta conferir
+                            </span>
+                          )
+                        ) : (
+                          <span className={cn('inline-block rounded-full px-2.5 py-0.5 text-xs font-medium', config.color)}>
+                            {config.label}
                           </span>
                         )}
                       </div>

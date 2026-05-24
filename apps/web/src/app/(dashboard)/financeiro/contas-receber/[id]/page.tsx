@@ -63,15 +63,55 @@ function safeDate(v: any, utc = false): string {
   return d.toLocaleDateString('pt-BR', utc ? { timeZone: 'UTC' } : undefined)
 }
 
-const PAYMENT_METHODS = [
-  { value: 'PIX', label: 'PIX', icon: QrCode, color: 'text-green-600 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-950 dark:border-green-800' },
-  { value: 'Boleto', label: 'Boleto', icon: FileBarChart, color: 'text-orange-600 bg-orange-50 border-orange-200 dark:text-orange-400 dark:bg-orange-950 dark:border-orange-800' },
-  { value: 'Cartão Crédito', label: 'Cartao Credito', icon: CreditCard, color: 'text-blue-600 bg-blue-50 border-blue-200 dark:text-blue-400 dark:bg-blue-950 dark:border-blue-800' },
-  { value: 'Cartão Débito', label: 'Cartao Debito', icon: CreditCard, color: 'text-indigo-600 bg-indigo-50 border-indigo-200 dark:text-indigo-400 dark:bg-indigo-950 dark:border-indigo-800' },
-  { value: 'Dinheiro', label: 'Dinheiro', icon: Coins, color: 'text-emerald-600 bg-emerald-50 border-emerald-200 dark:text-emerald-400 dark:bg-emerald-950 dark:border-emerald-800' },
-  { value: 'Transferência', label: 'Transferencia', icon: Landmark, color: 'text-purple-600 bg-purple-50 border-purple-200 dark:text-purple-400 dark:bg-purple-950 dark:border-purple-800' },
-  { value: 'Link de Pagamento', label: 'Link Pagamento', icon: Smartphone, color: 'text-pink-600 bg-pink-50 border-pink-200 dark:text-pink-400 dark:bg-pink-950 dark:border-pink-800' },
+// Wave AA (2026-05-24): biblioteca de visuais (cor + ícone Lucide) que tenta
+// casar com o name vindo da config /financeiro/formas-pagamento. Formas
+// customizadas (não-clássicas) caem no fallback genérico (cinza + CreditCard).
+const PAYMENT_VISUALS: { match: string[]; icon: any; color: string }[] = [
+  { match: ['PIX'], icon: QrCode, color: 'text-green-600 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-950 dark:border-green-800' },
+  { match: ['Boleto'], icon: FileBarChart, color: 'text-orange-600 bg-orange-50 border-orange-200 dark:text-orange-400 dark:bg-orange-950 dark:border-orange-800' },
+  { match: ['Cartão Crédito', 'Cartao Credito', 'Cartão Credito'], icon: CreditCard, color: 'text-blue-600 bg-blue-50 border-blue-200 dark:text-blue-400 dark:bg-blue-950 dark:border-blue-800' },
+  { match: ['Cartão Débito', 'Cartao Debito', 'Cartão Debito'], icon: CreditCard, color: 'text-indigo-600 bg-indigo-50 border-indigo-200 dark:text-indigo-400 dark:bg-indigo-950 dark:border-indigo-800' },
+  { match: ['Dinheiro'], icon: Coins, color: 'text-emerald-600 bg-emerald-50 border-emerald-200 dark:text-emerald-400 dark:bg-emerald-950 dark:border-emerald-800' },
+  { match: ['Transferência', 'Transferencia'], icon: Landmark, color: 'text-purple-600 bg-purple-50 border-purple-200 dark:text-purple-400 dark:bg-purple-950 dark:border-purple-800' },
+  { match: ['Link de Pagamento', 'Link Pagamento'], icon: Smartphone, color: 'text-pink-600 bg-pink-50 border-pink-200 dark:text-pink-400 dark:bg-pink-950 dark:border-pink-800' },
 ]
+
+function getPaymentVisual(name: string | null | undefined) {
+  if (!name) return null
+  const match = PAYMENT_VISUALS.find(v => v.match.some(m => m.toLowerCase() === name.toLowerCase()))
+  return match || { icon: CreditCard, color: 'text-gray-600 bg-gray-50 border-gray-200 dark:text-gray-400 dark:bg-gray-800 dark:border-gray-700' }
+}
+
+// Wave AB (2026-05-24): payment_method normalizer. Motorista app salva
+// upper-case underscored (DEBIT_CARD, CREDIT_CARD, PIX_CODE, MONEY_CASH).
+// Balcão salva já formatado (Cartão Crédito, PIX, Dinheiro). Normaliza
+// pra exibir sempre bonitinho no detalhe + formulários.
+const PAYMENT_METHOD_DISPLAY: Record<string, string> = {
+  DEBIT_CARD: 'Cartão Débito',
+  CREDIT_CARD: 'Cartão Crédito',
+  PIX: 'PIX',
+  PIX_CODE: 'PIX',
+  MONEY: 'Dinheiro',
+  MONEY_CASH: 'Dinheiro',
+  CASH: 'Dinheiro',
+  BOLETO: 'Boleto',
+  BANK_SLIP: 'Boleto',
+  TRANSFER: 'Transferência',
+  BANK_TRANSFER: 'Transferência',
+}
+function prettyPaymentMethod(pm: string | null | undefined): string {
+  if (!pm) return '—'
+  const upper = pm.toUpperCase()
+  return PAYMENT_METHOD_DISPLAY[upper] || pm
+}
+
+// Wave AB (2026-05-24): remove o sufixo técnico "[EVENT:uuid]" que o motorista app
+// inclui na descrição da AR pra dedup (linha 409 driver/entrega route). Visualmente
+// não interessa pro usuário — só polui. Backend continua salvando, frontend só esconde.
+function cleanDescription(d: string | null | undefined): string {
+  if (!d) return ''
+  return d.replace(/\s*\[event:[^\]]+\]\s*/gi, '').trim()
+}
 
 const statusConfig: Record<string, { bg: string; text: string; dot: string; label: string }> = {
   PENDENTE: { bg: 'bg-amber-50 dark:bg-amber-950', text: 'text-amber-700 dark:text-amber-400', dot: 'bg-amber-500', label: 'Pendente' },
@@ -97,6 +137,9 @@ export default function ContaReceberDetalhePage() {
   const [loading, setLoading] = useState(true)
   const [accounts, setAccounts] = useState<BankAccount[]>([])
   const [categories, setCategories] = useState<CategoryItem[]>([])
+  // Wave AA+AB (2026-05-24): formas de pagamento vindas da config (/financeiro/formas-pagamento)
+  // substituem o array hardcoded. Inclui formas ativas + a forma atual da AR (caso desativada).
+  const [formasPgto, setFormasPgto] = useState<{ id: string; name: string; icon: string; active: boolean }[]>([])
   const [otherPending, setOtherPending] = useState<OtherPending[]>([])
   const [groupedItems, setGroupedItems] = useState<GroupedItem[]>([])
   const [installments, setInstallments] = useState<Installment[]>([])
@@ -154,6 +197,10 @@ export default function ContaReceberDetalhePage() {
     loadConta()
     fetch('/api/financeiro/categorias?limit=100').then(r => r.json())
       .then(d => setCategories(d.data ?? []))
+      .catch(() => {})
+    // Wave AA+AB: formas de pagamento da config
+    fetch('/api/financeiro/formas-pagamento').then(r => r.json())
+      .then(d => setFormasPgto((d.data ?? []).filter((f: any) => f.active)))
       .catch(() => {})
   }, [id])
 
@@ -232,6 +279,32 @@ export default function ContaReceberDetalhePage() {
   const [showEstornar, setShowEstornar] = useState(false)
   const [estornarMotivo, setEstornarMotivo] = useState('')
   const [estornarSaving, setEstornarSaving] = useState(false)
+  // Wave AB (2026-05-24): modal pra confirmar conciliação quando AR não tem banco vinculado.
+  // Admin escolhe banco no modal, sistema vincula + marca reconciled=true atomicamente.
+  const [showConferirSemBanco, setShowConferirSemBanco] = useState(false)
+  const [conferirBancoId, setConferirBancoId] = useState('')
+  const [conferirSaving, setConferirSaving] = useState(false)
+  async function handleConferirSemBanco() {
+    if (!conferirBancoId) { toast.error('Selecione o banco onde a entrada apareceu'); return }
+    setConferirSaving(true)
+    try {
+      // 1. Vincula banco via PATCH
+      const patchRes = await fetch(`/api/financeiro/contas-receber/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: conferirBancoId }),
+      })
+      if (!patchRes.ok) { const d = await patchRes.json(); throw new Error(d.error || 'Erro ao vincular banco') }
+      // 2. Marca conciliado
+      const recRes = await fetch('/api/financeiro/contas-receber/bulk-reconcile', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [id], reconciled: true }),
+      })
+      if (!recRes.ok) { const d = await recRes.json(); throw new Error(d.error || 'Erro ao marcar conciliado') }
+      toast.success('Banco vinculado + conferido no extrato')
+      setShowConferirSemBanco(false); setConferirBancoId(''); loadConta()
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Erro') }
+    finally { setConferirSaving(false) }
+  }
   async function handleEstornar() {
     if (!estornarMotivo.trim()) { toast.error('Informe o motivo do estorno'); return }
     setEstornarSaving(true)
@@ -297,7 +370,10 @@ export default function ContaReceberDetalhePage() {
   const sc = statusConfig[isOverdue ? 'VENCIDO' : conta.status] || statusConfig.PENDENTE
 
   const selectedTotal = Array.from(selectedIds).reduce((sum, sid) => sum + (otherPending.find(p => p.id === sid)?.total_amount || 0), 0) + conta.total_amount
-  const currentPM = PAYMENT_METHODS.find(p => p.value === (editing ? editForm.payment_method : conta.payment_method))
+  // Wave AB: visual da forma atual via lookup no PAYMENT_VISUALS (cor + ícone Lucide)
+  const currentPMValue = editing ? editForm.payment_method : conta.payment_method
+  const currentPMVisual = getPaymentVisual(currentPMValue)
+  const currentPMLabel = prettyPaymentMethod(currentPMValue)
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
@@ -356,12 +432,20 @@ export default function ContaReceberDetalhePage() {
           {/* Wave Z (24/05): "✓ Conferi no extrato" — só admin. Marca reconciled=true.
               Regra Karlão: PAGO declarado por atendente ≠ quitado. Admin tem que
               confrontar com extrato bancário antes de virar conciliado oficialmente.
-              Exceções automáticas: Asaas webhook, CNAB Inter (já marcam sozinhos). */}
-          {isAdmin && (conta.status === 'RECEBIDO' || conta.status === 'PAGO') && conta.reconciled !== true && conta.account_id && !editing && (
+              Exceções automáticas: Asaas webhook, CNAB Inter (já marcam sozinhos).
+              Wave AB (24/05): botão aparece MESMO sem account_id. Se sem banco,
+              abre modal que pede o banco antes de confirmar (PATCH + bulk-reconcile). */}
+          {isAdmin && (conta.status === 'RECEBIDO' || conta.status === 'PAGO') && conta.reconciled !== true && !editing && (
             <button
               type="button"
               title="Marcar como conferido no extrato bancário (apenas admin)"
               onClick={async () => {
+                // Sem banco vinculado: abre modal que pede banco antes de marcar conciliado
+                if (!conta.account_id) {
+                  setShowConferirSemBanco(true)
+                  return
+                }
+                // Com banco: confirm simples + bulk-reconcile (caminho rápido)
                 if (!window.confirm('Confirmar que esta entrada bate com o extrato bancário?\n\nA AR vai sair de "Aguardando conferência" e ficar marcada como conciliada.')) return
                 try {
                   const res = await fetch('/api/financeiro/contas-receber/bulk-reconcile', {
@@ -429,7 +513,7 @@ export default function ContaReceberDetalhePage() {
                   className="block mt-1 text-xl font-bold w-full bg-transparent border-b-2 border-blue-300 dark:border-blue-700 text-gray-900 dark:text-white focus:border-blue-500 outline-none pb-1" />
               </div>
             ) : (
-              <h1 className="text-xl font-bold text-gray-900 dark:text-white">{conta.description}</h1>
+              <h1 className="text-xl font-bold text-gray-900 dark:text-white">{cleanDescription(conta.description)}</h1>
             )}
             {conta.service_orders && (
               <Link href={`/os/${conta.service_orders.id}`} className="inline-flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400 hover:underline mt-1">
@@ -514,27 +598,28 @@ export default function ContaReceberDetalhePage() {
           </h3>
           {editing ? (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {PAYMENT_METHODS.map(pm => {
-                const Icon = pm.icon
-                const selected = editForm.payment_method === pm.value
+              {formasPgto.map(pm => {
+                const visual = getPaymentVisual(pm.name)
+                const Icon = visual?.icon || CreditCard
+                const selected = editForm.payment_method === pm.name
                 return (
-                  <button key={pm.value} type="button"
-                    onClick={() => setEditForm(f => ({ ...f, payment_method: f.payment_method === pm.value ? '' : pm.value }))}
+                  <button key={pm.id} type="button"
+                    onClick={() => setEditForm(f => ({ ...f, payment_method: f.payment_method === pm.name ? '' : pm.name }))}
                     className={cn(
                       'flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-medium transition-all',
-                      selected ? `${pm.color} ring-2 ring-offset-1 ring-current` : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-300'
+                      selected ? `${visual?.color || ''} ring-2 ring-offset-1 ring-current` : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-300'
                     )}>
-                    <Icon className="h-4 w-4" /> {pm.label}
+                    <Icon className="h-4 w-4" /> {pm.name}
                   </button>
                 )
               })}
             </div>
-          ) : currentPM ? (
-            <div className={cn('inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium', currentPM.color)}>
-              <currentPM.icon className="h-4 w-4" /> {currentPM.label}
+          ) : currentPMValue && currentPMVisual ? (
+            <div className={cn('inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium', currentPMVisual.color)}>
+              <currentPMVisual.icon className="h-4 w-4" /> {currentPMLabel}
             </div>
           ) : (
-            <p className="text-sm text-gray-400">{conta.payment_method || '—'}</p>
+            <p className="text-sm text-gray-400">{currentPMLabel}</p>
           )}
         </div>
 
@@ -843,6 +928,37 @@ export default function ContaReceberDetalhePage() {
               <button type="button" onClick={handleEstornar} disabled={estornarSaving || !estornarMotivo.trim()}
                 className="px-4 py-2.5 text-sm bg-amber-600 text-white rounded-xl hover:bg-amber-700 disabled:opacity-50 flex items-center gap-2 font-medium">
                 {estornarSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Confirmar estorno
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Wave AB (24/05): Conferir conciliação sem banco — pede banco no modal */}
+      {showConferirSemBanco && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowConferirSemBanco(false)}>
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-bold mb-1 flex items-center gap-2">
+              <CheckCircle className="h-5 w-5 text-emerald-600" /> Conferir no extrato
+            </h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              Esta AR ainda não tem banco vinculado. Selecione onde a entrada apareceu no extrato — vou vincular e marcar como conciliada em um clique.
+            </p>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Banco onde o pagamento entrou</label>
+            <select title="Banco bancário" value={conferirBancoId} onChange={e => setConferirBancoId(e.target.value)}
+              className="w-full px-3 py-2 border rounded-xl text-sm bg-white dark:bg-gray-800 dark:border-gray-700"
+              autoFocus>
+              <option value="">Selecione...</option>
+              {accounts.map(acc => (
+                <option key={acc.id} value={acc.id}>{acc.name}{acc.bank_name ? ` — ${acc.bank_name}` : ''}</option>
+              ))}
+            </select>
+            <div className="flex gap-3 mt-4 justify-end">
+              <button type="button" onClick={() => { setShowConferirSemBanco(false); setConferirBancoId('') }}
+                className="px-4 py-2.5 text-sm border rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800">Cancelar</button>
+              <button type="button" onClick={handleConferirSemBanco} disabled={conferirSaving || !conferirBancoId}
+                className="px-4 py-2.5 text-sm bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-2 font-medium">
+                {conferirSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Vincular e conferir
               </button>
             </div>
           </div>

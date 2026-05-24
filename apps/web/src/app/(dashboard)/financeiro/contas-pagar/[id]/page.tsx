@@ -12,6 +12,7 @@ import {
 import { useAuth } from '@/lib/use-auth'
 import { cn } from '@/lib/utils'
 import { MoneyInput } from '@/app/(dashboard)/components/money-input'
+import { getPaymentVisual, prettyPaymentMethod, cleanDescription } from '@/lib/payment-display'
 
 // ─── Types ───────────────────────────────────
 interface ContaPagar {
@@ -230,6 +231,12 @@ export default function ContaPagarDetalhePage() {
   const dueYMD_AP = String(conta.due_date).substring(0, 10)
   const isOverdue = conta.status === 'PENDENTE' && dueYMD_AP < todayYMD_AP
   const sc = statusConfig[isOverdue ? 'VENCIDO' : conta.status] || statusConfig.PENDENTE
+  // Wave AB (2026-05-24): visual + label da forma de pagamento via helpers shared.
+  // Normaliza DEBIT_CARD/CREDIT_CARD do motorista app pra "Cartão Débito"/"Cartão Crédito".
+  const currentPMValue = editing ? editForm.payment_method : conta.payment_method
+  const currentPMVisual = getPaymentVisual(currentPMValue)
+  const currentPMLabel = prettyPaymentMethod(currentPMValue)
+  // Fallback pra retrocompat: ainda usa PAYMENT_METHODS no select editing
   const currentPM = PAYMENT_METHODS.find(p => p.value === (editing ? editForm.payment_method : conta.payment_method))
 
   return (
@@ -294,7 +301,7 @@ export default function ContaPagarDetalhePage() {
                   className="block mt-1 text-xl font-bold w-full bg-transparent border-b-2 border-blue-300 dark:border-blue-700 text-gray-900 dark:text-white focus:border-blue-500 outline-none pb-1" />
               </div>
             ) : (
-              <h1 className="text-xl font-bold text-gray-900 dark:text-white">{conta.description}</h1>
+              <h1 className="text-xl font-bold text-gray-900 dark:text-white">{cleanDescription(conta.description)}</h1>
             )}
           </div>
           <div className="text-right">
@@ -425,12 +432,12 @@ export default function ContaPagarDetalhePage() {
                 )
               })}
             </div>
-          ) : currentPM ? (
-            <div className={cn('inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium', currentPM.color)}>
-              <currentPM.icon className="h-4 w-4" /> {currentPM.label}
+          ) : currentPMValue && currentPMVisual ? (
+            <div className={cn('inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium', currentPMVisual.color)}>
+              <currentPMVisual.icon className="h-4 w-4" /> {currentPMLabel}
             </div>
           ) : (
-            <p className="text-sm text-gray-400">{conta.payment_method || '—'}</p>
+            <p className="text-sm text-gray-400">{currentPMLabel}</p>
           )}
         </div>
 
