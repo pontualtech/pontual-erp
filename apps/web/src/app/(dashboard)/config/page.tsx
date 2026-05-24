@@ -44,6 +44,7 @@ const sections = [
       { label: 'Cobrança Automática', href: '/config/cobranca', icon: Mail, desc: 'Lembrete de pagamento por email' },
       { label: 'Email de Orçamento', href: '/config/orcamento-email', icon: FileText, desc: 'Template e condições do orçamento por email' },
       { label: 'Lembrete Orçamento', href: '/config/lembrete-orcamento', icon: Clock, desc: 'Lembrete automático para orçamentos pendentes' },
+      { label: 'Email de Atraso de Reparo', href: '/config/atraso-reparo', icon: Clock, desc: 'Template enviado quando OS aprovada estoura o prazo (peças em trânsito)' },
       { label: 'Template NFS-e', href: '/config/nfse-template', icon: Receipt, desc: 'Texto da discriminação do serviço na nota fiscal' },
     ],
   },

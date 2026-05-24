@@ -203,6 +203,43 @@ export function stripBlocksComment(html: string): string {
   return html.replace(/<!--\s*BLOCKS:[\s\S]+?-->\s*\n?/g, '')
 }
 
+/**
+ * Wave AG-3 (2026-05-24): blocks default pra atraso-reparo "peças em trânsito".
+ * Espelha o template hardcoded PECAS_EM_TRANSITO em atraso-reparo.ts.
+ * Variáveis disponíveis: primeiro_nome, empresa, os_number, equipamento_completo,
+ * nova_eta, dias_uteis_restantes, link_portal, link_suporte.
+ */
+export const DEFAULT_PECAS_EM_TRANSITO_BLOCKS: EmailBlocks = {
+  version: 1,
+  header: {
+    emoji: '🔧',
+    title: 'Atualização sobre seu reparo',
+    subtitle: '{{empresa}}',
+  },
+  greeting: 'Oi, {{primeiro_nome}}! 👋',
+  paragraphs: [
+    'Atualização sobre sua {{equipamento_completo}} (OS #{{os_number}}).',
+    'Estamos aguardando a chegada das peças do fabricante para finalizar seu reparo. As peças já foram solicitadas e estão a caminho.',
+  ],
+  highlight_box: {
+    style: 'success',
+    title: '📦 Status: Aprovado, aguardando peças',
+    text: 'Assim que chegarem, retomamos o reparo imediatamente.',
+  },
+  cta_button: {
+    text: 'ACESSAR MEU PORTAL',
+    url: '{{link_portal}}',
+    style: 'primary',
+  },
+  secondary_text: 'Você entra direto, sem precisar de senha.',
+  closing: 'No portal você vê o histórico completo da sua OS, atualizações em tempo real e pode falar diretamente com a gente.\n\nObrigado pela paciência! 🙏',
+  signature: {
+    company_name: '{{empresa}}',
+    company_subtitle: 'Assistência Técnica em Informática',
+    disclaimer: '⚙️ Esta é uma mensagem automática. Não responda diretamente este email.',
+  },
+}
+
 export const DEFAULT_QUOTE_REMINDER_BLOCKS: EmailBlocks = {
   version: 1,
   header: {

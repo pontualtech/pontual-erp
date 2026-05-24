@@ -21,6 +21,27 @@ import { sendCompanyEmail } from '@/lib/send-email'
 import { buildMagicLink } from '@/lib/portal-magic-url'
 import { addBusinessDays, businessDaysUntil, PECAS_EM_TRANSITO } from '@/lib/email-templates/atraso-reparo'
 
+/**
+ * Wave AG-3 (2026-05-24): substitui placeholders {{var}} num HTML template.
+ * Usado quando Karlao customiza o template via /config/atraso-reparo (HTML salvo
+ * em setting atraso_reparo.email_template).
+ */
+function interpolateAtrasoHtml(html: string, vars: {
+  primeiro_nome: string; empresa: string; os_number: string | number;
+  equipamento_completo: string; nova_eta: string; dias_uteis_restantes: number;
+  link_portal: string; link_suporte: string;
+}): string {
+  return html
+    .replace(/\{\{primeiro_nome\}\}/g, String(vars.primeiro_nome))
+    .replace(/\{\{empresa\}\}/g, String(vars.empresa))
+    .replace(/\{\{os_number\}\}/g, String(vars.os_number))
+    .replace(/\{\{equipamento_completo\}\}/g, String(vars.equipamento_completo))
+    .replace(/\{\{nova_eta\}\}/g, String(vars.nova_eta))
+    .replace(/\{\{dias_uteis_restantes\}\}/g, String(vars.dias_uteis_restantes))
+    .replace(/\{\{link_portal\}\}/g, String(vars.link_portal))
+    .replace(/\{\{link_suporte\}\}/g, String(vars.link_suporte))
+}
+
 // Next 14: route depende de cookies/headers/searchParams — força runtime
 export const dynamic = 'force-dynamic'
 
@@ -82,6 +103,17 @@ export async function GET(request: NextRequest) {
         })
         .map((s: { id: string; name: string }) => s.id)
       if (approvedStatusIds.length === 0) continue
+
+      // Wave AG-3: carrega template customizado (se Karlao editou via UI).
+      // Setting atraso_reparo.email_template tem o HTML completo c/ blocos embed.
+      // Se nao existir, usa o default PECAS_EM_TRANSITO hardcoded.
+      const customTemplateSetting = await prisma.setting.findFirst({
+        where: { company_id: company.id, key: 'atraso_reparo.email_template' },
+      })
+      const customTemplateHtml = customTemplateSetting?.value || null
+      const customTemplateSubject = (await prisma.setting.findFirst({
+        where: { company_id: company.id, key: 'atraso_reparo.email_subject' },
+      }))?.value || null
 
       // Karlao 2026-05-24: comparacao por DATA (nao DateTime). Prazo de hoje
       // (estimated_delivery = 2026-05-24 qualquer hora) so estoura no DIA
@@ -205,7 +237,13 @@ export async function GET(request: NextRequest) {
             link_portal: linkPortal,
             link_suporte: linkSuporte,
           }
-          const tpl = PECAS_EM_TRANSITO(vars)
+          // Wave AG-3: usa template customizado se Karlao editou via UI, senao hardcoded
+          const tpl = customTemplateHtml
+            ? {
+                subject: customTemplateSubject || `OS #${os.os_number} — Atualização sobre seu reparo`,
+                html: interpolateAtrasoHtml(customTemplateHtml, vars),
+              }
+            : PECAS_EM_TRANSITO(vars)
           await sendCompanyEmail(company.id, os.customers.email, tpl.subject, tpl.html).catch((e) => {
             console.warn(`[cron/atraso] email pecas falhou OS-${os.os_number}:`, e?.message)
           })
