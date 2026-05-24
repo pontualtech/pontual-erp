@@ -14,6 +14,7 @@ import { useAuth } from '@/lib/use-auth'
 import { MoneyInput } from '@/app/(dashboard)/components/money-input'
 import { exportToExcel, exportToCSV, exportToPDF, importFromFile } from '@/lib/export-data'
 import { cleanDescription } from '@/lib/payment-display'
+import { DateInputBR } from '@/app/(dashboard)/components/date-input-br'
 
 interface Supplier {
   id: string
@@ -677,17 +678,19 @@ export default function ContasPagarPage() {
           </div>
           <div className="min-w-[140px]">
             <label className="block text-xs font-medium text-gray-500 mb-1">De</label>
-            <input type="date" title="Data inicial"
+            <DateInputBR
+              title="Data inicial"
               value={startDate}
-              onChange={e => { setStartDate(e.target.value); setPage(1) }}
+              onChange={iso => { setStartDate(iso); setPage(1) }}
               className="w-full rounded-md border bg-white py-2 px-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
             />
           </div>
           <div className="min-w-[140px]">
             <label className="block text-xs font-medium text-gray-500 mb-1">Até</label>
-            <input type="date" title="Data final"
+            <DateInputBR
+              title="Data final"
               value={endDate}
-              onChange={e => { setEndDate(e.target.value); setPage(1) }}
+              onChange={iso => { setEndDate(iso); setPage(1) }}
               className="w-full rounded-md border bg-white py-2 px-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
             />
           </div>

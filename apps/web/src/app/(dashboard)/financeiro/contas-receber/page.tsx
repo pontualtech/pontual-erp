@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/use-auth'
 import { exportToExcel, exportToCSV, exportToPDF, importFromFile } from '@/lib/export-data'
 import { cleanDescription } from '@/lib/payment-display'
+import { DateInputBR } from '@/app/(dashboard)/components/date-input-br'
 
 interface Customer {
   id: string
@@ -1417,21 +1418,21 @@ export default function ContasReceberPage() {
               </div>
               <div className="min-w-[120px]">
                 <label htmlFor="start-date-receivable" className="block text-xs font-medium text-gray-500 mb-1">De</label>
-                <input
+                <DateInputBR
                   id="start-date-receivable"
-                  type="date"
+                  title="Data inicial"
                   value={startDate}
-                  onChange={e => { setStartDate(e.target.value); setPage(1) }}
+                  onChange={iso => { setStartDate(iso); setPage(1) }}
                   className="w-full rounded-md border bg-white py-1.5 px-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
                 />
               </div>
               <div className="min-w-[120px]">
                 <label htmlFor="end-date-receivable" className="block text-xs font-medium text-gray-500 mb-1">Ate</label>
-                <input
+                <DateInputBR
                   id="end-date-receivable"
-                  type="date"
+                  title="Data final"
                   value={endDate}
-                  onChange={e => { setEndDate(e.target.value); setPage(1) }}
+                  onChange={iso => { setEndDate(iso); setPage(1) }}
                   className="w-full rounded-md border bg-white py-1.5 px-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
                 />
               </div>
