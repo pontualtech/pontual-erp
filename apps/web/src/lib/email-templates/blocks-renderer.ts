@@ -158,6 +158,51 @@ export function renderEmailFromBlocks(blocks: EmailBlocks): string {
  * Blocks default pra lembrete-orçamento (espelha visual do template HTML atual).
  * Karlão pode editar via UI; estes valores apenas alimentam o estado inicial.
  */
+/**
+ * Wave AG-2 (2026-05-24): persistencia "self-contained" — embute os blocos
+ * JSON em comentario HTML dentro do proprio template. Vantagem: nao precisa
+ * mudar backend (1 setting only), e ao recarregar a UI consegue voltar ao
+ * editor visual com fidelidade total.
+ *
+ * Convencao: `<!-- BLOCKS:{...json...} -->` no topo da `<head>` do template.
+ */
+
+const BLOCKS_COMMENT_PREFIX = '<!-- BLOCKS:'
+const BLOCKS_COMMENT_SUFFIX = ' -->'
+
+export function embedBlocksInHtml(html: string, blocks: EmailBlocks): string {
+  // Remove qualquer comentario BLOCKS anterior antes de re-embutir
+  const cleaned = stripBlocksComment(html)
+  const comment = `${BLOCKS_COMMENT_PREFIX}${JSON.stringify(blocks)}${BLOCKS_COMMENT_SUFFIX}\n`
+  // Insere logo apos a tag <head>
+  const headOpenIdx = cleaned.indexOf('<head>')
+  if (headOpenIdx >= 0) {
+    const insertAt = headOpenIdx + '<head>'.length
+    return cleaned.slice(0, insertAt) + '\n' + comment + cleaned.slice(insertAt)
+  }
+  // Sem <head> — preprend logo apos <!DOCTYPE...>
+  const doctypeMatch = cleaned.match(/<!DOCTYPE[^>]*>/i)
+  if (doctypeMatch) {
+    return cleaned.slice(0, doctypeMatch[0].length) + '\n' + comment + cleaned.slice(doctypeMatch[0].length)
+  }
+  return comment + cleaned
+}
+
+export function extractBlocksFromHtml(html: string): EmailBlocks | null {
+  // [\s\S] em vez de . com flag /s — compatibilidade com targets ES2017-
+  const m = html.match(/<!--\s*BLOCKS:([\s\S]+?)\s*-->/)
+  if (!m) return null
+  try {
+    const parsed = JSON.parse(m[1])
+    if (parsed?.version === 1) return parsed as EmailBlocks
+  } catch { /* HTML legacy ou comentario corrompido */ }
+  return null
+}
+
+export function stripBlocksComment(html: string): string {
+  return html.replace(/<!--\s*BLOCKS:[\s\S]+?-->\s*\n?/g, '')
+}
+
 export const DEFAULT_QUOTE_REMINDER_BLOCKS: EmailBlocks = {
   version: 1,
   header: {

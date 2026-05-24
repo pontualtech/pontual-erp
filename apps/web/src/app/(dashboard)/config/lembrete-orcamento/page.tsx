@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 import Link from 'next/link'
 import { ArrowLeft, Send, Eye, Loader2, Clock, CheckCircle2, Mail } from 'lucide-react'
 import { EmailBlocksEditor } from '@/app/(dashboard)/components/email-blocks-editor'
-import { renderEmailFromBlocks, DEFAULT_QUOTE_REMINDER_BLOCKS, type EmailBlocks } from '@/lib/email-templates/blocks-renderer'
+import { renderEmailFromBlocks, embedBlocksInHtml, extractBlocksFromHtml, DEFAULT_QUOTE_REMINDER_BLOCKS, type EmailBlocks } from '@/lib/email-templates/blocks-renderer'
 
 interface QuoteReminderConfig {
   enabled: boolean
@@ -99,13 +99,17 @@ export default function LembreteOrcamentoConfigPage() {
         if (flat['quote_reminder.email_template']) {
           setTemplate(flat['quote_reminder.email_template'])
           setSavedTemplate(flat['quote_reminder.email_template'])
-        }
-        // Wave AG: carrega blocos salvos (se houver), senao mantem defaults
-        if (flat['quote_reminder.email_blocks']) {
-          try {
-            const parsed = JSON.parse(flat['quote_reminder.email_blocks'])
-            if (parsed?.version === 1) setBlocks(parsed as EmailBlocks)
-          } catch { /* setting corrompido — segue com defaults */ }
+          // Wave AG-2: tenta extrair blocos embutidos no comentario HTML do template.
+          // Compat: AG-1 salvava em setting separado (email_blocks); AG-2 embute no proprio HTML.
+          const embeddedBlocks = extractBlocksFromHtml(flat['quote_reminder.email_template'])
+          if (embeddedBlocks) setBlocks(embeddedBlocks)
+          else if (flat['quote_reminder.email_blocks']) {
+            // Fallback compat AG-1
+            try {
+              const parsed = JSON.parse(flat['quote_reminder.email_blocks'])
+              if (parsed?.version === 1) setBlocks(parsed as EmailBlocks)
+            } catch { /* setting corrompido — segue com defaults */ }
+          }
         }
       }
 
@@ -168,25 +172,25 @@ export default function LembreteOrcamentoConfigPage() {
     }
   }
 
-  // Wave AG: salva os blocos (JSON) E gera HTML automaticamente pra
-  // quote_reminder.email_template (compat c/ sender atual sem mudar nada).
+  // Wave AG-2: embute blocos no comentario HTML e salva 1 setting so.
+  // Render → embed → save. Self-contained: nao precisa de setting separado pros blocos.
   async function handleSaveBlocks() {
     setSaving(true)
     try {
       const generatedHtml = renderEmailFromBlocks(blocks)
+      const htmlWithBlocks = embedBlocksInHtml(generatedHtml, blocks)
       const res = await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           settings: [
-            { key: 'quote_reminder.email_blocks', value: JSON.stringify(blocks), type: 'string', group: 'quote_reminder' },
-            { key: 'quote_reminder.email_template', value: generatedHtml, type: 'string', group: 'quote_reminder' },
+            { key: 'quote_reminder.email_template', value: htmlWithBlocks, type: 'string', group: 'quote_reminder' },
           ],
         }),
       })
       if (!res.ok) throw new Error('Erro ao salvar editor visual')
-      setTemplate(generatedHtml)
-      setSavedTemplate(generatedHtml)
+      setTemplate(htmlWithBlocks)
+      setSavedTemplate(htmlWithBlocks)
       toast.success('Template visual salvo!')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao salvar')
