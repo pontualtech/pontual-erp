@@ -67,12 +67,25 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       where: { id: params.id, company_id: user.companyId, deleted_at: null },
     })
     if (!existing) return error('Conta a pagar nao encontrada', 404)
-    if (['PAGO', 'CANCELADO'].includes(existing.status || '')) {
-      return error('Conta nao pode ser editada neste status', 400)
-    }
 
     const body = await req.json()
     const data = updatePayableSchema.parse(body)
+
+    // Wave AB-fix2 (2026-05-24): mesma estratégia do AR. AP em PAGO/CANCELADO
+    // permite atualizar account_id e notes (admin conferindo extrato). Demais
+    // campos bloqueados — preservam invariantes financeiros.
+    const isTerminalStatus = ['PAGO', 'CANCELADO'].includes(existing.status || '')
+    if (isTerminalStatus) {
+      const allowedKeys = new Set(['account_id', 'notes'])
+      const submittedKeys = Object.keys(data)
+      const blockedKeys = submittedKeys.filter(k => !allowedKeys.has(k))
+      if (blockedKeys.length > 0) {
+        return error(
+          `Conta em status ${existing.status} — só pode atualizar banco vinculado e notas. Campos não permitidos: ${blockedKeys.join(', ')}.`,
+          400
+        )
+      }
+    }
 
     // C15 fix 22/05: valida supplier_id pertence ao tenant
     if (data.supplier_id) {
