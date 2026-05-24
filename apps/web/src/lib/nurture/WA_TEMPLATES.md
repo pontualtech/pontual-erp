@@ -4,6 +4,20 @@ Specs pra submeter ao Meta Cloud API (Business Manager → WhatsApp Manager → 
 
 Cada template precisa **aprovação manual do Meta** (~1-2h tipicamente). Submeter **agora** os 3 abaixo pra estarem aprovados quando o cron começar a precisar deles (D+1, D+7, D+45 após captura).
 
+> **Regra Meta (descoberta em 2026-05-24):** o body NÃO pode começar nem terminar com uma variável `{{N}}`. Sempre prefixar com uma saudação literal ("Oi {{1}}", "Olá {{1}}" etc). Submissão direta com `{{1}},...` retorna HTTP 400 `error_subcode=2388299`.
+
+## Status atual (2026-05-24)
+
+Os 3 templates abaixo já foram submetidos pra WABA PontualTech (`1325161376335474`) e estão em **PENDING** aguardando review Meta:
+
+| Template | Categoria | Meta ID |
+|---|---|---|
+| `nurture_d1_empathy` | UTILITY | 2370258016814412 |
+| `nurture_d7_checkin` | UTILITY | 1464414781592508 |
+| `nurture_d45_pesquisa` | MARKETING | 1133401688997352 |
+
+Verificar status via: `curl "https://graph.facebook.com/v21.0/{waba}/message_templates?access_token={token}" | jq '.data[] | select(.name | startswith("nurture_"))'`
+
 ---
 
 ## 1. `nurture_d1_empathy` (D+1 após captura — Recomendado UTILITY)
@@ -46,7 +60,7 @@ Equipe PontualTech
 
 ### Body
 ```
-{{1}}, tudo bem por aí?
+Oi {{1}}, tudo bem por aí?
 
 Faz uma semana desde nossa última conversa. Só uma checagem rápida: a impressora ainda está dando aquele sintoma ou já voltou ao normal?
 
@@ -74,7 +88,7 @@ Equipe PontualTech
 
 ### Body
 ```
-{{1}}, posso te pedir 30 segundos?
+Olá {{1}}, posso te pedir 30 segundos?
 
 Faz um mês e meio que você considerou nosso serviço e acabou não fechando. Sem cobrança nenhuma — só queria entender o que pesou na decisão pra gente melhorar.
 
