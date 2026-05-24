@@ -7,6 +7,8 @@ import { sendCompanyEmail } from '@/lib/send-email'
 import { createHmac } from 'crypto'
 import { createAccessToken } from '@/lib/portal-auth'
 import { escapeHtml } from '@/lib/escape-html'
+import { sendWhatsAppTemplateMetaOnly } from '@/lib/whatsapp/cloud-api'
+import { buildMagicLink } from '@/lib/portal-magic-url'
 
 function fmtCents(cents: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cents / 100)
@@ -352,6 +354,215 @@ export async function sendQuoteReminders(companyId: string, userId: string, spec
     } catch (err) {
       console.error(`[LembreteOrcamento] Erro ao processar OS ${os.id}:`, err)
       errors.push(`Erro interno ao processar OS-${os.os_number}`)
+    }
+  }
+
+  return { sent: sentCount, total: orders.length, errors }
+}
+
+/**
+ * Wave AE-1: settings paralelas do canal WhatsApp.
+ * Defaults: disabled, daysWaiting herda do email, interval 3, max 0 (perpétuo).
+ */
+async function getQuoteWhatsAppSettings(companyId: string) {
+  const settings = await prisma.setting.findMany({
+    where: { company_id: companyId, key: { startsWith: 'quote_reminder.' } },
+  })
+  const map: Record<string, string> = {}
+  for (const s of settings) map[s.key] = s.value
+  return {
+    enabled: map['quote_reminder.whatsapp_enabled'] === 'true',
+    daysWaiting: parseInt(map['quote_reminder.whatsapp_days_waiting'] || map['quote_reminder.days_waiting'] || '5', 10),
+    intervalDays: parseInt(map['quote_reminder.whatsapp_interval_days'] || '3', 10),
+    maxReminders: parseInt(map['quote_reminder.whatsapp_max'] || '0', 10), // 0 = perpétuo
+  }
+}
+
+/**
+ * Wave AE-1: OS aguardando aprovação elegíveis pra envio WhatsApp.
+ * Diferenças vs versão email (getOsAwaitingApproval):
+ *   - Customer.mobile (não email)
+ *   - opt-out via custom_data.disable_reminders
+ *   - contador independente via auditLog action='quote_reminder_whatsapp_sent'
+ *   - maxReminders=0 = perpétuo (skip count check)
+ */
+async function getOsAwaitingApprovalForWhatsApp(
+  companyId: string,
+  daysWaiting: number,
+  intervalDays: number,
+  maxReminders: number,
+) {
+  const approvalStatuses = await prisma.moduleStatus.findMany({
+    where: { company_id: companyId, module: 'os' },
+  })
+  const matchingStatusIds = approvalStatuses
+    .filter((s: { id: string; name: string }) => {
+      const normalized = s.name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+      return normalized.includes('aguardando aprovacao') || normalized.includes('aprovacao')
+    })
+    .map((s: { id: string; name: string }) => s.id)
+  if (matchingStatusIds.length === 0) return []
+
+  const orders = await prisma.serviceOrder.findMany({
+    where: {
+      company_id: companyId,
+      status_id: { in: matchingStatusIds },
+      deleted_at: null,
+      customers: { mobile: { not: null } },
+    },
+    include: {
+      customers: true,
+      companies: true,
+      module_statuses: true,
+      service_order_history: {
+        where: { to_status_id: { in: matchingStatusIds } },
+        orderBy: { created_at: 'desc' },
+        take: 1,
+      },
+    },
+  })
+
+  const result = []
+  for (const os of orders) {
+    const historyEntry = os.service_order_history[0]
+    if (!historyEntry?.created_at) continue
+    const daysInStatus = daysSince(historyEntry.created_at)
+    if (daysInStatus < daysWaiting) continue
+
+    // Opt-out: custom_data.disable_reminders === true silencia todos canais
+    const cd = (os.customers?.custom_data as Record<string, any> | null) || {}
+    if (cd.disable_reminders === true) continue
+
+    const reminders = await prisma.auditLog.findMany({
+      where: {
+        company_id: companyId,
+        module: 'os',
+        action: 'quote_reminder_whatsapp_sent',
+        entity_id: os.id,
+      },
+      orderBy: { created_at: 'desc' },
+    })
+
+    if (maxReminders > 0 && reminders.length >= maxReminders) continue
+    if (reminders.length > 0 && reminders[0].created_at) {
+      const daysSinceLast = daysSince(reminders[0].created_at)
+      if (daysSinceLast < intervalDays) continue
+    }
+
+    result.push({
+      ...os,
+      days_waiting: daysInStatus,
+      reminders_sent: reminders.length,
+      status_changed_at: historyEntry.created_at,
+    })
+  }
+  return result
+}
+
+/**
+ * Wave AE-1: envia lembrete via WhatsApp Cloud (Meta-only, sem fallback
+ * Evolution conforme feedback_whatsapp_so_meta_cloud).
+ * Reutiliza template Meta quote_approval_reminder_pt_br (criar via
+ * POST /api/internal/whatsapp/create-quote-reminder-template).
+ * Encurta o magic-link via /lib/short-link (mesma estratégia atraso-reparo).
+ */
+export async function sendQuoteWhatsAppReminders(
+  companyId: string,
+  userId: string,
+  specificIds?: string[],
+) {
+  const settings = await getQuoteWhatsAppSettings(companyId)
+  if (!settings.enabled) {
+    return { sent: 0, total: 0, errors: [], skipped: 'whatsapp_disabled' as const }
+  }
+
+  let orders = await getOsAwaitingApprovalForWhatsApp(
+    companyId,
+    settings.daysWaiting,
+    settings.intervalDays,
+    settings.maxReminders,
+  )
+  if (specificIds && specificIds.length > 0) {
+    orders = orders.filter(os => specificIds.includes(os.id))
+  }
+
+  let sentCount = 0
+  const errors: string[] = []
+
+  for (const os of orders) {
+    try {
+      const customer = os.customers
+      if (!customer?.mobile) continue
+      const company = os.companies
+      const primeiroNome = (customer.legal_name || 'Cliente').split(' ')[0]
+
+      // Magic link encurtado via /s/[slug] (URL completa tem 350+ chars)
+      let shortSlug = 'portal'
+      try {
+        const ml = buildMagicLink({
+          customerId: customer.id,
+          companyId,
+          slug: company.slug,
+          osId: os.id,
+        })
+        const { shortenUrl } = await import('@/lib/short-link')
+        const shortUrl = await shortenUrl(ml.url, companyId, customer.id)
+        shortSlug = shortUrl.split('/s/').pop() || 'portal'
+      } catch (e: any) {
+        console.warn(`[QuoteReminder/WA] shorten falhou OS-${os.os_number}:`, e?.message)
+        // Sem short-link válido: skip esta OS pra evitar mandar template
+        // com botão URL quebrado (Meta rejeita ou cliente clica em link 404)
+        errors.push(`Short-link falhou OS-${os.os_number}, pulando`)
+        continue
+      }
+
+      const result = await sendWhatsAppTemplateMetaOnly(
+        companyId,
+        customer.mobile,
+        'quote_approval_reminder_pt_br',
+        'pt_BR',
+        [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', text: primeiroNome },
+              { type: 'text', text: String(os.os_number) },
+              { type: 'text', text: String(os.days_waiting) },
+            ],
+          },
+          {
+            type: 'button',
+            sub_type: 'url',
+            index: '0',
+            parameters: [{ type: 'text', text: shortSlug }],
+          },
+        ],
+        'suporte',
+      )
+
+      if (result.success) {
+        sentCount++
+        logAudit({
+          companyId,
+          userId,
+          module: 'os',
+          action: 'quote_reminder_whatsapp_sent',
+          entityId: os.id,
+          newValue: {
+            to: customer.mobile,
+            customer_name: customer.legal_name,
+            os_number: os.os_number,
+            days_waiting: os.days_waiting,
+            reminders_sent: os.reminders_sent + 1,
+            meta_message_id: result.messageId,
+          },
+        })
+      } else {
+        errors.push(`Falha WhatsApp para ${customer.mobile} (OS-${os.os_number}): ${result.error}`)
+      }
+    } catch (err) {
+      console.error(`[QuoteReminder/WA] Erro OS ${os.id}:`, err)
+      errors.push(`Erro WhatsApp OS-${os.os_number}`)
     }
   }
 

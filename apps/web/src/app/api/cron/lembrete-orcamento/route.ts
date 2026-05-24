@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { timingSafeEqual } from 'crypto'
 import { prisma } from '@pontual/db'
 import { success, error, handleError } from '@/lib/api-response'
-import { sendQuoteReminders } from '@/app/api/os/lembrete-orcamento/route'
+import { sendQuoteReminders, sendQuoteWhatsAppReminders } from '@/app/api/os/lembrete-orcamento/route'
 
 // Next 14: route depende de cookies/headers/searchParams — força runtime
 export const dynamic = 'force-dynamic'
@@ -39,57 +39,60 @@ export async function GET(request: NextRequest) {
       return error('Não autorizado', 401)
     }
 
-    // Buscar empresas com lembrete de orçamento ativado
+    // Wave AE-1 (2026-05-24): restringe a PontualTech (igual atraso-reparo).
+    // Imprimitech tem fluxo próprio. Pra estender, adicionar slug aqui.
+    // Buscar empresas com lembrete (email) ativado.
     const companiesWithReminder = await prisma.setting.findMany({
       where: { key: 'quote_reminder.enabled', value: 'true' },
       select: { company_id: true },
     })
 
-    if (companiesWithReminder.length === 0) {
-      // Se nenhuma empresa tem config, tentar todas as empresas ativas
-      const allCompanies = await prisma.company.findMany({
-        where: { is_active: true },
-        select: { id: true },
-      })
+    const pontualtechCompanies = await prisma.company.findMany({
+      where: { is_active: true, slug: 'pontualtech' },
+      select: { id: true },
+    })
+    const pontualtechIds = new Set<string>(pontualtechCompanies.map((c: { id: string }) => c.id))
 
-      let totalSent = 0
-      const allErrors: string[] = []
+    // Empresas-alvo: se tem toggle email ativo OU é pontualtech (whatsapp pode estar
+    // habilitado mesmo sem email). Sempre filtrando p/ slug pontualtech.
+    const enabledIds = new Set<string>(companiesWithReminder.map((s: { company_id: string }) => s.company_id))
+    const targetCompanyIds = Array.from(new Set<string>([
+      ...Array.from(enabledIds).filter((id: string) => pontualtechIds.has(id)),
+      ...Array.from(pontualtechIds),
+    ]))
 
-      for (const company of allCompanies) {
-        try {
-          const { sent, errors } = await sendQuoteReminders(company.id, 'cron')
-          totalSent += sent
-          allErrors.push(...errors)
-        } catch (err) {
-          console.error(`[Cron/LembreteOrcamento] Erro empresa ${company.id}:`, err)
-          allErrors.push(`Erro ao processar empresa ${company.id}`)
-        }
-      }
-
-      return success({
-        companies_processed: allCompanies.length,
-        emails_sent: totalSent,
-        errors: allErrors,
-      })
-    }
-
-    let totalSent = 0
+    let totalEmailSent = 0
+    let totalWhatsAppSent = 0
     const allErrors: string[] = []
 
-    for (const { company_id } of companiesWithReminder) {
+    for (const companyId of targetCompanyIds) {
+      // Email — só roda se quote_reminder.enabled=true
+      if (enabledIds.has(companyId)) {
+        try {
+          const { sent, errors } = await sendQuoteReminders(companyId, 'cron')
+          totalEmailSent += sent
+          allErrors.push(...errors)
+        } catch (err) {
+          console.error(`[Cron/LembreteOrcamento] Erro email empresa ${companyId}:`, err)
+          allErrors.push(`Erro email empresa ${companyId}`)
+        }
+      }
+      // WhatsApp — sempre tenta; sendQuoteWhatsAppReminders verifica setting
+      // quote_reminder.whatsapp_enabled internamente e retorna skipped se off.
       try {
-        const { sent, errors } = await sendQuoteReminders(company_id, 'cron')
-        totalSent += sent
-        allErrors.push(...errors)
+        const wa = await sendQuoteWhatsAppReminders(companyId, 'cron')
+        totalWhatsAppSent += wa.sent
+        if (wa.errors) allErrors.push(...wa.errors)
       } catch (err) {
-        console.error(`[Cron/LembreteOrcamento] Erro empresa ${company_id}:`, err)
-        allErrors.push(`Erro ao processar empresa ${company_id}`)
+        console.error(`[Cron/LembreteOrcamento] Erro whatsapp empresa ${companyId}:`, err)
+        allErrors.push(`Erro whatsapp empresa ${companyId}`)
       }
     }
 
     return success({
-      companies_processed: companiesWithReminder.length,
-      emails_sent: totalSent,
+      companies_processed: targetCompanyIds.length,
+      emails_sent: totalEmailSent,
+      whatsapp_sent: totalWhatsAppSent,
       errors: allErrors,
     })
   } catch (err) {

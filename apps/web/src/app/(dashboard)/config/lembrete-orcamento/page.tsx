@@ -12,6 +12,11 @@ interface QuoteReminderConfig {
   days_waiting: number
   interval_days: number
   max_reminders: number
+  // Wave AE-1 (2026-05-24): canal WhatsApp paralelo ao email.
+  // whatsapp_max=0 significa perpétuo (sem cap). Contadores independentes.
+  whatsapp_enabled: boolean
+  whatsapp_interval_days: number
+  whatsapp_max: number
 }
 
 interface AwaitingItem {
@@ -59,6 +64,9 @@ export default function LembreteOrcamentoConfigPage() {
     days_waiting: 5,
     interval_days: 3,
     max_reminders: 3,
+    whatsapp_enabled: false,
+    whatsapp_interval_days: 3,
+    whatsapp_max: 0, // 0 = perpétuo
   })
   const [template, setTemplate] = useState('')
   const [savedTemplate, setSavedTemplate] = useState('')
@@ -94,6 +102,9 @@ export default function LembreteOrcamentoConfigPage() {
           days_waiting: parseInt(flat['quote_reminder.days_waiting'] || '5', 10),
           interval_days: parseInt(flat['quote_reminder.interval_days'] || '3', 10),
           max_reminders: parseInt(flat['quote_reminder.max_reminders'] || '3', 10),
+          whatsapp_enabled: flat['quote_reminder.whatsapp_enabled'] === 'true',
+          whatsapp_interval_days: parseInt(flat['quote_reminder.whatsapp_interval_days'] || '3', 10),
+          whatsapp_max: parseInt(flat['quote_reminder.whatsapp_max'] || '0', 10),
         })
         // Load saved template
         if (flat['quote_reminder.email_template']) {
@@ -135,6 +146,9 @@ export default function LembreteOrcamentoConfigPage() {
         { key: 'quote_reminder.days_waiting', value: String(config.days_waiting), type: 'string', group: 'quote_reminder' },
         { key: 'quote_reminder.interval_days', value: String(config.interval_days), type: 'string', group: 'quote_reminder' },
         { key: 'quote_reminder.max_reminders', value: String(config.max_reminders), type: 'string', group: 'quote_reminder' },
+        { key: 'quote_reminder.whatsapp_enabled', value: String(config.whatsapp_enabled), type: 'string', group: 'quote_reminder' },
+        { key: 'quote_reminder.whatsapp_interval_days', value: String(config.whatsapp_interval_days), type: 'string', group: 'quote_reminder' },
+        { key: 'quote_reminder.whatsapp_max', value: String(config.whatsapp_max), type: 'string', group: 'quote_reminder' },
       ]
       const res = await fetch('/api/settings', {
         method: 'PUT',
@@ -390,6 +404,78 @@ export default function LembreteOrcamentoConfigPage() {
                 onChange={e => setConfig(prev => ({ ...prev, max_reminders: parseInt(e.target.value) || 3 }))}
                 className="w-32 rounded-lg border px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
+            </div>
+
+            {/* Wave AE-1 (2026-05-24): canal WhatsApp paralelo ao email.
+                Settings independentes — cliente pode receber email + WhatsApp,
+                cada qual com próprio contador/intervalo. Opt-out via
+                Customer.custom_data.disable_reminders silencia ambos. */}
+            <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50/40 p-5">
+              <div className="mb-3 flex items-center gap-2">
+                <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-sm font-bold text-white">W</span>
+                <h3 className="text-base font-semibold text-emerald-900">WhatsApp (Wave AE-1)</h3>
+              </div>
+              <p className="mb-4 text-xs text-emerald-800">
+                Envia lembrete via WhatsApp Cloud (Meta) em paralelo ao email.
+                Template <code className="rounded bg-white px-1.5 py-0.5 text-[11px]">quote_approval_reminder_pt_br</code> precisa estar aprovado
+                na WABA. Cliente com <code className="rounded bg-white px-1.5 py-0.5 text-[11px]">custom_data.disable_reminders=true</code> fica fora.
+              </p>
+
+              <div className="space-y-4">
+                {/* Toggle */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-gray-900">Lembrete WhatsApp ativado</p>
+                    <p className="text-sm text-gray-500">Apenas PontualTech. Custo Meta ~R$0,04/msg.</p>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={config.whatsapp_enabled ? 'Desativar lembrete WhatsApp' : 'Ativar lembrete WhatsApp'}
+                    onClick={() => setConfig(prev => ({ ...prev, whatsapp_enabled: !prev.whatsapp_enabled }))}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      config.whatsapp_enabled ? 'bg-emerald-600' : 'bg-gray-200'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        config.whatsapp_enabled ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {/* Interval WhatsApp */}
+                <div>
+                  <label htmlFor="wa-interval" className="block font-medium text-gray-900">Intervalo WhatsApp (dias)</label>
+                  <p className="mb-2 text-sm text-gray-500">Mínimo de dias entre cada lembrete WhatsApp pra mesma OS</p>
+                  <input
+                    id="wa-interval"
+                    type="number"
+                    min={1}
+                    max={90}
+                    value={config.whatsapp_interval_days}
+                    onChange={e => setConfig(prev => ({ ...prev, whatsapp_interval_days: parseInt(e.target.value) || 3 }))}
+                    className="w-32 rounded-lg border px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+
+                {/* Max WhatsApp */}
+                <div>
+                  <label htmlFor="wa-max" className="block font-medium text-gray-900">Máximo de lembretes WhatsApp por OS</label>
+                  <p className="mb-2 text-sm text-gray-500">
+                    <strong>0 = perpétuo</strong> (envia enquanto OS estiver aguardando + intervalo respeitado). Setar &gt;0 pra capar.
+                  </p>
+                  <input
+                    id="wa-max"
+                    type="number"
+                    min={0}
+                    max={50}
+                    value={config.whatsapp_max}
+                    onChange={e => setConfig(prev => ({ ...prev, whatsapp_max: parseInt(e.target.value) || 0 }))}
+                    className="w-32 rounded-lg border px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
             </div>
 
             <button
