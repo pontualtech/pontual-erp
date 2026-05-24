@@ -19,29 +19,10 @@ import { prisma } from '@pontual/db'
 import { success, error, handleError } from '@/lib/api-response'
 import { sendCompanyEmail } from '@/lib/send-email'
 import { buildMagicLink } from '@/lib/portal-magic-url'
-import { buildAtrasoEmail, addBusinessDays, businessDaysUntil, type AtrasoOverride } from '@/lib/email-templates/atraso-reparo'
+import { addBusinessDays, businessDaysUntil, PECAS_EM_TRANSITO } from '@/lib/email-templates/atraso-reparo'
 
 // Next 14: route depende de cookies/headers/searchParams — força runtime
 export const dynamic = 'force-dynamic'
-
-async function loadCompanyOverrides(companyId: string): Promise<Record<string, AtrasoOverride>> {
-  const settings = await prisma.setting.findMany({
-    where: { company_id: companyId, key: { startsWith: 'notif.atraso_reparo.' } },
-    select: { key: true, value: true },
-  })
-  const out: Record<string, AtrasoOverride> = {}
-  for (const s of settings) {
-    // key formato: notif.atraso_reparo.day0.subject | .html | .wa | weekly.subject ...
-    const parts = s.key.split('.')
-    if (parts.length < 4) continue
-    const slot = parts[2]   // day0 | day1 | ... | weekly
-    const field = parts[3]  // subject | html | wa
-    if (!['subject', 'html', 'wa'].includes(field)) continue
-    if (!out[slot]) out[slot] = {}
-    ;(out[slot] as any)[field] = s.value
-  }
-  return out
-}
 
 interface DelayState {
   triggered_at: string
@@ -50,15 +31,6 @@ interface DelayState {
   weekly_count: number
   last_sent_at: string
   last_sent_kind: 'daily' | 'weekly'
-}
-
-function isSameDay(a: Date, b: Date): boolean {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
-}
-
-function daysBetween(a: Date, b: Date): number {
-  const ms = Math.abs(b.getTime() - a.getTime())
-  return Math.floor(ms / (1000 * 60 * 60 * 24))
 }
 
 export async function GET(request: NextRequest) {
@@ -85,39 +57,44 @@ export async function GET(request: NextRequest) {
     const now = new Date()
     const stats = { scanned: 0, dia0: 0, daily: 0, weekly: 0, skipped: 0, errors: 0 }
 
-    // Multi-tenant: rodar por empresa, similar ao padrao dos outros crons
-    const companies = await prisma.company.findMany({ where: { is_active: true }, select: { id: true, slug: true, name: true } })
+    // Karlao 2026-05-24: cron limitado SO a PontualTech. Imprimitech/outras
+    // empresas tem fluxo proprio (Aline/Vitoria) e templates diferentes —
+    // evita spam acidental. Pra estender pra outra empresa, adicionar slug aqui.
+    const companies = await prisma.company.findMany({
+      where: { is_active: true, slug: 'pontualtech' },
+      select: { id: true, slug: true, name: true },
+    })
 
     for (const company of companies) {
-      // Carrega overrides de templates (settings.notif.atraso_reparo.*)
-      const overrides = await loadCompanyOverrides(company.id)
-      const pickOverride = (idx: number) => {
-        if (idx >= 14) return overrides['weekly']
-        return overrides[`day${idx}`]
-      }
-
-      // Status finais (Entregue/Cancelada/etc) e tambem "Entregar Reparado" e "Pronto"
-      // pra parar de notificar quando equipamento ja foi entregue ao cliente.
-      const stopStatuses = await prisma.moduleStatus.findMany({
-        where: {
-          company_id: company.id,
-          module: 'os',
-          OR: [
-            { is_final: true },
-            { name: { contains: 'Entregar Reparado', mode: 'insensitive' } },
-            { name: { contains: 'Pronto', mode: 'insensitive' } },
-          ],
-        },
-        select: { id: true },
+      // Karlao 2026-05-24: filtro estrito por status "Aprovado".
+      // Antes filtrava TUDO exceto status final/"Pronto"/"Entregar Reparado" —
+      // mandava email pra OS em "Coletar", "Orcar", "Aguardando Aprovacao", etc.
+      // Match: normalize sem acento + lowercase + regex `^aprovad[oa]$` (Aprovado
+      // ou Aprovada). Exclui "aguardando aprovacao" e "aprovado recalculado".
+      const allStatuses = await prisma.moduleStatus.findMany({
+        where: { company_id: company.id, module: 'os' },
+        select: { id: true, name: true },
       })
-      const stopIds = stopStatuses.map(s => s.id)
+      const approvedStatusIds = allStatuses
+        .filter((s: { id: string; name: string }) => {
+          const norm = s.name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
+          return /^aprovad[oa]$/.test(norm)
+        })
+        .map((s: { id: string; name: string }) => s.id)
+      if (approvedStatusIds.length === 0) continue
+
+      // Karlao 2026-05-24: comparacao por DATA (nao DateTime). Prazo de hoje
+      // (estimated_delivery = 2026-05-24 qualquer hora) so estoura no DIA
+      // SEGUINTE (cron roda 08h, manda email na manha do dia apos estouro).
+      const todayDateStart = new Date(now)
+      todayDateStart.setHours(0, 0, 0, 0)
 
       const overdueOSs = await prisma.serviceOrder.findMany({
         where: {
           company_id: company.id,
           deleted_at: null,
-          status_id: { notIn: stopIds },
-          estimated_delivery: { lt: now },
+          status_id: { in: approvedStatusIds },
+          estimated_delivery: { lt: todayDateStart },
         },
         include: {
           customers: { select: { id: true, legal_name: true, email: true, mobile: true, phone: true } },
@@ -160,67 +137,64 @@ export async function GET(request: NextRequest) {
 
           const linkSuporte = `https://wa.me/551126263841`
 
-          // PRIMEIRA DETECCAO: dispara WhatsApp + email dia 0
+          // Karlao 2026-05-24: NOVA LOGICA — 1 email por estouro de prazo
+          // (nao mais daily 1-14 + weekly).
+          // - 1a vez (delay undefined OU prazo original ainda nao tinha new_eta):
+          //   seta new_eta = hoje + 5 dias uteis e envia email
+          // - 2a+ vez: SO envia se hoje > delay.new_eta (estouro DO NOVO prazo).
+          //   Adiciona +5 dias uteis ao new_eta e envia email.
+          //
+          // Resultado pratico: cliente recebe 1 email no estouro original,
+          // depois mais 1 email a cada 5 dias uteis enquanto OS continuar
+          // "Aprovado". Sem spam diario.
+
+          let shouldSend = false
+          let updatedDelay: DelayState
+
           if (!delay) {
+            // Primeiro estouro: prazo original estourou. Define novo prazo.
             const newEta = addBusinessDays(now, 5)
-            const newDelay: DelayState = {
+            newEta.setHours(0, 0, 0, 0)
+            updatedDelay = {
               triggered_at: now.toISOString(),
               new_eta: newEta.toISOString(),
-              daily_count: 0,
-              weekly_count: 0,
+              daily_count: 1, // contador de quantas vezes enviou
+              weekly_count: 0, // legado, nao usado mais
               last_sent_at: now.toISOString(),
               last_sent_kind: 'daily',
             }
-            const vars = {
-              primeiro_nome: primeiroNome,
-              empresa: company.name,
-              os_number: os.os_number,
-              equipamento_completo: equipamentoCompleto,
-              nova_eta: newEta.toLocaleDateString('pt-BR'),
-              dias_uteis_restantes: businessDaysUntil(newEta),
-              link_portal: linkPortal,
-              link_suporte: linkSuporte,
+            shouldSend = true
+          } else {
+            // Ja tem delay registrado. Checa se o NOVO prazo tambem estourou.
+            const currentNewEta = new Date(delay.new_eta)
+            currentNewEta.setHours(0, 0, 0, 0)
+            const todayDate = new Date(now)
+            todayDate.setHours(0, 0, 0, 0)
+
+            if (todayDate <= currentNewEta) {
+              // Novo prazo ainda nao estourou — nao manda email
+              stats.skipped++
+              continue
             }
-            const tpl = buildAtrasoEmail(0, vars, pickOverride(0))
-            await sendCompanyEmail(company.id, os.customers.email, tpl.subject, tpl.html).catch((e) => {
-              console.warn(`[cron/atraso] email dia0 falhou OS-${os.os_number}:`, e?.message)
-            })
+            // Novo prazo tambem estourou — define mais um prazo (+5 dias uteis) e envia
+            const nextEta = addBusinessDays(now, 5)
+            nextEta.setHours(0, 0, 0, 0)
+            updatedDelay = {
+              ...delay,
+              new_eta: nextEta.toISOString(),
+              daily_count: (delay.daily_count || 0) + 1,
+              last_sent_at: now.toISOString(),
+              last_sent_kind: 'daily',
+            }
+            shouldSend = true
+          }
 
-            // Audit: registra no historico da OS pra operador ver
-            await prisma.serviceOrderHistory.create({
-              data: {
-                company_id: company.id,
-                service_order_id: os.id,
-                from_status_id: os.status_id,
-                to_status_id: os.status_id,
-                changed_by: 'SYSTEM',
-                notes: `📧 [Atraso D0] Email enviado a ${os.customers.email} — nova ETA ${vars.nova_eta}`,
-              },
-            }).catch(() => {})
-
-            // 2026-05-21: WhatsApp DESATIVADO no Dia 0. Karlao confirmou que
-            // notif de relacionamento (atraso) deve sair do +55 11 2626-3841,
-            // mas esse numero ainda nao esta cadastrado como WABA Cloud Meta.
-            // Cliente recebe email com link wa.me/551126263841 e pode responder
-            // pelo canal certo. Quando WABA 2626-3841 estiver configurado:
-            // re-ativar este bloco apontando pra phone_number_id correto.
-
-            await prisma.serviceOrder.update({
-              where: { id: os.id },
-              data: { custom_data: { ...customData, delay: { ...newDelay, daily_count: 1 } } },
-            })
-            stats.dia0++
+          if (!shouldSend) {
+            stats.skipped++
             continue
           }
 
-          // JA NOTIFICADO: decidir se manda daily, weekly ou skip
-          const lastSent = new Date(delay.last_sent_at)
-          if (isSameDay(lastSent, now)) {
-            stats.skipped++ // ja mandou hoje
-            continue
-          }
-
-          const newEta = new Date(delay.new_eta)
+          const newEta = new Date(updatedDelay.new_eta)
           const vars = {
             primeiro_nome: primeiroNome,
             empresa: company.name,
@@ -231,64 +205,29 @@ export async function GET(request: NextRequest) {
             link_portal: linkPortal,
             link_suporte: linkSuporte,
           }
+          const tpl = PECAS_EM_TRANSITO(vars)
+          await sendCompanyEmail(company.id, os.customers.email, tpl.subject, tpl.html).catch((e) => {
+            console.warn(`[cron/atraso] email pecas falhou OS-${os.os_number}:`, e?.message)
+          })
 
-          // Daily ate 14, depois semanal
-          if (delay.daily_count < 14) {
-            const tpl = buildAtrasoEmail(delay.daily_count, vars, pickOverride(delay.daily_count))
-            await sendCompanyEmail(company.id, os.customers.email, tpl.subject, tpl.html).catch((e) => {
-              console.warn(`[cron/atraso] email daily${delay.daily_count} falhou OS-${os.os_number}:`, e?.message)
-            })
-            await prisma.serviceOrderHistory.create({
-              data: {
-                company_id: company.id,
-                service_order_id: os.id,
-                from_status_id: os.status_id,
-                to_status_id: os.status_id,
-                changed_by: 'SYSTEM',
-                notes: `📧 [Atraso D${delay.daily_count}] Email enviado a ${os.customers.email}`,
-              },
-            }).catch(() => {})
-            await prisma.serviceOrder.update({
-              where: { id: os.id },
-              data: {
-                custom_data: {
-                  ...customData,
-                  delay: { ...delay, daily_count: delay.daily_count + 1, last_sent_at: now.toISOString(), last_sent_kind: 'daily' },
-                },
-              },
-            })
-            stats.daily++
-          } else {
-            // Semanal: so envia se passaram 7+ dias desde ultimo
-            if (daysBetween(lastSent, now) < 7) {
-              stats.skipped++
-              continue
-            }
-            const tpl = buildAtrasoEmail(99, vars, pickOverride(99)) // >=15 forca weekly
-            await sendCompanyEmail(company.id, os.customers.email, tpl.subject, tpl.html).catch((e) => {
-              console.warn(`[cron/atraso] email weekly falhou OS-${os.os_number}:`, e?.message)
-            })
-            await prisma.serviceOrderHistory.create({
-              data: {
-                company_id: company.id,
-                service_order_id: os.id,
-                from_status_id: os.status_id,
-                to_status_id: os.status_id,
-                changed_by: 'SYSTEM',
-                notes: `📧 [Atraso Semanal #${delay.weekly_count + 1}] Email enviado a ${os.customers.email}`,
-              },
-            }).catch(() => {})
-            await prisma.serviceOrder.update({
-              where: { id: os.id },
-              data: {
-                custom_data: {
-                  ...customData,
-                  delay: { ...delay, weekly_count: delay.weekly_count + 1, last_sent_at: now.toISOString(), last_sent_kind: 'weekly' },
-                },
-              },
-            })
-            stats.weekly++
-          }
+          await prisma.serviceOrderHistory.create({
+            data: {
+              company_id: company.id,
+              service_order_id: os.id,
+              from_status_id: os.status_id,
+              to_status_id: os.status_id,
+              changed_by: 'SYSTEM',
+              notes: `📧 [Atraso #${updatedDelay.daily_count}] Email enviado a ${os.customers.email} — nova ETA ${vars.nova_eta}`,
+            },
+          }).catch(() => {})
+
+          await prisma.serviceOrder.update({
+            where: { id: os.id },
+            data: { custom_data: { ...customData, delay: updatedDelay } },
+          })
+
+          if (updatedDelay.daily_count === 1) stats.dia0++
+          else stats.daily++
         } catch (e: any) {
           stats.errors++
           console.error(`[cron/atraso] OS-${os.os_number} error:`, e?.message)

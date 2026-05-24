@@ -217,6 +217,38 @@ const DAILIES: Array<(v: AtrasoVars) => { subject: string; html: string; wa?: st
   }),
 ]
 
+/**
+ * Atraso AE-pecas (2026-05-24, Karlão):
+ * Template ÚNICO usado em cada estouro de prazo da OS no status "Aprovado".
+ * Substitui a sequência diária 0-14 + semanal — só envia quando NOVO prazo
+ * estoura, mencionando peças e portal magic link.
+ */
+export const PECAS_EM_TRANSITO = (v: AtrasoVars) => ({
+  subject: `OS #${v.os_number} — Atualização sobre seu reparo`,
+  html: htmlBase(`
+    <h2 style="margin:0 0 12px;font-size:20px">Oi, ${escape(v.primeiro_nome)}! 👋</h2>
+    <p>Atualização sobre sua <strong>${escape(v.equipamento_completo)}</strong> (OS #${v.os_number}).</p>
+    <p>Estamos aguardando a chegada das <strong>peças do fabricante</strong> para finalizar seu reparo. As peças já foram solicitadas e estão a caminho.</p>
+    <div style="background:#ecfdf5;border-left:4px solid #10b981;padding:14px 16px;border-radius:6px;margin:18px 0">
+      <div style="font-size:13px;color:#065f46;margin-bottom:4px"><strong>📦 Status:</strong> Aprovado, aguardando peças</div>
+      <div style="font-size:13px;color:#065f46">Assim que chegarem, retomamos o reparo imediatamente.</div>
+    </div>
+    <p style="margin-top:18px"><strong>🔗 Acompanhe tudo no seu portal:</strong></p>
+    <p style="text-align:center;margin:14px 0">
+      <a href="${escape(v.link_portal)}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;font-weight:700;padding:14px 28px;border-radius:8px;font-size:15px">
+        ACESSAR MEU PORTAL
+      </a>
+    </p>
+    <p style="font-size:13px;color:#6b7280;text-align:center;margin-top:0">
+      Você entra direto, sem precisar de senha.
+    </p>
+    <p style="font-size:14px;color:#374151;margin-top:18px">
+      No portal você vê o histórico completo da sua OS, atualizações em tempo real e pode falar diretamente com a gente.
+    </p>
+    <p>Obrigado pela paciência! 🙏</p>
+  `, v),
+})
+
 const WEEKLY = (v: AtrasoVars) => ({
   subject: `OS #${v.os_number} — Update semanal 📆`,
   html: htmlBase(`
