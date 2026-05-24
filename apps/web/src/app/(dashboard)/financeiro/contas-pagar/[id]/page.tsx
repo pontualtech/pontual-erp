@@ -20,6 +20,7 @@ interface ContaPagar {
   due_date: string; status: string; payment_method: string | null; notes: string | null
   category_id: string | null; cost_center_id: string | null
   account_id: string | null  // Sprint UX-24: banco vinculado
+  reconciled: boolean | null  // Wave AC (2026-05-24): paridade com AR
   created_at: string
   categories: { id: string; name: string } | null
   cost_centers: { id: string; name: string } | null
@@ -94,6 +95,31 @@ export default function ContaPagarDetalhePage() {
   // Delete
   const [showDelete, setShowDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+
+  // Wave AC (2026-05-24): paridade com AR — admin marca como conferido no extrato.
+  // Quando AP não tem banco vinculado, abre modal que pede o banco antes (igual CR Wave AB).
+  const [showConferirSemBanco, setShowConferirSemBanco] = useState(false)
+  const [conferirBancoId, setConferirBancoId] = useState('')
+  const [conferirSaving, setConferirSaving] = useState(false)
+  async function handleConferirSemBanco() {
+    if (!conferirBancoId) { toast.error('Selecione o banco onde o pagamento saiu'); return }
+    setConferirSaving(true)
+    try {
+      const patchRes = await fetch(`/api/financeiro/contas-pagar/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: conferirBancoId }),
+      })
+      if (!patchRes.ok) { const d = await patchRes.json(); throw new Error(d.error || 'Erro ao vincular banco') }
+      const recRes = await fetch('/api/financeiro/contas-pagar/bulk-reconcile', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [id], reconciled: true }),
+      })
+      if (!recRes.ok) { const d = await recRes.json(); throw new Error(d.error || 'Erro ao marcar conciliado') }
+      toast.success('Banco vinculado + conferido no extrato')
+      setShowConferirSemBanco(false); setConferirBancoId(''); loadConta()
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Erro') }
+    finally { setConferirSaving(false) }
+  }
 
   // ─── Load ──────────────────────────────────
   function loadConta() {
@@ -282,6 +308,59 @@ export default function ContaPagarDetalhePage() {
               <Undo2 className="h-4 w-4" /> Estornar
             </button>
           )}
+          {/* Wave AC (2026-05-24): paridade com AR — botão admin "Conferi no extrato"
+              quando AP PAGO + reconciled!=true. Aparece mesmo sem banco; modal pede
+              banco antes de marcar conciliado. */}
+          {isAdmin && conta.status === 'PAGO' && conta.reconciled !== true && !editing && (
+            <button
+              type="button"
+              title="Marcar como conferido no extrato bancário (apenas admin)"
+              onClick={async () => {
+                if (!conta.account_id) { setShowConferirSemBanco(true); return }
+                if (!window.confirm('Confirmar que esta saída bate com o extrato bancário?\n\nA AP vai sair de "Aguardando conferência" e ficar marcada como conciliada.')) return
+                try {
+                  const res = await fetch('/api/financeiro/contas-pagar/bulk-reconcile', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: [conta.id], reconciled: true }),
+                  })
+                  const data = await res.json()
+                  if (!res.ok) throw new Error(data.error || 'Erro')
+                  toast.success('Conferido no extrato — AP marcada como conciliada')
+                  loadConta()
+                } catch (e) {
+                  toast.error(e instanceof Error ? e.message : 'Erro ao marcar como conferido')
+                }
+              }}
+              className="flex items-center gap-1.5 px-3 py-2.5 text-sm bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 font-medium shadow-sm transition-colors"
+            >
+              <CheckCircle className="h-4 w-4" /> Conferi no extrato
+            </button>
+          )}
+          {/* Wave AC: Desfazer conciliação (toggle reconciled=false) — só admin, só se conciliada */}
+          {conta.reconciled === true && !editing && (
+            <button
+              type="button"
+              title="Desfazer conciliação — marca como 'Aguardando' novamente (não reverte pagamento)"
+              onClick={async () => {
+                if (!window.confirm('Desfazer conciliação?\n\nAP volta pra "Aguardando conferência bancária".\nNÃO reverte o pagamento — use Estornar pra reverter.')) return
+                try {
+                  const res = await fetch('/api/financeiro/contas-pagar/bulk-reconcile', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: [conta.id], reconciled: false }),
+                  })
+                  const data = await res.json()
+                  if (!res.ok) throw new Error(data.error || 'Erro')
+                  toast.success('Conciliação desfeita — AP volta a "Aguardando"')
+                  loadConta()
+                } catch (e) {
+                  toast.error(e instanceof Error ? e.message : 'Erro ao desfazer conciliação')
+                }
+              }}
+              className="flex items-center gap-1.5 px-3 py-2.5 text-sm border border-yellow-200 rounded-xl text-yellow-700 hover:bg-yellow-50 transition-colors"
+            >
+              <Undo2 className="h-4 w-4" /> Desfazer conciliação
+            </button>
+          )}
           {isAdmin && !editing && (
             <button type="button" title="Excluir" onClick={() => setShowDelete(true)} className="flex items-center px-3 py-2.5 text-sm border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 transition-colors">
               <Trash2 className="h-4 w-4" />
@@ -400,12 +479,42 @@ export default function ContaPagarDetalhePage() {
             </select>
           ) : (() => {
             const linked = accounts.find(a => a.id === conta.account_id)
-            return linked ? (
-              <p className="text-sm font-medium text-gray-900 dark:text-white">
-                {linked.bank_name ? `${linked.bank_name} — ${linked.name}` : linked.name}
-              </p>
-            ) : (
-              <p className="text-sm text-gray-400">Nenhum banco vinculado (será definido na baixa)</p>
+            if (linked) {
+              return (
+                <p className="text-sm font-medium text-gray-900 dark:text-white">
+                  {linked.bank_name ? `${linked.bank_name} — ${linked.name}` : linked.name}
+                </p>
+              )
+            }
+            // Wave AC (2026-05-24): paridade com AR — AP PAGO sem banco é bug operacional,
+            // impossível conciliar com extrato. Alerta âmbar + atalho vincular.
+            const needsBank = conta.status === 'PAGO'
+            return (
+              <div className={cn(
+                'rounded-lg p-3',
+                needsBank ? 'bg-amber-50 border border-amber-200' : 'bg-gray-50'
+              )}>
+                <p className={cn('text-sm', needsBank ? 'text-amber-900' : 'text-gray-500')}>
+                  {needsBank ? '⚠️ ' : ''}Nenhum banco vinculado
+                </p>
+                {needsBank && (
+                  <p className="text-xs text-amber-800 mt-0.5">
+                    Esta conta está paga — vincule um banco pra poder conciliar com extrato.
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={startEditing}
+                  className={cn(
+                    'mt-2 inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium',
+                    needsBank
+                      ? 'bg-amber-600 text-white hover:bg-amber-700'
+                      : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                  )}
+                >
+                  📎 Vincular banco agora
+                </button>
+              </div>
             )
           })()}
         </div>
@@ -554,6 +663,37 @@ export default function ContaPagarDetalhePage() {
               <button type="button" onClick={handleEstornar} disabled={estornarSaving || !estornarMotivo.trim()}
                 className="px-4 py-2.5 text-sm bg-amber-600 text-white rounded-xl hover:bg-amber-700 disabled:opacity-50 flex items-center gap-2 font-medium">
                 {estornarSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Confirmar estorno
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Wave AC (24/05): Conferir conciliação AP sem banco — pede banco no modal */}
+      {showConferirSemBanco && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowConferirSemBanco(false)}>
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-bold mb-1 flex items-center gap-2">
+              <CheckCircle className="h-5 w-5 text-emerald-600" /> Conferir no extrato
+            </h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              Esta AP ainda não tem banco vinculado. Selecione de onde a saída saiu no extrato — vou vincular e marcar como conciliada em um clique.
+            </p>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Banco de onde o pagamento saiu</label>
+            <select title="Banco origem" value={conferirBancoId} onChange={e => setConferirBancoId(e.target.value)}
+              className="w-full px-3 py-2 border rounded-xl text-sm bg-white dark:bg-gray-800 dark:border-gray-700"
+              autoFocus>
+              <option value="">Selecione...</option>
+              {accounts.map(acc => (
+                <option key={acc.id} value={acc.id}>{acc.name}{acc.bank_name ? ` — ${acc.bank_name}` : ''}</option>
+              ))}
+            </select>
+            <div className="flex gap-3 mt-4 justify-end">
+              <button type="button" onClick={() => { setShowConferirSemBanco(false); setConferirBancoId('') }}
+                className="px-4 py-2.5 text-sm border rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800">Cancelar</button>
+              <button type="button" onClick={handleConferirSemBanco} disabled={conferirSaving || !conferirBancoId}
+                className="px-4 py-2.5 text-sm bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-2 font-medium">
+                {conferirSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Vincular e conferir
               </button>
             </div>
           </div>
