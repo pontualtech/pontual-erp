@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import Link from 'next/link'
 import { ArrowLeft, Send, Eye, Loader2, Clock, CheckCircle2, Mail } from 'lucide-react'
+import { EmailBlocksEditor } from '@/app/(dashboard)/components/email-blocks-editor'
+import { renderEmailFromBlocks, DEFAULT_QUOTE_REMINDER_BLOCKS, type EmailBlocks } from '@/lib/email-templates/blocks-renderer'
 
 interface QuoteReminderConfig {
   enabled: boolean
@@ -61,6 +63,11 @@ export default function LembreteOrcamentoConfigPage() {
   const [template, setTemplate] = useState('')
   const [savedTemplate, setSavedTemplate] = useState('')
   const [previewHtml, setPreviewHtml] = useState('')
+  // Wave AG (2026-05-24, Karlao): editor de blocos visuais. Salva JSON em
+  // quote_reminder.email_blocks e gera HTML pro quote_reminder.email_template
+  // automaticamente. Mantem compat 100% c/ sender existente.
+  const [blocks, setBlocks] = useState<EmailBlocks>(DEFAULT_QUOTE_REMINDER_BLOCKS)
+  const [editorMode, setEditorMode] = useState<'visual' | 'html'>('visual')
   const [awaitingItems, setAwaitingItems] = useState<AwaitingItem[]>([])
   const [canSend, setCanSend] = useState(0)
   const [activeTab, setActiveTab] = useState<'config' | 'template' | 'enviar' | 'historico'>('config')
@@ -92,6 +99,13 @@ export default function LembreteOrcamentoConfigPage() {
         if (flat['quote_reminder.email_template']) {
           setTemplate(flat['quote_reminder.email_template'])
           setSavedTemplate(flat['quote_reminder.email_template'])
+        }
+        // Wave AG: carrega blocos salvos (se houver), senao mantem defaults
+        if (flat['quote_reminder.email_blocks']) {
+          try {
+            const parsed = JSON.parse(flat['quote_reminder.email_blocks'])
+            if (parsed?.version === 1) setBlocks(parsed as EmailBlocks)
+          } catch { /* setting corrompido — segue com defaults */ }
         }
       }
 
@@ -147,6 +161,33 @@ export default function LembreteOrcamentoConfigPage() {
       if (!res.ok) throw new Error('Erro ao salvar template')
       setSavedTemplate(template)
       toast.success('Template salvo!')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao salvar')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Wave AG: salva os blocos (JSON) E gera HTML automaticamente pra
+  // quote_reminder.email_template (compat c/ sender atual sem mudar nada).
+  async function handleSaveBlocks() {
+    setSaving(true)
+    try {
+      const generatedHtml = renderEmailFromBlocks(blocks)
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          settings: [
+            { key: 'quote_reminder.email_blocks', value: JSON.stringify(blocks), type: 'string', group: 'quote_reminder' },
+            { key: 'quote_reminder.email_template', value: generatedHtml, type: 'string', group: 'quote_reminder' },
+          ],
+        }),
+      })
+      if (!res.ok) throw new Error('Erro ao salvar editor visual')
+      setTemplate(generatedHtml)
+      setSavedTemplate(generatedHtml)
+      toast.success('Template visual salvo!')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao salvar')
     } finally {
@@ -361,15 +402,63 @@ export default function LembreteOrcamentoConfigPage() {
       {/* Tab: Template */}
       {activeTab === 'template' && (
         <div className="space-y-4">
+          {/* Wave AG: toggle entre Editor Visual (novo, padrao) e HTML avancado */}
+          <div className="flex gap-1 rounded-lg bg-gray-100 p-1 max-w-md">
+            <button type="button" onClick={() => setEditorMode('visual')}
+              className={`flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                editorMode === 'visual' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}>
+              🎨 Editor Visual
+            </button>
+            <button type="button" onClick={() => setEditorMode('html')}
+              className={`flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                editorMode === 'html' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}>
+              ⚙️ HTML Avançado
+            </button>
+          </div>
+
+          {editorMode === 'visual' && (
+            <div className="rounded-lg border bg-white p-6 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-gray-900">Editor Visual</h2>
+                <button type="button" onClick={handleSaveBlocks} disabled={saving}
+                  className="rounded-lg bg-blue-600 px-6 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+                  {saving ? <Loader2 className="inline h-4 w-4 animate-spin" /> : 'Salvar template visual'}
+                </button>
+              </div>
+              <EmailBlocksEditor
+                value={blocks}
+                onChange={setBlocks}
+                availableVars={AVAILABLE_VARS.map(v => ({ key: v.var.replace(/[{}]/g, ''), desc: v.desc }))}
+                sampleVars={{
+                  customer_name: 'João da Silva (exemplo)',
+                  os_number: '1234',
+                  equipment: 'Impressora HP LaserJet Pro M404',
+                  diagnosis: 'Fusor com desgaste.',
+                  total_cost: 'R$ 450,00',
+                  days_waiting: '7',
+                  approval_link: '#preview',
+                  rejection_link: '#preview',
+                  portal_os_link: '#preview',
+                  company_name: 'PontualTech',
+                  company_phone: '(11) 2626-3841',
+                  company_whatsapp: '551126263841',
+                }}
+              />
+            </div>
+          )}
+
+          {editorMode === 'html' && (
           <div className="rounded-lg border bg-white p-6 shadow-sm">
-            <h2 className="mb-4 text-lg font-semibold text-gray-900">Template de Email</h2>
+            <h2 className="mb-4 text-lg font-semibold text-gray-900">Template de Email — HTML Avançado</h2>
 
             {/* Available variables */}
             <div className="mb-4 rounded-lg bg-blue-50 p-4">
               <p className="mb-2 text-sm font-medium text-blue-800">Variáveis disponíveis:</p>
               <div className="flex flex-wrap gap-2">
                 {AVAILABLE_VARS.map(v => (
-                  <button
+                  <button type="button"
                     key={v.var}
                     onClick={() => {
                       navigator.clipboard.writeText(v.var)
@@ -385,6 +474,7 @@ export default function LembreteOrcamentoConfigPage() {
             </div>
 
             <textarea
+              title="Template HTML"
               value={template}
               onChange={e => setTemplate(e.target.value)}
               className="h-96 w-full rounded-lg border p-4 font-mono text-xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -392,14 +482,14 @@ export default function LembreteOrcamentoConfigPage() {
             />
 
             <div className="mt-4 flex gap-3">
-              <button
+              <button type="button"
                 onClick={handleSaveTemplate}
                 disabled={saving}
                 className="rounded-lg bg-blue-600 px-6 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
               >
                 {saving ? <Loader2 className="inline h-4 w-4 animate-spin" /> : 'Salvar template'}
               </button>
-              <button
+              <button type="button"
                 onClick={handlePreview}
                 disabled={previewing || !template}
                 className="flex items-center gap-2 rounded-lg border px-6 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
@@ -409,6 +499,7 @@ export default function LembreteOrcamentoConfigPage() {
               </button>
             </div>
           </div>
+          )}
 
           {/* Preview result */}
           {previewHtml && (
