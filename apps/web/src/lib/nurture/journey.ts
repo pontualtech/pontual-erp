@@ -60,6 +60,7 @@ export async function createOrUpdateJourney(input: CaptureInput): Promise<{
 
   // 1. Upsert do contato
   // Composite unique key no Prisma: nome é <field1>_<field2> (não o `map` do schema)
+  const tagToAdd = `nurture:${journeyType}`
   const contact = await prisma.marketingContact.upsert({
     where: {
       company_id_email: {
@@ -71,8 +72,9 @@ export async function createOrUpdateJourney(input: CaptureInput): Promise<{
       // Só atualiza se passou phone/name novos (não sobrescreve com null)
       ...(input.phone ? { phone: input.phone } : {}),
       ...(input.name ? { name: input.name } : {}),
-      tags: { push: `nurture:${journeyType}` },
       last_seen_at: new Date(),
+      // NÃO usar `tags: { push }` aqui — duplicaria tag a cada re-captura.
+      // Dedup feito num update separado abaixo após o upsert.
     },
     create: {
       company_id: input.company_id,
@@ -80,9 +82,18 @@ export async function createOrUpdateJourney(input: CaptureInput): Promise<{
       phone: input.phone || null,
       name: input.name || null,
       origin: 'bot_capture',
-      tags: [`nurture:${journeyType}`],
+      tags: [tagToAdd],
     },
   })
+
+  // Dedup tag: adiciona só se não tiver. Postgres array_append não dedupa,
+  // então check em JS e update condicional.
+  if (!contact.tags.includes(tagToAdd)) {
+    await prisma.marketingContact.update({
+      where: { id: contact.id },
+      data: { tags: [...contact.tags, tagToAdd] },
+    })
+  }
 
   // 2. Upsert da journey — UNIQUE(contact_id, journey_type) garante 1 ativa
   const existing = await prisma.marketingJourney.findUnique({
@@ -169,15 +180,23 @@ export function evaluateNextStep(j: JourneyWithContact): {
 /**
  * Marca step como enviado: incrementa current_step + grava last_step_at.
  * Se step recorrente, current_step também incrementa (cada iteração = +1).
+ *
+ * Anti-race: requer expectedStep — só atualiza se current_step ainda for o
+ * esperado. Se outro processo já incrementou (2 crons concorrentes), retorna
+ * false e o caller pula o envio.
  */
-export async function recordStepSent(journeyId: string): Promise<void> {
-  await prisma.marketingJourney.update({
-    where: { id: journeyId },
+export async function recordStepSent(
+  journeyId: string,
+  expectedStep: number,
+): Promise<boolean> {
+  const r = await prisma.marketingJourney.updateMany({
+    where: { id: journeyId, current_step: expectedStep, ended_at: null },
     data: {
       current_step: { increment: 1 },
       last_step_at: new Date(),
     },
   })
+  return r.count === 1
 }
 
 /**

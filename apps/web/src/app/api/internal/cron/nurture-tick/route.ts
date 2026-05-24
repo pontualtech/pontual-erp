@@ -28,6 +28,11 @@ export const dynamic = 'force-dynamic'
  *   ?dry_run=1  — não envia, só reporta o que faria
  *   ?company_id=<uuid> — limita a 1 tenant
  */
+// GET delegates to POST — cobre Coolify scheduled task que usa wget com método default (GET)
+export async function GET(req: NextRequest) {
+  return POST(req)
+}
+
 export async function POST(req: NextRequest) {
   const guard = requireInternalKey(req)
   if (guard) return guard
@@ -86,6 +91,7 @@ export async function POST(req: NextRequest) {
       if (!evalRes) continue
 
       const { step, isRecurring, recurringIteration } = evalRes
+      const expectedStep = j.current_step // snapshot pra anti-race
       const ctx = {
         company_id: j.company_id,
         email: j.contact.email,
@@ -102,8 +108,11 @@ export async function POST(req: NextRequest) {
         }
         const r = await sendEmailStep(step as any, ctx, recurringIteration)
         if (r.ok) {
-          stats.steps_sent_email++
-          await recordStepSent(j.id)
+          // Anti-race: só conta como sent se updateMany pegou. Se outro cron concorrente
+          // já avançou, retorna false e a gente DESCARTA o stat (não duplicou no DB).
+          const advanced = await recordStepSent(j.id, expectedStep)
+          if (advanced) stats.steps_sent_email++
+          else stats.details.push({ kind: 'race_lost_email', journey_id: j.id, expectedStep })
         } else {
           stats.failed++
           stats.details.push({ kind: 'failed_email', journey_id: j.id, error: r.error })
@@ -120,8 +129,9 @@ export async function POST(req: NextRequest) {
         }
         const r = await sendWaStep(step as any, ctx)
         if (r.ok) {
-          stats.steps_sent_wa++
-          await recordStepSent(j.id)
+          const advanced = await recordStepSent(j.id, expectedStep)
+          if (advanced) stats.steps_sent_wa++
+          else stats.details.push({ kind: 'race_lost_wa', journey_id: j.id, expectedStep })
         } else {
           stats.failed++
           stats.details.push({ kind: 'failed_wa', journey_id: j.id, error: r.error })

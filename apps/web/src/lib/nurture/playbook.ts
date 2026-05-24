@@ -21,8 +21,8 @@ export interface NurtureStep {
   subject?: string
   /** Categoria Meta — UTILITY (não-comercial) ou MARKETING. Default UTILITY (passa aprovação mais fácil). */
   meta_category?: 'UTILITY' | 'MARKETING'
-  /** Foco do step pra dashboard (printer | notebook | both | empathy | followup) */
-  focus: 'empathy' | 'printer' | 'notebook' | 'both' | 'survey'
+  /** Foco do step pra dashboard (printer | notebook | both | empathy | followup | survey) */
+  focus: 'empathy' | 'printer' | 'notebook' | 'both' | 'survey' | 'followup'
   /** Descrição curta humana pra UI/admin */
   label: string
 }
@@ -75,7 +75,7 @@ export const RECUSED_OS_PLAYBOOK: NurturePlaybook = {
       channel: 'wa',
       template: 'nurture_d7_checkin',
       meta_category: 'UTILITY',
-      focus: 'followup' as any,
+      focus: 'followup',
       label: 'WA check-in pós primeiro touch',
     },
     {
@@ -163,10 +163,15 @@ export function getStepToExecute(
 
   // Quantas iterações recorrentes já passaram desde day_start
   const daysIntoRecurring = daysSinceStart - r.day_start
-  const iterationsExpected = Math.floor(daysIntoRecurring / r.repeat_every_days) + 1
+  const iterationsExpectedRaw = Math.floor(daysIntoRecurring / r.repeat_every_days) + 1
 
   // currentStep além de steps.length = quantas iterações recorrentes já enviadas
   const iterationsSent = currentStep - playbook.steps.length
+
+  // Anti-catch-up flood: se o cron ficou parado por meses e voltou, NÃO disparar
+  // todas as iterações atrasadas de uma vez. Dispara só +1 por tick — recupera
+  // gradualmente. Evita inundar cliente em 1 dia.
+  const iterationsExpected = Math.min(iterationsExpectedRaw, iterationsSent + 1)
 
   if (iterationsExpected > iterationsSent) {
     return { step: r, isRecurring: true, recurringIteration: iterationsSent }

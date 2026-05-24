@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Loader2, Users, Activity, TrendingUp, Target, Mail, Smartphone, Monitor } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
+import { toast } from 'sonner'
 
 interface RecentJourney {
   id: string
@@ -72,9 +73,15 @@ export default function NurtureDashboardPage() {
 
   useEffect(() => {
     fetch('/api/marketing/nurture/stats')
-      .then(r => r.json())
-      .then(d => setData(d.data))
-      .catch(() => {})
+      .then(async r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        const json = await r.json()
+        if (json.data) setData(json.data)
+        else throw new Error(json.error || 'Resposta sem data')
+      })
+      .catch(err => {
+        toast.error('Falha ao carregar métricas: ' + (err?.message || 'erro desconhecido'))
+      })
       .finally(() => setLoading(false))
   }, [])
 

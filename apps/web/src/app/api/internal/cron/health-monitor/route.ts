@@ -15,6 +15,11 @@ import { captureHealthSnapshot, sendAlert } from '@/lib/observability'
  * Anti-flood: o helper sendAlert() respeita cooldown 1h por tipo. Detecções
  * subsequentes ficam em occurrence_count mas não disparam email.
  */
+// GET delegates to POST — cobre Coolify scheduled task que usa wget GET por padrão
+export async function GET(req: NextRequest) {
+  return POST(req)
+}
+
 export async function POST(req: NextRequest) {
   const guard = requireInternalKey(req)
   if (guard) return guard

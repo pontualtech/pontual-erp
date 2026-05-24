@@ -7,11 +7,22 @@
 
 import fs from 'fs'
 import path from 'path'
+import { prisma } from '@pontual/db'
 import { sendCompanyEmail } from '@/lib/send-email'
 import { sendWhatsAppTemplateMetaOnly } from '@/lib/whatsapp/cloud-api'
 import type { NurtureStep, NurtureRecurringStep } from './playbook'
 
-const TEMPLATES_DIR = path.join(process.cwd(), 'apps/web/src/lib/nurture/templates')
+// Path resolution robusto pra Next standalone (path.join(process.cwd(), 'apps/...')
+// não funciona porque cwd é /app dentro do container e os arquivos ficam em
+// .next/standalone/apps/web/src/lib/nurture/templates). Tenta vários candidates.
+const TEMPLATES_CANDIDATES = [
+  // Standalone bundle (Docker): __dirname já aponta pra dentro do bundle
+  path.join(__dirname, 'templates'),
+  // Dev: process.cwd() = apps/web
+  path.join(process.cwd(), 'src/lib/nurture/templates'),
+  // Dev monorepo: process.cwd() = repo root
+  path.join(process.cwd(), 'apps/web/src/lib/nurture/templates'),
+]
 
 export interface SendResult {
   ok: boolean
@@ -29,35 +40,73 @@ function firstNameFrom(name: string | null | undefined): string {
 }
 
 function readTemplate(templateName: string): string {
-  // Templates podem estar em /lib/nurture/templates ou na raiz do projeto.
-  const candidates = [
-    path.join(TEMPLATES_DIR, templateName),
-    path.join(process.cwd(), templateName),
-  ]
-  for (const p of candidates) {
+  for (const dir of TEMPLATES_CANDIDATES) {
+    const p = path.join(dir, templateName)
     if (fs.existsSync(p)) return fs.readFileSync(p, 'utf-8')
   }
-  throw new Error(`Template não encontrado: ${templateName}`)
+  throw new Error(`Template nao encontrado em nenhum candidate: ${templateName} (tried: ${TEMPLATES_CANDIDATES.join(', ')})`)
 }
 
-function personalize(html: string, opts: { firstName: string; campaign: string }): string {
+// Defaults usados quando o tenant não tem Setting nurture.* configurada.
+// Pontualtech-001 herda esses defaults — Imprimitech (e futuros) devem
+// setar os seus próprios via Setting{key=nurture.unsubscribe_url, etc}.
+const DEFAULT_UNSUBSCRIBE_URL = 'https://pontualtech.com.br/?descadastrar=1'
+const DEFAULT_WEBVIEW_URL = 'https://sosimpressora.com/dicas.html'
+const DEFAULT_WA_NUMBER = '551131360415' // PT vendas (voz + whats)
+
+interface TenantNurtureConfig {
+  unsubscribeUrl: string
+  webviewUrl: string
+  waNumber: string
+}
+
+const configCache = new Map<string, { config: TenantNurtureConfig; expires: number }>()
+const CACHE_TTL = 5 * 60 * 1000
+
+async function getTenantNurtureConfig(companyId: string): Promise<TenantNurtureConfig> {
+  const cached = configCache.get(companyId)
+  if (cached && cached.expires > Date.now()) return cached.config
+
+  const settings = await prisma.setting.findMany({
+    where: { company_id: companyId, key: { startsWith: 'nurture.' } },
+    select: { key: true, value: true },
+  })
+  const get = (k: string) => settings.find(s => s.key === k)?.value || ''
+
+  const config: TenantNurtureConfig = {
+    unsubscribeUrl: get('nurture.unsubscribe_url') || DEFAULT_UNSUBSCRIBE_URL,
+    webviewUrl: get('nurture.webview_url') || DEFAULT_WEBVIEW_URL,
+    waNumber: get('nurture.wa_number') || DEFAULT_WA_NUMBER,
+  }
+  configCache.set(companyId, { config, expires: Date.now() + CACHE_TTL })
+  return config
+}
+
+async function personalize(
+  html: string,
+  opts: { firstName: string; campaign: string; companyId: string }
+): Promise<string> {
+  const tenant = await getTenantNurtureConfig(opts.companyId)
   const utm = `utm_source=email&utm_medium=nurture&utm_campaign=${opts.campaign}`
   const greeting = opts.firstName || 'Olá'
   const greetingAmigo = opts.firstName || 'amigo'
+  const webviewSep = tenant.webviewUrl.includes('?') ? '&' : '?'
 
   let out = html
     .replaceAll('{contactfield=firstname|Olá}', greeting)
     .replaceAll('{contactfield=firstname|amigo}', greetingAmigo)
-    .replaceAll('{unsubscribe_url}', 'https://pontualtech.com.br/?descadastrar=1')
-    .replaceAll('{webview_url}', `https://sosimpressora.com/dicas.html?${utm}`)
+    .replaceAll('{unsubscribe_url}', tenant.unsubscribeUrl)
+    .replaceAll('{webview_url}', `${tenant.webviewUrl}${webviewSep}${utm}`)
 
-  // WhatsApp link com identificador de origem (nurture)
-  const waText = `Oi, vim do email da PontualTech: ${opts.campaign}`
-  const waUrl = `https://wa.me/5511965760126?text=${encodeURIComponent(waText)}`
+  // WhatsApp link com identificador de origem (nurture) + número do tenant
+  const waText = `Oi, vim do email: ${opts.campaign}`
+  const waUrl = `https://wa.me/${tenant.waNumber}?text=${encodeURIComponent(waText)}`
   out = out.replace(/href="https:\/\/wa\.me\/[^"]+"/g, `href="${waUrl}"`)
 
   return out
 }
+
+// Adiciona Prisma import — necessário pro getTenantNurtureConfig query Settings.
 
 interface SendContext {
   company_id: string
@@ -87,9 +136,10 @@ export async function sendEmailStep(
   try {
     const html = readTemplate(templateFile)
     const campaign = `nurture_${'template' in step ? 'd' + step.day : 'recurring'}_j${ctx.journey_id.slice(0, 8)}`
-    const personalized = personalize(html, {
+    const personalized = await personalize(html, {
       firstName: firstNameFrom(ctx.name),
       campaign,
+      companyId: ctx.company_id,
     })
 
     const ok = await sendCompanyEmail(

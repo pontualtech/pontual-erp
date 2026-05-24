@@ -5,6 +5,11 @@ const nextConfig = {
   experimental: {
     instrumentationHook: true,
     serverComponentsExternalPackages: ['@prisma/client', 'xml-crypto', 'node-forge', 'xml2js', '@xmldom/xmldom', '@xmldom/is-dom-node', 'xpath'],
+    // Includes pra Next standalone copiar arquivos não-importados:
+    // - nurture/templates/*.html lido em runtime pelo sender (lib/nurture/sender.ts)
+    outputFileTracingIncludes: {
+      '/api/internal/cron/nurture-tick': ['./src/lib/nurture/templates/**'],
+    },
   },
   async headers() {
     return [{
