@@ -223,7 +223,7 @@ export async function GET(request: NextRequest) {
 
           await prisma.serviceOrder.update({
             where: { id: os.id },
-            data: { custom_data: { ...customData, delay: updatedDelay } },
+            data: { custom_data: { ...customData, delay: updatedDelay } as any },
           })
 
           if (updatedDelay.daily_count === 1) stats.dia0++
