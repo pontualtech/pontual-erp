@@ -1289,12 +1289,12 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
             ? { ...(existing.data as Record<string, any>) }
             : {}
         if (!existingData.attribution) {
+          // Audit 2026-05-24 fix #5: filtra strict por company_id (sem OR null fallback).
+          // Endpoint /whatsapp-redirect agora resolve company_id via Origin header.
+          // Sem isso, redirect de site PT podia ser atribuído a msg do inbox IMP (cross-tenant leak).
           const redirect = await prisma.marketingWhatsappRedirect.findFirst({
             where: {
-              OR: [
-                { company_id: cfg.companyId },
-                { company_id: null }, // tag CWT pode não enviar company_id
-              ],
+              company_id: cfg.companyId,
               consumed_at: null,
               expires_at: { gt: new Date() },
             },

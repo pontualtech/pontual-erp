@@ -7,34 +7,55 @@ import crypto from 'node:crypto'
  *
  * Chamado pela tag GTM "PT WhatsApp CWT" ANTES de redirecionar pro wa.me.
  * Grava snapshot {gclid, utm_*, phone_destination, click_at} pra que o bot
- * Marta/Ana/Aline/Grazi possa cruzar com mensagens incoming sem [ref:...]
- * (caso o cliente apague o texto pré-preenchido).
+ * Marta/Ana/Aline/Grazi possa cruzar com mensagens incoming sem [ref:...].
  *
  * Idempotência: cada click gera 1 row. TTL: 30 min via expires_at.
  *
  * Sem auth porque é chamado direto do navegador do cliente.
- * Rate limit: nginx/edge (deploy responsibility). Aqui validamos só shape.
+ *
+ * Audit 2026-05-24:
+ *  - Rate limit in-memory por IP hash (60 POSTs/min) → anti-flood
+ *  - Body size limit (4 KB) → anti-DB-bloat
+ *  - company_id derivado de Origin header → match strict no bot evita cross-tenant
  */
 
-const ALLOWED_ORIGINS = [
-  'https://pontualtech.com.br',
-  'https://www.pontualtech.com.br',
-  'https://sosimpressora.com',
-  'https://www.sosimpressora.com',
-  'https://rcimpressoras.com',
-  'https://www.rcimpressoras.com',
-  'https://pontualtech.net',
-  'https://www.pontualtech.net',
-  'https://imprimitech.com.br',
-  'https://www.imprimitech.com.br',
-  'https://doutorimpressora.com',
-  'https://www.doutorimpressora.com',
-]
+// hostname → company_id (allowlist + tenant resolver). Adicione sites novos aqui.
+// PT: pontualtech-001 / IMP: 86c829cf-32ed-4e40-80cd-59ce4178aa1a
+const HOSTNAME_TO_COMPANY: Record<string, string> = {
+  'pontualtech.com.br':     'pontualtech-001',
+  'www.pontualtech.com.br': 'pontualtech-001',
+  'sosimpressora.com':      'pontualtech-001',
+  'www.sosimpressora.com':  'pontualtech-001',
+  'rcimpressoras.com':      'pontualtech-001',
+  'www.rcimpressoras.com':  'pontualtech-001',
+  'pontualtech.net':        'pontualtech-001',
+  'www.pontualtech.net':    'pontualtech-001',
+  'doutorimpressora.com':   'pontualtech-001',
+  'www.doutorimpressora.com': 'pontualtech-001',
+  'imprimitech.com.br':     '86c829cf-32ed-4e40-80cd-59ce4178aa1a',
+  'www.imprimitech.com.br': '86c829cf-32ed-4e40-80cd-59ce4178aa1a',
+}
+
+const ALLOWED_ORIGINS = Object.keys(HOSTNAME_TO_COMPANY).map(h => `https://${h}`)
+const MAX_BODY_BYTES = 4096
+const RATE_LIMIT_WINDOW_MS = 60_000
+const RATE_LIMIT_MAX = 60
+
+// In-memory rate limit (per-pod). Aceita janela de pico, anti-spam grosseiro.
+// Em multi-pod, cada pod tem janela própria — ok pra MVP, suficiente p/ deter floods triviais.
+const rateMap = new Map<string, number[]>()
 
 function corsHeaders(origin: string | null): Record<string, string> {
-  const allow = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
+  // Só ecoa Allow-Origin se origin está na allowlist (caso contrário browser bloqueia naturalmente).
+  if (!origin || !ALLOWED_ORIGINS.includes(origin)) {
+    return {
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Max-Age': '86400',
+    }
+  }
   return {
-    'Access-Control-Allow-Origin': allow,
+    'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Max-Age': '86400',
@@ -60,12 +81,44 @@ function getClientIp(req: NextRequest): string {
       || ''
 }
 
+function originToCompanyId(origin: string | null): string | null {
+  if (!origin) return null
+  try {
+    const u = new URL(origin)
+    return HOSTNAME_TO_COMPANY[u.hostname.toLowerCase()] ?? null
+  } catch {
+    return null
+  }
+}
+
+function checkRateLimit(ipKey: string): boolean {
+  const now = Date.now()
+  const windowStart = now - RATE_LIMIT_WINDOW_MS
+  const stamps = (rateMap.get(ipKey) || []).filter(t => t > windowStart)
+  if (stamps.length >= RATE_LIMIT_MAX) return false
+  stamps.push(now)
+  rateMap.set(ipKey, stamps)
+  // Garbage collect: limpa entradas vazias ocasionalmente
+  if (rateMap.size > 1000 && Math.random() < 0.01) {
+    for (const [k, v] of rateMap) {
+      if (v.length === 0 || v[v.length - 1] < windowStart) rateMap.delete(k)
+    }
+  }
+  return true
+}
+
 export async function POST(req: NextRequest) {
   const origin = req.headers.get('origin')
   const headers = corsHeaders(origin)
 
   try {
-    const body = await req.json().catch(() => ({}))
+    // Body size guard ANTES de parse — evita JSON gigante consumir CPU/RAM
+    const raw = await req.text()
+    if (raw.length > MAX_BODY_BYTES) {
+      return NextResponse.json({ error: 'payload too large' }, { status: 413, headers })
+    }
+
+    const body = raw ? JSON.parse(raw) : {}
 
     const phoneDestination = digitsOnly(body.phone_destination || body.phone || '')
     if (!phoneDestination || phoneDestination.length < 10) {
@@ -75,8 +128,17 @@ export async function POST(req: NextRequest) {
     const ip = getClientIp(req)
     const ipHash = ip ? hashIp(ip) : null
 
+    // Rate limit por IP hash (anti-flood)
+    const rlKey = ipHash || 'no-ip'
+    if (!checkRateLimit(rlKey)) {
+      return NextResponse.json({ error: 'rate limit' }, { status: 429, headers })
+    }
+
+    const companyId = originToCompanyId(origin)
+
     await prisma.marketingWhatsappRedirect.create({
       data: {
+        company_id: companyId,
         phone_destination: phoneDestination,
         gclid:        body.gclid || null,
         msclkid:      body.msclkid || null,

@@ -13,10 +13,11 @@ import { success, error, handleError } from '@/lib/api-response'
  * POST: { channel, amount_cents } — upsert do setting.
  */
 
+// Mantém em sincronia com CHANNEL_META de api/marketing/attribution/route.ts.
+// Se você adicionar canal aqui, adicione lá também — senão investment fica órfão.
 const ALLOWED_CHANNELS = [
-  'google_ads', 'google_organic', 'meta_ads', 'meta_organic',
-  'whatsapp', 'instagram', 'youtube', 'tiktok', 'referral',
-  'email', 'direct', 'outro',
+  'google_ads', 'microsoft_ads', 'organic', 'email',
+  'social', 'direct', 'referral', 'other',
 ]
 
 export async function GET(_req: NextRequest) {
