@@ -87,6 +87,14 @@ export async function GET(request: NextRequest) {
       if (status === 'VENCIDO') {
         where.status = 'PENDENTE'
         where.due_date = { lt: new Date() }
+      } else if (status.includes(',')) {
+        // Wave T (2026-05-24): multi-status comma-separated, e.g. 'PAGO,RECEBIDO'
+        // Caso de uso: chip "Aguardando conferência bancária" precisa cobrir AR
+        // declarados balcão (status=PAGO) E recebidos via baixa (status=RECEBIDO).
+        const statusList = status.split(',').map(s => s.trim()).filter(Boolean)
+        if (statusList.length > 0) {
+          where.status = { in: statusList }
+        }
       } else {
         where.status = status
       }

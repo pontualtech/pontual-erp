@@ -663,10 +663,14 @@ export default function ContasReceberPage() {
     setPage(1)
   }
 
-  // Wave S (audit 2026-05-24): shortcut Karlão pediu — clica no chip "Aguardando
-  // conciliação" e filtro pula direto pra status=RECEBIDO + reconciled=false.
-  // Mostra só pagamentos confirmados (RECEBIDO) que ainda precisam de conferência
-  // no extrato bancário (reconciled=false). Sem clicar em cada um.
+  // Wave S+T (audit 2026-05-24): shortcut Karlão pediu — chip "Aguardando
+  // conferência bancária" cobre AMBOS os fluxos:
+  //   - PAGO: declarado manualmente no balcão (received_now=true). Atendente
+  //     viu comprovante (foto PIX, recibo cartão) mas falta confirmar no extrato.
+  //     Ex caso OS 60154 que motivou o fix Wave T.
+  //   - RECEBIDO: via /baixa ou conciliação OFX. Pago confirmado, falta marcar
+  //     reconciled=true depois de conferir extrato.
+  // Antes (Wave S) filtrava só RECEBIDO → 8 ARs visíveis. Agora 17 (8+9 PAGO).
   function applyAguardandoConciliacao() {
     setSearch('')
     setStartDate('')
@@ -677,7 +681,7 @@ export default function ContasReceberPage() {
     setValueMax('')
     setBankAccountFilter('')
     setChargeStatusFilter('')
-    setStatusFilter('RECEBIDO')
+    setStatusFilter('PAGO,RECEBIDO')
     setReconciledFilter('pending')
     setPage(1)
     setShowFilters(true)
@@ -1121,7 +1125,7 @@ export default function ContasReceberPage() {
         </div>
       )}
 
-      {/* Wave S (audit 2026-05-24): chip quick "Aguardando conciliação" */}
+      {/* Wave S+T (audit 2026-05-24): chip quick "Aguardando conferência" */}
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-[11px] font-semibold uppercase text-gray-400">Atalhos:</span>
         <button
@@ -1129,16 +1133,16 @@ export default function ContasReceberPage() {
           onClick={applyAguardandoConciliacao}
           className={cn(
             'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all',
-            (statusFilter === 'RECEBIDO' && reconciledFilter === 'pending')
+            (statusFilter === 'PAGO,RECEBIDO' && reconciledFilter === 'pending')
               ? 'border-amber-500 bg-amber-50 text-amber-800 shadow-sm'
               : 'border-gray-200 bg-white text-gray-600 hover:border-amber-300 hover:bg-amber-50/50'
           )}
-          title="Filtra pagamentos confirmados (RECEBIDO) que ainda precisam de conferência com o extrato bancário"
+          title="Filtra AR declarados PAGO (balcão) ou RECEBIDO (baixa formal) que ainda precisam de conferência com o extrato bancário"
         >
           <span aria-hidden>🏦</span>
           Aguardando conferência bancária
         </button>
-        {(statusFilter === 'RECEBIDO' && reconciledFilter === 'pending') && (
+        {(statusFilter === 'PAGO,RECEBIDO' && reconciledFilter === 'pending') && (
           <button
             type="button"
             onClick={clearFilters}
@@ -1247,7 +1251,9 @@ export default function ContasReceberPage() {
                 <option value="">Todos</option>
                 <option value="PENDENTE">Pendente</option>
                 <option value="VENCIDO">Vencido</option>
+                <option value="PAGO">Pago (balcão)</option>
                 <option value="RECEBIDO">Recebido</option>
+                <option value="PAGO,RECEBIDO">Pago ou Recebido</option>
                 <option value="CANCELADO">Cancelado</option>
                 <option value="AGRUPADO">Agrupado</option>
               </select>
