@@ -353,6 +353,35 @@ export default function ContaReceberDetalhePage() {
               <Undo2 className="h-4 w-4" /> Estornar
             </button>
           )}
+          {/* Wave Z (24/05): "✓ Conferi no extrato" — só admin. Marca reconciled=true.
+              Regra Karlão: PAGO declarado por atendente ≠ quitado. Admin tem que
+              confrontar com extrato bancário antes de virar conciliado oficialmente.
+              Exceções automáticas: Asaas webhook, CNAB Inter (já marcam sozinhos). */}
+          {isAdmin && (conta.status === 'RECEBIDO' || conta.status === 'PAGO') && conta.reconciled !== true && conta.account_id && !editing && (
+            <button
+              type="button"
+              title="Marcar como conferido no extrato bancário (apenas admin)"
+              onClick={async () => {
+                if (!window.confirm('Confirmar que esta entrada bate com o extrato bancário?\n\nA AR vai sair de "Aguardando conferência" e ficar marcada como conciliada.')) return
+                try {
+                  const res = await fetch('/api/financeiro/contas-receber/bulk-reconcile', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: [conta.id], reconciled: true }),
+                  })
+                  const data = await res.json()
+                  if (!res.ok) throw new Error(data.error || 'Erro')
+                  toast.success('Conferido no extrato — AR marcada como conciliada')
+                  loadConta()
+                } catch (e) {
+                  toast.error(e instanceof Error ? e.message : 'Erro ao marcar como conferido')
+                }
+              }}
+              className="flex items-center gap-1.5 px-3 py-2.5 text-sm bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 font-medium shadow-sm transition-colors"
+            >
+              <CheckCircle className="h-4 w-4" /> Conferi no extrato
+            </button>
+          )}
           {/* Wave V (24/05): Desfazer conciliação (toggle reconciled=false).
               Karlão pediu: se conferiu errado no extrato, desmarcar sem estornar
               o recebimento. Diferente de Estornar (que reverte AR pra PENDENTE). */}

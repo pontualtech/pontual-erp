@@ -1479,7 +1479,17 @@ export default function OSDetailPage() {
             <Clock className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
             <div>
               <div className="font-medium">Pago {methods ? `\u2014 ${methods}` : ''} {fmt(totalPaid)} {paidDate ? `em ${paidDate}` : ''}</div>
-              <div className="text-xs mt-0.5 text-amber-800">Aguardando confirmação no extrato bancário. Conciliar em /financeiro/conciliação para confirmar entrada do valor.</div>{renderCharges('text-amber-800')}
+              <div className="text-xs mt-0.5 text-amber-800">Pagamento declarado por atendente — aguardando admin confirmar no extrato bancário.</div>
+              {/* Wave Z (24/05): atalho direto pra AR (lá tem botão "Conferi no extrato" pra admin) */}
+              {lastAr?.id && (
+                <Link
+                  href={`/financeiro/contas-receber/${lastAr.id}`}
+                  className="inline-flex items-center gap-1 mt-1.5 text-xs font-medium text-amber-900 underline hover:opacity-80"
+                >
+                  <ExternalLink className="h-3 w-3" /> Conferir agora
+                </Link>
+              )}
+              {renderCharges('text-amber-800')}
             </div>
           </div>
         )

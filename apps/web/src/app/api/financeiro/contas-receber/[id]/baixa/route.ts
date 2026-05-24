@@ -50,11 +50,12 @@ export async function POST(req: NextRequest, { params }: Params) {
         data: {
           received_amount: newReceivedTotal,
           status: isReceivedInFull ? 'RECEBIDO' : 'PENDENTE',
-          // Wave Y (2026-05-24): baixa cria Transaction com reconciled=true
-          // (lançamento bate com extrato). AR é contraparte do mesmo lançamento
-          // — marca reconciled=true quando full paid pra remover badge "Aguardando
-          // conciliação" eterna. Mesmo padrão do /conciliacao/match.
-          ...(isReceivedInFull ? { reconciled: true } : {}),
+          // Wave Z (2026-05-24): NÃO setar reconciled=true. Karlão deixou claro:
+          // /baixa é atendente DECLARANDO recebimento (cliente mostrou comprovante).
+          // Conciliação só vale depois que admin confere no extrato bancário. Admin
+          // marca reconciled=true via botão "Conferi no extrato" no detalhe da AR
+          // (Wave Z) ou via /conciliacao/match (OFX). Exceções automáticas: Asaas
+          // webhook + CNAB Inter (já marcam reconciled=true sozinhos).
           updated_at: new Date(),
         },
       })
