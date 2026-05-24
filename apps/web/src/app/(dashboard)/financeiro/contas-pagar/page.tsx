@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/use-auth'
 import { MoneyInput } from '@/app/(dashboard)/components/money-input'
 import { exportToExcel, exportToCSV, exportToPDF, importFromFile } from '@/lib/export-data'
+import { cleanDescription } from '@/lib/payment-display'
 
 interface Supplier {
   id: string
@@ -811,7 +812,7 @@ export default function ContasPagarPage() {
                       </td>
                     )}
                     <td className="px-4 py-3">
-                      <p className="font-medium text-gray-900">{conta.description}</p>
+                      <p className="font-medium text-gray-900">{cleanDescription(conta.description)}</p>
                       {conta.notes && !conta.notes.trim().startsWith('{') && (
                         <p className="text-xs text-gray-400 truncate max-w-[200px]">{conta.notes}</p>
                       )}

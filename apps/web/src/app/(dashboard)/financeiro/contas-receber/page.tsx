@@ -14,6 +14,7 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/use-auth'
 import { exportToExcel, exportToCSV, exportToPDF, importFromFile } from '@/lib/export-data'
+import { cleanDescription } from '@/lib/payment-display'
 
 interface Customer {
   id: string
@@ -1527,7 +1528,7 @@ export default function ContasReceberPage() {
                     )}
                     {isColVisible('description') && (
                     <td className="px-4 py-3">
-                      <p className="font-medium text-gray-900">{conta.description}</p>
+                      <p className="font-medium text-gray-900">{cleanDescription(conta.description)}</p>
                       {/* Feature 2026-05-13: badge status cobranca Asaas + link copy + envio */}
                       {(() => {
                         const badge = getChargeBadge(conta.charge_status)
