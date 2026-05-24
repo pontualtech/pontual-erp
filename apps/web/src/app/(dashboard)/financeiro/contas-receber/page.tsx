@@ -163,26 +163,37 @@ export default function ContasReceberPage() {
   const [total, setTotal] = useState(0)
   const [summary, setSummary] = useState<Summary | null>(null)
 
-  // Filters (inicializar da URL se vier de outra pagina)
-  const [search, setSearch] = useState(urlParams.get('search') || '')
-  const [customerIdFilter] = useState(urlParams.get('customerId') || '')
+  // Wave X (audit 2026-05-24): filtros sticky via sessionStorage.
+  // Karlão pediu — operador filtra, edita 1 conta, volta, filtro sumia.
+  // Agora: URL > sessionStorage > default. Persiste entre navegações.
+  const SAVED_KEY = 'cr_filters_v1'
+  const saved = (() => {
+    if (typeof window === 'undefined') return {}
+    try { return JSON.parse(sessionStorage.getItem(SAVED_KEY) || '{}') } catch { return {} }
+  })()
+  const getInit = (urlKey: string, savedKey: string, fallback = '') =>
+    urlParams.get(urlKey) || saved[savedKey] || fallback
+
+  // Filters (URL > sessionStorage > default)
+  const [search, setSearch] = useState(getInit('search', 'search'))
+  const [customerIdFilter] = useState(getInit('customerId', 'customerId'))
   // Audit 11: aceita ?status= via URL pra deep link do dashboard
   // ("Contas vencidas" alert → /financeiro/contas-receber?status=VENCIDO)
-  const [statusFilter, setStatusFilter] = useState(urlParams.get('status') || '')
-  const [startDate, setStartDate] = useState('')
-  const [endDate, setEndDate] = useState('')
-  const [paymentMethodFilter, setPaymentMethodFilter] = useState('')
-  const [categoryFilter, setCategoryFilter] = useState('')
-  const [dateType, setDateType] = useState('vencimento')
-  const [valueMin, setValueMin] = useState('')
-  const [valueMax, setValueMax] = useState('')
+  const [statusFilter, setStatusFilter] = useState(getInit('status', 'status'))
+  const [startDate, setStartDate] = useState(getInit('startDate', 'startDate'))
+  const [endDate, setEndDate] = useState(getInit('endDate', 'endDate'))
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState(getInit('paymentMethod', 'paymentMethod'))
+  const [categoryFilter, setCategoryFilter] = useState(getInit('categoryId', 'categoryId'))
+  const [dateType, setDateType] = useState(getInit('dateType', 'dateType', 'vencimento'))
+  const [valueMin, setValueMin] = useState(getInit('valueMin', 'valueMin'))
+  const [valueMax, setValueMax] = useState(getInit('valueMax', 'valueMax'))
   // Sprint UX-23: filtro por banco vinculado (account_id)
-  const [bankAccountFilter, setBankAccountFilter] = useState(urlParams.get('bankAccountId') || '')
+  const [bankAccountFilter, setBankAccountFilter] = useState(getInit('bankAccountId', 'bankAccountId'))
   // 2026-05-14: filtro por status da cobranca Asaas (charge_status).
-  const [chargeStatusFilter, setChargeStatusFilter] = useState(urlParams.get('chargeStatus') || '')
+  const [chargeStatusFilter, setChargeStatusFilter] = useState(getInit('chargeStatus', 'chargeStatus'))
   // Wave S (2026-05-24): filtro de conciliação bancária.
   // '' = todos | 'pending' = aguardando conferência no extrato | 'done' = conferidos
-  const [reconciledFilter, setReconciledFilter] = useState(urlParams.get('reconciled') || '')
+  const [reconciledFilter, setReconciledFilter] = useState(getInit('reconciled', 'reconciled'))
   const [showFilters, setShowFilters] = useState(false)
   const [filteredSum, setFilteredSum] = useState(0)
 
@@ -370,6 +381,25 @@ export default function ContasReceberPage() {
     if (bankAccountFilter) params.set('bankAccountId', bankAccountFilter)
     if (chargeStatusFilter) params.set('chargeStatus', chargeStatusFilter)
     if (reconciledFilter) params.set('reconciled', reconciledFilter)
+
+    // Wave X (audit 2026-05-24): persiste filtros em sessionStorage pra
+    // sobreviver navegação (detalhe → voltar mantém os filtros aplicados).
+    try {
+      const filtersToSave: Record<string, string> = {}
+      if (search) filtersToSave.search = search
+      if (statusFilter) filtersToSave.status = statusFilter
+      if (startDate) filtersToSave.startDate = startDate
+      if (endDate) filtersToSave.endDate = endDate
+      if (paymentMethodFilter) filtersToSave.paymentMethod = paymentMethodFilter
+      if (categoryFilter) filtersToSave.categoryId = categoryFilter
+      if (dateType !== 'vencimento') filtersToSave.dateType = dateType
+      if (valueMin) filtersToSave.valueMin = valueMin
+      if (valueMax) filtersToSave.valueMax = valueMax
+      if (bankAccountFilter) filtersToSave.bankAccountId = bankAccountFilter
+      if (chargeStatusFilter) filtersToSave.chargeStatus = chargeStatusFilter
+      if (reconciledFilter) filtersToSave.reconciled = reconciledFilter
+      sessionStorage.setItem(SAVED_KEY, JSON.stringify(filtersToSave))
+    } catch {}
 
     fetch(`/api/financeiro/contas-receber?${params}`)
       .then(r => r.json())
@@ -661,6 +691,8 @@ export default function ContasReceberPage() {
     setChargeStatusFilter('')
     setReconciledFilter('')
     setPage(1)
+    // Wave X: limpa sessionStorage pra não ressuscitar filtro limpo
+    try { sessionStorage.removeItem(SAVED_KEY) } catch {}
   }
 
   // Wave S+T (audit 2026-05-24): shortcut Karlão pediu — chip "Aguardando

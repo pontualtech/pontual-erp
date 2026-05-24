@@ -100,17 +100,25 @@ export default function ContasPagarPage() {
   const [total, setTotal] = useState(0)
   const [summary, setSummary] = useState<Summary | null>(null)
 
-  // Filters
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
-  const [startDate, setStartDate] = useState('')
-  const [endDate, setEndDate] = useState('')
-  const [categoryFilter, setCategoryFilter] = useState('')
-  const [costCenterFilter, setCostCenterFilter] = useState('')
-  const [paymentMethodFilter, setPaymentMethodFilter] = useState('')
-  const [bankAccountFilter, setBankAccountFilter] = useState('') // Sprint UX-24
-  const [valueMin, setValueMin] = useState('')
-  const [valueMax, setValueMax] = useState('')
+  // Wave X (audit 2026-05-24): filtros sticky via sessionStorage.
+  // Karlão pediu — sair pra editar conta e voltar mantém o filtro.
+  const CP_SAVED_KEY = 'cp_filters_v1'
+  const cpSaved = (() => {
+    if (typeof window === 'undefined') return {}
+    try { return JSON.parse(sessionStorage.getItem(CP_SAVED_KEY) || '{}') } catch { return {} }
+  })()
+
+  // Filters (sessionStorage > default)
+  const [search, setSearch] = useState(cpSaved.search || '')
+  const [statusFilter, setStatusFilter] = useState(cpSaved.status || '')
+  const [startDate, setStartDate] = useState(cpSaved.startDate || '')
+  const [endDate, setEndDate] = useState(cpSaved.endDate || '')
+  const [categoryFilter, setCategoryFilter] = useState(cpSaved.categoryId || '')
+  const [costCenterFilter, setCostCenterFilter] = useState(cpSaved.costCenterId || '')
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState(cpSaved.paymentMethod || '')
+  const [bankAccountFilter, setBankAccountFilter] = useState(cpSaved.bankAccountId || '') // Sprint UX-24
+  const [valueMin, setValueMin] = useState(cpSaved.valueMin || '')
+  const [valueMax, setValueMax] = useState(cpSaved.valueMax || '')
   const [showAdvanced, setShowAdvanced] = useState(false)
 
   // Filter options (from API)
@@ -153,6 +161,22 @@ export default function ContasPagarPage() {
     if (bankAccountFilter) params.set('bankAccountId', bankAccountFilter)
     if (valueMin) params.set('valueMin', String(Math.round(Number(valueMin) * 100)))
     if (valueMax) params.set('valueMax', String(Math.round(Number(valueMax) * 100)))
+
+    // Wave X: persiste filtros pra sobreviver navegação detalhe → voltar
+    try {
+      const toSave: Record<string, string> = {}
+      if (search) toSave.search = search
+      if (statusFilter) toSave.status = statusFilter
+      if (startDate) toSave.startDate = startDate
+      if (endDate) toSave.endDate = endDate
+      if (categoryFilter) toSave.categoryId = categoryFilter
+      if (costCenterFilter) toSave.costCenterId = costCenterFilter
+      if (paymentMethodFilter) toSave.paymentMethod = paymentMethodFilter
+      if (bankAccountFilter) toSave.bankAccountId = bankAccountFilter
+      if (valueMin) toSave.valueMin = valueMin
+      if (valueMax) toSave.valueMax = valueMax
+      sessionStorage.setItem(CP_SAVED_KEY, JSON.stringify(toSave))
+    } catch {}
 
     fetch(`/api/financeiro/contas-pagar?${params}`)
       .then(r => r.json())
@@ -401,6 +425,7 @@ export default function ContasPagarPage() {
     setSearch(''); setStatusFilter(''); setStartDate(''); setEndDate('')
     setCategoryFilter(''); setCostCenterFilter(''); setPaymentMethodFilter(''); setBankAccountFilter('')
     setValueMin(''); setValueMax(''); setPage(1)
+    try { sessionStorage.removeItem(CP_SAVED_KEY) } catch {}
   }
 
   const hasFilters = search || statusFilter || startDate || endDate || categoryFilter || costCenterFilter || paymentMethodFilter || bankAccountFilter || valueMin || valueMax
