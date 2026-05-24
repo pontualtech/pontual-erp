@@ -180,6 +180,9 @@ export default function ContasReceberPage() {
   const [bankAccountFilter, setBankAccountFilter] = useState(urlParams.get('bankAccountId') || '')
   // 2026-05-14: filtro por status da cobranca Asaas (charge_status).
   const [chargeStatusFilter, setChargeStatusFilter] = useState(urlParams.get('chargeStatus') || '')
+  // Wave S (2026-05-24): filtro de conciliação bancária.
+  // '' = todos | 'pending' = aguardando conferência no extrato | 'done' = conferidos
+  const [reconciledFilter, setReconciledFilter] = useState(urlParams.get('reconciled') || '')
   const [showFilters, setShowFilters] = useState(false)
   const [filteredSum, setFilteredSum] = useState(0)
 
@@ -366,6 +369,7 @@ export default function ContasReceberPage() {
     if (customerIdFilter) params.set('customerId', customerIdFilter)
     if (bankAccountFilter) params.set('bankAccountId', bankAccountFilter)
     if (chargeStatusFilter) params.set('chargeStatus', chargeStatusFilter)
+    if (reconciledFilter) params.set('reconciled', reconciledFilter)
 
     fetch(`/api/financeiro/contas-receber?${params}`)
       .then(r => r.json())
@@ -378,7 +382,7 @@ export default function ContasReceberPage() {
       })
       .catch(() => toast.error('Erro ao carregar contas'))
       .finally(() => setLoading(false))
-  }, [page, search, statusFilter, startDate, endDate, paymentMethodFilter, categoryFilter, dateType, valueMin, valueMax, customerIdFilter, bankAccountFilter, chargeStatusFilter])
+  }, [page, search, statusFilter, startDate, endDate, paymentMethodFilter, categoryFilter, dateType, valueMin, valueMax, customerIdFilter, bankAccountFilter, chargeStatusFilter, reconciledFilter])
 
   useEffect(() => { loadContas(); setSelected(new Set()) }, [loadContas])
 
@@ -618,6 +622,31 @@ export default function ContasReceberPage() {
     }
   }
 
+  // Wave S (audit 2026-05-24): bulk reconcile via novo endpoint
+  const [bulkReconciling, setBulkReconciling] = useState(false)
+  async function handleBulkReconcile(markAsReconciled: boolean) {
+    if (bulkReconciling || selected.size === 0) return
+    const action = markAsReconciled ? 'marcar como CONFERIDAS' : 'desfazer conciliação'
+    if (!window.confirm(`${action} de ${selected.size} conta(s) selecionada(s)?`)) return
+    setBulkReconciling(true)
+    try {
+      const res = await fetch('/api/financeiro/contas-receber/bulk-reconcile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selected), reconciled: markAsReconciled }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro')
+      toast.success(`${data.data?.updated ?? 0} conta(s) ${markAsReconciled ? 'conferidas' : 'desconferidas'}`)
+      setSelected(new Set())
+      loadContas()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao conciliar em massa')
+    } finally {
+      setBulkReconciling(false)
+    }
+  }
+
   function clearFilters() {
     setSearch('')
     setStatusFilter('')
@@ -630,7 +659,28 @@ export default function ContasReceberPage() {
     setValueMax('')
     setBankAccountFilter('')
     setChargeStatusFilter('')
+    setReconciledFilter('')
     setPage(1)
+  }
+
+  // Wave S (audit 2026-05-24): shortcut Karlão pediu — clica no chip "Aguardando
+  // conciliação" e filtro pula direto pra status=RECEBIDO + reconciled=false.
+  // Mostra só pagamentos confirmados (RECEBIDO) que ainda precisam de conferência
+  // no extrato bancário (reconciled=false). Sem clicar em cada um.
+  function applyAguardandoConciliacao() {
+    setSearch('')
+    setStartDate('')
+    setEndDate('')
+    setPaymentMethodFilter('')
+    setCategoryFilter('')
+    setValueMin('')
+    setValueMax('')
+    setBankAccountFilter('')
+    setChargeStatusFilter('')
+    setStatusFilter('RECEBIDO')
+    setReconciledFilter('pending')
+    setPage(1)
+    setShowFilters(true)
   }
 
   // Export/Import helpers
@@ -897,8 +947,8 @@ export default function ContasReceberPage() {
     }
   }
 
-  const hasFilters = search || statusFilter || startDate || endDate || paymentMethodFilter || categoryFilter || dateType !== 'vencimento' || valueMin || valueMax || bankAccountFilter || chargeStatusFilter
-  const activeFilterCount = [statusFilter, paymentMethodFilter, categoryFilter, bankAccountFilter, chargeStatusFilter, startDate || endDate ? 'date' : '', valueMin || valueMax ? 'value' : '', dateType !== 'vencimento' ? 'dateType' : ''].filter(Boolean).length
+  const hasFilters = search || statusFilter || startDate || endDate || paymentMethodFilter || categoryFilter || dateType !== 'vencimento' || valueMin || valueMax || bankAccountFilter || chargeStatusFilter || reconciledFilter
+  const activeFilterCount = [statusFilter, paymentMethodFilter, categoryFilter, bankAccountFilter, chargeStatusFilter, reconciledFilter, startDate || endDate ? 'date' : '', valueMin || valueMax ? 'value' : '', dateType !== 'vencimento' ? 'dateType' : ''].filter(Boolean).length
   const contaToDelete = contas.find(c => c.id === deleteId)
   const contaBaixa = contas.find(c => c.id === baixaId)
 
@@ -1071,6 +1121,34 @@ export default function ContasReceberPage() {
         </div>
       )}
 
+      {/* Wave S (audit 2026-05-24): chip quick "Aguardando conciliação" */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-[11px] font-semibold uppercase text-gray-400">Atalhos:</span>
+        <button
+          type="button"
+          onClick={applyAguardandoConciliacao}
+          className={cn(
+            'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all',
+            (statusFilter === 'RECEBIDO' && reconciledFilter === 'pending')
+              ? 'border-amber-500 bg-amber-50 text-amber-800 shadow-sm'
+              : 'border-gray-200 bg-white text-gray-600 hover:border-amber-300 hover:bg-amber-50/50'
+          )}
+          title="Filtra pagamentos confirmados (RECEBIDO) que ainda precisam de conferência com o extrato bancário"
+        >
+          <span aria-hidden>🏦</span>
+          Aguardando conferência bancária
+        </button>
+        {(statusFilter === 'RECEBIDO' && reconciledFilter === 'pending') && (
+          <button
+            type="button"
+            onClick={clearFilters}
+            className="text-[11px] text-gray-500 hover:text-red-600 underline ml-1"
+          >
+            limpar
+          </button>
+        )}
+      </div>
+
       {/* Row 1: Search + Counter + Actions */}
       <div className="rounded-lg border bg-white p-4 shadow-sm space-y-3">
         <div className="flex flex-wrap items-center gap-3">
@@ -1200,6 +1278,20 @@ export default function ContasReceberPage() {
                 {categories.map(cat => (
                   <option key={cat.id} value={cat.id}>{cat.name}</option>
                 ))}
+              </select>
+            </div>
+            {/* Wave S (audit 2026-05-24): filtro conciliação bancária */}
+            <div className="min-w-[170px]">
+              <label htmlFor="reconciled-filter" className="block text-xs font-medium text-gray-500 mb-1">Conciliação</label>
+              <select
+                id="reconciled-filter"
+                value={reconciledFilter}
+                onChange={e => { setReconciledFilter(e.target.value); setPage(1) }}
+                className="w-full rounded-md border bg-white py-1.5 px-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+              >
+                <option value="">Todos</option>
+                <option value="pending">Aguardando conferência</option>
+                <option value="done">Já conferido</option>
               </select>
             </div>
             {/* Filtro charge_status (feature 2026-05-14): status da cobranca Asaas */}
@@ -1606,6 +1698,12 @@ export default function ContasReceberPage() {
               title="Enviar por e-mail"
               className="flex items-center gap-1.5 px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium">
               <Mail className="h-3.5 w-3.5" /> Email
+            </button>
+            {/* Wave S: bulk conciliar (Karlão pediu) */}
+            <button type="button" onClick={() => handleBulkReconcile(true)} disabled={bulkReconciling}
+              title="Marcar contas selecionadas como conferidas no extrato bancário"
+              className="flex items-center gap-1.5 px-3 py-1 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 font-medium disabled:opacity-60">
+              <CheckCircle2 className="h-3.5 w-3.5" /> {bulkReconciling ? 'Conferindo...' : 'Marcar conferidas'}
             </button>
             {/* Reenviar cobranca em massa (feature 2026-05-14 feat 2/4) */}
             <button type="button" onClick={handleBulkResend} disabled={bulkResending}

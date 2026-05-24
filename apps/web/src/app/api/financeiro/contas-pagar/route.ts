@@ -48,8 +48,16 @@ export async function GET(request: NextRequest) {
     const valueMax = searchParams.get('valueMax') ? Number(searchParams.get('valueMax')) : null
     // Sprint UX-24: filtro por banco vinculado (account_id)
     const bankAccountId = searchParams.get('bankAccountId')
+    // Wave S (2026-05-24): filtro reconciliação bancária (mesmo padrão AR).
+    const reconciledParam = searchParams.get('reconciled')
 
     const where: any = { company_id: user.companyId, deleted_at: null }
+
+    if (reconciledParam === 'false' || reconciledParam === 'pending') {
+      where.reconciled = false
+    } else if (reconciledParam === 'true' || reconciledParam === 'done') {
+      where.reconciled = true
+    }
 
     if (status) {
       if (status === 'VENCIDO') {

@@ -59,8 +59,21 @@ export async function GET(request: NextRequest) {
     // 2026-05-14: filtro por status da cobranca Asaas (charge_status).
     // Valor especial 'NONE' filtra ARs sem cobranca gerada (charge_status null).
     const chargeStatus = searchParams.get('chargeStatus')
+    // Wave S (2026-05-24): filtro por status de conciliação bancária.
+    // - 'pending' OR 'false' → reconciled=false (precisa conferir no extrato)
+    // - 'done' OR 'true' → reconciled=true (já conferido)
+    // - null/ausente → sem filtro
+    // Caso de uso: operador filtra "RECEBIDO + reconciled=pending" pra ver
+    // pagamentos que precisam de conferência manual com extrato.
+    const reconciledParam = searchParams.get('reconciled')
 
     const where: any = { company_id: user.companyId, deleted_at: null }
+
+    if (reconciledParam === 'false' || reconciledParam === 'pending') {
+      where.reconciled = false
+    } else if (reconciledParam === 'true' || reconciledParam === 'done') {
+      where.reconciled = true
+    }
 
     if (chargeStatus) {
       if (chargeStatus === 'NONE') {
