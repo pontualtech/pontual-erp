@@ -1530,14 +1530,27 @@ export default function ContasReceberPage() {
                         <span className={cn('inline-block rounded-full px-2.5 py-0.5 text-xs font-medium', config.color)}>
                           {config.label}
                         </span>
-                        {/* 2026-05-20: badge "Aguardando conciliacao" quando AR esta RECEBIDO mas
-                            ainda nao foi confirmado no extrato bancario (declaracao manual). */}
-                        {conta.status === 'RECEBIDO' && conta.reconciled !== true && (
+                        {/* 2026-05-20 + Wave U (2026-05-24): badge "Aguardando conciliação"
+                            quando AR está PAGO (balcão) ou RECEBIDO (baixa) mas reconciled=false.
+                            Antes só RECEBIDO — caso OS 60154 (PAGO via PIX foto) ficava sem badge.
+                            Karlão pediu pra ficar claro em cada linha qual precisa conferir. */}
+                        {(conta.status === 'RECEBIDO' || conta.status === 'PAGO') && conta.reconciled !== true && (
                           <span
-                            className="inline-block rounded-full px-2.5 py-0.5 text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200"
-                            title="Pagamento declarado mas ainda nao confirmado no extrato bancario. Conciliar em /financeiro/conciliacao."
+                            className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200"
+                            title="Pagamento declarado mas ainda não confirmado no extrato bancário. Use o chip 'Aguardando conferência bancária' no topo para listar todos e marcar em massa após conferir."
                           >
+                            <span aria-hidden>🏦</span>
                             Aguardando conciliação
+                          </span>
+                        )}
+                        {/* Wave U: badge positivo "Conciliado" pra contraste visual */}
+                        {(conta.status === 'RECEBIDO' || conta.status === 'PAGO') && conta.reconciled === true && (
+                          <span
+                            className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200"
+                            title="Pagamento confirmado no extrato bancário."
+                          >
+                            <span aria-hidden>✓</span>
+                            Conciliado
                           </span>
                         )}
                         {conta.anticipated_at && (
