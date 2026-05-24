@@ -26,6 +26,7 @@ interface ContaReceber {
   charge_id: string | null; charge_status: string | null; charge_url: string | null
   category_id: string | null
   account_id: string | null
+  reconciled: boolean | null
   created_at: string; categories: { id: string; name: string } | null
   customers: { id: string; legal_name: string; document_number?: string } | null
   service_orders: { id: string; os_number: number } | null
@@ -345,10 +346,39 @@ export default function ContaReceberDetalhePage() {
               <Combine className="h-4 w-4" /> Unificar
             </button>
           )}
-          {/* F-UX-01 fix 23/05: botao Estornar visivel quando AR RECEBIDA + tem conta vinculada */}
-          {conta.status === 'RECEBIDO' && conta.account_id && !editing && (
+          {/* F-UX-01 fix 23/05 + Wave V (24/05): Estornar cobre PAGO também,
+              não só RECEBIDO. PAGO = declarado balcão, mesma reversão. */}
+          {(conta.status === 'RECEBIDO' || conta.status === 'PAGO') && conta.account_id && !editing && (
             <button type="button" title="Estornar recebimento" onClick={() => setShowEstornar(true)} className="flex items-center gap-1.5 px-3 py-2.5 text-sm border border-amber-200 dark:border-amber-800 rounded-xl text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950 transition-colors">
               <Undo2 className="h-4 w-4" /> Estornar
+            </button>
+          )}
+          {/* Wave V (24/05): Desfazer conciliação (toggle reconciled=false).
+              Karlão pediu: se conferiu errado no extrato, desmarcar sem estornar
+              o recebimento. Diferente de Estornar (que reverte AR pra PENDENTE). */}
+          {conta.reconciled === true && !editing && (
+            <button
+              type="button"
+              title="Desfazer conciliação — marca como 'Aguardando' novamente (não reverte recebimento)"
+              onClick={async () => {
+                if (!window.confirm('Desfazer conciliação?\n\nAR volta pra "Aguardando conferência bancária".\nNÃO reverte o recebimento — use Estornar pra reverter o pagamento.')) return
+                try {
+                  const res = await fetch('/api/financeiro/contas-receber/bulk-reconcile', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: [conta.id], reconciled: false }),
+                  })
+                  const data = await res.json()
+                  if (!res.ok) throw new Error(data.error || 'Erro')
+                  toast.success('Conciliação desfeita — AR volta a "Aguardando"')
+                  loadConta()
+                } catch (e) {
+                  toast.error(e instanceof Error ? e.message : 'Erro ao desfazer conciliação')
+                }
+              }}
+              className="flex items-center gap-1.5 px-3 py-2.5 text-sm border border-yellow-200 rounded-xl text-yellow-700 hover:bg-yellow-50 transition-colors"
+            >
+              <Undo2 className="h-4 w-4" /> Desfazer conciliação
             </button>
           )}
           {isAdmin && !editing && (
@@ -503,10 +533,36 @@ export default function ContaReceberDetalhePage() {
           ) : (() => {
             const linkedAccount = accounts.find(a => a.id === conta.account_id)
             if (!linkedAccount) {
+              // Wave V (audit 2026-05-24): AR PAGO/RECEBIDO sem banco vinculado é
+              // bug operacional — impossível conciliar com extrato. Karlão pediu
+              // tornar mais óbvio + atalho pra vincular sem entrar em modo edit total.
+              const needsBank = conta.status === 'PAGO' || conta.status === 'RECEBIDO'
               return (
-                <p className="text-sm text-gray-400">
-                  Nenhum banco vinculado <span className="text-xs">(será definido na baixa)</span>
-                </p>
+                <div className={cn(
+                  'rounded-lg p-3',
+                  needsBank ? 'bg-amber-50 border border-amber-200' : 'bg-gray-50'
+                )}>
+                  <p className={cn('text-sm', needsBank ? 'text-amber-900' : 'text-gray-500')}>
+                    {needsBank ? '⚠️ ' : ''}Nenhum banco vinculado
+                  </p>
+                  {needsBank && (
+                    <p className="text-xs text-amber-800 mt-0.5">
+                      Esta conta está marcada como paga — vincule um banco pra poder conciliar com extrato.
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={startEditing}
+                    className={cn(
+                      'mt-2 inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium',
+                      needsBank
+                        ? 'bg-amber-600 text-white hover:bg-amber-700'
+                        : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                    )}
+                  >
+                    📎 Vincular banco agora
+                  </button>
+                </div>
               )
             }
             return (
