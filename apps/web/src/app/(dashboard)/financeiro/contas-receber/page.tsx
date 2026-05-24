@@ -1046,6 +1046,40 @@ export default function ContasReceberPage() {
         </div>
       </div>
 
+      {/* Wave Y (audit 2026-05-24): banner de filtros ativos.
+          Karlão reportou: Wave X sticky filters faziam "sumir" botão Receber
+          porque chip de conciliação persistia entre sessões. Banner torna óbvio
+          que lista está filtrada + Limpar tudo em 1 clique. */}
+      {activeFilterCount > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5">
+          <div className="flex flex-wrap items-center gap-2 text-sm text-amber-900">
+            <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0" />
+            <span className="font-medium">Lista filtrada</span>
+            <span className="text-amber-700">— {activeFilterCount} filtro{activeFilterCount > 1 ? 's' : ''} ativo{activeFilterCount > 1 ? 's' : ''}:</span>
+            <span className="text-xs text-amber-800 font-mono">
+              {[
+                statusFilter && `status=${statusFilter}`,
+                reconciledFilter && `conciliação=${reconciledFilter === 'pending' ? 'aguardando' : 'conferida'}`,
+                paymentMethodFilter && `método=${paymentMethodFilter}`,
+                categoryFilter && 'categoria',
+                bankAccountFilter && 'banco',
+                chargeStatusFilter && `cobrança=${chargeStatusFilter}`,
+                (startDate || endDate) && 'período',
+                (valueMin || valueMax) && 'valor',
+                dateType !== 'vencimento' && `dataPor=${dateType}`,
+              ].filter(Boolean).join(' • ')}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={clearFilters}
+            className="inline-flex items-center gap-1 rounded-md border border-amber-400 bg-white px-3 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100"
+          >
+            <X className="h-3 w-3" /> Limpar tudo
+          </button>
+        </div>
+      )}
+
       {/* Summary Cards (Sprint UX-23: clicaveis — pre-aplicam filtros) */}
       {summary && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

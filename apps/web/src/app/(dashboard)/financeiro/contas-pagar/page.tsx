@@ -503,6 +503,42 @@ export default function ContasPagarPage() {
         </div>
       </div>
 
+      {/* Wave Y (audit 2026-05-24): banner de filtros ativos.
+          Mesmo padrão do contas-receber — torna óbvio que lista está filtrada
+          + Limpar tudo em 1 clique. Wave X (sticky) podia colar filtros entre
+          sessões e dar sensação de "sumiu botão". */}
+      {hasFilters && (() => {
+        const filterCount = [statusFilter, paymentMethodFilter, categoryFilter, costCenterFilter, bankAccountFilter, startDate || endDate ? 'date' : '', valueMin || valueMax ? 'value' : ''].filter(Boolean).length
+        if (filterCount === 0) return null
+        return (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5">
+            <div className="flex flex-wrap items-center gap-2 text-sm text-amber-900">
+              <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0" />
+              <span className="font-medium">Lista filtrada</span>
+              <span className="text-amber-700">— {filterCount} filtro{filterCount > 1 ? 's' : ''} ativo{filterCount > 1 ? 's' : ''}:</span>
+              <span className="text-xs text-amber-800 font-mono">
+                {[
+                  statusFilter && `status=${statusFilter}`,
+                  paymentMethodFilter && `método=${paymentMethodFilter}`,
+                  categoryFilter && 'categoria',
+                  costCenterFilter && 'centro custo',
+                  bankAccountFilter && 'banco',
+                  (startDate || endDate) && 'período',
+                  (valueMin || valueMax) && 'valor',
+                ].filter(Boolean).join(' • ')}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="inline-flex items-center gap-1 rounded-md border border-amber-400 bg-white px-3 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100"
+            >
+              <X className="h-3 w-3" /> Limpar tudo
+            </button>
+          </div>
+        )
+      })()}
+
       {/* Summary Cards */}
       {summary && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

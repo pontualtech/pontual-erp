@@ -50,6 +50,11 @@ export async function POST(req: NextRequest, { params }: Params) {
         data: {
           received_amount: newReceivedTotal,
           status: isReceivedInFull ? 'RECEBIDO' : 'PENDENTE',
+          // Wave Y (2026-05-24): baixa cria Transaction com reconciled=true
+          // (lançamento bate com extrato). AR é contraparte do mesmo lançamento
+          // — marca reconciled=true quando full paid pra remover badge "Aguardando
+          // conciliação" eterna. Mesmo padrão do /conciliacao/match.
+          ...(isReceivedInFull ? { reconciled: true } : {}),
           updated_at: new Date(),
         },
       })

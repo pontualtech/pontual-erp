@@ -57,6 +57,9 @@ export async function POST(req: NextRequest, { params }: Params) {
           paid_amount: newPaidTotal,
           status: isPaidInFull ? 'PAGO' : 'PENDENTE',
           payment_method: fresh.payment_method,
+          // Wave Y (2026-05-24): mesmo padrão do AR baixa — reconciled=true
+          // quando full paid (Transaction já nasce reconciled, AP é contraparte).
+          ...(isPaidInFull ? { reconciled: true } : {}),
           updated_at: new Date(),
         },
       })

@@ -37,6 +37,8 @@ export async function POST(req: NextRequest, { params }: Params) {
         data: {
           status: 'PENDENTE',
           received_amount: 0,
+          // Wave Y: estorno desfaz a conciliação implícita da baixa.
+          reconciled: false,
           updated_at: new Date(),
         },
       })
