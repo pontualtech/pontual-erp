@@ -204,43 +204,37 @@ export async function POST(req: NextRequest) {
 
       // === Chain TEMPLATE-first (com botoes) ===
       // Decisao Karlao 2026-05-05 tarde: prefere mensagens com BOTAO clicavel
-      // ("Deixar feedback") em vez de free-text com link inline. Mais
-      // profissional + melhor CTR + visual mobile melhor.
+      // em vez de free-text com link inline. Mais profissional + melhor CTR.
+      //
+      // 2026-05-25: trocado v3 por v5. v3 deletado (oferecia "ganhe 10% se
+      // avaliar" — violava Google Review Policy, risco de suspensao GBP).
+      // v5 desacopla incentivo da review (cupom é "pelo atendimento", review
+      // é opcional). Detalhes em feedback_google_review_policy memory.
       //
       // Ordem:
-      // 1. pt_avaliacao_google_v3 (UTILITY, botao "Deixar feedback")
-      //    - Categoria UTILITY = deliverability ~95%
-      //    - Body neutro, sem mencionar oferta (regra Meta)
-      // 2. pt_feedback_v1 (MARKETING, botao "Avaliar e ganhar 10%")
-      //    - Body menciona desconto explicitamente
-      //    - MARKETING tem mais filtragem Meta-side, fica como fallback
-      // 3. free-text com link inline
-      //    - Ultimo recurso quando ambos templates falharem
+      // 1. pt_avaliacao_google_v5 (MARKETING, botao "Avaliar no Google")
+      //    - Cupom incondicional + review opcional (Google-compliant)
+      // 2. free-text com link inline
+      //    - Ultimo recurso quando template falhar
       //    - Fica sem botao (link no body)
+      //
+      // pt_feedback_v1 removido da chain — também violava policy (botao
+      // "Avaliar e ganhar 10%"). Considerar deletar do Meta apos validar v5
+      // em producao por algumas semanas.
       let r = await sendWhatsAppTemplate(
-        os.company_id, normalizedPhone, 'pt_avaliacao_google_v3', 'pt_BR',
+        os.company_id, normalizedPhone, 'pt_avaliacao_google_v5', 'pt_BR',
         [
           { type: 'body', parameters: [{ type: 'text', text: firstName }] },
           { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: token }] },
         ],
         freeText,
       )
-      let channelUsed: 'pt_avaliacao_google_v3' | 'pt_feedback_v1' | 'free_text' | null =
-        r.success ? 'pt_avaliacao_google_v3' : null
+      let channelUsed: 'pt_avaliacao_google_v5' | 'free_text' | null =
+        r.success ? 'pt_avaliacao_google_v5' : null
 
       if (!r.success) {
-        r = await sendWhatsAppTemplate(
-          os.company_id, normalizedPhone, 'pt_feedback_v1', 'pt_BR',
-          [
-            { type: 'body', parameters: [{ type: 'text', text: firstName }] },
-            { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: token }] },
-          ],
-          freeText,
-        )
-        if (r.success) channelUsed = 'pt_feedback_v1'
-      }
-      if (!r.success) {
-        // Ultimo recurso: free-text. Sem botao, link no corpo.
+        // Fallback: free-text com link inline (sem botao, mas garante entrega).
+        // pt_feedback_v1 removido da chain em 2026-05-25 — também violava policy.
         r = await sendWhatsAppCloud(os.company_id, normalizedPhone, freeText)
         if (r.success) channelUsed = 'free_text'
       }
