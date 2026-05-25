@@ -16,8 +16,8 @@ import { success, error, handleError } from '@/lib/api-response'
 // Mantém em sincronia com CHANNEL_META de api/marketing/attribution/route.ts.
 // Se você adicionar canal aqui, adicione lá também — senão investment fica órfão.
 const ALLOWED_CHANNELS = [
-  'google_ads', 'microsoft_ads', 'organic', 'email',
-  'social', 'direct', 'referral', 'other',
+  'google_ads', 'microsoft_ads', 'meta_ads', 'linkedin_ads', 'x_ads', 'tiktok_ads',
+  'organic', 'email', 'social', 'direct', 'referral', 'other',
 ]
 
 export async function GET(_req: NextRequest) {

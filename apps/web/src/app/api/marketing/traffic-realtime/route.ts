@@ -92,7 +92,7 @@ export async function GET(req: NextRequest) {
 
 function emptyBreakdown(): ChannelBreakdown {
   return {
-    google_ads: 0, microsoft_ads: 0, organic: 0, direct: 0,
-    email: 0, referral: 0, social: 0, other: 0, total: 0,
+    google_ads: 0, microsoft_ads: 0, meta_ads: 0, linkedin_ads: 0, x_ads: 0, tiktok_ads: 0,
+    organic: 0, direct: 0, email: 0, referral: 0, social: 0, other: 0, total: 0,
   }
 }

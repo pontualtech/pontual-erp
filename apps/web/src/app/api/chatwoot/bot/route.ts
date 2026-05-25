@@ -1305,6 +1305,10 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
             if (redirect.gclid) attribution.gclid = redirect.gclid
             if (redirect.msclkid) attribution.msclkid = redirect.msclkid
             if (redirect.gbraid) attribution.gbraid = redirect.gbraid
+            if (redirect.fbclid) attribution.fbclid = redirect.fbclid
+            if (redirect.li_fat_id) attribution.li_fat_id = redirect.li_fat_id
+            if (redirect.twclid) attribution.twclid = redirect.twclid
+            if (redirect.ttclid) attribution.ttclid = redirect.ttclid
             if (redirect.utm_source) attribution.utm_source = redirect.utm_source
             if (redirect.utm_medium) attribution.utm_medium = redirect.utm_medium
             if (redirect.utm_campaign) attribution.utm_campaign = redirect.utm_campaign
@@ -1334,8 +1338,14 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
 
               // Posta nota privada igual ao path do [ref:]
               const srcLabel = (() => {
+                if (attribution.gclid) return 'Google Ads'
+                if (attribution.msclkid) return 'Microsoft Ads'
+                if (attribution.fbclid) return 'Meta Ads'
+                if (attribution.li_fat_id) return 'LinkedIn Ads'
+                if (attribution.twclid) return 'X (Twitter) Ads'
+                if (attribution.ttclid) return 'TikTok Ads'
                 const src = attribution.utm_source || ''
-                const m: Record<string, string> = { google: 'Google Ads', bing: 'Microsoft Ads', meta: 'Meta Ads', facebook: 'Meta Ads', instagram: 'Instagram', direct: 'Direto' }
+                const m: Record<string, string> = { google: 'Google Ads', bing: 'Microsoft Ads', meta: 'Meta Ads', facebook: 'Meta Ads', instagram: 'Instagram', linkedin: 'LinkedIn', twitter: 'X (Twitter)', x: 'X (Twitter)', tiktok: 'TikTok', direct: 'Direto' }
                 return m[src.toLowerCase()] || (src ? src.charAt(0).toUpperCase() + src.slice(1) : 'Origem desconhecida')
               })()
               const noteLines = [`📊 *Origem: ${srcLabel}* (via fingerprint)`]

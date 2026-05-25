@@ -2467,6 +2467,10 @@ model MarketingWhatsappRedirect {
   gclid          String?
   msclkid        String?
   gbraid         String?
+  fbclid         String?  // Meta (FB/Insta) Ads — 2026-05-25
+  li_fat_id      String?  // LinkedIn Ads — 2026-05-25
+  twclid         String?  // X/Twitter Ads — 2026-05-25
+  ttclid         String?  // TikTok Ads — 2026-05-25
   utm_source     String?
   utm_medium     String?
   utm_campaign   String?

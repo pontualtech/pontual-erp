@@ -17,7 +17,7 @@ import { success, handleError } from '@/lib/api-response'
 
 const RANGES_DAYS: Record<string, number> = { '7d': 7, '30d': 30, '90d': 90, '365d': 365 }
 
-type ChannelKey = 'google_ads' | 'microsoft_ads' | 'organic' | 'direct' | 'email' | 'referral' | 'social' | 'other' | 'sem_tracking'
+type ChannelKey = 'google_ads' | 'microsoft_ads' | 'meta_ads' | 'linkedin_ads' | 'x_ads' | 'tiktok_ads' | 'organic' | 'direct' | 'email' | 'referral' | 'social' | 'other' | 'sem_tracking'
 
 type OrderRef = {
   os_id: string
@@ -41,13 +41,27 @@ type ChannelStats = {
   top_orders: OrderRef[]       // top 10 OS no canal (ordenadas por approved_cost desc)
 }
 
-function classifyChannel(source: string | null, medium: string | null, gclid: string | null, msclkid: string | null): ChannelKey {
+function classifyChannel(
+  source: string | null, medium: string | null,
+  gclid: string | null, msclkid: string | null,
+  fbclid: string | null = null, liFatId: string | null = null,
+  twclid: string | null = null, ttclid: string | null = null,
+): ChannelKey {
+  // CLIDs têm precedência — captura mais determinística do que utm_source
   if (gclid) return 'google_ads'
   if (msclkid) return 'microsoft_ads'
+  if (fbclid) return 'meta_ads'
+  if (liFatId) return 'linkedin_ads'
+  if (twclid) return 'x_ads'
+  if (ttclid) return 'tiktok_ads'
   if (!source && !medium) return 'sem_tracking'
   const sm = `${source || ''} / ${medium || ''}`.toLowerCase()
   if (/google\s*\/\s*cpc/.test(sm) || /google\s*\/\s*paid/.test(sm)) return 'google_ads'
   if (/bing\s*\/\s*cpc/.test(sm) || /microsoft\s*\/\s*cpc/.test(sm)) return 'microsoft_ads'
+  if (/(facebook|instagram|meta|fb)\s*\/\s*(cpc|paid_social|paid)/.test(sm)) return 'meta_ads'
+  if (/linkedin\s*\/\s*(cpc|paid_social|paid)/.test(sm)) return 'linkedin_ads'
+  if (/(twitter|^x)\s*\/\s*(cpc|paid_social|paid)/.test(sm)) return 'x_ads'
+  if (/tiktok\s*\/\s*(cpc|paid_social|paid)/.test(sm)) return 'tiktok_ads'
   if (/\/\s*organic/.test(sm)) return 'organic'
   if (/\/\s*email/.test(sm) || /mautic/.test(sm)) return 'email'
   if (/(facebook|instagram|linkedin|tiktok|youtube)/.test(sm)) return 'social'
@@ -59,13 +73,17 @@ function classifyChannel(source: string | null, medium: string | null, gclid: st
 const CHANNEL_META: Record<ChannelKey, { label: string; emoji: string; order: number }> = {
   google_ads:    { label: 'Google Ads',       emoji: '🔵', order: 1 },
   microsoft_ads: { label: 'Microsoft Ads',    emoji: '🔷', order: 2 },
-  organic:       { label: 'Orgânico',         emoji: '🌱', order: 3 },
-  email:         { label: 'Email',            emoji: '📧', order: 4 },
-  social:        { label: 'Social',           emoji: '📱', order: 5 },
-  direct:        { label: 'Direto',           emoji: '🔘', order: 6 },
-  referral:      { label: 'Referral',         emoji: '🔗', order: 7 },
-  other:         { label: 'Outros',           emoji: '⚪', order: 8 },
-  sem_tracking:  { label: 'Sem tracking',     emoji: '❓', order: 9 },
+  meta_ads:      { label: 'Meta Ads',         emoji: '🟦', order: 3 },
+  linkedin_ads:  { label: 'LinkedIn Ads',     emoji: '💼', order: 4 },
+  x_ads:         { label: 'X Ads',            emoji: '✖️', order: 5 },
+  tiktok_ads:    { label: 'TikTok Ads',       emoji: '🎵', order: 6 },
+  organic:       { label: 'Orgânico',         emoji: '🌱', order: 7 },
+  email:         { label: 'Email',            emoji: '📧', order: 8 },
+  social:        { label: 'Social orgânico',  emoji: '📱', order: 9 },
+  direct:        { label: 'Direto',           emoji: '🔘', order: 10 },
+  referral:      { label: 'Referral',         emoji: '🔗', order: 11 },
+  other:         { label: 'Outros',           emoji: '⚪', order: 12 },
+  sem_tracking:  { label: 'Sem tracking',     emoji: '❓', order: 13 },
 }
 
 export async function GET(req: NextRequest) {
@@ -128,6 +146,10 @@ export async function GET(req: NextRequest) {
         tracking.utm_medium ?? null,
         tracking.gclid ?? null,
         tracking.msclkid ?? null,
+        tracking.fbclid ?? null,
+        tracking.li_fat_id ?? null,
+        tracking.twclid ?? null,
+        tracking.ttclid ?? null,
       )
       const b = buckets[channel]
       b.os_count++

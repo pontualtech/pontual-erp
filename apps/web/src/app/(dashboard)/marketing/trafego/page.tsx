@@ -7,6 +7,10 @@ import { ArrowLeft, Loader2, RefreshCw, Globe, AlertCircle, MessageCircle } from
 type ChannelBreakdown = {
   google_ads: number
   microsoft_ads: number
+  meta_ads: number
+  linkedin_ads: number
+  x_ads: number
+  tiktok_ads: number
   organic: number
   direct: number
   email: number
@@ -40,9 +44,13 @@ type Period = 'today' | 'last7d' | 'last30d'
 const CHANNELS: { key: keyof Omit<ChannelBreakdown, 'total'>; label: string; emoji: string; color: string }[] = [
   { key: 'google_ads', label: 'Google Ads', emoji: '🔵', color: 'bg-blue-100 text-blue-800' },
   { key: 'microsoft_ads', label: 'Microsoft Ads', emoji: '🔷', color: 'bg-cyan-100 text-cyan-800' },
+  { key: 'meta_ads', label: 'Meta Ads', emoji: '🟦', color: 'bg-indigo-100 text-indigo-800' },
+  { key: 'linkedin_ads', label: 'LinkedIn Ads', emoji: '💼', color: 'bg-sky-100 text-sky-800' },
+  { key: 'x_ads', label: 'X Ads', emoji: '✖️', color: 'bg-zinc-100 text-zinc-800' },
+  { key: 'tiktok_ads', label: 'TikTok Ads', emoji: '🎵', color: 'bg-rose-100 text-rose-800' },
   { key: 'organic', label: 'Orgânico', emoji: '🌱', color: 'bg-green-100 text-green-800' },
   { key: 'email', label: 'Email', emoji: '📧', color: 'bg-purple-100 text-purple-800' },
-  { key: 'social', label: 'Social', emoji: '📱', color: 'bg-pink-100 text-pink-800' },
+  { key: 'social', label: 'Social orgânico', emoji: '📱', color: 'bg-pink-100 text-pink-800' },
   { key: 'direct', label: 'Direto', emoji: '🔘', color: 'bg-gray-100 text-gray-800' },
   { key: 'referral', label: 'Referral', emoji: '🔗', color: 'bg-orange-100 text-orange-800' },
   { key: 'other', label: 'Não classificado', emoji: '⚪', color: 'bg-slate-100 text-slate-800' },

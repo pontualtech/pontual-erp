@@ -35,6 +35,10 @@ type TimelineRow = {
   date: string
   google_ads?: number
   microsoft_ads?: number
+  meta_ads?: number
+  linkedin_ads?: number
+  x_ads?: number
+  tiktok_ads?: number
   organic?: number
   email?: number
   direct?: number
@@ -80,9 +84,13 @@ type EmailEngagementResponse = {
 const CHART_COLORS: Record<string, string> = {
   google_ads: '#3b82f6',     // blue-500
   microsoft_ads: '#06b6d4',  // cyan-500
+  meta_ads: '#6366f1',       // indigo-500
+  linkedin_ads: '#0ea5e9',   // sky-500
+  x_ads: '#71717a',          // zinc-500
+  tiktok_ads: '#f43f5e',     // rose-500
   organic: '#10b981',        // emerald-500
   email: '#8b5cf6',          // violet-500
-  social: '#ec4899',         // pink-500
+  social: '#ec4899',         // pink-500 (social orgânico)
   direct: '#6b7280',         // gray-500
   referral: '#f59e0b',       // amber-500
   other: '#94a3b8',          // slate-400
@@ -92,6 +100,10 @@ const CHART_COLORS: Record<string, string> = {
 type ChannelBreakdownGA4 = {
   google_ads: number
   microsoft_ads: number
+  meta_ads: number
+  linkedin_ads: number
+  x_ads: number
+  tiktok_ads: number
   organic: number
   direct: number
   email: number
@@ -225,7 +237,7 @@ export default function MarketingAttributionPage() {
   function buildFunnel(): FunnelRow[] {
     if (!data || !ga4) return []
     const useWindow: 'last7d' | 'last30d' = range === '7d' ? 'last7d' : 'last30d'
-    const ga4Totals: Record<string, number> = { google_ads: 0, microsoft_ads: 0, organic: 0, direct: 0, email: 0, referral: 0, social: 0, other: 0 }
+    const ga4Totals: Record<string, number> = { google_ads: 0, microsoft_ads: 0, meta_ads: 0, linkedin_ads: 0, x_ads: 0, tiktok_ads: 0, organic: 0, direct: 0, email: 0, referral: 0, social: 0, other: 0 }
     for (const site of ga4.sites) {
       if (!site.configured) continue
       const bd = site[useWindow]

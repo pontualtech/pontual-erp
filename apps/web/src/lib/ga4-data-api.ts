@@ -61,11 +61,15 @@ async function getAccessToken(): Promise<string> {
 export type ChannelBreakdown = {
   google_ads: number
   microsoft_ads: number
+  meta_ads: number      // FB + Insta (paid) — 2026-05-25
+  linkedin_ads: number  // 2026-05-25
+  x_ads: number         // X/Twitter — 2026-05-25
+  tiktok_ads: number    // 2026-05-25
   organic: number
   direct: number
   email: number
   referral: number
-  social: number
+  social: number        // social orgânico (sem paid)
   other: number
   total: number
 }
@@ -82,15 +86,19 @@ export type ChannelBreakdown = {
  */
 export function classifyChannel(sourceMedium: string): keyof Omit<ChannelBreakdown, 'total'> {
   const sm = sourceMedium.toLowerCase()
-  // Google Ads
+  // Paid — verificar ANTES de social orgânico
   if (/google\s*\/\s*cpc/.test(sm) || /google\s*\/\s*paid/.test(sm)) return 'google_ads'
-  // Microsoft Ads
   if (/bing\s*\/\s*cpc/.test(sm) || /microsoft\s*\/\s*cpc/.test(sm)) return 'microsoft_ads'
+  // Meta (FB/Insta) — paid_social ou cpc com source meta/facebook/instagram
+  if (/(facebook|instagram|meta|fb)\s*\/\s*(cpc|paid_social|paid)/.test(sm)) return 'meta_ads'
+  if (/linkedin\s*\/\s*(cpc|paid_social|paid)/.test(sm)) return 'linkedin_ads'
+  if (/(twitter|^x)\s*\/\s*(cpc|paid_social|paid)/.test(sm)) return 'x_ads'
+  if (/tiktok\s*\/\s*(cpc|paid_social|paid)/.test(sm)) return 'tiktok_ads'
   // Orgânico
   if (/\/\s*organic\b/.test(sm)) return 'organic'
   // Email
   if (/\/\s*email\b/.test(sm) || /mautic/.test(sm)) return 'email'
-  // Social
+  // Social orgânico (sem paid)
   if (/(facebook|instagram|linkedin|twitter|tiktok|youtube)/.test(sm)) return 'social'
   // Direto
   if (sm.startsWith('(direct)') || sm.includes('(not set)') || sm.includes('(data not available)')) {
@@ -145,8 +153,8 @@ export async function getEventChannelBreakdown(
     limit: 200,
   })
   const result: ChannelBreakdown = {
-    google_ads: 0, microsoft_ads: 0, organic: 0, direct: 0,
-    email: 0, referral: 0, social: 0, other: 0, total: 0,
+    google_ads: 0, microsoft_ads: 0, meta_ads: 0, linkedin_ads: 0, x_ads: 0, tiktok_ads: 0,
+    organic: 0, direct: 0, email: 0, referral: 0, social: 0, other: 0, total: 0,
   }
   for (const row of data.rows || []) {
     const sourceMedium = row.dimensionValues[0].value
@@ -170,8 +178,8 @@ export async function getChannelBreakdown(propertyId: string, dateRange: { start
     limit: 200,
   })
   const result: ChannelBreakdown = {
-    google_ads: 0, microsoft_ads: 0, organic: 0, direct: 0,
-    email: 0, referral: 0, social: 0, other: 0, total: 0,
+    google_ads: 0, microsoft_ads: 0, meta_ads: 0, linkedin_ads: 0, x_ads: 0, tiktok_ads: 0,
+    organic: 0, direct: 0, email: 0, referral: 0, social: 0, other: 0, total: 0,
   }
   for (const row of data.rows || []) {
     const sourceMedium = row.dimensionValues[0].value
