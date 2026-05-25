@@ -95,7 +95,7 @@ export async function emitReminder(args: {
   const ar = await prisma.accountReceivable.findFirst({
     where: { id: args.payment_id, company_id: args.company_id, deleted_at: null },
     include: {
-      customers: { select: { id: true, legal_name: true, email: true, mobile: true } },
+      customers: { select: { id: true, legal_name: true, email: true, mobile: true, custom_data: true } },
       companies: { select: { id: true, name: true, slug: true } },
     },
   })
@@ -103,6 +103,13 @@ export async function emitReminder(args: {
   if (!ar.due_date) return { ok: false, error: 'ar_no_due_date' }
   if (!ar.customers) return { ok: false, error: 'ar_no_customer' }
   if (ar.status !== 'PENDENTE') return { ok: false, error: `ar_status_${ar.status}` }
+
+  // Wave AE-3 (consistência): opt-out do cliente silencia AE-2 também.
+  // Flag única `custom_data.disable_reminders` setada via /portal/[slug]/perfil.
+  // Sem isso, cliente que clicou "Desativar lembretes" continuaria recebendo
+  // cobrança em atraso — bug funcional do trio AE.
+  const cd = (ar.customers.custom_data as Record<string, any> | null) || {}
+  if (cd.disable_reminders === true) return { ok: false, error: 'customer_opted_out' }
 
   const customer = ar.customers
   const company = ar.companies
