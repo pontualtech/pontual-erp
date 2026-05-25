@@ -129,7 +129,7 @@ export async function GET(request: NextRequest) {
           estimated_delivery: { lt: todayDateStart },
         },
         include: {
-          customers: { select: { id: true, legal_name: true, email: true, mobile: true, phone: true } },
+          customers: { select: { id: true, legal_name: true, email: true, mobile: true, phone: true, custom_data: true } },
           module_statuses: { select: { name: true } },
         },
       })
@@ -138,6 +138,14 @@ export async function GET(request: NextRequest) {
         stats.scanned++
         try {
           if (!os.customers?.email) {
+            stats.skipped++
+            continue
+          }
+          // Wave AE-3.2: respeitar opt-out do cliente (flag única do trio AE).
+          // Cliente que clicou "Desativar lembretes" em /portal/[slug]/perfil
+          // não recebe mais email/whatsapp do "Peças em trânsito".
+          const customerCd = (os.customers.custom_data as Record<string, any> | null) || {}
+          if (customerCd.disable_reminders === true) {
             stats.skipped++
             continue
           }
