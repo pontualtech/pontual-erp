@@ -78,7 +78,7 @@ export default function PortalOSDetailPage() {
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
   const [approvePayment, setApprovePayment] = useState<string | null>(null)
-  const [company, setCompany] = useState<{ name: string; phone?: string; whatsapp?: string; email?: string; address?: string; cnpj?: string; horario?: string; pix_chave?: string; pix_banco?: string; default_business_days?: string } | null>(null)
+  const [company, setCompany] = useState<{ name: string; phone?: string; whatsapp?: string; email?: string; address?: string; cnpj?: string; horario?: string; pix_chave?: string; pix_banco?: string; default_business_days?: string; warranty_days?: string } | null>(null)
   const [customer, setCustomer] = useState<{ id: string; name: string } | null>(null)
   // NPS antigo (0-10): substituido 2026-05-20 por card "Avalie no Google".
   // Mantemos npsExisting display pra preservar avaliacoes ja submetidas no
@@ -1016,9 +1016,15 @@ export default function PortalOSDetailPage() {
                 <div>
                   <h4 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">Garantia</h4>
                   <ul className="mt-1 text-sm text-gray-600 dark:text-gray-400 space-y-1">
-                    <li>Todo serviço possui garantia conforme descrito no orçamento</li>
-                    <li>Peças substituídas com garantia do fabricante</li>
-                    <li>Acompanhe pelo portal a qualquer momento</li>
+                    {(() => {
+                      const d = parseInt(company?.warranty_days || '90', 10) || 90
+                      const label = d % 30 === 0
+                        ? `${d / 30} ${d / 30 === 1 ? 'mês' : 'meses'} (${d} dias)`
+                        : `${d} dias`
+                      return <li>Garantia padrão de <strong>{label}</strong> a partir da entrega do serviço</li>
+                    })()}
+                    <li>Peças substituídas seguem garantia do fabricante</li>
+                    <li>Acompanhe a data de vencimento da garantia pelo portal a qualquer momento</li>
                   </ul>
                 </div>
               </div>

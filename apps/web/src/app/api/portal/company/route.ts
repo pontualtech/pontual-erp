@@ -44,6 +44,7 @@ export async function GET(req: NextRequest) {
         pix_chave: cfg['pix.chave'] || cfg['cnab.cnpj'] || '',
         pix_banco: cfg['pix.banco'] || '',
         default_business_days: cfg['os.default_business_days'] || '10',
+        warranty_days: cfg['warranty_days'] || '90',
       },
     })
   } catch (err) {
