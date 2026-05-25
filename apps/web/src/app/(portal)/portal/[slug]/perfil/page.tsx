@@ -20,6 +20,8 @@ interface ProfileData {
   address_zip: string | null
   document_number: string | null
   person_type: string
+  // Wave AE-3: opt-out de lembretes (email + WhatsApp). Silencia ambos canais.
+  disable_reminders?: boolean
 }
 
 export default function PerfilPage() {
@@ -34,7 +36,9 @@ export default function PerfilPage() {
     email: '', phone: '', mobile: '',
     address_street: '', address_number: '', address_complement: '',
     address_neighborhood: '', address_city: '', address_state: '', address_zip: '',
+    disable_reminders: false,
   })
+  const [savingReminders, setSavingReminders] = useState(false)
 
   useEffect(() => {
     fetch('/api/portal/profile')
@@ -53,6 +57,7 @@ export default function PerfilPage() {
             address_city: res.data.address_city || '',
             address_state: res.data.address_state || '',
             address_zip: res.data.address_zip || '',
+            disable_reminders: res.data.disable_reminders === true,
           })
         }
       })
@@ -74,6 +79,22 @@ export default function PerfilPage() {
       toast.success('Dados atualizados!')
     } catch { toast.error('Erro de conexao') }
     finally { setSaving(false) }
+  }
+
+  // Wave AE-3: toggle imediato pra opt-out (sem submit do form completo)
+  async function toggleReminders(next: boolean) {
+    setSavingReminders(true)
+    try {
+      const res = await fetch('/api/portal/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ disable_reminders: next }),
+      })
+      if (!res.ok) { toast.error('Erro ao salvar preferência'); return }
+      setForm(f => ({ ...f, disable_reminders: next }))
+      toast.success(next ? 'Lembretes desativados' : 'Lembretes reativados')
+    } catch { toast.error('Erro de conexão') }
+    finally { setSavingReminders(false) }
   }
 
   const inp = "w-full px-4 py-3 border border-gray-300 dark:border-zinc-600 rounded-xl text-gray-900 dark:text-gray-100 bg-white dark:bg-zinc-800 placeholder-gray-400 dark:placeholder-gray-600 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
@@ -107,6 +128,41 @@ export default function PerfilPage() {
                 {profile?.person_type === 'JURIDICA' ? 'CNPJ' : 'CPF'}: {profile?.document_number || '-'}
               </p>
             </div>
+          </div>
+        </div>
+
+        {/* Wave AE-3: opt-out de lembretes (silencia email + WhatsApp) */}
+        <div className="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-700 p-6 mb-6">
+          <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-1">Notificações</h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Lembretes automáticos sobre orçamentos pendentes e faturas em atraso.
+          </p>
+          <div className="flex items-center justify-between">
+            <div className="pr-4">
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                Receber lembretes
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                {form.disable_reminders
+                  ? 'Você não receberá lembretes por email nem WhatsApp.'
+                  : 'Lembretes ativos (email e WhatsApp).'}
+              </p>
+            </div>
+            <button
+              type="button"
+              aria-label={form.disable_reminders ? 'Reativar lembretes' : 'Desativar lembretes'}
+              onClick={() => toggleReminders(!form.disable_reminders)}
+              disabled={savingReminders}
+              className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors disabled:opacity-50 ${
+                !form.disable_reminders ? 'bg-blue-600 dark:bg-blue-500' : 'bg-gray-300 dark:bg-zinc-700'
+              }`}
+            >
+              <span
+                className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                  !form.disable_reminders ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
           </div>
         </div>
 

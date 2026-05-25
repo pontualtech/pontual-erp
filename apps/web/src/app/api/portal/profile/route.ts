@@ -27,6 +27,7 @@ export async function GET(req: NextRequest) {
         address_zip: true,
         document_number: true,
         person_type: true,
+        custom_data: true,
       },
     })
 
@@ -34,9 +35,16 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Cliente nao encontrado' }, { status: 404 })
     }
 
+    // Wave AE-3: expõe disable_reminders (opt-out de lembretes WhatsApp/email).
+    // Lido de custom_data.disable_reminders (zero migration, ver AE-1).
+    const cd = (customer.custom_data as Record<string, any> | null) || {}
+    const disable_reminders = cd.disable_reminders === true
+
     const { toTitleCase } = await import('@/lib/format-text')
     return NextResponse.json({ data: {
       ...customer,
+      custom_data: undefined, // não expor o JSON completo, só o flag derivado
+      disable_reminders,
       legal_name: toTitleCase(customer.legal_name || ''),
       address_street: customer.address_street ? toTitleCase(customer.address_street) : customer.address_street,
       address_complement: customer.address_complement ? toTitleCase(customer.address_complement) : customer.address_complement,
@@ -57,12 +65,12 @@ export async function PUT(req: NextRequest) {
     }
 
     const body = await req.json()
-    const { email, phone, mobile, address_street, address_number, address_complement, address_neighborhood, address_city, address_state, address_zip } = body
+    const { email, phone, mobile, address_street, address_number, address_complement, address_neighborhood, address_city, address_state, address_zip, disable_reminders } = body
 
     // Load current data for comparison
     const current = await prisma.customer.findFirst({
       where: { id: portalUser.customer_id, company_id: portalUser.company_id },
-      select: { legal_name: true, email: true, phone: true, mobile: true, address_street: true, address_number: true, address_city: true, address_state: true },
+      select: { legal_name: true, email: true, phone: true, mobile: true, address_street: true, address_number: true, address_city: true, address_state: true, custom_data: true },
     })
 
     if (!current) {
@@ -82,14 +90,30 @@ export async function PUT(req: NextRequest) {
     if (address_state !== undefined) changes.address_state = address_state
     if (address_zip !== undefined) changes.address_zip = address_zip?.replace(/\D/g, '')
 
+    // Wave AE-3: disable_reminders vai pra custom_data (merge), não pra coluna dedicada
+    const currentCd = (current.custom_data as Record<string, any> | null) || {}
+    const currentDisabled = currentCd.disable_reminders === true
+    let customDataUpdate: Record<string, any> | null = null
+    if (disable_reminders !== undefined && disable_reminders !== currentDisabled) {
+      customDataUpdate = { ...currentCd, disable_reminders: !!disable_reminders }
+      changes.disable_reminders = !!disable_reminders // pra audit log only; não vai pro update direto
+    }
+
     if (Object.keys(changes).length === 0) {
       return NextResponse.json({ data: { message: 'Nenhuma alteracao' } })
     }
 
+    // Separar mudanças de coluna vs custom_data antes do update
+    const colChanges = { ...changes }
+    delete colChanges.disable_reminders
+
     // Update customer
     await prisma.customer.update({
       where: { id: portalUser.customer_id },
-      data: changes,
+      data: {
+        ...colChanges,
+        ...(customDataUpdate ? { custom_data: customDataUpdate as any } : {}),
+      },
     })
 
     // Log in audit
