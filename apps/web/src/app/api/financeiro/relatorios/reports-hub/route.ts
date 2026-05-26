@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
       const clientId = r.customers?.id ?? 'none'
       const clientName = r.customers?.legal_name ?? 'Sem cliente'
       if (!clientMap[clientId]) clientMap[clientId] = { name: clientName, amount: 0 }
-      clientMap[clientId].amount += r.received_amount ?? r.total_amount
+      clientMap[clientId].amount += (r.received_amount || r.total_amount)
     }
     const topClientes = Object.values(clientMap)
       .sort((a, b) => b.amount - a.amount)
@@ -164,7 +164,7 @@ export async function GET(request: NextRequest) {
       const d = new Date(r.due_date)
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
       if (monthlyMap[key]) {
-        monthlyMap[key].receitas += r.received_amount ?? r.total_amount
+        monthlyMap[key].receitas += (r.received_amount || r.total_amount)
       }
     }
 
