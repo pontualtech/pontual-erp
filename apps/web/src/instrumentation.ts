@@ -75,6 +75,30 @@ function startCronJobs() {
     }
   }, 60 * 60 * 1000) // 1 hour
 
+  // Payment Reminders V2 (Wave AE-2) — every 10 minutes
+  // Régua de cobrança nova: scheduler (cria PaymentReminders) + dispatcher
+  // (envia via Meta/email quando PAYMENT_REMINDERS_V2_REAL_DISPATCH=1).
+  // Endpoint deployado desde 25/05 mas ficou órfão de cron até este fix
+  // (audit operador humano 2026-05-26).
+  setInterval(async () => {
+    try {
+      const res = await fetch(`${BASE_URL}/api/cron/payment-reminders-v2`, { headers })
+      if (res.ok) {
+        const data = await res.json()
+        const sched = data.data?.scheduled || 0
+        const disp = data.data?.dispatched || 0
+        const fail = data.data?.dispatch_failures || 0
+        if (sched > 0 || disp > 0 || fail > 0) {
+          console.log(`[Cron/PaymentRemindersV2] scheduled=${sched} dispatched=${disp} failures=${fail}`)
+        }
+      } else {
+        console.error(`[Cron/PaymentRemindersV2] HTTP ${res.status}`)
+      }
+    } catch (err) {
+      console.error('[Cron/PaymentRemindersV2] Error:', err instanceof Error ? err.message : err)
+    }
+  }, 10 * 60 * 1000) // 10 minutes
+
   // Driver Inactivity — every 10 minutes (so-opera em horario comercial)
   setInterval(async () => {
     try {
