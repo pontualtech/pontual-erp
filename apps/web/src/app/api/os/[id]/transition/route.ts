@@ -451,7 +451,10 @@ export async function POST(req: NextRequest, { params }: Params) {
               paid_amount: 0,
               due_date: new Date(),
               status: 'PENDENTE',
-              payment_method: 'Desconto automático',
+              // Fix 2026-05-26: padronizado SEM til pra alinhar com 4 outros writes
+              // (driver/entrega, perform-match x2, capture-fees). Antes essa linha
+              // era o único lugar com til, criando 54 rows divididas no banco.
+              payment_method: 'Desconto automatico',
             },
           })
         }
