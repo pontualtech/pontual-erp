@@ -106,14 +106,16 @@ export async function GET(request: NextRequest) {
       if (!clientMap[clientId]) {
         clientMap[clientId] = { name: clientName, amount: 0 }
       }
-      clientMap[clientId].amount += r.received_amount ?? r.total_amount
+      // Fix 2026-05-26: usar || (truthy) em vez de ?? (nullish) — 7 ARs RECEBIDO antigas
+      // têm received_amount=0 (campo nunca preenchido); ?? não fazia fallback porque 0 não é nullish.
+      clientMap[clientId].amount += (r.received_amount || r.total_amount)
     }
 
     const topClientes = Object.values(clientMap)
       .sort((a, b) => b.amount - a.amount)
       .slice(0, 5)
 
-    const faturamento = totalReceived._sum.received_amount ?? totalReceived._sum.total_amount ?? 0
+    const faturamento = totalReceived._sum.received_amount || totalReceived._sum.total_amount || 0
     const despesas = totalPaid._sum.paid_amount ?? totalPaid._sum.total_amount ?? 0
 
     return success({

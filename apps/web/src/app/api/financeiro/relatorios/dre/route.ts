@@ -119,7 +119,7 @@ export async function GET(request: NextRequest) {
     let receitaBruta = 0
 
     for (const r of receivables) {
-      const amount = r.received_amount ?? r.total_amount
+      const amount = (r.received_amount || r.total_amount)
       const catName = r.categories?.name ?? 'Outros'
       receitasMap[catName] = (receitasMap[catName] || 0) + amount
       receitaBruta += amount
@@ -197,7 +197,7 @@ export async function GET(request: NextRequest) {
       for (const r of receivables) {
         const d = new Date(r.due_date)
         if (d >= mStart && d <= mEnd) {
-          mReceitaBruta += r.received_amount ?? r.total_amount
+          mReceitaBruta += (r.received_amount || r.total_amount)
         }
       }
 
