@@ -121,11 +121,11 @@ export async function GET(_req: NextRequest) {
 
     const [mtdRev, lyRev] = await Promise.all([
       prisma.accountReceivable.aggregate({
-        where: { company_id: user.companyId, deleted_at: null, status: 'RECEBIDO', due_date: { gte: ystart, lte: yend } },
+        where: { company_id: user.companyId, deleted_at: null, status: { in: ['RECEBIDO', 'PAGO'] }, due_date: { gte: ystart, lte: yend } },
         _sum: { received_amount: true },
       }),
       prisma.accountReceivable.aggregate({
-        where: { company_id: user.companyId, deleted_at: null, status: 'RECEBIDO', due_date: { gte: lyStart, lte: lyEnd } },
+        where: { company_id: user.companyId, deleted_at: null, status: { in: ['RECEBIDO', 'PAGO'] }, due_date: { gte: lyStart, lte: lyEnd } },
         _sum: { received_amount: true },
       }),
     ])

@@ -2159,7 +2159,10 @@ export default function OSDetailPage() {
             <div className="px-4 pb-4 space-y-3">
               {os.accounts_receivable!.map(ar => {
                 const isOverdue = ar.status === 'PENDENTE' && new Date(ar.due_date) < new Date()
-                const isPaid = ar.status === 'RECEBIDO'
+                // Fix 2026-05-26: banco tem ambos 'RECEBIDO' (legado, 141 rows) e
+                // 'PAGO' (mais novo, 46 rows). Caso OS-60210: status='PAGO' mostrava
+                // como "Pendente" porque check só pegava 'RECEBIDO'.
+                const isPaid = ar.status === 'RECEBIDO' || ar.status === 'PAGO'
                 const isCancelled = ar.status === 'CANCELADO'
                 const remaining = ar.total_amount - ar.received_amount
 
@@ -2219,8 +2222,8 @@ export default function OSDetailPage() {
                       </div>
                       <div>
                         <p className="text-xs text-gray-400 uppercase">Pago em</p>
-                        <p className={cn('font-medium', ar.status === 'RECEBIDO' ? 'text-green-700' : 'text-gray-400')}>
-                          {ar.status === 'RECEBIDO' && ar.updated_at
+                        <p className={cn('font-medium', isPaid ? 'text-green-700' : 'text-gray-400')}>
+                          {isPaid && ar.updated_at
                             ? new Date(ar.updated_at).toLocaleDateString('pt-BR')
                             : '--'}
                         </p>
@@ -2303,7 +2306,7 @@ export default function OSDetailPage() {
                           <tbody className="divide-y">
                             {ar.installments.map(inst => {
                               const instOverdue = inst.status === 'PENDENTE' && new Date(inst.due_date) < new Date()
-                              const instPaid = inst.status === 'RECEBIDO'
+                              const instPaid = inst.status === 'RECEBIDO' || inst.status === 'PAGO'
                               const rowClass = instPaid
                                 ? 'bg-green-50/50 text-green-800'
                                 : instOverdue
