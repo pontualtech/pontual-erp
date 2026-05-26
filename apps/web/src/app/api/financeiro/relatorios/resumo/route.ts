@@ -82,7 +82,10 @@ export async function GET(request: NextRequest) {
       if (!categoryMap[catId]) {
         categoryMap[catId] = { name: catName, amount: 0 }
       }
-      categoryMap[catId].amount += p.paid_amount ?? p.total_amount
+      // Fix 2026-05-26: defesa preventiva (mesmo bug do received_amount ?? — ver
+      // feedback_nullish_vs_truthy_fallback). 0 APs com paid_amount=0 hoje, mas
+      // se entrar uma no futuro, evita subestimar top categorias.
+      categoryMap[catId].amount += (p.paid_amount || p.total_amount)
     }
 
     const topCategories = Object.values(categoryMap)

@@ -122,7 +122,7 @@ export async function GET(request: NextRequest) {
       const supplierId = p.customers?.id ?? 'none'
       const supplierName = p.customers?.legal_name ?? 'Sem fornecedor'
       if (!supplierMap[supplierId]) supplierMap[supplierId] = { name: supplierName, amount: 0 }
-      supplierMap[supplierId].amount += p.paid_amount ?? p.total_amount
+      supplierMap[supplierId].amount += (p.paid_amount || p.total_amount)
     }
     const topFornecedores = Object.values(supplierMap)
       .sort((a, b) => b.amount - a.amount)
@@ -172,7 +172,7 @@ export async function GET(request: NextRequest) {
       const d = new Date(p.due_date)
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
       if (monthlyMap[key]) {
-        monthlyMap[key].despesas += p.paid_amount ?? p.total_amount
+        monthlyMap[key].despesas += (p.paid_amount || p.total_amount)
       }
     }
 
