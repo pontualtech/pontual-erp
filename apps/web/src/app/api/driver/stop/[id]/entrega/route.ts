@@ -522,7 +522,10 @@ export async function POST(
                     dueDate,
                     totalAmount: amount,
                     receiptUrl,
-                    status: isOnSite ? 'PAGO' : 'PENDENTE',
+                    // Fix 2026-05-26: AR usa 'RECEBIDO' como valor canônico (legado, 141 rows).
+                    // Antes: 'PAGO' criava coexistência com 'RECEBIDO' invisibilizando rows
+                    // em reads que filtravam só 'RECEBIDO' (DRE, resumo, dashboard).
+                    status: isOnSite ? 'RECEBIDO' : 'PENDENTE',
                     receivedAmount: isOnSite ? amount : 0,
                     notes: `Recebido via motorista ${auth.name} (split em ${splitsPayload.length} formas)`,
                     splits: splitsPayload,
@@ -543,8 +546,10 @@ export async function POST(
                     total_amount: amount,
                     received_amount: isOnSite ? amount : 0,
                     due_date: dueDate,
-                    status: isOnSite ? 'PAGO' : 'PENDENTE',
-                    // 2026-05-20: motorista presencial e declaracao manual. AR vira PAGO mas
+                    // Fix 2026-05-26: 'RECEBIDO' (canônico) em vez de 'PAGO' — ver outro
+                    // chamador acima e dre/route.ts pra justificativa.
+                    status: isOnSite ? 'RECEBIDO' : 'PENDENTE',
+                    // 2026-05-20: motorista presencial e declaracao manual. AR vira RECEBIDO mas
                     // reconciled=false ate financeiro bater no extrato bancario.
                     reconciled: false,
                     payment_method: paymentMethodMapped,
