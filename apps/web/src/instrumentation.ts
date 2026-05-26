@@ -51,8 +51,10 @@ function startCronJobs() {
       const res = await fetch(`${BASE_URL}/api/cron/lembrete-orcamento`, { headers })
       if (res.ok) {
         const data = await res.json()
-        if (data.data?.emails_sent > 0) {
-          console.log(`[Cron/LembreteOrcamento] Sent ${data.data.emails_sent} reminders`)
+        const emails = data.data?.emails_sent || 0
+        const whatsapp = data.data?.whatsapp_sent || 0
+        if (emails > 0 || whatsapp > 0) {
+          console.log(`[Cron/LembreteOrcamento] emails_sent=${emails} whatsapp_sent=${whatsapp}`)
         }
       }
     } catch (err) {
