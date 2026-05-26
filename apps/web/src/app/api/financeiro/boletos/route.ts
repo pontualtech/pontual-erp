@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
 
       // Determine display status
       let boletoStatus = boletoMeta.boletoStatus || 'REGISTERED'
-      if (b.status === 'RECEBIDO') boletoStatus = 'PAID'
+      if (b.status === 'RECEBIDO' || b.status === 'PAGO') boletoStatus = 'PAID'
       else if (b.status === 'CANCELADO') boletoStatus = 'CANCELLED'
       else if (b.status === 'PENDENTE' && new Date(b.due_date) < new Date(new Date().toDateString())) {
         boletoStatus = 'OVERDUE'
@@ -107,7 +107,7 @@ export async function GET(request: NextRequest) {
         where: { company_id: user.companyId, deleted_at: null, boleto_url: { not: null }, status: 'PENDENTE', due_date: { gte: new Date(new Date().toDateString()) } },
       }),
       prisma.accountReceivable.count({
-        where: { company_id: user.companyId, deleted_at: null, boleto_url: { not: null }, status: 'RECEBIDO' },
+        where: { company_id: user.companyId, deleted_at: null, boleto_url: { not: null }, status: { in: ['RECEBIDO', 'PAGO'] } },
       }),
       prisma.accountReceivable.count({
         where: { company_id: user.companyId, deleted_at: null, boleto_url: { not: null }, status: 'PENDENTE', due_date: { lt: new Date(new Date().toDateString()) } },
