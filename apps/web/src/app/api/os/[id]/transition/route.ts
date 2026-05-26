@@ -277,7 +277,8 @@ export async function POST(req: NextRequest, { params }: Params) {
           orderBy: { name: 'asc' },
         })
         const totalAmount = os.total_cost ?? 0
-        const splitStatus = receivedNow ? 'PAGO' : 'PENDENTE'
+        // Fix 2026-05-26: 'RECEBIDO' canônico em AR (ver dre/route.ts pra justificativa)
+        const splitStatus = receivedNow ? 'RECEBIDO' : 'PENDENTE'
         const result = await createReceivableOrSplit({
           companyId: user.companyId,
           customerId: os.customer_id,

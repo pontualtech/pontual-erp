@@ -43,10 +43,19 @@ export async function GET(request: NextRequest) {
       endDate = new Date(year, 11, 31, 23, 59, 59)
     }
 
-    const baseWhere = {
+    // Fix 2026-05-26: AR usa ambos 'RECEBIDO' (legado, 141 rows) e 'PAGO'
+    // (motorista PWA on-site, 46 rows). DRE só lia 'PAGO' — invisibilizava
+    // ~75% da receita real. AP só usa 'PAGO' (canônico, sem coexistência).
+    const baseWhereAP = {
       company_id: user.companyId,
       deleted_at: null,
       status: 'PAGO' as const,
+      due_date: { gte: startDate, lte: endDate },
+    }
+    const baseWhereAR = {
+      company_id: user.companyId,
+      deleted_at: null,
+      status: { in: ['RECEBIDO', 'PAGO'] as const },
       due_date: { gte: startDate, lte: endDate },
     }
 
@@ -63,7 +72,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch receivables with categories
     const receivables = await prisma.accountReceivable.findMany({
-      where: baseWhere,
+      where: baseWhereAR,
       select: {
         total_amount: true,
         received_amount: true,
@@ -74,7 +83,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch payables with categories
     const payables = await prisma.accountPayable.findMany({
-      where: baseWhere,
+      where: baseWhereAP,
       select: {
         total_amount: true,
         paid_amount: true,
