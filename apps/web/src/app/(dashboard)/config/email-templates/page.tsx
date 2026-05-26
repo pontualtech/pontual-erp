@@ -232,6 +232,16 @@ export default function EmailTemplatesPage() {
             </div>
             {tab === 'visual' ? (
               <div className="p-4">
+                {/* Wave AG-3 (audit 2026-05-26): aviso quando template não foi customizado.
+                    Editor visual semeia useState com DEFAULT_QUOTE_REMINDER_BLOCKS pra
+                    QUALQUER aba (feedback/recibo/coleta_concluida). Clicar Salvar sem
+                    editar grava HTML de "Orçamento Pendente" na key da aba — caso 24/05
+                    poluiu email_templates.feedback.html, dois NPS saíram com body errado. */}
+                {!isCustom && (
+                  <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                    ⚠️ <strong>Template ainda usa o padrão.</strong> O editor visual carrega blocos de exemplo do template "Orçamento Pendente" como ponto de partida — <strong>edite o conteúdo antes de clicar Salvar</strong>, senão você sobrescreve esta aba com texto irrelevante. Pra usar o template padrão original sem mexer, use a aba "Preview" pra ver e não salve aqui.
+                  </div>
+                )}
                 <div className="mb-3 flex items-center justify-between">
                   <p className="text-xs text-gray-500">Edita os blocos — preview ao lado atualiza ao vivo.</p>
                   <button type="button" onClick={saveBlocks} disabled={saving}
