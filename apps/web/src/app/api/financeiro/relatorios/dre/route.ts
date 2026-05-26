@@ -134,7 +134,7 @@ export async function GET(request: NextRequest) {
     const unclassified: Array<{ category: string; amount: number; via: 'chart' | 'heuristic' | 'fallback' }> = []
 
     for (const p of payables) {
-      const amount = p.paid_amount ?? p.total_amount
+      const amount = (p.paid_amount || p.total_amount)
       const catName = p.categories?.name ?? 'Outros'
       const module = p.categories?.module ?? ''
 
@@ -204,7 +204,7 @@ export async function GET(request: NextRequest) {
       for (const p of payables) {
         const d = new Date(p.due_date)
         if (d >= mStart && d <= mEnd) {
-          const amount = p.paid_amount ?? p.total_amount
+          const amount = (p.paid_amount || p.total_amount)
           const catName = p.categories?.name ?? ''
           const module = p.categories?.module ?? ''
 
