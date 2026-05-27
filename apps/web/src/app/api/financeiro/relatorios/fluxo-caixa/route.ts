@@ -37,6 +37,20 @@ export async function GET(request: NextRequest) {
       select: { total_amount: true, received_amount: true, due_date: true, status: true },
     })
 
+    // Wave AS-1 (2026-05-27): ARs RECEBIDO via Asaas cartão crédito têm o
+    // dinheiro "creditado" só em D+32 (vide expected_credit_date). Sem essa
+    // query separada, ~R$ 62k ficavam invisíveis no fluxo de caixa.
+    const receivablesAwaitingCredit = await prisma.accountReceivable.findMany({
+      where: {
+        company_id: user.companyId,
+        deleted_at: null,
+        status: 'RECEBIDO',
+        expected_credit_date: { gte: startDate, lte: endDate },
+        ...(categoryId ? { category_id: categoryId } : {}),
+      },
+      select: { total_amount: true, received_amount: true, expected_credit_date: true },
+    })
+
     // Buscar pagamentos (PAGO + PENDENTE para projeção)
     const payablesWhere: any = {
       company_id: user.companyId,
@@ -126,6 +140,16 @@ export async function GET(request: NextRequest) {
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
       if (monthMap[key]) {
         monthMap[key].saidas += p.total_amount - (p.paid_amount || 0)
+      }
+    }
+    // Wave AS-1: ARs RECEBIDO aguardando crédito Asaas (cartão D+32, débito D+3, etc).
+    // Agrupa pelo expected_credit_date (data que dinheiro realmente entra), não due_date.
+    for (const r of receivablesAwaitingCredit) {
+      if (!r.expected_credit_date) continue
+      const d = new Date(r.expected_credit_date)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      if (monthMap[key]) {
+        monthMap[key].entradas += r.received_amount || r.total_amount
       }
     }
 
