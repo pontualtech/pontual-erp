@@ -110,17 +110,34 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
       })
 
       if (receivable) {
-        const newReceived = (receivable.received_amount || 0) + txn.gross_amount
-        const fully = newReceived >= receivable.total_amount
-        await tx.accountReceivable.update({
-          where: { id: receivable.id },
-          data: {
-            received_amount: newReceived,
-            status: fully ? 'RECEBIDO' : 'PARCIAL',
-            charge_status: 'RECEIVED',
-            payment_method: billingType,
-          },
-        })
+        // Fix 2026-05-27: guard contra double-credit. Se AR já está RECEBIDO
+        // (webhook Asaas processou antes, /baixa manual, etc), match da
+        // maquininha NÃO soma received_amount novamente — só marca como
+        // reconciled=true e atualiza charge_status. Caso 27/05: 5 ARs com
+        // received_amount = 2x total_amount geradas por esse fluxo
+        // (R$ 2.388,11 fantasma em receita inflada).
+        if (receivable.status === 'RECEBIDO') {
+          await tx.accountReceivable.update({
+            where: { id: receivable.id },
+            data: {
+              reconciled: true,
+              charge_status: 'RECEIVED',
+            },
+          })
+        } else {
+          const newReceived = (receivable.received_amount || 0) + txn.gross_amount
+          const fully = newReceived >= receivable.total_amount
+          await tx.accountReceivable.update({
+            where: { id: receivable.id },
+            data: {
+              received_amount: newReceived,
+              status: fully ? 'RECEBIDO' : 'PARCIAL',
+              charge_status: 'RECEIVED',
+              payment_method: billingType,
+              ...(fully ? { reconciled: true } : {}),
+            },
+          })
+        }
       } else {
         const cat = await tx.category.findFirst({
           where: { company_id: companyId, module: 'financeiro_receita', name: { mode: 'insensitive', contains: 'Venda de Servi' } },
