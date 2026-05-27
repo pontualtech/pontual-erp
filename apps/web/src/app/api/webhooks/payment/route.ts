@@ -37,6 +37,28 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   CANCELLED: ['DELETED'],
 }
 
+// Wave AS-1 (2026-05-27): calcula data esperada de crédito no banco baseado
+// em billing_type + settings da empresa. Defaults Asaas sem antecipação (PDF
+// 27/05/2026): PIX/Boleto D+1, Cartão Crédito D+32, Cartão Débito D+3.
+// Empresa pode customizar via settings `asaas.credit_days.{PIX,BOLETO,CREDIT_CARD,DEBIT_CARD}`.
+async function computeExpectedCreditDate(
+  tx: any,
+  companyId: string,
+  billingType: string | null,
+): Promise<Date> {
+  const defaults: Record<string, number> = { PIX: 1, BOLETO: 1, CREDIT_CARD: 32, DEBIT_CARD: 3 }
+  const key = (billingType || '').toUpperCase()
+  const settingKey = `asaas.credit_days.${key}`
+  const setting = await tx.setting.findFirst({
+    where: { company_id: companyId, key: settingKey },
+  })
+  const days = setting?.value ? parseInt(setting.value, 10) : (defaults[key] ?? 1)
+  const d = new Date()
+  d.setUTCHours(0, 0, 0, 0)
+  d.setUTCDate(d.getUTCDate() + (Number.isFinite(days) ? days : 1))
+  return d
+}
+
 // Map Asaas webhook events to internal payment status
 // UX-11 #9: incluídos eventos de chargeback/dispute — antes ficavam em IGNORED
 // silencioso, R$ chargebacks não eram refletidos no AR/DRE.
@@ -389,6 +411,12 @@ export async function POST(req: NextRequest) {
           if (receivable.status !== 'RECEBIDO') {
             const newReceived = (receivable.received_amount || 0) + fresh.amount
             const isFullyPaid = newReceived >= receivable.total_amount
+            // Wave AS-1 (2026-05-27): calcula data esperada de credito baseado em
+            // billing_type + settings da empresa. Asaas credito sem antecipacao = D+32.
+            // Fluxo de caixa le este campo pra mostrar "RECEBIDO aguardando credito".
+            const expectedCreditDate = isFullyPaid
+              ? await computeExpectedCreditDate(tx, fresh.company_id, fresh.billing_type || fresh.method || null)
+              : null
             await tx.accountReceivable.update({
               where: { id: fresh.receivable_id },
               data: {
@@ -398,6 +426,7 @@ export async function POST(req: NextRequest) {
                 // Marca reconciled=true junto com RECEBIDO. Pagamento parcial fica PENDENTE
                 // (reconciled fica como esta — sera marcado true so quando virar RECEBIDO).
                 ...(isFullyPaid ? { reconciled: true } : {}),
+                ...(expectedCreditDate ? { expected_credit_date: expectedCreditDate } : {}),
                 charge_status: newStatus,
                 payment_method: fresh.billing_type || fresh.method || receivable.payment_method,
                 updated_at: new Date(),

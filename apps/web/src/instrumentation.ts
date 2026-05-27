@@ -200,6 +200,24 @@ function startCronJobs() {
     }
   })()
 
+  // Wave AS-1 (2026-05-27) — ensure column expected_credit_date em accounts_receivable.
+  // Fluxo de caixa lê pra mostrar receitas "RECEBIDO mas aguardando crédito" (Asaas
+  // crédito = D+32). Migration idempotente; reload schema cache do PostgREST após.
+  ;(async () => {
+    try {
+      const { prisma } = await import('@pontual/db')
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE accounts_receivable
+        ADD COLUMN IF NOT EXISTS expected_credit_date DATE
+      `)
+      // PostgREST cacheia schema — reload pra ver coluna nova imediatamente
+      await prisma.$executeRawUnsafe(`NOTIFY pgrst, 'reload schema'`).catch(() => {})
+      console.log('[Boot/EnsureExpectedCreditDate] OK — column adicionada (idempotente)')
+    } catch (err) {
+      console.error('[Boot/EnsureExpectedCreditDate] FAIL:', err instanceof Error ? err.message : err)
+    }
+  })()
+
   // M4 (audit 2026-05-23) — DRE materialized view refresh a cada 30min
   // dre_monthly era refrescada só por UI admin → healthcheck dre_mv_stale=true
   // permanente. Endpoint /api/internal/cron/dre-mv-refresh já existia mas
