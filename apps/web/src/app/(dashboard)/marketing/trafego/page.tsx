@@ -18,6 +18,9 @@ type ChannelBreakdown = {
   social: number
   other: number
   total: number
+  // CWT-first 2026-05-28: campos novos opcionais (backwards-compat)
+  topKeywords?: string[]
+  source?: 'cwt' | 'ga4_fallback'
 }
 
 type SiteTraffic = {
@@ -197,7 +200,23 @@ export default function MarketingTrafegoPage() {
                 <div className="p-4">
                   <div className="mb-3 flex items-baseline justify-between">
                     <span className="text-2xl font-semibold text-gray-900">{breakdown.total}</span>
-                    <span className="text-xs text-gray-500">leads via WhatsApp</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500">leads via WhatsApp</span>
+                      {breakdown.source && (
+                        <span
+                          title={breakdown.source === 'cwt'
+                            ? 'Dado server-side (CWT) — atribuição precisa, sem perdas por ad-blocker/consent'
+                            : 'Dado GA4 client-side — atribuição parcial (consent/blockers podem ter mascarado origem)'}
+                          className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                            breakdown.source === 'cwt'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-amber-100 text-amber-700'
+                          }`}
+                        >
+                          {breakdown.source === 'cwt' ? 'CWT' : 'GA4'}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <table className="w-full text-sm">
                     <thead>
@@ -227,6 +246,20 @@ export default function MarketingTrafegoPage() {
                       })}
                     </tbody>
                   </table>
+                  {breakdown.topKeywords && breakdown.topKeywords.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-gray-100">
+                      <div className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5">
+                        Top palavras-chave
+                      </div>
+                      <ul className="space-y-1">
+                        {breakdown.topKeywords.map((kw, i) => (
+                          <li key={i} className="text-xs text-gray-700 truncate" title={kw}>
+                            <span className="text-gray-400 mr-1">›</span>{kw}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -235,7 +268,9 @@ export default function MarketingTrafegoPage() {
       </div>
 
       <div className="mt-6 text-xs text-gray-400 text-center">
-        Métrica: event <code>{data?.leadEvent}</code> · GA4 Data API · atualiza a cada 60s
+        Métrica: event <code>{data?.leadEvent}</code> ·
+        fonte <span className="text-emerald-600 font-medium">CWT (server-side)</span>{' '}
+        com fallback <span className="text-amber-600 font-medium">GA4</span> · atualiza a cada 60s
       </div>
     </div>
   )

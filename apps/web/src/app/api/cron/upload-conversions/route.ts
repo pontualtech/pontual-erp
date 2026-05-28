@@ -159,23 +159,14 @@ async function recoverAttribution(os: any, customer: any): Promise<Attribution> 
 // Google Ads Click Conversion Import API
 // ---------------------------------------------------------------------------
 
-async function uploadGoogleAdsConversion(
-  cfg: GoogleAdsConfig,
-  gclid: string,
-  conversionActionResource: string,
-  value: number,
-  conversionDateTime: Date,
-): Promise<{ ok: boolean; error?: string }> {
-  if (!cfg.developerToken || !cfg.refreshToken || !cfg.clientId || !conversionActionResource) {
-    return { ok: false, error: 'Google Ads credentials not configured (skipping upload, would have sent gclid=' + gclid.slice(0, 12) + '...)' }
-  }
-  // Workaround: alguma etapa upstream (site/n8n/Dify) escapa "_" como "*" no gclid antes
-  // de gravar em custom_data.tracking.gclid. Google rejeita gclids com "*" ("could not be
-  // decoded"). Revertemos aqui — "*" não é caractere válido em gclid Google (alfanum+-_),
-  // então a substituição é segura. TODO: achar root cause da substituição upstream.
-  const sanitizedGclid = gclid.replace(/\*/g, '_')
+/**
+ * Refresh OAuth2 access_token. Chamar UMA VEZ por cron run e reusar
+ * (token vale 3600s). 2026-05-28: detectado que múltiplos refreshes em sequência
+ * causavam 401 esporádico (provável rate limit não-documentado do OAuth server).
+ */
+async function getGoogleAdsAccessToken(cfg: GoogleAdsConfig): Promise<string | null> {
+  if (!cfg.developerToken || !cfg.refreshToken || !cfg.clientId) return null
   try {
-    // 1. Get OAuth2 access token
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -187,11 +178,32 @@ async function uploadGoogleAdsConversion(
       }),
     })
     const tokenData = await tokenRes.json()
-    if (!tokenData.access_token) return { ok: false, error: 'OAuth failed: ' + JSON.stringify(tokenData).slice(0, 200) }
-    // 2. POST conversion upload (REST v17)
+    return tokenData.access_token || null
+  } catch {
+    return null
+  }
+}
+
+async function uploadGoogleAdsConversion(
+  cfg: GoogleAdsConfig,
+  accessToken: string | null,
+  gclid: string,
+  conversionActionResource: string,
+  value: number,
+  conversionDateTime: Date,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!cfg.developerToken || !accessToken || !conversionActionResource) {
+    return { ok: false, error: 'Google Ads credentials not configured (skipping upload, would have sent gclid=' + gclid.slice(0, 12) + '...)' }
+  }
+  // Workaround: alguma etapa upstream (site/n8n/Dify) escapa "_" como "*" no gclid antes
+  // de gravar em custom_data.tracking.gclid. Google rejeita gclids com "*" ("could not be
+  // decoded"). Revertemos aqui — "*" não é caractere válido em gclid Google (alfanum+-_),
+  // então a substituição é segura. TODO: achar root cause da substituição upstream.
+  const sanitizedGclid = gclid.replace(/\*/g, '_')
+  try {
     const url = `https://googleads.googleapis.com/v20/customers/${cfg.customerId}:uploadClickConversions`
     const headers: Record<string, string> = {
-      'Authorization': `Bearer ${tokenData.access_token}`,
+      'Authorization': `Bearer ${accessToken}`,
       'developer-token': cfg.developerToken,
       'Content-Type': 'application/json',
     }
@@ -266,6 +278,10 @@ export async function GET(request: NextRequest) {
   let approvedSent = 0, approvedSkipped = 0, approvedFailed = 0
   const errors: string[] = []
 
+  // OAuth refresh UMA VEZ por cron run (fix 2026-05-28: múltiplos refreshes
+  // em sequência causavam 401 esporádico). access_token válido 3600s.
+  const googleAccessToken = PT_GOOGLE_ADS ? await getGoogleAdsAccessToken(PT_GOOGLE_ADS) : null
+
   for (const entry of byId.values()) {
     const { os, quote } = entry
     const cd = (os.custom_data as Record<string, any> | null) || {}
@@ -288,6 +304,7 @@ export async function GET(request: NextRequest) {
       const value = valueForLead(os)
       const r = await uploadGoogleAdsConversion(
         PT_GOOGLE_ADS,
+        googleAccessToken,
         attribution.gclid,
         PT_GOOGLE_ADS.conversionActionLead,
         value,
@@ -301,6 +318,7 @@ export async function GET(request: NextRequest) {
     if (needApproved && attribution.gclid && approvedValue && approvedValue > 0 && quote?.approved_at && PT_GOOGLE_ADS) {
       const r = await uploadGoogleAdsConversion(
         PT_GOOGLE_ADS,
+        googleAccessToken,
         attribution.gclid,
         PT_GOOGLE_ADS.conversionActionApproved,
         approvedValue,
