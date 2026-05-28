@@ -184,7 +184,7 @@ async function uploadGoogleAdsConversion(
     const tokenData = await tokenRes.json()
     if (!tokenData.access_token) return { ok: false, error: 'OAuth failed: ' + JSON.stringify(tokenData).slice(0, 200) }
     // 2. POST conversion upload (REST v17)
-    const url = `https://googleads.googleapis.com/v17/customers/${cfg.customerId}:uploadClickConversions`
+    const url = `https://googleads.googleapis.com/v20/customers/${cfg.customerId}:uploadClickConversions`
     const headers: Record<string, string> = {
       'Authorization': `Bearer ${tokenData.access_token}`,
       'developer-token': cfg.developerToken,
