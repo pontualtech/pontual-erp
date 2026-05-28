@@ -113,6 +113,7 @@ export async function getCWTChannelBreakdown(
       li_fat_id: true, twclid: true, ttclid: true,
       utm_source: true, utm_medium: true, utm_term: true,
       page_url: true,
+      click_at: true,
     },
     take: 5000, // sanity bound; volume diário <1k
   })
@@ -120,7 +121,7 @@ export async function getCWTChannelBreakdown(
   // Refina: hostname exato (LIKE pega substring)
   const result = emptyBreakdown()
   const termCounts: Record<string, number> = {}
-  const googleAdsGclids: string[] = []
+  const googleAdsGclids: { gclid: string; clickAt: Date }[] = []
   for (const r of rows) {
     if (!r.page_url) continue
     let host = ''
@@ -138,9 +139,10 @@ export async function getCWTChannelBreakdown(
       termCounts[term] = (termCounts[term] || 0) + 1
     }
 
-    // Fase 2: coleta gclids de leads classificados como Google Ads pra enrichment
-    if (channel === 'google_ads' && r.gclid) {
-      googleAdsGclids.push(r.gclid)
+    // Fase 2: coleta (gclid, clickAt) de leads classificados como Google Ads.
+    // clickAt necessário pra group-by-day na query click_view (Google Ads API exige).
+    if (channel === 'google_ads' && r.gclid && r.click_at) {
+      googleAdsGclids.push({ gclid: r.gclid, clickAt: r.click_at })
     }
   }
 
@@ -154,8 +156,8 @@ export async function getCWTChannelBreakdown(
     const enrichment = await enrichGclids(googleAdsGclids)
     const campaignCounts: Record<string, number> = {}
     let unknownCount = 0
-    for (const g of googleAdsGclids) {
-      const sanitized = g.replace(/\*/g, '_')
+    for (const { gclid } of googleAdsGclids) {
+      const sanitized = gclid.replace(/\*/g, '_')
       const info = enrichment.get(sanitized)
       if (info && info.campaignName) {
         campaignCounts[info.campaignName] = (campaignCounts[info.campaignName] || 0) + 1
