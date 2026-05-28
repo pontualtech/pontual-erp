@@ -169,6 +169,11 @@ async function uploadGoogleAdsConversion(
   if (!cfg.developerToken || !cfg.refreshToken || !cfg.clientId || !conversionActionResource) {
     return { ok: false, error: 'Google Ads credentials not configured (skipping upload, would have sent gclid=' + gclid.slice(0, 12) + '...)' }
   }
+  // Workaround: alguma etapa upstream (site/n8n/Dify) escapa "_" como "*" no gclid antes
+  // de gravar em custom_data.tracking.gclid. Google rejeita gclids com "*" ("could not be
+  // decoded"). Revertemos aqui — "*" não é caractere válido em gclid Google (alfanum+-_),
+  // então a substituição é segura. TODO: achar root cause da substituição upstream.
+  const sanitizedGclid = gclid.replace(/\*/g, '_')
   try {
     // 1. Get OAuth2 access token
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
@@ -193,7 +198,7 @@ async function uploadGoogleAdsConversion(
     if (cfg.loginCustomerId) headers['login-customer-id'] = cfg.loginCustomerId
     const body = {
       conversions: [{
-        gclid,
+        gclid: sanitizedGclid,
         conversionAction: conversionActionResource,
         conversionDateTime: conversionDateTime.toISOString().replace('T', ' ').replace(/\..+$/, '+00:00'),
         conversionValue: value,
