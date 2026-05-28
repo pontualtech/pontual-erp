@@ -12,9 +12,12 @@
 
 import { prisma } from '@pontual/db'
 import type { ChannelBreakdown } from './ga4-data-api'
+import { enrichGclids } from './google-ads-enrichment'
 
 export type CWTBreakdown = ChannelBreakdown & {
   topKeywords: string[]
+  // Fase 2 2026-05-28: top 3 nomes de campanha Google Ads (formato "Campaign Name (N)")
+  topCampaigns: string[]
 }
 
 /**
@@ -84,6 +87,7 @@ function emptyBreakdown(): CWTBreakdown {
     organic: 0, direct: 0, email: 0, referral: 0, social: 0, other: 0,
     total: 0,
     topKeywords: [],
+    topCampaigns: [],
   }
 }
 
@@ -116,6 +120,7 @@ export async function getCWTChannelBreakdown(
   // Refina: hostname exato (LIKE pega substring)
   const result = emptyBreakdown()
   const termCounts: Record<string, number> = {}
+  const googleAdsGclids: string[] = []
   for (const r of rows) {
     if (!r.page_url) continue
     let host = ''
@@ -132,12 +137,41 @@ export async function getCWTChannelBreakdown(
       const term = r.utm_term.trim().toLowerCase()
       termCounts[term] = (termCounts[term] || 0) + 1
     }
+
+    // Fase 2: coleta gclids de leads classificados como Google Ads pra enrichment
+    if (channel === 'google_ads' && r.gclid) {
+      googleAdsGclids.push(r.gclid)
+    }
   }
 
   result.topKeywords = Object.entries(termCounts)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 3)
     .map(([term, n]) => `${term} (${n})`)
+
+  // Fase 2: enriquece com nomes de campanha Google Ads (cache 24h)
+  if (googleAdsGclids.length > 0) {
+    const enrichment = await enrichGclids(googleAdsGclids)
+    const campaignCounts: Record<string, number> = {}
+    let unknownCount = 0
+    for (const g of googleAdsGclids) {
+      const sanitized = g.replace(/\*/g, '_')
+      const info = enrichment.get(sanitized)
+      if (info && info.campaignName) {
+        campaignCounts[info.campaignName] = (campaignCounts[info.campaignName] || 0) + 1
+      } else {
+        unknownCount++
+      }
+    }
+    const topCampaigns = Object.entries(campaignCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([name, n]) => `${name} (${n})`)
+    if (unknownCount > 0) {
+      topCampaigns.push(`Sem dado (${unknownCount})`)
+    }
+    result.topCampaigns = topCampaigns
+  }
 
   return result
 }

@@ -56,7 +56,7 @@ async function getWindowBreakdown(
   if (configured) {
     const ga4 = await getEventChannelBreakdown(propertyId, dateRange, LEAD_EVENT).catch(() => null)
     if (ga4) {
-      return { ...ga4, topKeywords: [], source: 'ga4_fallback' }
+      return { ...ga4, topKeywords: [], topCampaigns: [], source: 'ga4_fallback' }
     }
   }
   // 3. Nenhum dado
@@ -116,5 +116,6 @@ function emptyBreakdown(): CWTBreakdown {
     google_ads: 0, microsoft_ads: 0, meta_ads: 0, linkedin_ads: 0, x_ads: 0, tiktok_ads: 0,
     organic: 0, direct: 0, email: 0, referral: 0, social: 0, other: 0, total: 0,
     topKeywords: [],
+    topCampaigns: [],
   }
 }

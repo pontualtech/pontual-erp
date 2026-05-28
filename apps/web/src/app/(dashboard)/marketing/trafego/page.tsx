@@ -21,6 +21,8 @@ type ChannelBreakdown = {
   // CWT-first 2026-05-28: campos novos opcionais (backwards-compat)
   topKeywords?: string[]
   source?: 'cwt' | 'ga4_fallback'
+  // Fase 2 2026-05-28: top campanhas Google Ads enriquecidas
+  topCampaigns?: string[]
 }
 
 type SiteTraffic = {
@@ -246,6 +248,20 @@ export default function MarketingTrafegoPage() {
                       })}
                     </tbody>
                   </table>
+                  {breakdown.topCampaigns && breakdown.topCampaigns.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-gray-100">
+                      <div className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5 flex items-center gap-1">
+                        <span>🔵</span> Top campanhas Google Ads
+                      </div>
+                      <ul className="space-y-1">
+                        {breakdown.topCampaigns.map((c, i) => (
+                          <li key={i} className="text-xs text-gray-700 truncate" title={c}>
+                            <span className="text-gray-400 mr-1">›</span>{c}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   {breakdown.topKeywords && breakdown.topKeywords.length > 0 && (
                     <div className="mt-3 pt-3 border-t border-gray-100">
                       <div className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5">
