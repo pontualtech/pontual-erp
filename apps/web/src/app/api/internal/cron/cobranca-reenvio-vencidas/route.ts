@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { resendChargeByPaymentId } from '@/lib/payments/resend-charge'
 import { logAudit } from '@/lib/audit'
+import { getImprimitechHandoffStatusId } from '@/lib/imprimitech-handoff'
 
 /**
  * POST /api/internal/cron/cobranca-reenvio-vencidas
@@ -59,7 +60,10 @@ export async function POST(req: NextRequest) {
 
     // 2. Busca candidatos: ARs com charge ativa (charge_id), vencidos,
     // status nao recebido, cooldown passou. Order by oldest first.
-    const candidates = await prisma.accountReceivable.findMany({
+    // Wave 1.2 audit Cr7: include service_orders.status_id pra filtrar
+    // AR vinculada a OS em handoff Imprimitech (mesma classe de bug que
+    // payment-reminders-v2 Phase 1+2 e cobranca/route.ts cobrem).
+    const rawCandidates = await prisma.accountReceivable.findMany({
       where: {
         deleted_at: null,
         status: 'PENDENTE',
@@ -74,7 +78,28 @@ export async function POST(req: NextRequest) {
       },
       orderBy: { due_date: 'asc' },
       take: PER_RUN_LIMIT,
-      select: { id: true, charge_id: true, company_id: true, due_date: true },
+      select: {
+        id: true,
+        charge_id: true,
+        company_id: true,
+        due_date: true,
+        service_order_id: true,
+        service_orders: { select: { status_id: true } },
+      },
+    })
+
+    // Filter out ARs whose OS is in Imprimitech handoff status. Pre-fetches
+    // handoff status_id per unique company_id (small set, cached 1h).
+    const uniqueCompanyIds = [...new Set(rawCandidates.map(c => c.company_id))]
+    const handoffByCompany = new Map<string, string | null>()
+    await Promise.all(uniqueCompanyIds.map(async cid => {
+      handoffByCompany.set(cid, await getImprimitechHandoffStatusId(cid))
+    }))
+    const candidates = rawCandidates.filter(c => {
+      if (!c.service_order_id) return true  // AR avulsa: passa
+      const handoffId = handoffByCompany.get(c.company_id)
+      if (!handoffId) return true  // empresa sem status handoff: passa
+      return c.service_orders?.status_id !== handoffId
     })
 
     const results: Array<{

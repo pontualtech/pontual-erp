@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { getPortalUserFromRequest } from '@/lib/portal-auth'
 import { getPaymentProviderForAccount, getPaymentProvider } from '@/lib/payments/factory'
+import { isImprimitechHandoffStatus } from '@/lib/imprimitech-handoff'
 
 /**
  * POST /api/portal/payments/[id]/verify
@@ -28,9 +29,19 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         company_id: portalUser.company_id,
         customer_id: portalUser.customer_id,
       },
+      include: {
+        service_orders: { select: { module_statuses: { select: { name: true } } } },
+      },
     })
     if (!payment) return NextResponse.json({ error: 'Pagamento nao encontrado' }, { status: 404 })
     if (!payment.external_id) return NextResponse.json({ error: 'Pagamento sem ID externo' }, { status: 400 })
+
+    // Wave 1.2 audit Hi11: gate handoff Imprimitech — verify NÃO pode confirmar
+    // pagamento + baixar AR de OS já transferida (criaria divergência financeira
+    // PT vs IMP). Mesmo padrão dos endpoints geradores de cobrança.
+    if (isImprimitechHandoffStatus(payment.service_orders?.module_statuses?.name)) {
+      return NextResponse.json({ error: 'Pagamento nao encontrado' }, { status: 404 })
+    }
 
     // Ja esta confirmado localmente? retorna cedo
     if (payment.status === 'RECEIVED' || payment.status === 'CONFIRMED') {

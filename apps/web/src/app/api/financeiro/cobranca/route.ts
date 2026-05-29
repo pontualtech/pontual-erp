@@ -5,6 +5,7 @@ import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { sendCompanyEmail } from '@/lib/send-email'
 import { createHmac } from 'crypto'
+import { getImprimitechHandoffStatusId } from '@/lib/imprimitech-handoff'
 
 function fmtCents(cents: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cents / 100)
@@ -120,6 +121,18 @@ async function getOverdueReceivables(companyId: string, minDaysOverdue: number, 
     due_date: { lt: minDueDate },
     deleted_at: null,
     customers: { email: { not: null } },
+  }
+
+  // Wave 1.2 audit Cr6 (2026-05-29): pula AR vinculada a OS em handoff
+  // Imprimitech. Sem este filtro, cron de cobrança enviava email PT pra
+  // cliente cuja OS foi transferida pra Imprimitech (cobrança duplicada).
+  // Mesmo padrão do payment-reminders-v2 Phase 1+2.
+  const handoffStatusId = await getImprimitechHandoffStatusId(companyId)
+  if (handoffStatusId) {
+    where.OR = [
+      { service_order_id: null },
+      { service_orders: { status_id: { not: handoffStatusId } } },
+    ]
   }
 
   if (specificIds && specificIds.length > 0) {

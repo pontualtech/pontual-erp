@@ -5,6 +5,7 @@ import { getPaymentProviderForAccount } from '@/lib/payments/factory'
 import { resolveDefaultProviderAccount } from '@/lib/payments/resolve-account'
 import { canCustomerPayOS, PAYMENT_BLOCKED_MESSAGE } from '@/lib/os-payment-rules'
 import { findActivePendingPaymentForOs, isOsAlreadyPaid } from '@/lib/payments/find-active-charge'
+import { isImprimitechHandoffStatus } from '@/lib/imprimitech-handoff'
 
 /**
  * POST /api/portal/payments/pix
@@ -46,6 +47,14 @@ export async function POST(req: NextRequest) {
       },
     })
     if (!os) return NextResponse.json({ error: 'OS nao encontrada' }, { status: 404 })
+
+    // Wave 1.2 audit Hi7: gate handoff Imprimitech antes de qualquer geração
+    // de cobrança. Sem isto, cliente em status Imprim podia gerar PIX PT pra
+    // OS que já foi transferida (cobrança duplicada PT+IMP).
+    if (isImprimitechHandoffStatus(os.module_statuses?.name)) {
+      return NextResponse.json({ error: 'OS nao encontrada' }, { status: 404 })
+    }
+
     if (!os.total_cost || os.total_cost <= 0) {
       return NextResponse.json({ error: 'OS sem valor definido — aguarde o orçamento' }, { status: 400 })
     }
