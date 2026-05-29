@@ -94,6 +94,19 @@ export async function middleware(request: NextRequest) {
   if (pathname.startsWith('/s/')) {
     return NextResponse.next()
   }
+  // Redirect publico de cold-email pro WhatsApp limpo — cliente clica
+  // botao "Falar agora no WhatsApp" do email, /r/wa/[slug] registra
+  // atribuicao server-side e devolve 302 pro wa.me sem tag visivel.
+  // Atribuicao via timing + phone (bot Marta cruza ate 30min depois).
+  if (pathname.startsWith('/r/wa/')) {
+    return NextResponse.next()
+  }
+  // Endpoint publico de descadastramento (List-Unsubscribe compliance).
+  // Recebe email do form em pontualtech.com.br/descadastrar.html e marca
+  // marketing_contacts.unsubscribed=true.
+  if (pathname === '/api/public/unsubscribe') {
+    return NextResponse.next()
+  }
   // Internal routes with their own auth (X-Internal-Key header)
   if (pathname.startsWith('/api/internal/')) {
     return NextResponse.next()
