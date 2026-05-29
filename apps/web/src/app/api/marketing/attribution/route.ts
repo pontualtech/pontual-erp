@@ -121,7 +121,16 @@ export async function GET(req: NextRequest) {
     } else {
       range = req.nextUrl.searchParams.get('range') || '30d'
       const days = RANGES_DAYS[range] ?? 30
-      since = new Date(Date.now() - days * 86400 * 1000)
+      // "today" significa "hoje a partir de 00:00 BRT" (não 24h rolling como '1d').
+      // BRT = UTC-3. Início do dia BRT = data atual com hora zerada em BRT, depois +3h pra UTC.
+      if (range === 'today') {
+        const nowUtc = new Date()
+        const brtMidnight = new Date(nowUtc.getTime() - 3 * 3600 * 1000)
+        brtMidnight.setUTCHours(0, 0, 0, 0)
+        since = new Date(brtMidnight.getTime() + 3 * 3600 * 1000) // de volta pra UTC
+      } else {
+        since = new Date(Date.now() - days * 86400 * 1000)
+      }
       until = new Date()
     }
 
