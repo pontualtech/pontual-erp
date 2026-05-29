@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { getPortalUserFromRequest } from '@/lib/portal-auth'
 import { getNextOsNumber } from '@/lib/os-number'
 import { lookupTrackingFromConv } from '@/lib/lookup-tracking'
+import { getImprimitechHandoffStatusId } from '@/lib/imprimitech-handoff'
 
 export async function POST(req: NextRequest) {
   try {
@@ -139,7 +140,21 @@ export async function GET(req: NextRequest) {
       deleted_at: null,
     }
 
-    if (statusId) where.status_id = statusId
+    // Handoff Imprimitech (2026-05-29): OS movida pro status "Imprimitech"
+    // some da listagem do portal — cliente passou pra Imprimitech sob outro
+    // número de OS. Outras OS PT do mesmo cliente continuam visíveis.
+    const handoffStatusId = await getImprimitechHandoffStatusId(portalUser.company_id)
+
+    if (statusId) {
+      // Se cliente filtra explicitamente pelo handoff status (improvável),
+      // retorna vazio — comportamento equivalente a OS inexistente no portal.
+      if (handoffStatusId && statusId === handoffStatusId) {
+        return NextResponse.json({ data: [], total: 0, page, limit, totalPages: 0 })
+      }
+      where.status_id = statusId
+    } else if (handoffStatusId) {
+      where.status_id = { not: handoffStatusId }
+    }
 
     const [data, total] = await Promise.all([
       prisma.serviceOrder.findMany({

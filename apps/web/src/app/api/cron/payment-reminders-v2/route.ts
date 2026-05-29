@@ -6,6 +6,7 @@ import { success, error, handleError } from '@/lib/api-response'
 // Coolify quando todo o código vivia inline neste route — 200+ linhas
 // no mesmo arquivo + tsconfig strict consumiam muita memória).
 import { emitReminder as emitReminderReal } from '@/lib/payment-reminder-dispatcher'
+import { getImprimitechHandoffStatusId } from '@/lib/imprimitech-handoff'
 
 // Next 14: route depende de cookies/headers/searchParams — força runtime
 export const dynamic = 'force-dynamic'
@@ -93,11 +94,24 @@ export async function GET(request: NextRequest) {
           include: { steps: { orderBy: { step_order: 'asc' } } },
         })
 
+        // Handoff Imprimitech (2026-05-29): pula AR vinculadas a OS que foram
+        // movidas pro status "Imprimitech" — cliente passou pra Imprimitech
+        // e a cobrança deve seguir lá (sob outro número). Inclui AR sem
+        // service_order_id (cobranças avulsas continuam normais).
+        const handoffStatusId = await getImprimitechHandoffStatusId(companyId)
         const ars = await prisma.accountReceivable.findMany({
           where: {
             company_id: companyId,
             status: 'PENDENTE',
             deleted_at: null,
+            ...(handoffStatusId
+              ? {
+                  OR: [
+                    { service_order_id: null },
+                    { service_orders: { status_id: { not: handoffStatusId } } },
+                  ],
+                }
+              : {}),
           },
           select: { id: true, due_date: true },
         })
