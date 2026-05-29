@@ -123,6 +123,7 @@ model Company {
   marketing_segments            MarketingSegment[]
   marketing_stage_automations   MarketingStageAutomation[]
   marketing_automation_runs     MarketingAutomationRun[]
+  email_campaigns               EmailCampaign[]
   fiscal_configs                FiscalConfig?
   invoices                      Invoice[]
   message_templates             MessageTemplate[]
@@ -864,37 +865,37 @@ model CostCenter {
 }
 
 model AccountPayable {
-  id             String      @id @default(dbgenerated("(gen_random_uuid())::text"))
-  company_id     String
-  vhsys_id       String?
-  supplier_id    String?
-  category_id    String?
-  cost_center_id String?
-  account_id     String? // Sprint UX-24: conta bancaria de origem do pagamento (Itau, Asaas, etc)
-  description    String
-  total_amount   Int
-  paid_amount    Int?        @default(0)
-  due_date       DateTime    @db.Date
-  status         String?     @default("PENDENTE")
-  payment_method String?
-  notes          String?
-  group_id       String? // Split payment 2026-05-19: agrupa multiplos payables da mesma despesa pagos em formas diferentes (ex: parte PIX + parte cartao)
-  reconciled     Boolean?    @default(false) // 2026-05-20: true quando confirmado no extrato bancario (webhook Asaas ou match OFX/CNAB). false = declaracao manual aguardando conciliacao.
-  service_order_id String?   // 2026-05-23: liga taxa cartao (ou outras despesas geradas por OS) ao service_order pra auto-pay quando receivable da OS for pago totalmente. Audit 14 fix em contas-receber/baixa.
-  created_at     DateTime?   @default(now()) @db.Timestamptz(6)
-  updated_at     DateTime?   @default(now()) @db.Timestamptz(6)
-  deleted_at     DateTime?   @db.Timestamptz(6)
+  id               String      @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id       String
+  vhsys_id         String?
+  supplier_id      String?
+  category_id      String?
+  cost_center_id   String?
+  account_id       String? // Sprint UX-24: conta bancaria de origem do pagamento (Itau, Asaas, etc)
+  description      String
+  total_amount     Int
+  paid_amount      Int?        @default(0)
+  due_date         DateTime    @db.Date
+  status           String?     @default("PENDENTE")
+  payment_method   String?
+  notes            String?
+  group_id         String? // Split payment 2026-05-19: agrupa multiplos payables da mesma despesa pagos em formas diferentes (ex: parte PIX + parte cartao)
+  reconciled       Boolean?    @default(false) // 2026-05-20: true quando confirmado no extrato bancario (webhook Asaas ou match OFX/CNAB). false = declaracao manual aguardando conciliacao.
+  service_order_id String? // 2026-05-23: liga taxa cartao (ou outras despesas geradas por OS) ao service_order pra auto-pay quando receivable da OS for pago totalmente. Audit 14 fix em contas-receber/baixa.
+  created_at       DateTime?   @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime?   @default(now()) @db.Timestamptz(6)
+  deleted_at       DateTime?   @db.Timestamptz(6)
   // Sprint UX-24: account_id existe como FK no DB (REFERENCES accounts(id) ON DELETE SET NULL)
   // mas mantido sem relation Prisma pra paridade com AccountReceivable.account_id
   // (ambos usam access via raw column, evitando complicar queries existentes).
-  categories     Category?   @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  companies      Company     @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  cost_centers   CostCenter? @relation(fields: [cost_center_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  categories       Category?   @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  companies        Company     @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  cost_centers     CostCenter? @relation(fields: [cost_center_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   // Wave SU-1 (2026-05-27): supplier_id agora aponta corretamente pra Supplier
   // (antes apontava pra Customer — atalho usado em 2025 que nunca foi formalizado).
   // 0 APs em produção tinham supplier_id populado (FK bloqueava), então
   // mudança é zero-risk pra dados existentes.
-  suppliers      Supplier?   @relation(fields: [supplier_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  suppliers        Supplier?   @relation(fields: [supplier_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([company_id])
   @@index([company_id, status])
@@ -906,48 +907,48 @@ model AccountPayable {
 }
 
 model AccountReceivable {
-  id                 String        @id @default(dbgenerated("(gen_random_uuid())::text"))
-  company_id         String
-  vhsys_id           String?
-  customer_id        String?
-  service_order_id   String?
-  category_id        String?
-  account_id         String? // Conta bancaria que gerou a cobranca (Asaas, Inter, etc)
-  description        String
-  total_amount       Int
-  received_amount    Int?          @default(0)
-  due_date           DateTime      @db.Date
-  status             String?       @default("PENDENTE")
-  payment_method     String?
-  boleto_url         String?
-  pix_code           String?
-  receipt_url        String? // Comprovante do pagamento (PIX screenshot, recibo maquininha, etc)
-  notes              String?
-  installment_count  Int?          @default(1)
-  card_fee_total     Int?          @default(0)
-  net_amount         Int?
-  anticipated_at     DateTime?     @db.Timestamptz(6)
-  anticipation_fee   Int?          @default(0)
-  anticipated_amount Int?
-  group_id           String?
-  grouped_into_id    String?
-  reconciled         Boolean?      @default(false) // 2026-05-20: true quando confirmado no extrato bancario (webhook Asaas ou match OFX/CNAB). false = declaracao manual aguardando conciliacao.
-  charge_id          String?
-  charge_status      String?
-  charge_url         String?
-  charge_sent_at     DateTime?     @db.Timestamptz(6)
-  charge_sent_via    String?
+  id                   String        @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id           String
+  vhsys_id             String?
+  customer_id          String?
+  service_order_id     String?
+  category_id          String?
+  account_id           String? // Conta bancaria que gerou a cobranca (Asaas, Inter, etc)
+  description          String
+  total_amount         Int
+  received_amount      Int?          @default(0)
+  due_date             DateTime      @db.Date
+  status               String?       @default("PENDENTE")
+  payment_method       String?
+  boleto_url           String?
+  pix_code             String?
+  receipt_url          String? // Comprovante do pagamento (PIX screenshot, recibo maquininha, etc)
+  notes                String?
+  installment_count    Int?          @default(1)
+  card_fee_total       Int?          @default(0)
+  net_amount           Int?
+  anticipated_at       DateTime?     @db.Timestamptz(6)
+  anticipation_fee     Int?          @default(0)
+  anticipated_amount   Int?
+  group_id             String?
+  grouped_into_id      String?
+  reconciled           Boolean?      @default(false) // 2026-05-20: true quando confirmado no extrato bancario (webhook Asaas ou match OFX/CNAB). false = declaracao manual aguardando conciliacao.
+  charge_id            String?
+  charge_status        String?
+  charge_url           String?
+  charge_sent_at       DateTime?     @db.Timestamptz(6)
+  charge_sent_via      String?
   // Wave AS-1 (2026-05-27): data esperada em que o gateway credita o valor na
   // conta da empresa. Asaas crédito = D+32, débito = D+3, boleto/PIX = D+1.
   // Permite fluxo de caixa mostrar receitas "RECEBIDO mas aguardando crédito".
-  expected_credit_date DateTime?    @db.Date
-  created_at         DateTime?     @default(now()) @db.Timestamptz(6)
-  updated_at         DateTime?     @default(now()) @db.Timestamptz(6)
-  deleted_at         DateTime?     @db.Timestamptz(6)
-  categories         Category?     @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  companies          Company       @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  customers          Customer?     @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  service_orders     ServiceOrder? @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  expected_credit_date DateTime?     @db.Date
+  created_at           DateTime?     @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime?     @default(now()) @db.Timestamptz(6)
+  deleted_at           DateTime?     @db.Timestamptz(6)
+  categories           Category?     @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  companies            Company       @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customers            Customer?     @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  service_orders       ServiceOrder? @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([company_id])
   @@index([company_id, status])
@@ -1570,7 +1571,7 @@ model ChatbotLog {
 // ========== ESTOQUE AVANÇADO ==========
 
 model Supplier {
-  id                String     @id @default(dbgenerated("(gen_random_uuid())::text"))
+  id                String           @id @default(dbgenerated("(gen_random_uuid())::text"))
   company_id        String
   name              String
   document          String?
@@ -1579,9 +1580,9 @@ model Supplier {
   email             String?
   avg_delivery_days Int?
   notes             String?
-  is_active         Boolean?   @default(true)
-  created_at        DateTime?  @default(now()) @db.Timestamptz(6)
-  companies         Company    @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  is_active         Boolean?         @default(true)
+  created_at        DateTime?        @default(now()) @db.Timestamptz(6)
+  companies         Company          @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   purchases         Purchase[]
   products          Product[]
   // Wave SU-1: back-relation pra accountPayable usar via include
@@ -2431,6 +2432,7 @@ model MarketingContact {
   customer       Customer?               @relation(fields: [customer_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
   webhook_events MarketingWebhookEvent[]
   journeys       MarketingJourney[]
+  email_jobs     EmailJob[]
 
   @@unique([company_id, email], map: "marketing_contacts_company_email_unique")
   @@index([email], map: "idx_mc_email")
@@ -2477,18 +2479,18 @@ model MarketingWhatsappRedirect {
   consumed_at         DateTime? @db.Timestamptz(6)
   consumed_by_conv_id Int?
 
-  gclid          String?
-  msclkid        String?
-  gbraid         String?
-  fbclid         String?  // Meta (FB/Insta) Ads — 2026-05-25
-  li_fat_id      String?  // LinkedIn Ads — 2026-05-25
-  twclid         String?  // X/Twitter Ads — 2026-05-25
-  ttclid         String?  // TikTok Ads — 2026-05-25
-  utm_source     String?
-  utm_medium     String?
-  utm_campaign   String?
-  utm_term       String?
-  utm_content    String?
+  gclid        String?
+  msclkid      String?
+  gbraid       String?
+  fbclid       String? // Meta (FB/Insta) Ads — 2026-05-25
+  li_fat_id    String? // LinkedIn Ads — 2026-05-25
+  twclid       String? // X/Twitter Ads — 2026-05-25
+  ttclid       String? // TikTok Ads — 2026-05-25
+  utm_source   String?
+  utm_medium   String?
+  utm_campaign String?
+  utm_term     String?
+  utm_content  String?
 
   page_url        String?
   referrer        String?
@@ -2624,20 +2626,78 @@ model AlertState {
   @@map("alert_state")
 }
 
+/// Email blast campaign — 1 row por disparo (cold/newsletter/winback) 2026-05-29
+/// Substitui scripts send_email*.js locais. Processamento em fila BullMQ + Redis.
+model EmailCampaign {
+  id                 String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id         String
+  slug               String /// Identificador unico: "email3_b2b_conserto_2026_05_29"
+  template_name      String /// Arquivo HTML: "email3_notebook_empresarial.html"
+  subject            String
+  from_email         String    @default("PontualTech <newsletter@pontualtech.com.br>")
+  reply_to           String    @default("contato@pontualtech.com.br")
+  status             String    @default("queued") /// queued | running | completed | cancelled | failed
+  total_jobs         Int       @default(0)
+  sent_count         Int       @default(0)
+  failed_count       Int       @default(0)
+  skipped_count      Int       @default(0)
+  rate_limit_per_sec Float     @default(1.0) /// Throttle jobs/seg
+  config_json        Json?     @default("{}") /// utm, webview_url, etc
+  started_at         DateTime? @db.Timestamptz(6)
+  finished_at        DateTime? @db.Timestamptz(6)
+  cancelled_at       DateTime? @db.Timestamptz(6)
+  created_by         String? /// user_profile.id
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime? @default(now()) @db.Timestamptz(6)
+
+  company Company    @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  jobs    EmailJob[]
+
+  @@unique([company_id, slug], map: "email_campaigns_company_slug_unique")
+  @@index([company_id, status, started_at(sort: Desc)], map: "idx_ec_company_status_started")
+  @@map("email_campaigns")
+}
+
+/// 1 row por (campaign, contact). Status individual + retry tracking.
+model EmailJob {
+  id            String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  campaign_id   String
+  contact_id    String
+  status        String    @default("pending") /// pending | queued | sent | failed | skipped
+  attempts      Int       @default(0)
+  last_error    String?
+  resend_id     String? /// ID retornado pelo Resend API
+  bullmq_job_id String? /// ID do BullMQ pra rastrear no Redis
+  queued_at     DateTime? @db.Timestamptz(6)
+  sent_at       DateTime? @db.Timestamptz(6)
+  failed_at     DateTime? @db.Timestamptz(6)
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime? @default(now()) @db.Timestamptz(6)
+
+  campaign EmailCampaign    @relation(fields: [campaign_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  contact  MarketingContact @relation(fields: [contact_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([campaign_id, contact_id], map: "email_jobs_campaign_contact_unique")
+  @@index([campaign_id, status], map: "idx_ej_campaign_status")
+  @@index([contact_id, sent_at(sort: Desc)], map: "idx_ej_contact_sent")
+  @@index([status, attempts], map: "idx_ej_status_attempts")
+  @@map("email_jobs")
+}
+
 /// Nurture journey — perpétuo follow-up de leads que recusaram OS (2026-05-22)
 /// 1 row por (contact_id, journey_type). current_step incrementa a cada envio.
 /// ended_at NULL = ativa.
 model MarketingJourney {
-  id            String    @id @default(dbgenerated("(gen_random_uuid())::text"))
-  contact_id    String
-  company_id    String
-  journey_type  String    @default("recused_os")
-  current_step  Int       @default(0)
-  started_at    DateTime  @default(now()) @db.Timestamptz(6)
-  last_step_at  DateTime? @db.Timestamptz(6)
-  ended_at      DateTime? @db.Timestamptz(6)
-  outcome       String?
-  source_data   Json      @default("{}")
+  id           String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  contact_id   String
+  company_id   String
+  journey_type String    @default("recused_os")
+  current_step Int       @default(0)
+  started_at   DateTime  @default(now()) @db.Timestamptz(6)
+  last_step_at DateTime? @db.Timestamptz(6)
+  ended_at     DateTime? @db.Timestamptz(6)
+  outcome      String?
+  source_data  Json      @default("{}")
 
   contact MarketingContact @relation(fields: [contact_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 

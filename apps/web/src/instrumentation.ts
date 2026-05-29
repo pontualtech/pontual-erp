@@ -14,6 +14,20 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs' && !cronStarted) {
     cronStarted = true
     startCronJobs()
+    await startEmailBlastWorker()
+  }
+}
+
+/**
+ * Inicia BullMQ Worker pro email-blast (2026-05-29).
+ * Sem REDIS_URL = no-op silencioso (dev local). Em prod e configurado.
+ */
+async function startEmailBlastWorker() {
+  try {
+    const { startEmailWorker } = await import('@/lib/email-queue')
+    startEmailWorker()
+  } catch (err) {
+    console.error('[Instrumentation/EmailBlast] failed to start worker:', err instanceof Error ? err.message : err)
   }
 }
 
