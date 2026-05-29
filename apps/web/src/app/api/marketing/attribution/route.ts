@@ -16,7 +16,7 @@ import { getGoogleAdsTotalCostCents } from '@/lib/google-ads-enrichment'
  * Karlão: "dos clientes que aprovaram OS, quantos vieram do Google, MS Ads, etc."
  */
 
-const RANGES_DAYS: Record<string, number> = { '7d': 7, '30d': 30, '90d': 90, '365d': 365 }
+const RANGES_DAYS: Record<string, number> = { '7d': 7, '30d': 30, '90d': 90, '365d': 365, '1y': 365 }
 
 type ChannelKey = 'google_ads' | 'microsoft_ads' | 'meta_ads' | 'linkedin_ads' | 'x_ads' | 'tiktok_ads' | 'organic' | 'direct' | 'email' | 'referral' | 'social' | 'other' | 'sem_tracking'
 

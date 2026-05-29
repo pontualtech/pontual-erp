@@ -228,13 +228,13 @@ export async function getGoogleAdsTotalCostCents(daysAgo: number): Promise<numbe
   const accessToken = await getAccessToken(cfg)
   if (!accessToken) return null
 
-  // Map daysAgo pra DURING token do Google Ads (limitado aos validos da API)
-  let duringToken: string
-  if (daysAgo <= 7) duringToken = 'LAST_7_DAYS'
-  else if (daysAgo <= 14) duringToken = 'LAST_14_DAYS'
-  else if (daysAgo <= 30) duringToken = 'LAST_30_DAYS'
-  else if (daysAgo <= 90) duringToken = 'LAST_90_DAYS'
-  else duringToken = 'LAST_30_DAYS' // fallback — 90 é o máximo razoável pra ROAS
+  // Google Ads API só aceita LAST_7/14/30 DAYS como DURING literals — LAST_90_DAYS
+  // é inválido (INVALID_VALUE_WITH_DURING_OPERATOR). Usar BETWEEN com datas
+  // explícitas pra cobrir qualquer range arbitrário (7d / 30d / 90d / 365d / 1y).
+  const end = new Date()
+  const start = new Date(end.getTime() - daysAgo * 86400 * 1000)
+  const fmt = (d: Date) => d.toISOString().slice(0, 10) // YYYY-MM-DD
+  const dateFilter = `segments.date BETWEEN '${fmt(start)}' AND '${fmt(end)}'`
 
   const headers: Record<string, string> = {
     'Authorization': `Bearer ${accessToken}`,
@@ -252,7 +252,7 @@ export async function getGoogleAdsTotalCostCents(daysAgo: number): Promise<numbe
         method: 'POST',
         headers,
         body: JSON.stringify({
-          query: `SELECT metrics.cost_micros FROM campaign WHERE segments.date DURING ${duringToken}`,
+          query: `SELECT metrics.cost_micros FROM campaign WHERE ${dateFilter}`,
         }),
       },
     )
