@@ -11,12 +11,35 @@ const nextConfig = {
   typescript: { ignoreBuildErrors: true },
   experimental: {
     instrumentationHook: true,
-    serverComponentsExternalPackages: ['@prisma/client', 'xml-crypto', 'node-forge', 'xml2js', '@xmldom/xmldom', '@xmldom/is-dom-node', 'xpath'],
+    serverComponentsExternalPackages: ['@prisma/client', 'xml-crypto', 'node-forge', 'xml2js', '@xmldom/xmldom', '@xmldom/is-dom-node', 'xpath', 'bullmq', 'ioredis'],
     // Includes pra Next standalone copiar arquivos não-importados:
     // - nurture/templates/*.html lido em runtime pelo sender (lib/nurture/sender.ts)
     outputFileTracingIncludes: {
       '/api/internal/cron/nurture-tick': ['./src/lib/nurture/templates/**'],
     },
+  },
+  // 2026-05-29 fix: BullMQ + IORedis (email-blast worker) importam Node
+  // built-ins. Next 14 compila instrumentation.ts em AMBOS edge + nodejs
+  // runtimes — edge não tem esses módulos. Em edge runtime ignoramos os
+  // imports inteiros via NormalModuleReplacementPlugin + fallback.
+  webpack: (config, { nextRuntime, webpack }) => {
+    if (nextRuntime !== 'nodejs') {
+      config.resolve.fallback = {
+        ...(config.resolve.fallback || {}),
+        bullmq: false, ioredis: false,
+        fs: false, path: false, crypto: false, stream: false,
+        net: false, tls: false, child_process: false, os: false, dns: false,
+        string_decoder: false, worker_threads: false, util: false,
+        zlib: false, http: false, https: false, querystring: false, url: false,
+      }
+      // Ignora qualquer import de node:* scheme em edge runtime
+      config.plugins.push(
+        new webpack.NormalModuleReplacementPlugin(/^node:/, (resource) => {
+          resource.request = resource.request.replace(/^node:/, '')
+        })
+      )
+    }
+    return config
   },
   async headers() {
     return [{
