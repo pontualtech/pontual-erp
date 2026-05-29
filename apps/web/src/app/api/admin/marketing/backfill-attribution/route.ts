@@ -65,10 +65,10 @@ export async function POST(req: NextRequest) {
     const apply = req.nextUrl.searchParams.get('apply') === 'true'
 
     // 1. Pegar todas botConv da company COM attribution gravada
+    // (Prisma rejeita { not: null } no where — filtramos null no JS depois)
     const convs = await prisma.botConversation.findMany({
       where: {
         company_id: user.companyId,
-        customer_phone: { not: null },
       },
       select: {
         id: true,
@@ -100,12 +100,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 3. Buscar OS da company SEM tracking
+    // 3. Buscar OS da company SEM tracking (customer_id checado no loop abaixo)
     const osList = await prisma.serviceOrder.findMany({
       where: {
         company_id: user.companyId,
         deleted_at: null,
-        customer_id: { not: null },
       },
       select: {
         id: true,
