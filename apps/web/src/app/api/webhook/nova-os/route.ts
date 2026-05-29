@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { getNextOsNumber } from '@/lib/os-number'
+import { lookupTrackingFromConv } from '@/lib/lookup-tracking'
 
 /**
  * POST /api/webhook/nova-os
@@ -118,6 +119,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Status de OS nao configurado' }, { status: 500 })
     }
 
+    // Frente D (2026-05-29): propaga tracking (telefone vem direto no body).
+    const customData = await lookupTrackingFromConv(companyId, telefone)
+
     // 3. Create OS with atomic number inside transaction (prevents duplicate os_numbers)
     const { os, osNumber } = await prisma.$transaction(async (tx) => {
       // Advisory lock prevents concurrent OS creation from getting same number
@@ -139,6 +143,7 @@ export async function POST(req: NextRequest) {
           reception_notes: observacoes || undefined,
           vhsys_id: vhsys_os_id || undefined,
           internal_notes: `[BOT ANA] OS aberta via WhatsApp/n8n em ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}. Cliente: ${customer.legal_name}. Tel: ${telefone || 'N/I'}. ${vhsys_os_number ? 'VHSys OS #' + vhsys_os_number : ''}`,
+          ...(customData ? { custom_data: customData } : {}),
         },
       })
       return { os: created, osNumber: num }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { getPortalUserFromRequest } from '@/lib/portal-auth'
 import { getNextOsNumber } from '@/lib/os-number'
+import { lookupTrackingFromConv } from '@/lib/lookup-tracking'
 
 export async function POST(req: NextRequest) {
   try {
@@ -48,6 +49,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Status inicial nao configurado' }, { status: 500 })
     }
 
+    // Frente D (2026-05-29): propaga tracking quando cliente abre OS via portal.
+    // Lookup helper compartilhado com /api/os, webhook/nova-os, v1/os.
+    const customer = await prisma.customer.findUnique({
+      where: { id: portalUser.customer_id },
+      select: { phone: true, mobile: true },
+    })
+    const customerPhone = customer?.phone || customer?.mobile || null
+    const customData = await lookupTrackingFromConv(portalUser.company_id, customerPhone)
+
     // Create OS with atomic numbering (same pattern as internal API)
     const os = await prisma.$transaction(async (tx) => {
       const lockKey = Buffer.from(portalUser.company_id).reduce((acc, b) => acc + b, 0)
@@ -70,6 +80,7 @@ export async function POST(req: NextRequest) {
           serial_number: serial_number || null,
           reported_issue,
           estimated_delivery: preferred_date ? new Date(preferred_date) : undefined,
+          ...(customData ? { custom_data: customData } : {}),
         },
         include: {
           module_statuses: {

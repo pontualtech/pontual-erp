@@ -5,6 +5,7 @@ import { success, paginated, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { getNextOsNumber } from '@/lib/os-number'
 import { getOverdueOsWhereClause } from '@/lib/os-overdue'
+import { lookupTrackingFromConv } from '@/lib/lookup-tracking'
 
 export async function GET(req: NextRequest) {
   try {
@@ -291,53 +292,10 @@ export async function POST(req: NextRequest) {
     }
     if (!initialStatus) return error('Status inicial não configurado para OS', 500)
 
-    // Sprint 1 Gargalo 1 (2026-05-29): propaga tracking quando atendente abre OS manual.
-    // Bot Ana já fazia isso (api/bot/abrir-os/route.ts:297-330); agora dashboard manual
-    // também. Lookup via botConversation (que carrega tracking do CWT/[ref:] ou do
-    // fingerprint server-side matched).
-    let customData: { tracking: Record<string, string>; tracking_captured_at: string } | undefined
+    // Sprint 1 Gargalo 1 (2026-05-29) / Frente D refactor: propaga tracking quando
+    // atendente abre OS manual. Helper compartilhado com portal/webhook/v1.
     const customerPhone = customer?.phone || customer?.mobile || null
-    if (customerPhone) {
-      try {
-        const phoneEnd = customerPhone.replace(/\D/g, '').slice(-10)
-        if (phoneEnd.length >= 10) {
-          const conv = await prisma.botConversation.findFirst({
-            where: {
-              company_id: user.companyId,
-              customer_phone: { endsWith: phoneEnd },
-            },
-            orderBy: { created_at: 'desc' },
-          })
-          const attrRaw = conv?.data && typeof conv.data === 'object' && !Array.isArray(conv.data)
-            ? ((conv.data as Record<string, any>).attribution as Record<string, string> | undefined)
-            : undefined
-          if (attrRaw) {
-            const tracking: Record<string, string> = {}
-            if (attrRaw.gclid) tracking.gclid = attrRaw.gclid
-            if (attrRaw.gbraid) tracking.gbraid = attrRaw.gbraid
-            if (attrRaw.wbraid) tracking.wbraid = attrRaw.wbraid
-            if (attrRaw.msclkid) tracking.msclkid = attrRaw.msclkid
-            if (attrRaw.fbclid) tracking.fbclid = attrRaw.fbclid
-            const src = attrRaw.utm_source || attrRaw.src
-            if (src) tracking.utm_source = src
-            const med = attrRaw.utm_medium || attrRaw.med
-            if (med) tracking.utm_medium = med
-            const camp = attrRaw.utm_campaign || attrRaw.camp
-            if (camp) tracking.utm_campaign = camp
-            const kw = attrRaw.utm_term || attrRaw.kw
-            if (kw) tracking.utm_term = kw
-            const cont = attrRaw.utm_content || attrRaw.cont
-            if (cont) tracking.utm_content = cont
-            if (Object.keys(tracking).length > 0) {
-              customData = { tracking, tracking_captured_at: new Date().toISOString() }
-              console.log(`[OS manual] tracking propagado de botConversation ${conv?.id} (phone ${phoneEnd})`)
-            }
-          }
-        }
-      } catch (e: any) {
-        console.warn(`[OS manual] lookup tracking falhou (segue sem): ${e?.message}`)
-      }
-    }
+    const customData = await lookupTrackingFromConv(user.companyId, customerPhone)
 
     // Criar OS com número atômico (prevenir race condition)
     const os = await prisma.$transaction(async (tx) => {

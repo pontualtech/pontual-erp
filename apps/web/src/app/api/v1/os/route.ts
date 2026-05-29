@@ -4,6 +4,7 @@ import { authenticateApiKey, checkApiPermission, type ApiKeyUser } from '@/lib/a
 import { createOSSchema } from '@/lib/validations/os'
 import { ZodError } from 'zod'
 import { getNextOsNumber } from '@/lib/os-number'
+import { lookupTrackingFromConv } from '@/lib/lookup-tracking'
 
 /**
  * GET /api/v1/os — Listar ordens de serviço
@@ -83,6 +84,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Status inicial não configurado' }, { status: 500 })
     }
 
+    // Frente D (2026-05-29): propaga tracking via helper. Customer.phone vem do DB.
+    const customerData = data.customer_id ? await prisma.customer.findUnique({
+      where: { id: data.customer_id as string },
+      select: { phone: true, mobile: true },
+    }) : null
+    const customerPhone = customerData?.phone || customerData?.mobile || null
+    const customData = await lookupTrackingFromConv(user.companyId, customerPhone)
+
     // Criar com número atômico (advisory lock previne race condition)
     const os = await prisma.$transaction(async (tx) => {
       const lockKey = Buffer.from(user.companyId).reduce((acc: number, b: number) => acc + b, 0)
@@ -97,6 +106,7 @@ export async function POST(req: NextRequest) {
           os_number: nextNumber,
           status_id: initialStatus.id,
           estimated_delivery: estimated_delivery ? new Date(estimated_delivery) : undefined,
+          ...(customData ? { custom_data: customData } : {}),
         } as any,
         include: { customers: true },
       })
