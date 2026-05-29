@@ -251,20 +251,33 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     }
     const sentVia: string[] = []
 
+    // Eco audit H8 (2026-05-29): trackeia falhas reais ao invés de marcar
+    // como enviado prematuramente. Antes: sentVia.push antes do await →
+    // se WhatsApp+email falhavam, charge_sent_at marcava sucesso (cliente
+    // nunca recebia link, mas DB dizia "enviado").
+    const sentStatus: { whatsapp?: 'ok' | 'fail'; email?: 'ok' | 'fail' } = {}
+
     if (data.send_whatsapp && os.customers.mobile) {
       const osNum = String(os.os_number).padStart(4, '0')
       // pt_cobranca_v3: BODY {{1}}=valor, {{2}}=os_num. URL button {{1}}=magic_token.
       const { buildMagicLink: bml } = await import('@/lib/portal-magic-url')
       const ml = bml({ customerId: os.customer_id, companyId: auth.companyId, slug: os.companies?.slug || 'pontualtech', osId: os.id })
       const fallback = `*Cobranca PontualTech — OS #${osNum}*\n\nValor: ${valueStr}\nForma: ${billingLabel[data.billing_type]}\n\nPagar:\n${charge.invoiceUrl}\n\nAcompanhar OS:\n${ml.url}`
-      sendWhatsAppTemplate(auth.companyId, os.customers.mobile, 'pt_cobranca_v3', 'pt_BR', [
-        { type: 'body', parameters: [
-          { type: 'text', text: valueStr },
-          { type: 'text', text: osNum },
-        ] },
-        { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: ml.token }] },
-      ], fallback).catch(() => {})
-      sentVia.push('whatsapp')
+      try {
+        const r = await sendWhatsAppTemplate(auth.companyId, os.customers.mobile, 'pt_cobranca_v3', 'pt_BR', [
+          { type: 'body', parameters: [
+            { type: 'text', text: valueStr },
+            { type: 'text', text: osNum },
+          ] },
+          { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: ml.token }] },
+        ], fallback)
+        sentStatus.whatsapp = r?.success ? 'ok' : 'fail'
+        if (r?.success) sentVia.push('whatsapp')
+        else console.warn(`[os/charge] WhatsApp falhou OS #${os.os_number}:`, r?.error)
+      } catch (e) {
+        sentStatus.whatsapp = 'fail'
+        console.error(`[os/charge] WhatsApp throw OS #${os.os_number}:`, e instanceof Error ? e.message : e)
+      }
     }
 
     if (data.send_email && os.customers.email) {
@@ -287,11 +300,20 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
           </div>
         </div>
       </body></html>`
-      sendCompanyEmail(auth.companyId, os.customers.email,
-        `Cobranca ${companyName} — OS #${os.os_number} — ${valueStr}`, emailHtml).catch(() => {})
-      sentVia.push('email')
+      try {
+        const ok = await sendCompanyEmail(auth.companyId, os.customers.email,
+          `Cobranca ${companyName} — OS #${os.os_number} — ${valueStr}`, emailHtml)
+        sentStatus.email = ok ? 'ok' : 'fail'
+        if (ok) sentVia.push('email')
+        else console.warn(`[os/charge] Email falhou OS #${os.os_number} (sendCompanyEmail=false)`)
+      } catch (e) {
+        sentStatus.email = 'fail'
+        console.error(`[os/charge] Email throw OS #${os.os_number}:`, e instanceof Error ? e.message : e)
+      }
     }
 
+    // Eco H8: só marca charge_sent_at se PELO MENOS UM canal teve sucesso.
+    // Antes: marcava mesmo com 100% de falha, criando ilusão de "enviado".
     if (sentVia.length > 0) {
       await prisma.accountReceivable.update({
         where: { id: receivable.id },

@@ -284,37 +284,56 @@ export async function GET(request: NextRequest) {
       idx++
     }
 
+    // Eco audit I (2026-05-29): try/catch POR ITEM. Antes: se 1 prisma.update
+     // lança exception (ex: Payment deletado entre fetch e dispatch), break
+     // sai do loop SEM processar restantes do batch + lock advisory liberado.
+     // Próxima execução do cron pula esse batch (cooldown). Resultado:
+     // reminders ficam sem dispatch por uma janela. Fix: cada item isolado.
     for (const rem of due) {
-      const result = await emitReminder({
-        channel: rem.channel,
-        payment_id: rem.payment_id,
-        rule_step_id: rem.rule_step_id,
-        company_id: rem.company_id,
-      })
+      try {
+        const result = await emitReminder({
+          channel: rem.channel,
+          payment_id: rem.payment_id,
+          rule_step_id: rem.rule_step_id,
+          company_id: rem.company_id,
+        })
 
-      if (result.ok) {
-        await prisma.paymentReminder.update({
-          where: { id: rem.id },
-          data: {
-            status: 'SENT',
-            sent_at: new Date(),
-            attempts: rem.attempts + 1,
-            delivery_meta: result.delivery_meta ?? {},
-          },
-        })
-        dispatchedCount++
-      } else {
+        if (result.ok) {
+          await prisma.paymentReminder.update({
+            where: { id: rem.id },
+            data: {
+              status: 'SENT',
+              sent_at: new Date(),
+              attempts: rem.attempts + 1,
+              delivery_meta: result.delivery_meta ?? {},
+            },
+          }).catch(updateErr => {
+            // Update do paymentReminder falhou MAS reminder JÁ foi enviado.
+            // Log critical + count separado pra triage (não decrementar dispatchedCount,
+            // só sinalizar que estado interno divergiu do external).
+            console.error(`[payment-reminders-v2] CRITICAL: emitReminder ok mas DB update fail PaymentReminder ${rem.id}:`, updateErr instanceof Error ? updateErr.message : updateErr)
+          })
+          dispatchedCount++
+        } else {
+          dispatchFailures++
+          const newAttempts = rem.attempts + 1
+          // A1 fix aplicado: constraint agora aceita attempts BETWEEN 0 AND 5.
+          await prisma.paymentReminder.update({
+            where: { id: rem.id },
+            data: {
+              status: newAttempts >= 5 ? 'FAILED' : 'PENDING',
+              attempts: newAttempts,
+              error_message: result.error?.slice(0, 500) ?? 'unknown',
+            },
+          }).catch(updateErr => {
+            console.error(`[payment-reminders-v2] DB update fail (fail path) PaymentReminder ${rem.id}:`, updateErr instanceof Error ? updateErr.message : updateErr)
+          })
+        }
+      } catch (itemErr) {
+        // Isolamento per-item: continua loop. Sem isto 1 item ruim mata batch.
         dispatchFailures++
-        const newAttempts = rem.attempts + 1
-        // A1 fix aplicado: constraint agora aceita attempts BETWEEN 0 AND 5.
-        await prisma.paymentReminder.update({
-          where: { id: rem.id },
-          data: {
-            status: newAttempts >= 5 ? 'FAILED' : 'PENDING',
-            attempts: newAttempts,
-            error_message: result.error?.slice(0, 500) ?? 'unknown',
-          },
-        })
+        errors.push(`PaymentReminder ${rem.id}: ${itemErr instanceof Error ? itemErr.message : String(itemErr)}`.slice(0, 200))
+        console.error(`[payment-reminders-v2] item exception PaymentReminder ${rem.id}:`, itemErr instanceof Error ? itemErr.message : itemErr)
       }
     }
 

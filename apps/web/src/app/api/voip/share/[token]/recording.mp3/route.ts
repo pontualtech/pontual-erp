@@ -47,7 +47,10 @@ export async function GET(
     if (!call) return error('Chamada nao encontrada', 404)
     if (!call.recording_url) return error('Sem gravacao disponivel', 404)
 
-    // N29: audit log download (LGPD trilha de quem acessou áudio sensível)
+    // N29: audit log download (LGPD trilha de quem acessou áudio sensível).
+    // Eco audit H9 (2026-05-29): swallow silent removido — LGPD exige
+    // trilha auditável; se falhar criar audit, bloqueamos download (ELSE
+    // gravação pode ser baixada sem trail = compliance violation).
     try {
       await prisma.auditLog.create({
         data: {
@@ -60,7 +63,10 @@ export async function GET(
           new_value: { call_id: call.call_id },
         },
       })
-    } catch {}
+    } catch (auditErr) {
+      console.error('[voip/recording] LGPD audit log FAILED — blocking download:', auditErr instanceof Error ? auditErr.message : auditErr)
+      return error('Erro de auditoria — download bloqueado por compliance', 500)
+    }
 
     const filename = `call-${call.call_id}.mp3`
     const baseHeaders = {

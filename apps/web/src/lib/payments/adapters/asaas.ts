@@ -28,26 +28,64 @@ export class AsaasProvider implements PaymentProvider {
   private apiUrl(): string { return this.config.apiUrl || ENV_API_URL() }
   private webhookToken(): string { return this.config.webhookToken || ENV_WEBHOOK_TOKEN() }
 
+  // Eco audit H7 (2026-05-29): retry com backoff exponencial pra 5xx +
+  // network errors. Antes: 1 falha qualquer = throw definitivo. Asaas
+  // ocasionalmente 502/503 sob load — sem retry, cobranças PIX/Boleto
+  // falham silenciosamente em network blip. Idempotency via externalReference
+  // (passed em createPixCharge etc) garante que retry de POST não cria
+  // charge duplicada — Asaas dedupes por externalReference.
   private async request(method: string, path: string, body?: unknown) {
     const url = `${this.apiUrl()}${path}`
-    const res = await fetch(url, {
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-        'access_token': this.apiKey(),
-      },
-      body: body ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(10000),
-    })
+    const MAX_RETRIES = 3
+    let lastErr: unknown
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({})) as { errors?: Array<{ description?: string }>; message?: string }
-      const detail = err.errors?.[0]?.description || err.message || ''
-      console.error('[Asaas API Error]', { status: res.status, path, err })
-      throw new Error(detail ? `Asaas: ${detail}` : `Asaas API error: ${res.status}`)
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        const res = await fetch(url, {
+          method,
+          headers: {
+            'Content-Type': 'application/json',
+            'access_token': this.apiKey(),
+          },
+          body: body ? JSON.stringify(body) : undefined,
+          signal: AbortSignal.timeout(10000),
+        })
+
+        if (!res.ok) {
+          // 4xx (exceto 429) = retry inútil — auth/validation/not-found.
+          const shouldRetry = res.status >= 500 || res.status === 429
+          if (shouldRetry && attempt < MAX_RETRIES - 1) {
+            const wait = 500 * Math.pow(2, attempt) // 500ms, 1s, 2s
+            console.warn(`[Asaas] ${res.status} on ${path} — retry ${attempt + 1}/${MAX_RETRIES} in ${wait}ms`)
+            await new Promise(r => setTimeout(r, wait))
+            continue
+          }
+          const err = await res.json().catch(() => ({})) as { errors?: Array<{ description?: string }>; message?: string }
+          const detail = err.errors?.[0]?.description || err.message || ''
+          console.error('[Asaas API Error]', { status: res.status, path, err, attempt })
+          throw new Error(detail ? `Asaas: ${detail}` : `Asaas API error: ${res.status}`)
+        }
+
+        return res.json()
+      } catch (err) {
+        lastErr = err
+        const isRetryable = err instanceof Error && (
+          err.name === 'AbortError'
+          || err.name === 'TimeoutError'
+          || err.message.includes('fetch failed')
+          || err.message.includes('ECONNRESET')
+          || err.message.includes('ETIMEDOUT')
+        )
+        if (isRetryable && attempt < MAX_RETRIES - 1) {
+          const wait = 500 * Math.pow(2, attempt)
+          console.warn(`[Asaas] network error on ${path} — retry ${attempt + 1}/${MAX_RETRIES} in ${wait}ms:`, err instanceof Error ? err.message : err)
+          await new Promise(r => setTimeout(r, wait))
+          continue
+        }
+        throw err
+      }
     }
-
-    return res.json()
+    throw lastErr || new Error(`Asaas: ${method} ${path} failed after ${MAX_RETRIES} retries`)
   }
 
   async createPixCharge(params: {

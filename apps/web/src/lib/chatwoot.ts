@@ -22,25 +22,62 @@ function headers() {
   }
 }
 
+// Eco audit H6 (2026-05-29): timeout 10s default + 3 retries com
+// backoff exponencial pra 5xx/network errors. Antes: zero timeout
+// (request infinito se Chatwoot lento) + zero retry (network blip
+// = fail definitivo). Cascade fail comum em produção.
+const CHATWOOT_TIMEOUT_MS = 10_000
+const CHATWOOT_MAX_RETRIES = 3
+
 async function chatwootFetch<T = any>(path: string, options?: RequestInit): Promise<T> {
   if (!getChatwootToken()) {
     throw new Error('CHATWOOT_API_TOKEN not configured')
   }
 
-  const res = await fetch(`${baseUrl()}${path}`, {
-    ...options,
-    headers: {
-      ...headers(),
-      ...options?.headers,
-    },
-  })
+  let lastErr: unknown
+  for (let attempt = 0; attempt < CHATWOOT_MAX_RETRIES; attempt++) {
+    try {
+      const res = await fetch(`${baseUrl()}${path}`, {
+        ...options,
+        headers: {
+          ...headers(),
+          ...options?.headers,
+        },
+        signal: AbortSignal.timeout(CHATWOOT_TIMEOUT_MS),
+      })
 
-  if (!res.ok) {
-    const body = await res.text()
-    throw new Error(`Chatwoot API ${res.status}: ${body}`)
+      // 4xx (exceto 429) = não vale retry (auth/validation/not-found)
+      if (!res.ok) {
+        const body = await res.text()
+        const shouldRetry = res.status >= 500 || res.status === 429
+        if (shouldRetry && attempt < CHATWOOT_MAX_RETRIES - 1) {
+          lastErr = new Error(`Chatwoot API ${res.status}: ${body.slice(0, 200)}`)
+          // Backoff exponencial: 500ms, 1s, 2s
+          await new Promise(r => setTimeout(r, 500 * Math.pow(2, attempt)))
+          continue
+        }
+        throw new Error(`Chatwoot API ${res.status}: ${body}`)
+      }
+
+      return res.json()
+    } catch (err) {
+      lastErr = err
+      // AbortError (timeout) ou TypeError (network) → retry com backoff
+      const isRetryable = err instanceof Error && (
+        err.name === 'AbortError'
+        || err.name === 'TimeoutError'
+        || err.message.includes('fetch failed')
+        || err.message.includes('ECONNRESET')
+        || err.message.includes('ETIMEDOUT')
+      )
+      if (isRetryable && attempt < CHATWOOT_MAX_RETRIES - 1) {
+        await new Promise(r => setTimeout(r, 500 * Math.pow(2, attempt)))
+        continue
+      }
+      throw err
+    }
   }
-
-  return res.json()
+  throw lastErr || new Error('Chatwoot fetch failed after retries')
 }
 
 // --- Contacts ---

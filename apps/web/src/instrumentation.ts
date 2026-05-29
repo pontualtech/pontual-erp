@@ -42,8 +42,24 @@ function startCronJobs() {
 
   const headers = { Authorization: `Bearer ${CRON_SECRET}` }
 
+  // Eco audit A2 (2026-05-29): wrapper que registra última execução de cada
+  // cron interno em settings (via lib/cron-health.markCronRun). Antes deste
+  // wrapper, cron-health-monitor era CEGO aos 9 crons internos — falhas
+  // silenciosas em produção (descobertas em audit ecosystem 29/05).
+  // Dynamic import evita circular dep + lazy carrega Prisma no boot.
+  const trackHealth = async (cronName: string, ok: boolean, durationMs: number, error?: string) => {
+    try {
+      const { markCronRun } = await import('@/lib/cron-health')
+      await markCronRun(cronName, { ok, duration_ms: durationMs, error })
+    } catch (err) {
+      // Best-effort — não deixa telemetry derrubar cron
+      console.error(`[CronHealth/${cronName}] track failed (non-fatal):`, err instanceof Error ? err.message : err)
+    }
+  }
+
   // Bot Follow-up — every 5 minutes
   setInterval(async () => {
+    const t0 = Date.now()
     try {
       const res = await fetch(`${BASE_URL}/api/cron/bot-followup`, { headers })
       if (res.ok) {
@@ -51,16 +67,20 @@ function startCronJobs() {
         if (data.data?.sent > 0) {
           console.log(`[Cron/BotFollowUp] Sent ${data.data.sent} follow-ups`)
         }
+        await trackHealth('bot-followup', true, Date.now() - t0)
       } else {
         console.error(`[Cron/BotFollowUp] HTTP ${res.status}`)
+        await trackHealth('bot-followup', false, Date.now() - t0, `HTTP ${res.status}`)
       }
     } catch (err) {
       console.error('[Cron/BotFollowUp] Error:', err instanceof Error ? err.message : err)
+      await trackHealth('bot-followup', false, Date.now() - t0, err instanceof Error ? err.message : String(err))
     }
   }, 5 * 60 * 1000) // 5 minutes
 
   // Quote Reminder — every 30 minutes
   setInterval(async () => {
+    const t0 = Date.now()
     try {
       const res = await fetch(`${BASE_URL}/api/cron/lembrete-orcamento`, { headers })
       if (res.ok) {
@@ -70,14 +90,19 @@ function startCronJobs() {
         if (emails > 0 || whatsapp > 0) {
           console.log(`[Cron/LembreteOrcamento] emails_sent=${emails} whatsapp_sent=${whatsapp}`)
         }
+        await trackHealth('lembrete-orcamento', true, Date.now() - t0)
+      } else {
+        await trackHealth('lembrete-orcamento', false, Date.now() - t0, `HTTP ${res.status}`)
       }
     } catch (err) {
       console.error('[Cron/LembreteOrcamento] Error:', err instanceof Error ? err.message : err)
+      await trackHealth('lembrete-orcamento', false, Date.now() - t0, err instanceof Error ? err.message : String(err))
     }
   }, 30 * 60 * 1000) // 30 minutes
 
   // Billing Reminder — every hour
   setInterval(async () => {
+    const t0 = Date.now()
     try {
       const res = await fetch(`${BASE_URL}/api/cron/cobranca`, { headers })
       if (res.ok) {
@@ -85,9 +110,13 @@ function startCronJobs() {
         if (data.data?.sent > 0) {
           console.log(`[Cron/Cobranca] Sent ${data.data.sent} billing reminders`)
         }
+        await trackHealth('cobranca', true, Date.now() - t0)
+      } else {
+        await trackHealth('cobranca', false, Date.now() - t0, `HTTP ${res.status}`)
       }
     } catch (err) {
       console.error('[Cron/Cobranca] Error:', err instanceof Error ? err.message : err)
+      await trackHealth('cobranca', false, Date.now() - t0, err instanceof Error ? err.message : String(err))
     }
   }, 60 * 60 * 1000) // 1 hour
 
@@ -97,6 +126,7 @@ function startCronJobs() {
   // Endpoint deployado desde 25/05 mas ficou órfão de cron até este fix
   // (audit operador humano 2026-05-26).
   setInterval(async () => {
+    const t0 = Date.now()
     try {
       const res = await fetch(`${BASE_URL}/api/cron/payment-reminders-v2`, { headers })
       if (res.ok) {
@@ -107,11 +137,14 @@ function startCronJobs() {
         if (sched > 0 || disp > 0 || fail > 0) {
           console.log(`[Cron/PaymentRemindersV2] scheduled=${sched} dispatched=${disp} failures=${fail}`)
         }
+        await trackHealth('payment-reminders-v2', true, Date.now() - t0)
       } else {
         console.error(`[Cron/PaymentRemindersV2] HTTP ${res.status}`)
+        await trackHealth('payment-reminders-v2', false, Date.now() - t0, `HTTP ${res.status}`)
       }
     } catch (err) {
       console.error('[Cron/PaymentRemindersV2] Error:', err instanceof Error ? err.message : err)
+      await trackHealth('payment-reminders-v2', false, Date.now() - t0, err instanceof Error ? err.message : String(err))
     }
   }, 10 * 60 * 1000) // 10 minutes
 
@@ -154,6 +187,7 @@ function startCronJobs() {
     console.warn('[Cron/GoogleReviews] INTERNAL_API_KEY ausente — cron desabilitado')
   } else {
     setInterval(async () => {
+      const t0 = Date.now()
       try {
         const res = await fetch(`${BASE_URL}/api/internal/cron/google-reviews`, {
           method: 'POST',
@@ -164,13 +198,16 @@ function startCronJobs() {
           if (data.data?.sent > 0) {
             console.log(`[Cron/GoogleReviews] Sent ${data.data.sent} review links`)
           }
+          await trackHealth('google-reviews', true, Date.now() - t0)
         } else {
           // Logging defensivo: ate antes desse fix, 401 ficava silencioso
           // pq nao tinha else aqui. Cron rodou 5 dias mudo em prod.
           console.error(`[Cron/GoogleReviews] HTTP ${res.status}`)
+          await trackHealth('google-reviews', false, Date.now() - t0, `HTTP ${res.status}`)
         }
       } catch (err) {
         console.error('[Cron/GoogleReviews] Error:', err instanceof Error ? err.message : err)
+        await trackHealth('google-reviews', false, Date.now() - t0, err instanceof Error ? err.message : String(err))
       }
     }, 5 * 60 * 1000) // 5 minutes
   }
@@ -258,6 +295,7 @@ function startCronJobs() {
     console.warn('[Cron/DreMvRefresh] INTERNAL_API_KEY ausente — cron desabilitado')
   } else {
     setInterval(async () => {
+      const t0 = Date.now()
       try {
         const res = await fetch(`${BASE_URL}/api/internal/cron/dre-mv-refresh`, {
           headers: { 'x-internal-key': INTERNAL_API_KEY },
@@ -267,11 +305,14 @@ function startCronJobs() {
           if (data.data?.ok && !data.data?.skipped) {
             console.log(`[Cron/DreMvRefresh] refreshed (${data.data.mode}) in ${data.data.elapsed_ms}ms — ${data.data.mv_rows} rows`)
           }
+          await trackHealth('dre-mv-refresh', true, Date.now() - t0)
         } else {
           console.error(`[Cron/DreMvRefresh] HTTP ${res.status}`)
+          await trackHealth('dre-mv-refresh', false, Date.now() - t0, `HTTP ${res.status}`)
         }
       } catch (err) {
         console.error('[Cron/DreMvRefresh] Error:', err instanceof Error ? err.message : err)
+        await trackHealth('dre-mv-refresh', false, Date.now() - t0, err instanceof Error ? err.message : String(err))
       }
     }, 30 * 60 * 1000) // 30 minutes
   }
@@ -283,6 +324,7 @@ function startCronJobs() {
     console.warn('[Cron/CobrancaReenvio] INTERNAL_API_KEY ausente — cron desabilitado')
   } else {
     setInterval(async () => {
+      const t0 = Date.now()
       try {
         const res = await fetch(`${BASE_URL}/api/internal/cron/cobranca-reenvio-vencidas`, {
           method: 'POST',
@@ -293,11 +335,14 @@ function startCronJobs() {
           if (data.data?.ok_count > 0) {
             console.log(`[Cron/CobrancaReenvio] Reenviadas ${data.data.ok_count}/${data.data.processed} cobrancas`)
           }
+          await trackHealth('cobranca-reenvio-vencidas', true, Date.now() - t0)
         } else {
           console.error(`[Cron/CobrancaReenvio] HTTP ${res.status}`)
+          await trackHealth('cobranca-reenvio-vencidas', false, Date.now() - t0, `HTTP ${res.status}`)
         }
       } catch (err) {
         console.error('[Cron/CobrancaReenvio] Error:', err instanceof Error ? err.message : err)
+        await trackHealth('cobranca-reenvio-vencidas', false, Date.now() - t0, err instanceof Error ? err.message : String(err))
       }
     }, 60 * 60 * 1000) // 1 hour
   }
