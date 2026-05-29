@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { getPaymentProvider } from '@/lib/payments/factory'
 import { captureFeesForPayment } from '@/lib/payments/capture-fees'
+import { isImprimitechHandoffStatus } from '@/lib/imprimitech-handoff'
 
 // Valid status transitions — reject anything not in this map
 const VALID_TRANSITIONS: Record<string, string[]> = {
@@ -1152,6 +1153,7 @@ export async function POST(req: NextRequest) {
                   equipment_model: true,
                   customers: { select: { id: true, legal_name: true, email: true, mobile: true, phone: true } },
                   companies: { select: { name: true, slug: true } },
+                  module_statuses: { select: { name: true } },
                 },
               },
             },
@@ -1160,6 +1162,18 @@ export async function POST(req: NextRequest) {
           if (!so || !paymentFresh) return
           const customer = so.customers
           if (!customer) return
+
+          // Wave 1.3 audit NEW-1: se OS já foi pra Imprimitech antes do
+          // webhook chegar (cliente pagou link gerado pré-handoff), NÃO
+          // dispara mensagem "Pagamento confirmado" do nome da PT — cliente
+          // recebeu handoff message do bot Marta, mensagem PT seria
+          // contraditória. UPDATEs financeiros já aconteceram em transação
+          // separada (ar.received_amount, payment.status), só comunicação
+          // é suprimida. Atendente Imprimitech notifica via canal próprio.
+          if (isImprimitechHandoffStatus(so.module_statuses?.name)) {
+            console.log(`[webhook-payment] Handoff Imprimitech detectado pra OS #${so.os_number} — supressão de notificação PT (UPDATEs financeiros mantidos).`)
+            return
+          }
 
           const valorBRL = (paymentFresh.amount / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
           const osNum = String(so.os_number).padStart(4, '0')

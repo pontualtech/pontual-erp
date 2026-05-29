@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { getPortalUserFromRequest } from '@/lib/portal-auth'
+import { getImprimitechHandoffStatusId } from '@/lib/imprimitech-handoff'
 
 export async function GET(req: NextRequest) {
   try {
@@ -9,6 +10,12 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Nao autenticado' }, { status: 401 })
     }
 
+    // Wave 1.3 audit NEW-2 (2026-05-29): esconde OS em handoff Imprimitech
+    // do dashboard /financeiro. Sem isto, cliente via valor+pending_payment
+    // de OS já transferida no resumo agregado (inconsistente com /ordens
+    // que esconde a OS — UX rompida + leak médio do total_cost).
+    const handoffStatusId = await getImprimitechHandoffStatusId(portalUser.company_id)
+
     // Get all OS with values for this customer
     const orders = await prisma.serviceOrder.findMany({
       where: {
@@ -16,6 +23,7 @@ export async function GET(req: NextRequest) {
         customer_id: portalUser.customer_id,
         deleted_at: null,
         total_cost: { gt: 0 },
+        ...(handoffStatusId ? { status_id: { not: handoffStatusId } } : {}),
       },
       include: {
         module_statuses: { select: { name: true, color: true, is_final: true } },
