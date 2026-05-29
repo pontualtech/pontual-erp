@@ -9,7 +9,7 @@ import crypto from 'node:crypto'
  * Grava snapshot {gclid, utm_*, phone_destination, click_at} pra que o bot
  * Marta/Ana/Aline/Grazi possa cruzar com mensagens incoming sem [ref:...].
  *
- * Idempotência: cada click gera 1 row. TTL: 30 min via expires_at.
+ * Idempotência: cada click gera 1 row. TTL: 24 h via expires_at (era 30 min até 2026-05-29).
  *
  * Sem auth porque é chamado direto do navegador do cliente.
  *

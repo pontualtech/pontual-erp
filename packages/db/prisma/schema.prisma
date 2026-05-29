@@ -2464,7 +2464,7 @@ model MarketingWhatsappRedirect {
   company_id          String?
   phone_destination   String
   click_at            DateTime  @default(now()) @db.Timestamptz(6)
-  expires_at          DateTime  @default(dbgenerated("(now() + interval '30 minutes')")) @db.Timestamptz(6)
+  expires_at          DateTime  @default(dbgenerated("(now() + interval '24 hours')")) @db.Timestamptz(6)
   consumed_at         DateTime? @db.Timestamptz(6)
   consumed_by_conv_id Int?
 
