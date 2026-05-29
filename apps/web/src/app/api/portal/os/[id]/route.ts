@@ -4,6 +4,7 @@ import { getPortalUserFromRequest } from '@/lib/portal-auth'
 import { isAllowedOrigin } from '@/lib/csrf-origin'
 import { canCustomerPayOS } from '@/lib/os-payment-rules'
 import { buildCouponToken } from '@/lib/coupon-token'
+import { isImprimitechHandoffStatus } from '@/lib/imprimitech-handoff'
 
 // 2026-05-21: cliente pode aprovar OS mesmo em status 'Renegociar' ou
 // 'Orcar Negociar' DESDE QUE ja tenha passado por 'Aguardando Aprovacao'
@@ -127,6 +128,13 @@ export async function GET(
     })
 
     if (!os) {
+      return NextResponse.json({ error: 'OS nao encontrada' }, { status: 404 })
+    }
+
+    // Handoff Imprimitech (2026-05-29): se OS foi transferida, retorna 404
+    // (mesma resposta de OS deletada). Cliente não vê detalhes via link
+    // antigo nem via magic link — passou pra Imprimitech sob outro número.
+    if (isImprimitechHandoffStatus(os.module_statuses?.name)) {
       return NextResponse.json({ error: 'OS nao encontrada' }, { status: 404 })
     }
 

@@ -25,6 +25,10 @@ import {
   type ReplyButton,
   type ListRow,
 } from '@/lib/whatsapp/cloud-api'
+import {
+  getImprimitechHandoffStatusId,
+  buildImprimitechHandoffMessage,
+} from '@/lib/imprimitech-handoff'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -2110,6 +2114,67 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
         // Nao bloquear atendimento por erro em verificacao defensiva.
         console.warn('[Bot] checkCrossTenantLock falhou (seguindo normal):', lockErr instanceof Error ? lockErr.message : lockErr)
       }
+    }
+
+    // Handoff Imprimitech (2026-05-29) — phone do cliente tem OS NESSA empresa
+    // (PT) em status "Imprimitech"? Significa que operador moveu pra Imprimitech
+    // e a OS foi reaberta lá sob outro número. Bot da PT responde com mensagem
+    // padrão direcionando pra Aline + atendente humano assume — SEM chamar LLM.
+    // Diferente do CROSS_TENANT_PAIR (que olha "tem OS no outro tenant?"); aqui
+    // a OS está NESTE tenant mas marcada como "saiu pra Imprimitech".
+    try {
+      const handoffStatusId = await getImprimitechHandoffStatusId(cfg.companyId)
+      if (handoffStatusId && phone) {
+        const cleanPhone = phone.replace(/\D/g, '').slice(-10)
+        if (cleanPhone.length >= 10) {
+          const handoffOs = await prisma.serviceOrder.findFirst({
+            where: {
+              company_id: cfg.companyId,
+              status_id: handoffStatusId,
+              deleted_at: null,
+              customers: {
+                OR: [
+                  { mobile: { endsWith: cleanPhone } },
+                  { phone: { endsWith: cleanPhone } },
+                ],
+              },
+            },
+            orderBy: { updated_at: 'desc' },
+            select: {
+              os_number: true,
+              customers: { select: { legal_name: true } },
+            },
+          })
+          if (handoffOs) {
+            const firstName = (handoffOs.customers?.legal_name || '').split(' ')[0] || null
+            // Pega WhatsApp da Imprimitech do tenant-par (se configurado em settings).
+            const imprimSetting = await prisma.setting.findFirst({
+              where: { company_id: '86c829cf-32ed-4e40-80cd-59ce4178aa1a', key: 'company.phone' },
+              select: { value: true },
+            }).catch(() => null)
+            const imprimWa = imprimSetting?.value
+              ? `https://wa.me/${imprimSetting.value.replace(/\D/g, '')}`
+              : null
+            const msg = buildImprimitechHandoffMessage({
+              osNumber: handoffOs.os_number,
+              customerFirstName: firstName,
+              imprimitechWhatsApp: imprimWa,
+            })
+            await cwSendMessage(cfg, conversationId, msg)
+            await cwSendMessage(cfg, conversationId, `[BOT] Handoff Imprimitech — OS #${handoffOs.os_number} status=Imprimitech. Atendente humano assume.`, true)
+            // Não resolve a conversa — atendente humano segue o caso.
+            await prisma.botConversation.update({
+              where: { id: botConv.id },
+              data: { human_takeover: true, step: 'HUMAN' },
+            }).catch(() => {})
+            await releaseLock(botConv.id)
+            return
+          }
+        }
+      }
+    } catch (handoffErr) {
+      // Falha graceful: log + segue pro LLM (mesmo padrão do cross-tenant).
+      console.warn('[Bot] Imprimitech handoff check falhou (seguindo normal):', handoffErr instanceof Error ? handoffErr.message : handoffErr)
     }
 
     // Call Dify
