@@ -42,6 +42,7 @@ interface GoogleAdsConfig {
   clientSecret: string       // OAuth2 client secret
   conversionActionLead: string     // resource name: customers/X/conversionActions/Y
   conversionActionApproved: string
+  conversionActionWhatsapp: string // clique WhatsApp (CWT server-side), imune a consent
 }
 
 interface BingAdsConfig {
@@ -64,6 +65,7 @@ const PT_GOOGLE_ADS: GoogleAdsConfig | null = process.env.GOOGLE_ADS_CUSTOMER_ID
   clientSecret: process.env.GOOGLE_ADS_CLIENT_SECRET || '',
   conversionActionLead: process.env.GOOGLE_ADS_CONV_ACTION_LEAD || '',
   conversionActionApproved: process.env.GOOGLE_ADS_CONV_ACTION_APPROVED || '',
+  conversionActionWhatsapp: process.env.GOOGLE_ADS_CONV_ACTION_WHATSAPP || '',
 } : null
 
 const PT_BING_ADS: BingAdsConfig | null = process.env.BING_ADS_CUSTOMER_ID ? {
@@ -230,6 +232,77 @@ async function uploadGoogleAdsConversion(
 }
 
 // ---------------------------------------------------------------------------
+// CWT WhatsApp clicks → Google Ads (conversão de contato imune a consent)
+// ---------------------------------------------------------------------------
+
+const PT_CWT_COMPANY_ID = 'pontualtech-001'
+
+/**
+ * Sobe cliques de WhatsApp capturados server-side (marketing_whatsapp_redirects)
+ * como conversão pro Google Ads. Restaura o sinal que a conversão client-side
+ * (tipo WEBPAGE) perdeu desde 01/05 — Consent Mode passou a bloquear ad_storage,
+ * então o clique só virava conversão se o usuário aceitasse cookies. O CWT grava
+ * o clique+gclid no servidor, sem depender de consentimento.
+ *
+ * Idempotência: marca gads_conversion_uploaded_at após enviar (não reenvia).
+ * Janela de 30d é segura porque a coluna impede duplicação mesmo com sobreposição.
+ * Dedupe por gclid: 1 conversão de contato por clique de anúncio único.
+ * Valor 0 (contagem pura) — categoria CONTACT; valor por lead pode ser ligado depois.
+ */
+async function uploadCwtWhatsappConversions(
+  cfg: GoogleAdsConfig,
+  accessToken: string | null,
+): Promise<{ sent: number; skipped: number; failed: number; errors: string[] }> {
+  const errors: string[] = []
+  if (!cfg.conversionActionWhatsapp) {
+    return { sent: 0, skipped: 0, failed: 0, errors: ['GOOGLE_ADS_CONV_ACTION_WHATSAPP not configured'] }
+  }
+
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) // 30d; coluna de idempotência impede duplicar
+  const rows = await prisma.marketingWhatsappRedirect.findMany({
+    where: {
+      company_id: PT_CWT_COMPANY_ID,
+      gclid: { not: null },               // gclid e gads_*_at são nullable → filtro válido
+      gads_conversion_uploaded_at: null,
+      click_at: { gte: since },
+    },
+    select: { id: true, gclid: true, click_at: true },
+    orderBy: { click_at: 'asc' },
+    take: 500,
+  })
+
+  // Dedupe por gclid sanitizado (* → _, mesmo workaround do upload de OS). Junta ids p/ marcar
+  // todas as linhas do mesmo gclid. Valida formato: gclid real do Google é base64url com ≥40
+  // chars — descarta IDs de teste/sintéticos (ex: 'diag_test_...', 'F2_EVENT_ID_TEST') que
+  // poluiriam o algoritmo e seriam rejeitados pela API.
+  const byGclid = new Map<string, { clickAt: Date; ids: string[] }>()
+  for (const r of rows) {
+    const g = (r.gclid || '').replace(/\*/g, '_')
+    if (g.length < 40 || !/^[A-Za-z0-9_-]+$/.test(g) || /test|audit|diag|playwright|event_id/i.test(g)) continue
+    const e = byGclid.get(g)
+    if (e) { e.ids.push(r.id); if (r.click_at > e.clickAt) e.clickAt = r.click_at }
+    else byGclid.set(g, { clickAt: r.click_at, ids: [r.id] })
+  }
+
+  let sent = 0, failed = 0
+  for (const [gclid, { clickAt, ids }] of byGclid) {
+    const r = await uploadGoogleAdsConversion(cfg, accessToken, gclid, cfg.conversionActionWhatsapp, 0, clickAt)
+    if (r.ok) {
+      sent++
+      await prisma.marketingWhatsappRedirect.updateMany({
+        where: { id: { in: ids } },
+        data: { gads_conversion_uploaded_at: new Date() },
+      })
+    } else {
+      failed++
+      if (errors.length < 10) errors.push(`gclid ${gclid.slice(0, 12)}…: ${r.error}`)
+    }
+  }
+  const skipped = rows.length - [...byGclid.values()].reduce((n, e) => n + e.ids.length, 0)
+  return { sent, skipped, failed, errors }
+}
+
+// ---------------------------------------------------------------------------
 // Main cron handler
 // ---------------------------------------------------------------------------
 
@@ -338,12 +411,24 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  console.log(`[Cron/UploadConv] candidates=${byId.size} | leads sent=${leadsSent} skipped=${leadsSkipped} failed=${leadsFailed} | approved sent=${approvedSent} skipped=${approvedSkipped} failed=${approvedFailed}`)
+  // CWT WhatsApp clicks → Google Ads. Aditivo: try/catch isola do upload de OS/quote acima —
+  // se isto falhar, NÃO afeta o resultado dos uploads de LEAD/APPROVED já processados.
+  let whatsappResult = { sent: 0, skipped: 0, failed: 0, errors: [] as string[] }
+  try {
+    if (PT_GOOGLE_ADS) {
+      whatsappResult = await uploadCwtWhatsappConversions(PT_GOOGLE_ADS, googleAccessToken)
+    }
+  } catch (e: any) {
+    whatsappResult.errors.push('cwt upload crashed: ' + (e?.message || 'unknown'))
+  }
+
+  console.log(`[Cron/UploadConv] candidates=${byId.size} | leads sent=${leadsSent} skipped=${leadsSkipped} failed=${leadsFailed} | approved sent=${approvedSent} skipped=${approvedSkipped} failed=${approvedFailed} | whatsapp_cwt sent=${whatsappResult.sent} skipped=${whatsappResult.skipped} failed=${whatsappResult.failed}`)
 
   return success({
     candidates: byId.size,
     leads: { sent: leadsSent, skipped: leadsSkipped, failed: leadsFailed },
     approved: { sent: approvedSent, skipped: approvedSkipped, failed: approvedFailed },
+    whatsapp_cwt: whatsappResult,
     errors: errors.slice(0, 10),
     google_ads_configured: !!PT_GOOGLE_ADS?.developerToken,
     bing_ads_configured: !!PT_BING_ADS?.developerToken,
