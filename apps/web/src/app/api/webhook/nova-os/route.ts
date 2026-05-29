@@ -149,7 +149,10 @@ export async function POST(req: NextRequest) {
       return { os: created, osNumber: num }
     })
 
-    // 4. History
+    // 4. History — Eco audit H10 (2026-05-29): swallow silent removido.
+    // ServiceOrderHistory é trilha de auditoria (LGPD/SEFAZ/dispute) — perda
+    // silenciosa = sem evidência se cliente disputar mudança de status.
+    // Não bloqueia criação da OS (já commitada) mas logamos pra triagem.
     await prisma.serviceOrderHistory.create({
       data: {
         company_id: companyId,
@@ -158,7 +161,9 @@ export async function POST(req: NextRequest) {
         changed_by: 'BOT_ANA',
         notes: `OS aberta via WhatsApp (Bot Ana/n8n) — ${equipamento} ${marca || ''} ${modelo || ''} — ${defeito}`,
       },
-    }).catch(() => {})
+    }).catch(err => {
+      console.error(`[webhook/nova-os] ServiceOrderHistory criação FAILED OS #${osNumber} — audit gap:`, err instanceof Error ? err.message : err)
+    })
 
     const { redactName: _redactName } = await import('@/lib/log-redact')
     console.log(`[Webhook nova-os] OS #${osNumber} criada | Cliente: ${_redactName(customer.legal_name)} ${isNewCustomer ? '(NOVO)' : ''} | ${equipamento} ${marca || ''} | ${defeito?.substring(0, 50)}`)

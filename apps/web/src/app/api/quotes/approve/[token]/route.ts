@@ -80,6 +80,13 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     const { action } = await req.json()
 
+    // Eco audit H11 (2026-05-29): captura IP+UA pra audit trail
+    // (aprovação financeira via token público — evidência se disputa).
+    const reqIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+      || req.headers.get('x-real-ip')
+      || 'unknown'
+    const reqUa = (req.headers.get('user-agent') || 'unknown').slice(0, 250)
+
     if (action === 'approve') {
       // Atomico: aprova quote + propaga total_amount pra os.total_cost.
       // Sem essa propagacao, conciliacao da maquininha (match-engine) nao
@@ -93,9 +100,30 @@ export async function POST(req: NextRequest, { params }: Params) {
           },
         })
         await propagateQuoteApprovalToOS(tx, quote.id)
+        // Eco audit H11: audit log estruturado da aprovação via token público.
+        // Trail forense se cliente disputar ("nunca aprovei").
+        await tx.auditLog.create({
+          data: {
+            company_id: quote.company_id,
+            user_id: 'public:quote-token',
+            module: 'quotes',
+            action: 'quote.approved.via_token',
+            entity_id: quote.id,
+            ip_address: reqIp,
+            new_value: {
+              quote_number: quote.quote_number,
+              service_order_id: quote.service_order_id,
+              token_prefix: params.token.slice(0, 8),
+              user_agent: reqUa,
+            },
+          },
+        }).catch(err => {
+          // Log mas não bloqueia aprovação (já commitada antes)
+          console.error(`[quotes/approve] audit log FAILED quote #${quote.quote_number}:`, err instanceof Error ? err.message : err)
+        })
       })
 
-      // Notify via n8n webhook (fire-and-forget)
+      // Notify via n8n webhook (fire-and-forget — Eco audit H11: logar erro)
       const webhookUrl = process.env.N8N_QUOTE_APPROVED_WEBHOOK_URL
       if (webhookUrl) {
         fetch(webhookUrl, {
@@ -107,7 +135,9 @@ export async function POST(req: NextRequest, { params }: Params) {
             serviceOrderId: quote.service_order_id,
             action: 'approved',
           }),
-        }).catch(() => {})
+        }).catch(err => {
+          console.error(`[quotes/approve] n8n webhook FAILED quote #${quote.quote_number}:`, err instanceof Error ? err.message : err)
+        })
       }
 
       return success({ status: 'APPROVED', quoteNumber: quote.quote_number })

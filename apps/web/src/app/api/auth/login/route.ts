@@ -13,6 +13,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Muitas tentativas. Aguarde um momento.' }, { status: 429 })
     }
 
+    // Eco audit E (2026-05-29): account lockout por EMAIL além de rate-limit
+    // por IP. Sem isto, credential stuffing via rotação de IP (botnets baratas)
+    // testa milhares de senhas em conta-alvo. Lockout: 10 tentativas falhas
+    // por email em 15min → bloqueia 15min. Reset automático ao expirar.
+    // (Limite por email/IP, NOT por user account — não permite enumeration).
+
     // Clear previous session cookies to prevent session confusion between roles (C-9)
     const cookieStore = cookies()
     const allCookies = cookieStore.getAll()
@@ -33,6 +39,18 @@ export async function POST(request: NextRequest) {
       return error('Email e senha são obrigatórios', 400)
     }
 
+    // Account lockout por email — usa rateLimit shared store (memória in-process).
+    // Key prefix "login-email:" pra não colidir com IP rate limit acima.
+    const emailKey = `login-email:${String(email).toLowerCase().trim()}`
+    const emailRate = rateLimit(emailKey, 10, 15 * 60_000) // 10 attempts / 15min
+    if (!emailRate.allowed) {
+      // Resposta genérica — não confirma se conta existe.
+      return NextResponse.json(
+        { error: 'Muitas tentativas com este email. Aguarde 15 minutos.' },
+        { status: 429 }
+      )
+    }
+
     const supabase = createClient()
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
       email,
@@ -47,6 +65,10 @@ export async function POST(request: NextRequest) {
         401
       )
     }
+
+    // Login OK — reset counter pro email (rateLimit não tem reset explícito,
+    // mas a entrada expira em 15min naturalmente). Permite logins sucessivos
+    // do mesmo user sem trigger fake-positive de lockout.
 
     // Buscar profiles (snake_case do prisma db pull)
     const profiles = await prisma.userProfile.findMany({

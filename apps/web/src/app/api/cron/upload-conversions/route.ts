@@ -322,14 +322,21 @@ export async function GET(request: NextRequest) {
   const now = new Date()
   const since = new Date(now.getTime() - 36 * 60 * 60 * 1000) // últimas 36h (margem vs 24h)
 
+  // Eco audit J (2026-05-29): filtrar por company_id PT-001 explicitamente.
+  // Antes: findMany sem company_id → pegava OS de TODOS tenants (incluindo
+  // Imprimitech). Se IMP customer tinha gclid (raro mas possível), upload
+  // ocorria como conversão PT (cross-tenant leak) + escrita em os.custom_data
+  // de OS que não é nossa. Multi-tenant violation.
+  const PT_COMPANY_ID = process.env.BOT_ANA_COMPANY_ID || 'pontualtech-001'
+
   // Candidatos: OS criadas no período + OS com quotes aprovadas no período
   const osCreatedRecent = await prisma.serviceOrder.findMany({
-    where: { created_at: { gte: since }, deleted_at: null },
+    where: { company_id: PT_COMPANY_ID, created_at: { gte: since }, deleted_at: null },
     include: { customers: true },
     take: 500,
   })
   const quotesApprovedRecent = await prisma.quote.findMany({
-    where: { approved_at: { gte: since }, status: { not: 'DRAFT' } },
+    where: { company_id: PT_COMPANY_ID, approved_at: { gte: since }, status: { not: 'DRAFT' } },
     include: { service_orders: { include: { customers: true } } },
     take: 500,
   })

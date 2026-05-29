@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { success, handleError } from '@/lib/api-response'
 import { requireInternalKey } from '@/lib/internal-auth'
 import { sendAlert } from '@/lib/observability'
+import { getAllInternalCronHealth, type InternalCronHealth } from '@/lib/cron-health'
 
 /**
  * Meta-monitoring: pollla Coolify API e detecta scheduled tasks quebradas.
@@ -182,8 +183,34 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Eco audit A2 (2026-05-29): também monitora crons INTERNOS do
+    // instrumentation.ts (9 crons que rodam via setInterval no boot do
+    // Next.js, fora do scheduler Coolify). Antes deste fix eram cegos.
+    const internalHealth = await getAllInternalCronHealth()
+    let internal_alerts = 0
+    for (const ic of internalHealth) {
+      if (ic.verdict === 'failing') {
+        const dispatched = await sendAlert(
+          `internal_cron_failing_${ic.name}`,
+          `Cron interno "${ic.name}" falhou ${ic.consecutive_fails}x consecutivas. Último run há ${ic.age_min}min.`,
+          'critical',
+        )
+        if (dispatched) internal_alerts++
+      } else if (ic.verdict === 'stale' || ic.verdict === 'never_ran') {
+        const dispatched = await sendAlert(
+          `internal_cron_stale_${ic.name}`,
+          ic.verdict === 'never_ran'
+            ? `Cron interno "${ic.name}" NUNCA rodou desde último boot. instrumentation.ts quebrado?`
+            : `Cron interno "${ic.name}" sem execução há ${ic.age_min}min (esperado <=${ic.expected_max_min}min). Scheduler interno parado?`,
+          'critical',
+        )
+        if (dispatched) internal_alerts++
+      }
+    }
+
     return success({
       ok: true,
+      // Crons SCHEDULED do Coolify
       total_tasks: tasks.length,
       checked: checks.filter(c => c.verdict !== 'unknown').length,
       healthy: checks.filter(c => c.verdict === 'healthy').length,
@@ -191,6 +218,14 @@ export async function POST(req: NextRequest) {
       stale: checks.filter(c => c.verdict === 'stale').length,
       alerts_dispatched,
       details: checks,
+      // Crons INTERNOS do instrumentation.ts (Eco audit A2)
+      internal_total: internalHealth.length,
+      internal_healthy: internalHealth.filter(c => c.verdict === 'healthy').length,
+      internal_failing: internalHealth.filter(c => c.verdict === 'failing').length,
+      internal_stale: internalHealth.filter(c => c.verdict === 'stale').length,
+      internal_never_ran: internalHealth.filter(c => c.verdict === 'never_ran').length,
+      internal_alerts_dispatched: internal_alerts,
+      internal_details: internalHealth,
     })
   } catch (err) {
     return handleError(err)
