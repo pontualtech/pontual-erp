@@ -534,7 +534,9 @@ model Customer {
   created_at           DateTime?           @default(now()) @db.Timestamptz(6)
   updated_at           DateTime?           @default(now()) @db.Timestamptz(6)
   deleted_at           DateTime?           @db.Timestamptz(6)
-  accounts_payable     AccountPayable[]
+  // Wave SU-1 (2026-05-29): accounts_payable relation removida do Customer.
+  // AccountPayable agora aponta corretamente pra Supplier (não Customer).
+  // Mantida só accounts_receivable que de fato pertence ao cliente.
   accounts_receivable  AccountReceivable[]
   companies            Company             @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   invoices             Invoice[]
