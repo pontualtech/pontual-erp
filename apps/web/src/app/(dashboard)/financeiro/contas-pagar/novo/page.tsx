@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
@@ -96,15 +96,21 @@ export default function NovaContaPagarPage() {
       .catch(() => {})
   }, [])
 
-  async function searchSuppliers(query: string) {
+  // Wave SU-1 fix I3 (2026-05-27): debounce 300ms — evita flood de fetches enquanto user digita.
+  // Antes: cada tecla = 1 request. Agora: aguarda usuário pausar antes de buscar.
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  function searchSuppliers(query: string) {
     setSupplierSearch(query)
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
     if (query.length < 2) { setSuppliers([]); return }
-    try {
-      // Wave SU-1: busca em /api/suppliers (era /api/clientes — anti-pattern legado)
-      const res = await fetch(`/api/suppliers?search=${encodeURIComponent(query)}&limit=5&active=true`)
-      const json = await res.json()
-      setSuppliers(json.data || [])
-    } catch { setSuppliers([]) }
+    searchTimerRef.current = setTimeout(async () => {
+      try {
+        // Wave SU-1: busca em /api/suppliers (era /api/clientes — anti-pattern legado)
+        const res = await fetch(`/api/suppliers?search=${encodeURIComponent(query)}&limit=5&active=true`)
+        const json = await res.json()
+        setSuppliers(json.data || [])
+      } catch { setSuppliers([]) }
+    }, 300)
   }
 
   function selectSupplier(supplier: SearchResult) {
@@ -120,6 +126,14 @@ export default function NovaContaPagarPage() {
   const [newSupplierDoc, setNewSupplierDoc] = useState('')
   const [newSupplierPhone, setNewSupplierPhone] = useState('')
   const [creatingSupplier, setCreatingSupplier] = useState(false)
+
+  // Wave SU-1 fix I4 (2026-05-27): fecha modal + limpa inputs (antes mantinha valores entre aberturas)
+  function closeNewSupplierModal() {
+    setShowNewSupplier(false)
+    setNewSupplierName('')
+    setNewSupplierDoc('')
+    setNewSupplierPhone('')
+  }
 
   async function createSupplierInline() {
     if (!newSupplierName.trim()) { toast.error('Nome do fornecedor é obrigatório'); return }
@@ -281,7 +295,7 @@ export default function NovaContaPagarPage() {
               <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-5 space-y-3">
                 <div className="flex items-center justify-between">
                   <h3 className="text-base font-semibold text-gray-900">Novo Fornecedor</h3>
-                  <button type="button" onClick={() => setShowNewSupplier(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+                  <button type="button" onClick={closeNewSupplierModal} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
                 </div>
                 <div>
                   <label className="block text-sm text-gray-600 mb-1" htmlFor="new-sup-name">Nome / Razão social *</label>
@@ -320,7 +334,7 @@ export default function NovaContaPagarPage() {
                 <div className="flex gap-2 pt-2">
                   <button
                     type="button"
-                    onClick={() => setShowNewSupplier(false)}
+                    onClick={closeNewSupplierModal}
                     className="flex-1 px-3 py-2 border rounded-md text-sm text-gray-700 hover:bg-gray-50"
                   >
                     Cancelar
