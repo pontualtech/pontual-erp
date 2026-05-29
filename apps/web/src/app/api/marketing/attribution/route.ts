@@ -16,7 +16,14 @@ import { getGoogleAdsTotalCostCents } from '@/lib/google-ads-enrichment'
  * Karlão: "dos clientes que aprovaram OS, quantos vieram do Google, MS Ads, etc."
  */
 
-const RANGES_DAYS: Record<string, number> = { '7d': 7, '30d': 30, '90d': 90, '365d': 365, '1y': 365 }
+const RANGES_DAYS: Record<string, number> = { 'today': 1, '1d': 1, '7d': 7, '30d': 30, '90d': 90, '365d': 365, '1y': 365 }
+
+/** Parse YYYY-MM-DD pra Date no início do dia BRT (UTC-3). Retorna null se inválido. */
+function parseDateBR(s: string | null): Date | null {
+  if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return null
+  const d = new Date(`${s}T00:00:00-03:00`)
+  return isNaN(d.getTime()) ? null : d
+}
 
 type ChannelKey = 'google_ads' | 'microsoft_ads' | 'meta_ads' | 'linkedin_ads' | 'x_ads' | 'tiktok_ads' | 'organic' | 'direct' | 'email' | 'referral' | 'social' | 'other' | 'sem_tracking'
 
@@ -96,14 +103,32 @@ export async function GET(req: NextRequest) {
     const user = result
 
     const cId = user.companyId
-    const range = req.nextUrl.searchParams.get('range') || '30d'
-    const days = RANGES_DAYS[range] ?? 30
-    const since = new Date(Date.now() - days * 86400 * 1000)
+    // Custom range (2026-05-29): aceita ?from=YYYY-MM-DD&to=YYYY-MM-DD além de ?range=Xd.
+    // Custom vence quando ambos from e to são válidos. range fallback default 30d.
+    const fromParam = parseDateBR(req.nextUrl.searchParams.get('from'))
+    const toParam = parseDateBR(req.nextUrl.searchParams.get('to'))
+    let range: string
+    let since: Date
+    let until: Date
+    if (fromParam && toParam) {
+      // Swap se invertido pra tolerar erro de UX
+      since = fromParam <= toParam ? fromParam : toParam
+      // until: fim do dia do toParam (23:59:59) pra incluir o dia inteiro
+      const endOfToDay = new Date(Math.max(fromParam.getTime(), toParam.getTime()))
+      endOfToDay.setUTCHours(endOfToDay.getUTCHours() + 24) // próximo dia 00:00 BRT
+      until = endOfToDay
+      range = `custom:${since.toISOString().slice(0,10)}_${(new Date(until.getTime() - 86400_000)).toISOString().slice(0,10)}`
+    } else {
+      range = req.nextUrl.searchParams.get('range') || '30d'
+      const days = RANGES_DAYS[range] ?? 30
+      since = new Date(Date.now() - days * 86400 * 1000)
+      until = new Date()
+    }
 
     const orders = await prisma.serviceOrder.findMany({
       where: {
         company_id: cId,
-        created_at: { gte: since },
+        created_at: { gte: since, lte: until },
         deleted_at: null,
       },
       select: {
@@ -216,10 +241,10 @@ export async function GET(req: NextRequest) {
       }).length,
     }
 
-    // Constrói timeline preenchendo dias vazios entre since e hoje
+    // Constrói timeline preenchendo dias vazios entre since e until (era 'now',
+    // agora respeita range custom passado pelo usuário).
     const timeline: Array<{ date: string } & Partial<Record<ChannelKey, number>>> = []
-    const now = new Date()
-    for (let d = new Date(since); d <= now; d = new Date(d.getTime() + 86400_000)) {
+    for (let d = new Date(since); d <= until; d = new Date(d.getTime() + 86400_000)) {
       const dateKey = d.toISOString().slice(0, 10)
       const dayData = timelineMap[dateKey] || {}
       const row: any = { date: dateKey }
@@ -242,13 +267,12 @@ export async function GET(req: NextRequest) {
       const channel = s.key.replace('marketing.investment.', '')
       investments[channel] = parseInt(s.value) || 0
     }
-    // Frente E (2026-05-29): se setting manual google_ads não existir/zerada,
-    // busca custo automaticamente via Google Ads API. Manual sempre vence (Karlão
-    // pode forçar valor diferente pra simular cenários). Cache 1h dentro do helper.
+    // Frente E (2026-05-29) + Custom range: passa from/to direto.
+    // Manual sempre vence (Karlão pode forçar valor pra simular cenários).
     const investmentSources: Record<string, 'manual' | 'google_ads_api'> = {}
     for (const ch of Object.keys(investments)) investmentSources[ch] = 'manual'
     if (!investments['google_ads']) {
-      const auto = await getGoogleAdsTotalCostCents(days).catch(() => null)
+      const auto = await getGoogleAdsTotalCostCents({ from: since, to: until }).catch(() => null)
       if (auto && auto > 0) {
         investments['google_ads'] = auto
         investmentSources['google_ads'] = 'google_ads_api'

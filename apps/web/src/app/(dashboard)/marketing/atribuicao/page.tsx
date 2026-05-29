@@ -149,9 +149,24 @@ type FunnelRow = {
   approved_revenue_cents: number
 }
 
-type Range = '7d' | '30d' | '90d' | '365d'
+type Range = 'today' | '1d' | '7d' | '30d' | '90d' | '365d' | 'custom'
 
-const RANGE_LABELS: Record<Range, string> = { '7d': '7 dias', '30d': '30 dias', '90d': '90 dias', '365d': '1 ano' }
+const RANGE_LABELS: Record<Exclude<Range, 'custom'>, string> = {
+  'today': 'Hoje', '1d': '24h', '7d': '7 dias', '30d': '30 dias', '90d': '90 dias', '365d': '1 ano',
+}
+
+/** YYYY-MM-DD default pra inputs date (hoje BRT) */
+function todayBR(): string {
+  const d = new Date()
+  d.setHours(d.getHours() - 3) // shift pra BRT
+  return d.toISOString().slice(0, 10)
+}
+function daysAgoBR(n: number): string {
+  const d = new Date()
+  d.setHours(d.getHours() - 3)
+  d.setDate(d.getDate() - n)
+  return d.toISOString().slice(0, 10)
+}
 
 function fmtBRL(cents: number): string {
   return (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -163,6 +178,10 @@ function fmtPct(n: number): string {
 
 export default function MarketingAttributionPage() {
   const [range, setRange] = useState<Range>('90d')
+  // Custom range (2026-05-29): só usados quando range === 'custom'
+  const [customFrom, setCustomFrom] = useState<string>(daysAgoBR(7))
+  const [customTo, setCustomTo] = useState<string>(todayBR())
+  const [showCustomPicker, setShowCustomPicker] = useState(false)
   const [data, setData] = useState<ApiResponse | null>(null)
   const [ga4, setGa4] = useState<GA4Response | null>(null)
   const [email, setEmail] = useState<EmailEngagementResponse | null>(null)
@@ -171,6 +190,11 @@ export default function MarketingAttributionPage() {
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [reloadKey, setReloadKey] = useState(0)
+
+  // Monta query string da API conforme range escolhido
+  const attributionUrl = range === 'custom'
+    ? `/api/marketing/attribution?from=${customFrom}&to=${customTo}`
+    : `/api/marketing/attribution?range=${range}`
 
   const toggleExpand = (ch: string) => {
     setExpanded(prev => {
@@ -187,7 +211,7 @@ export default function MarketingAttributionPage() {
     setError(null)
     // Buscamos atribuição (depende do range) + GA4 traffic + email engagement (paralelos)
     Promise.all([
-      fetch(`/api/marketing/attribution?range=${range}`).then(r => r.ok ? r.json() : Promise.reject(r)),
+      fetch(attributionUrl).then(r => r.ok ? r.json() : Promise.reject(r)),
       fetch('/api/marketing/traffic-realtime').then(r => r.ok ? r.json() : null).catch(() => null),
       fetch(`/api/marketing/email-engagement?window=${emailWindow}`).then(r => r.ok ? r.json() : null).catch(() => null),
     ])
@@ -200,7 +224,7 @@ export default function MarketingAttributionPage() {
       .catch(e => !cancelled && setError(e instanceof Error ? e.message : 'Erro ao carregar'))
       .finally(() => !cancelled && setLoading(false))
     return () => { cancelled = true }
-  }, [range, emailWindow, reloadKey])
+  }, [range, customFrom, customTo, emailWindow, reloadKey])
 
   // Sprint UX-16: editar investimento mensal por canal (CAC/ROI)
   async function editInvestment(channel: string, currentCents: number) {
@@ -279,17 +303,57 @@ export default function MarketingAttributionPage() {
             <p className="text-sm text-gray-500">OS criadas e aprovadas por canal de origem</p>
           </div>
         </div>
-        <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1">
-          {(['7d', '30d', '90d', '365d'] as Range[]).map(r => (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+          <div className="inline-flex flex-wrap rounded-lg border border-gray-200 bg-white p-1">
+            {(['today', '1d', '7d', '30d', '90d', '365d'] as const).map(r => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => { setRange(r); setShowCustomPicker(false) }}
+                className={`px-3 py-1.5 text-sm rounded-md transition ${range === r ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+              >
+                {RANGE_LABELS[r]}
+              </button>
+            ))}
             <button
-              key={r}
               type="button"
-              onClick={() => setRange(r)}
-              className={`px-3 py-1.5 text-sm rounded-md transition ${range === r ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+              onClick={() => { setShowCustomPicker(v => !v); if (range !== 'custom') setRange('custom') }}
+              className={`px-3 py-1.5 text-sm rounded-md transition ${range === 'custom' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+              title="Escolher datas customizadas"
             >
-              {RANGE_LABELS[r]}
+              Custom…
             </button>
-          ))}
+          </div>
+          {showCustomPicker && (
+            <div className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-sm">
+              <span className="text-gray-500">De</span>
+              <input
+                type="date"
+                aria-label="Data inicial"
+                value={customFrom}
+                onChange={e => setCustomFrom(e.target.value)}
+                max={customTo}
+                className="border border-gray-200 rounded px-2 py-0.5 text-xs"
+              />
+              <span className="text-gray-500">Até</span>
+              <input
+                type="date"
+                aria-label="Data final"
+                value={customTo}
+                onChange={e => setCustomTo(e.target.value)}
+                min={customFrom}
+                max={todayBR()}
+                className="border border-gray-200 rounded px-2 py-0.5 text-xs"
+              />
+              <button
+                type="button"
+                onClick={() => setRange('custom')}
+                className="px-2 py-0.5 text-xs rounded bg-emerald-600 text-white hover:bg-emerald-700"
+              >
+                Aplicar
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

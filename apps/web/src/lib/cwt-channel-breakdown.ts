@@ -154,11 +154,10 @@ export async function getCWTChannelBreakdown(
   // Fase 2: enriquece com nomes de campanha Google Ads (cache 24h)
   // A2 (2026-05-29): em paralelo, busca custo por campanha pra mostrar invest + CPL.
   if (googleAdsGclids.length > 0) {
-    // daysAgo do range pro getGoogleAdsCampaignCosts. Usa diff entre since/until em dias.
-    const daysAgo = Math.max(1, Math.round((Date.now() - since.getTime()) / 86400_000))
+    // Custom range (2026-05-29): passa from/to direto pro helper. Diff implícito no cache.
     const [enrichment, campaignCosts] = await Promise.all([
       enrichGclids(googleAdsGclids),
-      getGoogleAdsCampaignCosts(daysAgo).catch(() => null),
+      getGoogleAdsCampaignCosts({ from: since, to: until }).catch(() => null),
     ])
     const campaignCounts: Record<string, number> = {}
     let unknownCount = 0

@@ -213,15 +213,18 @@ export async function enrichGclids(items: GclidWithDate[]): Promise<Map<string, 
 }
 
 /**
- * Frente E (2026-05-29): retorna custo TOTAL em centavos (BRL) gasto em Google
- * Ads na janela {daysAgo..hoje}. Reusa OAuth/cfg do enrichment. Query única
- * `campaign` view (aceita range, ao contrário de click_view). Cache 1h.
+ * Frente E (2026-05-29) + Custom range (2026-05-29): retorna custo TOTAL em
+ * centavos (BRL) gasto em Google Ads na janela {from..to}.
+ *
+ * Reusa OAuth/cfg do enrichment. Query única `campaign` view (aceita range,
+ * ao contrário de click_view). Cache 1h por (from, to) específico.
  *
  * Retorna null se sem creds, sem token, API falha, ou response vazia (cliente
  * não tem campanha ativa). UI decide entre auto-fill ou cair pra setting manual.
  */
-export async function getGoogleAdsTotalCostCents(daysAgo: number): Promise<number | null> {
-  const cacheKey = `total:${daysAgo}d`
+export async function getGoogleAdsTotalCostCents(range: { from: Date; to: Date }): Promise<number | null> {
+  const fmt = (d: Date) => d.toISOString().slice(0, 10) // YYYY-MM-DD
+  const cacheKey = `total:${fmt(range.from)}_${fmt(range.to)}`
   const now = Date.now()
   const cached = COST_CACHE.get(cacheKey)
   if (cached && now - cached.fetchedAt < COST_CACHE_TTL_MS) return cached.costCents
@@ -233,11 +236,8 @@ export async function getGoogleAdsTotalCostCents(daysAgo: number): Promise<numbe
 
   // Google Ads API só aceita LAST_7/14/30 DAYS como DURING literals — LAST_90_DAYS
   // é inválido (INVALID_VALUE_WITH_DURING_OPERATOR). Usar BETWEEN com datas
-  // explícitas pra cobrir qualquer range arbitrário (7d / 30d / 90d / 365d / 1y).
-  const end = new Date()
-  const start = new Date(end.getTime() - daysAgo * 86400 * 1000)
-  const fmt = (d: Date) => d.toISOString().slice(0, 10) // YYYY-MM-DD
-  const dateFilter = `segments.date BETWEEN '${fmt(start)}' AND '${fmt(end)}'`
+  // explícitas pra cobrir qualquer range arbitrário (incluindo custom).
+  const dateFilter = `segments.date BETWEEN '${fmt(range.from)}' AND '${fmt(range.to)}'`
 
   const headers: Record<string, string> = {
     'Authorization': `Bearer ${accessToken}`,
@@ -278,13 +278,15 @@ export async function getGoogleAdsTotalCostCents(daysAgo: number): Promise<numbe
 }
 
 /**
- * A2 (2026-05-29): retorna custo POR CAMPANHA em centavos (BRL) na janela.
- * Reusa mesmos cfg/token. Query agregada por campaign.name. Cache 1h.
+ * A2 (2026-05-29) + Custom range (2026-05-29): retorna custo POR CAMPANHA em
+ * centavos (BRL) na janela {from..to}. Reusa mesmos cfg/token.
+ * Query agregada por campaign.name. Cache 1h por (from, to).
  * Retorna null se sem creds, token, ou API falha. Map vazio = sem campanhas
  * ativas no período (não-erro).
  */
-export async function getGoogleAdsCampaignCosts(daysAgo: number): Promise<Map<string, number> | null> {
-  const cacheKey = `campaigns:${daysAgo}d`
+export async function getGoogleAdsCampaignCosts(range: { from: Date; to: Date }): Promise<Map<string, number> | null> {
+  const fmt = (d: Date) => d.toISOString().slice(0, 10)
+  const cacheKey = `campaigns:${fmt(range.from)}_${fmt(range.to)}`
   const now = Date.now()
   const cached = CAMPAIGN_COSTS_CACHE.get(cacheKey)
   if (cached && now - cached.fetchedAt < COST_CACHE_TTL_MS) return cached.costsByName
@@ -294,10 +296,7 @@ export async function getGoogleAdsCampaignCosts(daysAgo: number): Promise<Map<st
   const accessToken = await getAccessToken(cfg)
   if (!accessToken) return null
 
-  const end = new Date()
-  const start = new Date(end.getTime() - daysAgo * 86400 * 1000)
-  const fmt = (d: Date) => d.toISOString().slice(0, 10)
-  const dateFilter = `segments.date BETWEEN '${fmt(start)}' AND '${fmt(end)}'`
+  const dateFilter = `segments.date BETWEEN '${fmt(range.from)}' AND '${fmt(range.to)}'`
 
   const headers: Record<string, string> = {
     'Authorization': `Bearer ${accessToken}`,
