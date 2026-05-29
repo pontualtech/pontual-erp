@@ -50,7 +50,9 @@ function readTemplate(templateName: string): string {
 // Defaults usados quando o tenant não tem Setting nurture.* configurada.
 // Pontualtech-001 herda esses defaults — Imprimitech (e futuros) devem
 // setar os seus próprios via Setting{key=nurture.unsubscribe_url, etc}.
-const DEFAULT_UNSUBSCRIBE_URL = 'https://pontualtech.com.br/?descadastrar=1'
+// 2026-05-29 (CRIT-1 fix): URL aponta pro endpoint RFC 8058 direto (não
+// pra página estática descadastrar.html, que dropava query string no redirect).
+const DEFAULT_UNSUBSCRIBE_URL = 'https://erp.pontualtech.work/api/public/unsubscribe'
 const DEFAULT_WEBVIEW_URL = 'https://sosimpressora.com/dicas.html'
 const DEFAULT_WA_NUMBER = '551131360415' // PT vendas (voz + whats)
 
@@ -82,20 +84,28 @@ async function getTenantNurtureConfig(companyId: string): Promise<TenantNurtureC
   return config
 }
 
+function buildUnsubUrl(baseUrl: string, recipientEmail: string): string {
+  const sep = baseUrl.includes('?') ? '&' : '?'
+  return `${baseUrl}${sep}email=${encodeURIComponent(recipientEmail)}`
+}
+
 async function personalize(
   html: string,
-  opts: { firstName: string; campaign: string; companyId: string }
+  opts: { firstName: string; campaign: string; companyId: string; recipientEmail: string }
 ): Promise<string> {
   const tenant = await getTenantNurtureConfig(opts.companyId)
   const utm = `utm_source=email&utm_medium=nurture&utm_campaign=${opts.campaign}`
   const greeting = opts.firstName || 'Olá'
   const greetingAmigo = opts.firstName || 'amigo'
   const webviewSep = tenant.webviewUrl.includes('?') ? '&' : '?'
+  // CRIT-1 fix 2026-05-29: link unsub carrega ?email= pro endpoint
+  // marcar diretamente (RFC 8058 + UX one-click sem redigitar).
+  const unsubUrlForLink = buildUnsubUrl(tenant.unsubscribeUrl, opts.recipientEmail)
 
   let out = html
     .replaceAll('{contactfield=firstname|Olá}', greeting)
     .replaceAll('{contactfield=firstname|amigo}', greetingAmigo)
-    .replaceAll('{unsubscribe_url}', tenant.unsubscribeUrl)
+    .replaceAll('{unsubscribe_url}', unsubUrlForLink)
     .replaceAll('{webview_url}', `${tenant.webviewUrl}${webviewSep}${utm}`)
 
   // WhatsApp link com identificador de origem (nurture) + número do tenant
@@ -140,13 +150,21 @@ export async function sendEmailStep(
       firstName: firstNameFrom(ctx.name),
       campaign,
       companyId: ctx.company_id,
+      recipientEmail: ctx.email,
     })
+
+    // CRIT-1 fix: ativa header List-Unsubscribe pro one-click nativo
+    // Gmail/Outlook/Yahoo. Mesma URL do link visual (consistência).
+    const tenantForHeader = await getTenantNurtureConfig(ctx.company_id)
+    const unsubscribeUrl = buildUnsubUrl(tenantForHeader.unsubscribeUrl, ctx.email)
 
     const ok = await sendCompanyEmail(
       ctx.company_id,
       ctx.email,
       subject,
       personalized,
+      undefined,
+      { unsubscribeUrl },
     )
 
     return {

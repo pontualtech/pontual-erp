@@ -1493,42 +1493,66 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
     return
   }
 
-  // 2026-05-29 — Isca digital: cliente abandonou após qualificação, bot
-  // ofereceu checklist via follow-up #1, cliente respondeu com email.
-  // Detecta email no content + valida que tem attribution (= veio de ad) +
-  // que ainda não capturamos email pra essa conv → dispara journey.
-  // Idempotente: createOrUpdateJourney não duplica se journey já existe.
-  try {
+  // 2026-05-29 — Isca digital (defense-in-depth, REVISADO):
+  // Detector dispara SOMENTE quando (todas as condicoes):
+  //  (1) NÃO é canal email (DMARC reports, ads notifs viriam por inbox email)
+  //  (2) Cron-followup já entregou a isca (data.isca_offered_at gravado)
+  //  (3) Conv tem attribution real (lead veio de ad)
+  //  (4) Ainda não capturou (idempotente)
+  //  (5) Email matched é válido por regex Unicode + validação estrutural
+  //  (6) Email NÃO é do domínio do próprio tenant (autorefer)
+  // Update atômico via $executeRaw (race-safe) — WHERE captured IS NULL.
+  if (!isEmailChannel) try {
     const convData: any = botConv.data && typeof botConv.data === 'object' && !Array.isArray(botConv.data) ? botConv.data : {}
-    const emailMatch = content.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)
-    if (emailMatch && convData.attribution && !convData.lead_email_captured_at) {
-      const email = emailMatch[0].toLowerCase()
-      const { createOrUpdateJourney } = await import('@/lib/nurture/journey')
-      const result = await createOrUpdateJourney({
-        company_id: cfg.companyId,
-        email,
-        phone: phone || undefined,
-        name: sender.name || undefined,
-        journey_type: 'bot_abandono',
-        source_data: {
-          chatwoot_conv_id: conversationId,
-          attribution: convData.attribution,
-          captured_via: 'bot_followup_isca',
-        },
-      })
-      // Marca conv pra evitar re-captura (também serve pra audit)
-      await prisma.botConversation.update({
-        where: { id: botConv.id },
-        data: {
-          data: {
-            ...convData,
-            lead_email: email,
-            lead_email_captured_at: new Date().toISOString(),
-            lead_journey_id: result.journey_id,
-          },
-        },
-      })
-      console.log(`[Bot/Isca] Email capturado conv ${conversationId}: ${email} → journey ${result.journey_id} (is_new=${result.is_new})`)
+    if (convData.isca_offered_at && convData.attribution && !convData.lead_email_captured_at) {
+      // Regex Unicode-safe (aceita acentos no local-part e dominio).
+      const emailMatch = content.match(/[\p{L}\p{N}._%+-]+@[\p{L}\p{N}.-]+\.[\p{L}]{2,}/iu)
+      if (emailMatch) {
+        const email = emailMatch[0].toLowerCase()
+        // Validação estrutural: dominio com ponto, length>=6, sem chars colados de signature.
+        const dom = email.split('@')[1] || ''
+        const looksValid = email.length >= 6 && dom.includes('.') && !/\.(png|jpg|jpeg|gif|ab)$/.test(dom)
+        // Skip dominios do proprio tenant (autorefer, signatures, forwards).
+        const TENANT_DOMAINS = ['pontualtech.com.br', 'pontualtech.work', 'imprimitech.com.br']
+        const isTenantEmail = TENANT_DOMAINS.some(d => dom === d || dom.endsWith('.' + d))
+        if (looksValid && !isTenantEmail) {
+          // Update condicional (anti-race): só captura se ainda não foi capturado.
+          // Retorna 0 rows se outro request concorrente já marcou.
+          const updated: number = await prisma.$executeRaw`
+            UPDATE bot_conversations
+            SET data = data || jsonb_build_object(
+              'lead_email', ${email}::text,
+              'lead_email_captured_at', ${new Date().toISOString()}::text
+            )
+            WHERE id = ${botConv.id}
+              AND (data->>'lead_email_captured_at') IS NULL
+          `
+          if (updated > 0) {
+            const { createOrUpdateJourney } = await import('@/lib/nurture/journey')
+            const result = await createOrUpdateJourney({
+              company_id: cfg.companyId,
+              email,
+              phone: phone || undefined,
+              name: sender.name || undefined,
+              journey_type: 'bot_abandono',
+              source_data: {
+                chatwoot_conv_id: conversationId,
+                attribution: convData.attribution,
+                captured_via: 'bot_followup_isca',
+              },
+            })
+            // Linka journey_id no data (não-crítico, race-safe via jsonb merge).
+            await prisma.$executeRaw`
+              UPDATE bot_conversations
+              SET data = data || jsonb_build_object('lead_journey_id', ${result.journey_id}::text)
+              WHERE id = ${botConv.id}
+            `.catch(() => {})
+            console.log(`[Bot/Isca] Email capturado conv ${conversationId}: ${email} → journey ${result.journey_id} (is_new=${result.is_new})`)
+          } else {
+            console.log(`[Bot/Isca] Captura skipped conv ${conversationId}: race lost (já capturado por outro request)`)
+          }
+        }
+      }
     }
   } catch (e: any) {
     console.warn(`[Bot/Isca] Captura de email falhou (segue fluxo): ${e?.message}`)

@@ -371,6 +371,25 @@ export async function GET(request: NextRequest) {
           },
         })
 
+        // 2026-05-29 (CRIT-2 fix) — Marca isca oferecida quando msg_3 entregue
+        // E o texto do msg_3 contem solicitacao explicita de email. Sem
+        // checagem de texto, msg_3 de despedida (Imprimitech) acionaria o
+        // detector indevidamente. PT msg_3 atual contem 'email' + 'checklist'.
+        if (nextCount === 3) {
+          const msg3Text = (cfg['bot.followup.msg_3'] || '').toLowerCase()
+          const iscaOferecida = msg3Text.includes('email') && (msg3Text.includes('checklist') || msg3Text.includes('manda'))
+          if (iscaOferecida) {
+            await prisma.$executeRaw`
+              UPDATE bot_conversations
+              SET data = data || jsonb_build_object('isca_offered_at', ${new Date().toISOString()}::text)
+              WHERE id = ${conv.id}
+                AND (data->>'isca_offered_at') IS NULL
+            `.catch((e: any) => {
+              console.warn(`[Cron/BotFollowUp] isca_offered_at update falhou conv ${conv.chatwoot_conv_id}: ${e?.message}`)
+            })
+          }
+        }
+
         // Internal note for agents
         await fetch(
           `${cwCfg.cwUrl}/api/v1/accounts/${cwCfg.cwAccountId}/conversations/${conv.chatwoot_conv_id}/messages`,
@@ -417,21 +436,33 @@ function getNextFollowUpTime(from: Date, attemptNumber: number, cfg: Record<stri
   return new Date(from.getTime() + minutes * 60 * 1000)
 }
 
-/** Find the next business day at the given start hour (São Paulo timezone) */
+/** Find the next business day at the given start hour (São Paulo timezone).
+ *
+ * 2026-05-29 (ADJ-3 fix): pattern antigo usava `new Date(toLocaleString(...))`
+ * que mistura local/UTC e gerava follow_up_next_at deslocado 3h. Agora monta
+ * o instante via UTC explícito (BRT = UTC-3 fixo, Brasil aboliu DST em 2019).
+ */
+const DAY_IDX: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
+function brtDayOfWeek(d: Date): number {
+  const s = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Sao_Paulo', weekday: 'short' }).format(d)
+  return DAY_IDX[s] ?? 0
+}
 function getNextBusinessDay(now: Date, allowedDays: number[], startHour: number): Date {
-  const next = new Date(now)
-  next.setHours(startHour, 0, 0, 0)
+  // Extrai data BRT atual via Intl pra evitar bug de TZ no host UTC.
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hour12: false,
+  }).formatToParts(now)
+  const part = (t: string) => parseInt(parts.find(p => p.type === t)?.value || '0')
+  const yr = part('year'), mo = part('month'), dy = part('day'), hh = part('hour')
 
-  // If we're past start hour today, move to next day
-  if (now.getHours() >= startHour) {
-    next.setDate(next.getDate() + 1)
-  }
+  // startHour BRT = startHour+3 UTC. Date.UTC retorna ms desde epoch.
+  let candidate = new Date(Date.UTC(yr, mo - 1, dy, startHour + 3, 0, 0, 0))
+  if (hh >= startHour) candidate = new Date(candidate.getTime() + 86_400_000)
 
-  // Find next allowed day (max 7 iterations)
   for (let i = 0; i < 7; i++) {
-    if (allowedDays.includes(next.getDay())) break
-    next.setDate(next.getDate() + 1)
+    if (allowedDays.includes(brtDayOfWeek(candidate))) return candidate
+    candidate = new Date(candidate.getTime() + 86_400_000)
   }
-
-  return next
+  return candidate
 }

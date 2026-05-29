@@ -227,7 +227,7 @@ export async function detectReactivations(): Promise<{ journey_id: string; os_id
       so.id AS os_id
     FROM marketing_journeys mj
     JOIN marketing_contacts mc ON mc.id = mj.contact_id
-    JOIN customers cu ON cu.email = mc.email AND cu.company_id = mj.company_id
+    JOIN customers cu ON LOWER(cu.email) = mc.email AND cu.company_id = mj.company_id
     JOIN service_orders so ON so.customer_id = cu.id
       AND so.created_at > mj.started_at
       AND so.company_id = mj.company_id
