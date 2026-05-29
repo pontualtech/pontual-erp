@@ -36,6 +36,11 @@ export type GclidWithDate = {
 const CACHE: Map<string, CacheEntry> = new Map()
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000 // 24h
 
+// Cache de custo total por range (Frente E 2026-05-29). TTL 1h — custo de
+// dia corrente acumula durante o dia, então não pode ser 24h como o de gclid.
+const COST_CACHE: Map<string, { costCents: number; fetchedAt: number }> = new Map()
+const COST_CACHE_TTL_MS = 60 * 60 * 1000 // 1h
+
 // gclid sanitization (mesmo padrão do cron upload-conversions)
 function sanitizeGclid(g: string): string {
   return g.replace(/\*/g, '_')
@@ -202,4 +207,69 @@ export async function enrichGclids(items: GclidWithDate[]): Promise<Map<string, 
   }
 
   return result
+}
+
+/**
+ * Frente E (2026-05-29): retorna custo TOTAL em centavos (BRL) gasto em Google
+ * Ads na janela {daysAgo..hoje}. Reusa OAuth/cfg do enrichment. Query única
+ * `campaign` view (aceita range, ao contrário de click_view). Cache 1h.
+ *
+ * Retorna null se sem creds, sem token, API falha, ou response vazia (cliente
+ * não tem campanha ativa). UI decide entre auto-fill ou cair pra setting manual.
+ */
+export async function getGoogleAdsTotalCostCents(daysAgo: number): Promise<number | null> {
+  const cacheKey = `total:${daysAgo}d`
+  const now = Date.now()
+  const cached = COST_CACHE.get(cacheKey)
+  if (cached && now - cached.fetchedAt < COST_CACHE_TTL_MS) return cached.costCents
+
+  const cfg = getCfg()
+  if (!cfg || !cfg.developerToken || !cfg.refreshToken) return null
+  const accessToken = await getAccessToken(cfg)
+  if (!accessToken) return null
+
+  // Map daysAgo pra DURING token do Google Ads (limitado aos validos da API)
+  let duringToken: string
+  if (daysAgo <= 7) duringToken = 'LAST_7_DAYS'
+  else if (daysAgo <= 14) duringToken = 'LAST_14_DAYS'
+  else if (daysAgo <= 30) duringToken = 'LAST_30_DAYS'
+  else if (daysAgo <= 90) duringToken = 'LAST_90_DAYS'
+  else duringToken = 'LAST_30_DAYS' // fallback — 90 é o máximo razoável pra ROAS
+
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${accessToken}`,
+    'developer-token': cfg.developerToken,
+    'Content-Type': 'application/json',
+  }
+  if (cfg.loginCustomerId && cfg.loginCustomerId !== cfg.customerId) {
+    headers['login-customer-id'] = cfg.loginCustomerId
+  }
+
+  try {
+    const res = await fetch(
+      `https://googleads.googleapis.com/v20/customers/${cfg.customerId}/googleAds:searchStream`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          query: `SELECT metrics.cost_micros FROM campaign WHERE segments.date DURING ${duringToken}`,
+        }),
+      },
+    )
+    if (!res.ok) return null
+    const data = await res.json()
+    let totalMicros = 0
+    const chunks = Array.isArray(data) ? data : (data.results ? [data] : [])
+    for (const chunk of chunks) {
+      for (const r of (chunk.results || [])) {
+        totalMicros += parseInt(r.metrics?.costMicros || '0', 10)
+      }
+    }
+    // micros = 1/1.000.000 da moeda. Para centavos: micros / 10.000
+    const costCents = Math.round(totalMicros / 10_000)
+    COST_CACHE.set(cacheKey, { costCents, fetchedAt: now })
+    return costCents
+  } catch {
+    return null
+  }
 }

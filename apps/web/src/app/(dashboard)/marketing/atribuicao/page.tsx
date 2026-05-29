@@ -29,6 +29,8 @@ type ChannelStats = {
   investment_cents?: number
   cac_cents?: number | null
   roi_pct?: number | null
+  // Frente E (2026-05-29): origem do investment_cents — 'manual' (user set) ou 'google_ads_api' (auto-fill)
+  investment_source?: 'manual' | 'google_ads_api' | null
 }
 
 type TimelineRow = {
@@ -505,10 +507,15 @@ export default function MarketingAttributionPage() {
                             <button
                               type="button"
                               onClick={e => { e.stopPropagation(); editInvestment(b.channel, b.investment_cents || 0) }}
-                              className="text-xs font-mono text-gray-600 hover:text-blue-600 underline decoration-dotted"
-                              title="Clique pra editar investimento mensal"
+                              className="text-xs font-mono text-gray-600 hover:text-blue-600 underline decoration-dotted inline-flex items-center gap-1"
+                              title={b.investment_source === 'google_ads_api'
+                                ? 'Custo automático via Google Ads API — clique pra sobrescrever manualmente'
+                                : 'Clique pra editar investimento mensal'}
                             >
                               {b.investment_cents && b.investment_cents > 0 ? fmtBRL(b.investment_cents) : '— set'}
+                              {b.investment_source === 'google_ads_api' && (
+                                <span className="text-[9px] px-1 py-0 rounded bg-blue-50 text-blue-700 font-semibold" title="Auto via Google Ads API">auto</span>
+                              )}
                             </button>
                           </td>
                           {/* CAC */}

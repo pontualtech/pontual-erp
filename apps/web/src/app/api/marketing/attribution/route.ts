@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, handleError } from '@/lib/api-response'
+import { getGoogleAdsTotalCostCents } from '@/lib/google-ads-enrichment'
 
 /**
  * Returns OS × Aprovações × Canal breakdown for marketing attribution.
@@ -241,6 +242,18 @@ export async function GET(req: NextRequest) {
       const channel = s.key.replace('marketing.investment.', '')
       investments[channel] = parseInt(s.value) || 0
     }
+    // Frente E (2026-05-29): se setting manual google_ads não existir/zerada,
+    // busca custo automaticamente via Google Ads API. Manual sempre vence (Karlão
+    // pode forçar valor diferente pra simular cenários). Cache 1h dentro do helper.
+    const investmentSources: Record<string, 'manual' | 'google_ads_api'> = {}
+    for (const ch of Object.keys(investments)) investmentSources[ch] = 'manual'
+    if (!investments['google_ads']) {
+      const auto = await getGoogleAdsTotalCostCents(days).catch(() => null)
+      if (auto && auto > 0) {
+        investments['google_ads'] = auto
+        investmentSources['google_ads'] = 'google_ads_api'
+      }
+    }
 
     // Anexa CAC em cada item do breakdown
     // Bug-hunt humano (2026-05-23): se investment === 0, CAC era 0 (matematicamente
@@ -250,7 +263,13 @@ export async function GET(req: NextRequest) {
       const investment = investments[b.channel] || 0
       const cac = (investment > 0 && b.approved_count > 0) ? Math.round(investment / b.approved_count) : null
       const roi = investment > 0 ? Math.round((b.approved_revenue_cents - investment) / investment * 100) : null
-      return { ...b, investment_cents: investment, cac_cents: cac, roi_pct: roi }
+      return {
+        ...b,
+        investment_cents: investment,
+        investment_source: investmentSources[b.channel] || null,
+        cac_cents: cac,
+        roi_pct: roi,
+      }
     })
 
     return success({
@@ -261,6 +280,7 @@ export async function GET(req: NextRequest) {
       timeline,
       coverage_pct: totals.os_count > 0 ? (totals.tracked_count / totals.os_count) * 100 : 0,
       investments,
+      investment_sources: investmentSources,
     })
   } catch (e) {
     return handleError(e)
