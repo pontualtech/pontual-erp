@@ -255,7 +255,7 @@ export default function MarketingTrafegoPage() {
                       </div>
                       <ul className="space-y-1">
                         {breakdown.topCampaigns.map((c, i) => (
-                          <li key={i} className="text-xs text-gray-700 truncate" title={c}>
+                          <li key={i} className="text-xs text-gray-700 leading-snug" title={c}>
                             <span className="text-gray-400 mr-1">›</span>{c}
                           </li>
                         ))}

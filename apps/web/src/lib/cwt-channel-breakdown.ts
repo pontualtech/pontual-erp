@@ -12,7 +12,7 @@
 
 import { prisma } from '@pontual/db'
 import type { ChannelBreakdown } from './ga4-data-api'
-import { enrichGclids } from './google-ads-enrichment'
+import { enrichGclids, getGoogleAdsCampaignCosts } from './google-ads-enrichment'
 
 export type CWTBreakdown = ChannelBreakdown & {
   topKeywords: string[]
@@ -152,8 +152,14 @@ export async function getCWTChannelBreakdown(
     .map(([term, n]) => `${term} (${n})`)
 
   // Fase 2: enriquece com nomes de campanha Google Ads (cache 24h)
+  // A2 (2026-05-29): em paralelo, busca custo por campanha pra mostrar invest + CPL.
   if (googleAdsGclids.length > 0) {
-    const enrichment = await enrichGclids(googleAdsGclids)
+    // daysAgo do range pro getGoogleAdsCampaignCosts. Usa diff entre since/until em dias.
+    const daysAgo = Math.max(1, Math.round((Date.now() - since.getTime()) / 86400_000))
+    const [enrichment, campaignCosts] = await Promise.all([
+      enrichGclids(googleAdsGclids),
+      getGoogleAdsCampaignCosts(daysAgo).catch(() => null),
+    ])
     const campaignCounts: Record<string, number> = {}
     let unknownCount = 0
     for (const { gclid } of googleAdsGclids) {
@@ -165,12 +171,20 @@ export async function getCWTChannelBreakdown(
         unknownCount++
       }
     }
+    // Format: "NomeCampanha (19 leads · R$ 24.288 · R$ 1.278/lead)"
+    // Sem custo disponível: "NomeCampanha (19 leads)"
+    const fmtBRL = (cents: number) => `R$ ${(cents / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     const topCampaigns = Object.entries(campaignCounts)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3)
-      .map(([name, n]) => `${name} (${n})`)
+      .map(([name, n]) => {
+        const costCents = campaignCosts?.get(name)
+        if (!costCents || costCents <= 0) return `${name} (${n} leads)`
+        const cplCents = Math.round(costCents / n)
+        return `${name} (${n} leads · ${fmtBRL(costCents)} · ${fmtBRL(cplCents)}/lead)`
+      })
     if (unknownCount > 0) {
-      topCampaigns.push(`Sem dado (${unknownCount})`)
+      topCampaigns.push(`Sem dado (${unknownCount} leads · custo n/a)`)
     }
     result.topCampaigns = topCampaigns
   }

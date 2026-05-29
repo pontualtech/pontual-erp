@@ -41,6 +41,9 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000 // 24h
 const COST_CACHE: Map<string, { costCents: number; fetchedAt: number }> = new Map()
 const COST_CACHE_TTL_MS = 60 * 60 * 1000 // 1h
 
+// Cache de custos POR CAMPANHA por range (A2 2026-05-29). Mesmo TTL 1h.
+const CAMPAIGN_COSTS_CACHE: Map<string, { costsByName: Map<string, number>; fetchedAt: number }> = new Map()
+
 // gclid sanitization (mesmo padrão do cron upload-conversions)
 function sanitizeGclid(g: string): string {
   return g.replace(/\*/g, '_')
@@ -269,6 +272,67 @@ export async function getGoogleAdsTotalCostCents(daysAgo: number): Promise<numbe
     const costCents = Math.round(totalMicros / 10_000)
     COST_CACHE.set(cacheKey, { costCents, fetchedAt: now })
     return costCents
+  } catch {
+    return null
+  }
+}
+
+/**
+ * A2 (2026-05-29): retorna custo POR CAMPANHA em centavos (BRL) na janela.
+ * Reusa mesmos cfg/token. Query agregada por campaign.name. Cache 1h.
+ * Retorna null se sem creds, token, ou API falha. Map vazio = sem campanhas
+ * ativas no período (não-erro).
+ */
+export async function getGoogleAdsCampaignCosts(daysAgo: number): Promise<Map<string, number> | null> {
+  const cacheKey = `campaigns:${daysAgo}d`
+  const now = Date.now()
+  const cached = CAMPAIGN_COSTS_CACHE.get(cacheKey)
+  if (cached && now - cached.fetchedAt < COST_CACHE_TTL_MS) return cached.costsByName
+
+  const cfg = getCfg()
+  if (!cfg || !cfg.developerToken || !cfg.refreshToken) return null
+  const accessToken = await getAccessToken(cfg)
+  if (!accessToken) return null
+
+  const end = new Date()
+  const start = new Date(end.getTime() - daysAgo * 86400 * 1000)
+  const fmt = (d: Date) => d.toISOString().slice(0, 10)
+  const dateFilter = `segments.date BETWEEN '${fmt(start)}' AND '${fmt(end)}'`
+
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${accessToken}`,
+    'developer-token': cfg.developerToken,
+    'Content-Type': 'application/json',
+  }
+  if (cfg.loginCustomerId && cfg.loginCustomerId !== cfg.customerId) {
+    headers['login-customer-id'] = cfg.loginCustomerId
+  }
+
+  try {
+    const res = await fetch(
+      `https://googleads.googleapis.com/v20/customers/${cfg.customerId}/googleAds:searchStream`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          query: `SELECT campaign.name, metrics.cost_micros FROM campaign WHERE ${dateFilter} AND metrics.cost_micros > 0`,
+        }),
+      },
+    )
+    if (!res.ok) return null
+    const data = await res.json()
+    const costsByName = new Map<string, number>()
+    const chunks = Array.isArray(data) ? data : (data.results ? [data] : [])
+    for (const chunk of chunks) {
+      for (const r of (chunk.results || [])) {
+        const name = r.campaign?.name
+        if (!name) continue
+        const micros = parseInt(r.metrics?.costMicros || '0', 10)
+        costsByName.set(name, (costsByName.get(name) || 0) + Math.round(micros / 10_000))
+      }
+    }
+    CAMPAIGN_COSTS_CACHE.set(cacheKey, { costsByName, fetchedAt: now })
+    return costsByName
   } catch {
     return null
   }
