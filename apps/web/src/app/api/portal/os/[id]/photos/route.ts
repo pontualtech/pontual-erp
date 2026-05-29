@@ -5,6 +5,7 @@ import { unlink } from 'fs/promises'
 import { existsSync } from 'fs'
 import path from 'path'
 import { uploadPhotoBuffer, isS3Url, deleteS3Object, isS3Configured } from '@/lib/storage/photos'
+import { isImprimitechHandoffStatus } from '@/lib/imprimitech-handoff'
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf']
@@ -28,10 +29,15 @@ export async function GET(
         customer_id: portalUser.customer_id,
         deleted_at: null,
       },
-      select: { id: true },
+      select: { id: true, module_statuses: { select: { name: true } } },
     })
 
     if (!os) {
+      return NextResponse.json({ error: 'OS nao encontrada' }, { status: 404 })
+    }
+
+    // Wave 1.1 audit H1: gate handoff em GET — cliente não vê fotos de OS transferida.
+    if (isImprimitechHandoffStatus(os.module_statuses?.name)) {
       return NextResponse.json({ error: 'OS nao encontrada' }, { status: 404 })
     }
 
@@ -82,10 +88,15 @@ export async function POST(
         customer_id: portalUser.customer_id,
         deleted_at: null,
       },
-      select: { id: true, os_number: true },
+      select: { id: true, os_number: true, module_statuses: { select: { name: true } } },
     })
 
     if (!os) {
+      return NextResponse.json({ error: 'OS nao encontrada' }, { status: 404 })
+    }
+
+    // Wave 1.1 audit H1: gate handoff em POST — cliente não sobe foto em OS transferida.
+    if (isImprimitechHandoffStatus(os.module_statuses?.name)) {
       return NextResponse.json({ error: 'OS nao encontrada' }, { status: 404 })
     }
 
@@ -176,6 +187,20 @@ export async function DELETE(
     const { photo_id } = await req.json()
     if (!photo_id) {
       return NextResponse.json({ error: 'photo_id obrigatorio' }, { status: 400 })
+    }
+
+    // Wave 1.1 audit H1: gate handoff em DELETE — cliente não deleta foto de OS transferida.
+    const osCheck = await prisma.serviceOrder.findFirst({
+      where: {
+        id: params.id,
+        company_id: portalUser.company_id,
+        customer_id: portalUser.customer_id,
+        deleted_at: null,
+      },
+      select: { id: true, module_statuses: { select: { name: true } } },
+    })
+    if (!osCheck || isImprimitechHandoffStatus(osCheck.module_statuses?.name)) {
+      return NextResponse.json({ error: 'Foto nao encontrada' }, { status: 404 })
     }
 
     const photo = await prisma.serviceOrderPhoto.findFirst({

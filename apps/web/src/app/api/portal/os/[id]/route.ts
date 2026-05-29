@@ -352,6 +352,15 @@ export async function POST(
       return NextResponse.json({ error: 'OS nao encontrada' }, { status: 404 })
     }
 
+    // Wave 1.1 audit C1 (2026-05-29): POST não pode mexer em OS em handoff.
+    // Sem este gate cliente com magic link velho podia (a) action=approve
+    // ressuscitando OS pra Aprovado, (b) action=reject criando Ticket
+    // NEGOCIACAO_OS na PT + Announcement urgente, (c) action=comment
+    // gerando ticket COMENTARIO_OS na PT. Resposta 404 espelha o GET.
+    if (isImprimitechHandoffStatus(os.module_statuses?.name)) {
+      return NextResponse.json({ error: 'OS nao encontrada' }, { status: 404 })
+    }
+
     if (action === 'approve') {
       // 2026-05-21: gate atualizado — aceita 'Aguardando Aprovacao' OU status
       // de negociacao (Renegociar/Orcar Negociar) se OS ja passou por

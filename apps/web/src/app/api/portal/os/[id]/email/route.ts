@@ -4,6 +4,7 @@ import { getPortalUserFromRequest } from '@/lib/portal-auth'
 import { sendCompanyEmail } from '@/lib/send-email'
 import { escapeHtml } from '@/lib/escape-html'
 import { buildMagicLink } from '@/lib/portal-magic-url'
+import { isImprimitechHandoffStatus } from '@/lib/imprimitech-handoff'
 
 export async function POST(
   req: NextRequest,
@@ -52,6 +53,12 @@ export async function POST(
     })
 
     if (!os) {
+      return NextResponse.json({ error: 'OS nao encontrada' }, { status: 404 })
+    }
+
+    // Wave 1.1 audit H2: gate handoff — cliente não reenvia email com items+
+    // valor+status interno "Imprimitech" de OS já transferida (vaza dados).
+    if (isImprimitechHandoffStatus(os.module_statuses?.name)) {
       return NextResponse.json({ error: 'OS nao encontrada' }, { status: 404 })
     }
 

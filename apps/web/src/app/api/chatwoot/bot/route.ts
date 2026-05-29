@@ -2147,11 +2147,16 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
           })
           if (handoffOs) {
             const firstName = (handoffOs.customers?.legal_name || '').split(' ')[0] || null
-            // Pega WhatsApp da Imprimitech do tenant-par (se configurado em settings).
-            const imprimSetting = await prisma.setting.findFirst({
-              where: { company_id: '86c829cf-32ed-4e40-80cd-59ce4178aa1a', key: 'company.phone' },
-              select: { value: true },
-            }).catch(() => null)
+            // Wave 1.1 audit H5: usa CROSS_TENANT_PAIR ao invés de UUID hardcoded.
+            // Defende contra rotation de company_id em restore/migration. Padrão
+            // alinhado com feedback_independent_ecosystems.
+            const otherCompanyId = CROSS_TENANT_PAIR[cfg.companyId]
+            const imprimSetting = otherCompanyId
+              ? await prisma.setting.findFirst({
+                  where: { company_id: otherCompanyId, key: 'company.phone' },
+                  select: { value: true },
+                }).catch(() => null)
+              : null
             const imprimWa = imprimSetting?.value
               ? `https://wa.me/${imprimSetting.value.replace(/\D/g, '')}`
               : null

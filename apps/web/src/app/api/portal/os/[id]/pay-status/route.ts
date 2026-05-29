@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { getPortalUserFromRequest } from '@/lib/portal-auth'
+import { isImprimitechHandoffStatus } from '@/lib/imprimitech-handoff'
 
 /**
  * GET /api/portal/os/[id]/pay-status
@@ -25,9 +26,15 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         customer_id: portalUser.customer_id,
         deleted_at: null,
       },
-      select: { id: true, total_cost: true },
+      select: { id: true, total_cost: true, module_statuses: { select: { name: true } } },
     })
     if (!os) return NextResponse.json({ error: 'OS nao encontrada' }, { status: 404 })
+
+    // Wave 1.1 audit H3: gate handoff — vaza total_due/total_paid/active_payment.invoice_url
+    // de OS já transferida pra Imprimitech (cobrança segue na IMP).
+    if (isImprimitechHandoffStatus(os.module_statuses?.name)) {
+      return NextResponse.json({ error: 'OS nao encontrada' }, { status: 404 })
+    }
 
     const totalDue = os.total_cost || 0
     const ars = await prisma.accountReceivable.findMany({

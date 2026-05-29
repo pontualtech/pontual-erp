@@ -241,12 +241,28 @@ export async function GET(request: NextRequest) {
     type ReminderRow = Awaited<ReturnType<typeof prisma.paymentReminder.findMany>>[number]
     const tenantBatches: ReminderRow[][] = []
     for (const t of dueByTenant) {
+      // Wave 1.1 audit C3 (2026-05-29): Phase 2 dispatcher também precisa
+      // re-filtrar handoff. Phase 1 (scheduler) cria PaymentReminder pra
+      // AR PENDENTE; se cliente vira Imprimitech ENTRE criação e despacho,
+      // o reminder agendado continuaria disparando WhatsApp/email da PT.
+      // Filtra via nested relation: PaymentReminder -> AR -> ServiceOrder.
+      const handoffStatusId = await getImprimitechHandoffStatusId(t.company_id)
       const batch = await prisma.paymentReminder.findMany({
         where: {
           company_id: t.company_id,
           status: 'PENDING',
           scheduled_for: { lte: new Date() },
           attempts: { lt: 5 },
+          ...(handoffStatusId
+            ? {
+                payment: {
+                  OR: [
+                    { service_order_id: null },
+                    { service_orders: { status_id: { not: handoffStatusId } } },
+                  ],
+                },
+              }
+            : {}),
         },
         take: PER_TENANT_LIMIT,
         orderBy: { scheduled_for: 'asc' },
