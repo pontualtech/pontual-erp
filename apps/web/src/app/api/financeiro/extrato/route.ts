@@ -101,8 +101,8 @@ export async function GET(request: NextRequest) {
     if (accountId) apWhere.account_id = accountId
     if (search) apWhere.OR = [
       { description: { contains: search, mode: 'insensitive' } },
-      // AccountPayable.supplier_id aponta pra Customer — relation Prisma chama-se "customers"
-      { customers: { legal_name: { contains: search, mode: 'insensitive' } } },
+      // Wave SU-1 (2026-05-27): supplier_id agora aponta pra Supplier (corrigido bug histórico)
+      { suppliers: { name: { contains: search, mode: 'insensitive' } } },
     ]
 
     const payables = skipPagar ? [] : await prisma.accountPayable.findMany({
@@ -110,7 +110,8 @@ export async function GET(request: NextRequest) {
       include: {
         categories: { select: { name: true } },
         cost_centers: { select: { name: true } },
-        customers: { select: { legal_name: true } },
+        // Wave SU-1: AP usa suppliers (não customers)
+        suppliers: { select: { name: true } },
       },
       orderBy: { due_date: 'desc' },
     })
@@ -187,7 +188,8 @@ export async function GET(request: NextRequest) {
         id: p.id,
         data: p.due_date ? new Date(p.due_date).toISOString() : '',
         descricao: p.description,
-        entidade: p.customers?.legal_name || '—',
+        // Wave SU-1: AP usa supplier.name agora
+        entidade: p.suppliers?.name || '—',
         conta_bancaria: '—',
         centro_custo: p.cost_centers?.name || '—',
         categoria: p.categories?.name || '—',

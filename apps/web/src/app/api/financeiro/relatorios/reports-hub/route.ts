@@ -113,14 +113,15 @@ export async function GET(request: NextRequest) {
       select: {
         total_amount: true,
         paid_amount: true,
-        customers: { select: { id: true, legal_name: true } },
+        // Wave SU-1 (2026-05-27): AP usa Supplier agora (corrigido bug histórico)
+        suppliers: { select: { id: true, name: true } },
       },
     })
 
     const supplierMap: Record<string, { name: string; amount: number }> = {}
     for (const p of payablesBySupplier) {
-      const supplierId = p.customers?.id ?? 'none'
-      const supplierName = p.customers?.legal_name ?? 'Sem fornecedor'
+      const supplierId = p.suppliers?.id ?? 'none'
+      const supplierName = p.suppliers?.name ?? 'Sem fornecedor'
       if (!supplierMap[supplierId]) supplierMap[supplierId] = { name: supplierName, amount: 0 }
       supplierMap[supplierId].amount += (p.paid_amount || p.total_amount)
     }

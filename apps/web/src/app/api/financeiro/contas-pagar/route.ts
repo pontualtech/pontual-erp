@@ -89,7 +89,8 @@ export async function GET(request: NextRequest) {
       where.OR = [
         { description: { contains: search, mode: 'insensitive' } },
         { notes: { contains: search, mode: 'insensitive' } },
-        { customers: { legal_name: { contains: search, mode: 'insensitive' } } },
+        // Wave SU-1 (2026-05-27): supplier_id agora aponta pra Supplier (não Customer)
+        { suppliers: { name: { contains: search, mode: 'insensitive' } } },
       ]
     }
 
@@ -106,7 +107,8 @@ export async function GET(request: NextRequest) {
         take: limit,
         orderBy: { due_date: 'asc' },
         include: {
-          customers: { select: { id: true, legal_name: true } },
+          // Wave SU-1: supplier_id linkado pra Supplier agora (não Customer)
+          suppliers: { select: { id: true, name: true } },
           categories: { select: { id: true, name: true } },
           cost_centers: { select: { id: true, name: true } },
         },
@@ -269,8 +271,9 @@ export async function POST(request: NextRequest) {
     // qualquer UUID, permitindo vazamento de fornecedor cross-tenant em
     // relatorios — mesma classe do incidente customer_id leak 03/05).
     if (data.supplier_id) {
-      const supplier = await prisma.customer.findFirst({
-        where: { id: data.supplier_id, company_id: user.companyId, deleted_at: null },
+      // Wave SU-1: valida em suppliers (não em customers — ver schema.prisma)
+      const supplier = await prisma.supplier.findFirst({
+        where: { id: data.supplier_id, company_id: user.companyId },
         select: { id: true },
       })
       if (!supplier) return error('Fornecedor nao pertence a esta empresa', 403)

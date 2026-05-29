@@ -156,7 +156,8 @@ export async function GET(request: NextRequest) {
           due_date: { gte: globalMin, lte: globalMax },
         },
         include: {
-          customers: { select: { legal_name: true } },
+          // Wave SU-1: AP usa suppliers (não customers)
+          suppliers: { select: { name: true } },
         },
       }),
       prisma.accountReceivable.findMany({
@@ -179,7 +180,8 @@ export async function GET(request: NextRequest) {
       description: p.description,
       total_amount: p.total_amount,
       due_date: p.due_date.toISOString(),
-      customer_name: p.customers?.legal_name || null,
+      // Wave SU-1: AP usa supplier.name agora (não customer.legal_name)
+      customer_name: p.suppliers?.name || null,
       status: p.status,
     }))
 
