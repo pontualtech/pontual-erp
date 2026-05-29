@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
-import { requirePermission } from '@/lib/auth'
+import { requirePermission, getServerUser, hasPermission } from '@/lib/auth'
 import { success, paginated, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { z } from 'zod'
@@ -62,12 +62,36 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const result = await requirePermission('estoque', 'create')
-    if (result instanceof NextResponse) return result
-    const user = result
+    // Wave SU-1 fix I1 (2026-05-27): aceita estoque.create OU financeiro.create.
+    // Operador financeiro cadastra fornecedor via modal AP novo (/financeiro/contas-pagar/novo).
+    // Antes exigia só estoque.create — bloqueava o fluxo dele com 403 silencioso.
+    const user = await getServerUser()
+    if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+    const [canEstoque, canFinanceiro] = await Promise.all([
+      hasPermission(user.id, user.companyId, 'estoque', 'create'),
+      hasPermission(user.id, user.companyId, 'financeiro', 'create'),
+    ])
+    if (!canEstoque && !canFinanceiro) {
+      return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+    }
 
     const body = await request.json()
     const data = createSupplierSchema.parse(body)
+
+    // Wave SU-1 fix I5 (2026-05-27): anti-duplicata por document (CNPJ/CPF).
+    // Document normalizado removendo não-dígitos pra comparar (banco pode ter
+    // variações de pontuação: "00.000.000/0000-00" vs "00000000000000").
+    const docDigits = (data.document || '').replace(/\D/g, '')
+    if (docDigits.length > 0) {
+      const dupes = await prisma.supplier.findMany({
+        where: { company_id: user.companyId, document: { not: null } },
+        select: { id: true, name: true, document: true },
+      })
+      const found = dupes.find(s => (s.document || '').replace(/\D/g, '') === docDigits)
+      if (found) {
+        return error(`Fornecedor com este CNPJ/CPF já existe: "${found.name}"`, 409)
+      }
+    }
 
     const supplier = await prisma.supplier.create({
       data: {

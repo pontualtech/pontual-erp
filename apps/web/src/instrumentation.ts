@@ -218,6 +218,24 @@ function startCronJobs() {
     }
   })()
 
+  // Wave SU-1 (2026-05-27) fix I2 — ensure index idx_ap_supplier.
+  // Schema.prisma declara @@index([supplier_id]) mas ERP não roda
+  // prisma migrate deploy no build (vide outras waves). Sem este boot
+  // ALTER, queries WHERE supplier_id = X em accounts_payable fazem full
+  // scan. Idempotente: CREATE INDEX IF NOT EXISTS.
+  ;(async () => {
+    try {
+      const { prisma } = await import('@pontual/db')
+      await prisma.$executeRawUnsafe(`
+        CREATE INDEX IF NOT EXISTS idx_ap_supplier
+          ON accounts_payable (supplier_id)
+      `)
+      console.log('[Boot/EnsureApSupplierIndex] OK — index criado (idempotente)')
+    } catch (err) {
+      console.error('[Boot/EnsureApSupplierIndex] FAIL:', err instanceof Error ? err.message : err)
+    }
+  })()
+
   // M4 (audit 2026-05-23) — DRE materialized view refresh a cada 30min
   // dre_monthly era refrescada só por UI admin → healthcheck dre_mv_stale=true
   // permanente. Endpoint /api/internal/cron/dre-mv-refresh já existia mas
