@@ -47,6 +47,21 @@ async function loadTemplate(templateName: string): Promise<string> {
   throw new Error(`Template nao encontrado: ${templateName}`)
 }
 
+/**
+ * Fecha campanha quando todos os jobs (sent+failed+skipped) >= total_jobs.
+ * SQL atomico + WHERE status='running' = idempotent + race-safe.
+ * Chamar apos qualquer mudanca de contador (sent/failed/skipped).
+ */
+async function maybeCompleteCampaign(campaignId: string): Promise<void> {
+  await prisma.$executeRaw`
+    UPDATE email_campaigns
+    SET status = 'completed', finished_at = NOW()
+    WHERE id = ${campaignId}
+      AND status = 'running'
+      AND (sent_count + failed_count + skipped_count) >= total_jobs
+  `
+}
+
 async function processJob(job: Job<EmailJobData>): Promise<SendResult> {
   const { jobId, campaignId } = job.data
 
@@ -79,6 +94,7 @@ async function processJob(job: Job<EmailJobData>): Promise<SendResult> {
       where: { id: campaignId },
       data: { skipped_count: { increment: 1 } },
     })
+    await maybeCompleteCampaign(campaignId)
     return { ok: true }
   }
 
@@ -101,6 +117,7 @@ async function processJob(job: Job<EmailJobData>): Promise<SendResult> {
       where: { id: campaignId },
       data: { failed_count: { increment: 1 } },
     })
+    await maybeCompleteCampaign(campaignId)
     return { ok: false, error: msg }
   }
 
@@ -135,6 +152,8 @@ async function processJob(job: Job<EmailJobData>): Promise<SendResult> {
         data: { last_sent_at: new Date() },
       }),
     ])
+    // 2026-05-29 audit fix: fecha campanha quando ultimo job termina (sent path)
+    await maybeCompleteCampaign(campaignId)
     // Throttle por campanha — sleep depois de cada envio bem sucedido
     const sleepMs = Math.max(50, Math.floor(1000 / campaign.rate_limit_per_sec))
     await new Promise(r => setTimeout(r, sleepMs))
@@ -183,6 +202,7 @@ export function startEmailWorker(): Worker<EmailJobData> | null {
           where: { id: job.data.campaignId },
           data: { failed_count: { increment: 1 } },
         })
+        await maybeCompleteCampaign(job.data.campaignId)
       } catch {}
     }
   })

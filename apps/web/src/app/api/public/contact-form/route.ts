@@ -97,7 +97,18 @@ export async function OPTIONS(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const origin = req.headers.get('origin')
   const cors = corsHeaders(origin)
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || 'unknown'
+
+  // 2026-05-29 audit fix: rejeita origens nao-allowlist explicitamente.
+  // CORS header so afeta browser; sem check server-side, ataques direto-em-API passavam.
+  if (!origin || !ALLOWED_ORIGINS.includes(origin)) {
+    return NextResponse.json({ error: 'Origem nao autorizada' }, { status: 403, headers: cors })
+  }
+
+  // IP read: x-real-ip (Coolify Traefik injeta peer real) > ultimo IP do XFF chain.
+  // Antes pegava XFF[0] que e trivially spoofable (cliente seta x-forwarded-for=7.7.7.7).
+  const ip = (req.headers.get('x-real-ip') || '').trim()
+    || (req.headers.get('x-forwarded-for') || '').split(',').pop()?.trim()
+    || 'unknown'
 
   if (!checkRate(ip)) {
     return NextResponse.json({ error: 'Muitas requisições. Tente em 15min.' }, { status: 429, headers: cors })
