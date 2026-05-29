@@ -839,6 +839,11 @@ interface ParsedResponse {
   // OS nao tiver cobranca PENDING ativa, Marta cai no fallback de regra 9
   // (registrar pra financeiro conferir). Tag formato: [REENVIAR_COBRANCA:60343]
   resendChargeOsNumber: number | null
+  // 2026-05-29 C2: classifier de intent pra emails recebidos (Marta tagueia no
+  // fim da resposta). 'commercial' dispara welcome series; 'support'/'other'
+  // capturam silenciosamente (sem journey — LGPD-safe). Tag formato:
+  //   [INTENT:commercial] | [INTENT:support] | [INTENT:other]
+  emailIntent: 'commercial' | 'support' | 'other' | null
 }
 
 /**
@@ -924,6 +929,7 @@ function parseDifyResponse(text: string): ParsedResponse {
   let discountNegotiateOsNumber: number | null = null
   let clienteIrritado = false
   let resendChargeOsNumber: number | null = null
+  let emailIntent: ParsedResponse['emailIntent'] = null
 
   // Extract [VHSYS_DATA]{json}[/VHSYS_DATA]
   const dataMatch = text.match(/\[VHSYS_DATA\]([\s\S]+?)\[\/VHSYS_DATA\]/)
@@ -1015,6 +1021,14 @@ function parseDifyResponse(text: string): ParsedResponse {
     cleanText = cleanText.replace(/\[REENVIAR_COBRANCA(?::\d+)?\]/g, '').trim()
   }
 
+  // 2026-05-29 C2: extract [INTENT:commercial|support|other] from email replies.
+  // Marta tagueia no fim da resposta. Limpa antes de enviar pro cliente.
+  const intentMatch = text.match(/\[INTENT:(commercial|support|other)\]/i)
+  if (intentMatch) {
+    emailIntent = intentMatch[1].toLowerCase() as ParsedResponse['emailIntent']
+    cleanText = cleanText.replace(/\[INTENT:(?:commercial|support|other)\]/gi, '').trim()
+  }
+
   // Detect action tags
   if (text.includes('[ABRIR_OS]')) {
     action = 'ABRIR_OS'
@@ -1033,7 +1047,7 @@ function parseDifyResponse(text: string): ParsedResponse {
     cleanText = cleanText.replace(/\[NENHUMA_ACAO\]/g, '').trim()
   }
 
-  return { cleanText, vhsysData, action, retentionStatus, retentionOsNumber, isSpam, urgencyLevel, urgencyOsNumber, cancelOsNumber, returnOsNumber, discountNegotiateOsNumber, clienteIrritado, resendChargeOsNumber }
+  return { cleanText, vhsysData, action, retentionStatus, retentionOsNumber, isSpam, urgencyLevel, urgencyOsNumber, cancelOsNumber, returnOsNumber, discountNegotiateOsNumber, clienteIrritado, resendChargeOsNumber, emailIntent }
 }
 
 // ---------------------------------------------------------------------------
@@ -2109,6 +2123,47 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
 
       // Parse response for action tags
       const parsed = parseDifyResponse(difyResponse.answer)
+
+      // 2026-05-29 C2: captura email inbox (PontualTech) com classifier LLM.
+      // Marta tagueia [INTENT:commercial|support|other] no fim. Comercial dispara
+      // welcome series; support/other capturam silenciosamente (LGPD-safe).
+      if (isEmailChannel && senderEmail && parsed.emailIntent) {
+        try {
+          if (parsed.emailIntent === 'commercial') {
+            const { createOrUpdateJourney } = await import('@/lib/nurture/journey')
+            const result = await createOrUpdateJourney({
+              company_id: cfg.companyId,
+              email: senderEmail,
+              phone: phone || undefined,
+              name: sender.name || undefined,
+              journey_type: 'bot_abandono', // reusa playbook (mesma série welcome)
+              source_data: {
+                chatwoot_conv_id: conversationId,
+                captured_via: 'email_inbox_commercial',
+                intent_classified_by: 'marta_dify',
+              },
+            })
+            console.log(`[Bot/EmailIntent] commercial → journey ${result.journey_id} (is_new=${result.is_new}) email=${senderEmail}`)
+          } else {
+            // support/other — só cria contato pra lista geral (sem journey)
+            await prisma.marketingContact.upsert({
+              where: { company_id_email: { company_id: cfg.companyId, email: senderEmail.toLowerCase() } },
+              update: { last_seen_at: new Date() },
+              create: {
+                company_id: cfg.companyId,
+                email: senderEmail.toLowerCase(),
+                phone: phone || null,
+                name: sender.name || null,
+                origin: 'email_inbox',
+                tags: [`intent:${parsed.emailIntent}`, 'lead:email_inbox'],
+              },
+            })
+            console.log(`[Bot/EmailIntent] ${parsed.emailIntent} → contato silent email=${senderEmail}`)
+          }
+        } catch (e: any) {
+          console.warn(`[Bot/EmailIntent] captura falhou (segue fluxo): ${e?.message}`)
+        }
+      }
 
       // Save dify_conv_id and update history
       const assistantHistory = addToHistory(updatedHistory, 'assistant', parsed.cleanText)
