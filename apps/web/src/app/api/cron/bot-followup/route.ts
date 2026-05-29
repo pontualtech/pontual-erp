@@ -248,6 +248,31 @@ export async function GET(request: NextRequest) {
               shouldSkip = true
               skipReason = `OS #${recentActiveOs.os_number} ja aberta/em andamento`
             }
+
+            // Wave 1.2 audit Hi14: Guard 5 — cliente tem OS em handoff
+            // Imprimitech. Bot Marta NÃO faz follow-up proativo (ao vivo já
+            // tem o gate em chatwoot/bot/route.ts). Guard 3 só protege se
+            // o status Imprimitech estiver marcado is_final=true; este guard
+            // é defensivo pra cobrir todos os casos.
+            if (!shouldSkip) {
+              const { getImprimitechHandoffStatusId } = await import('@/lib/imprimitech-handoff')
+              const handoffStatusId = await getImprimitechHandoffStatusId(conv.company_id)
+              if (handoffStatusId) {
+                const handoffOs = await prisma.serviceOrder.findFirst({
+                  where: {
+                    company_id: conv.company_id,
+                    customer_id: customer.id,
+                    status_id: handoffStatusId,
+                    deleted_at: null,
+                  },
+                  select: { os_number: true },
+                })
+                if (handoffOs) {
+                  shouldSkip = true
+                  skipReason = `OS #${handoffOs.os_number} em handoff Imprimitech`
+                }
+              }
+            }
           }
         }
 

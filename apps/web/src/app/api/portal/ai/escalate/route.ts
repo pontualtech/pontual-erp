@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { getPortalUserFromRequest } from '@/lib/portal-auth'
 import { ensureTicketForOS, addCustomerMessageToTicket } from '@/lib/tickets'
+import { isImprimitechHandoffStatus } from '@/lib/imprimitech-handoff'
 
 /**
  * POST /api/portal/ai/escalate
@@ -38,9 +39,17 @@ export async function POST(req: NextRequest) {
       },
       include: {
         customers: { select: { id: true, legal_name: true } },
+        module_statuses: { select: { name: true } },
       },
     })
     if (!os) {
+      return NextResponse.json({ error: 'OS nao encontrada' }, { status: 404 })
+    }
+
+    // Wave 1.2 audit Hi12: gate handoff — cliente NÃO escala OS Imprim pra
+    // atendente PT (criaria Ticket + Announcement URGENTE pra equipamento
+    // que já é da Imprimitech).
+    if (isImprimitechHandoffStatus(os.module_statuses?.name)) {
       return NextResponse.json({ error: 'OS nao encontrada' }, { status: 404 })
     }
 

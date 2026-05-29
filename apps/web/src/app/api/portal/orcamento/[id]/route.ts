@@ -8,6 +8,7 @@ import { rateLimit, getClientIp } from '@/lib/rate-limit'
 import { escapeHtml } from '@/lib/escape-html'
 import { getCompanyContact } from '@/lib/company-contact'
 import { buildMagicLink } from '@/lib/portal-magic-url'
+import { isImprimitechHandoffStatus } from '@/lib/imprimitech-handoff'
 
 type Params = { params: { id: string } }
 
@@ -58,6 +59,13 @@ export async function GET(request: NextRequest, { params }: Params) {
 
     if (os.companies.slug !== slug) {
       return error('Token inválido', 401)
+    }
+
+    // Wave 1.2 audit Hi6: gate handoff no GET (token HMAC público). Cliente
+    // com link antigo de orçamento (email enviado antes do handoff) vê 404
+    // ao invés de dados da OS já transferida.
+    if (isImprimitechHandoffStatus(os.module_statuses?.name)) {
+      return error('Ordem de serviço não encontrada', 404)
     }
 
     // Load company settings
@@ -193,6 +201,13 @@ export async function POST(request: NextRequest, { params }: Params) {
 
     if (!os) return error('Ordem de serviço não encontrada', 404)
     if (os.companies.slug !== slug) return error('Token inválido', 401)
+
+    // Wave 1.2 audit Hi6: gate handoff no POST — cliente com link HMAC público
+    // NÃO pode aprovar/recusar OS já transferida (ressuscitaria pra Aprovado
+    // ou criaria Ticket+Announcement urgente PT pra OS que já é da IMP).
+    if (isImprimitechHandoffStatus(os.module_statuses?.name)) {
+      return error('Ordem de serviço não encontrada', 404)
+    }
 
     if (action === 'approve') {
       const currentStatusName = os.module_statuses?.name?.toLowerCase() || ''

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { getPortalUserFromRequest } from '@/lib/portal-auth'
+import { isImprimitechHandoffStatus } from '@/lib/imprimitech-handoff'
 
 export async function GET(req: NextRequest) {
   try {
@@ -91,8 +92,15 @@ export async function POST(req: NextRequest) {
           customer_id: portalUser.customer_id,
           deleted_at: null,
         },
+        include: { module_statuses: { select: { name: true } } },
       })
       if (!os) {
+        return NextResponse.json({ error: 'OS nao encontrada' }, { status: 404 })
+      }
+      // Wave 1.2 audit Hi13: gate handoff — cliente NÃO vincula ticket novo
+      // a OS já transferida pra Imprimitech (atendente PT receberia ticket
+      // de equipamento que não está mais com ele).
+      if (isImprimitechHandoffStatus(os.module_statuses?.name)) {
         return NextResponse.json({ error: 'OS nao encontrada' }, { status: 404 })
       }
     }

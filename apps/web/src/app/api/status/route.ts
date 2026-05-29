@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
+import { invalidateImprimitechHandoffCache, isImprimitechHandoffStatus } from '@/lib/imprimitech-handoff'
 
 export async function GET(req: NextRequest) {
   try {
@@ -42,6 +43,12 @@ export async function POST(req: NextRequest) {
         is_final: body.is_final ?? false,
       },
     })
+
+    // Wave 1.2 audit R1: se o novo status é "Imprimitech", invalida cache
+    // negativo (5min) — handoff helper vai re-resolver o novo id imediatamente.
+    if (isImprimitechHandoffStatus(status.name)) {
+      invalidateImprimitechHandoffCache(user.companyId)
+    }
 
     return success(status, 201)
   } catch (err) {
