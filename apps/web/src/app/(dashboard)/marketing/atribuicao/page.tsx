@@ -305,16 +305,27 @@ export default function MarketingAttributionPage() {
         </div>
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
           <div className="inline-flex flex-wrap rounded-lg border border-gray-200 bg-white p-1">
-            {(['today', '1d', '7d', '30d', '90d', '365d'] as const).map(r => (
-              <button
-                key={r}
-                type="button"
-                onClick={() => { setRange(r); setShowCustomPicker(false) }}
-                className={`px-3 py-1.5 text-sm rounded-md transition ${range === r ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
-              >
-                {RANGE_LABELS[r]}
-              </button>
-            ))}
+            {(['today', '1d', '7d', '30d', '90d', '365d'] as const).map(r => {
+              const tip: Record<typeof r, string> = {
+                'today': 'A partir das 00:00 de hoje (BRT). Reseta à meia-noite.',
+                '1d': 'Últimas 24h corridas (rolling). Diferente de "Hoje".',
+                '7d': 'Últimos 7 dias corridos',
+                '30d': 'Últimos 30 dias corridos',
+                '90d': 'Últimos 90 dias corridos',
+                '365d': 'Últimos 365 dias corridos',
+              } as const
+              return (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => { setRange(r); setShowCustomPicker(false) }}
+                  title={tip[r]}
+                  className={`px-3 py-1.5 text-sm rounded-md transition ${range === r ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+                >
+                  {RANGE_LABELS[r]}
+                </button>
+              )
+            })}
             <button
               type="button"
               onClick={() => { setShowCustomPicker(v => !v); if (range !== 'custom') setRange('custom') }}
@@ -401,10 +412,24 @@ export default function MarketingAttributionPage() {
               <div className="text-sm text-amber-900">
                 <p className="font-medium">Cobertura de tracking baixa ({data.coverage_pct.toFixed(1)}%)</p>
                 <p className="text-xs text-amber-700 mt-0.5">
-                  A tag CWT (Click-to-WhatsApp Tracking) foi ativa em 2026-05-21. OS criadas antes não têm tracking de canal.
-                  Dados pós-21/05 vão acumular cobertura de ~70-90%.
+                  O CWT (tracking server-side) está ativo desde 21/05/2026. OS criadas antes não têm origem rastreada
+                  — vão aparecer em &quot;Sem tracking&quot;. <strong>Por isso o CAC/ROI parecem inflados nessa janela:</strong>{' '}
+                  o Google Ads cobrou pelo período inteiro, mas só captamos leads dos últimos dias.
+                  Use a janela <strong>7 dias</strong> pra comparativos mais realistas até que o tracking complete 30+ dias.
                 </p>
               </div>
+            </div>
+          )}
+
+          {/* Empty state: período selecionado sem OS */}
+          {data.totals.os_count === 0 && (
+            <div className="mb-4 p-6 rounded-md bg-gray-50 border border-gray-200 text-center">
+              <p className="text-sm text-gray-600">
+                Nenhuma OS criada no período selecionado{range === 'today' ? ' (a partir de 00:00 BRT)' : ''}.
+              </p>
+              <p className="text-xs text-gray-400 mt-1">
+                Tente uma janela maior (ex: <strong>7 dias</strong> ou <strong>30 dias</strong>) pra ver dados acumulados.
+              </p>
             </div>
           )}
 
