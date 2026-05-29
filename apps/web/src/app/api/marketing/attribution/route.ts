@@ -305,6 +305,24 @@ export async function GET(req: NextRequest) {
       }
     })
 
+    // Nurture journey stats (2026-05-29 Frente C): contadores agregados de leads
+    // capturados via bot isca + outros. Mostra ativos vs reativados (= viraram OS).
+    const journeyStats = await prisma.marketingJourney.groupBy({
+      by: ['journey_type', 'outcome'],
+      where: { company_id: cId },
+      _count: { id: true },
+    }).then(rows => {
+      const result: Record<string, { active: number; reactivated: number; other_ended: number }> = {}
+      for (const r of rows) {
+        const type = r.journey_type
+        if (!result[type]) result[type] = { active: 0, reactivated: 0, other_ended: 0 }
+        if (r.outcome === null) result[type].active += r._count.id
+        else if (r.outcome === 'reactivated') result[type].reactivated += r._count.id
+        else result[type].other_ended += r._count.id
+      }
+      return result
+    }).catch(() => ({} as Record<string, { active: number; reactivated: number; other_ended: number }>))
+
     return success({
       range,
       since: since.toISOString(),
@@ -314,6 +332,7 @@ export async function GET(req: NextRequest) {
       coverage_pct: totals.os_count > 0 ? (totals.tracked_count / totals.os_count) * 100 : 0,
       investments,
       investment_sources: investmentSources,
+      nurture_journeys: journeyStats,
     })
   } catch (e) {
     return handleError(e)

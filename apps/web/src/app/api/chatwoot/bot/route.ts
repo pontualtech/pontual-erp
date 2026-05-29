@@ -1494,6 +1494,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
         company_id: cfg.companyId,
         email,
         phone: phone || undefined,
+        name: sender.name || undefined,
         journey_type: 'bot_abandono',
         source_data: {
           chatwoot_conv_id: conversationId,

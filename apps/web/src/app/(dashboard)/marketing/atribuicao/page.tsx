@@ -62,6 +62,8 @@ type ApiResponse = {
   breakdown: ChannelStats[]
   timeline: TimelineRow[]
   coverage_pct: number
+  // Frente C (2026-05-29): contadores de journeys de nurture por tipo
+  nurture_journeys?: Record<string, { active: number; reactivated: number; other_ended: number }>
 }
 
 type EmailEngagementItem = {
@@ -404,6 +406,52 @@ export default function MarketingAttributionPage() {
               <div className="text-xs text-gray-400 mt-0.5">{data.totals.tracked_count} de {data.totals.os_count} OS</div>
             </div>
           </div>
+
+          {/* Frente C (2026-05-29): Card "Leads em nurture" — só aparece se houver journey ativa */}
+          {data.nurture_journeys && Object.keys(data.nurture_journeys).length > 0 && (
+            <div className="mb-4 bg-white rounded-lg border border-gray-200 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <div className="text-sm font-semibold text-gray-900">📧 Leads em jornada de nurture</div>
+                  <div className="text-xs text-gray-500 mt-0.5">
+                    Leads que abandonaram bot mas deram email — recebem série de emails até reabrir OS
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {Object.entries(data.nurture_journeys).map(([type, counts]) => {
+                  const total = counts.active + counts.reactivated + counts.other_ended
+                  const reactivation_pct = total > 0 ? (counts.reactivated / total * 100) : 0
+                  const labels: Record<string, string> = {
+                    bot_abandono: 'Bot Abandono',
+                    recused_os: 'Recusou Orçamento',
+                  }
+                  return (
+                    <div key={type} className="bg-gray-50 rounded p-3 border border-gray-100">
+                      <div className="text-xs font-medium text-gray-700">{labels[type] || type}</div>
+                      <div className="mt-2 grid grid-cols-3 gap-1 text-center">
+                        <div>
+                          <div className="text-lg font-semibold text-blue-600">{counts.active}</div>
+                          <div className="text-[10px] text-gray-500 uppercase tracking-wide">ativos</div>
+                        </div>
+                        <div>
+                          <div className="text-lg font-semibold text-emerald-600">{counts.reactivated}</div>
+                          <div className="text-[10px] text-gray-500 uppercase tracking-wide">reativ.</div>
+                        </div>
+                        <div>
+                          <div className="text-lg font-semibold text-gray-400">{counts.other_ended}</div>
+                          <div className="text-[10px] text-gray-500 uppercase tracking-wide">encerrados</div>
+                        </div>
+                      </div>
+                      <div className="mt-2 text-[11px] text-gray-500 text-center">
+                        {total} totais · {reactivation_pct.toFixed(1)}% reativação
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Aviso CWT recente */}
           {data.coverage_pct < 30 && data.totals.os_count > 5 && (

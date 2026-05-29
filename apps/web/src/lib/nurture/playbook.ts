@@ -142,10 +142,10 @@ export const BOT_ABANDONO_PLAYBOOK: NurturePlaybook = {
     {
       day: 0,
       channel: 'email',
-      template: 'email2_dicas_impressora.html',
-      subject: 'Sua dica grátis sobre impressoras (e quem somos)',
+      template: 'bot_abandono_d0_checklist.html',
+      subject: 'Seu checklist de manutenção (e quem somos)',
       focus: 'printer',
-      label: 'D0 — entrega imediata (apresentação + dica técnica)',
+      label: 'D0 — apresentação + checklist completo (impressoras+térmicas)',
     },
     {
       day: 7,
