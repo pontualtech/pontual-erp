@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { getPortalUserFromRequest } from '@/lib/portal-auth'
 import { isAllowedOrigin } from '@/lib/csrf-origin'
+import { isImprimitechHandoffStatus } from '@/lib/imprimitech-handoff'
 
 type Params = { params: { id: string } }
 
@@ -60,9 +61,15 @@ export async function GET(req: NextRequest, { params }: Params) {
         customer_id: portalUser.customer_id,
         deleted_at: null,
       },
-      select: { id: true },
+      select: { id: true, module_statuses: { select: { name: true } } },
     })
     if (!os) return NextResponse.json({ error: 'OS nao encontrada' }, { status: 404 })
+
+    // Wave 1.1 audit C2: gate handoff — cliente não vê histórico de chat
+    // de OS já transferida pra Imprimitech (a comunicação segue na IMP).
+    if (isImprimitechHandoffStatus(os.module_statuses?.name)) {
+      return NextResponse.json({ error: 'OS nao encontrada' }, { status: 404 })
+    }
 
     const ticket = await getOrCreateOsChatTicket(params.id, portalUser.company_id, portalUser.customer_id)
     const messages = await prisma.ticketMessage.findMany({
@@ -98,9 +105,17 @@ export async function POST(req: NextRequest, { params }: Params) {
       },
       include: {
         customers: { select: { legal_name: true } },
+        module_statuses: { select: { name: true } },
       },
     })
     if (!os) return NextResponse.json({ error: 'OS nao encontrada' }, { status: 404 })
+
+    // Wave 1.1 audit C2: gate handoff — cliente não cria mensagem nova
+    // em OS já transferida. Sem este gate atendente PT recebia mensagem
+    // que devia ser pra Aline (Imprimitech).
+    if (isImprimitechHandoffStatus(os.module_statuses?.name)) {
+      return NextResponse.json({ error: 'OS nao encontrada' }, { status: 404 })
+    }
 
     const ticket = await getOrCreateOsChatTicket(params.id, portalUser.company_id, portalUser.customer_id)
 

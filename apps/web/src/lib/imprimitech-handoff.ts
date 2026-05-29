@@ -35,24 +35,47 @@ export function isImprimitechHandoffStatus(name: string | null | undefined): boo
 // Per-process cache pra não bater no DB em todo request. Status ID estável
 // (não muda em runtime), TTL longo (1h) é seguro. Cache miss → 1 query.
 const statusIdCache = new Map<string, { id: string | null; ts: number }>()
-const CACHE_TTL_MS = 60 * 60 * 1000
+const CACHE_TTL_MS = 60 * 60 * 1000          // 1h pra hits positivos
+const CACHE_TTL_NEGATIVE_MS = 5 * 60 * 1000  // 5min pra hits null (defensive)
 
 /**
  * Resolve o status_id do "Imprimitech" pra essa empresa. Retorna null se
  * a empresa não tem esse status (ex: Imprimitech-001 não tem; só PT-001).
- * Cached 1h por company_id.
+ *
+ * Match TOLERANTE (audit Wave 1.1 H4): busca por nome via isImprimitech-
+ * HandoffStatus pra defender contra rename casual via UI ("imprimitech"
+ * lowercase, "Imprimitech " com trailing space, "IMPRIMITECH" maiúsculo).
+ *
+ * Cache:
+ *   - Hits positivos (id != null): TTL 1h (operação raríssima de renomear)
+ *   - Hits negativos (id === null): TTL 5min (caso comum: tenant cria o
+ *     status DEPOIS do primeiro lookup; sem TTL curto, ficaria inativo 1h)
  */
 export async function getImprimitechHandoffStatusId(companyId: string): Promise<string | null> {
   const cached = statusIdCache.get(companyId)
-  if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return cached.id
+  if (cached) {
+    const ttl = cached.id ? CACHE_TTL_MS : CACHE_TTL_NEGATIVE_MS
+    if (Date.now() - cached.ts < ttl) return cached.id
+  }
 
-  const status = await prisma.moduleStatus.findFirst({
-    where: { company_id: companyId, module: 'os', name: IMPRIMITECH_HANDOFF_STATUS_NAME },
-    select: { id: true },
+  // Match tolerante: pega todos os status do módulo OS da empresa e filtra
+  // via helper normalizado. Custo: pequeno (cada empresa tem ~20 status).
+  const allOsStatuses = await prisma.moduleStatus.findMany({
+    where: { company_id: companyId, module: 'os' },
+    select: { id: true, name: true },
   })
-  const id = status?.id || null
+  const match = allOsStatuses.find(s => isImprimitechHandoffStatus(s.name))
+  const id = match?.id || null
   statusIdCache.set(companyId, { id, ts: Date.now() })
   return id
+}
+
+/**
+ * Invalida cache pra uma empresa específica. Chamado pelos endpoints de
+ * CRUD do /config/status quando admin renomeia/cria/deleta status.
+ */
+export function invalidateImprimitechHandoffCache(companyId: string): void {
+  statusIdCache.delete(companyId)
 }
 
 /**
