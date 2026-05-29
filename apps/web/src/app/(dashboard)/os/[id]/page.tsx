@@ -108,7 +108,10 @@ interface PriceSuggestion {
   service_description: string | null; default_price: number; estimated_time_minutes: number | null
 }
 
-const CANAL_OPTIONS = ['WhatsApp', 'Telefone', 'Balcao', 'Site', 'Indicacao', 'Outro'] as const
+// 2026-05-29: adicionado canais ads/marketing pra alinhar com /atribuicao (spec
+// canal_entrada autofill 22/05). Helper lookup-tracking deriva automaticamente
+// estes valores quando tracking presente — atendente pode sobrescrever.
+const CANAL_OPTIONS = ['WhatsApp', 'Telefone', 'Balcao', 'Site', 'Indicacao', 'Google Ads', 'Microsoft Ads', 'Meta Ads', 'Email', 'Social', 'Organico', 'Outro'] as const
 
 const priorityLabel: Record<string, string> = { LOW: 'Baixa', MEDIUM: 'Normal', HIGH: 'Alta', URGENT: 'Urgente' }
 const priorityColor: Record<string, string> = { LOW: 'text-gray-500', MEDIUM: 'text-blue-600', HIGH: 'text-orange-600', URGENT: 'text-red-600' }

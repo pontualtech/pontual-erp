@@ -13,6 +13,27 @@ import { prisma } from '@pontual/db'
 export type LookupResult = {
   tracking: Record<string, string>
   tracking_captured_at: string
+  // 2026-05-29 (canal_entrada autofill spec 22/05): derivado pra UI /os/[id]
+  // popular select automaticamente. Atendente pode sobrescrever.
+  canal_entrada?: string
+}
+
+/**
+ * Deriva `canal_entrada` a partir dos campos de tracking (spec 22/05 aprovada).
+ * Precedência: CLIDs > UTM source/medium. Retorna null se não bate nenhum.
+ */
+function deriveCanalEntrada(t: Record<string, string>): string | null {
+  if (t.gclid || t.gbraid || t.wbraid) return 'Google Ads'
+  if (t.msclkid) return 'Microsoft Ads'
+  if (t.fbclid) return 'Meta Ads'
+  const sm = `${t.utm_source || ''} / ${t.utm_medium || ''}`.toLowerCase()
+  if (/google\s*\/\s*cpc/.test(sm) || /google\s*\/\s*paid/.test(sm)) return 'Google Ads'
+  if (/bing\s*\/\s*cpc/.test(sm) || /microsoft\s*\/\s*cpc/.test(sm)) return 'Microsoft Ads'
+  if (/(facebook|instagram|meta)\s*\/\s*(cpc|paid)/.test(sm)) return 'Meta Ads'
+  if (/\/\s*organic/.test(sm)) return 'Organico'
+  if (/\/\s*email/.test(sm) || /mautic/.test(sm)) return 'Email'
+  if (/(facebook|instagram|linkedin|tiktok|youtube)/.test(sm)) return 'Social'
+  return null
 }
 
 /**
@@ -60,7 +81,8 @@ export async function lookupTrackingFromConv(
 
     if (Object.keys(tracking).length === 0) return null
 
-    return { tracking, tracking_captured_at: new Date().toISOString() }
+    const canal_entrada = deriveCanalEntrada(tracking) || undefined
+    return { tracking, tracking_captured_at: new Date().toISOString(), ...(canal_entrada ? { canal_entrada } : {}) }
   } catch (e: any) {
     console.warn(`[lookupTracking] falhou (segue sem): ${e?.message}`)
     return null
