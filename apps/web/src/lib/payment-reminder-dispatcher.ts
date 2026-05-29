@@ -57,6 +57,10 @@ const DEFAULT_OVERDUE_EMAIL_HTML = `<!DOCTYPE html>
       <p style="margin:22px 0 0;font-size:11px;color:#94a3b8;text-align:center;">
         Esta é uma mensagem automática. Em caso de dúvida, responda diretamente este email.
       </p>
+      <p style="margin:14px 0 0;font-size:10px;color:#94a3b8;text-align:center;line-height:1.5;">
+        Se preferir não receber lembretes por email, <a href="{{unsubscribe_url}}" style="color:#94a3b8;">descadastre aqui</a>.
+        Isso <strong>não cancela a cobrança</strong> — a fatura permanecerá em aberto até a regularização.
+      </p>
     </td></tr>
   </table>
 </body></html>`
@@ -186,6 +190,9 @@ export async function emitReminder(args: {
         if (tpl?.template) html = tpl.template
       }
     }
+    // 2026-05-29: List-Unsubscribe RFC 8058 — Gmail bulk sender rules.
+    // Texto no body avisa que descadastrar NÃO cancela a dívida (Karlão approval).
+    const unsubscribeUrl = `https://erp.pontualtech.work/api/public/unsubscribe?email=${encodeURIComponent(customer.email)}`
     const vars = {
       customer_name: customer.legal_name || 'Cliente',
       company_name: company.name || 'Empresa',
@@ -193,10 +200,14 @@ export async function emitReminder(args: {
       amount: amountBrl,
       days_overdue: String(days),
       portal_link: portalLink,
+      unsubscribe_url: unsubscribeUrl,
     }
     const subject = `Fatura em atraso #${arIdShort} — ${company.name}`
     try {
-      const sent = await sendCompanyEmail(args.company_id, customer.email, subject, replaceVars(html, vars))
+      const sent = await sendCompanyEmail(
+        args.company_id, customer.email, subject, replaceVars(html, vars),
+        undefined, { unsubscribeUrl },
+      )
       return {
         ok: !!sent,
         delivery_meta: { to: customer.email, subject },
