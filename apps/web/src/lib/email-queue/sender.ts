@@ -46,8 +46,11 @@ export async function sendBlastEmail(args: SendBlastArgs): Promise<SendResult> {
     return { ok: false, error: 'resend_api_key_missing' }
   }
 
-  // List-Unsubscribe pra ativar botao nativo Gmail/Outlook + RFC 8058 one-click
-  const unsubscribeUrl = `https://pontualtech.com.br/descadastrar.html?email=${encodeURIComponent(args.to)}`
+  // List-Unsubscribe pra ativar botao nativo Gmail/Outlook + RFC 8058 one-click.
+  // 2026-05-29 fix: URL antiga (descadastrar.html no site) droppava query string
+  // no 302 redirect → cliente caía na page sem email preenchido. Endpoint real
+  // /api/public/unsubscribe processa one-click direto.
+  const unsubscribeUrl = `https://erp.pontualtech.work/api/public/unsubscribe?email=${encodeURIComponent(args.to)}`
   const unsubscribeMailto = `mailto:unsubscribe@pontualtech.com.br?subject=Descadastrar`
 
   try {
