@@ -888,13 +888,18 @@ model AccountPayable {
   categories     Category?   @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   companies      Company     @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   cost_centers   CostCenter? @relation(fields: [cost_center_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  customers      Customer?   @relation(fields: [supplier_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  // Wave SU-1 (2026-05-27): supplier_id agora aponta corretamente pra Supplier
+  // (antes apontava pra Customer — atalho usado em 2025 que nunca foi formalizado).
+  // 0 APs em produção tinham supplier_id populado (FK bloqueava), então
+  // mudança é zero-risk pra dados existentes.
+  suppliers      Supplier?   @relation(fields: [supplier_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([company_id])
   @@index([company_id, status])
   @@index([company_id, due_date])
   @@index([account_id])
   @@index([service_order_id], map: "idx_ap_service_order")
+  @@index([supplier_id], map: "idx_ap_supplier")
   @@map("accounts_payable")
 }
 
@@ -1577,6 +1582,8 @@ model Supplier {
   companies         Company    @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   purchases         Purchase[]
   products          Product[]
+  // Wave SU-1: back-relation pra accountPayable usar via include
+  accounts_payable  AccountPayable[]
 
   @@index([company_id], map: "idx_suppliers_company")
   @@map("suppliers")

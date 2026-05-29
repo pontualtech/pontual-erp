@@ -17,8 +17,10 @@ import { cleanDescription } from '@/lib/payment-display'
 import { DateInputBR } from '@/app/(dashboard)/components/date-input-br'
 
 interface Supplier {
+  // Wave SU-1 (2026-05-27): supplier_id linkado pra Supplier (campo `name`).
+  // Antes a relation era pra Customer e expunha `legal_name` — atalho legado removido.
   id: string
-  legal_name: string
+  name: string
 }
 
 interface Category {
@@ -47,7 +49,8 @@ interface ContaPagar {
   payment_method: string | null
   notes: string | null
   reconciled: boolean | null
-  customers: Supplier | null
+  // Wave SU-1: relation Prisma agora chama-se `suppliers` (não `customers`)
+  suppliers: Supplier | null
   categories: Category | null
   cost_centers: CostCenter | null
 }
@@ -325,7 +328,7 @@ export default function ContasPagarPage() {
   function prepareExportData(data: ContaPagar[]) {
     return data.map(c => ({
       ...c,
-      supplier_name: c.customers?.legal_name ?? '',
+      supplier_name: c.suppliers?.name ?? '',
       category_name: c.categories?.name ?? '',
       cost_center_name: c.cost_centers?.name ?? '',
       status: (statusConfig[getDisplayStatus(c)] || statusConfig.PENDENTE).label,
@@ -821,7 +824,7 @@ export default function ContasPagarPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-gray-500">
-                      {conta.customers?.legal_name || '--'}
+                      {conta.suppliers?.name || '--'}
                     </td>
                     <td className="px-4 py-3 text-gray-500">
                       {conta.categories?.name || '--'}

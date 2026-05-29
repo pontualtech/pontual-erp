@@ -30,7 +30,8 @@ export async function GET(req: NextRequest, { params }: Params) {
     const payable = await prisma.accountPayable.findFirst({
       where: { id: params.id, company_id: user.companyId, deleted_at: null },
       include: {
-        customers: { select: { id: true, legal_name: true, document_number: true } },
+        // Wave SU-1: supplier_id agora aponta pra Supplier (não Customer)
+        suppliers: { select: { id: true, name: true, document: true } },
         categories: { select: { id: true, name: true } },
         cost_centers: { select: { id: true, name: true } },
       },
@@ -88,9 +89,10 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     }
 
     // C15 fix 22/05: valida supplier_id pertence ao tenant
+    // Wave SU-1 (2026-05-27): valida em prisma.supplier (não customer)
     if (data.supplier_id) {
-      const supplier = await prisma.customer.findFirst({
-        where: { id: data.supplier_id, company_id: user.companyId, deleted_at: null },
+      const supplier = await prisma.supplier.findFirst({
+        where: { id: data.supplier_id, company_id: user.companyId },
         select: { id: true },
       })
       if (!supplier) return error('Fornecedor nao pertence a esta empresa', 403)

@@ -16,8 +16,9 @@ interface Split {
 const emptySplit = (): Split => ({ payment_method: '', account_id: '', amount_str: '', installment_count: '1' })
 
 interface SearchResult {
+  // Wave SU-1 (2026-05-27): agora reflete Supplier (campo `name`), não Customer (`legal_name`)
   id: string
-  legal_name: string
+  name: string
 }
 
 interface Category {
@@ -99,7 +100,8 @@ export default function NovaContaPagarPage() {
     setSupplierSearch(query)
     if (query.length < 2) { setSuppliers([]); return }
     try {
-      const res = await fetch(`/api/clientes?search=${encodeURIComponent(query)}&limit=5`)
+      // Wave SU-1: busca em /api/suppliers (era /api/clientes — anti-pattern legado)
+      const res = await fetch(`/api/suppliers?search=${encodeURIComponent(query)}&limit=5&active=true`)
       const json = await res.json()
       setSuppliers(json.data || [])
     } catch { setSuppliers([]) }
@@ -107,9 +109,42 @@ export default function NovaContaPagarPage() {
 
   function selectSupplier(supplier: SearchResult) {
     setSelectedSupplier(supplier)
-    setSupplierSearch(supplier.legal_name)
+    setSupplierSearch(supplier.name)
     setSuppliers([])
     updateForm('supplier_id', supplier.id)
+  }
+
+  // Wave SU-1: modal pra criar fornecedor inline (sem sair da tela)
+  const [showNewSupplier, setShowNewSupplier] = useState(false)
+  const [newSupplierName, setNewSupplierName] = useState('')
+  const [newSupplierDoc, setNewSupplierDoc] = useState('')
+  const [newSupplierPhone, setNewSupplierPhone] = useState('')
+  const [creatingSupplier, setCreatingSupplier] = useState(false)
+
+  async function createSupplierInline() {
+    if (!newSupplierName.trim()) { toast.error('Nome do fornecedor é obrigatório'); return }
+    setCreatingSupplier(true)
+    try {
+      const res = await fetch('/api/suppliers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newSupplierName.trim(),
+          document: newSupplierDoc.trim() || undefined,
+          phone: newSupplierPhone.trim() || undefined,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) { toast.error(json.error || 'Erro ao cadastrar fornecedor'); return }
+      const created = json.data
+      // Autoseleciona o recém-criado
+      const sel: SearchResult = { id: created.id, name: created.name }
+      selectSupplier(sel)
+      setShowNewSupplier(false)
+      setNewSupplierName(''); setNewSupplierDoc(''); setNewSupplierPhone('')
+      toast.success(`Fornecedor "${created.name}" cadastrado`)
+    } catch { toast.error('Erro de conexão') }
+    finally { setCreatingSupplier(false) }
   }
 
   function clearSupplier() {
@@ -217,18 +252,91 @@ export default function NovaContaPagarPage() {
                     onClick={() => selectSupplier(s)}
                     className="w-full text-left px-3 py-2 hover:bg-blue-50 text-sm"
                   >
-                    {s.legal_name}
+                    {s.name}
                   </button>
                 ))}
               </div>
             )}
             {selectedSupplier && (
               <div className="flex items-center gap-2 mt-1">
-                <p className="text-sm text-green-600">Selecionado: {selectedSupplier.legal_name}</p>
+                <p className="text-sm text-green-600">Selecionado: {selectedSupplier.name}</p>
                 <button type="button" onClick={clearSupplier} className="text-xs text-red-500 hover:underline">Remover</button>
               </div>
             )}
+            {/* Wave SU-1: botão pra criar fornecedor inline (sem ir em /estoque/fornecedores) */}
+            {!selectedSupplier && (
+              <button
+                type="button"
+                onClick={() => { setShowNewSupplier(true); setNewSupplierName(supplierSearch); }}
+                className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800"
+              >
+                <Plus className="w-3 h-3" /> Novo fornecedor
+              </button>
+            )}
           </div>
+
+          {/* Modal cadastro inline de Fornecedor */}
+          {showNewSupplier && (
+            <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-base font-semibold text-gray-900">Novo Fornecedor</h3>
+                  <button type="button" onClick={() => setShowNewSupplier(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1" htmlFor="new-sup-name">Nome / Razão social *</label>
+                  <input
+                    id="new-sup-name"
+                    type="text"
+                    value={newSupplierName}
+                    onChange={e => setNewSupplierName(e.target.value)}
+                    autoFocus
+                    className="w-full px-3 py-2 border rounded-md text-sm"
+                    placeholder="Ex: Distribuidora ACME LTDA"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1" htmlFor="new-sup-doc">CNPJ / CPF (opcional)</label>
+                  <input
+                    id="new-sup-doc"
+                    type="text"
+                    value={newSupplierDoc}
+                    onChange={e => setNewSupplierDoc(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-md text-sm"
+                    placeholder="00.000.000/0000-00"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1" htmlFor="new-sup-phone">Telefone (opcional)</label>
+                  <input
+                    id="new-sup-phone"
+                    type="text"
+                    value={newSupplierPhone}
+                    onChange={e => setNewSupplierPhone(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-md text-sm"
+                    placeholder="(11) 99999-9999"
+                  />
+                </div>
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowNewSupplier(false)}
+                    className="flex-1 px-3 py-2 border rounded-md text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={createSupplierInline}
+                    disabled={creatingSupplier || !newSupplierName.trim()}
+                    className="flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium disabled:opacity-50"
+                  >
+                    {creatingSupplier ? 'Salvando...' : 'Cadastrar'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Detalhes */}
