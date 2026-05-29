@@ -130,9 +130,71 @@ export const RECUSED_OS_PLAYBOOK: NurturePlaybook = {
   },
 }
 
+// ─────────────────────────────────────────────
+// Playbook BOT_ABANDONO — lead clicou em ad, conversou com bot mas abandonou
+// ANTES de virar customer (não há OS, só email capturado via follow-up #1).
+// 2026-05-29: criado pra capturar leads quentes que abandonam após qualificação.
+// ─────────────────────────────────────────────
+export const BOT_ABANDONO_PLAYBOOK: NurturePlaybook = {
+  type: 'bot_abandono',
+  description: 'Lead deu email ao bot mas não fechou. D0 entrega de valor + apresentação → cross-sell notebook → loop.',
+  steps: [
+    {
+      day: 0,
+      channel: 'email',
+      template: 'email2_dicas_impressora.html',
+      subject: 'Sua dica grátis sobre impressoras (e quem somos)',
+      focus: 'printer',
+      label: 'D0 — entrega imediata (apresentação + dica técnica)',
+    },
+    {
+      day: 7,
+      channel: 'email',
+      template: 'newsletter_notebook_pontualtech.html',
+      subject: 'Sabia que também consertamos notebooks e impressoras térmicas?',
+      focus: 'notebook',
+      label: 'D7 — cross-sell notebook + térmica',
+    },
+    {
+      day: 15,
+      channel: 'email',
+      template: 'nurture_d22_caso.html',
+      subject: 'Cliente economizou R$ 380 com revisão preventiva',
+      focus: 'printer',
+      label: 'D15 — caso/prova social',
+    },
+    {
+      day: 30,
+      channel: 'email',
+      template: 'nurture_d30_offer.html',
+      subject: 'Cupom 10% — impressora, notebook ou térmica',
+      focus: 'both',
+      label: 'D30 — soft offer',
+    },
+  ],
+  recurring: {
+    day_start: 60,
+    repeat_every_days: 30,
+    channel: 'email',
+    template_pool: [
+      'nurture_recurring_dica.html',
+      'nurture_recurring_case.html',
+      'nurture_recurring_novidade.html',
+    ],
+    subject_pool: [
+      'Dica do mês PontualTech',
+      'Cliente recuperou equipamento que ia trocar',
+      'Novidade pra cliente PT',
+    ],
+    focus: 'both',
+    label: 'Loop mensal perpétuo (rotativo)',
+  },
+}
+
 // Mapa nome → playbook (futuras journey types se adicionar)
 export const PLAYBOOKS: Record<string, NurturePlaybook> = {
   recused_os: RECUSED_OS_PLAYBOOK,
+  bot_abandono: BOT_ABANDONO_PLAYBOOK,
 }
 
 /**

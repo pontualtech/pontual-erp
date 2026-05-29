@@ -1479,6 +1479,46 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
     return
   }
 
+  // 2026-05-29 — Isca digital: cliente abandonou após qualificação, bot
+  // ofereceu checklist via follow-up #1, cliente respondeu com email.
+  // Detecta email no content + valida que tem attribution (= veio de ad) +
+  // que ainda não capturamos email pra essa conv → dispara journey.
+  // Idempotente: createOrUpdateJourney não duplica se journey já existe.
+  try {
+    const convData: any = botConv.data && typeof botConv.data === 'object' && !Array.isArray(botConv.data) ? botConv.data : {}
+    const emailMatch = content.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)
+    if (emailMatch && convData.attribution && !convData.lead_email_captured_at) {
+      const email = emailMatch[0].toLowerCase()
+      const { createOrUpdateJourney } = await import('@/lib/nurture/journey')
+      const result = await createOrUpdateJourney({
+        company_id: cfg.companyId,
+        email,
+        phone: phone || undefined,
+        journey_type: 'bot_abandono',
+        source_data: {
+          chatwoot_conv_id: conversationId,
+          attribution: convData.attribution,
+          captured_via: 'bot_followup_isca',
+        },
+      })
+      // Marca conv pra evitar re-captura (também serve pra audit)
+      await prisma.botConversation.update({
+        where: { id: botConv.id },
+        data: {
+          data: {
+            ...convData,
+            lead_email: email,
+            lead_email_captured_at: new Date().toISOString(),
+            lead_journey_id: result.journey_id,
+          },
+        },
+      })
+      console.log(`[Bot/Isca] Email capturado conv ${conversationId}: ${email} → journey ${result.journey_id} (is_new=${result.is_new})`)
+    }
+  } catch (e: any) {
+    console.warn(`[Bot/Isca] Captura de email falhou (segue fluxo): ${e?.message}`)
+  }
+
   // -----------------------------------------------------------------------
   // INTERACTIVE BUTTONS: handle button clicks before debounce/Dify
   // -----------------------------------------------------------------------
