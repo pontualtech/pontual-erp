@@ -287,6 +287,25 @@ function startCronJobs() {
     }
   })()
 
+  // 2026-05-29 (CRIT-DATA-STRING fix) — recupera bot_conversations.data
+  // corrompido como JSONB string (do bug em route.ts:1159 `data: '{}'`).
+  // 94% das 666 convs desde 22/05 tinham data='"{}"' (string), tornando
+  // jsonb_typeof(data)='string' e quebrando data->>'attribution' queries.
+  // Idempotente: roda 1x no boot, depois 0 rows (fix code já evita novos).
+  ;(async () => {
+    try {
+      const { prisma } = await import('@pontual/db')
+      const result: any = await prisma.$executeRawUnsafe(`
+        UPDATE bot_conversations
+        SET data = '{}'::jsonb
+        WHERE jsonb_typeof(data) = 'string'
+      `)
+      console.log(`[Boot/FixDataStringCorruption] OK — ${result} rows recuperadas (jsonb_typeof=string → {})`)
+    } catch (err) {
+      console.error('[Boot/FixDataStringCorruption] FAIL:', err instanceof Error ? err.message : err)
+    }
+  })()
+
   // M4 (audit 2026-05-23) — DRE materialized view refresh a cada 30min
   // dre_monthly era refrescada só por UI admin → healthcheck dre_mv_stale=true
   // permanente. Endpoint /api/internal/cron/dre-mv-refresh já existia mas
@@ -345,6 +364,41 @@ function startCronJobs() {
         await trackHealth('cobranca-reenvio-vencidas', false, Date.now() - t0, err instanceof Error ? err.message : String(err))
       }
     }, 60 * 60 * 1000) // 1 hour
+  }
+
+  // 2026-05-29 — Nurture tick (audit pos-deploy 29/05 detectou journey
+  // bot_abandono orfã: Irene capturada 14:41 sem cron processando steps).
+  // Endpoint /api/internal/cron/nurture-tick faz 2 etapas:
+  //   1. detectReactivations — fecha journeys cujo cliente abriu OS
+  //   2. processSteps — envia próximo email/wa do playbook
+  // Advisory lock interno previne concorrência. Roda a cada 15min — playbook
+  // tem steps em D0/D7/D15/D30/D60+, latência sub-hora é suficiente.
+  if (!INTERNAL_API_KEY) {
+    console.warn('[Cron/NurtureTick] INTERNAL_API_KEY ausente — cron desabilitado')
+  } else {
+    setInterval(async () => {
+      const t0 = Date.now()
+      try {
+        const res = await fetch(`${BASE_URL}/api/internal/cron/nurture-tick`, {
+          method: 'POST',
+          headers: { 'x-internal-key': INTERNAL_API_KEY },
+        })
+        if (res.ok) {
+          const data = await res.json()
+          const d = data.data || {}
+          if (d.reactivations > 0 || d.steps_sent_email > 0 || d.steps_sent_wa > 0) {
+            console.log(`[Cron/NurtureTick] reactivations=${d.reactivations} email=${d.steps_sent_email} wa=${d.steps_sent_wa} failed=${d.failed}`)
+          }
+          await trackHealth('nurture-tick', true, Date.now() - t0)
+        } else {
+          console.error(`[Cron/NurtureTick] HTTP ${res.status}`)
+          await trackHealth('nurture-tick', false, Date.now() - t0, `HTTP ${res.status}`)
+        }
+      } catch (err) {
+        console.error('[Cron/NurtureTick] Error:', err instanceof Error ? err.message : err)
+        await trackHealth('nurture-tick', false, Date.now() - t0, err instanceof Error ? err.message : String(err))
+      }
+    }, 15 * 60 * 1000) // 15 minutes
   }
 
   console.log('[Cron] Internal cron jobs started:')

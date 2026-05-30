@@ -1156,7 +1156,12 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
           human_takeover: false,
           // KEEP dify_conv_id — preserves conversation memory in Dify
           step: 'IDLE',
-          data: '{}',
+          // 2026-05-29 (CRIT-DATA-STRING fix): Prisma JSON field aceita string
+          // literal e armazena como JSONB string `"{}"` (não objeto vazio).
+          // Resultado: jsonb operators (data->>'attribution') retornavam null
+          // SEMPRE, invalidando 94% das atribuições. Usar objeto Prisma.JsonNull
+          // pra resetar pra null OU literal {} pra objeto vazio.
+          data: {},
           // CLEAR follow-up — resolved conversations should NOT receive follow-ups
           follow_up_next_at: null,
           follow_up_count: 0,
