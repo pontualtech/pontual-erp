@@ -7,10 +7,18 @@ import { createHmac } from 'crypto'
 type Params = { params: { id: string } }
 
 function validatePaymentToken(receivableId: string, token: string): boolean {
-  const key = process.env.ENCRYPTION_KEY
-  if (!key) return false
-  const expected = createHmac('sha256', key).update(receivableId).digest('hex').slice(0, 16)
-  return token === expected
+  // Eco audit W5 (2026-05-30): dual-key fallback durante rotação ENCRYPTION_KEY.
+  // Cliente recebe link cobrança por email/WhatsApp e pode clicar dias depois;
+  // tokens emitidos com OLD continuam válidos no período de transição.
+  try {
+    const { hmacVerify } = require('@/lib/hmac-rotation') as typeof import('@/lib/hmac-rotation')
+    return hmacVerify(receivableId, token, '', 16)
+  } catch {
+    const key = process.env.ENCRYPTION_KEY
+    if (!key) return false
+    const expected = createHmac('sha256', key).update(receivableId).digest('hex').slice(0, 16)
+    return token === expected
+  }
 }
 
 function daysOverdue(dueDate: Date): number {

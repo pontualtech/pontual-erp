@@ -52,10 +52,14 @@ export async function GET(request: NextRequest) {
       status: 'PAGO' as const,
       due_date: { gte: startDate, lte: endDate },
     }
+    // Eco audit W6 (2026-05-30): remover `as const` que travava o tipo
+    // como readonly tuple (`readonly ['RECEBIDO','PAGO']`), incompatível
+    // com `AccountReceivableWhereInput.status.in: string[]`. Array literal
+    // sem `as const` é inferido como `string[]` corretamente.
     const baseWhereAR = {
       company_id: user.companyId,
       deleted_at: null,
-      status: { in: ['RECEBIDO', 'PAGO'] as const },
+      status: { in: ['RECEBIDO', 'PAGO'] },
       due_date: { gte: startDate, lte: endDate },
     }
 
