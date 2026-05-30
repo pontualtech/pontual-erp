@@ -1225,8 +1225,16 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
   // Ignore private notes
   if (body.private) return
 
-  // Filter by allowed inboxes
-  const inboxId = body.inbox?.id || body.conversation?.inbox_id
+  // Filter by allowed inboxes.
+  // Audit 30/05 #6 fix: alguns payloads Chatwoot (custom integrations / formats
+  // antigos) chegam SEM body.inbox?.id e sem body.conversation?.inbox_id —
+  // bot processava normalmente mas gravava inbox_id=NULL em bot_conversations
+  // (17 rows IMP detectadas). Fallback: se cfg permite só 1 inbox, assume.
+  let inboxId = body.inbox?.id || body.conversation?.inbox_id
+  if (!inboxId && cfg.allowedInboxes.length === 1) {
+    inboxId = cfg.allowedInboxes[0]
+    console.log(`[Bot ${cfg.slug}] webhook sem inbox_id, usando fallback único=${inboxId}`)
+  }
   if (inboxId && !cfg.allowedInboxes.includes(inboxId)) {
     return
   }

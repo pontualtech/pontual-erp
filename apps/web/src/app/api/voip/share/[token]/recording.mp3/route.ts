@@ -72,7 +72,10 @@ export async function GET(
     const baseHeaders = {
       'Content-Type': 'audio/mpeg',
       'Content-Disposition': `inline; filename="${filename}"`,
-      'Cache-Control': 'public, max-age=3600',
+      // Audit 30/05 #4 LGPD: áudio é PII sensível, NUNCA pode cachear em
+      // proxy intermediário/CDN. private,no-store impede reuso cross-user.
+      'Cache-Control': 'private, no-store, no-cache, must-revalidate',
+      'Pragma': 'no-cache',
     }
 
     // 1) Cache local

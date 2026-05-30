@@ -189,8 +189,15 @@ const p = new PrismaClient();
 
     // 3. Triggers updated_at em payments, accounts_chart, cobranca_rules,
     //    payment_method_configs, payment_terms (M-009)
+    // Audit 30/05 #1: service_orders adicionado — schema tem @updatedAt
+    // mas raw SQL/scripts bypassavam, deixando 82.2% das OS com timestamp
+    // congelado (KPI dashboard técnico errado).
+    // Outras críticas (customers, products, accounts_receivable, accounts_payable)
+    // também adicionadas pra hardening cross-cutting.
     for (const t of ['payments', 'accounts_chart', 'cobranca_rules',
-                      'payment_method_configs', 'payment_terms']) {
+                      'payment_method_configs', 'payment_terms',
+                      'service_orders', 'customers', 'products',
+                      'accounts_receivable', 'accounts_payable']) {
       const exists = await p.$queryRawUnsafe(
         `SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=$1`,
         t
@@ -298,7 +305,7 @@ const p = new PrismaClient();
     // cascade vira O(n) em volume. Adicionar via raw SQL é mais barato que
     // schema.prisma rebuild + db push. IF NOT EXISTS torna idempotente.
     try {
-      const fkIndexes: Array<[string, string, string]> = [
+      const fkIndexes = [
         // [table, index_name, columns]
         ['quotes', 'idx_quotes_service_order', '(service_order_id)'],
         ['service_order_items', 'idx_soi_product', '(product_id)'],
@@ -324,11 +331,11 @@ const p = new PrismaClient();
         const tblExists = await p.$queryRawUnsafe(
           `SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=$1`,
           tbl
-        ) as any[];
+        );
         if (!tblExists || tblExists.length === 0) continue;
         await p.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS ${idx} ON ${tbl} ${cols}`);
       }
-    } catch (e: any) {
+    } catch (e) {
       console.warn('[ensure-financeiro] N25 FK indexes:', e?.message);
     }
 
@@ -343,13 +350,13 @@ const p = new PrismaClient();
         const tblExists = await p.$queryRawUnsafe(
           `SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=$1`,
           tbl
-        ) as any[];
+        );
         if (!tblExists || tblExists.length === 0) continue;
         // Verifica se a coluna vhsys_id existe (alguns models antigos podem não ter)
         const colExists = await p.$queryRawUnsafe(
           `SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 AND column_name='vhsys_id'`,
           tbl
-        ) as any[];
+        );
         if (!colExists || colExists.length === 0) continue;
         await p.$executeRawUnsafe(`
           CREATE UNIQUE INDEX IF NOT EXISTS uniq_${tbl}_company_vhsys
@@ -357,7 +364,7 @@ const p = new PrismaClient();
             WHERE vhsys_id IS NOT NULL
         `);
       }
-    } catch (e: any) {
+    } catch (e) {
       console.warn('[ensure-financeiro] N34 vhsys unique:', e?.message);
     }
 
@@ -370,7 +377,7 @@ const p = new PrismaClient();
     try {
       const prExists = await p.$queryRawUnsafe(
         `SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='payment_reminders'`
-      ) as any[];
+      );
       if (prExists && prExists.length > 0) {
         await p.$executeRawUnsafe(`
           CREATE UNIQUE INDEX IF NOT EXISTS uniq_payment_reminders_step
@@ -378,7 +385,7 @@ const p = new PrismaClient();
             WHERE rule_step_id IS NOT NULL
         `);
       }
-    } catch (e: any) {
+    } catch (e) {
       console.warn('[ensure-financeiro] N13 unique payment_reminders:', e?.message);
     }
 
@@ -436,13 +443,13 @@ const p = new PrismaClient();
       );
       if (!tblExists || tblExists.length === 0) continue;
       // A1: drop old constraint name se renomeada (graceful migration)
-      if ((c as any).dropOld) {
+      if (c.dropOld) {
         try {
           await p.$executeRawUnsafe(
-            `ALTER TABLE ${c.table} DROP CONSTRAINT IF EXISTS ${(c as any).dropOld};`
+            `ALTER TABLE ${c.table} DROP CONSTRAINT IF EXISTS ${c.dropOld};`
           );
-        } catch (e: any) {
-          console.warn(`[ensure-financeiro] dropOld ${(c as any).dropOld}: ${e.message}`);
+        } catch (e) {
+          console.warn(`[ensure-financeiro] dropOld ${c.dropOld}: ${e.message}`);
         }
       }
       await p.$executeRawUnsafe(`
@@ -529,7 +536,7 @@ const p = new PrismaClient();
     if (feExists.length > 0 && acExists.length > 0) {
       const mvExists = await p.$queryRawUnsafe(
         `SELECT 1 FROM pg_matviews WHERE schemaname='public' AND matviewname='dre_monthly'`
-      ) as any[];
+      );
       if (!mvExists || mvExists.length === 0) {
         // MV não existe — cria
         await p.$executeRawUnsafe(`
@@ -657,11 +664,14 @@ const p = new PrismaClient();
               -- Nova AR → cria row em payments (se ainda não existe pra mesmo origin)
               -- amount (legacy NOT NULL int) recebe total_amount; idempotency_key
               -- (NOT NULL UNIQUE legacy) recebe id pra unicidade.
+              -- Audit 30/05 #4: paid_at derivado de status quando RECEBIDO/PAGO
+              -- (AR não tem coluna paid_at própria — usa updated_at como proxy).
               INSERT INTO payments (
                 id, company_id, kind, status, customer_id,
                 origin_type, origin_id,
                 amount, idempotency_key,
                 total_amount, paid_amount, issue_date, due_date,
+                paid_at,
                 description, created_at, updated_at
               ) VALUES (
                 NEW.id, NEW.company_id, v_kind, COALESCE(NEW.status, 'PENDING'),
@@ -669,11 +679,14 @@ const p = new PrismaClient();
                 NEW.total_amount, 'ar:' || NEW.id,
                 NEW.total_amount, COALESCE(NEW.received_amount, 0),
                 CURRENT_DATE, NEW.due_date,
+                CASE WHEN NEW.status IN ('RECEBIDO','PAGO') THEN COALESCE(NEW.updated_at, NOW()) ELSE NULL END,
                 COALESCE(NEW.description, '(AR)'), COALESCE(NEW.created_at, NOW()), COALESCE(NEW.updated_at, NOW())
               )
               ON CONFLICT (id) DO NOTHING;
             ELSIF TG_OP = 'UPDATE' THEN
-              -- AR atualizado → propaga campos críticos pra payments
+              -- AR atualizado → propaga campos críticos pra payments.
+              -- Audit 30/05 #4: paid_at seta quando status vira RECEBIDO/PAGO
+              -- e ainda está NULL. Não sobrescreve paid_at já existente.
               UPDATE payments
                 SET status = COALESCE(NEW.status, status),
                     total_amount = NEW.total_amount,
@@ -681,6 +694,11 @@ const p = new PrismaClient();
                     due_date = NEW.due_date,
                     description = NEW.description,
                     deleted_at = NEW.deleted_at,
+                    paid_at = CASE
+                      WHEN paid_at IS NULL AND NEW.status IN ('RECEBIDO','PAGO')
+                        THEN COALESCE(NEW.updated_at, NOW())
+                      ELSE paid_at
+                    END,
                     updated_at = NOW()
               WHERE id = NEW.id;
             END IF;
@@ -720,11 +738,13 @@ const p = new PrismaClient();
               -- AP precisa customer_id (NOT NULL legacy). Usa supplier_id como customer
               -- temporariamente (em payments unified, supplier_id é a info correta).
               -- amount + idempotency_key cobrem legacy NOT NULL.
+              -- Audit 30/05 #4: paid_at derivado de status PAGO (AP canonical).
               INSERT INTO payments (
                 id, company_id, kind, status,
                 customer_id, supplier_id, origin_type, origin_id,
                 amount, idempotency_key,
                 total_amount, paid_amount, issue_date, due_date,
+                paid_at,
                 description, created_at, updated_at
               ) VALUES (
                 NEW.id, NEW.company_id, v_kind, COALESCE(NEW.status, 'PENDING'),
@@ -732,6 +752,7 @@ const p = new PrismaClient();
                 NEW.total_amount, 'ap:' || NEW.id,
                 NEW.total_amount, COALESCE(NEW.paid_amount, 0),
                 CURRENT_DATE, NEW.due_date,
+                CASE WHEN NEW.status = 'PAGO' THEN COALESCE(NEW.updated_at, NOW()) ELSE NULL END,
                 COALESCE(NEW.description, '(AP)'),
                 COALESCE(NEW.created_at, NOW()), COALESCE(NEW.updated_at, NOW())
               )
@@ -744,6 +765,11 @@ const p = new PrismaClient();
                     due_date = NEW.due_date,
                     description = COALESCE(NEW.description, description),
                     deleted_at = NEW.deleted_at,
+                    paid_at = CASE
+                      WHEN paid_at IS NULL AND NEW.status = 'PAGO'
+                        THEN COALESCE(NEW.updated_at, NOW())
+                      ELSE paid_at
+                    END,
                     updated_at = NOW()
               WHERE id = NEW.id;
             END IF;
@@ -1007,7 +1033,7 @@ const p = new PrismaClient();
       // fiscal_entries no boot (cada redeploy roda novamente). LIMIT força
       // chunks; loop até count==0 ou max iterations protege contra runaway.
       // Skip rápido: se >50% já backfilled, vira no-op pra acelerar boot.
-      const arUnbackfilled = await p.$queryRawUnsafe<Array<{ count: bigint }>>(`
+      const arUnbackfilled = await p.$queryRawUnsafe(`
         SELECT COUNT(*)::bigint AS count FROM accounts_receivable ar
          WHERE ar.status IN ('RECEBIDO', 'PAGO')
            AND ar.deleted_at IS NULL
@@ -1056,7 +1082,7 @@ const p = new PrismaClient();
          LIMIT 500
       `);
       // Análogo pra AP: skip rápido se completo
-      const apUnbackfilled = await p.$queryRawUnsafe<Array<{ count: bigint }>>(`
+      const apUnbackfilled = await p.$queryRawUnsafe(`
         SELECT COUNT(*)::bigint AS count FROM accounts_payable ap
          WHERE ap.status = 'PAGO'
            AND ap.deleted_at IS NULL
@@ -1156,11 +1182,13 @@ const p = new PrismaClient();
     if (process.env.PONTUAL_BACKFILL_M012 === '1' && arExists.length > 0) {
       try {
         const arResult = await p.$executeRawUnsafe(`
+          -- Audit 30/05 #4: backfill agora popula paid_at quando status='RECEBIDO'.
           INSERT INTO payments (
             id, company_id, kind, status, customer_id,
             origin_type, origin_id,
             amount, idempotency_key,
             total_amount, paid_amount, issue_date, due_date,
+            paid_at,
             description, created_at, updated_at
           )
           SELECT
@@ -1173,6 +1201,7 @@ const p = new PrismaClient();
             COALESCE(ar.received_amount, 0),
             COALESCE(ar.created_at::date, CURRENT_DATE),
             COALESCE(ar.due_date, CURRENT_DATE),
+            CASE WHEN ar.status IN ('RECEBIDO','PAGO') THEN COALESCE(ar.updated_at, ar.created_at, now()) ELSE NULL END,
             COALESCE(ar.description, 'AR ' || ar.id),
             COALESCE(ar.created_at, now()),
             COALESCE(ar.updated_at, now())
@@ -1199,12 +1228,14 @@ const p = new PrismaClient();
           // AP: payments.customer_id é NOT NULL (legacy). Reusa supplier_id em ambos,
           // mesmo padrão do trigger M-013 dual_write_ap_to_payments.
           const apResult = await p.$executeRawUnsafe(`
+            -- Audit 30/05 #4: backfill popula paid_at quando AP status='PAGO'.
             INSERT INTO payments (
               id, company_id, kind, status,
               customer_id, supplier_id,
               origin_type, origin_id,
               amount, idempotency_key,
               total_amount, paid_amount, issue_date, due_date,
+              paid_at,
               description, created_at, updated_at
             )
             SELECT
@@ -1218,6 +1249,7 @@ const p = new PrismaClient();
               COALESCE(ap.paid_amount, 0),
               COALESCE(ap.created_at::date, CURRENT_DATE),
               COALESCE(ap.due_date, CURRENT_DATE),
+              CASE WHEN ap.status = 'PAGO' THEN COALESCE(ap.updated_at, ap.created_at, now()) ELSE NULL END,
               COALESCE(ap.description, 'AP ' || ap.id),
               COALESCE(ap.created_at, now()),
               COALESCE(ap.updated_at, now())

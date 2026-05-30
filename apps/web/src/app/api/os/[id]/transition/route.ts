@@ -398,10 +398,14 @@ export async function POST(req: NextRequest, { params }: Params) {
             account_id: defaultAccountId,
             description: `OS-${String(os.os_number).padStart(4, '0')} — ${os.equipment_type || 'Serviço'} ${os.equipment_brand || ''} ${os.equipment_model || ''}`.trim(),
             total_amount: totalAmount,
-            // 2026-05-20: received_now=true (admin balcao default) => AR vira PAGO + reconciled=false
+            // 2026-05-20: received_now=true (admin balcao default) => AR vira RECEBIDO + reconciled=false
+            // Audit 30/05 #3 fix: AR usa 'RECEBIDO' canônico (não 'PAGO').
+            // Bug regressão pós-26/05: 13 ARs com 'PAGO' invisibilizavam R$ 8.825 no DRE
+            // (DRE filtra `status IN ('RECEBIDO','PAGO')` mas relatórios legacy só `RECEBIDO`).
+            // Ver feedback_ar_status_canonico_recebido.md.
             received_amount: receivedNow ? totalAmount : 0,
             due_date: dueDate,
-            status: receivedNow ? 'PAGO' : 'PENDENTE',
+            status: receivedNow ? 'RECEBIDO' : 'PENDENTE',
             reconciled: false, // declaracao manual; conciliacao OFX/CNAB depois marca true
             payment_method: payment_method,
             installment_count: installment_count,
