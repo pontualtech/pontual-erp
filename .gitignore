@@ -19,3 +19,6 @@ BACKUP_REPLICACAO_COMPLETA.md
 
 # Scripts ad-hoc Claude (tokens, queries one-off) — nao versionar
 _*.mjs
+
+# Security audit 2026-05-30: arquivos *.local podem conter keys rotacionadas (NUNCA commitar)
+*.local
