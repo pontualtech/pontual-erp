@@ -67,7 +67,16 @@ export async function GET(req: NextRequest, { params }: { params: { token: strin
   const setting = await prisma.setting.findFirst({
     where: { company_id: decoded.companyId, key: 'google_reviews.url' },
   })
-  const reviewsUrl = setting?.value || 'https://www.google.com'
+  const reviewsUrl = setting?.value
+
+  // Audit #16 (2026-05-29): fail-closed se URL nao configurada.
+  // Antes caia em fallback 'google.com' generico + criava cupom mesmo assim
+  // = cliente ganhava 10% sem deixar avaliacao (perda direta).
+  // Agora: redireciona pro site sem criar cupom + log warning pro admin notar.
+  if (!reviewsUrl) {
+    console.warn(`[cupom-avaliacao] google_reviews.url nao configurado pra company_id=${decoded.companyId} — abortando criacao de cupom`)
+    return NextResponse.redirect('https://www.pontualtech.com.br/', 302)
+  }
 
   try {
     // Unique constraint (company_id, customer_id, source='review')

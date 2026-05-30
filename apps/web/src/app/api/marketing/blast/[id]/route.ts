@@ -80,12 +80,12 @@ async function handleCancel(campaignId: string, userCompanyId: string) {
     )
   }
 
-  const { removed } = await cancelCampaignJobs(campaignId)
+  const { removed_from_queue, skipped_in_db } = await cancelCampaignJobs(campaignId)
   await prisma.emailCampaign.update({
     where: { id: campaignId },
     data: { status: 'cancelled', cancelled_at: new Date() },
   })
-  return success({ ok: true, removed_from_queue: removed })
+  return success({ ok: true, removed_from_queue, skipped_in_db })
 }
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {

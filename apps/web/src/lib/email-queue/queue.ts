@@ -6,6 +6,7 @@
  * (evita stale snapshot no payload BullMQ).
  */
 import { Queue, type ConnectionOptions } from 'bullmq'
+import { prisma } from '@pontual/db'
 import { EMAIL_QUEUE_NAME, type EmailJobData } from './types'
 
 function getConnection(): ConnectionOptions {
@@ -54,6 +55,20 @@ export async function enqueueJobs(
 
   try {
     await queue.addBulk(bullData)
+    // Audit #13 (2026-05-29): backfill bullmq_job_id no DB pra observabilidade
+    // BullMQ job id e deterministico (campaignId:jobId), 1 raw query pros N jobs.
+    // Best-effort: se falha no DB, addBulk ja foi — nao reverter o enqueue.
+    try {
+      await prisma.$executeRaw`
+        UPDATE email_jobs
+        SET bullmq_job_id = ${campaignId} || ':' || id
+        WHERE campaign_id = ${campaignId}
+          AND id = ANY(${jobIds}::text[])
+          AND bullmq_job_id IS NULL
+      `
+    } catch (dbErr) {
+      console.warn('[email-queue/enqueueJobs] bullmq_job_id backfill failed (non-fatal):', dbErr instanceof Error ? dbErr.message : dbErr)
+    }
     return { enqueued: jobIds.length, failed: [] }
   } catch (err) {
     console.error('[email-queue/enqueueJobs] bulk add failed:', err)
@@ -62,14 +77,35 @@ export async function enqueueJobs(
 }
 
 /**
- * Remove jobs pending/active de uma campanha (cancel).
- * Jobs já sendo processados terminam — não interrompe meio do envio.
+ * Cancela jobs pending/queued de uma campanha. Jobs ATIVOS (em envio
+ * pelo worker AGORA) NÃO são interrompidos — BullMQ não suporta nativamente
+ * matar workers mid-job. O worker tem guard que detecta cancel e skipa o
+ * próximo job, então o impacto é ~1-3 jobs depois do cancel ainda saírem.
+ *
+ * Audit #12 (2026-05-29): antes só removia do BullMQ, deixava DB com
+ * EmailJob.status='queued' eternamente. Agora também marca DB consistente.
  */
-export async function cancelCampaignJobs(campaignId: string): Promise<{ removed: number }> {
+export async function cancelCampaignJobs(campaignId: string): Promise<{ removed_from_queue: number; skipped_in_db: number }> {
   const queue = getEmailQueue()
-  // Filtra job ids que começam com `${campaignId}:`
+
+  // 1) Remove jobs ainda não-active do BullMQ (waiting|delayed|paused)
+  //    Active (sendo processado) BullMQ não permite remover — worker continua
   const waiting = await queue.getJobs(['waiting', 'delayed', 'paused'])
   const targets = waiting.filter(j => j.data?.campaignId === campaignId)
   await Promise.all(targets.map(j => j.remove().catch(() => null)))
-  return { removed: targets.length }
+
+  // 2) Atualiza DB pra estado consistente — todos jobs ainda não-enviados
+  //    viram 'skipped' com motivo. Idempotente: jobs já 'sent'/'failed'/'skipped' não mudam.
+  const updated = await prisma.emailJob.updateMany({
+    where: {
+      campaign_id: campaignId,
+      status: { in: ['pending', 'queued'] },
+    },
+    data: {
+      status: 'skipped',
+      last_error: 'campaign_cancelled',
+    },
+  })
+
+  return { removed_from_queue: targets.length, skipped_in_db: updated.count }
 }
