@@ -13,10 +13,20 @@ import { isImprimitechHandoffStatus } from '@/lib/imprimitech-handoff'
 type Params = { params: { id: string } }
 
 function validateOrcamentoToken(osId: string, token: string): boolean {
-  const key = process.env.ENCRYPTION_KEY
-  if (!key) return false
-  const expected = createHmac('sha256', key).update('orcamento:' + osId).digest('hex').slice(0, 16)
-  return token === expected
+  // Eco audit A (2026-05-30): dual-key fallback durante rotação ENCRYPTION_KEY.
+  // Cliente recebe link orcamento por email/WhatsApp e pode clicar dias depois;
+  // durante a rotação, tokens emitidos com key antiga continuam válidos.
+  try {
+    // Import dinâmico pra evitar circular dep com modules que usam encryption
+    const { hmacVerify } = require('@/lib/hmac-rotation') as typeof import('@/lib/hmac-rotation')
+    return hmacVerify('orcamento:' + osId, token, '', 16)
+  } catch {
+    // Fallback antigo se hmac-rotation não disponível por algum motivo
+    const key = process.env.ENCRYPTION_KEY
+    if (!key) return false
+    const expected = createHmac('sha256', key).update('orcamento:' + osId).digest('hex').slice(0, 16)
+    return token === expected
+  }
 }
 
 function fmtCents(cents: number): string {

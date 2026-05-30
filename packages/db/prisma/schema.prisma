@@ -106,7 +106,7 @@ model Company {
   settings                      Json?                        @default("{}")
   is_active                     Boolean?                     @default(true)
   created_at                    DateTime?                    @default(now()) @db.Timestamptz(6)
-  updated_at                    DateTime?                    @default(now()) @db.Timestamptz(6)
+  updated_at                    DateTime?                    @updatedAt @default(now()) @db.Timestamptz(6)
   accounts                      Account[]
   accounts_payable              AccountPayable[]
   accounts_receivable           AccountReceivable[]
@@ -181,7 +181,7 @@ model UserProfile {
   // durante horario comercial.
   notify_inactivity             Boolean?                     @default(false)
   created_at                    DateTime?                    @default(now()) @db.Timestamptz(6)
-  updated_at                    DateTime?                    @default(now()) @db.Timestamptz(6)
+  updated_at                    DateTime?                    @updatedAt @default(now()) @db.Timestamptz(6)
   service_orders                ServiceOrder[]
   logistics_routes              LogisticsRoute[]
   location_history              DriverLocationHistory[]
@@ -229,7 +229,7 @@ model Role {
   is_system        Boolean?         @default(false)
   is_active        Boolean?         @default(true)
   created_at       DateTime?        @default(now()) @db.Timestamptz(6)
-  updated_at       DateTime?        @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime?        @updatedAt @default(now()) @db.Timestamptz(6)
   role_permissions RolePermission[]
   companies        Company          @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   user_profiles    UserProfile[]
@@ -277,7 +277,7 @@ model CustomField {
   order       Int?      @default(0)
   is_active   Boolean?  @default(true)
   created_at  DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at  DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime? @updatedAt @default(now()) @db.Timestamptz(6)
   companies   Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([company_id, module, field_name])
@@ -292,7 +292,7 @@ model FieldLabel {
   field_key    String
   custom_label String
   created_at   DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at   DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime? @updatedAt @default(now()) @db.Timestamptz(6)
   companies    Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([company_id, module, field_key])
@@ -311,7 +311,7 @@ model ModuleStatus {
   is_default                                                                  Boolean?              @default(false)
   transitions                                                                 Json?                 @default("[]")
   created_at                                                                  DateTime?             @default(now()) @db.Timestamptz(6)
-  updated_at                                                                  DateTime?             @default(now()) @db.Timestamptz(6)
+  updated_at                                                                  DateTime?             @updatedAt @default(now()) @db.Timestamptz(6)
   companies                                                                   Company               @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   service_order_history_service_order_history_from_status_idTomodule_statuses ServiceOrderHistory[] @relation("service_order_history_from_status_idTomodule_statuses")
   service_order_history_service_order_history_to_status_idTomodule_statuses   ServiceOrderHistory[] @relation("service_order_history_to_status_idTomodule_statuses")
@@ -331,7 +331,7 @@ model PrintTemplate {
   is_default    Boolean?  @default(false)
   is_active     Boolean?  @default(true)
   created_at    DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at    DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime? @updatedAt @default(now()) @db.Timestamptz(6)
   companies     Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([company_id])
@@ -346,7 +346,7 @@ model MessageTemplate {
   template   String
   is_active  Boolean?  @default(true)
   created_at DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at DateTime? @updatedAt @default(now()) @db.Timestamptz(6)
   companies  Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([company_id])
@@ -361,7 +361,7 @@ model Category {
   parent_id           String?
   order               Int?                @default(0)
   created_at          DateTime?           @default(now()) @db.Timestamptz(6)
-  updated_at          DateTime?           @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime?           @updatedAt @default(now()) @db.Timestamptz(6)
   accounts_payable    AccountPayable[]
   accounts_receivable AccountReceivable[]
   companies           Company             @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -380,7 +380,7 @@ model Setting {
   value      String
   type       String?   @default("string")
   created_at DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at DateTime? @updatedAt @default(now()) @db.Timestamptz(6)
   companies  Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([company_id, key])
@@ -462,7 +462,7 @@ model DashboardWidget {
   position    Json?     @default("{}")
   is_active   Boolean?  @default(true)
   created_at  DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at  DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime? @updatedAt @default(now()) @db.Timestamptz(6)
   companies   Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([company_id])
@@ -533,7 +533,7 @@ model Customer {
   total_os             Int?                @default(0)
   last_os_at           DateTime?           @db.Timestamptz(6)
   created_at           DateTime?           @default(now()) @db.Timestamptz(6)
-  updated_at           DateTime?           @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime?           @updatedAt @default(now()) @db.Timestamptz(6)
   deleted_at           DateTime?           @db.Timestamptz(6)
   // Wave SU-1 (2026-05-29): accounts_payable relation removida do Customer.
   // AccountPayable agora aponta corretamente pra Supplier (não Customer).
@@ -602,7 +602,7 @@ model ServiceOrder {
   warranty_original      ServiceOrder?         @relation("warranty_chain", fields: [warranty_os_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   warranty_children      ServiceOrder[]        @relation("warranty_chain")
   created_at             DateTime?             @default(now()) @db.Timestamptz(6)
-  updated_at             DateTime?             @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime?             @updatedAt @default(now()) @db.Timestamptz(6)
   deleted_at             DateTime?             @db.Timestamptz(6)
   accounts_receivable    AccountReceivable[]
   invoices               Invoice[]
@@ -691,7 +691,7 @@ model Quote {
   sent_at          DateTime?    @db.Timestamptz(6)
   notes            String?
   created_at       DateTime?    @default(now()) @db.Timestamptz(6)
-  updated_at       DateTime?    @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime?    @updatedAt @default(now()) @db.Timestamptz(6)
   quote_items      QuoteItem[]
   companies        Company      @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   service_orders   ServiceOrder @relation(fields: [service_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -738,7 +738,7 @@ model Product {
   is_active            Boolean?            @default(true)
   custom_data          Json?               @default("{}")
   created_at           DateTime?           @default(now()) @db.Timestamptz(6)
-  updated_at           DateTime?           @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime?           @updatedAt @default(now()) @db.Timestamptz(6)
   deleted_at           DateTime?           @db.Timestamptz(6)
   invoice_items        InvoiceItem[]
   categories           Category?           @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -791,7 +791,7 @@ model PurchaseEntry {
   discount             Int?                @default(0)
   notes                String?
   created_at           DateTime?           @default(now()) @db.Timestamptz(6)
-  updated_at           DateTime?           @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime?           @updatedAt @default(now()) @db.Timestamptz(6)
   companies            Company             @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   customers            Customer?           @relation(fields: [supplier_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   purchase_entry_items PurchaseEntryItem[]
@@ -839,7 +839,7 @@ model Account {
   is_active       Boolean?      @default(true)
   provider_config Json?         @default("{}")
   created_at      DateTime?     @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime?     @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime?     @updatedAt @default(now()) @db.Timestamptz(6)
   companies       Company       @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   transactions    Transaction[]
 
@@ -883,7 +883,7 @@ model AccountPayable {
   reconciled       Boolean?    @default(false) // 2026-05-20: true quando confirmado no extrato bancario (webhook Asaas ou match OFX/CNAB). false = declaracao manual aguardando conciliacao.
   service_order_id String? // 2026-05-23: liga taxa cartao (ou outras despesas geradas por OS) ao service_order pra auto-pay quando receivable da OS for pago totalmente. Audit 14 fix em contas-receber/baixa.
   created_at       DateTime?   @default(now()) @db.Timestamptz(6)
-  updated_at       DateTime?   @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime?   @updatedAt @default(now()) @db.Timestamptz(6)
   deleted_at       DateTime?   @db.Timestamptz(6)
   // Sprint UX-24: account_id existe como FK no DB (REFERENCES accounts(id) ON DELETE SET NULL)
   // mas mantido sem relation Prisma pra paridade com AccountReceivable.account_id
@@ -943,7 +943,7 @@ model AccountReceivable {
   // Permite fluxo de caixa mostrar receitas "RECEBIDO mas aguardando crédito".
   expected_credit_date DateTime?     @db.Date
   created_at           DateTime?     @default(now()) @db.Timestamptz(6)
-  updated_at           DateTime?     @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime?     @updatedAt @default(now()) @db.Timestamptz(6)
   deleted_at           DateTime?     @db.Timestamptz(6)
   categories           Category?     @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   companies            Company       @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -1001,7 +1001,7 @@ model FiscalConfig {
   certificate_password String?
   settings             Json?     @default("{}")
   created_at           DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at           DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime? @updatedAt @default(now()) @db.Timestamptz(6)
   companies            Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@map("fiscal_configs")
@@ -1028,7 +1028,7 @@ model Invoice {
   authorized_at       DateTime?     @db.Timestamptz(6)
   notes               String?
   created_at          DateTime?     @default(now()) @db.Timestamptz(6)
-  updated_at          DateTime?     @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime?     @updatedAt @default(now()) @db.Timestamptz(6)
   nfe_tipo            String?
   nfe_referenced_keys Json?         @default("[]")
   payment_method_nfe  String?       @default("99")
@@ -1101,7 +1101,7 @@ model Ticket {
   created_by_type  String?         @default("FUNCIONARIO")
   closed_at        DateTime?       @db.Timestamptz(6)
   created_at       DateTime?       @default(now()) @db.Timestamptz(6)
-  updated_at       DateTime?       @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime?       @updatedAt @default(now()) @db.Timestamptz(6)
   deleted_at       DateTime?       @db.Timestamptz(6)
   companies        Company         @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   customers        Customer?       @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -1170,7 +1170,7 @@ model Payment {
   expires_at       DateTime? @db.Timestamptz(6)
   metadata         Json?     @default("{}")
   created_at       DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at       DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime? @updatedAt @default(now()) @db.Timestamptz(6)
 
   // ─── Refactor financeiro v2 (Sprint 1, M-002 expand) ────────────────────────
   // Colunas novas adicionadas pra modelo unificado RECEIVABLE+PAYABLE.
@@ -1314,7 +1314,7 @@ model AiDocument {
   category   String? // manual, faq, troubleshooting
   metadata   Json?     @default("{}")
   created_at DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at DateTime? @updatedAt @default(now()) @db.Timestamptz(6)
 
   @@index([company_id], map: "idx_ai_documents_company")
   @@map("ai_documents")
@@ -1447,7 +1447,7 @@ model NfeRecebida {
   imported          Boolean?  @default(false)
   purchase_entry_id String?
   created_at        DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at        DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime? @updatedAt @default(now()) @db.Timestamptz(6)
 
   @@unique([company_id, chave_nfe])
   @@index([company_id], map: "idx_nfe_recebidas_company")
@@ -1461,7 +1461,7 @@ model NfeSerie {
   last_number Int       @default(0)
   is_active   Boolean?  @default(true)
   created_at  DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at  DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime? @updatedAt @default(now()) @db.Timestamptz(6)
 
   @@unique([company_id, serie])
   @@map("nfe_series")
@@ -1485,7 +1485,7 @@ model LogisticsRoute {
   last_lng         Decimal?        @db.Decimal(11, 8)
   last_location_at DateTime?       @db.Timestamptz(6)
   created_at       DateTime?       @default(now()) @db.Timestamptz(6)
-  updated_at       DateTime?       @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime?       @updatedAt @default(now()) @db.Timestamptz(6)
   stops            LogisticsStop[]
   driver           UserProfile?    @relation(fields: [driver_id], references: [id])
 
@@ -1646,7 +1646,7 @@ model Contract {
   renewal_alert_days    Int?                @default(30)
   notes                 String?
   created_at            DateTime?           @default(now()) @db.Timestamptz(6)
-  updated_at            DateTime?           @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime?           @updatedAt @default(now()) @db.Timestamptz(6)
   companies             Company             @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   customers             Customer            @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   contract_equipment    ContractEquipment[]
@@ -1756,7 +1756,7 @@ model AsaasCustomer {
   customer_id String // FK para customers.id
   asaas_id    String // cus_xxx no Asaas
   created_at  DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at  DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime? @updatedAt @default(now()) @db.Timestamptz(6)
 
   @@unique([company_id, customer_id], map: "idx_asaas_customers_company_customer")
   @@unique([company_id, asaas_id], map: "idx_asaas_customers_company_asaas")
@@ -1773,7 +1773,7 @@ model PaymentConfig {
   pix_key       String? // chave PIX cadastrada
   enabled       Boolean   @default(true)
   created_at    DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at    DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime? @updatedAt @default(now()) @db.Timestamptz(6)
 
   @@index([company_id], map: "idx_payment_configs_company")
   @@map("payment_configs")
@@ -1861,7 +1861,7 @@ model AcquirerTerminalAssignment {
   valid_to        DateTime?    @db.Date // null = vigente
   notes           String?
   created_at      DateTime?    @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime?    @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime?    @updatedAt @default(now()) @db.Timestamptz(6)
   companies       Company      @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   user_profiles   UserProfile? @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
@@ -1911,7 +1911,7 @@ model AcquirerTransaction {
   imported_at              DateTime? @default(now()) @db.Timestamptz(6)
   imported_by              String?
   created_at               DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at               DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime? @updatedAt @default(now()) @db.Timestamptz(6)
   companies                Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   payments                 Payment?  @relation(fields: [matched_payment_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
@@ -1972,7 +1972,7 @@ model VoipCall {
   // Audit
   raw_webhook Json?     @default("{}") // payload original do webhook (debug)
   created_at  DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at  DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime? @updatedAt @default(now()) @db.Timestamptz(6)
 
   // Relations
   companies      Company       @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -2075,8 +2075,7 @@ model AccountChart {
   display_order Int                @default(0)
   notes         String?
   created_at    DateTime           @default(now()) @db.Timestamptz(6)
-  updated_at    DateTime           @default(now()) @db.Timestamptz(6)
-
+  updated_at    DateTime           @updatedAt @default(now()) @db.Timestamptz(6)
   parent         AccountChart?  @relation("ChartHierarchy", fields: [parent_id], references: [id], onDelete: NoAction)
   children       AccountChart[] @relation("ChartHierarchy")
   payments       Payment[]
@@ -2144,8 +2143,7 @@ model CobrancaRule {
   is_active          Boolean  @default(true)
   applies_to_segment String? // 'ALL' | 'CUSTOMER_TAG:premium' | 'AMOUNT_GT:100000' | etc.
   created_at         DateTime @default(now()) @db.Timestamptz(6)
-  updated_at         DateTime @default(now()) @db.Timestamptz(6)
-
+  updated_at         DateTime @updatedAt @default(now()) @db.Timestamptz(6)
   steps CobrancaRuleStep[]
 
   @@index([company_id, is_active], map: "idx_cobranca_rules_active")
@@ -2225,8 +2223,7 @@ model PaymentMethodConfig {
   fee_fixed_cents BigInt              @default(0)
   display_order   Int                 @default(0)
   created_at      DateTime            @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime            @default(now()) @db.Timestamptz(6)
-
+  updated_at      DateTime            @updatedAt @default(now()) @db.Timestamptz(6)
   @@unique([company_id, method, provider], map: "uniq_company_method_provider")
   @@map("payment_method_configs")
 }
@@ -2243,8 +2240,7 @@ model PaymentTerm {
   discount_pct      Decimal? @default(0) @db.Decimal(5, 2)
   is_active         Boolean  @default(true)
   created_at        DateTime @default(now()) @db.Timestamptz(6)
-  updated_at        DateTime @default(now()) @db.Timestamptz(6)
-
+  updated_at        DateTime @updatedAt @default(now()) @db.Timestamptz(6)
   @@unique([company_id, name], map: "uniq_company_term_name")
   @@map("payment_terms")
 }
@@ -2331,8 +2327,7 @@ model FeatureFlag {
   strategy    feature_flag_strategy @default(OFF)
   rollout_pct Int                   @default(0) @db.SmallInt
   created_at  DateTime              @default(now()) @db.Timestamptz(6)
-  updated_at  DateTime              @default(now()) @db.Timestamptz(6)
-
+  updated_at  DateTime              @updatedAt @default(now()) @db.Timestamptz(6)
   tenant_overrides TenantFeatureFlag[]
 
   @@map("feature_flags")
@@ -2394,7 +2389,7 @@ model VoipExtension {
 
   // Audit
   created_at DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at DateTime? @updatedAt @default(now()) @db.Timestamptz(6)
 
   // Relations
   companies     Company      @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -2426,7 +2421,7 @@ model MarketingContact {
   last_seen_at    DateTime? @db.Timestamptz(6)
   metadata        Json?     @default("{}")
   created_at      DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime? @updatedAt @default(now()) @db.Timestamptz(6)
 
   company        Company                 @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   customer       Customer?               @relation(fields: [customer_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
@@ -2519,8 +2514,7 @@ model MarketingSegment {
   contact_count_updated_at DateTime? @db.Timestamptz(6)
   created_by               String?
   created_at               DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at               DateTime  @default(now()) @db.Timestamptz(6)
-
+  updated_at               DateTime  @updatedAt @default(now()) @db.Timestamptz(6)
   company Company @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([company_id, name], map: "marketing_segments_company_name_uniq")
@@ -2547,8 +2541,7 @@ model MarketingStageAutomation {
   active        Boolean  @default(true)
   created_by    String?
   created_at    DateTime @default(now()) @db.Timestamptz(6)
-  updated_at    DateTime @default(now()) @db.Timestamptz(6)
-
+  updated_at    DateTime @updatedAt @default(now()) @db.Timestamptz(6)
   company Company                  @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   runs    MarketingAutomationRun[]
 
@@ -2651,7 +2644,7 @@ model EmailCampaign {
   cancelled_at       DateTime? @db.Timestamptz(6)
   created_by         String? /// user_profile.id
   created_at         DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at         DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime? @updatedAt @default(now()) @db.Timestamptz(6)
 
   company Company    @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   jobs    EmailJob[]
@@ -2675,7 +2668,7 @@ model EmailJob {
   sent_at       DateTime? @db.Timestamptz(6)
   failed_at     DateTime? @db.Timestamptz(6)
   created_at    DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at    DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime? @updatedAt @default(now()) @db.Timestamptz(6)
 
   campaign EmailCampaign    @relation(fields: [campaign_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   contact  MarketingContact @relation(fields: [contact_id], references: [id], onDelete: Cascade, onUpdate: NoAction)

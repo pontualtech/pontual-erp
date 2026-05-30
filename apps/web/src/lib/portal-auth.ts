@@ -16,6 +16,14 @@ function getSecret(): string {
   return key
 }
 
+// Eco audit A (2026-05-30): dual-key fallback pra rotação segura.
+// Magic-link tokens emitidos com chave antiga (até a rotação) continuam
+// válidos por 30 dias. Após esse período, ENCRYPTION_KEY_OLD pode ser
+// removida. Retorna null se OLD não configurada (=sem fallback ativo).
+function getSecretOld(): string | null {
+  return process.env.ENCRYPTION_KEY_OLD || null
+}
+
 /**
  * Cria token para o portal do cliente
  * Formato: base64(payload).hmac_signature
@@ -34,17 +42,29 @@ export function createPortalToken(customerId: string, companyId: string): string
 }
 
 /**
- * Verifica token do portal
+ * Verifica token do portal — tenta NEW key primeiro, fallback OLD se em rotação.
  */
 export function verifyPortalToken(token: string): PortalUser | null {
   try {
     const [payloadB64, signature] = token.split('.')
     if (!payloadB64 || !signature) return null
 
-    const expectedSig = createHmac('sha256', getSecret()).update(payloadB64).digest('base64url')
+    // Tenta NEW key
+    const newSig = createHmac('sha256', getSecret()).update(payloadB64).digest('base64url')
     const sigBuf = Buffer.from(signature)
-    const expectedBuf = Buffer.from(expectedSig)
-    if (sigBuf.length !== expectedBuf.length || !timingSafeEqual(sigBuf, expectedBuf)) return null
+    let valid = sigBuf.length === Buffer.from(newSig).length
+      && timingSafeEqual(sigBuf, Buffer.from(newSig))
+
+    // Fallback OLD key (durante janela de rotação — Eco audit A)
+    if (!valid) {
+      const oldSecret = getSecretOld()
+      if (oldSecret) {
+        const oldSig = createHmac('sha256', oldSecret).update(payloadB64).digest('base64url')
+        valid = sigBuf.length === Buffer.from(oldSig).length
+          && timingSafeEqual(sigBuf, Buffer.from(oldSig))
+      }
+    }
+    if (!valid) return null
 
     const payload: PortalUser = JSON.parse(
       Buffer.from(payloadB64, 'base64url').toString('utf8')
@@ -135,16 +155,31 @@ export function createAccessToken(customerId: string, companyId: string): string
 }
 
 /**
- * Valida token de acesso direto e retorna payload.
+ * Valida token de acesso direto (magic-link) — dual-key fallback (Eco audit A).
+ * Tokens emitidos com chave antiga continuam válidos por 30d após rotação.
  */
 export function verifyAccessToken(token: string): AccessPayload | null {
   try {
     const [payloadB64, signature] = token.split('.')
     if (!payloadB64 || !signature) return null
-    const expectedSig = createHmac('sha256', getSecret() + ':access').update(payloadB64).digest('base64url')
+
+    // Tenta NEW key
+    const newSig = createHmac('sha256', getSecret() + ':access').update(payloadB64).digest('base64url')
     const sigBuf = Buffer.from(signature)
-    const expectedBuf = Buffer.from(expectedSig)
-    if (sigBuf.length !== expectedBuf.length || !timingSafeEqual(sigBuf, expectedBuf)) return null
+    let valid = sigBuf.length === Buffer.from(newSig).length
+      && timingSafeEqual(sigBuf, Buffer.from(newSig))
+
+    // Fallback OLD key (durante janela de rotação)
+    if (!valid) {
+      const oldSecret = getSecretOld()
+      if (oldSecret) {
+        const oldSig = createHmac('sha256', oldSecret + ':access').update(payloadB64).digest('base64url')
+        valid = sigBuf.length === Buffer.from(oldSig).length
+          && timingSafeEqual(sigBuf, Buffer.from(oldSig))
+      }
+    }
+    if (!valid) return null
+
     const payload: AccessPayload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'))
     if (payload.exp < Date.now()) return null
     return payload
