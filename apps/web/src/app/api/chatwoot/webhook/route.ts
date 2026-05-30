@@ -56,19 +56,37 @@ async function loadBotConfig(companyId: string): Promise<BotConfig> {
   let apiKey = map.get('chatbot.api_key') || ''
   if (apiKey && apiKey.includes(':')) {
     // Encrypted with the same method as /api/settings/chatbot
-    try {
-      const encKey = process.env.ENCRYPTION_KEY
-      if (!encKey) throw new Error('ENCRYPTION_KEY not configured')
-      const key = crypto.scryptSync(encKey, 'salt', 32)
-      const [ivHex, encrypted] = apiKey.split(':')
-      const iv = Buffer.from(ivHex, 'hex')
-      const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv)
-      let decrypted = decipher.update(encrypted, 'hex', 'utf8')
-      decrypted += decipher.final('utf8')
-      apiKey = decrypted
-    } catch {
-      console.error('[Webhook] Failed to decrypt API key')
+    // Eco audit W8 (2026-05-30): dual-key fallback durante rotação ENCRYPTION_KEY.
+    const tryDecrypt = (encKey: string): string | null => {
+      try {
+        const key = crypto.scryptSync(encKey, 'salt', 32)
+        const [ivHex, encrypted] = apiKey.split(':')
+        const iv = Buffer.from(ivHex, 'hex')
+        const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv)
+        let decrypted = decipher.update(encrypted, 'hex', 'utf8')
+        decrypted += decipher.final('utf8')
+        return decrypted
+      } catch {
+        return null
+      }
+    }
+    const newKey = process.env.ENCRYPTION_KEY
+    if (!newKey) {
+      console.error('[Webhook] ENCRYPTION_KEY not configured')
       apiKey = ''
+    } else {
+      // Tenta NEW primeiro
+      let plain = tryDecrypt(newKey)
+      // Fallback OLD (período de rotação)
+      if (!plain && process.env.ENCRYPTION_KEY_OLD) {
+        plain = tryDecrypt(process.env.ENCRYPTION_KEY_OLD)
+      }
+      if (!plain) {
+        console.error('[Webhook] Failed to decrypt API key (NEW + OLD)')
+        apiKey = ''
+      } else {
+        apiKey = plain
+      }
     }
   }
 

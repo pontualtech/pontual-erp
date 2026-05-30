@@ -129,10 +129,16 @@ type GA4Response = {
   sites: GA4SiteTraffic[]
 }
 
-// Mapeia channel do GA4 endpoint pro mesmo nome usado no attribution
+// Mapeia channel do GA4 endpoint pro mesmo nome usado no attribution.
+// Eco audit W7 (2026-05-30): adicionados meta_ads, linkedin_ads, x_ads,
+// tiktok_ads pra fechar exhaustive check do tipo Record.
 const CHANNEL_MAP_GA4: Record<keyof Omit<ChannelBreakdownGA4, 'total'>, string> = {
   google_ads: 'google_ads',
   microsoft_ads: 'microsoft_ads',
+  meta_ads: 'meta_ads',
+  linkedin_ads: 'linkedin_ads',
+  x_ads: 'x_ads',
+  tiktok_ads: 'tiktok_ads',
   organic: 'organic',
   direct: 'direct',
   email: 'email',

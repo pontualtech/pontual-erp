@@ -49,17 +49,27 @@ function encrypt(text: string): string {
 
 function decrypt(text: string): string {
   if (!text || !text.includes(':')) return ''
-  try {
-    const key = crypto.scryptSync(ENCRYPTION_KEY, 'salt', 32)
-    const [ivHex, encrypted] = text.split(':')
-    const iv = Buffer.from(ivHex, 'hex')
-    const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv)
-    let decrypted = decipher.update(encrypted, 'hex', 'utf8')
-    decrypted += decipher.final('utf8')
-    return decrypted
-  } catch {
-    return ''
+  // Eco audit W8 (2026-05-30): dual-key fallback durante rotação.
+  const tryWith = (encKey: string): string | null => {
+    try {
+      const key = crypto.scryptSync(encKey, 'salt', 32)
+      const [ivHex, encrypted] = text.split(':')
+      const iv = Buffer.from(ivHex, 'hex')
+      const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv)
+      let decrypted = decipher.update(encrypted, 'hex', 'utf8')
+      decrypted += decipher.final('utf8')
+      return decrypted
+    } catch {
+      return null
+    }
   }
+  // Tenta NEW primeiro
+  let plain = tryWith(ENCRYPTION_KEY)
+  // Fallback OLD durante rotação
+  if (!plain && process.env.ENCRYPTION_KEY_OLD) {
+    plain = tryWith(process.env.ENCRYPTION_KEY_OLD)
+  }
+  return plain || ''
 }
 
 function maskApiKey(key: string): string {

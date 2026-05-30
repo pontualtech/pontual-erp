@@ -206,7 +206,8 @@ export async function POST(req: NextRequest) {
           action: 'backfill_tracking',
           entityId: m.os_id,
           newValue: { tracking: m.tracking, tracking_source: 'backfill_2026_05_29' },
-        }).catch(() => {}) // audit não-bloqueante
+        }) // Eco audit W7: logAudit é fire-and-forget interno, retorna void —
+           // .catch removido (TS2339). Try/catch externo (linha 211) cobre falha.
         appliedCount++
       } catch (e: any) {
         errors.push({ os_id: m.os_id, error: e?.message || String(e) })

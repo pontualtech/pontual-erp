@@ -3,12 +3,14 @@ const nextConfig = {
   output: 'standalone',
   transpilePackages: ['@pontual/db', '@pontual/types', '@pontual/utils'],
   // Wave AE-2D (2026-05-25): bypass do type-check de build do Next.js.
-  // ~100 erros TS pre-existentes no projeto (implicit any em handlers de
-  // rota antigos) bloqueavam todo build após o module graph expandir com
-  // a lib payment-reminder-dispatcher. Build do Coolify silenciosamente
-  // morria no lint phase (parecia OOM). tsc --noEmit roda em CI separado
-  // pra cleanup gradual desses erros. Compilação JS continua estrita.
-  typescript: { ignoreBuildErrors: true },
+  // ~100 erros TS pre-existentes bloqueavam build após o module graph
+  // expandir com payment-reminder-dispatcher.
+  //
+  // Eco audit W9 (2026-05-30): zero TS errors agora (corrigidos em waves
+  // B+C+W6+W7). Removido o bypass — type-check ESTRITO restaurado em
+  // todo build. Próximo build com erro TS quebra alto (não silent).
+  // Se um dia voltar a quebrar, re-habilitar temporariamente é OK mas
+  // documentar quais erros e plano de cleanup.
   experimental: {
     instrumentationHook: true,
     serverComponentsExternalPackages: ['@prisma/client', 'xml-crypto', 'node-forge', 'xml2js', '@xmldom/xmldom', '@xmldom/is-dom-node', 'xpath', 'bullmq', 'ioredis'],

@@ -230,9 +230,12 @@ export default function MarketingTrafegoPage() {
                     </thead>
                     <tbody>
                       {CHANNELS.map(ch => {
-                        const count = breakdown[ch.key]
+                        // Eco audit W7 (2026-05-30): Number() pra garantir tipo
+                        // primitive number (defesa contra schema drift de breakdown).
+                        const count = Number(breakdown[ch.key] ?? 0)
                         if (count === 0) return null
-                        const pct = (count / breakdown.total) * 100
+                        const total = Number(breakdown.total ?? 0) || 1
+                        const pct = (count / total) * 100
                         return (
                           <tr key={ch.key} className="border-b border-gray-50 last:border-0">
                             <td className="py-2">
