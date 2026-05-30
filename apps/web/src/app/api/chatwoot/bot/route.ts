@@ -1103,7 +1103,20 @@ export async function POST(req: NextRequest) {
   // URL. Token na query string vaza em logs Traefik/Coolify/Cloudflare/Sentry
   // e em históricos de browser. Header é melhor pra secrets.
   // Backward compat: aceita ?token= durante período de migração com warning.
-  const webhookSecret = process.env.BOT_WEBHOOK_SECRET
+  //
+  // Eco audit W1 (2026-05-30): suporte a SECRETS PER-TENANT. Antes, único
+  // BOT_WEBHOOK_SECRET autorizava webhook de PT e IMP — se uma key vazasse
+  // (ex: leak no Chatwoot logs de um tenant), ambos comprometidos.
+  // Agora: BOT_WEBHOOK_SECRET_PT / BOT_WEBHOOK_SECRET_IMP têm prioridade
+  // sobre BOT_WEBHOOK_SECRET global (fallback backward compat).
+  let webhookSecret: string | undefined
+  if (cfg.slug.startsWith('pontualtech')) {
+    webhookSecret = process.env.BOT_WEBHOOK_SECRET_PT || process.env.BOT_WEBHOOK_SECRET
+  } else if (cfg.slug.includes('imprimitech')) {
+    webhookSecret = process.env.BOT_WEBHOOK_SECRET_IMP || process.env.BOT_WEBHOOK_SECRET
+  } else {
+    webhookSecret = process.env.BOT_WEBHOOK_SECRET
+  }
   if (webhookSecret) {
     const headerToken = req.headers.get('x-bot-token')
     const queryToken = req.nextUrl.searchParams.get('token')
@@ -1851,14 +1864,44 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
                 },
                 take: 10,
               })
-              // Pick the customer that has active OS (most relevant)
-              for (const c of allMatches) {
-                const os = await getActiveOrders(c.id, cfg.companyId)
-                if (os.length > 0) {
-                  customer = c
-                  activeOS = os
-                  console.log(`[Bot] Customer by phone (with OS): ${redactName(c.legal_name)} (${os.length} OS)`)
-                  break
+              // Eco audit W2 (2026-05-30): batch query ao invés de N+1.
+              // Antes: loop chamava getActiveOrders por candidato (até 10 queries).
+              // Agora: 1 query pega OS de TODOS candidatos + agrupa em memória.
+              // Mantém ordering pela ORDEM DE INSERÇÃO no allMatches (priorizando
+              // primeiro match que tem OS ativa, igual lógica original).
+              if (allMatches.length > 0) {
+                const batchIds = allMatches.map(c => c.id)
+                const allActiveOs = await prisma.serviceOrder.findMany({
+                  where: {
+                    company_id: cfg.companyId,
+                    customer_id: { in: batchIds },
+                    deleted_at: null,
+                    module_statuses: { is_final: false },
+                  },
+                  include: {
+                    module_statuses: true,
+                    service_order_items: { where: { deleted_at: null }, select: { id: true } },
+                    user_profiles: { select: { name: true } },
+                    payments: { where: { status: 'PENDING' }, select: { id: true }, take: 1 },
+                  },
+                  orderBy: { created_at: 'desc' },
+                })
+                // Agrupa por customer_id, mantém só os 10 mais recentes (mesmo cap do getActiveOrders)
+                const byCustomer = new Map<string, typeof allActiveOs>()
+                for (const o of allActiveOs) {
+                  const arr = byCustomer.get(o.customer_id) || []
+                  if (arr.length < 10) arr.push(o)
+                  byCustomer.set(o.customer_id, arr)
+                }
+                // Pick primeiro candidato com OS ativa (igual comportamento original)
+                for (const c of allMatches) {
+                  const os = (byCustomer.get(c.id) || []) as unknown as OsInfo[]
+                  if (os.length > 0) {
+                    customer = c
+                    activeOS = os
+                    console.log(`[Bot] Customer by phone (with OS, batched): ${redactName(c.legal_name)} (${os.length} OS)`)
+                    break
+                  }
                 }
               }
               // If none has active OS, use first match

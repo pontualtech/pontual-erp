@@ -120,7 +120,10 @@ export async function emitReminder(args: {
   const primeiroNome = (customer.legal_name || 'Cliente').split(' ')[0]
   const days = daysOverdue(ar.due_date)
   const arIdShort = ar.id.slice(0, 8)
-  const amountBrl = fmtBRL(Number(ar.amount || 0))
+  // Eco audit W6 (2026-05-30): ar.amount não existe (era total_amount).
+  // received_amount pode ser parcial — uso o saldo devedor = total - received.
+  const arRemaining = ar.total_amount - (ar.received_amount || 0)
+  const amountBrl = fmtBRL(Number(arRemaining || 0))
 
   let portalLink = `https://portal.pontualtech.com.br/portal/${company.slug}/pagamento/${ar.id}`
   let shortSlug = ''
