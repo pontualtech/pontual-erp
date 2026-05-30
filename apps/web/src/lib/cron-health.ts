@@ -19,7 +19,11 @@ import { prisma } from '@pontual/db'
  * company_id usado = 'GLOBAL' (placeholder pra dados de plataforma).
  */
 
-const HEALTH_COMPANY_ID = 'GLOBAL'
+// BUG FIX 2026-05-30: 'GLOBAL' não existe em companies (FK violation).
+// Usar PT-001 como tenant default pro health data — funciona bem porque
+// queries do monitor filtram por key prefix `cron.health.*`, não por tenant.
+// company_id pode ser overridden via env CRON_HEALTH_COMPANY_ID em SaaS.
+const HEALTH_COMPANY_ID = process.env.CRON_HEALTH_COMPANY_ID || 'pontualtech-001'
 
 export interface CronRunMeta {
   ok: boolean
