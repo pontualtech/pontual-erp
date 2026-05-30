@@ -131,6 +131,14 @@ export interface InternalCronHealth {
  * Crons internos rastreados + threshold de staleness (em minutos).
  * Se age_min > expected_max_min, cron é considerado stale (alerta).
  */
+/**
+ * Audit 30/05: removidos 3 fantasmas que disparavam alerta CRITICAL "instrumentation.ts
+ * quebrado?" hourly. Esses 3 são scheduled tasks Coolify, NÃO setInterval do
+ * instrumentation.ts — já cobertos pelo bloco SCHEDULED do cron-health-monitor.
+ * Listá-los aqui causava cry-wolf (esperam markCronRun() de um path que nunca chama).
+ *
+ * Bonus: adicionado nurture-tick (estava órfão — instrumentado mas sem threshold).
+ */
 export const INTERNAL_CRON_THRESHOLDS: Record<string, number> = {
   // setInterval internos do instrumentation.ts (Eco audit A2 fix):
   // APENAS crons que TÊM chamada markCronRun() — adicionar entry aqui
@@ -142,6 +150,7 @@ export const INTERNAL_CRON_THRESHOLDS: Record<string, number> = {
   'google-reviews': 15,                     // 5min → alerta >15min
   'dre-mv-refresh': 90,                     // 30min → alerta >90min
   'cobranca-reenvio-vencidas': 90,          // 1h → alerta >90min
+  'nurture-tick': 30,                       // 15min → alerta >30min (audit 30/05 — antes órfão)
   // BUG FIX 2026-05-30: atraso-reparo, evolution-zombie-check e
   // voip-cleanup-stale-ringing REMOVIDOS daqui. Esses são SCHEDULED TASKS
   // do Coolify (não internos do instrumentation.ts), portanto JÁ MONITORADOS

@@ -84,8 +84,12 @@ function hashIp(ip: string): string {
 }
 
 function getClientIp(req: NextRequest): string {
-  return req.headers.get('x-forwarded-for')?.split(',')[0].trim()
-      || req.headers.get('x-real-ip')
+  // 2026-05-30 audit #2 fix: x-real-ip (Coolify Traefik injeta peer real) >
+  // XFF.pop() (último IP do chain, mais próximo do servidor — anti-spoof).
+  // Antes pegava XFF[0] que era trivially spoofable (cliente seta
+  // x-forwarded-for=7.7.7.7 → bucket diferente → bypass rate limit).
+  return (req.headers.get('x-real-ip') || '').trim()
+      || (req.headers.get('x-forwarded-for') || '').split(',').pop()?.trim()
       || ''
 }
 
@@ -118,6 +122,14 @@ function checkRateLimit(ipKey: string): boolean {
 export async function POST(req: NextRequest) {
   const origin = req.headers.get('origin')
   const headers = corsHeaders(origin)
+
+  // 2026-05-30 audit #2 fix: rejeitar origens cross-origin server-side.
+  // Antes: CORS headers só afetavam browser; ataque direto-em-API (curl)
+  // passava e gravava row poisoning a tabela marketing_whatsapp_redirects
+  // (DB bloat + gclid forjado poluindo Quality Score Google Ads).
+  if (!origin || !ALLOWED_ORIGINS.includes(origin)) {
+    return NextResponse.json({ error: 'origem nao autorizada' }, { status: 403, headers })
+  }
 
   try {
     // Body size guard ANTES de parse — evita JSON gigante consumir CPU/RAM

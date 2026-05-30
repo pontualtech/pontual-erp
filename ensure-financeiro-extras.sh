@@ -421,6 +421,12 @@ const p = new PrismaClient();
       // M-011: reconciliation_entries.match_score 0-100 (nullable)
       { table: 'reconciliation_entries', name: 'chk_match_score_range',
         check: `match_score IS NULL OR (match_score BETWEEN 0 AND 100)` },
+      // Audit 2026-05-30: anti double-credit em AR. Permite ate 1.5% overpay
+      // (juros/correcao mora). 7 ARs PT foram backfilled antes deste constraint.
+      // Bloqueia recorrencia do bug de installment expansion ou request duplicado
+      // que duplicava received_amount = 2x total exato.
+      { table: 'accounts_receivable', name: 'chk_no_double_credit',
+        check: `received_amount IS NULL OR total_amount IS NULL OR received_amount <= total_amount * 1.015` },
     ];
 
     for (const c of checkConstraints) {
