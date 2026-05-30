@@ -207,12 +207,23 @@ export async function POST(req: NextRequest) {
       break
 
     case 'email.bounced': {
-      // Audit 14 fix: read-modify-write substituido por SQL atomic abaixo
-      // (bounce_count + 1) com CASE pra setar unsubscribed em >=3. Race
-      // anterior: 2 webhooks simultaneos calculavam mesmo newBounceCount
-      // e gravavam N+1 quando deveria ser N+2.
-      bounceAtomic = true
-      tagsToAdd.push('email:bouncing')
+      // 2026-05-29 (fix audit): hard bounces (Permanent) marcam unsubscribed
+      // IMEDIATAMENTE — Resend já classifica permanente, esperar 3 ocorrências
+      // é desperdício de quota + risco reputação. Soft (Transient) continua
+      // com o threshold 3 atomic (race-safe).
+      const bounceType = payload.data?.bounce?.type
+      if (bounceType === 'Permanent') {
+        updates.unsubscribed = true
+        updates.unsubscribed_at = new Date()
+        tagsToAdd.push('email:bouncing', 'email:hard-bounce')
+      } else {
+        // Audit 14 fix: read-modify-write substituido por SQL atomic abaixo
+        // (bounce_count + 1) com CASE pra setar unsubscribed em >=3. Race
+        // anterior: 2 webhooks simultaneos calculavam mesmo newBounceCount
+        // e gravavam N+1 quando deveria ser N+2.
+        bounceAtomic = true
+        tagsToAdd.push('email:bouncing')
+      }
       break
     }
 
