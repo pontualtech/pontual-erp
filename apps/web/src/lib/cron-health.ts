@@ -133,6 +133,8 @@ export interface InternalCronHealth {
  */
 export const INTERNAL_CRON_THRESHOLDS: Record<string, number> = {
   // setInterval internos do instrumentation.ts (Eco audit A2 fix):
+  // APENAS crons que TÊM chamada markCronRun() — adicionar entry aqui
+  // sem instrumentar o cron gera falso-positivo "never_ran" no monitor.
   'bot-followup': 15,                       // 5min → alerta >15min
   'payment-reminders-v2': 30,               // 10min → alerta >30min
   'cobranca': 75,                           // 1h → alerta >75min
@@ -140,10 +142,14 @@ export const INTERNAL_CRON_THRESHOLDS: Record<string, number> = {
   'google-reviews': 15,                     // 5min → alerta >15min
   'dre-mv-refresh': 90,                     // 30min → alerta >90min
   'cobranca-reenvio-vencidas': 90,          // 1h → alerta >90min
-  // Scheduled tasks Coolify (cobertos pelo monitor original, mas redundância OK):
-  'atraso-reparo': 24 * 60 + 60,            // diário 11h
-  'evolution-zombie-check': 90,             // 30min
-  'voip-cleanup-stale-ringing': 90,         // 30min
+  // BUG FIX 2026-05-30: atraso-reparo, evolution-zombie-check e
+  // voip-cleanup-stale-ringing REMOVIDOS daqui. Esses são SCHEDULED TASKS
+  // do Coolify (não internos do instrumentation.ts), portanto JÁ MONITORADOS
+  // pelo bloco original do cron-health-monitor que lê scheduled-tasks API.
+  // Tinha redundância achando que era "extra safety", mas como eles nunca
+  // chamam markCronRun (não estão em setInterval interno), o monitor
+  // reportava "never_ran" e disparava alerta crítico falso a cada hora.
+  // Caso real Karlão 30/05: email "internal_cron_stale_voip-cleanup-stale-ringing".
 }
 
 /**
