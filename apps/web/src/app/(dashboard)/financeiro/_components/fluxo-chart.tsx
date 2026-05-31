@@ -2,6 +2,7 @@
 
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts'
 import { useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 
 interface SeriesPoint {
   date: string // YYYY-MM-DD
@@ -26,9 +27,11 @@ function shortDate(iso: string): string {
 }
 
 export function FluxoChart({ series, inflowTotalCents, outflowTotalCents, loading }: Props) {
+  const router = useRouter()
   const data = useMemo(
     () => series.map((s) => ({
       date: shortDate(s.date),
+      isoDate: s.date, // Bug #50 (audit 31/05): mantém ISO pra drill-down /extrato
       Entradas: s.inflowCents / 100,
       Saídas: s.outflowCents / 100,
     })),
@@ -63,7 +66,20 @@ export function FluxoChart({ series, inflowTotalCents, outflowTotalCents, loadin
           <EmptyState />
         ) : (
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 0 }} barCategoryGap={data.length > 31 ? 1 : 4}>
+            <BarChart
+              data={data}
+              margin={{ top: 8, right: 8, left: 8, bottom: 0 }}
+              barCategoryGap={data.length > 31 ? 1 : 4}
+              // Bug #50 (audit 31/05 Karlão): clique numa barra → /extrato filtrado pelo dia.
+              onClick={(e: { activeLabel?: string } | undefined) => {
+                const label = e?.activeLabel
+                if (!label) return
+                const point = data.find((d) => d.date === label)
+                if (!point?.isoDate) return
+                router.push(`/financeiro/extrato?from=${point.isoDate}&to=${point.isoDate}`)
+              }}
+              style={{ cursor: 'pointer' }}
+            >
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
               <XAxis
                 dataKey="date"
