@@ -909,7 +909,12 @@ export default function ContasPagarPage() {
                     )}
                     {isColVisible('description') && (
                       <td className="px-4 py-3">
-                        <p className="font-medium text-gray-900">{cleanDescription(conta.description)}</p>
+                        {/* Bug #23 (audit 31/05): descrição agora é link pra detalhe — antes só
+                            o ícone "Ver detalhes" (hover-only) abria a conta. */}
+                        <Link href={`/financeiro/contas-pagar/${conta.id}`}
+                          className="font-medium text-gray-900 hover:text-blue-700 hover:underline">
+                          {cleanDescription(conta.description)}
+                        </Link>
                         {conta.notes && !conta.notes.trim().startsWith('{') && (
                           <p className="text-xs text-gray-400 truncate max-w-[200px]">{conta.notes}</p>
                         )}

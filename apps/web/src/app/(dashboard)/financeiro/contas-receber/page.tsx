@@ -1527,7 +1527,12 @@ export default function ContasReceberPage() {
                     )}
                     {isColVisible('description') && (
                     <td className="px-4 py-3">
-                      <p className="font-medium text-gray-900">{cleanDescription(conta.description)}</p>
+                      {/* Bug #23 (audit 31/05): descrição agora é link pra detalhe — antes só
+                          o ícone hover-only abria a conta. */}
+                      <Link href={`/financeiro/contas-receber/${conta.id}`}
+                        className="font-medium text-gray-900 hover:text-blue-700 hover:underline">
+                        {cleanDescription(conta.description)}
+                      </Link>
                       {/* Feature 2026-05-13: badge status cobranca Asaas + link copy + envio */}
                       {(() => {
                         const badge = getChargeBadge(conta.charge_status)

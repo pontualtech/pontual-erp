@@ -13,6 +13,7 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { exportToExcel, exportToCSV, exportToPDF } from '@/lib/export-data'
 import { MoneyInput } from '@/app/(dashboard)/components/money-input'
+import { cleanDescription, prettyPaymentMethod } from '@/lib/payment-display'
 
 // ─── Types ───────────────────────────────────────────────
 interface ExtratoItem {
@@ -645,7 +646,7 @@ export default function ExtratoPage() {
                     (item.origem === 'receber' || item.origem === 'pagar')
                       ? 'text-blue-700 dark:text-blue-400 hover:underline'
                       : 'text-gray-900 dark:text-white'
-                  )}>{item.descricao}</p>
+                  )}>{cleanDescription(item.descricao)}</p>
                   <div className="flex items-center gap-2 mt-0.5">
                     {item.conta_bancaria !== '—' && <span className="text-[10px] text-gray-400 dark:text-gray-500">{item.conta_bancaria}</span>}
                     {item.centro_custo !== '—' && <span className="text-[10px] text-gray-400 dark:text-gray-500">C.C: {item.centro_custo}</span>}
@@ -666,7 +667,7 @@ export default function ExtratoPage() {
                 </td>
                 <td className="px-4 py-3">
                   {item.forma_pagamento !== '—' ? (
-                    <span className="inline-flex items-center rounded-md bg-indigo-50 dark:bg-indigo-950 px-2 py-0.5 text-xs font-medium text-indigo-700 dark:text-indigo-300">{item.forma_pagamento}</span>
+                    <span className="inline-flex items-center rounded-md bg-indigo-50 dark:bg-indigo-950 px-2 py-0.5 text-xs font-medium text-indigo-700 dark:text-indigo-300">{prettyPaymentMethod(item.forma_pagamento)}</span>
                   ) : <span className="text-gray-300 dark:text-gray-600">—</span>}
                 </td>
                 <td className={cn('px-4 py-3 text-right font-semibold whitespace-nowrap', item.tipo === 'ENTRADA' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400')}>
