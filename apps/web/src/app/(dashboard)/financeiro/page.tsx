@@ -6,7 +6,7 @@ import Link from 'next/link'
 import {
   TrendingUp, TrendingDown, DollarSign, Wallet, AlertTriangle,
   Landmark, FolderTree, Target, CreditCard, BarChart3, FileSpreadsheet,
-  Receipt, ArrowRightLeft, Plus,
+  Receipt, ArrowRightLeft, Plus, Repeat,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -211,6 +211,7 @@ export default function FinanceiroPage() {
           { label: 'Categorias',        href: '/financeiro/categorias',          icon: FolderTree, desc: 'Receitas e despesas',  tone: 'purple' },
           { label: 'Centros de custo',  href: '/financeiro/centros-custo',       icon: Target,     desc: 'Departamentos',         tone: 'blue' },
           { label: 'Contas bancárias',  href: '/financeiro/contas-bancarias',    icon: Landmark,   desc: 'Bancos e caixas',       tone: 'emerald' },
+          { label: 'Despesas fixas',    href: '/financeiro/despesas-fixas',      icon: Repeat, desc: 'Recorrentes mensais',  tone: 'rose' },
           { label: 'Cond. pagamento',   href: '/financeiro/condicoes-pagamento', icon: CreditCard, desc: 'Parcelamentos',         tone: 'amber' },
           { label: 'Formas de pgto',    href: '/financeiro/formas-pagamento',    icon: CreditCard, desc: 'Dinheiro, PIX, cartão', tone: 'pink' },
         ]}
