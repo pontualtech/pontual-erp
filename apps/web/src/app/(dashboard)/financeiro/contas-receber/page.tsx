@@ -16,6 +16,7 @@ import { useAuth } from '@/lib/use-auth'
 import { exportToExcel, exportToCSV, exportToPDF, importFromFile } from '@/lib/export-data'
 import { cleanDescription } from '@/lib/payment-display'
 import { DateInputBR } from '@/app/(dashboard)/components/date-input-br'
+import { MultiStatusPicker } from '@/app/(dashboard)/financeiro/_components/multi-status-picker'
 
 interface Customer {
   id: string
@@ -1308,24 +1309,20 @@ export default function ContasReceberPage() {
         {/* Row 2: Advanced Filters (collapsible) */}
         {showFilters && (
           <div className="flex flex-wrap items-end gap-3 pt-3 border-t">
-            <div className="min-w-[130px]">
-              <label htmlFor="status-filter-receivable" className="block text-xs font-medium text-gray-500 mb-1">Status</label>
-              <select
-                id="status-filter-receivable"
-                value={statusFilter}
-                onChange={e => { setStatusFilter(e.target.value); setPage(1) }}
-                className="w-full rounded-md border bg-white py-1.5 px-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
-              >
-                <option value="">Todos</option>
-                <option value="PENDENTE">Pendente</option>
-                <option value="VENCIDO">Vencido</option>
-                <option value="PAGO">Pago (balcão)</option>
-                <option value="RECEBIDO">Recebido</option>
-                <option value="PAGO,RECEBIDO">Pago ou Recebido</option>
-                <option value="CANCELADO">Cancelado</option>
-                <option value="AGRUPADO">Agrupado</option>
-              </select>
-            </div>
+            <MultiStatusPicker
+              id="status-filter-receivable"
+              value={statusFilter}
+              onChange={(csv) => { setStatusFilter(csv); setPage(1) }}
+              accent="emerald"
+              options={[
+                { value: 'PENDENTE',  label: 'Pendente',     color: 'bg-amber-500' },
+                { value: 'VENCIDO',   label: 'Vencido',      color: 'bg-red-500' },
+                { value: 'PAGO',      label: 'Pago (balcão)',color: 'bg-emerald-500' },
+                { value: 'RECEBIDO',  label: 'Recebido',     color: 'bg-emerald-500' },
+                { value: 'CANCELADO', label: 'Cancelado',    color: 'bg-gray-400' },
+                { value: 'AGRUPADO',  label: 'Agrupado',     color: 'bg-blue-500' },
+              ]}
+            />
             <div className="min-w-[150px]">
               <label htmlFor="payment-method-filter" className="block text-xs font-medium text-gray-500 mb-1">Forma pgto</label>
               <select

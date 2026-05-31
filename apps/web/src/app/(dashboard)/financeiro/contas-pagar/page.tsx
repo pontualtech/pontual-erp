@@ -6,7 +6,8 @@ import { useRouter } from 'next/navigation'
 import {
   Plus, Search, Eye, Pencil, Trash2, DollarSign,
   AlertTriangle, Clock, CheckCircle2, CalendarClock, Filter, X, Loader2,
-  Download, Upload, ChevronDown, FileSpreadsheet, FileText, FileDown
+  Download, Upload, ChevronDown, FileSpreadsheet, FileText, FileDown,
+  Columns3,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -14,6 +15,7 @@ import { useAuth } from '@/lib/use-auth'
 import { MoneyInput } from '@/app/(dashboard)/components/money-input'
 import { exportToExcel, exportToCSV, exportToPDF, importFromFile } from '@/lib/export-data'
 import { cleanDescription } from '@/lib/payment-display'
+import { MultiStatusPicker } from '@/app/(dashboard)/financeiro/_components/multi-status-picker'
 import { DateInputBR } from '@/app/(dashboard)/components/date-input-br'
 
 interface Supplier {
@@ -125,6 +127,37 @@ export default function ContasPagarPage() {
   const [valueMin, setValueMin] = useState(cpSaved.valueMin || '')
   const [valueMax, setValueMax] = useState(cpSaved.valueMax || '')
   const [showAdvanced, setShowAdvanced] = useState(false)
+
+  // Column visibility (portado do contas-receber 2026-05-31).
+  // Persiste em localStorage com chave própria 'cp_hidden_columns' pra não
+  // colidir com 'cr_hidden_columns' do contas-receber.
+  const [showColToggle, setShowColToggle] = useState(false)
+  const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('cp_hidden_columns')
+        if (stored) return new Set(JSON.parse(stored))
+      } catch {}
+    }
+    return new Set()
+  })
+  const allColumns = [
+    { key: 'description', label: 'Descrição' },
+    { key: 'supplier',    label: 'Fornecedor' },
+    { key: 'category',    label: 'Categoria' },
+    { key: 'due_date',    label: 'Vencimento' },
+    { key: 'total_amount',label: 'Valor' },
+    { key: 'status',      label: 'Status' },
+  ] as const
+  function toggleColumn(key: string) {
+    setHiddenColumns((prev) => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      try { localStorage.setItem('cp_hidden_columns', JSON.stringify(Array.from(next))) } catch {}
+      return next
+    })
+  }
+  function isColVisible(key: string) { return !hiddenColumns.has(key) }
 
   // Filter options (from API)
   const [filterCategories, setFilterCategories] = useState<{ id: string; name: string }[]>([])
@@ -665,20 +698,18 @@ export default function ContasPagarPage() {
               />
             </div>
           </div>
-          <div className="min-w-[150px]">
-            <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
-            <select title="Filtrar por status"
-              value={statusFilter}
-              onChange={e => { setStatusFilter(e.target.value); setPage(1) }}
-              className="w-full rounded-md border bg-white py-2 px-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-            >
-              <option value="">Todos</option>
-              <option value="PENDENTE">Pendente</option>
-              <option value="VENCIDO">Vencido</option>
-              <option value="PAGO">Pago</option>
-              <option value="CANCELADO">Cancelado</option>
-            </select>
-          </div>
+          <MultiStatusPicker
+            id="status-filter-payable"
+            value={statusFilter}
+            onChange={(csv) => { setStatusFilter(csv); setPage(1) }}
+            accent="red"
+            options={[
+              { value: 'PENDENTE',  label: 'Pendente',  color: 'bg-amber-500' },
+              { value: 'VENCIDO',   label: 'Vencido',   color: 'bg-red-500' },
+              { value: 'PAGO',      label: 'Pago',      color: 'bg-emerald-500' },
+              { value: 'CANCELADO', label: 'Cancelado', color: 'bg-gray-400' },
+            ]}
+          />
           <div className="min-w-[140px]">
             <label className="block text-xs font-medium text-gray-500 mb-1">De</label>
             <DateInputBR
@@ -704,6 +735,40 @@ export default function ContasPagarPage() {
               <span className="bg-blue-600 text-white rounded-full h-4 w-4 text-[10px] flex items-center justify-center font-bold">!</span>
             )}
           </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowColToggle(v => !v)}
+              className={cn(
+                'flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
+                showColToggle ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50',
+              )}
+            >
+              <Columns3 className="h-4 w-4" />
+              Colunas
+              {hiddenColumns.size > 0 && (
+                <span className="rounded-full bg-blue-600 px-1.5 text-[10px] font-bold text-white">{allColumns.length - hiddenColumns.size}/{allColumns.length}</span>
+              )}
+            </button>
+            {showColToggle && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setShowColToggle(false)} />
+                <div className="absolute right-0 top-full z-20 mt-1 w-48 rounded-md border bg-white py-1 shadow-lg">
+                  {allColumns.map((col) => (
+                    <label key={col.key} className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
+                      <input
+                        type="checkbox"
+                        checked={isColVisible(col.key)}
+                        onChange={() => toggleColumn(col.key)}
+                        className="rounded text-blue-600"
+                      />
+                      {col.label}
+                    </label>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
           {hasFilters && (
             <button type="button"
               onClick={clearFilters}
@@ -780,12 +845,12 @@ export default function ContasPagarPage() {
                     onChange={toggleAll} className="rounded text-blue-600" />
                 </th>
               )}
-              <th className="px-4 py-3">Descrição</th>
-              <th className="px-4 py-3">Fornecedor</th>
-              <th className="px-4 py-3">Categoria</th>
-              <th className="px-4 py-3">Vencimento</th>
-              <th className="px-4 py-3 text-right">Valor</th>
-              <th className="px-4 py-3 text-center">Status</th>
+              {isColVisible('description') && <th className="px-4 py-3">Descrição</th>}
+              {isColVisible('supplier') && <th className="px-4 py-3">Fornecedor</th>}
+              {isColVisible('category') && <th className="px-4 py-3">Categoria</th>}
+              {isColVisible('due_date') && <th className="px-4 py-3">Vencimento</th>}
+              {isColVisible('total_amount') && <th className="px-4 py-3 text-right">Valor</th>}
+              {isColVisible('status') && <th className="px-4 py-3 text-center">Status</th>}
               <th className="px-4 py-3 text-right">Ações</th>
             </tr>
           </thead>
@@ -817,27 +882,38 @@ export default function ContasPagarPage() {
                           className="rounded text-blue-600" />
                       </td>
                     )}
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-gray-900">{cleanDescription(conta.description)}</p>
-                      {conta.notes && !conta.notes.trim().startsWith('{') && (
-                        <p className="text-xs text-gray-400 truncate max-w-[200px]">{conta.notes}</p>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-gray-500">
-                      {conta.suppliers?.name || '--'}
-                    </td>
-                    <td className="px-4 py-3 text-gray-500">
-                      {conta.categories?.name || '--'}
-                    </td>
-                    <td className="px-4 py-3 text-gray-700">
-                      {formatDate(conta.due_date)}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <p className="font-medium text-gray-900">{formatCurrency(conta.total_amount)}</p>
-                      {(conta.paid_amount || 0) > 0 && conta.status !== 'PAGO' && (
-                        <p className="text-xs text-green-600">Pago: {formatCurrency(conta.paid_amount || 0)}</p>
-                      )}
-                    </td>
+                    {isColVisible('description') && (
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-gray-900">{cleanDescription(conta.description)}</p>
+                        {conta.notes && !conta.notes.trim().startsWith('{') && (
+                          <p className="text-xs text-gray-400 truncate max-w-[200px]">{conta.notes}</p>
+                        )}
+                      </td>
+                    )}
+                    {isColVisible('supplier') && (
+                      <td className="px-4 py-3 text-gray-500">
+                        {conta.suppliers?.name || '--'}
+                      </td>
+                    )}
+                    {isColVisible('category') && (
+                      <td className="px-4 py-3 text-gray-500">
+                        {conta.categories?.name || '--'}
+                      </td>
+                    )}
+                    {isColVisible('due_date') && (
+                      <td className="px-4 py-3 text-gray-700">
+                        {formatDate(conta.due_date)}
+                      </td>
+                    )}
+                    {isColVisible('total_amount') && (
+                      <td className="px-4 py-3 text-right">
+                        <p className="font-medium text-gray-900">{formatCurrency(conta.total_amount)}</p>
+                        {(conta.paid_amount || 0) > 0 && conta.status !== 'PAGO' && (
+                          <p className="text-xs text-green-600">Pago: {formatCurrency(conta.paid_amount || 0)}</p>
+                        )}
+                      </td>
+                    )}
+                    {isColVisible('status') && (
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-1.5 flex-wrap">
                         {/* Wave AB (2026-05-24): badge ÚNICO. PAGO+reconciled=true → "Pago e conciliado"
@@ -866,6 +942,7 @@ export default function ContasPagarPage() {
                         )}
                       </div>
                     </td>
+                    )}
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
