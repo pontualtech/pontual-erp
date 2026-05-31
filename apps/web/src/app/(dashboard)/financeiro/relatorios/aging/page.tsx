@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, AlertTriangle, Loader2, Phone, Mail, MessageCircle, ExternalLink } from 'lucide-react'
+import { AlertTriangle, Loader2, Phone, Mail, MessageCircle, ExternalLink, TrendingUp, TrendingDown, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 
 /**
- * Aging Report A/R — Sprint UX-15 Onda 5 (2026-05-23)
+ * Aging Report A/R — Sprint UX-15 Onda 5 (2026-05-23) · Fase 3 visual refine 2026-05-31
  *
  * Inspirado em QuickBooks A/R Aging Summary e SAP FBL5N.
  * Lista inadimplência por faixa etária + Top 10 clientes inadimplentes.
@@ -65,12 +66,13 @@ function fmt(cents: number) {
   return (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
-const BUCKET_COLORS: Record<string, string> = {
-  future: 'bg-blue-50 border-blue-200 text-blue-700',
-  '0-30': 'bg-amber-50 border-amber-200 text-amber-700',
-  '31-60': 'bg-orange-50 border-orange-200 text-orange-700',
-  '61-90': 'bg-red-50 border-red-200 text-red-700',
-  '90+': 'bg-rose-100 border-rose-300 text-rose-800',
+// Cor por severidade do bucket. Anti-pattern: sem hover:scale (layout shift Stripe rule).
+const BUCKET_TONE: Record<string, { border: string; bg: string; text: string; accent: string }> = {
+  future:   { border: 'border-blue-200',   bg: 'bg-blue-50/60',   text: 'text-blue-700',   accent: 'bg-blue-500' },
+  '0-30':   { border: 'border-amber-200',  bg: 'bg-amber-50/60',  text: 'text-amber-700',  accent: 'bg-amber-500' },
+  '31-60':  { border: 'border-orange-200', bg: 'bg-orange-50/60', text: 'text-orange-700', accent: 'bg-orange-500' },
+  '61-90':  { border: 'border-red-200',    bg: 'bg-red-50/60',    text: 'text-red-700',    accent: 'bg-red-500' },
+  '90+':    { border: 'border-rose-300',   bg: 'bg-rose-100/60',  text: 'text-rose-800',   accent: 'bg-rose-600' },
 }
 
 export default function AgingReportPage() {
@@ -104,138 +106,197 @@ export default function AgingReportPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto p-4">
-      <div className="flex items-center gap-3">
-        <Link href="/financeiro" className="rounded-xl border border-gray-200 dark:border-gray-700 p-2.5 hover:bg-gray-50 dark:hover:bg-gray-800">
-          <ArrowLeft className="h-4 w-4 text-gray-500" />
-        </Link>
+    <div className="space-y-5">
+      {/* Header consistente com /financeiro */}
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Aging Report — A/R</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Inadimplência por faixa etária (similar QuickBooks A/R Aging Summary)</p>
+          <p className="text-xs font-medium uppercase tracking-wider text-gray-400">Financeiro</p>
+          <h1 className="mt-0.5 text-2xl font-semibold text-gray-900">Aging A/R — Inadimplência</h1>
+          <p className="mt-1 text-xs text-gray-500">Por faixa de atraso · padrão QuickBooks / SAP FBL5N</p>
+        </div>
+        <div className="flex gap-2">
+          <Link
+            href="/financeiro/contas-receber"
+            className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 transition-colors hover:border-emerald-300 hover:bg-emerald-100"
+          >
+            <TrendingUp className="h-4 w-4" />
+            Contas a receber
+          </Link>
+          <Link
+            href="/financeiro/contas-pagar"
+            className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 text-sm font-medium text-red-700 transition-colors hover:border-red-300 hover:bg-red-100"
+          >
+            <TrendingDown className="h-4 w-4" />
+            Contas a pagar
+          </Link>
         </div>
       </div>
 
-      <div className="flex items-center gap-3 flex-wrap">
-        <label className="text-sm text-gray-600 dark:text-gray-400">Valor mínimo (R$):</label>
-        <input
-          type="text"
-          value={minValueR}
-          onChange={e => setMinValueR(e.target.value)}
-          onBlur={() => load()}
-          onKeyDown={e => e.key === 'Enter' && load()}
-          placeholder="0"
-          className="w-24 px-3 py-1.5 border rounded-lg text-sm bg-white dark:bg-gray-800 dark:border-gray-700"
-        />
-        <button
-          type="button"
-          onClick={load}
-          disabled={loading}
-          className="px-4 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-        >
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Atualizar'}
-        </button>
-        {data?.generated_at && (
-          <span className="text-xs text-gray-400 ml-auto">
-            Atualizado: {new Date(data.generated_at).toLocaleString('pt-BR')}
-          </span>
-        )}
+      {/* Filtros sticky */}
+      <div className="sticky top-0 z-20 -mx-4 border-b border-gray-200 bg-white/85 px-4 py-2.5 backdrop-blur-md sm:-mx-6 sm:px-6">
+        <div className="flex flex-wrap items-end gap-2">
+          <div>
+            <label htmlFor="aging-min" className="mb-1 block text-[11px] text-gray-500">Valor mínimo (R$)</label>
+            <input
+              id="aging-min"
+              type="text"
+              value={minValueR}
+              onChange={(e) => setMinValueR(e.target.value)}
+              onBlur={() => load()}
+              onKeyDown={(e) => e.key === 'Enter' && load()}
+              placeholder="0"
+              className="h-9 w-28 rounded-md border border-gray-200 bg-white px-2 text-sm tabular-nums focus:border-blue-500 focus:outline-none"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={load}
+            disabled={loading}
+            className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
+            Atualizar
+          </button>
+          {data?.generated_at && (
+            <span className="ml-auto text-[11px] text-gray-400 tabular-nums">
+              Atualizado: {new Date(data.generated_at).toLocaleString('pt-BR')}
+            </span>
+          )}
+        </div>
       </div>
 
       {loading && !data ? (
-        <div className="text-center py-20 text-gray-500"><Loader2 className="h-8 w-8 animate-spin inline mr-2" /> Carregando…</div>
+        <div className="rounded-xl border border-gray-200 bg-white p-12 text-center text-sm text-gray-400">
+          <Loader2 className="mr-2 inline h-5 w-5 animate-spin" /> Carregando…
+        </div>
       ) : !data ? (
-        <div className="text-center py-20 text-gray-500">Sem dados</div>
+        <div className="rounded-xl border border-gray-200 bg-white p-12 text-center text-sm text-gray-400">Sem dados</div>
       ) : (
         <>
           {/* Summary */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="rounded-xl border bg-white dark:bg-gray-900 p-5 shadow-sm">
-              <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">Total a receber</p>
-              <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">{fmt(data.summary.grand_total)}</p>
-              <p className="mt-1 text-xs text-gray-400">{data.summary.overdue_count + data.summary.future_count} titulo(s)</p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-[0_1px_2px_rgb(0,0,0,0.04)]">
+              <p className="text-[11px] font-medium uppercase tracking-wider text-gray-400">Total a receber</p>
+              <p className="mt-1 text-2xl font-semibold text-gray-900 tabular-nums">{fmt(data.summary.grand_total)}</p>
+              <p className="mt-1 text-xs text-gray-500 tabular-nums">{data.summary.overdue_count + data.summary.future_count} título(s)</p>
             </div>
-            <div className="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-5 shadow-sm">
-              <p className="text-xs text-amber-700 dark:text-amber-300 uppercase tracking-wider flex items-center gap-1">
+            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-5 shadow-[0_1px_2px_rgb(0,0,0,0.04)]">
+              <p className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wider text-amber-700">
                 <AlertTriangle className="h-3 w-3" /> Vencidos
               </p>
-              <p className="mt-1 text-2xl font-bold text-amber-800 dark:text-amber-200">{fmt(data.summary.total_overdue)}</p>
-              <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">{data.summary.overdue_count} titulo(s) inadimplente(s)</p>
+              <p className="mt-1 text-2xl font-semibold text-amber-900 tabular-nums">{fmt(data.summary.total_overdue)}</p>
+              <p className="mt-1 text-xs text-amber-700 tabular-nums">{data.summary.overdue_count} título(s) inadimplente(s)</p>
             </div>
-            <div className="rounded-xl border bg-white dark:bg-gray-900 p-5 shadow-sm">
-              <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">A vencer</p>
-              <p className="mt-1 text-2xl font-bold text-blue-700">{fmt(data.summary.total_future)}</p>
-              <p className="mt-1 text-xs text-gray-400">{data.summary.future_count} titulo(s)</p>
+            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-[0_1px_2px_rgb(0,0,0,0.04)]">
+              <p className="text-[11px] font-medium uppercase tracking-wider text-gray-400">A vencer</p>
+              <p className="mt-1 text-2xl font-semibold text-blue-700 tabular-nums">{fmt(data.summary.total_future)}</p>
+              <p className="mt-1 text-xs text-gray-500 tabular-nums">{data.summary.future_count} título(s)</p>
             </div>
           </div>
 
           {/* Buckets */}
           <div>
-            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-3">Por faixa de atraso</h2>
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-              {data.buckets.map(b => (
-                <button
-                  type="button"
-                  key={b.key}
-                  onClick={() => setExpandedBucket(expandedBucket === b.key ? null : b.key)}
-                  disabled={b.count === 0}
-                  className={`rounded-xl border-2 p-4 text-left transition-all ${BUCKET_COLORS[b.key]} ${
-                    expandedBucket === b.key ? 'ring-2 ring-offset-2 ring-current' : ''
-                  } ${b.count === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:scale-[1.02] cursor-pointer'}`}
-                >
-                  <p className="text-xs font-semibold uppercase">{b.label}</p>
-                  <p className="text-xl font-bold mt-1">{fmt(b.total)}</p>
-                  <p className="text-xs mt-1 opacity-80">{b.count} titulo(s)</p>
-                </button>
-              ))}
+            <h2 className="mb-3 text-base font-semibold text-gray-900">Por faixa de atraso</h2>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+              {data.buckets.map((b) => {
+                const tone = BUCKET_TONE[b.key]
+                const isExpanded = expandedBucket === b.key
+                const disabled = b.count === 0
+                const totalAll = data.summary.grand_total || 1
+                const pct = (b.total / totalAll) * 100
+                return (
+                  <button
+                    type="button"
+                    key={b.key}
+                    onClick={() => setExpandedBucket(isExpanded ? null : b.key)}
+                    disabled={disabled}
+                    className={cn(
+                      'relative overflow-hidden rounded-xl border bg-white p-4 text-left transition-all',
+                      tone.border,
+                      isExpanded && `ring-2 ring-offset-2 ${tone.text.replace('text-', 'ring-')}`,
+                      disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:-translate-y-px hover:shadow-md',
+                    )}
+                  >
+                    <p className={cn('text-[11px] font-semibold uppercase tracking-wider', tone.text)}>{b.label}</p>
+                    <p className="mt-1 text-xl font-semibold text-gray-900 tabular-nums">{fmt(b.total)}</p>
+                    <p className="mt-1 text-xs text-gray-500 tabular-nums">{b.count} título(s)</p>
+                    {/* Bar % do total */}
+                    <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-gray-100">
+                      <div className={cn('h-full rounded-full transition-all duration-500', tone.accent)} style={{ width: `${Math.max(pct, b.total === 0 ? 0 : 4)}%` }} />
+                    </div>
+                  </button>
+                )
+              })}
             </div>
           </div>
 
           {/* Expanded Bucket */}
           {expandedBucket && (() => {
-            const b = data.buckets.find(x => x.key === expandedBucket)
+            const b = data.buckets.find((x) => x.key === expandedBucket)
             if (!b || b.receivables.length === 0) return null
             return (
-              <div className="rounded-xl border bg-white dark:bg-gray-900 shadow-sm overflow-hidden">
-                <div className="px-5 py-3 border-b bg-gray-50 dark:bg-gray-800 flex items-center justify-between">
-                  <h3 className="font-bold text-gray-900 dark:text-white">{b.label} — {b.count} titulo(s)</h3>
-                  <button onClick={() => setExpandedBucket(null)} className="text-xs text-gray-500 hover:text-gray-700">Fechar</button>
+              <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-[0_1px_2px_rgb(0,0,0,0.04)]">
+                <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3 bg-gray-50/50">
+                  <h3 className="text-sm font-semibold text-gray-900">{b.label} — {b.count} título(s)</h3>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedBucket(null)}
+                    className="text-xs font-medium text-gray-500 hover:text-gray-700"
+                  >
+                    Fechar
+                  </button>
                 </div>
-                <div className="divide-y dark:divide-gray-800">
-                  {b.receivables.map(r => {
+                <div className="divide-y divide-gray-100">
+                  {b.receivables.map((r) => {
                     const wa = waLink(r.customer_phone, r.customer_name, r.remaining)
                     return (
-                      <div key={r.id} className="px-5 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-3 flex-wrap">
-                        <div className="flex-1 min-w-0">
-                          <Link href={`/financeiro/contas-receber/${r.id}`} className="font-medium text-gray-900 dark:text-white truncate hover:text-blue-600 inline-flex items-center gap-1">
-                            {r.description} <ExternalLink className="h-3 w-3" />
+                      <div key={r.id} className="flex flex-wrap items-center gap-3 px-5 py-3 transition-colors hover:bg-gray-50">
+                        <div className="min-w-0 flex-1">
+                          <Link
+                            href={`/financeiro/contas-receber/${r.id}`}
+                            className="inline-flex items-center gap-1 font-medium text-gray-900 hover:text-blue-600"
+                          >
+                            <span className="truncate">{r.description}</span>
+                            <ExternalLink className="h-3 w-3 flex-none" />
                           </Link>
-                          <p className="text-xs text-gray-500 truncate">{r.customer_name}</p>
+                          <p className="truncate text-xs text-gray-500">{r.customer_name}</p>
                         </div>
                         <div className="text-right">
-                          <p className="text-sm font-bold text-gray-900 dark:text-white">{fmt(r.remaining)}</p>
-                          <p className="text-xs text-gray-500">venc: {new Date(r.due_date + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
+                          <p className="text-sm font-semibold text-gray-900 tabular-nums">{fmt(r.remaining)}</p>
+                          <p className="text-xs text-gray-500 tabular-nums">venc: {new Date(r.due_date + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
                         </div>
                         {r.days_overdue > 0 && (
-                          <span className="text-xs font-semibold px-2 py-1 rounded bg-red-100 text-red-700">
+                          <span className="rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-100 tabular-nums">
                             {r.days_overdue}d
                           </span>
                         )}
                         <div className="flex items-center gap-1">
                           {wa && (
-                            <a href={wa} target="_blank" rel="noopener noreferrer"
-                              className="p-1.5 rounded hover:bg-green-100 text-green-600" title="Enviar WhatsApp">
+                            <a
+                              href={wa}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="rounded p-1.5 text-emerald-600 transition-colors hover:bg-emerald-50"
+                              title="Enviar WhatsApp"
+                            >
                               <MessageCircle className="h-4 w-4" />
                             </a>
                           )}
                           {r.customer_phone && (
-                            <a href={`tel:${r.customer_phone}`}
-                              className="p-1.5 rounded hover:bg-blue-100 text-blue-600" title="Ligar">
+                            <a
+                              href={`tel:${r.customer_phone}`}
+                              className="rounded p-1.5 text-blue-600 transition-colors hover:bg-blue-50"
+                              title="Ligar"
+                            >
                               <Phone className="h-4 w-4" />
                             </a>
                           )}
                           {r.customer_email && (
-                            <a href={`mailto:${r.customer_email}?subject=Cobranca em aberto&body=${encodeURIComponent(`Cobranca em aberto: ${r.description} - ${fmt(r.remaining)}`)}`}
-                              className="p-1.5 rounded hover:bg-purple-100 text-purple-600" title="Email">
+                            <a
+                              href={`mailto:${r.customer_email}?subject=${encodeURIComponent('Cobrança em aberto')}&body=${encodeURIComponent(`Cobrança em aberto: ${r.description} - ${fmt(r.remaining)}`)}`}
+                              className="rounded p-1.5 text-purple-600 transition-colors hover:bg-purple-50"
+                              title="Email"
+                            >
                               <Mail className="h-4 w-4" />
                             </a>
                           )}
@@ -251,28 +312,33 @@ export default function AgingReportPage() {
           {/* Top inadimplentes */}
           {data.top_inadimplentes.length > 0 && (
             <div>
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-3">Top 10 inadimplentes</h2>
-              <div className="rounded-xl border bg-white dark:bg-gray-900 shadow-sm overflow-hidden">
-                <div className="divide-y dark:divide-gray-800">
+              <h2 className="mb-3 text-base font-semibold text-gray-900">Top 10 inadimplentes</h2>
+              <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-[0_1px_2px_rgb(0,0,0,0.04)]">
+                <div className="divide-y divide-gray-100">
                   {data.top_inadimplentes.map((c, i) => {
                     const wa = waLink(c.customer_phone, c.customer_name, c.total)
                     return (
-                      <div key={c.customer_id || `nocust-${i}`} className="px-5 py-3 flex items-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-800">
-                        <span className="w-6 text-right text-sm font-bold text-gray-400">#{i + 1}</span>
-                        <div className="flex-1 min-w-0">
+                      <div key={c.customer_id || `nocust-${i}`} className="flex items-center gap-3 px-5 py-3 transition-colors hover:bg-gray-50">
+                        <span className="w-6 text-right text-sm font-semibold tabular-nums text-gray-400">#{i + 1}</span>
+                        <div className="min-w-0 flex-1">
                           {c.customer_id ? (
-                            <Link href={`/clientes/${c.customer_id}`} className="font-medium text-gray-900 dark:text-white truncate hover:text-blue-600">
+                            <Link href={`/clientes/${c.customer_id}`} className="block truncate font-medium text-gray-900 hover:text-blue-600">
                               {c.customer_name}
                             </Link>
                           ) : (
-                            <span className="font-medium text-gray-900 dark:text-white truncate">{c.customer_name}</span>
+                            <span className="block truncate font-medium text-gray-900">{c.customer_name}</span>
                           )}
-                          <p className="text-xs text-gray-500">{c.count} titulo(s) · pior atraso: {c.worst_days}d</p>
+                          <p className="text-xs text-gray-500 tabular-nums">{c.count} título(s) · pior atraso: {c.worst_days}d</p>
                         </div>
-                        <p className="text-sm font-bold text-red-700">{fmt(c.total)}</p>
+                        <p className="text-sm font-semibold text-red-700 tabular-nums">{fmt(c.total)}</p>
                         {wa && (
-                          <a href={wa} target="_blank" rel="noopener noreferrer"
-                            className="p-1.5 rounded hover:bg-green-100 text-green-600" title="WhatsApp">
+                          <a
+                            href={wa}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="rounded p-1.5 text-emerald-600 transition-colors hover:bg-emerald-50"
+                            title="WhatsApp"
+                          >
                             <MessageCircle className="h-4 w-4" />
                           </a>
                         )}
