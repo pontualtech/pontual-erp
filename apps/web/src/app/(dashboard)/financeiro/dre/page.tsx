@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Loader2, ChevronDown, ChevronRight, Download, RefreshCw, Database, Layers } from 'lucide-react'
+import { Loader2, ChevronDown, ChevronRight, Download, RefreshCw, Database, Layers, TrendingUp, TrendingDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import {
@@ -330,30 +330,38 @@ export default function DREPage() {
   ]
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+    <div className="space-y-5">
+      {/* Header consistente com /financeiro */}
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wider text-gray-400">Financeiro</p>
+          <h1 className="mt-0.5 text-2xl font-semibold text-gray-900">DRE — Demonstrativo de resultados</h1>
+          {/* UX-11 #8: badge de frescor — alerta visível quando MV está stale */}
+          {data?.meta?.last_entry_at && (() => {
+            const b = freshnessBadge(data.meta.last_entry_at)
+            return (
+              <span className={cn('mt-1.5 inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium', b.color)}>
+                <span aria-hidden>{b.icon}</span>
+                {b.label}
+              </span>
+            )
+          })()}
+        </div>
+        <div className="flex gap-2">
           <Link
-            href="/financeiro"
-            className="rounded-md border p-2 text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+            href="/financeiro/contas-receber"
+            className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 transition-colors hover:border-emerald-300 hover:bg-emerald-100"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <TrendingUp className="h-4 w-4" />
+            Contas a receber
           </Link>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">DRE - Demonstrativo de Resultados</h1>
-            <p className="text-sm text-gray-500">Análise de receitas, custos e lucro</p>
-            {/* UX-11 #8: badge de frescor — alerta visível quando MV está stale */}
-            {data?.meta?.last_entry_at && (() => {
-              const b = freshnessBadge(data.meta.last_entry_at)
-              return (
-                <span className={cn('inline-flex items-center gap-1 mt-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium', b.color)}>
-                  <span aria-hidden>{b.icon}</span>
-                  {b.label}
-                </span>
-              )
-            })()}
-          </div>
+          <Link
+            href="/financeiro/contas-pagar"
+            className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 text-sm font-medium text-red-700 transition-colors hover:border-red-300 hover:bg-red-100"
+          >
+            <TrendingDown className="h-4 w-4" />
+            Contas a pagar
+          </Link>
         </div>
       </div>
 
@@ -362,32 +370,36 @@ export default function DREPage() {
         <PulseCard pulse={pulse} />
       )}
 
-      {/* Filters */}
-      <div className="rounded-lg border bg-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-end gap-4 justify-between">
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Ano</label>
-            <select
-              value={year}
-              onChange={e => setYear(Number(e.target.value))}
-              className="rounded-md border bg-white py-2 px-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-            >
-              {years.map(y => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Mês</label>
-            <select
-              value={month}
-              onChange={e => setMonth(e.target.value)}
-              className="rounded-md border bg-white py-2 px-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 min-w-[160px]"
-            >
-              {monthOptions.map(m => (
-                <option key={m.value} value={m.value}>{m.label}</option>
-              ))}
-            </select>
+      {/* Filtros sticky (consistente com /financeiro e /financeiro/fluxo-caixa) */}
+      <div className="sticky top-0 z-20 -mx-4 border-b border-gray-200 bg-white/85 px-4 py-2.5 backdrop-blur-md sm:-mx-6 sm:px-6">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div className="flex flex-wrap items-end gap-2">
+            <div>
+              <label htmlFor="dre-year" className="mb-1 block text-[11px] text-gray-500">Ano</label>
+              <select
+                id="dre-year"
+                value={year}
+                onChange={(e) => setYear(Number(e.target.value))}
+                className="h-9 cursor-pointer rounded-md border border-gray-200 bg-white px-2 text-sm tabular-nums focus:border-blue-500 focus:outline-none"
+              >
+                {years.map((y) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="dre-month" className="mb-1 block text-[11px] text-gray-500">Mês</label>
+              <select
+                id="dre-month"
+                value={month}
+                onChange={(e) => setMonth(e.target.value)}
+                className="h-9 min-w-[150px] cursor-pointer rounded-md border border-gray-200 bg-white px-2 text-sm focus:border-blue-500 focus:outline-none"
+              >
+                {monthOptions.map((m) => (
+                  <option key={m.value} value={m.value}>{m.label}</option>
+                ))}
+              </select>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             {/* UX-9 #9: toggle Live/MV escondido por padrão — jargão técnico
@@ -439,7 +451,7 @@ export default function DREPage() {
               type="button"
               onClick={exportCSV}
               disabled={!dre || loading}
-              className="flex items-center gap-2 rounded-md border bg-white py-2 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Download className="h-4 w-4" />
               Exportar CSV
