@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Plus, Pencil, Trash2, X, Loader2, ArrowLeft, Search, Landmark } from 'lucide-react'
 import Link from 'next/link'
+import { cn } from '@/lib/utils'
 
 type AccountType = 'CHECKING' | 'SAVINGS' | 'CASH'
 
@@ -15,6 +16,7 @@ interface ContaBancaria {
   account_number: string | null
   account_type: AccountType
   initial_balance: number
+  current_balance: number
   is_active: boolean
 }
 
@@ -174,7 +176,15 @@ export default function ContasBancariasPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className="text-sm font-medium text-gray-700 whitespace-nowrap">{formatCurrency(c.initial_balance)}</span>
+                      <span
+                        className={cn(
+                          'text-sm font-semibold whitespace-nowrap tabular-nums',
+                          (c.current_balance ?? 0) < 0 ? 'text-red-600' : 'text-gray-900',
+                        )}
+                        title="Saldo atual (atualizado por baixas, conciliação OFX, CNAB)"
+                      >
+                        {formatCurrency(c.current_balance ?? 0)}
+                      </span>
                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button type="button" onClick={() => openEdit(c)} title="Editar"
                           className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-amber-600"><Pencil className="h-3.5 w-3.5" /></button>
