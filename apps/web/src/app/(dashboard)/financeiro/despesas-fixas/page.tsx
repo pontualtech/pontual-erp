@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Plus, Pencil, Trash2, RefreshCw, Pause, Play, Calendar, Wallet, FolderTree, Loader2, TrendingDown, TrendingUp } from 'lucide-react'
+import { Plus, Pencil, Trash2, RefreshCw, Pause, Play, Calendar, Wallet, FolderTree, Loader2, TrendingDown, TrendingUp, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
@@ -68,6 +68,7 @@ export default function DespesasFixasPage() {
   const [formActive, setFormActive] = useState(true)
   const [saving, setSaving] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [runningNow, setRunningNow] = useState(false)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -186,6 +187,27 @@ export default function DespesasFixasPage() {
     }
   }
 
+  async function runNow() {
+    if (runningNow) return
+    if (!confirm('Gerar contas a pagar do mês corrente pras despesas fixas ativas?\n\nIdempotente: itens já gerados este mês são pulados.')) return
+    setRunningNow(true)
+    try {
+      const r = await fetch('/api/financeiro/despesas-fixas/run-now', { method: 'POST' })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d?.error || 'Erro')
+      const { generated, skipped, failed, month } = d.data
+      const parts = [`${generated} gerada(s)`]
+      if (skipped) parts.push(`${skipped} já existia(m)`)
+      if (failed) parts.push(`${failed} falhou`)
+      toast.success(`${month}: ${parts.join(' · ')}`)
+      load()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Erro ao gerar APs')
+    } finally {
+      setRunningNow(false)
+    }
+  }
+
   // Donut: comparação despesas fixas (mensal) vs A pagar total (visual simples sem chart lib)
   // Cálculo aproximado: fixas / (fixas + média mensal de variáveis ao longo dos 12m).
   const variablePaidLast12mCents = useMemo(() => {
@@ -212,6 +234,16 @@ export default function DespesasFixasPage() {
             <TrendingDown className="h-4 w-4" />
             Contas a pagar
           </Link>
+          <button
+            type="button"
+            onClick={runNow}
+            disabled={runningNow}
+            title="Gera os contas a pagar do mês corrente agora (idempotente). O cron diário também faz isso automaticamente."
+            className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-3 text-sm font-medium text-amber-700 transition-colors hover:border-amber-300 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {runningNow ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+            Gerar APs do mês agora
+          </button>
           <button
             type="button"
             onClick={openCreate}
