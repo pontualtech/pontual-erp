@@ -296,9 +296,13 @@ export async function POST(request: NextRequest) {
     if (data.account_id) {
       const account = await prisma.account.findFirst({
         where: { id: data.account_id, company_id: user.companyId },
-        select: { id: true },
+        select: { id: true, is_active: true },
       })
       if (!account) return error('Conta bancária não pertence a esta empresa', 403)
+      // Bug #65 (audit 31/05 LOOP r6): antes só /baixa validava is_active.
+      // Criar AP vinculado a conta inativa permitia "lixo" — depois pra pagar
+      // tinha que mudar conta. Bloquear na origem.
+      if (!account.is_active) return error('Conta bancária está desativada. Reative ou escolha outra.', 400)
     }
     // Bug #51 (audit 31/05): valida category_id antes pra evitar FK violation 500.
     if (data.category_id) {

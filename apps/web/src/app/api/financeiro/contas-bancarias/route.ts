@@ -11,7 +11,9 @@ const createAccountSchema = z.object({
   bank_name: z.string().nullable().optional(),
   agency: z.string().nullable().optional(),
   account_number: z.string().nullable().optional(),
-  initial_balance: z.number().int().default(0),
+  // Bug #64 (audit 31/05 LOOP r6): cap em ±R$ 999M pra evitar overflow Int (mesma classe #42).
+  // Negativo é permitido pra contas tipo cheque especial (saldo negativo válido).
+  initial_balance: z.number().int().min(-9999999999, 'Saldo mínimo -R$ 99.999.999,99').max(9999999999, 'Saldo máximo R$ 99.999.999,99').default(0),
   is_active: z.boolean().optional().default(true),
 })
 
