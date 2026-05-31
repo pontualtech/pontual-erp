@@ -1,0 +1,79 @@
+'use client'
+
+import { LineChart, Line, ResponsiveContainer } from 'recharts'
+import { ArrowDownRight, ArrowUpRight, type LucideIcon } from 'lucide-react'
+import { cn } from '@/lib/utils'
+
+interface Props {
+  label: string
+  value: string
+  sub?: string | null
+  icon: LucideIcon
+  // Cor temática do ícone: 'green' | 'red' | 'amber' | 'blue' | 'slate'
+  tone: 'green' | 'red' | 'amber' | 'orange' | 'blue' | 'slate'
+  // Delta %: positivo = melhora (verde p/ entrada, vermelho p/ saída),
+  // null = sem comparativo. Boolean inverse pra inverter semântica.
+  deltaPct?: number | null
+  // Quando true, delta positivo é RUIM (ex: A Pagar subiu = pior).
+  deltaInverse?: boolean
+  // Mini série pro sparkline. Cada item: número (valor do dia).
+  sparkline?: number[]
+  // Loading skeleton
+  loading?: boolean
+}
+
+const toneClasses = {
+  green:  { bg: 'bg-emerald-50', text: 'text-emerald-600', stroke: '#059669' },
+  red:    { bg: 'bg-red-50',     text: 'text-red-600',     stroke: '#dc2626' },
+  amber:  { bg: 'bg-amber-50',   text: 'text-amber-600',   stroke: '#d97706' },
+  orange: { bg: 'bg-orange-50',  text: 'text-orange-600',  stroke: '#ea580c' },
+  blue:   { bg: 'bg-blue-50',    text: 'text-blue-600',    stroke: '#2563eb' },
+  slate:  { bg: 'bg-slate-100',  text: 'text-slate-500',   stroke: '#64748b' },
+}
+
+export function KPICard({ label, value, sub, icon: Icon, tone, deltaPct, deltaInverse, sparkline, loading }: Props) {
+  const t = toneClasses[tone]
+  const hasDelta = deltaPct !== null && deltaPct !== undefined && Number.isFinite(deltaPct)
+  const goodDirection = deltaInverse ? (deltaPct ?? 0) < 0 : (deltaPct ?? 0) > 0
+  const deltaColor = hasDelta
+    ? goodDirection ? 'text-emerald-600' : 'text-red-600'
+    : 'text-gray-400'
+  const DeltaIcon = (deltaPct ?? 0) >= 0 ? ArrowUpRight : ArrowDownRight
+
+  const chartData = (sparkline ?? []).map((v, i) => ({ i, v }))
+
+  return (
+    <div className="group relative overflow-hidden rounded-xl border border-gray-200 bg-white p-5 shadow-[0_1px_2px_rgb(0,0,0,0.04)] transition-shadow hover:shadow-md">
+      <div className="flex items-start justify-between">
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-medium text-gray-500">{label}</p>
+          <p className="mt-1.5 truncate text-[26px] font-semibold leading-none text-gray-900 tabular-nums">
+            {loading ? <span className="inline-block h-7 w-32 animate-pulse rounded bg-gray-200" /> : value}
+          </p>
+          <div className="mt-2 flex items-center gap-2 text-xs">
+            {sub && <span className="text-gray-500">{sub}</span>}
+            {hasDelta && (
+              <span className={cn('inline-flex items-center gap-0.5 font-medium tabular-nums', deltaColor)}>
+                <DeltaIcon className="h-3.5 w-3.5" />
+                {Math.abs(deltaPct as number).toFixed(1)}%
+              </span>
+            )}
+          </div>
+        </div>
+        <div className={cn('rounded-lg p-2.5', t.bg)}>
+          <Icon className={cn('h-5 w-5', t.text)} />
+        </div>
+      </div>
+
+      {chartData.length > 1 && (
+        <div className="-mb-2 -ml-1 -mr-1 mt-3 h-10 opacity-90 transition-opacity group-hover:opacity-100">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartData} margin={{ top: 4, bottom: 0, left: 0, right: 0 }}>
+              <Line type="monotone" dataKey="v" stroke={t.stroke} strokeWidth={1.75} dot={false} isAnimationActive={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
+  )
+}

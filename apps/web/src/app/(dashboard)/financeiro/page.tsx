@@ -1,16 +1,42 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { cn } from '@/lib/utils'
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { TrendingUp, TrendingDown, DollarSign, AlertTriangle, Landmark, FolderTree, Target, CreditCard, BarChart3, FileSpreadsheet, Receipt, ArrowRightLeft } from 'lucide-react'
+import {
+  TrendingUp, TrendingDown, DollarSign, Wallet, AlertTriangle,
+  Landmark, FolderTree, Target, CreditCard, BarChart3, FileSpreadsheet,
+  Receipt, ArrowRightLeft, Plus,
+} from 'lucide-react'
 import { toast } from 'sonner'
 
-interface FinanceiroDashboard {
+import { FiltersBar } from './_components/filters-bar'
+import { KPICard } from './_components/kpi-card'
+import { FluxoChart } from './_components/fluxo-chart'
+import { TopDevedores } from './_components/top-devedores'
+import { ContasDistribuicao } from './_components/contas-distribuicao'
+import { OverdueBanner } from './_components/overdue-banner'
+import { QuickLinks } from './_components/quick-links'
+
+interface DashboardData {
   totalBalanceCents: number
-  accounts: { id: string; name: string; balance_cents: number; type: string }[]
+  accounts: { id: string; name: string; account_type?: string; current_balance: number | null }[]
   payable: { openCents: number; openCount: number; overdueCents: number; overdueCount: number }
   receivable: { openCents: number; openCount: number; overdueCents: number; overdueCount: number }
+  period: { fromISO: string; toISO: string; days: number }
+  inflow: { cents: number; count: number }
+  outflow: { cents: number; count: number }
+  deltas: { inflowPct: number | null; outflowPct: number | null }
+  series: { date: string; inflowCents: number; outflowCents: number }[]
+  topOverdueReceivables: {
+    id: string
+    description: string
+    customerName: string | null
+    customerId: string | null
+    openCents: number
+    dueDate: string
+    daysOverdue: number
+  }[]
 }
 
 function formatCurrency(cents: number) {
@@ -18,154 +44,175 @@ function formatCurrency(cents: number) {
 }
 
 export default function FinanceiroPage() {
-  const [data, setData] = useState<FinanceiroDashboard | null>(null)
+  const sp = useSearchParams()
+  const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    fetch('/api/financeiro/dashboard')
-      .then(r => r.json())
-      .then(d => setData(d.data ?? null))
-      .catch(() => toast.error('Erro ao carregar dados financeiros'))
-      .finally(() => setLoading(false))
-  }, [])
+  // URL params determinam query do dashboard
+  const qs = useMemo(() => {
+    const p = new URLSearchParams()
+    for (const k of ['from', 'to', 'accountId', 'categoryId', 'costCenterId']) {
+      const v = sp.get(k)
+      if (v) p.set(k, v)
+    }
+    return p.toString()
+  }, [sp])
 
-  // A2 fix 22/05: cards Vencidos separados em "A receber vencidos" e
-  // "A pagar vencidos". Antes somava entrada+saida no mesmo card — nao
-  // fazia sentido financeiro (nao e saldo nem exposicao).
-  const overdueRecv = data?.receivable?.overdueCents ?? 0
-  const overduePay = data?.payable?.overdueCents ?? 0
-  const overdueRecvCount = data?.receivable?.overdueCount ?? 0
-  const overduePayCount = data?.payable?.overdueCount ?? 0
-  const cards = [
-    { label: 'Saldo Total', value: formatCurrency(data?.totalBalanceCents ?? 0), icon: DollarSign, color: 'text-emerald-600 bg-emerald-50' },
-    { label: 'A Receber', value: formatCurrency(data?.receivable?.openCents ?? 0), sub: data?.receivable?.openCount ? `${data.receivable.openCount} titulo(s)` : null, icon: TrendingUp, color: 'text-green-600 bg-green-50' },
-    { label: 'A Pagar', value: formatCurrency(data?.payable?.openCents ?? 0), sub: data?.payable?.openCount ? `${data.payable.openCount} titulo(s)` : null, icon: TrendingDown, color: 'text-red-600 bg-red-50' },
-    { label: 'Recebimentos Vencidos', value: formatCurrency(overdueRecv), sub: overdueRecvCount > 0 ? `${overdueRecvCount} titulo(s)` : null, icon: overdueRecv > 0 ? AlertTriangle : DollarSign, color: overdueRecv > 0 ? 'text-amber-600 bg-amber-50' : 'text-gray-400 bg-gray-50' },
-    { label: 'Pagamentos Vencidos', value: formatCurrency(overduePay), sub: overduePayCount > 0 ? `${overduePayCount} titulo(s)` : null, icon: overduePay > 0 ? AlertTriangle : DollarSign, color: overduePay > 0 ? 'text-orange-600 bg-orange-50' : 'text-gray-400 bg-gray-50' },
-  ]
+  useEffect(() => {
+    // AbortController previne race: cliques rápidos em filtros podem fazer
+    // response antiga sobrescrever a nova. AbortError é silenciado.
+    const ac = new AbortController()
+    setLoading(true)
+    fetch(`/api/financeiro/dashboard${qs ? `?${qs}` : ''}`, { signal: ac.signal })
+      .then((r) => r.json())
+      .then((d) => setData(d.data ?? null))
+      .catch((err) => {
+        if (err?.name !== 'AbortError') toast.error('Erro ao carregar dados financeiros')
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setLoading(false)
+      })
+    return () => ac.abort()
+  }, [qs])
+
+  // Sparklines de Entradas/Saídas derivados da series. Saldo total NÃO tem
+  // sparkline porque reconstrução histórica precisaria considerar transferências
+  // internas + ajustes manuais (fora da series AR/AP) — qualquer aproximação
+  // visual sem esses dados seria enganosa.
+  const inflowSpark = useMemo(() => data?.series.map((s) => s.inflowCents / 100) ?? [], [data])
+  const outflowSpark = useMemo(() => data?.series.map((s) => s.outflowCents / 100) ?? [], [data])
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Financeiro</h1>
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wider text-gray-400">Visão geral</p>
+          <h1 className="mt-0.5 text-2xl font-semibold text-gray-900">Financeiro</h1>
+        </div>
         <div className="flex gap-2">
-          <Link href="/financeiro/contas-receber" className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">
-            Contas a Receber
+          <Link
+            href="/financeiro/contas-receber/novo"
+            className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 transition-colors hover:border-emerald-300 hover:bg-emerald-100"
+          >
+            <Plus className="h-4 w-4" />
+            Lançar entrada
           </Link>
-          <Link href="/financeiro/contas-pagar" className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
-            Contas a Pagar
+          <Link
+            href="/financeiro/contas-pagar/novo"
+            className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 text-sm font-medium text-red-700 transition-colors hover:border-red-300 hover:bg-red-100"
+          >
+            <Plus className="h-4 w-4" />
+            Lançar despesa
           </Link>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        {cards.map(card => {
-          const Icon = card.icon
-          return (
-            <div key={card.label} className="rounded-lg border bg-white p-5 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-500">{card.label}</p>
-                  <p className="mt-1 text-2xl font-bold text-gray-900">{loading ? '...' : card.value}</p>
-                  {'sub' in card && card.sub && (
-                    <p className="mt-0.5 text-xs text-gray-400">{card.sub}</p>
-                  )}
-                </div>
-                <div className={cn('rounded-lg p-2.5', card.color)}>
-                  <Icon className="h-5 w-5" />
-                </div>
-              </div>
-            </div>
-          )
-        })}
+      <FiltersBar accounts={data?.accounts ?? []} />
+
+      {/* KPIs (5) */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <KPICard
+          label="Saldo total"
+          value={formatCurrency(data?.totalBalanceCents ?? 0)}
+          sub={data?.accounts.length ? `${data.accounts.length} ${data.accounts.length === 1 ? 'conta' : 'contas'}` : null}
+          icon={Wallet}
+          tone="blue"
+          loading={loading}
+        />
+        <KPICard
+          label="Entradas no período"
+          value={formatCurrency(data?.inflow.cents ?? 0)}
+          sub={data?.inflow.count ? `${data.inflow.count} lançamentos` : null}
+          icon={TrendingUp}
+          tone="green"
+          deltaPct={data?.deltas.inflowPct}
+          sparkline={inflowSpark}
+          loading={loading}
+        />
+        <KPICard
+          label="Saídas no período"
+          value={formatCurrency(data?.outflow.cents ?? 0)}
+          sub={data?.outflow.count ? `${data.outflow.count} lançamentos` : null}
+          icon={TrendingDown}
+          tone="red"
+          deltaPct={data?.deltas.outflowPct}
+          deltaInverse
+          sparkline={outflowSpark}
+          loading={loading}
+        />
+        <KPICard
+          label="A receber"
+          value={formatCurrency(data?.receivable.openCents ?? 0)}
+          sub={data?.receivable.openCount ? `${data.receivable.openCount} títulos` : null}
+          icon={DollarSign}
+          tone="green"
+          loading={loading}
+        />
+        <KPICard
+          label="A pagar"
+          value={formatCurrency(data?.payable.openCents ?? 0)}
+          sub={data?.payable.openCount ? `${data.payable.openCount} títulos` : null}
+          icon={DollarSign}
+          tone="red"
+          loading={loading}
+        />
       </div>
 
-      {/* Accounts summary */}
-      {(data?.accounts ?? []).length > 0 && (
-        <div className="rounded-lg border bg-white shadow-sm">
-          <div className="border-b px-5 py-3">
-            <h2 className="font-semibold text-gray-900">Contas</h2>
-          </div>
-          <div className="divide-y">
-            {data!.accounts.map((acc: any) => (
-              <div key={acc.id} className="flex items-center justify-between px-5 py-3">
-                <div>
-                  <p className="text-sm font-medium text-gray-900">{acc.name}</p>
-                  <p className="text-xs text-gray-400">{acc.type}</p>
-                </div>
-                <span className={cn('text-sm font-semibold', (acc.current_balance ?? acc.balance_cents ?? 0) >= 0 ? 'text-green-600' : 'text-red-600')}>
-                  {formatCurrency(acc.current_balance ?? acc.balance_cents ?? 0)}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Banner de vencidos (ação prioritária) */}
+      <OverdueBanner
+        receivableOverdueCents={data?.receivable.overdueCents ?? 0}
+        receivableOverdueCount={data?.receivable.overdueCount ?? 0}
+        payableOverdueCents={data?.payable.overdueCents ?? 0}
+        payableOverdueCount={data?.payable.overdueCount ?? 0}
+        loading={loading}
+      />
 
-      {/* Navigation cards */}
-      <div>
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-400 mb-3">Cadastros</h2>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {[
-            { label: 'Categorias', href: '/financeiro/categorias', icon: FolderTree, desc: 'Receitas e despesas', color: 'text-purple-600 bg-purple-50' },
-            { label: 'Centros de Custo', href: '/financeiro/centros-custo', icon: Target, desc: 'Departamentos', color: 'text-blue-600 bg-blue-50' },
-            { label: 'Contas Bancárias', href: '/financeiro/contas-bancarias', icon: Landmark, desc: 'Bancos e caixas', color: 'text-emerald-600 bg-emerald-50' },
-            { label: 'Cond. Pagamento', href: '/financeiro/condicoes-pagamento', icon: CreditCard, desc: 'Parcelamentos', color: 'text-amber-600 bg-amber-50' },
-            { label: 'Formas de Pgto', href: '/financeiro/formas-pagamento', icon: CreditCard, desc: 'Dinheiro, PIX, Cartão...', color: 'text-pink-600 bg-pink-50' },
-          ].map(item => {
-            const Icon = item.icon
-            return (
-              <Link key={item.href} href={item.href}
-                className="flex items-start gap-3 rounded-lg border bg-white p-4 shadow-sm hover:border-blue-200 hover:bg-blue-50/50 transition-colors">
-                <div className={cn('rounded-lg p-2', item.color)}><Icon className="h-4 w-4" /></div>
-                <div>
-                  <p className="font-medium text-gray-900 text-sm">{item.label}</p>
-                  <p className="text-xs text-gray-500">{item.desc}</p>
-                </div>
-              </Link>
-            )
-          })}
+      {/* Fluxo de caixa + Top vencidos lado a lado (60/40 em LG) */}
+      <div className="grid gap-4 lg:grid-cols-5">
+        <div className="lg:col-span-3">
+          <FluxoChart
+            series={data?.series ?? []}
+            inflowTotalCents={data?.inflow.cents ?? 0}
+            outflowTotalCents={data?.outflow.cents ?? 0}
+            loading={loading}
+          />
         </div>
-      </div>
-
-      <div>
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-400 mb-3">Relatórios</h2>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {[
-            { label: 'Extrato', href: '/financeiro/extrato', icon: Receipt, desc: 'Lançamentos por período', color: 'text-violet-600 bg-violet-50' },
-            { label: 'Relatórios', href: '/financeiro/relatorios', icon: BarChart3, desc: 'Resumo e análises', color: 'text-blue-600 bg-blue-50' },
-            { label: 'Fluxo de Caixa', href: '/financeiro/fluxo-caixa', icon: BarChart3, desc: 'Entradas e saídas', color: 'text-cyan-600 bg-cyan-50' },
-            { label: 'DRE', href: '/financeiro/dre', icon: FileSpreadsheet, desc: 'Demonstrativo de resultados', color: 'text-indigo-600 bg-indigo-50' },
-            { label: 'Aging A/R', href: '/financeiro/relatorios/aging', icon: AlertTriangle, desc: 'Inadimplência por faixa etária', color: 'text-rose-600 bg-rose-50' },
-            { label: 'Conciliação', href: '/financeiro/conciliacao', icon: Receipt, desc: 'Importar OFX', color: 'text-teal-600 bg-teal-50' },
-            { label: 'Boletos', href: '/financeiro/boletos', icon: Receipt, desc: 'Emitir e gerenciar', color: 'text-orange-600 bg-orange-50' },
-            { label: 'CNAB Inter', href: '/financeiro/cnab', icon: FileSpreadsheet, desc: 'Remessa e retorno CNAB 400', color: 'text-amber-600 bg-amber-50' },
-            { label: 'Maquininha', href: '/financeiro/maquininha', icon: CreditCard, desc: 'Conciliação cartão Rede', color: 'text-rose-600 bg-rose-50' },
-            { label: 'Transferência', href: '/financeiro/transferencia', icon: ArrowRightLeft, desc: 'Mover saldo entre bancos', color: 'text-sky-600 bg-sky-50' },
-          ].map(item => {
-            const Icon = item.icon
-            return (
-              <Link key={item.href} href={item.href}
-                className="flex items-start gap-3 rounded-lg border bg-white p-4 shadow-sm hover:border-blue-200 hover:bg-blue-50/50 transition-colors">
-                <div className={cn('rounded-lg p-2', item.color)}><Icon className="h-4 w-4" /></div>
-                <div>
-                  <p className="font-medium text-gray-900 text-sm">{item.label}</p>
-                  <p className="text-xs text-gray-500">{item.desc}</p>
-                </div>
-              </Link>
-            )
-          })}
+        <div className="lg:col-span-2">
+          <TopDevedores items={data?.topOverdueReceivables ?? []} loading={loading} />
         </div>
       </div>
 
-      {/* Empty state */}
-      {!loading && (data?.accounts ?? []).length === 0 && (data?.payable?.openCount ?? 0) === 0 && (data?.receivable?.openCount ?? 0) === 0 && (
-        <div className="rounded-lg border bg-white p-8 text-center shadow-sm">
-          <DollarSign className="mx-auto h-10 w-10 text-gray-300" />
-          <p className="mt-2 text-sm text-gray-400">Nenhum lançamento financeiro encontrado</p>
-          <p className="text-xs text-gray-400">Cadastre contas bancárias e lançamentos para acompanhar suas finanças</p>
-        </div>
-      )}
+      {/* Distribuição de contas */}
+      <ContasDistribuicao accounts={data?.accounts ?? []} loading={loading} />
+
+      {/* Cadastros + Relatórios (collapsed) */}
+      <QuickLinks
+        title="Cadastros"
+        items={[
+          { label: 'Categorias',        href: '/financeiro/categorias',          icon: FolderTree, desc: 'Receitas e despesas',  tone: 'purple' },
+          { label: 'Centros de custo',  href: '/financeiro/centros-custo',       icon: Target,     desc: 'Departamentos',         tone: 'blue' },
+          { label: 'Contas bancárias',  href: '/financeiro/contas-bancarias',    icon: Landmark,   desc: 'Bancos e caixas',       tone: 'emerald' },
+          { label: 'Cond. pagamento',   href: '/financeiro/condicoes-pagamento', icon: CreditCard, desc: 'Parcelamentos',         tone: 'amber' },
+          { label: 'Formas de pgto',    href: '/financeiro/formas-pagamento',    icon: CreditCard, desc: 'Dinheiro, PIX, cartão', tone: 'pink' },
+        ]}
+      />
+
+      <QuickLinks
+        title="Relatórios e ferramentas"
+        items={[
+          { label: 'Extrato',         href: '/financeiro/extrato',           icon: Receipt,         desc: 'Lançamentos por período',  tone: 'violet' },
+          { label: 'Relatórios',      href: '/financeiro/relatorios',        icon: BarChart3,       desc: 'Resumo e análises',         tone: 'blue' },
+          { label: 'Fluxo de caixa',  href: '/financeiro/fluxo-caixa',       icon: BarChart3,       desc: 'Entradas e saídas',         tone: 'cyan' },
+          { label: 'DRE',             href: '/financeiro/dre',               icon: FileSpreadsheet, desc: 'Demonstrativo de resultados', tone: 'indigo' },
+          { label: 'Aging A/R',       href: '/financeiro/relatorios/aging',  icon: AlertTriangle,   desc: 'Inadimplência por faixa',   tone: 'rose' },
+          { label: 'Conciliação',     href: '/financeiro/conciliacao',       icon: Receipt,         desc: 'Importar OFX',              tone: 'teal' },
+          { label: 'Boletos',         href: '/financeiro/boletos',           icon: Receipt,         desc: 'Emitir e gerenciar',        tone: 'orange' },
+          { label: 'CNAB Inter',      href: '/financeiro/cnab',              icon: FileSpreadsheet, desc: 'Remessa e retorno CNAB',    tone: 'amber' },
+          { label: 'Maquininha',      href: '/financeiro/maquininha',        icon: CreditCard,      desc: 'Conciliação cartão Rede',   tone: 'rose' },
+          { label: 'Transferência',   href: '/financeiro/transferencia',     icon: ArrowRightLeft,  desc: 'Mover saldo entre bancos',  tone: 'sky' },
+        ]}
+      />
     </div>
   )
 }
