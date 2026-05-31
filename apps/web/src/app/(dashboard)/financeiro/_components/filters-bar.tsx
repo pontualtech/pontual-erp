@@ -1,9 +1,9 @@
 'use client'
 
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as Popover from '@radix-ui/react-popover'
-import { Calendar, ChevronDown, Filter, X } from 'lucide-react'
+import { Calendar, ChevronDown, FolderTree, Search, Target, Wallet, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { DateInputBR } from '@/app/(dashboard)/components/date-input-br'
 import { PRESETS, rangeForPreset, detectPreset, formatBR, type PeriodPreset } from '@/lib/financeiro/period-presets'
@@ -14,21 +14,40 @@ interface Account {
   account_type?: string
 }
 
+interface Lookup { id: string; name: string }
+
 interface Props {
   accounts: Account[]
 }
 
 // Filtros globais do dashboard financeiro. Estado vive na URL — refresh-safe
 // e shareable. Atualiza via router.replace pra não empilhar histórico.
+//
+// Filtros suportados (URL params):
+//   from, to        — período (DateRangePicker + presets)
+//   accountId       — conta bancária
+//   categoryId      — categoria
+//   costCenterId    — centro de custo
+//   paymentMethod   — forma de pagamento
+//   search          — busca livre (description/cliente)
 export function FiltersBar({ accounts }: Props) {
   const router = useRouter()
   const sp = useSearchParams()
   const from = sp.get('from') || rangeForPreset('30d').from
   const to = sp.get('to') || rangeForPreset('30d').to
   const accountId = sp.get('accountId') || ''
+  const categoryId = sp.get('categoryId') || ''
+  const costCenterId = sp.get('costCenterId') || ''
+  const paymentMethod = sp.get('paymentMethod') || ''
+  const search = sp.get('search') || ''
 
   const preset = useMemo(() => detectPreset(from, to), [from, to])
   const selectedAccount = accounts.find((a) => a.id === accountId)
+
+  // Lookups carregados sob demanda quando o popover abre (lazy fetch)
+  const [categories, setCategories] = useState<Lookup[] | null>(null)
+  const [costCenters, setCostCenters] = useState<Lookup[] | null>(null)
+  const [paymentMethods, setPaymentMethods] = useState<Lookup[] | null>(null)
 
   const setParams = useCallback(
     (next: Record<string, string | null>) => {
@@ -47,7 +66,11 @@ export function FiltersBar({ accounts }: Props) {
     setParams({ from: r.from, to: r.to })
   }
 
-  const hasFilters = preset !== '30d' || accountId
+  const selectedCategory = categories?.find((c) => c.id === categoryId)
+  const selectedCostCenter = costCenters?.find((c) => c.id === costCenterId)
+  const selectedPaymentMethod = paymentMethods?.find((p) => p.id === paymentMethod || p.name === paymentMethod)
+
+  const hasFilters = preset !== '30d' || accountId || categoryId || costCenterId || paymentMethod || search
 
   return (
     <div className="sticky top-0 z-20 -mx-4 border-b border-gray-200 bg-white/85 px-4 py-2.5 backdrop-blur-md sm:-mx-6 sm:px-6">
@@ -55,7 +78,7 @@ export function FiltersBar({ accounts }: Props) {
         {/* Período */}
         <Popover.Root>
           <Popover.Trigger asChild>
-            <button
+            <button type="button"
               className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-gray-200 bg-white px-3 text-sm font-medium text-gray-900 transition-colors hover:border-gray-300 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
               aria-label="Filtrar por período"
             >
@@ -82,61 +105,108 @@ export function FiltersBar({ accounts }: Props) {
         </Popover.Root>
 
         {/* Conta bancária */}
-        <Popover.Root>
-          <Popover.Trigger asChild>
-            <button
-              className={cn(
-                'inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1',
-                accountId
-                  ? 'border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100'
-                  : 'border-gray-200 bg-white text-gray-900 hover:border-gray-300 hover:bg-gray-50',
-              )}
-              aria-label="Filtrar por conta bancária"
-            >
-              <BankIcon />
-              <span>{selectedAccount?.name ?? 'Todas as contas'}</span>
-              <ChevronDown className="h-4 w-4 text-gray-400" />
-            </button>
-          </Popover.Trigger>
-          <Popover.Portal>
-            <Popover.Content
-              align="start"
-              sideOffset={4}
-              className="z-30 w-64 rounded-lg border border-gray-200 bg-white p-1.5 shadow-lg"
-            >
-              <button
-                onClick={() => setParams({ accountId: null })}
-                className={cn(
-                  'flex w-full cursor-pointer items-center justify-between rounded px-2.5 py-2 text-sm transition-colors hover:bg-gray-50',
-                  !accountId && 'bg-gray-50 font-medium',
-                )}
-              >
-                <span className="text-gray-900">Todas as contas</span>
-                {!accountId && <Check />}
-              </button>
-              <div className="my-1 h-px bg-gray-100" />
-              {accounts.map((a) => (
-                <button
-                  key={a.id}
-                  onClick={() => setParams({ accountId: a.id })}
-                  className={cn(
-                    'flex w-full cursor-pointer items-center justify-between rounded px-2.5 py-2 text-sm transition-colors hover:bg-gray-50',
-                    accountId === a.id && 'bg-gray-50 font-medium',
-                  )}
-                >
-                  <span className="text-gray-900">{a.name}</span>
-                  {accountId === a.id && <Check />}
-                </button>
-              ))}
-            </Popover.Content>
-          </Popover.Portal>
-        </Popover.Root>
+        <FilterPicker
+          icon={Wallet}
+          label={selectedAccount?.name ?? 'Todas as contas'}
+          active={!!accountId}
+          ariaLabel="Filtrar por conta bancária"
+        >
+          <PickerList
+            allLabel="Todas as contas"
+            current={accountId}
+            items={accounts.map((a) => ({ id: a.id, name: a.name }))}
+            onSelect={(id) => setParams({ accountId: id })}
+            loading={false}
+          />
+        </FilterPicker>
+
+        {/* Categoria */}
+        <FilterPicker
+          icon={FolderTree}
+          label={selectedCategory?.name ?? (categoryId ? 'Categoria...' : 'Todas categorias')}
+          active={!!categoryId}
+          ariaLabel="Filtrar por categoria"
+          onOpen={() => {
+            if (categories === null) {
+              fetch('/api/financeiro/categorias?simple=1')
+                .then((r) => r.json())
+                .then((d) => setCategories(Array.isArray(d.data) ? d.data.map((c: any) => ({ id: c.id, name: c.name })) : []))
+                .catch(() => setCategories([]))
+            }
+          }}
+        >
+          <PickerList
+            allLabel="Todas as categorias"
+            current={categoryId}
+            items={categories ?? []}
+            onSelect={(id) => setParams({ categoryId: id })}
+            loading={categories === null}
+            emptyHint="Nenhuma categoria cadastrada"
+          />
+        </FilterPicker>
+
+        {/* Centro de Custo */}
+        <FilterPicker
+          icon={Target}
+          label={selectedCostCenter?.name ?? (costCenterId ? 'Centro...' : 'Todos centros')}
+          active={!!costCenterId}
+          ariaLabel="Filtrar por centro de custo"
+          onOpen={() => {
+            if (costCenters === null) {
+              fetch('/api/financeiro/centros-custo?simple=1')
+                .then((r) => r.json())
+                .then((d) => setCostCenters(Array.isArray(d.data) ? d.data.map((c: any) => ({ id: c.id, name: c.name })) : []))
+                .catch(() => setCostCenters([]))
+            }
+          }}
+        >
+          <PickerList
+            allLabel="Todos os centros de custo"
+            current={costCenterId}
+            items={costCenters ?? []}
+            onSelect={(id) => setParams({ costCenterId: id })}
+            loading={costCenters === null}
+            emptyHint="Nenhum centro de custo cadastrado"
+          />
+        </FilterPicker>
+
+        {/* Forma de pagamento */}
+        <FilterPicker
+          icon={CreditCardIcon}
+          label={selectedPaymentMethod?.name ?? paymentMethod ?? 'Todas formas'}
+          active={!!paymentMethod}
+          ariaLabel="Filtrar por forma de pagamento"
+          onOpen={() => {
+            if (paymentMethods === null) {
+              fetch('/api/financeiro/formas-pagamento?simple=1')
+                .then((r) => r.json())
+                .then((d) => setPaymentMethods(Array.isArray(d.data) ? d.data.map((p: any) => ({ id: p.id ?? p.name, name: p.name })) : []))
+                .catch(() => setPaymentMethods([]))
+            }
+          }}
+        >
+          <PickerList
+            allLabel="Todas as formas"
+            current={paymentMethod}
+            items={paymentMethods ?? []}
+            onSelect={(id) => setParams({ paymentMethod: id })}
+            loading={paymentMethods === null}
+            emptyHint="Nenhuma forma cadastrada"
+          />
+        </FilterPicker>
+
+        {/* Busca livre (debounced) */}
+        <SearchInput value={search} onChange={(v) => setParams({ search: v || null })} />
 
         {hasFilters && (
-          <button
+          <button type="button"
             onClick={() => {
               const r = rangeForPreset('30d')
-              setParams({ from: r.from, to: r.to, accountId: null, categoryId: null, costCenterId: null })
+              setParams({
+                from: r.from, to: r.to,
+                accountId: null, categoryId: null, costCenterId: null,
+                paymentMethod: null, search: null,
+              })
             }}
             className="ml-auto inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-md px-2 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
             aria-label="Limpar filtros"
@@ -150,18 +220,141 @@ export function FiltersBar({ accounts }: Props) {
   )
 }
 
+// ---------- helpers ----------
+
 function periodLabel(from: string, to: string, preset: PeriodPreset): string {
   if (preset === 'custom') return `${formatBR(from)} – ${formatBR(to)}`
   const found = PRESETS.find((p) => p.value === preset)
   return found?.label ?? `${formatBR(from)} – ${formatBR(to)}`
 }
 
+function FilterPicker({
+  icon: Icon,
+  label,
+  active,
+  ariaLabel,
+  onOpen,
+  children,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  active: boolean
+  ariaLabel: string
+  onOpen?: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <Popover.Root onOpenChange={(open) => open && onOpen?.()}>
+      <Popover.Trigger asChild>
+        <button type="button"
+          className={cn(
+            'inline-flex h-9 max-w-[200px] cursor-pointer items-center gap-2 rounded-md border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1',
+            active
+              ? 'border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100'
+              : 'border-gray-200 bg-white text-gray-900 hover:border-gray-300 hover:bg-gray-50',
+          )}
+          aria-label={ariaLabel}
+        >
+          <Icon className="h-4 w-4 flex-none text-gray-500" />
+          <span className="truncate">{label}</span>
+          <ChevronDown className="h-4 w-4 flex-none text-gray-400" />
+        </button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          align="start"
+          sideOffset={4}
+          className="z-30 w-64 rounded-lg border border-gray-200 bg-white p-1.5 shadow-lg"
+        >
+          {children}
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  )
+}
+
+function PickerList({
+  allLabel,
+  current,
+  items,
+  onSelect,
+  loading,
+  emptyHint,
+}: {
+  allLabel: string
+  current: string
+  items: Lookup[]
+  onSelect: (id: string | null) => void
+  loading: boolean
+  emptyHint?: string
+}) {
+  return (
+    <div className="max-h-64 overflow-y-auto">
+      <button type="button"
+        onClick={() => onSelect(null)}
+        className={cn(
+          'flex w-full cursor-pointer items-center justify-between rounded px-2.5 py-2 text-sm transition-colors hover:bg-gray-50',
+          !current && 'bg-gray-50 font-medium',
+        )}
+      >
+        <span className="text-gray-900">{allLabel}</span>
+        {!current && <Check />}
+      </button>
+      {(items.length > 0 || !loading) && <div className="my-1 h-px bg-gray-100" />}
+      {loading ? (
+        <div className="px-2.5 py-3 text-xs text-gray-400">Carregando...</div>
+      ) : items.length === 0 ? (
+        <div className="px-2.5 py-3 text-xs text-gray-400">{emptyHint ?? 'Sem opções'}</div>
+      ) : (
+        items.map((it) => (
+          <button type="button"
+            key={it.id}
+            onClick={() => onSelect(it.id)}
+            className={cn(
+              'flex w-full cursor-pointer items-center justify-between rounded px-2.5 py-2 text-left text-sm transition-colors hover:bg-gray-50',
+              current === it.id && 'bg-gray-50 font-medium',
+            )}
+          >
+            <span className="truncate pr-2 text-gray-900">{it.name}</span>
+            {current === it.id && <Check />}
+          </button>
+        ))
+      )}
+    </div>
+  )
+}
+
+// Input de busca com debounce de 300ms — evita query spam por keystroke.
+function SearchInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [local, setLocal] = useState(value)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Sincroniza quando URL muda externamente (back/forward, clear)
+  useEffect(() => { setLocal(value) }, [value])
+
+  const handleChange = (v: string) => {
+    setLocal(v)
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => onChange(v), 300)
+  }
+
+  return (
+    <div className="relative">
+      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+      <input
+        type="text"
+        value={local}
+        onChange={(e) => handleChange(e.target.value)}
+        placeholder="Buscar..."
+        aria-label="Buscar por descrição ou cliente"
+        className="h-9 w-48 rounded-md border border-gray-200 bg-white pl-8 pr-3 text-sm text-gray-900 placeholder:text-gray-400 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+      />
+    </div>
+  )
+}
+
 function PeriodPicker({
-  from,
-  to,
-  currentPreset,
-  onPreset,
-  onCustom,
+  from, to, currentPreset, onPreset, onCustom,
 }: {
   from: string
   to: string
@@ -176,7 +369,7 @@ function PeriodPicker({
     <div>
       <div className="grid grid-cols-2 gap-1">
         {PRESETS.map((p) => (
-          <button
+          <button type="button"
             key={p.value}
             onClick={() => onPreset(p.value)}
             className={cn(
@@ -204,7 +397,7 @@ function PeriodPicker({
             className="h-8 w-full rounded border border-gray-200 px-2 text-xs tabular-nums focus:border-blue-500 focus:outline-none" />
         </div>
       </div>
-      <button
+      <button type="button"
         onClick={() => onCustom(customFrom, customTo)}
         disabled={!customFrom || !customTo}
         className="mt-2 h-8 w-full cursor-pointer rounded bg-gray-900 text-xs font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
@@ -215,17 +408,12 @@ function PeriodPicker({
   )
 }
 
-function BankIcon() {
+function CreditCardIcon({ className }: { className?: string }) {
   return (
-    <svg className="h-4 w-4 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M3 21h18" />
-      <path d="M3 10h18" />
-      <path d="M5 6l7-3 7 3" />
-      <path d="M4 10v11" />
-      <path d="M20 10v11" />
-      <path d="M8 14v3" />
-      <path d="M12 14v3" />
-      <path d="M16 14v3" />
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="2" y="5" width="20" height="14" rx="2" />
+      <line x1="2" y1="10" x2="22" y2="10" />
+      <line x1="6" y1="15" x2="10" y2="15" />
     </svg>
   )
 }

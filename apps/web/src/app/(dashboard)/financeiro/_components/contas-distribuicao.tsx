@@ -1,6 +1,7 @@
 'use client'
 
-import { Landmark } from 'lucide-react'
+import Link from 'next/link'
+import { ArrowRight, Landmark } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface Account {
@@ -53,11 +54,16 @@ export function ContasDistribuicao({ accounts, loading }: Props) {
             const widthPct = max > 0 ? (Math.abs(balance) / max) * 100 : 0
             const sharePct = totalPositive > 0 && balance > 0 ? (balance / totalPositive) * 100 : null
             const isNegative = balance < 0
+            // Drill-down: vai pro extrato filtrado pela conta (já aceita ?account_id=).
             return (
-              <div key={a.id} className="px-5 py-3">
+              <Link
+                key={a.id}
+                href={`/financeiro/extrato?account_id=${a.id}`}
+                className="group block cursor-pointer px-5 py-3 transition-colors hover:bg-gray-50"
+              >
                 <div className="flex items-baseline justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-gray-900">{a.name}</p>
+                    <p className="truncate text-sm font-medium text-gray-900 group-hover:text-blue-700">{a.name}</p>
                     <p className="text-[11px] text-gray-400">{typeLabels[a.account_type ?? ''] ?? a.account_type ?? 'Conta'}</p>
                   </div>
                   <div className="flex items-baseline gap-2">
@@ -67,6 +73,7 @@ export function ContasDistribuicao({ accounts, loading }: Props) {
                     <span className={cn('text-sm font-semibold tabular-nums', isNegative ? 'text-red-600' : 'text-gray-900')}>
                       {formatBRL(balance)}
                     </span>
+                    <ArrowRight className="h-3.5 w-3.5 flex-none text-gray-300 transition-all group-hover:translate-x-0.5 group-hover:text-blue-500" />
                   </div>
                 </div>
                 <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
@@ -75,7 +82,7 @@ export function ContasDistribuicao({ accounts, loading }: Props) {
                     style={{ width: `${Math.max(widthPct, balance === 0 ? 0 : 4)}%` }}
                   />
                 </div>
-              </div>
+              </Link>
             )
           })
         )}

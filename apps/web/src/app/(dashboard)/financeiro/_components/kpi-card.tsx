@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { LineChart, Line, ResponsiveContainer } from 'recharts'
 import { ArrowDownRight, ArrowUpRight, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -20,6 +21,8 @@ interface Props {
   sparkline?: number[]
   // Loading skeleton
   loading?: boolean
+  // Quando passado, o card vira clicável (drill-down). Tooltip pelo title.
+  href?: string
 }
 
 const toneClasses = {
@@ -31,7 +34,7 @@ const toneClasses = {
   slate:  { bg: 'bg-slate-100',  text: 'text-slate-500',   stroke: '#64748b' },
 }
 
-export function KPICard({ label, value, sub, icon: Icon, tone, deltaPct, deltaInverse, sparkline, loading }: Props) {
+export function KPICard({ label, value, sub, icon: Icon, tone, deltaPct, deltaInverse, sparkline, loading, href }: Props) {
   const t = toneClasses[tone]
   const hasDelta = deltaPct !== null && deltaPct !== undefined && Number.isFinite(deltaPct)
   const goodDirection = deltaInverse ? (deltaPct ?? 0) < 0 : (deltaPct ?? 0) > 0
@@ -42,8 +45,14 @@ export function KPICard({ label, value, sub, icon: Icon, tone, deltaPct, deltaIn
 
   const chartData = (sparkline ?? []).map((v, i) => ({ i, v }))
 
+  // Wrapper: <Link> quando href, <div> caso contrário. Mesma classe base.
+  const Wrapper: any = href ? Link : 'div'
+  const wrapperProps: any = href
+    ? { href, className: 'group relative block overflow-hidden rounded-xl border border-gray-200 bg-white p-5 shadow-[0_1px_2px_rgb(0,0,0,0.04)] transition-all hover:-translate-y-px hover:border-gray-300 hover:shadow-md cursor-pointer' }
+    : { className: 'group relative overflow-hidden rounded-xl border border-gray-200 bg-white p-5 shadow-[0_1px_2px_rgb(0,0,0,0.04)] transition-shadow hover:shadow-md' }
+
   return (
-    <div className="group relative overflow-hidden rounded-xl border border-gray-200 bg-white p-5 shadow-[0_1px_2px_rgb(0,0,0,0.04)] transition-shadow hover:shadow-md">
+    <Wrapper {...wrapperProps}>
       <div className="flex items-start justify-between">
         <div className="min-w-0 flex-1">
           <p className="text-[13px] font-medium text-gray-500">{label}</p>
@@ -74,6 +83,6 @@ export function KPICard({ label, value, sub, icon: Icon, tone, deltaPct, deltaIn
           </ResponsiveContainer>
         </div>
       )}
-    </div>
+    </Wrapper>
   )
 }

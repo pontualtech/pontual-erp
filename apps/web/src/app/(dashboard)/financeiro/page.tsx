@@ -51,11 +51,24 @@ export default function FinanceiroPage() {
   // URL params determinam query do dashboard
   const qs = useMemo(() => {
     const p = new URLSearchParams()
-    for (const k of ['from', 'to', 'accountId', 'categoryId', 'costCenterId']) {
+    for (const k of ['from', 'to', 'accountId', 'categoryId', 'costCenterId', 'paymentMethod', 'search']) {
       const v = sp.get(k)
       if (v) p.set(k, v)
     }
     return p.toString()
+  }, [sp])
+
+  // qs do extrato (usa snake_case account_id) — drill-down do KPI "Entradas/Saídas"
+  // leva pro extrato filtrado pelo mesmo período.
+  const extratoPeriodHref = useMemo(() => {
+    const f = sp.get('from'), t = sp.get('to')
+    const p = new URLSearchParams()
+    if (f) p.set('from', f)
+    if (t) p.set('to', t)
+    const acc = sp.get('accountId')
+    if (acc) p.set('account_id', acc)
+    const qsStr = p.toString()
+    return `/financeiro/extrato${qsStr ? `?${qsStr}` : ''}`
   }, [sp])
 
   useEffect(() => {
@@ -118,6 +131,7 @@ export default function FinanceiroPage() {
           sub={data?.accounts.length ? `${data.accounts.length} ${data.accounts.length === 1 ? 'conta' : 'contas'}` : null}
           icon={Wallet}
           tone="blue"
+          href="/financeiro/contas-bancarias"
           loading={loading}
         />
         <KPICard
@@ -128,6 +142,7 @@ export default function FinanceiroPage() {
           tone="green"
           deltaPct={data?.deltas.inflowPct}
           sparkline={inflowSpark}
+          href={extratoPeriodHref}
           loading={loading}
         />
         <KPICard
@@ -139,6 +154,7 @@ export default function FinanceiroPage() {
           deltaPct={data?.deltas.outflowPct}
           deltaInverse
           sparkline={outflowSpark}
+          href={extratoPeriodHref}
           loading={loading}
         />
         <KPICard
@@ -147,6 +163,7 @@ export default function FinanceiroPage() {
           sub={data?.receivable.openCount ? `${data.receivable.openCount} títulos` : null}
           icon={DollarSign}
           tone="green"
+          href="/financeiro/contas-receber"
           loading={loading}
         />
         <KPICard
@@ -155,6 +172,7 @@ export default function FinanceiroPage() {
           sub={data?.payable.openCount ? `${data.payable.openCount} títulos` : null}
           icon={DollarSign}
           tone="red"
+          href="/financeiro/contas-pagar"
           loading={loading}
         />
       </div>

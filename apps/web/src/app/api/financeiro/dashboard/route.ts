@@ -57,6 +57,11 @@ export async function GET(request: NextRequest) {
     const accountId = sp.get('accountId') || undefined
     const categoryId = sp.get('categoryId') || undefined
     const costCenterId = sp.get('costCenterId') || undefined
+    const paymentMethod = sp.get('paymentMethod') || undefined
+    // Busca livre: max 100 chars, sanitização básica. Aplicada via ILIKE em
+    // description (AR/AP) e customer.legal_name/trade_name (AR).
+    const searchRaw = sp.get('search')?.trim().slice(0, 100) || undefined
+    const search = searchRaw ? searchRaw : undefined
 
     // Valida UUIDs (Postgres ainda escapa via bind, mas isso evita 500 e
     // protege logs contra noise/string esquisita)
@@ -83,6 +88,21 @@ export async function GET(request: NextRequest) {
       baseReceivable.category_id = categoryId
     }
     if (costCenterId) basePayable.cost_center_id = costCenterId
+    if (paymentMethod) {
+      basePayable.payment_method = paymentMethod
+      baseReceivable.payment_method = paymentMethod
+    }
+    if (search) {
+      // Prisma OR — busca em description (AR/AP). Customer name fica restrito
+      // a AR via customers relation. Performance OK em ~10k rows; pra >100k,
+      // considerar Postgres tsvector.
+      basePayable.description = { contains: search, mode: 'insensitive' }
+      baseReceivable.OR = [
+        { description: { contains: search, mode: 'insensitive' } },
+        { customers: { legal_name: { contains: search, mode: 'insensitive' } } },
+        { customers: { trade_name: { contains: search, mode: 'insensitive' } } },
+      ]
+    }
 
     // A7 fix (audit): wrap em withTenantTx pra strict-ready (M-007).
     const [
