@@ -35,17 +35,28 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!existing.paid_amount || existing.paid_amount <= 0) return error('AP sem paid_amount valido', 400)
 
     await prisma.$transaction(async (tx: any) => {
-      // 1. Reverter AP pra PENDENTE
-      await tx.accountPayable.update({
-        where: { id: params.id, company_id: user.companyId },
+      // Bug #67 (audit 31/05 LOOP r7): MESMA classe de #41 mas em /estornar!
+      // 3 estornar concorrentes → 3 Transactions CREDIT criadas, saldo +3x
+      // (testado: estornar 3x de R$ 0,50 → saldo subiu R$ 1,50 em vez de R$ 0,50).
+      // Fix: updateMany com guard status='PAGO' (só primeira tx vence atomic).
+      // Se claim=0, request perdeu race → throw antes de criar Transaction.
+      const claim = await tx.accountPayable.updateMany({
+        where: {
+          id: params.id,
+          company_id: user.companyId,
+          status: 'PAGO',
+          deleted_at: null,
+        },
         data: {
           status: 'PENDENTE',
           paid_amount: 0,
-          // Wave Y: estorno desfaz a conciliação implícita da baixa.
           reconciled: false,
           updated_at: new Date(),
         },
       })
+      if (claim.count === 0) {
+        throw new Error('Estorno concorrente — outra requisição já estornou esta conta')
+      }
 
       // 2. Criar Transaction CREDIT compensatoria (reverte o DEBIT original)
       //    bank_ref aponta pra "AP:{id}:estorno" pra distinguir do DEBIT original

@@ -32,16 +32,25 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!existing.received_amount || existing.received_amount <= 0) return error('AR sem received_amount valido', 400)
 
     await prisma.$transaction(async (tx: any) => {
-      await tx.accountReceivable.update({
-        where: { id: params.id, company_id: user.companyId },
+      // Bug #67 (audit 31/05 LOOP r7): race em estornar — mesma classe de #41.
+      // Guard atomic com updateMany where status='RECEBIDO' (ou 'PAGO' defensivo).
+      const claim = await tx.accountReceivable.updateMany({
+        where: {
+          id: params.id,
+          company_id: user.companyId,
+          status: { in: ['RECEBIDO', 'PAGO'] },
+          deleted_at: null,
+        },
         data: {
           status: 'PENDENTE',
           received_amount: 0,
-          // Wave Y: estorno desfaz a conciliação implícita da baixa.
           reconciled: false,
           updated_at: new Date(),
         },
       })
+      if (claim.count === 0) {
+        throw new Error('Estorno concorrente — outra requisição já estornou esta conta')
+      }
 
       await tx.transaction.create({
         data: {
