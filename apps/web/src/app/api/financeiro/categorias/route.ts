@@ -5,9 +5,11 @@ import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { z } from 'zod'
 
+import { CATEGORY_TYPES, TYPE_TO_MODULE, MODULE_TO_TYPE, ALL_MODULES, type CategoryType } from '@/lib/category-types'
+
 const createCategorySchema = z.object({
   name: z.string().min(1, 'Nome obrigatório'),
-  type: z.enum(['RECEITA', 'DESPESA']),
+  type: z.enum(CATEGORY_TYPES),
   parent_id: z.string().nullable().optional(),
 })
 
@@ -18,19 +20,17 @@ export async function GET(req: NextRequest) {
     const user = result
 
     const url = req.nextUrl.searchParams
-    const type = url.get('type') as 'RECEITA' | 'DESPESA' | null
+    const typeParam = url.get('type') as CategoryType | null
 
     const where: Record<string, unknown> = {
       company_id: user.companyId,
     }
 
-    // Category type is encoded in the module field: financeiro_receita | financeiro_despesa
-    if (type === 'RECEITA') {
-      where.module = 'financeiro_receita'
-    } else if (type === 'DESPESA') {
-      where.module = 'financeiro_despesa'
+    // Type encodado em module (financeiro_receita/custo/despesa/investimento).
+    if (typeParam && TYPE_TO_MODULE[typeParam]) {
+      where.module = TYPE_TO_MODULE[typeParam]
     } else {
-      where.module = { in: ['financeiro_receita', 'financeiro_despesa'] }
+      where.module = { in: ALL_MODULES }
     }
 
     const categories = await prisma.category.findMany({
@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
     // Add virtual 'type' field based on module
     const data = categories.map((c) => ({
       ...c,
-      type: c.module === 'financeiro_receita' ? 'RECEITA' : 'DESPESA',
+      type: MODULE_TO_TYPE[c.module] || 'DESPESA',
     }))
 
     return success(data)
@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const data = createCategorySchema.parse(body)
 
-    const module = data.type === 'RECEITA' ? 'financeiro_receita' : 'financeiro_despesa'
+    const module = TYPE_TO_MODULE[data.type]
 
     // Validate parent belongs to same company and same type
     if (data.parent_id) {

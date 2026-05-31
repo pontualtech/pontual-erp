@@ -178,7 +178,8 @@ export default function ContasReceberPage() {
     urlParams.get(urlKey) || saved[savedKey] || fallback
 
   // Filters (URL > sessionStorage > default)
-  const [search, setSearch] = useState(getInit('search', 'search'))
+  // Melhoria #2 (audit 31/05): ?q= é alias retrocompat pra ?search=
+  const [search, setSearch] = useState(urlParams.get('q') || getInit('search', 'search'))
   const [customerIdFilter] = useState(getInit('customerId', 'customerId'))
   // Audit 11: aceita ?status= via URL pra deep link do dashboard
   // ("Contas vencidas" alert → /financeiro/contas-receber?status=VENCIDO)

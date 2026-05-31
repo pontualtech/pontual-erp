@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   Plus, Search, Eye, Pencil, Trash2, DollarSign,
   AlertTriangle, Clock, CheckCircle2, CalendarClock, Filter, X, Loader2,
@@ -127,21 +127,30 @@ export default function ContasPagarPage() {
   const [valueMax, setValueMax] = useState('')
   const [showAdvanced, setShowAdvanced] = useState(false)
 
-  // Hydrate filters from sessionStorage on mount (client only — evita SSR mismatch)
+  // Hydrate filters: URL query > sessionStorage > default (client only)
+  // Melhoria #2 (audit 31/05 Karlão): deep-link via ?q=, ?status=, ?from=, ?to=, etc
+  // ?status=vencidos é alias retro-compat usado por cards /financeiro index
+  const urlParams = useSearchParams()
   useEffect(() => {
-    try {
-      const saved = JSON.parse(sessionStorage.getItem(CP_SAVED_KEY) || '{}')
-      if (saved.search) setSearch(saved.search)
-      if (saved.status) setStatusFilter(saved.status)
-      if (saved.startDate) setStartDate(saved.startDate)
-      if (saved.endDate) setEndDate(saved.endDate)
-      if (saved.categoryId) setCategoryFilter(saved.categoryId)
-      if (saved.costCenterId) setCostCenterFilter(saved.costCenterId)
-      if (saved.paymentMethod) setPaymentMethodFilter(saved.paymentMethod)
-      if (saved.bankAccountId) setBankAccountFilter(saved.bankAccountId)
-      if (saved.valueMin) setValueMin(saved.valueMin)
-      if (saved.valueMax) setValueMax(saved.valueMax)
-    } catch {}
+    let saved: Record<string, string> = {}
+    try { saved = JSON.parse(sessionStorage.getItem(CP_SAVED_KEY) || '{}') } catch {}
+    const u = urlParams
+    const pick = (urlKey: string, savedKey: string) => u.get(urlKey) || saved[savedKey] || ''
+    const qParam = u.get('q') || u.get('search') || saved.search || ''
+    if (qParam) setSearch(qParam)
+    const statusParam = u.get('status')
+    if (statusParam === 'vencidos') setStatusFilter('VENCIDO')
+    else if (statusParam) setStatusFilter(statusParam.toUpperCase())
+    else if (saved.status) setStatusFilter(saved.status)
+    const sd = pick('from', 'startDate'); if (sd) setStartDate(sd)
+    const ed = pick('to', 'endDate'); if (ed) setEndDate(ed)
+    const cat = pick('categoryId', 'categoryId'); if (cat) setCategoryFilter(cat)
+    const cc = pick('costCenterId', 'costCenterId'); if (cc) setCostCenterFilter(cc)
+    const pm = pick('paymentMethod', 'paymentMethod'); if (pm) setPaymentMethodFilter(pm)
+    const ba = pick('bankAccountId', 'bankAccountId'); if (ba) setBankAccountFilter(ba)
+    if (saved.valueMin) setValueMin(saved.valueMin)
+    if (saved.valueMax) setValueMax(saved.valueMax)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Column visibility (portado do contas-receber 2026-05-31).

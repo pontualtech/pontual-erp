@@ -4,10 +4,11 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { z } from 'zod'
+import { CATEGORY_TYPES, TYPE_TO_MODULE, MODULE_TO_TYPE, ALL_MODULES } from '@/lib/category-types'
 
 const updateCategorySchema = z.object({
   name: z.string().min(1).optional(),
-  type: z.enum(['RECEITA', 'DESPESA']).optional(),
+  type: z.enum(CATEGORY_TYPES).optional(),
   parent_id: z.string().nullable().optional(),
 })
 
@@ -23,7 +24,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
       where: {
         id: params.id,
         company_id: user.companyId,
-        module: { in: ['financeiro_receita', 'financeiro_despesa'] },
+        module: { in: ALL_MODULES },
       },
       include: {
         categories: { select: { id: true, name: true } },
@@ -35,7 +36,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
 
     return success({
       ...category,
-      type: category.module === 'financeiro_receita' ? 'RECEITA' : 'DESPESA',
+      type: MODULE_TO_TYPE[category.module] || 'DESPESA',
     })
   } catch (err) {
     return handleError(err)
@@ -52,7 +53,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       where: {
         id: params.id,
         company_id: user.companyId,
-        module: { in: ['financeiro_receita', 'financeiro_despesa'] },
+        module: { in: ALL_MODULES },
       },
     })
     if (!existing) return error('Categoria não encontrada', 404)
@@ -64,7 +65,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (data.name !== undefined) updateData.name = data.name
     if (data.parent_id !== undefined) updateData.parent_id = data.parent_id
     if (data.type !== undefined) {
-      updateData.module = data.type === 'RECEITA' ? 'financeiro_receita' : 'financeiro_despesa'
+      updateData.module = TYPE_TO_MODULE[data.type]
     }
 
     // Validate parent if provided
@@ -96,7 +97,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
     return success({
       ...category!,
-      type: category!.module === 'financeiro_receita' ? 'RECEITA' : 'DESPESA',
+      type: MODULE_TO_TYPE[category!.module] || 'DESPESA',
     })
   } catch (err) {
     return handleError(err)
@@ -113,7 +114,7 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
       where: {
         id: params.id,
         company_id: user.companyId,
-        module: { in: ['financeiro_receita', 'financeiro_despesa'] },
+        module: { in: ALL_MODULES },
       },
     })
     if (!existing) return error('Categoria não encontrada', 404)

@@ -1,7 +1,7 @@
 // Period presets pro filtro de período do dashboard financeiro.
 // ISO YYYY-MM-DD em UTC pra evitar timezone-shift cliente/servidor.
 
-export type PeriodPreset = 'today' | '7d' | '30d' | 'month' | 'quarter' | 'year' | 'custom'
+export type PeriodPreset = 'today' | '7d' | '15d' | '30d' | '90d' | 'month' | 'lastMonth' | 'quarter' | 'year' | 'custom'
 
 export interface PeriodRange {
   from: string // ISO YYYY-MM-DD
@@ -23,13 +23,26 @@ export function rangeForPreset(preset: PeriodPreset, customFrom?: string, custom
       const from = new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000)
       return { from: iso(from), to: todayISO, label: 'Últimos 7 dias' }
     }
+    case '15d': {
+      const from = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000)
+      return { from: iso(from), to: todayISO, label: 'Últimos 15 dias' }
+    }
     case '30d': {
       const from = new Date(now.getTime() - 29 * 24 * 60 * 60 * 1000)
       return { from: iso(from), to: todayISO, label: 'Últimos 30 dias' }
     }
+    case '90d': {
+      const from = new Date(now.getTime() - 89 * 24 * 60 * 60 * 1000)
+      return { from: iso(from), to: todayISO, label: 'Últimos 90 dias' }
+    }
     case 'month': {
       const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
       return { from: iso(from), to: todayISO, label: monthLabel(now) }
+    }
+    case 'lastMonth': {
+      const lastMonthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1))
+      const lastDayOfLastMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0))
+      return { from: iso(lastMonthDate), to: iso(lastDayOfLastMonth), label: 'Mês passado' }
     }
     case 'quarter': {
       const q = Math.floor(now.getUTCMonth() / 3)
@@ -51,7 +64,7 @@ export function rangeForPreset(preset: PeriodPreset, customFrom?: string, custom
 export function detectPreset(from: string, to: string): PeriodPreset {
   const today = iso(new Date())
   if (from === today && to === today) return 'today'
-  for (const p of ['7d', '30d', 'month', 'quarter', 'year'] as PeriodPreset[]) {
+  for (const p of ['7d', '15d', '30d', '90d', 'month', 'lastMonth', 'quarter', 'year'] as PeriodPreset[]) {
     const r = rangeForPreset(p)
     if (r.from === from && r.to === to) return p
   }
@@ -61,8 +74,11 @@ export function detectPreset(from: string, to: string): PeriodPreset {
 export const PRESETS: { value: PeriodPreset; label: string }[] = [
   { value: 'today', label: 'Hoje' },
   { value: '7d', label: '7 dias' },
+  { value: '15d', label: '15 dias' },
   { value: '30d', label: '30 dias' },
+  { value: '90d', label: '90 dias' },
   { value: 'month', label: 'Este mês' },
+  { value: 'lastMonth', label: 'Mês passado' },
   { value: 'quarter', label: 'Trimestre' },
   { value: 'year', label: 'Ano' },
 ]
