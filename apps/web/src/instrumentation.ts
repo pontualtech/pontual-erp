@@ -57,8 +57,21 @@ function startCronJobs() {
     }
   }
 
+  // Cold-start warming (2026-05-30): setInterval(fn, intervalMs) só dispara
+  // após intervalMs ms. Em crons com interval ≥ threshold-buffer (cobranca-
+  // reenvio-vencidas: 1h interval, 90min threshold = 30min buffer), 1 restart
+  // > 30min causa alerta "stale" cry-wolf em cron-health-monitor. scheduleCron
+  // adiciona first-run 5s após boot (não-bloqueante) — zera o gap pós-restart.
+  // 5s é folga pro lib/cron-health (Prisma) carregar antes do primeiro tick.
+  // Caso real Karlão 30/05 11:05Z: cobranca-reenvio-vencidas alertou após
+  // restart madrugada; aplicado em todos os 8 crons rastreados em INTERNAL_CRON_THRESHOLDS.
+  const scheduleCron = (fn: () => Promise<void>, intervalMs: number) => {
+    setTimeout(() => { fn().catch(() => {}) }, 5000)
+    setInterval(fn, intervalMs)
+  }
+
   // Bot Follow-up — every 5 minutes
-  setInterval(async () => {
+  scheduleCron(async () => {
     const t0 = Date.now()
     try {
       const res = await fetch(`${BASE_URL}/api/cron/bot-followup`, { headers })
@@ -79,7 +92,7 @@ function startCronJobs() {
   }, 5 * 60 * 1000) // 5 minutes
 
   // Quote Reminder — every 30 minutes
-  setInterval(async () => {
+  scheduleCron(async () => {
     const t0 = Date.now()
     try {
       const res = await fetch(`${BASE_URL}/api/cron/lembrete-orcamento`, { headers })
@@ -101,7 +114,7 @@ function startCronJobs() {
   }, 30 * 60 * 1000) // 30 minutes
 
   // Billing Reminder — every hour
-  setInterval(async () => {
+  scheduleCron(async () => {
     const t0 = Date.now()
     try {
       const res = await fetch(`${BASE_URL}/api/cron/cobranca`, { headers })
@@ -125,7 +138,7 @@ function startCronJobs() {
   // (envia via Meta/email quando PAYMENT_REMINDERS_V2_REAL_DISPATCH=1).
   // Endpoint deployado desde 25/05 mas ficou órfão de cron até este fix
   // (audit operador humano 2026-05-26).
-  setInterval(async () => {
+  scheduleCron(async () => {
     const t0 = Date.now()
     try {
       const res = await fetch(`${BASE_URL}/api/cron/payment-reminders-v2`, { headers })
@@ -186,7 +199,7 @@ function startCronJobs() {
   if (!INTERNAL_API_KEY) {
     console.warn('[Cron/GoogleReviews] INTERNAL_API_KEY ausente — cron desabilitado')
   } else {
-    setInterval(async () => {
+    scheduleCron(async () => {
       const t0 = Date.now()
       try {
         const res = await fetch(`${BASE_URL}/api/internal/cron/google-reviews`, {
@@ -313,7 +326,7 @@ function startCronJobs() {
   if (!INTERNAL_API_KEY) {
     console.warn('[Cron/DreMvRefresh] INTERNAL_API_KEY ausente — cron desabilitado')
   } else {
-    setInterval(async () => {
+    scheduleCron(async () => {
       const t0 = Date.now()
       try {
         const res = await fetch(`${BASE_URL}/api/internal/cron/dre-mv-refresh`, {
@@ -342,7 +355,7 @@ function startCronJobs() {
   if (!INTERNAL_API_KEY) {
     console.warn('[Cron/CobrancaReenvio] INTERNAL_API_KEY ausente — cron desabilitado')
   } else {
-    setInterval(async () => {
+    scheduleCron(async () => {
       const t0 = Date.now()
       try {
         const res = await fetch(`${BASE_URL}/api/internal/cron/cobranca-reenvio-vencidas`, {
@@ -376,7 +389,7 @@ function startCronJobs() {
   if (!INTERNAL_API_KEY) {
     console.warn('[Cron/NurtureTick] INTERNAL_API_KEY ausente — cron desabilitado')
   } else {
-    setInterval(async () => {
+    scheduleCron(async () => {
       const t0 = Date.now()
       try {
         const res = await fetch(`${BASE_URL}/api/internal/cron/nurture-tick`, {
