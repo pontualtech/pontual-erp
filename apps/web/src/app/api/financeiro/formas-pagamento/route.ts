@@ -37,6 +37,18 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     if (!body.name?.trim()) return error('Nome é obrigatório', 400)
 
+    // Bug #57 (audit 31/05 LOOP r4): dup prevention. Forma pgto guardada
+    // como Setting json — busca scan por prefix + parse.
+    const existing = await prisma.setting.findMany({
+      where: { company_id: user.companyId, key: { startsWith: KEY_PREFIX } },
+      select: { value: true },
+    })
+    const nameLower = body.name.trim().toLowerCase()
+    const dup = existing.find((s) => {
+      try { return JSON.parse(s.value || '{}').name?.toLowerCase().trim() === nameLower } catch { return false }
+    })
+    if (dup) return error(`Já existe forma de pagamento "${body.name.trim()}". Escolha outro nome.`, 409)
+
     const setting = await prisma.setting.create({
       data: {
         company_id: user.companyId,

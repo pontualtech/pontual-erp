@@ -49,6 +49,19 @@ export async function POST(req: NextRequest) {
       if (!parent) return error('Centro de custo pai não encontrado', 404)
     }
 
+    // Bug #56 (audit 31/05 LOOP r4): mesma classe de #54 — duplicidade silenciosa.
+    // Karlão consegue criar 2x "Administrativo" e UI mostra ambos confundindo.
+    const dupCheck = await prisma.costCenter.findFirst({
+      where: {
+        company_id: user.companyId,
+        name: { equals: data.name.trim(), mode: 'insensitive' },
+      },
+      select: { id: true, name: true },
+    })
+    if (dupCheck) {
+      return error(`Já existe centro de custo "${dupCheck.name}". Escolha outro nome ou edite o existente.`, 409)
+    }
+
     const costCenter = await prisma.costCenter.create({
       data: {
         company_id: user.companyId,

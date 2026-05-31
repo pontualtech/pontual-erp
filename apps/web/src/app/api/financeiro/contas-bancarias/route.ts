@@ -41,6 +41,16 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const data = createAccountSchema.parse(body)
 
+    // Bug #59 (audit 31/05 LOOP r4): dup prevention. Mesma classe de #54/#56/#57/#58.
+    const dup = await prisma.account.findFirst({
+      where: {
+        company_id: user.companyId,
+        name: { equals: data.name.trim(), mode: 'insensitive' },
+      },
+      select: { id: true, name: true },
+    })
+    if (dup) return error(`Já existe conta bancária "${dup.name}". Escolha outro nome.`, 409)
+
     const account = await prisma.account.create({
       data: {
         company_id: user.companyId,

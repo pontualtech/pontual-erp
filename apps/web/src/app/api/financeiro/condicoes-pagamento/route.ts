@@ -53,6 +53,17 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const data = createPaymentConditionSchema.parse(body)
 
+    // Bug #58 (audit 31/05 LOOP r4): dup prevention (Setting json scan).
+    const existing = await prisma.setting.findMany({
+      where: { company_id: user.companyId, key: { startsWith: 'cond_pgto.' } },
+      select: { value: true },
+    })
+    const nameLower = data.name.trim().toLowerCase()
+    const dup = existing.find((s) => {
+      try { return JSON.parse(s.value || '{}').name?.toLowerCase().trim() === nameLower } catch { return false }
+    })
+    if (dup) return error(`Já existe condição de pagamento "${data.name.trim()}". Escolha outro nome.`, 409)
+
     const uid = crypto.randomUUID()
     const key = `cond_pgto.${uid}`
 
