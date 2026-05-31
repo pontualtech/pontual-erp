@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState, useCallback } from 'react'
+import Link from 'next/link'
 import { TrendingUp, TrendingDown, Wallet } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -167,6 +168,22 @@ export default function FluxoCaixaPage() {
         <div>
           <p className="text-xs font-medium uppercase tracking-wider text-gray-400">Financeiro</p>
           <h1 className="mt-0.5 text-2xl font-semibold text-gray-900">Fluxo de caixa</h1>
+        </div>
+        <div className="flex gap-2">
+          <Link
+            href="/financeiro/contas-receber"
+            className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 transition-colors hover:border-emerald-300 hover:bg-emerald-100"
+          >
+            <TrendingUp className="h-4 w-4" />
+            Contas a receber
+          </Link>
+          <Link
+            href="/financeiro/contas-pagar"
+            className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 text-sm font-medium text-red-700 transition-colors hover:border-red-300 hover:bg-red-100"
+          >
+            <TrendingDown className="h-4 w-4" />
+            Contas a pagar
+          </Link>
         </div>
       </div>
 
