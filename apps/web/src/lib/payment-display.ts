@@ -61,7 +61,19 @@ export function prettyPaymentMethod(pm: string | null | undefined): string {
 
 // Remove o sufixo técnico "[EVENT:uuid]" que o motorista app inclui na descrição
 // da AR pra dedup. Visualmente não interessa pro usuário — só polui.
+// Bug #29 (audit 31/05): também normaliza ENUMs crus tipo CARTAO_CREDITO/CREDIT_CARD
+// pra forma legível (mesma tabela do prettyPaymentMethod). Fix de origem é gerar
+// descrição já formatada no job de taxa cartão; este é fix em runtime defensivo.
 export function cleanDescription(d: string | null | undefined): string {
   if (!d) return ''
-  return d.replace(/\s*\[event:[^\]]+\]\s*/gi, '').trim()
+  let out = d.replace(/\s*\[event:[^\]]+\]\s*/gi, '').trim()
+  // Substituir ENUMs de payment method aparecendo cruamente na descrição
+  out = out
+    .replace(/\bCARTAO_CREDITO\b/g, 'Cartão Crédito')
+    .replace(/\bCREDIT_CARD\b/g, 'Cartão Crédito')
+    .replace(/\bCARTAO_DEBITO\b/g, 'Cartão Débito')
+    .replace(/\bDEBIT_CARD\b/g, 'Cartão Débito')
+    .replace(/\bBANK_TRANSFER\b/g, 'Transferência')
+    .replace(/\bBANK_SLIP\b/g, 'Boleto')
+  return out
 }
