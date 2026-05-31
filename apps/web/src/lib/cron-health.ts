@@ -151,6 +151,7 @@ export const INTERNAL_CRON_THRESHOLDS: Record<string, number> = {
   'dre-mv-refresh': 90,                     // 30min → alerta >90min
   'cobranca-reenvio-vencidas': 90,          // 1h → alerta >90min
   'nurture-tick': 30,                       // 15min → alerta >30min (audit 30/05 — antes órfão)
+  'fixed-expenses': 480,                    // 6h → alerta >8h (feature 31/05 Karlão)
   // BUG FIX 2026-05-30: atraso-reparo, evolution-zombie-check e
   // voip-cleanup-stale-ringing REMOVIDOS daqui. Esses são SCHEDULED TASKS
   // do Coolify (não internos do instrumentation.ts), portanto JÁ MONITORADOS

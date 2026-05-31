@@ -110,6 +110,7 @@ model Company {
   accounts                      Account[]
   accounts_payable              AccountPayable[]
   accounts_receivable           AccountReceivable[]
+  fixed_expenses                FixedExpense[]
   apiKeys                       ApiKey[]
   categories                    Category[]
   company_modules               CompanyModule[]
@@ -364,6 +365,7 @@ model Category {
   updated_at          DateTime?           @updatedAt @default(now()) @db.Timestamptz(6)
   accounts_payable    AccountPayable[]
   accounts_receivable AccountReceivable[]
+  fixed_expenses      FixedExpense[]
   companies           Company             @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   categories          Category?           @relation("categoriesTocategories", fields: [parent_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   other_categories    Category[]          @relation("categoriesTocategories")
@@ -855,6 +857,7 @@ model CostCenter {
   is_active          Boolean?         @default(true)
   created_at         DateTime?        @default(now()) @db.Timestamptz(6)
   accounts_payable   AccountPayable[]
+  fixed_expenses     FixedExpense[]
   companies          Company          @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   cost_centers       CostCenter?      @relation("cost_centersTocost_centers", fields: [parent_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   other_cost_centers CostCenter[]     @relation("cost_centersTocost_centers")
@@ -896,6 +899,9 @@ model AccountPayable {
   // 0 APs em produção tinham supplier_id populado (FK bloqueava), então
   // mudança é zero-risk pra dados existentes.
   suppliers        Supplier?   @relation(fields: [supplier_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  // Feature 2026-05-31 (Karlão): link pra FixedExpense quando AP foi gerada pelo cron mensal.
+  fixed_expense_id String?
+  fixed_expenses   FixedExpense? @relation(fields: [fixed_expense_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([company_id])
   @@index([company_id, status])
@@ -903,6 +909,7 @@ model AccountPayable {
   @@index([account_id])
   @@index([service_order_id], map: "idx_ap_service_order")
   @@index([supplier_id], map: "idx_ap_supplier")
+  @@index([fixed_expense_id], map: "idx_ap_fixed_expense")
   @@map("accounts_payable")
 }
 
@@ -2701,4 +2708,35 @@ model MarketingJourney {
   @@index([started_at(sort: Desc)], map: "idx_mj_started_at_desc")
   @@index([company_id, started_at(sort: Desc)], map: "idx_mj_company_started")
   @@map("marketing_journeys")
+}
+
+// Feature 2026-05-31 (Karlão): Despesas Fixas recorrentes.
+// "Template" de despesa que o cron mensal converte em AccountPayable concreto.
+// Histórico das APs geradas é navegável via fk fixed_expense_id em AccountPayable.
+// Frequência fixa em "mensal" pra começar (futuro: ANNUAL, QUARTERLY).
+model FixedExpense {
+  id                String              @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id        String
+  name              String              // ex: "Aluguel sede", "Internet Vivo"
+  amount_cents      Int                 // valor padrão (pode ser ajustado mês a mês na AP gerada)
+  due_day           Int                 // dia do mês (1-31); cron clampa se mês não tem (ex: 31/fev → 28/29)
+  category_id       String?
+  cost_center_id    String?
+  account_id        String?             // conta default pra débito (Itaú etc)
+  payment_method    String?             // ex: "PIX", "Boleto", "DA"
+  notes             String?
+  active            Boolean             @default(true)
+  last_generated_at DateTime?           @db.Date // mês/ano do último AP gerado (idempotência do cron)
+  created_at        DateTime?           @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime?           @updatedAt @default(now()) @db.Timestamptz(6)
+  deleted_at        DateTime?           @db.Timestamptz(6)
+
+  companies         Company             @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  categories        Category?           @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  cost_centers      CostCenter?         @relation(fields: [cost_center_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  accounts_payable  AccountPayable[]
+
+  @@index([company_id])
+  @@index([company_id, active])
+  @@map("fixed_expenses")
 }

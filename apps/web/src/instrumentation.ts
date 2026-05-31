@@ -319,6 +319,47 @@ function startCronJobs() {
     }
   })()
 
+  // Feature 2026-05-31 (Karlão): garante tabela fixed_expenses + FK em
+  // accounts_payable. Coolify não roda `prisma migrate deploy`; usamos
+  // CREATE/ALTER IF NOT EXISTS pra subir DDL idempotente no boot.
+  ;(async () => {
+    try {
+      const { prisma } = await import('@pontual/db')
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS fixed_expenses (
+          id text PRIMARY KEY DEFAULT (gen_random_uuid())::text,
+          company_id text NOT NULL,
+          name text NOT NULL,
+          amount_cents integer NOT NULL,
+          due_day integer NOT NULL,
+          category_id text,
+          cost_center_id text,
+          account_id text,
+          payment_method text,
+          notes text,
+          active boolean NOT NULL DEFAULT true,
+          last_generated_at date,
+          created_at timestamptz DEFAULT NOW(),
+          updated_at timestamptz DEFAULT NOW(),
+          deleted_at timestamptz,
+          CONSTRAINT fk_fixed_expenses_company FOREIGN KEY (company_id) REFERENCES companies(id),
+          CONSTRAINT fk_fixed_expenses_category FOREIGN KEY (category_id) REFERENCES categories(id),
+          CONSTRAINT fk_fixed_expenses_cost_center FOREIGN KEY (cost_center_id) REFERENCES cost_centers(id)
+        )
+      `)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_fixed_expenses_company ON fixed_expenses (company_id)`)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_fixed_expenses_active ON fixed_expenses (company_id, active)`)
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE accounts_payable
+        ADD COLUMN IF NOT EXISTS fixed_expense_id text
+      `)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_ap_fixed_expense ON accounts_payable (fixed_expense_id)`)
+      console.log('[Boot/EnsureFixedExpenses] OK — table+indexes+FK column criados (idempotente)')
+    } catch (err) {
+      console.error('[Boot/EnsureFixedExpenses] FAIL:', err instanceof Error ? err.message : err)
+    }
+  })()
+
   // M4 (audit 2026-05-23) — DRE materialized view refresh a cada 30min
   // dre_monthly era refrescada só por UI admin → healthcheck dre_mv_stale=true
   // permanente. Endpoint /api/internal/cron/dre-mv-refresh já existia mas
@@ -412,6 +453,38 @@ function startCronJobs() {
         await trackHealth('nurture-tick', false, Date.now() - t0, err instanceof Error ? err.message : String(err))
       }
     }, 15 * 60 * 1000) // 15 minutes
+  }
+
+  // Feature 2026-05-31 (Karlão): Despesas fixas — gera APs do mês corrente
+  // todo dia às 03:00 BRT. Endpoint é idempotente (last_generated_at por mês).
+  // Roda a cada 6h via scheduleCron: garante materialização rápida no dia 1
+  // mesmo se o servidor reiniciar (no máximo 6h de atraso pra criar APs do mês).
+  if (!INTERNAL_API_KEY) {
+    console.warn('[Cron/FixedExpenses] INTERNAL_API_KEY ausente — cron desabilitado')
+  } else {
+    scheduleCron(async () => {
+      const t0 = Date.now()
+      try {
+        const res = await fetch(`${BASE_URL}/api/internal/cron/generate-fixed-expenses`, {
+          method: 'POST',
+          headers: { 'x-internal-key': INTERNAL_API_KEY },
+        })
+        if (res.ok) {
+          const data = await res.json()
+          const d = data.data || {}
+          if (d.generated > 0 || d.failed > 0) {
+            console.log(`[Cron/FixedExpenses] month=${d.month} generated=${d.generated} skipped=${d.skipped} failed=${d.failed}`)
+          }
+          await trackHealth('fixed-expenses', true, Date.now() - t0)
+        } else {
+          console.error(`[Cron/FixedExpenses] HTTP ${res.status}`)
+          await trackHealth('fixed-expenses', false, Date.now() - t0, `HTTP ${res.status}`)
+        }
+      } catch (err) {
+        console.error('[Cron/FixedExpenses] Error:', err instanceof Error ? err.message : err)
+        await trackHealth('fixed-expenses', false, Date.now() - t0, err instanceof Error ? err.message : String(err))
+      }
+    }, 6 * 60 * 60 * 1000) // 6 hours
   }
 
   console.log('[Cron] Internal cron jobs started:')
