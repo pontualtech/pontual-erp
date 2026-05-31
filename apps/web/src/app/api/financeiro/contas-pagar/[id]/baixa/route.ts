@@ -39,7 +39,11 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!account) return error('Conta bancaria nao pertence a esta empresa', 403)
     if (!account.is_active) return error('Conta bancaria desativada — escolha outra', 400)
 
-    // C4 fix 22/05: race em baixa concorrente — rele fresh dentro da tx.
+    // Bug #41 (audit 31/05): C4 fix anterior usava findFirst+update que NÃO
+    // bloqueia o row → 3 baixas concorrentes criavam 3 Transactions e
+    // decrementavam saldo 3x. Fix: updateMany com where status != PAGO
+    // como guard atomic — só a primeira a commitar dá count=1; as outras
+    // retornam count=0 e abortam ANTES de criar Transaction/decrementar saldo.
     const payable = await prisma.$transaction(async (tx) => {
       const fresh = await tx.accountPayable.findFirst({
         where: { id: params.id, company_id: user.companyId, deleted_at: null },
@@ -51,16 +55,29 @@ export async function POST(req: NextRequest, { params }: Params) {
       const newPaidTotal = previousPaid + data.paid_amount
       const isPaidInFull = newPaidTotal >= fresh.total_amount
 
-      const updated = await tx.accountPayable.update({
-        where: { id: params.id, company_id: user.companyId },
+      // Guard atomic: só roda se ainda não estiver PAGO. updateMany retorna
+      // count=0 se outra tx concorrente já marcou PAGO entre nosso findFirst
+      // e este update — isso é o sinal pra abortar sem efeitos colaterais.
+      const claim = await tx.accountPayable.updateMany({
+        where: {
+          id: params.id,
+          company_id: user.companyId,
+          status: { notIn: ['PAGO', 'CANCELADO'] },
+          deleted_at: null,
+        },
         data: {
           paid_amount: newPaidTotal,
           status: isPaidInFull ? 'PAGO' : 'PENDENTE',
           payment_method: fresh.payment_method,
-          // Wave Z (2026-05-24): NÃO setar reconciled=true. /baixa é declaração
-          // de pagamento, não conferência de extrato (admin confere depois).
           updated_at: new Date(),
         },
+      })
+      if (claim.count === 0) {
+        throw new Error('Baixa concorrente detectada — esta conta já foi paga por outra requisição')
+      }
+
+      const updated = await tx.accountPayable.findFirstOrThrow({
+        where: { id: params.id, company_id: user.companyId },
       })
 
       // account_id e obrigatorio (schema), entao SEMPRE criamos Transaction

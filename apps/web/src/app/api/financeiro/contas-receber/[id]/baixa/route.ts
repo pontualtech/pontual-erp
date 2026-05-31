@@ -45,19 +45,28 @@ export async function POST(req: NextRequest, { params }: Params) {
       const newReceivedTotal = previousReceived + data.received_amount
       const isReceivedInFull = newReceivedTotal >= fresh.total_amount
 
-      const updated = await tx.accountReceivable.update({
-        where: { id: params.id, company_id: user.companyId },
+      // Bug #41 (audit 31/05): mesmo race condition de AP — findFirst+update
+      // não trava row. Guard atomic com updateMany where status != RECEBIDO.
+      const claim = await tx.accountReceivable.updateMany({
+        where: {
+          id: params.id,
+          company_id: user.companyId,
+          status: { notIn: ['RECEBIDO', 'PAGO', 'CANCELADO'] },
+          deleted_at: null,
+        },
         data: {
           received_amount: newReceivedTotal,
           status: isReceivedInFull ? 'RECEBIDO' : 'PENDENTE',
-          // Wave Z (2026-05-24): NÃO setar reconciled=true. Karlão deixou claro:
-          // /baixa é atendente DECLARANDO recebimento (cliente mostrou comprovante).
-          // Conciliação só vale depois que admin confere no extrato bancário. Admin
-          // marca reconciled=true via botão "Conferi no extrato" no detalhe da AR
-          // (Wave Z) ou via /conciliacao/match (OFX). Exceções automáticas: Asaas
-          // webhook + CNAB Inter (já marcam reconciled=true sozinhos).
+          // Wave Z (2026-05-24): NÃO setar reconciled=true (admin confere extrato depois).
           updated_at: new Date(),
         },
+      })
+      if (claim.count === 0) {
+        throw new Error('Baixa concorrente detectada — esta conta já foi recebida por outra requisição')
+      }
+
+      const updated = await tx.accountReceivable.findFirstOrThrow({
+        where: { id: params.id, company_id: user.companyId },
       })
 
       // account_id e obrigatorio agora — sempre cria Transaction + ajusta saldo.

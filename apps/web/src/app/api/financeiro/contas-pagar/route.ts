@@ -14,10 +14,13 @@ const splitSchema = z.object({
 
 const createPayableSchema = z.object({
   supplier_id: z.string().optional(),
-  description: z.string().min(1, 'Descrição é obrigatória'),
-  notes: z.string().optional(),
-  total_amount: z.number().int().positive('Valor deve ser positivo'),
-  due_date: z.string(),
+  description: z.string().min(1, 'Descrição é obrigatória').max(500, 'Descrição muito longa'),
+  notes: z.string().max(2000, 'Notas muito longas').optional(),
+  // Bug #42 (audit 31/05): cap em R$ 99.999.999,99 (9.999.999.999 cents) pra evitar
+  // overflow PostgreSQL Int e proteger contra typos catastróficos.
+  total_amount: z.number().int().positive('Valor deve ser positivo').max(9999999999, 'Valor máximo R$ 99.999.999,99'),
+  // Bug #38 (audit 31/05): validar formato date ISO antes de hit Prisma (evita 500).
+  due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}/, 'Data deve estar no formato YYYY-MM-DD'),
   category_id: z.string().optional(),
   cost_center_id: z.string().optional(),
   account_id: z.string().optional(), // Sprint UX-24: banco origem do pagamento (Itau, Asaas, etc)
@@ -25,7 +28,15 @@ const createPayableSchema = z.object({
   installment_count: z.number().int().min(1).max(60).optional(), // M7 fix 22/05: cap 60 (era 120)
   // Split payment 2026-05-19: se splits[] vier, cria N payables agrupados via group_id
   splits: z.array(splitSchema).optional(),
-})
+}).refine(
+  (d) => {
+    // Bug #43 (audit 31/05): account_id obrigatório se não houver splits.
+    // Splits têm seu próprio account_id por linha (cada item carrega banco diferente).
+    // Karlão exigiu na regra UX: todo lançamento manual deve ter conta bancária.
+    return !!d.account_id || (d.splits && d.splits.length > 0)
+  },
+  { message: 'Conta bancária obrigatória (ou splits com account_id em cada linha)', path: ['account_id'] },
+)
 
 export async function GET(request: NextRequest) {
   try {

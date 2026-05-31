@@ -18,10 +18,12 @@ const splitSchema = z.object({
 const createReceivableSchema = z.object({
   customer_id: z.string().optional(),
   service_order_id: z.string().optional(),
-  description: z.string().min(1, 'Descrição é obrigatória'),
-  notes: z.string().optional(),
-  total_amount: z.number().int().positive('Valor deve ser positivo'),
-  due_date: z.string(),
+  description: z.string().min(1, 'Descrição é obrigatória').max(500, 'Descrição muito longa'),
+  notes: z.string().max(2000, 'Notas muito longas').optional(),
+  // Bug #42 (audit 31/05): cap em R$ 99.999.999,99 pra evitar overflow Int + typo catastrófico.
+  total_amount: z.number().int().positive('Valor deve ser positivo').max(9999999999, 'Valor máximo R$ 99.999.999,99'),
+  // Bug #38 (audit 31/05): validar formato date ISO antes de hit Prisma (evita 500).
+  due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}/, 'Data deve estar no formato YYYY-MM-DD'),
   category_id: z.string().optional(),
   account_id: z.string().optional(), // Sprint UX-23: pré-vincular conta bancária destino
   payment_method: z.string().optional(),
@@ -30,7 +32,14 @@ const createReceivableSchema = z.object({
   // (um por split) agrupados via group_id. Caso contrario, comportamento atual
   // (1 receivable com payment_method/account_id/installment_count flat).
   splits: z.array(splitSchema).optional(),
-})
+}).refine(
+  (d) => {
+    // Bug #43 (audit 31/05): account_id obrigatório (ou splits com seu próprio).
+    // Regra Karlão: todo lançamento deve ter conta bancária pra rastreio de saldo.
+    return !!d.account_id || (d.splits && d.splits.length > 0)
+  },
+  { message: 'Conta bancária obrigatória (ou splits com account_id em cada linha)', path: ['account_id'] },
+)
 
 export async function GET(request: NextRequest) {
   try {
