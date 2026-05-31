@@ -146,6 +146,16 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       }
     }
 
+    // Bug #68 (audit 31/05 LOOP r10): PATCH status='PENDENTE' em AR RECEBIDO com
+    // received_amount > 0 deixava inconsistente. Forçar uso de /estornar.
+    if (
+      data.status === 'PENDENTE' &&
+      (existing.status === 'RECEBIDO' || existing.status === 'PAGO') &&
+      (existing.received_amount ?? 0) > 0
+    ) {
+      return error('Para reverter RECEBIDO→PENDENTE use o botão Estornar (zera received_amount e cria transação compensatória).', 400)
+    }
+
     const updateData: any = { ...data, updated_at: new Date() }
     if (data.due_date) updateData.due_date = new Date(data.due_date)
 
