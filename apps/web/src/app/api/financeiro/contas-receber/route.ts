@@ -344,6 +344,30 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const data = createReceivableSchema.parse(body)
 
+    // Bug #51/#52 (audit 31/05): validar FKs tenant ANTES do create pra evitar
+    // FK violation 500 + permitir cross-tenant leak. Mesmo padrão aplicado em AP.
+    if (data.customer_id) {
+      const customer = await prisma.customer.findFirst({
+        where: { id: data.customer_id, company_id: user.companyId },
+        select: { id: true },
+      })
+      if (!customer) return error('Cliente não pertence a esta empresa', 403)
+    }
+    if (data.account_id) {
+      const account = await prisma.account.findFirst({
+        where: { id: data.account_id, company_id: user.companyId },
+        select: { id: true },
+      })
+      if (!account) return error('Conta bancária não pertence a esta empresa', 403)
+    }
+    if (data.category_id) {
+      const category = await prisma.category.findFirst({
+        where: { id: data.category_id, company_id: user.companyId },
+        select: { id: true },
+      })
+      if (!category) return error('Categoria não pertence a esta empresa', 403)
+    }
+
     // Refetch card_fee settings 1x (compartilhado entre todos splits de cartao)
     const feeSettings = await prisma.setting.findMany({
       where: { company_id: user.companyId, key: { startsWith: 'card_fee.' } },

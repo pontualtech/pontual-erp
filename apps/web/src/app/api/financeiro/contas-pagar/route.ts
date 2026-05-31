@@ -290,6 +290,33 @@ export async function POST(request: NextRequest) {
       if (!supplier) return error('Fornecedor nao pertence a esta empresa', 403)
     }
 
+    // Bug #52 (audit 31/05): valida account_id pertence ao tenant ANTES do
+    // Prisma create (antes aceitava UUID fake e Prisma criava AP com FK lazy
+    // ou retornava 500 quando FK violation explodia). Mesmo padrão do supplier.
+    if (data.account_id) {
+      const account = await prisma.account.findFirst({
+        where: { id: data.account_id, company_id: user.companyId },
+        select: { id: true },
+      })
+      if (!account) return error('Conta bancária não pertence a esta empresa', 403)
+    }
+    // Bug #51 (audit 31/05): valida category_id antes pra evitar FK violation 500.
+    if (data.category_id) {
+      const category = await prisma.category.findFirst({
+        where: { id: data.category_id, company_id: user.companyId },
+        select: { id: true },
+      })
+      if (!category) return error('Categoria não pertence a esta empresa', 403)
+    }
+    // Idem cost_center_id.
+    if (data.cost_center_id) {
+      const cc = await prisma.costCenter.findFirst({
+        where: { id: data.cost_center_id, company_id: user.companyId },
+        select: { id: true },
+      })
+      if (!cc) return error('Centro de custo não pertence a esta empresa', 403)
+    }
+
     const hasSplits = Array.isArray(data.splits) && data.splits.length > 0
 
     if (hasSplits) {
