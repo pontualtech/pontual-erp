@@ -92,7 +92,16 @@ export default function NovaContaPagarPage() {
 
     fetch('/api/financeiro/contas-bancarias')
       .then(r => r.json())
-      .then(d => setBankAccounts(d.data ?? []))
+      .then(d => {
+        const accs = d.data ?? []
+        setBankAccounts(accs)
+        // Default: Itaú como conta padrão (Karlão 31/05). Busca por name contendo
+        // "ITAU" case-insensitive; fallback pra primeira conta ativa.
+        const defaultAcc = accs.find((a: any) => /itau/i.test(a.name)) ?? accs[0]
+        if (defaultAcc?.id) {
+          setSplits(prev => prev.map((sp, i) => i === 0 && !sp.account_id ? { ...sp, account_id: defaultAcc.id } : sp))
+        }
+      })
       .catch(() => {})
   }, [])
 
@@ -173,6 +182,12 @@ export default function NovaContaPagarPage() {
     if (!form.total_amount || Number(form.total_amount.replace(',', '.')) <= 0) { toast.error('Valor deve ser maior que zero'); return }
     if (!form.due_date) { toast.error('Data de vencimento e obrigatoria'); return }
     if (!sumValid) { toast.error(`Soma das formas (R$ ${splitsSum.toFixed(2)}) deve ser igual ao total (R$ ${totalNum.toFixed(2)})`); return }
+    // Conta bancária obrigatória em TODOS os splits (Karlão 31/05).
+    const missingAccount = splits.findIndex(sp => !sp.account_id)
+    if (missingAccount >= 0) {
+      toast.error(splits.length > 1 ? `Forma ${missingAccount + 1}: selecione a conta bancária` : 'Selecione a conta bancária')
+      return
+    }
 
     setLoading(true)
     try {

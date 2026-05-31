@@ -123,8 +123,8 @@ export default function FinanceiroPage() {
 
       <FiltersBar accounts={data?.accounts ?? []} />
 
-      {/* KPIs (5) */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      {/* KPIs (5) — md:cols-3 evita aperto em laptop 13-14"; lg+ vira 5-up */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
         <KPICard
           label="Saldo total"
           value={formatCurrency(data?.totalBalanceCents ?? 0)}

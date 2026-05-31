@@ -53,13 +53,17 @@ export function KPICard({ label, value, sub, icon: Icon, tone, deltaPct, deltaIn
 
   return (
     <Wrapper {...wrapperProps}>
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-medium text-gray-500">{label}</p>
-          <p className="mt-1.5 truncate text-[26px] font-semibold leading-none text-gray-900 tabular-nums">
+          <p className="truncate text-[13px] font-medium text-gray-500" title={label}>{label}</p>
+          {/* Font responsive: shrink em viewports onde 5 cards lutam por espaço.
+              text-xl (20px) → sm:text-[22px] → xl:text-[24px] → 2xl:text-[26px].
+              Sem truncate (era cortando "R$ 142.207,46" pra "R..." em laptop 14").
+              break-words deixa quebrar se passar dos limites. tabular-nums alinha dígitos. */}
+          <p className="mt-1.5 text-xl font-semibold leading-tight text-gray-900 tabular-nums break-words sm:text-[22px] xl:text-[24px] 2xl:text-[26px]">
             {loading ? <span className="inline-block h-7 w-32 animate-pulse rounded bg-gray-200" /> : value}
           </p>
-          <div className="mt-2 flex items-center gap-2 text-xs">
+          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
             {sub && <span className="text-gray-500">{sub}</span>}
             {hasDelta && (
               <span className={cn('inline-flex items-center gap-0.5 font-medium tabular-nums', deltaColor)}>
@@ -69,7 +73,7 @@ export function KPICard({ label, value, sub, icon: Icon, tone, deltaPct, deltaIn
             )}
           </div>
         </div>
-        <div className={cn('rounded-lg p-2.5', t.bg)}>
+        <div className={cn('flex-none rounded-lg p-2.5', t.bg)}>
           <Icon className={cn('h-5 w-5', t.text)} />
         </div>
       </div>
