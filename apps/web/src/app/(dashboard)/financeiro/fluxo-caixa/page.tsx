@@ -1,21 +1,15 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
-import Link from 'next/link'
-import { ArrowLeft, TrendingUp, TrendingDown, DollarSign, Loader2, Filter } from 'lucide-react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
+import { TrendingUp, TrendingDown, Wallet } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import {
-  Bar,
-  Line,
-  ComposedChart,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
+  Bar, Line, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
+import { DateInputBR } from '@/app/(dashboard)/components/date-input-br'
+import { KPICard } from '@/app/(dashboard)/financeiro/_components/kpi-card'
+import { ContasDistribuicao } from '@/app/(dashboard)/financeiro/_components/contas-distribuicao'
 
 interface FluxoItem {
   month: string
@@ -39,11 +33,7 @@ interface CategoriaOption {
 
 interface FluxoData {
   data: FluxoItem[]
-  totais: {
-    entradas: number
-    saidas: number
-    saldo: number
-  }
+  totais: { entradas: number; saidas: number; saldo: number }
   saldoBancario: number
   contas: ContaBancaria[]
   categorias: CategoriaOption[]
@@ -59,34 +49,49 @@ function formatMonthLabel(month: string) {
   return `${months[Number(m) - 1]}/${year.slice(2)}`
 }
 
+// Tooltip custom: separa "real" (Bar) de "projeção" (Line tracejada) c/ label clara.
 function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null
   return (
-    <div className="rounded-lg border bg-white p-3 shadow-lg text-sm">
-      <p className="font-medium text-gray-900 mb-1">{label}</p>
+    <div className="rounded-lg border border-gray-200 bg-white p-3 shadow-lg text-xs">
+      <p className="mb-1.5 font-medium text-gray-900">{label}</p>
       {payload.map((entry: any) => (
-        <p key={entry.dataKey} style={{ color: entry.color }}>
-          {entry.name}: {formatCurrency(entry.value)}
+        <p key={entry.dataKey} className="tabular-nums" style={{ color: entry.color }}>
+          <span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ background: entry.color }} />
+          {entry.name}: {formatCurrency(entry.value * 100)}
         </p>
       ))}
     </div>
   )
 }
 
+const PRESETS: { label: string; months: number; offset?: number }[] = [
+  { label: '3 meses',  months: 3 },
+  { label: '6 meses',  months: 6 },
+  { label: '12 meses', months: 12 },
+  { label: 'Ano',      months: 12, offset: -new Date().getMonth() },
+]
+
+function presetRange(months: number, offset = 0) {
+  const now = new Date()
+  const from = new Date(now.getFullYear(), now.getMonth() + offset, 1)
+  const to = new Date(now.getFullYear(), now.getMonth() + offset + months, 0)
+  return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) }
+}
+
 export default function FluxoCaixaPage() {
   const [data, setData] = useState<FluxoData | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Default: mes corrente ate 11 meses a frente
-  const now = new Date()
-  const defaultFrom = new Date(now.getFullYear(), now.getMonth(), 1)
-  const defaultTo = new Date(now.getFullYear(), now.getMonth() + 12, 0)
-  const [fromDate, setFromDate] = useState(defaultFrom.toISOString().slice(0, 10))
-  const [toDate, setToDate] = useState(defaultTo.toISOString().slice(0, 10))
+  // Default: mês atual + 11 à frente (12 meses)
+  const defaultRange = useMemo(() => presetRange(12), [])
+  const [fromDate, setFromDate] = useState(defaultRange.from)
+  const [toDate, setToDate] = useState(defaultRange.to)
   const [accountId, setAccountId] = useState('')
   const [categoryId, setCategoryId] = useState('')
 
   const loadData = useCallback(() => {
+    const ac = new AbortController()
     setLoading(true)
     const params = new URLSearchParams()
     if (fromDate) params.set('from', fromDate)
@@ -94,339 +99,321 @@ export default function FluxoCaixaPage() {
     if (accountId) params.set('account_id', accountId)
     if (categoryId) params.set('category_id', categoryId)
 
-    fetch(`/api/financeiro/relatorios/fluxo-caixa?${params}`)
-      .then(r => r.json())
-      .then(d => setData(d.data ?? null))
-      .catch(() => toast.error('Erro ao carregar fluxo de caixa'))
-      .finally(() => setLoading(false))
+    fetch(`/api/financeiro/relatorios/fluxo-caixa?${params}`, { signal: ac.signal })
+      .then((r) => r.json())
+      .then((d) => setData(d.data ?? null))
+      .catch((err) => {
+        if (err?.name !== 'AbortError') toast.error('Erro ao carregar fluxo de caixa')
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setLoading(false)
+      })
+    return () => ac.abort()
   }, [fromDate, toDate, accountId, categoryId])
 
-  useEffect(() => { loadData() }, [loadData])
+  useEffect(() => {
+    const cleanup = loadData()
+    return cleanup
+  }, [loadData])
 
-  // W8 (audit 2026-05-23): projeção de fluxo de caixa — padrão ChartMogul/Baremetrics.
-  // Linha tracejada de previsão = média dos últimos 3 meses fechados (passado),
-  // estendida sobre meses futuros do gráfico. Karlão vê se vai sobrar caixa sem
-  // montar planilha. Calculo no client, zero backend novo.
   const rawData = data?.data ?? []
   const todayProj = new Date()
   const currentMonthKey = `${todayProj.getFullYear()}-${String(todayProj.getMonth() + 1).padStart(2, '0')}`
-  // Últimos 3 meses FECHADOS (anteriores ao corrente) com dados não-zero
-  const closedMonths = rawData.filter(m => m.month < currentMonthKey && (m.entradas > 0 || m.saidas > 0))
+
+  // W8 (audit 2026-05-23): projeção de fluxo de caixa — padrão ChartMogul/Baremetrics.
+  // Linha tracejada de previsão = média dos últimos 3 meses fechados (passado),
+  // estendida sobre meses futuros. Karlão vê se vai sobrar caixa.
+  const closedMonths = rawData.filter((m) => m.month < currentMonthKey && (m.entradas > 0 || m.saidas > 0))
   const last3 = closedMonths.slice(-3)
   const avgEntradas = last3.length > 0 ? last3.reduce((a, m) => a + m.entradas, 0) / last3.length : 0
   const avgSaidas = last3.length > 0 ? last3.reduce((a, m) => a + m.saidas, 0) / last3.length : 0
 
-  const chartData = rawData.map(item => {
+  const chartData = rawData.map((item) => {
     const isFuture = item.month >= currentMonthKey
     return {
       name: formatMonthLabel(item.month),
       Entradas: item.entradas / 100,
       Saidas: item.saidas / 100,
-      // Projeção: só nos meses futuros — desenha linha tracejada estimando média
+      Acumulado: item.acumulado / 100,
       'Entradas (proj)': isFuture && avgEntradas > 0 ? avgEntradas / 100 : null,
-      'Saidas (proj)': isFuture && avgSaidas > 0 ? avgSaidas / 100 : null,
+      'Saidas (proj)':   isFuture && avgSaidas > 0 ? avgSaidas / 100 : null,
       month: item.month,
     }
   })
 
-  const hasProjection = last3.length >= 2 && chartData.some(c => c['Entradas (proj)'] != null)
-
+  const hasProjection = last3.length >= 2 && chartData.some((c) => c['Entradas (proj)'] != null)
   const totais = data?.totais
 
+  // Sparkline mensal pros KPIs (cada mês = 1 ponto). Em valores R$ (centavos/100).
+  const entradasSpark = rawData.map((d) => d.entradas / 100)
+  const saidasSpark   = rawData.map((d) => d.saidas / 100)
+
+  // Delta % vs período anterior equivalente (calculado pegando o último mês fechado vs anterior).
+  // Aproximação simples — pra cálculo robusto, API precisaria de período anterior.
+  const recentClosed = closedMonths.slice(-2)
+  const deltaEntradas = recentClosed.length === 2 && recentClosed[0].entradas > 0
+    ? ((recentClosed[1].entradas - recentClosed[0].entradas) / recentClosed[0].entradas) * 100
+    : null
+  const deltaSaidas = recentClosed.length === 2 && recentClosed[0].saidas > 0
+    ? ((recentClosed[1].saidas - recentClosed[0].saidas) / recentClosed[0].saidas) * 100
+    : null
+
+  const hasFilters = accountId || categoryId || fromDate !== defaultRange.from || toDate !== defaultRange.to
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Link
-            href="/financeiro"
-            className="rounded-md border p-2 text-gray-500 hover:bg-gray-50 hover:text-gray-700"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Fluxo de Caixa</h1>
-            <p className="text-sm text-gray-500">Entradas e saídas por período</p>
-          </div>
+    <div className="space-y-5">
+      {/* Header consistente com /financeiro */}
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wider text-gray-400">Financeiro</p>
+          <h1 className="mt-0.5 text-2xl font-semibold text-gray-900">Fluxo de caixa</h1>
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="rounded-lg border bg-white p-4 shadow-sm">
-        <div className="flex items-center gap-2 mb-3">
-          <Filter className="h-4 w-4 text-gray-400" />
-          <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Filtros</span>
-        </div>
-        <div className="flex flex-wrap items-end gap-4">
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">De</label>
-            <input
-              type="date"
-              value={fromDate}
-              onChange={e => setFromDate(e.target.value)}
-              className="rounded-md border bg-white py-2 px-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-            />
+      {/* Filtros sticky */}
+      <div className="sticky top-0 z-20 -mx-4 border-b border-gray-200 bg-white/85 px-4 py-2.5 backdrop-blur-md sm:-mx-6 sm:px-6">
+        <div className="flex flex-wrap items-end gap-2">
+          {/* Presets período */}
+          <div className="flex flex-wrap gap-1">
+            {PRESETS.map((p) => {
+              const r = presetRange(p.months, p.offset ?? 0)
+              const active = fromDate === r.from && toDate === r.to
+              return (
+                <button
+                  key={p.label}
+                  type="button"
+                  onClick={() => { setFromDate(r.from); setToDate(r.to) }}
+                  className={cn(
+                    'h-9 cursor-pointer rounded-md border px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
+                    active
+                      ? 'border-blue-200 bg-blue-50 text-blue-700'
+                      : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50',
+                  )}
+                >
+                  {p.label}
+                </button>
+              )
+            })}
           </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Até</label>
-            <input
-              type="date"
-              value={toDate}
-              onChange={e => setToDate(e.target.value)}
-              className="rounded-md border bg-white py-2 px-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-            />
+          {/* Custom range */}
+          <div className="flex items-end gap-2">
+            <div>
+              <label htmlFor="fc-from" className="mb-1 block text-[11px] text-gray-500">De</label>
+              <DateInputBR id="fc-from" value={fromDate} onChange={setFromDate}
+                className="h-9 w-32 rounded-md border border-gray-200 bg-white px-2 text-sm tabular-nums focus:border-blue-500 focus:outline-none" />
+            </div>
+            <div>
+              <label htmlFor="fc-to" className="mb-1 block text-[11px] text-gray-500">Até</label>
+              <DateInputBR id="fc-to" value={toDate} onChange={setToDate}
+                className="h-9 w-32 rounded-md border border-gray-200 bg-white px-2 text-sm tabular-nums focus:border-blue-500 focus:outline-none" />
+            </div>
           </div>
+          {/* Conta */}
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Conta Bancária</label>
+            <label htmlFor="fc-account" className="mb-1 block text-[11px] text-gray-500">Conta</label>
             <select
+              id="fc-account"
               value={accountId}
-              onChange={e => setAccountId(e.target.value)}
-              title="Conta Bancária"
-              aria-label="Conta Bancária"
-              className="rounded-md border bg-white py-2 px-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 min-w-[180px]"
+              onChange={(e) => setAccountId(e.target.value)}
+              className="h-9 min-w-[160px] cursor-pointer rounded-md border border-gray-200 bg-white px-2 text-sm focus:border-blue-500 focus:outline-none"
             >
               <option value="">Todas as contas</option>
-              {(data?.contas ?? []).map(c => (
+              {(data?.contas ?? []).map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
           </div>
+          {/* Categoria */}
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Categoria</label>
+            <label htmlFor="fc-category" className="mb-1 block text-[11px] text-gray-500">Categoria</label>
             <select
+              id="fc-category"
               value={categoryId}
-              onChange={e => setCategoryId(e.target.value)}
-              title="Categoria"
-              aria-label="Categoria"
-              className="rounded-md border bg-white py-2 px-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 min-w-[180px]"
+              onChange={(e) => setCategoryId(e.target.value)}
+              className="h-9 min-w-[160px] cursor-pointer rounded-md border border-gray-200 bg-white px-2 text-sm focus:border-blue-500 focus:outline-none"
             >
-              <option value="">Todas as categorias</option>
-              {(data?.categorias ?? []).map(c => (
+              <option value="">Todas categorias</option>
+              {(data?.categorias ?? []).map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
           </div>
-          {(accountId || categoryId) && (
+          {hasFilters && (
             <button
               type="button"
-              onClick={() => { setAccountId(''); setCategoryId('') }}
-              className="rounded-md border border-gray-300 bg-white py-2 px-3 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+              onClick={() => {
+                setAccountId(''); setCategoryId('')
+                setFromDate(defaultRange.from); setToDate(defaultRange.to)
+              }}
+              className="ml-auto h-9 cursor-pointer rounded-md px-2 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
             >
-              Limpar filtros
+              Limpar
             </button>
           )}
         </div>
       </div>
 
-      {/* Saldo Bancário */}
-      {data && data.contas && data.contas.length > 0 && (
-        <div className="rounded-lg border bg-gradient-to-r from-blue-50 to-indigo-50 p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-gray-700">
-              Saldo Bancário Atual
-              {accountId && <span className="text-xs text-gray-400 ml-2">(filtrado)</span>}
-            </h2>
-            <span className={cn('text-2xl font-bold', (data.saldoBancario ?? 0) >= 0 ? 'text-blue-700' : 'text-red-600')}>
-              {formatCurrency(data.saldoBancario ?? 0)}
-            </span>
-          </div>
-          {!accountId && (
-            <div className="flex flex-wrap gap-4">
-              {data.contas.map(c => (
-                <div key={c.id} className="flex items-center gap-2 text-sm">
-                  <span className="text-gray-500">{c.name}:</span>
-                  <span className={cn('font-medium', c.balance >= 0 ? 'text-blue-700' : 'text-red-600')}>
-                    {formatCurrency(c.balance)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {/* KPIs */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <KPICard
+          label="Total entradas"
+          value={formatCurrency(totais?.entradas ?? 0)}
+          icon={TrendingUp}
+          tone="green"
+          sparkline={entradasSpark}
+          deltaPct={deltaEntradas}
+          loading={loading}
+        />
+        <KPICard
+          label="Total saídas"
+          value={formatCurrency(totais?.saidas ?? 0)}
+          icon={TrendingDown}
+          tone="red"
+          sparkline={saidasSpark}
+          deltaPct={deltaSaidas}
+          deltaInverse
+          loading={loading}
+        />
+        <KPICard
+          label="Saldo do período"
+          value={formatCurrency(totais?.saldo ?? 0)}
+          sub={`${rawData.length} ${rawData.length === 1 ? 'mês' : 'meses'}`}
+          icon={Wallet}
+          tone={(totais?.saldo ?? 0) >= 0 ? 'green' : 'red'}
+          loading={loading}
+        />
+      </div>
 
-      {/* Summary Cards */}
-      {totais && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="rounded-lg border bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500">Total Entradas</p>
-                <p className="mt-1 text-2xl font-bold text-green-600">
-                  {loading ? '...' : formatCurrency(totais.entradas)}
-                </p>
-              </div>
-              <div className="rounded-lg bg-green-50 p-2.5">
-                <TrendingUp className="h-5 w-5 text-green-600" />
-              </div>
-            </div>
-          </div>
-          <div className="rounded-lg border bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500">Total Saídas</p>
-                <p className="mt-1 text-2xl font-bold text-red-600">
-                  {loading ? '...' : formatCurrency(totais.saidas)}
-                </p>
-              </div>
-              <div className="rounded-lg bg-red-50 p-2.5">
-                <TrendingDown className="h-5 w-5 text-red-600" />
-              </div>
-            </div>
-          </div>
-          <div className="rounded-lg border bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500">Saldo</p>
-                <p className={cn(
-                  'mt-1 text-2xl font-bold',
-                  totais.saldo >= 0 ? 'text-emerald-600' : 'text-red-600'
-                )}>
-                  {loading ? '...' : formatCurrency(totais.saldo)}
-                </p>
-              </div>
-              <div className={cn(
-                'rounded-lg p-2.5',
-                totais.saldo >= 0 ? 'bg-emerald-50' : 'bg-red-50'
-              )}>
-                <DollarSign className={cn('h-5 w-5', totais.saldo >= 0 ? 'text-emerald-600' : 'text-red-600')} />
-              </div>
-            </div>
+      {/* Saldo Bancário (reusa ContasDistribuicao da Fase 1) */}
+      <ContasDistribuicao
+        accounts={(data?.contas ?? []).map((c) => ({ id: c.id, name: c.name, current_balance: c.balance }))}
+        loading={loading}
+      />
+
+      {/* Chart Entradas vs Saídas + Acumulado (Line) + Projeção tracejada */}
+      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-[0_1px_2px_rgb(0,0,0,0.04)]">
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Entradas vs saídas por mês</h2>
+            <p className="mt-0.5 text-xs text-gray-500">
+              Barras = realizado + projetado · Linha verde = saldo acumulado
+              {hasProjection && ` · Tracejado = projeção (média ${last3.length}m)`}
+            </p>
           </div>
         </div>
-      )}
-
-      {/* Chart */}
-      <div className="rounded-lg border bg-white p-5 shadow-sm">
-        <h2 className="text-sm font-semibold text-gray-700 mb-4">Entradas vs Saídas por Mês</h2>
         {loading ? (
-          <div className="flex items-center justify-center h-[350px] text-gray-400">
-            <Loader2 className="h-6 w-6 animate-spin mr-2" /> Carregando...
-          </div>
+          <div className="flex h-[360px] items-center justify-center text-sm text-gray-400">Carregando…</div>
         ) : chartData.length === 0 ? (
-          <div className="flex items-center justify-center h-[350px] text-gray-400">
-            Nenhum dado para o periodo selecionado
+          <div className="flex h-[360px] items-center justify-center text-sm text-gray-400">
+            Nenhum dado para o período selecionado
           </div>
         ) : (
-          <>
-          <ResponsiveContainer width="100%" height={350}>
-            <ComposedChart data={chartData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+          <ResponsiveContainer width="100%" height={360}>
+            <ComposedChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+              <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#6b7280' }} tickLine={false} axisLine={{ stroke: '#e5e7eb' }} />
               <YAxis
-                tick={{ fontSize: 12 }}
-                tickFormatter={(value: number) =>
-                  value >= 1000 ? `${(value / 1000).toFixed(0)}k` : String(value)
+                yAxisId="left"
+                tick={{ fontSize: 11, fill: '#6b7280' }}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(v: number) =>
+                  v === 0 ? '0' : new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 }).format(v)
                 }
+                width={56}
               />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
-              <Bar dataKey="Entradas" fill="#22c55e" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="Saidas" fill="#ef4444" radius={[4, 4, 0, 0]} />
+              <YAxis
+                yAxisId="right"
+                orientation="right"
+                tick={{ fontSize: 11, fill: '#10b981' }}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(v: number) =>
+                  v === 0 ? '0' : new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 }).format(v)
+                }
+                width={56}
+              />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.03)' }} />
+              <Legend
+                iconType="circle"
+                iconSize={8}
+                wrapperStyle={{ fontSize: 12, paddingTop: 8 }}
+                formatter={(v) => <span className="text-gray-700">{v}</span>}
+              />
+              <Bar yAxisId="left" dataKey="Entradas" fill="#10b981" radius={[3, 3, 0, 0]} />
+              <Bar yAxisId="left" dataKey="Saidas"   fill="#ef4444" radius={[3, 3, 0, 0]} />
+              <Line yAxisId="right" type="monotone" dataKey="Acumulado" stroke="#0ea5e9" strokeWidth={2} dot={{ r: 2.5 }} activeDot={{ r: 4 }} />
               {hasProjection && (
                 <>
-                  <Line
-                    type="monotone"
-                    dataKey="Entradas (proj)"
-                    stroke="#22c55e"
-                    strokeWidth={2}
-                    strokeDasharray="5 5"
-                    dot={{ r: 3 }}
-                    connectNulls={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="Saidas (proj)"
-                    stroke="#ef4444"
-                    strokeWidth={2}
-                    strokeDasharray="5 5"
-                    dot={{ r: 3 }}
-                    connectNulls={false}
-                  />
+                  <Line yAxisId="left" type="monotone" dataKey="Entradas (proj)"
+                    stroke="#10b981" strokeWidth={1.5} strokeDasharray="5 5" dot={{ r: 2 }} connectNulls={false} />
+                  <Line yAxisId="left" type="monotone" dataKey="Saidas (proj)"
+                    stroke="#ef4444" strokeWidth={1.5} strokeDasharray="5 5" dot={{ r: 2 }} connectNulls={false} />
                 </>
               )}
             </ComposedChart>
           </ResponsiveContainer>
-          {hasProjection && (
-            <p className="text-[11px] text-gray-400 mt-2">
-              ⓘ Linhas tracejadas = projeção baseada na média dos últimos {last3.length} {last3.length === 1 ? 'mês' : 'meses'} fechado(s). Aproximação — não considera sazonalidade.
-            </p>
-          )}
-          </>
+        )}
+        {hasProjection && (
+          <p className="mt-3 text-[11px] text-gray-400">
+            ⓘ Tracejado = projeção baseada na média dos últimos {last3.length} {last3.length === 1 ? 'mês fechado' : 'meses fechados'}. Aproximação — não considera sazonalidade.
+          </p>
         )}
       </div>
 
-      {/* Table */}
-      <div className="overflow-x-auto rounded-lg border bg-white shadow-sm">
+      {/* Tabela mensal */}
+      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-[0_1px_2px_rgb(0,0,0,0.04)]">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
-              <th className="px-4 py-3">Mes</th>
-              <th className="px-4 py-3 text-right">Entradas</th>
-              <th className="px-4 py-3 text-right">Saídas</th>
-              <th className="px-4 py-3 text-right">Saldo</th>
-              <th className="px-4 py-3 text-right">Acumulado</th>
+            <tr className="border-b border-gray-100 bg-gray-50/50 text-left text-[11px] font-medium uppercase tracking-wider text-gray-500">
+              <th className="px-5 py-3">Mês</th>
+              <th className="px-5 py-3 text-right">Entradas</th>
+              <th className="px-5 py-3 text-right">Saídas</th>
+              <th className="px-5 py-3 text-right">Saldo do mês</th>
+              <th className="px-5 py-3 text-right">Acumulado</th>
             </tr>
           </thead>
-          <tbody className="divide-y">
+          <tbody className="divide-y divide-gray-100">
             {loading ? (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
-                  <Loader2 className="h-4 w-4 animate-spin inline mr-2" /> Carregando...
-                </td>
+                <td colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">Carregando…</td>
               </tr>
-            ) : (data?.data ?? []).length === 0 ? (
+            ) : rawData.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
-                  Nenhum dado para o periodo selecionado
-                </td>
+                <td colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">Nenhum dado para o período</td>
               </tr>
             ) : (
-              (data?.data ?? []).map(item => (
-                <tr key={item.month} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-gray-900">
-                    {formatMonthLabel(item.month)}
-                  </td>
-                  <td className="px-4 py-3 text-right text-green-600 font-medium">
-                    {formatCurrency(item.entradas)}
-                  </td>
-                  <td className="px-4 py-3 text-right text-red-600 font-medium">
-                    {formatCurrency(item.saidas)}
-                  </td>
-                  <td className={cn(
-                    'px-4 py-3 text-right font-medium',
-                    item.saldo >= 0 ? 'text-green-600' : 'text-red-600'
-                  )}>
-                    {formatCurrency(item.saldo)}
-                  </td>
-                  <td className={cn(
-                    'px-4 py-3 text-right font-semibold',
-                    item.acumulado >= 0 ? 'text-emerald-700' : 'text-red-700'
-                  )}>
-                    {formatCurrency(item.acumulado)}
-                  </td>
-                </tr>
-              ))
+              rawData.map((item) => {
+                const isFuture = item.month >= currentMonthKey
+                return (
+                  <tr key={item.month} className={cn('transition-colors hover:bg-gray-50', isFuture && 'bg-blue-50/30')}>
+                    <td className="px-5 py-3 font-medium text-gray-900 tabular-nums">
+                      {formatMonthLabel(item.month)}
+                      {isFuture && <span className="ml-2 text-[10px] font-medium uppercase tracking-wider text-blue-500">Projetado</span>}
+                    </td>
+                    <td className="px-5 py-3 text-right font-medium text-emerald-600 tabular-nums">{formatCurrency(item.entradas)}</td>
+                    <td className="px-5 py-3 text-right font-medium text-red-600 tabular-nums">{formatCurrency(item.saidas)}</td>
+                    <td className={cn('px-5 py-3 text-right font-medium tabular-nums', item.saldo >= 0 ? 'text-gray-900' : 'text-red-600')}>
+                      {formatCurrency(item.saldo)}
+                    </td>
+                    <td className={cn('px-5 py-3 text-right font-semibold tabular-nums', item.acumulado >= 0 ? 'text-sky-600' : 'text-red-700')}>
+                      {formatCurrency(item.acumulado)}
+                    </td>
+                  </tr>
+                )
+              })
             )}
           </tbody>
-          {/* Totals row */}
-          {totais && !loading && (data?.data ?? []).length > 0 && (
+          {totais && !loading && rawData.length > 0 && (
             <tfoot>
-              <tr className="border-t-2 bg-gray-50 font-semibold">
-                <td className="px-4 py-3 text-gray-900">Total</td>
-                <td className="px-4 py-3 text-right text-green-600">
-                  {formatCurrency(totais.entradas)}
-                </td>
-                <td className="px-4 py-3 text-right text-red-600">
-                  {formatCurrency(totais.saidas)}
-                </td>
-                <td className={cn(
-                  'px-4 py-3 text-right',
-                  totais.saldo >= 0 ? 'text-green-600' : 'text-red-600'
-                )}>
+              <tr className="border-t border-gray-200 bg-gray-50/80 text-sm font-semibold">
+                <td className="px-5 py-3 text-gray-900">Total</td>
+                <td className="px-5 py-3 text-right text-emerald-600 tabular-nums">{formatCurrency(totais.entradas)}</td>
+                <td className="px-5 py-3 text-right text-red-600 tabular-nums">{formatCurrency(totais.saidas)}</td>
+                <td className={cn('px-5 py-3 text-right tabular-nums', totais.saldo >= 0 ? 'text-gray-900' : 'text-red-600')}>
                   {formatCurrency(totais.saldo)}
                 </td>
-                <td className="px-4 py-3 text-right text-gray-400">--</td>
+                <td className="px-5 py-3 text-right text-gray-400">—</td>
               </tr>
             </tfoot>
           )}
