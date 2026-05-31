@@ -39,6 +39,20 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!account) return error('Conta bancaria nao pertence a esta empresa', 403)
     if (!account.is_active) return error('Conta bancaria desativada — escolha outra', 400)
 
+    // Bug #53 (audit 31/05): validar amount > saldo restante ANTES da transaction
+    // (throw dentro de transaction vira 500 via handleError). Pequena race com baixa
+    // concorrente é tratada DENTRO da tx com updateMany guard de status.
+    const apForCheck = await prisma.accountPayable.findFirst({
+      where: { id: params.id, company_id: user.companyId, deleted_at: null },
+      select: { total_amount: true, paid_amount: true },
+    })
+    if (apForCheck) {
+      const remainingCents = apForCheck.total_amount - (apForCheck.paid_amount || 0)
+      if (data.paid_amount > remainingCents) {
+        return error(`Valor da baixa (R$ ${(data.paid_amount/100).toFixed(2)}) excede o saldo restante (R$ ${(remainingCents/100).toFixed(2)})`, 400)
+      }
+    }
+
     // Bug #41 (audit 31/05): C4 fix anterior usava findFirst+update que NÃO
     // bloqueia o row → 3 baixas concorrentes criavam 3 Transactions e
     // decrementavam saldo 3x. Fix: updateMany com where status != PAGO

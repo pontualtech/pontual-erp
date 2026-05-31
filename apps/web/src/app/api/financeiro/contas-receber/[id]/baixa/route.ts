@@ -30,6 +30,19 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!account) return error('Conta bancaria nao pertence a esta empresa', 403)
     if (!account.is_active) return error('Conta bancaria desativada — escolha outra', 400)
 
+    // Bug #53 (audit 31/05): validar valor > saldo restante ANTES da transaction
+    // (throw dentro de tx vira 500 via handleError mapping de Error genérico).
+    const arForCheck = await prisma.accountReceivable.findFirst({
+      where: { id: params.id, company_id: user.companyId, deleted_at: null },
+      select: { total_amount: true, received_amount: true },
+    })
+    if (arForCheck) {
+      const remainingCents = arForCheck.total_amount - (arForCheck.received_amount || 0)
+      if (data.received_amount > remainingCents) {
+        return error(`Valor do recebimento (R$ ${(data.received_amount/100).toFixed(2)}) excede o saldo restante (R$ ${(remainingCents/100).toFixed(2)})`, 400)
+      }
+    }
+
     // C4 fix 22/05: race em baixa concorrente. Relemos o AR DENTRO da $transaction
     // pra evitar 2 baixas simultaneas somarem ao mesmo received_amount. Tambem
     // re-checa status — se outra baixa ja completou, retorna erro em vez de
