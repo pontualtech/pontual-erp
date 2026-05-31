@@ -43,6 +43,10 @@ export async function POST(req: NextRequest, { params }: Params) {
       if (fresh.status === 'CANCELADO') throw new Error('Conta cancelada durante a baixa')
       const previousReceived = fresh.received_amount || 0
       const newReceivedTotal = previousReceived + data.received_amount
+      // Bug #53 (audit 31/05): baixa com valor > total causava 500. Cap explícito.
+      if (newReceivedTotal > fresh.total_amount) {
+        throw new Error(`Valor do recebimento (R$ ${(data.received_amount/100).toFixed(2)}) excede o saldo restante (R$ ${((fresh.total_amount - previousReceived)/100).toFixed(2)})`)
+      }
       const isReceivedInFull = newReceivedTotal >= fresh.total_amount
 
       // Bug #41 (audit 31/05): mesmo race condition de AP — findFirst+update

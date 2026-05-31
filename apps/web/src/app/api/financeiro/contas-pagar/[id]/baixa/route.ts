@@ -53,6 +53,11 @@ export async function POST(req: NextRequest, { params }: Params) {
       if (fresh.status === 'CANCELADO') throw new Error('Conta cancelada durante a baixa')
       const previousPaid = fresh.paid_amount || 0
       const newPaidTotal = previousPaid + data.paid_amount
+      // Bug #53 (audit 31/05): baixa com valor > total causava 500 (overflow).
+      // Cap em total_amount — qualquer excedente vira erro 400 com mensagem clara.
+      if (newPaidTotal > fresh.total_amount) {
+        throw new Error(`Valor da baixa (R$ ${(data.paid_amount/100).toFixed(2)}) excede o saldo restante (R$ ${((fresh.total_amount - previousPaid)/100).toFixed(2)})`)
+      }
       const isPaidInFull = newPaidTotal >= fresh.total_amount
 
       // Guard atomic: só roda se ainda não estiver PAGO. updateMany retorna

@@ -73,6 +73,20 @@ export async function POST(req: NextRequest) {
       if (!parent) return error('Categoria pai não encontrada ou tipo incompatível', 404)
     }
 
+    // Bug #54 (audit 31/05): nome duplicado dentro do mesmo tipo era aceito,
+    // gerando 2 categorias "Aluguel" lado a lado na lista. Check case-insensitive.
+    const dupCheck = await prisma.category.findFirst({
+      where: {
+        company_id: user.companyId,
+        module,
+        name: { equals: data.name.trim(), mode: 'insensitive' },
+      },
+      select: { id: true, name: true },
+    })
+    if (dupCheck) {
+      return error(`Já existe uma categoria "${dupCheck.name}" deste tipo. Escolha outro nome ou edite a existente.`, 409)
+    }
+
     const category = await prisma.category.create({
       data: {
         company_id: user.companyId,
