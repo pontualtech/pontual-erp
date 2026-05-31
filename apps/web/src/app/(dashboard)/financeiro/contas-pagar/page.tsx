@@ -109,38 +109,54 @@ export default function ContasPagarPage() {
 
   // Wave X (audit 2026-05-24): filtros sticky via sessionStorage.
   // Karlão pediu — sair pra editar conta e voltar mantém o filtro.
+  // Bug #5 (audit 31/05): ler sessionStorage no initializer do useState causa
+  // hydration mismatch (#418/#422) — SSR vê {} mas CSR vê valores salvos.
+  // Fix: inicializar com '' e hidratar via useEffect (só roda no client).
   const CP_SAVED_KEY = 'cp_filters_v1'
-  const cpSaved = (() => {
-    if (typeof window === 'undefined') return {}
-    try { return JSON.parse(sessionStorage.getItem(CP_SAVED_KEY) || '{}') } catch { return {} }
-  })()
 
-  // Filters (sessionStorage > default)
-  const [search, setSearch] = useState(cpSaved.search || '')
-  const [statusFilter, setStatusFilter] = useState(cpSaved.status || '')
-  const [startDate, setStartDate] = useState(cpSaved.startDate || '')
-  const [endDate, setEndDate] = useState(cpSaved.endDate || '')
-  const [categoryFilter, setCategoryFilter] = useState(cpSaved.categoryId || '')
-  const [costCenterFilter, setCostCenterFilter] = useState(cpSaved.costCenterId || '')
-  const [paymentMethodFilter, setPaymentMethodFilter] = useState(cpSaved.paymentMethod || '')
-  const [bankAccountFilter, setBankAccountFilter] = useState(cpSaved.bankAccountId || '') // Sprint UX-24
-  const [valueMin, setValueMin] = useState(cpSaved.valueMin || '')
-  const [valueMax, setValueMax] = useState(cpSaved.valueMax || '')
+  // Filters (default vazio; sessionStorage carregado abaixo no useEffect)
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState('')
+  const [costCenterFilter, setCostCenterFilter] = useState('')
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState('')
+  const [bankAccountFilter, setBankAccountFilter] = useState('') // Sprint UX-24
+  const [valueMin, setValueMin] = useState('')
+  const [valueMax, setValueMax] = useState('')
   const [showAdvanced, setShowAdvanced] = useState(false)
+
+  // Hydrate filters from sessionStorage on mount (client only — evita SSR mismatch)
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(CP_SAVED_KEY) || '{}')
+      if (saved.search) setSearch(saved.search)
+      if (saved.status) setStatusFilter(saved.status)
+      if (saved.startDate) setStartDate(saved.startDate)
+      if (saved.endDate) setEndDate(saved.endDate)
+      if (saved.categoryId) setCategoryFilter(saved.categoryId)
+      if (saved.costCenterId) setCostCenterFilter(saved.costCenterId)
+      if (saved.paymentMethod) setPaymentMethodFilter(saved.paymentMethod)
+      if (saved.bankAccountId) setBankAccountFilter(saved.bankAccountId)
+      if (saved.valueMin) setValueMin(saved.valueMin)
+      if (saved.valueMax) setValueMax(saved.valueMax)
+    } catch {}
+  }, [])
 
   // Column visibility (portado do contas-receber 2026-05-31).
   // Persiste em localStorage com chave própria 'cp_hidden_columns' pra não
   // colidir com 'cr_hidden_columns' do contas-receber.
+  // Bug #5 (audit 31/05): inicializar vazio + hidratar via useEffect (evita
+  // hydration mismatch SSR/CSR).
   const [showColToggle, setShowColToggle] = useState(false)
-  const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = localStorage.getItem('cp_hidden_columns')
-        if (stored) return new Set(JSON.parse(stored))
-      } catch {}
-    }
-    return new Set()
-  })
+  const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(() => new Set())
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('cp_hidden_columns')
+      if (stored) setHiddenColumns(new Set(JSON.parse(stored)))
+    } catch {}
+  }, [])
   const allColumns = [
     { key: 'description', label: 'Descrição' },
     { key: 'supplier',    label: 'Fornecedor' },

@@ -131,7 +131,12 @@ export default function ContaPagarDetalhePage() {
         if (!c) { toast.error('Conta nao encontrada'); router.push('/financeiro/contas-pagar'); return }
         setConta(c)
         setBaixaAmount(String((c.total_amount - (c.paid_amount || 0)) / 100))
-        setAccounts(d.data.accounts ?? [])
+        const accs: BankAccount[] = d.data.accounts ?? []
+        setAccounts(accs)
+        // Bug #7 (audit 31/05 Karlão): pré-selecionar conta no modal Pagar.
+        // Prioridade: account_id do AP > Itaú default > primeira conta.
+        const itau = accs.find(a => /ita[uú]/i.test(a.name) || /ita[uú]/i.test((a as { bank_name?: string }).bank_name ?? ''))
+        setBaixaAccountId(c.account_id || itau?.id || accs[0]?.id || '')
         setCostCenters(d.data.cost_centers ?? [])
         setInstallments(d.data.installments ?? [])
         setEditForm({

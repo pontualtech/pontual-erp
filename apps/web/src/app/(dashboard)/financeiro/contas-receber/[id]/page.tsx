@@ -174,7 +174,12 @@ export default function ContaReceberDetalhePage() {
         if (!c) { toast.error('Conta nao encontrada'); router.push('/financeiro/contas-receber'); return }
         setConta(c)
         setBaixaAmount(String((c.total_amount - (c.received_amount || 0)) / 100))
-        setAccounts(c.accounts ?? [])
+        const accs: BankAccount[] = c.accounts ?? []
+        setAccounts(accs)
+        // Bug #7 (audit 31/05 Karlão): pré-selecionar conta no modal Receber.
+        // Prioridade: account_id do AR > Itaú default > primeira conta.
+        const itau = accs.find(a => /ita[uú]/i.test(a.name) || /ita[uú]/i.test((a as { bank_name?: string }).bank_name ?? ''))
+        setBaixaAccountId(c.account_id || itau?.id || accs[0]?.id || '')
         setOtherPending(c.other_pending ?? [])
         setGroupedItems(c.grouped_items ?? [])
         setInstallments(c.installments ?? [])

@@ -144,6 +144,16 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     })
     if (!existing) return error('Conta a pagar nao encontrada', 404)
 
+    // Bug #8 (audit 31/05 Karlão): bloquear delete de AP pago pra evitar
+    // saldo bancário órfão. Pagamento criou lançamento bancário que NÃO é
+    // revertido pelo soft-delete do AP → diff silencioso no saldo.
+    if (existing.status === 'PAGO' && (existing.paid_amount ?? 0) > 0) {
+      return error(
+        'Esta conta está paga. Estorne o pagamento antes de excluir (botão Estornar) para reverter o lançamento bancário.',
+        409,
+      )
+    }
+
     await prisma.accountPayable.updateMany({
       where: { id: params.id, company_id: user.companyId },
       data: { deleted_at: new Date() },

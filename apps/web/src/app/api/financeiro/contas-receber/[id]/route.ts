@@ -184,6 +184,19 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     })
     if (!existing) return error('Conta a receber nao encontrada', 404)
 
+    // Bug #8 (audit 31/05 Karlão): bloquear delete de AR recebido (PAGO/RECEBIDO
+    // são canônicos pra AR — projeto migrou 26/05 mas defensivo mantém ambos).
+    // Recebimento criou lançamento bancário que NÃO é revertido pelo soft-delete.
+    if (
+      (existing.status === 'RECEBIDO' || existing.status === 'PAGO') &&
+      (existing.received_amount ?? 0) > 0
+    ) {
+      return error(
+        'Esta conta está recebida. Estorne o recebimento antes de excluir (botão Estornar) para reverter o lançamento bancário.',
+        409,
+      )
+    }
+
     await prisma.accountReceivable.updateMany({
       where: { id: params.id, company_id: user.companyId },
       data: { deleted_at: new Date() },
