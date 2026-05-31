@@ -106,6 +106,18 @@ export async function POST(req: NextRequest) {
     }
     const data = parsed.data
 
+    // Bug #60 (audit 31/05 LOOP r5): dup prevention. Mesma classe de #54-#59.
+    // Despesa fixa duplicada gera 2 APs/mês via cron (despesa cobrada 2x silentemente!).
+    const dup = await prisma.fixedExpense.findFirst({
+      where: {
+        company_id: user.companyId,
+        deleted_at: null,
+        name: { equals: data.name.trim(), mode: 'insensitive' },
+      },
+      select: { id: true, name: true },
+    })
+    if (dup) return error(`Já existe despesa fixa "${dup.name}". Escolha outro nome ou edite a existente.`, 409)
+
     const fe = await prisma.fixedExpense.create({
       data: {
         company_id: user.companyId,
