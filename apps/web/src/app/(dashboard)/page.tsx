@@ -781,7 +781,10 @@ export default function DashboardPage() {
 
         {/* Pipeline de OS */}
         {isWidgetVisible('chart_pipeline') && <div className="rounded-xl border bg-white p-5 shadow-sm">
-          <h2 className="mb-4 font-semibold text-gray-900">Pipeline de OS</h2>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h2 className="font-semibold text-gray-900">Pipeline de OS</h2>
+            <span className="text-[10px] uppercase tracking-wider text-gray-400">Clique pra filtrar</span>
+          </div>
           {loading ? (
             <div className="flex h-52 items-center justify-center">
               <Loader2 className="h-6 w-6 animate-spin text-gray-300" />
@@ -826,10 +829,19 @@ export default function DashboardPage() {
                   verticalAlign="bottom"
                   align="center"
                   layout="horizontal"
-                  wrapperStyle={{ fontSize: '11px', lineHeight: '18px', paddingTop: '8px' }}
+                  wrapperStyle={{ fontSize: '11px', lineHeight: '18px', paddingTop: '8px', cursor: 'pointer' }}
                   formatter={(value: string) => {
                     const item = stats!.pipeline.find(p => p.name === value)
                     return `${value} (${item?.count ?? 0})`
+                  }}
+                  // Bug Pipeline #46 (audit 31/05 Karlão): legenda agora dispara
+                  // mesmo drill-down da fatia (clique em "Coletar (41)" → /os?status=ID).
+                  onClick={(payload: { value?: string } | undefined) => {
+                    const name = payload?.value
+                    if (!name) return
+                    const item = stats?.pipeline?.find(p => p.name === name)
+                    if (item?.id) router.push(`/os?status=${encodeURIComponent(item.id)}`)
+                    else router.push(`/os?search=${encodeURIComponent(name)}`)
                   }}
                 />
               </PieChart>
@@ -1025,7 +1037,11 @@ export default function DashboardPage() {
                   return (
                     <tr key={tech.id} className="hover:bg-gray-50">
                       <td className="px-4 py-2.5">
-                        <Link href={`/tecnico?tech=${tech.id}`} className="font-medium text-gray-900 hover:text-blue-600">{tech.name}</Link>
+                        {/* Bug #48 (audit 31/05 Karlão): antes link ia pra /tecnico
+                            (Meu Painel do user logado), ignorando o tech.id passado.
+                            Admin clicando em "Luiz" via Carga de Trabalho via parar
+                            no próprio painel. Agora vai pra /os filtrado. */}
+                        <Link href={`/os?assignedTo=${tech.id}`} className="font-medium text-gray-900 hover:text-blue-600">{tech.name}</Link>
                       </td>
                       <td className="px-4 py-2.5 text-center font-semibold text-gray-900">{tech.total}</td>
                       <td className="px-4 py-2.5 text-center">
