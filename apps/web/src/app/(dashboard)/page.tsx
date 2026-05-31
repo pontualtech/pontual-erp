@@ -14,6 +14,7 @@ import {
 import { toast } from 'sonner'
 import { VoipDashboardCard } from '@/components/voip/VoipDashboardCard'
 import { ChargesSummaryWidget } from './components/ChargesSummaryWidget'
+import { cleanDescription } from '@/lib/payment-display'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
@@ -930,10 +931,12 @@ export default function DashboardPage() {
             ) : (
               stats!.recentOs.map(os => (
                 <Link key={os.id} href={`/os/${os.id}`}
-                  className="flex items-center justify-between px-5 py-3 hover:bg-gray-50 transition-colors">
-                  <div className="min-w-0">
-                    <span className="font-medium text-gray-900">OS-{String(os.os_number).padStart(4, '0')}</span>
-                    <span className="ml-3 text-sm text-gray-500 truncate">{os.customer_name}</span>
+                  className="flex items-center justify-between gap-3 px-5 py-3 hover:bg-gray-50 transition-colors">
+                  {/* Bug #30 (audit 31/05): OS-XXXXX quebrava em 2 linhas com clientes de nome longo
+                      (span inline sem shrink-0 + truncate no nome dentro do mesmo elemento). */}
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <span className="font-medium text-gray-900 shrink-0 whitespace-nowrap">OS-{String(os.os_number).padStart(4, '0')}</span>
+                    <span className="text-sm text-gray-500 truncate">{os.customer_name}</span>
                   </div>
                   <span
                     className="shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium"
@@ -965,9 +968,11 @@ export default function DashboardPage() {
                 <p className="p-5 text-sm text-gray-400">Nenhuma conta encontrada</p>
               ) : (
                 stats!.recentReceivable.map(r => (
-                  <div key={r.id} className="flex items-center justify-between px-5 py-3">
+                  <Link key={r.id} href={`/financeiro/contas-receber/${r.id}`}
+                    className="flex items-center justify-between px-5 py-3 hover:bg-gray-50 transition-colors">
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-gray-900 truncate">{r.description}</p>
+                      {/* Bug #28b (audit 31/05): widget também precisa do cleanDescription */}
+                      <p className="text-sm font-medium text-gray-900 truncate">{cleanDescription(r.description)}</p>
                       <p className="text-xs text-gray-400">{r.customer_name} &middot; Venc. {formatDate(r.due_date)}</p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0 ml-3">
@@ -979,7 +984,7 @@ export default function DashboardPage() {
                         {receivableStatusLabel[r.status ?? 'PENDENTE'] ?? r.status}
                       </span>
                     </div>
-                  </div>
+                  </Link>
                 ))
               )}
             </div>
