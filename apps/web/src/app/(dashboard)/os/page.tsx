@@ -389,7 +389,7 @@ export default function OSListPage() {
   // Load role-based visibility config
   useEffect(() => {
     if (isAdmin) {
-      setAllowedColumns(['os_number', 'created_at', 'customer', 'equipment_type', 'equipment_brand', 'equipment_model', 'os_type', 'os_location', 'status', 'total_cost', 'financeiro', 'technician', 'priority'])
+      setAllowedColumns(['os_number', 'created_at', 'customer', 'address_zip', 'equipment_type', 'equipment_brand', 'equipment_model', 'os_type', 'os_location', 'status', 'total_cost', 'financeiro', 'technician', 'priority'])
       setOwnOnly(false)
       setVisibilityLoaded(true)
       return
@@ -403,7 +403,7 @@ export default function OSListPage() {
         }
       })
       .catch(() => {
-        setAllowedColumns(['os_number', 'created_at', 'customer', 'equipment_type', 'equipment_brand', 'equipment_model', 'os_type', 'os_location', 'status', 'total_cost', 'financeiro', 'technician', 'priority'])
+        setAllowedColumns(['os_number', 'created_at', 'customer', 'address_zip', 'equipment_type', 'equipment_brand', 'equipment_model', 'os_type', 'os_location', 'status', 'total_cost', 'financeiro', 'technician', 'priority'])
       })
       .finally(() => setVisibilityLoaded(true))
   }, [isAdmin])
