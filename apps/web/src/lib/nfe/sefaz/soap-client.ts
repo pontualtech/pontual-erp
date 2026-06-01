@@ -121,7 +121,11 @@ export async function sendSoapRequest(req: SoapRequest): Promise<string> {
         if (res.statusCode && res.statusCode >= 200 && res.statusCode < 500) {
           resolve(data)
         } else {
-          reject(new Error(`SEFAZ HTTP ${res.statusCode}: ${data.substring(0, 500)}`))
+          // DEBUG NFe 2026-06-01: aumentado trunc 500→5000 + log REQUEST envelope
+          // pra capturar inner exception + comparar request enviado vs SEFAZ rejeição.
+          console.error(`[SOAP] REJECTED — REQUEST ENVELOPE: ${envelope.substring(0, 3000)}`)
+          console.error(`[SOAP] REJECTED — RESPONSE FULL: ${data.substring(0, 5000)}`)
+          reject(new Error(`SEFAZ HTTP ${res.statusCode}: ${data.substring(0, 2000)}`))
         }
       })
     })

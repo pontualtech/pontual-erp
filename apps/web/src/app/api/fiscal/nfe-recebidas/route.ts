@@ -95,11 +95,12 @@ export async function POST(req: NextRequest) {
       })
     } catch (sefazErr: any) {
       console.error('[NF-e Recebidas] Erro SEFAZ:', sefazErr.message)
-      // Log para debug
+      // DEBUG NFe 2026-06-01: salva REQUEST enviado pra investigação de NPE persistente.
       await prisma.fiscalLog.create({
         data: {
           company_id: user.companyId,
           action: 'nfe_recebidas_sync_error',
+          request: { distXml, url: endpoints.distribuicaoDFe, action: 'nfeDistDFeInteresse' },
           response: {
             error: sefazErr.message,
             url: endpoints.distribuicaoDFe,
