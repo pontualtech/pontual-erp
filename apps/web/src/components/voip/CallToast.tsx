@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { PhoneIncoming, PhoneOutgoing, PhoneMissed, PhoneCall, X, ExternalLink, RotateCw } from 'lucide-react'
+import { PhoneIncoming, PhoneOutgoing, PhoneMissed, PhoneCall, X, ExternalLink, RotateCw, AlertTriangle } from 'lucide-react'
 
 type VoipEvent = {
   type: 'hello' | 'call.start' | 'call.answered' | 'call.missed' | 'call.completed'
@@ -28,7 +28,17 @@ type ActiveToast = {
   externalNumber: string
   direction: 'inbound' | 'outbound'
   startedAt: number
+  // ms entre ringing→missed quando essa chamada veio dum toast ringing anterior.
+  // <2000 indica problema provavel de registro (Sonax marcou missed instantaneo),
+  // tipico do flicker de REGISTER do widget. Operador ve aviso "linha com problema"
+  // em vez de pensar que falhou em atender.
+  wasRingingFor?: number
 }
+
+// Limiar abaixo do qual ringing→missed e tratado como "missed instantaneo" (provavel
+// problema de registro do ramal). Calls normais demoram 15-60s ate virar missed —
+// abaixo de 2s e quase certo que o ramal estava off-line no momento.
+const INSTANT_MISSED_MS = 2000
 
 function formatPhone(raw: string | null | undefined): string {
   if (!raw) return '—'
@@ -139,23 +149,34 @@ export function CallToast() {
       {toasts.map(t => {
         const isMissed = t.kind === 'missed'
         const isRinging = t.kind === 'ringing'
+        // Missed que veio dum ringing muito curto: provavel problema de registro do ramal.
+        // Diferencia visualmente pra operador saber que NAO foi falha dele.
+        const isInstantMissed = isMissed
+          && typeof t.wasRingingFor === 'number'
+          && t.wasRingingFor < INSTANT_MISSED_MS
         const colors = isMissed
-          ? 'bg-red-50 border-red-300 text-red-900 dark:bg-red-950 dark:border-red-800 dark:text-red-100'
+          ? (isInstantMissed
+              ? 'bg-amber-50 border-amber-400 text-amber-900 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-100'
+              : 'bg-red-50 border-red-300 text-red-900 dark:bg-red-950 dark:border-red-800 dark:text-red-100')
           : isRinging
             ? 'bg-amber-50 border-amber-300 text-amber-900 dark:bg-amber-950 dark:border-amber-800 dark:text-amber-100'
             : 'bg-green-50 border-green-300 text-green-900 dark:bg-green-950 dark:border-green-800 dark:text-green-100'
 
-        const Icon = isMissed
-          ? PhoneMissed
-          : t.direction === 'outbound'
-            ? PhoneOutgoing
-            : isRinging ? PhoneCall : PhoneIncoming
+        const Icon = isInstantMissed
+          ? AlertTriangle
+          : isMissed
+            ? PhoneMissed
+            : t.direction === 'outbound'
+              ? PhoneOutgoing
+              : isRinging ? PhoneCall : PhoneIncoming
 
-        const title = isMissed
-          ? '❌ Chamada perdida'
-          : isRinging
-            ? (t.direction === 'inbound' ? '📞 Tocando — chamada recebida' : '📞 Chamando…')
-            : '✓ Chamada atendida'
+        const title = isInstantMissed
+          ? '⚠ Chamada caiu na hora — linha pode estar com problema'
+          : isMissed
+            ? '❌ Chamada perdida'
+            : isRinging
+              ? (t.direction === 'inbound' ? '📞 Tocando — chamada recebida' : '📞 Chamando…')
+              : '✓ Chamada atendida'
 
         return (
           <div
@@ -173,6 +194,11 @@ export function CallToast() {
                     <div className="italic opacity-70">Cliente não identificado</div>
                   )}
                   <div className="font-mono text-xs opacity-80">{formatPhone(t.externalNumber)}</div>
+                  {isInstantMissed && (
+                    <div className="mt-1.5 text-xs leading-snug">
+                      Seu ramal pode ter ficado desconectado por instantes — a chamada nem chegou a tocar. Tente recarregar a página (F5) e verifique a bolinha do widget Sonax.
+                    </div>
+                  )}
                 </div>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {t.customerId && (
@@ -223,7 +249,13 @@ function addOrReplace(arr: ActiveToast[], next: ActiveToast): ActiveToast[] {
   const idx = arr.findIndex(t => t.uid === next.uid)
   if (idx === -1) return [...arr, next]
   // Mesma chamada que evolui de ringing → answered/missed: substitui in-place
+  const previous = arr[idx]
   const copy = [...arr]
-  copy[idx] = next
+  // Preserva info "quanto tempo ficou ringing" pra UI sinalizar problema de registro
+  if (previous.kind === 'ringing' && next.kind === 'missed') {
+    copy[idx] = { ...next, wasRingingFor: next.startedAt - previous.startedAt }
+  } else {
+    copy[idx] = next
+  }
   return copy
 }
