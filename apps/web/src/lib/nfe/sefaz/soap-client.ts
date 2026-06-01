@@ -94,7 +94,13 @@ export async function sendSoapRequest(req: SoapRequest): Promise<string> {
       path: urlObj.pathname,
       method: 'POST',
       headers: {
-        'Content-Type': `application/soap+xml; charset=utf-8; action="${req.action}"`,
+        // BUG FIX 2026-06-01 (Karlão NPE persiste após remoção do <Header/>):
+        // Mudado formato Content-Type pro padrão sped-nfe (lib referência indústria).
+        // Antes: 'application/soap+xml; charset=utf-8; action="URL"'  (com espaços + aspas)
+        // Agora: 'application/soap+xml;charset=utf-8;action=URL'        (sem espaços, sem aspas)
+        // Parsers .NET WCF strict podem dar NPE em quoted action quando esperam unquoted.
+        // Ref: https://github.com/nfephp-org/sped-common/blob/master/src/Soap/SoapCurl.php#L71
+        'Content-Type': `application/soap+xml;charset=utf-8;action=${req.action}`,
         'Content-Length': Buffer.byteLength(envelope, 'utf-8'),
       },
       key: req.privateKeyPem,
