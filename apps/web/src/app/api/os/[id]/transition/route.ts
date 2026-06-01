@@ -442,11 +442,12 @@ export async function POST(req: NextRequest, { params }: Params) {
         }
 
         // Taxa do cartão
+        let cardFeeAp: { id: string } | null = null
         if (cardFeeTotal > 0) {
           const feeCategory = await tx.category.findFirst({
             where: { company_id: user.companyId, module: 'financeiro_despesa', name: { contains: 'Taxas de Cartao' } },
           })
-          await tx.accountPayable.create({
+          cardFeeAp = await tx.accountPayable.create({
             data: {
               company_id: user.companyId,
               category_id: feeCategory?.id || null,
@@ -460,7 +461,73 @@ export async function POST(req: NextRequest, { params }: Params) {
               // era o único lugar com til, criando 54 rows divididas no banco.
               payment_method: 'Desconto automatico',
             },
+            select: { id: true },
           })
+        }
+
+        // Bug fix 2026-06-01 (Karlão reportou OS-60797 "recebida mas saldo não subiu"):
+        // Antes desse fix, /transition criava AR com status=RECEBIDO + received_amount
+        // mas NUNCA criava Transaction CREDIT nem incrementava saldo bancário —
+        // resultado: AR aparecia paga mas saldo Itaú no sistema ficava subdeclarado.
+        // Também o AP da taxa de cartão era criado PENDENTE e nunca pago, escondendo
+        // o desconto da taxa Rede do extrato.
+        // Fix: replica exatamente o que /api/financeiro/contas-receber/[id]/baixa faz —
+        // 1) Transaction CREDIT do recebimento + increment current_balance
+        // 2) Se cardFeeTotal>0: paga AP da taxa + Transaction DEBIT + decrement
+        // Tudo atomic na mesma $transaction. reconciled=false (admin financeiro
+        // confere extrato depois via "Conferi no extrato" — Wave Z regra Karlão).
+        if (receivedNow && defaultAccountId) {
+          await tx.transaction.create({
+            data: {
+              company_id: user.companyId,
+              account_id: defaultAccountId,
+              transaction_type: 'CREDIT',
+              amount: totalAmount,
+              description: `Recebimento: ${receivable.description}`,
+              transaction_date: new Date(),
+              bank_ref: `AR:${receivable.id}`,
+              reconciled: false,
+            },
+          })
+          await tx.account.update({
+            where: { id: defaultAccountId },
+            data: {
+              current_balance: { increment: totalAmount },
+              updated_at: new Date(),
+            },
+          })
+
+          // Pagamento atomic do AP da taxa de cartão (igual /baixa AR linhas 117-146):
+          // marca PAGO + cria Transaction DEBIT + decrementa saldo.
+          if (cardFeeAp && cardFeeTotal > 0) {
+            await tx.accountPayable.update({
+              where: { id: cardFeeAp.id },
+              data: {
+                status: 'PAGO',
+                paid_amount: cardFeeTotal,
+                updated_at: new Date(),
+              },
+            })
+            await tx.transaction.create({
+              data: {
+                company_id: user.companyId,
+                account_id: defaultAccountId,
+                transaction_type: 'DEBIT',
+                amount: cardFeeTotal,
+                description: `Taxa cartão: ${receivable.description}`,
+                transaction_date: new Date(),
+                bank_ref: `AP:${cardFeeAp.id}`,
+                reconciled: false,
+              },
+            })
+            await tx.account.update({
+              where: { id: defaultAccountId },
+              data: {
+                current_balance: { decrement: cardFeeTotal },
+                updated_at: new Date(),
+              },
+            })
+          }
         }
 
         receivableCreated = true
