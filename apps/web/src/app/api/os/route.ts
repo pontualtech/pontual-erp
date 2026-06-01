@@ -98,6 +98,18 @@ export async function GET(req: NextRequest) {
     const filterModel = url.get('equipmentModel')
     if (filterModel) where.equipment_model = { contains: filterModel, mode: 'insensitive' }
 
+    // Feature 2026-06-01 (Karlão): filtro por CEP do cliente pra organizar logística
+    // de coletas/entregas por região. CEPs são hierárquicos (primeiros dígitos =
+    // região, depois bairro, depois rua), então usamos startsWith pra agrupar.
+    // Normaliza: remove dashes/espaços que usuário pode digitar ("01310-100" → "01310100").
+    const filterZip = url.get('zip')
+    if (filterZip) {
+      const zipNormalized = filterZip.replace(/\D/g, '')
+      if (zipNormalized.length > 0) {
+        where.customers = { ...(where.customers || {}), address_zip: { startsWith: zipNormalized } }
+      }
+    }
+
     // Ocultar entregues e/ou canceladas por padrão
     const hideCancelled = url.get('hideCancelled') === 'true'
     const hideDelivered = url.get('hideDelivered') === 'true'

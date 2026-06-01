@@ -3,17 +3,20 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 
+// 2026-06-01 (Karlão): adicionada coluna address_zip pra filtro logístico por CEP.
+// Motorista vê por padrão (precisa pra coleta/entrega); técnico/financeiro
+// não precisam por default mas podem habilitar via column picker.
 const ALL_COLUMNS = [
-  'os_number', 'created_at', 'customer', 'equipment_type', 'equipment_brand', 'equipment_model',
+  'os_number', 'created_at', 'customer', 'address_zip', 'equipment_type', 'equipment_brand', 'equipment_model',
   'os_type', 'os_location', 'status', 'total_cost', 'financeiro', 'technician', 'priority',
 ]
 
 const DEFAULT_HIDDEN: Record<string, string[]> = {
   admin: [],
   atendente: [],
-  tecnico: ['financeiro'],
-  motorista: ['total_cost', 'financeiro'],
-  financeiro: [],
+  tecnico: ['financeiro', 'address_zip'],
+  motorista: ['total_cost', 'financeiro'], // motorista PRECISA do CEP — não esconder
+  financeiro: ['address_zip'],
 }
 
 const DEFAULT_OWN_ONLY: Record<string, boolean> = {

@@ -40,7 +40,7 @@ interface OS {
   is_warranty: boolean | null
   warranty_os_id: string | null
   created_at: string
-  customers: { id: string; legal_name: string; phone: string | null; document_number: string | null } | null
+  customers: { id: string; legal_name: string; phone: string | null; document_number: string | null; address_zip: string | null; address_neighborhood: string | null; address_city: string | null } | null
   module_statuses: { id: string; name: string; color: string } | null
   user_profiles: { id: string; name: string } | null
   accounts_receivable: { id: string; status: string; total_amount: number; received_amount: number | null }[]
@@ -177,6 +177,9 @@ export default function OSListPage() {
   const [equipFilter, setEquipFilter] = useState(saved.current.equip || '')
   const [brandFilter, setBrandFilter] = useState(saved.current.brand || '')
   const [modelFilter, setModelFilter] = useState(saved.current.model || '')
+  // Feature 2026-06-01 (Karlão): filtro CEP pra logística por região.
+  // Prefix match no backend (?zip=01310 pega 01310-100, 01310-200, ...).
+  const [zipFilter, setZipFilter] = useState(saved.current.zip || '')
   const [equipTypes, setEquipTypes] = useState<string[]>([])
   const [brandOptions, setBrandOptions] = useState<string[]>([])
   const [modelOptions, setModelOptions] = useState<string[]>([])
@@ -208,6 +211,7 @@ export default function OSListPage() {
     if (equipFilter) data.equip = equipFilter
     if (brandFilter) data.brand = brandFilter
     if (modelFilter) data.model = modelFilter
+    if (zipFilter) data.zip = zipFilter
     if (dateFrom) data.from = dateFrom
     if (dateTo) data.to = dateTo
     if (overdueFilter) data.overdue = '1'
@@ -222,7 +226,7 @@ export default function OSListPage() {
     const qs = params.toString()
     const newUrl = qs ? `${pathname}?${qs}` : pathname
     window.history.replaceState(null, '', newUrl)
-  }, [debouncedSearch, statusFilter, typeFilter, locationFilter, equipFilter, brandFilter, modelFilter, dateFrom, dateTo, overdueFilter, page, view, pathname])
+  }, [debouncedSearch, statusFilter, typeFilter, locationFilter, equipFilter, brandFilter, modelFilter, zipFilter, dateFrom, dateTo, overdueFilter, page, view, pathname])
 
   const [showCancelled, setShowCancelled] = useState(false)
   const [showDelivered, setShowDelivered] = useState(false)
@@ -485,6 +489,7 @@ export default function OSListPage() {
     if (equipFilter) params.set('equipmentType', equipFilter)
     if (brandFilter) params.set('equipmentBrand', brandFilter)
     if (modelFilter) params.set('equipmentModel', modelFilter)
+    if (zipFilter) params.set('zip', zipFilter)
     if (overdueFilter) params.set('overdue', 'true')
     // Audit 11 wave 3: filtro server-side OS sem técnico atribuído
     if (noTechFilter) params.set('noTech', 'true')
@@ -519,7 +524,7 @@ export default function OSListPage() {
       .finally(() => { if (!ctrl.signal.aborted) setLoading(false) })
   }
 
-  useEffect(() => { loadOS(); setSelected(new Set()) }, [debouncedSearch, statusFilter, typeFilter, locationFilter, equipFilter, brandFilter, modelFilter, overdueFilter, noTechFilter, showCancelled, showDelivered, page, visibilityLoaded, ownOnly, myOsFilter, dateFrom, dateTo, sortField, sortDir])
+  useEffect(() => { loadOS(); setSelected(new Set()) }, [debouncedSearch, statusFilter, typeFilter, locationFilter, equipFilter, brandFilter, modelFilter, zipFilter, overdueFilter, noTechFilter, showCancelled, showDelivered, page, visibilityLoaded, ownOnly, myOsFilter, dateFrom, dateTo, sortField, sortDir])
 
   function toggleSelect(id: string) {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -550,6 +555,7 @@ export default function OSListPage() {
         case 'os_number': va = a.os_number; vb = b.os_number; break
         case 'created_at': va = a.created_at; vb = b.created_at; break
         case 'customer': va = a.customers?.legal_name || ''; vb = b.customers?.legal_name || ''; break
+        case 'address_zip': va = a.customers?.address_zip || ''; vb = b.customers?.address_zip || ''; break
         case 'equipment_type': va = a.equipment_type || ''; vb = b.equipment_type || ''; break
         case 'equipment_brand': va = a.equipment_brand || ''; vb = b.equipment_brand || ''; break
         case 'equipment_model': va = a.equipment_model || ''; vb = b.equipment_model || ''; break
@@ -882,7 +888,7 @@ export default function OSListPage() {
   const effectiveColumns = allowedColumns.filter(c => !hiddenByUser.has(c))
 
   const allColumnLabels: Record<string, string> = {
-    os_number: 'Nº', created_at: 'Data', customer: 'Cliente', equipment_type: 'Equip.',
+    os_number: 'Nº', created_at: 'Data', customer: 'Cliente', address_zip: 'CEP/Bairro', equipment_type: 'Equip.',
     equipment_brand: 'Marca', equipment_model: 'Modelo',
     os_type: 'Tipo', os_location: 'Local', status: 'Status', total_cost: 'Valor', financeiro: 'Financeiro', technician: 'Técnico', priority: 'Prioridade',
   }
@@ -899,6 +905,12 @@ export default function OSListPage() {
         case 'os_number': return `OS-${String(os.os_number).padStart(4, '0')}`
         case 'created_at': return new Date(os.created_at).toLocaleDateString('pt-BR')
         case 'customer': return tc(os.customers?.legal_name || '')
+        case 'address_zip': {
+          const zip = os.customers?.address_zip || ''
+          const zipFmt = zip.length === 8 ? `${zip.slice(0, 5)}-${zip.slice(5)}` : zip
+          const neigh = os.customers?.address_neighborhood || ''
+          return [neigh, zipFmt].filter(Boolean).join(' · ')
+        }
         case 'equipment_type': return tc(os.equipment_type || '')
         case 'equipment_brand': return tc(os.equipment_brand || '')
         case 'equipment_model': return tc(os.equipment_model || '')
@@ -981,6 +993,12 @@ export default function OSListPage() {
           case 'os_number': return `OS-${String(os.os_number).padStart(4, '0')}`
           case 'created_at': return new Date(os.created_at).toLocaleDateString('pt-BR')
           case 'customer': return tc(os.customers?.legal_name || '')
+          case 'address_zip': {
+            const zip = os.customers?.address_zip || ''
+            const zipFmt = zip.length === 8 ? `${zip.slice(0, 5)}-${zip.slice(5)}` : zip
+            const neigh = os.customers?.address_neighborhood || ''
+            return [neigh, zipFmt].filter(Boolean).join(' · ')
+          }
           case 'equipment_type': return tc(os.equipment_type || '')
           case 'os_type': return osTypeLabel[os.os_type] || os.os_type
           case 'status': return st?.name || ''
@@ -1095,6 +1113,7 @@ export default function OSListPage() {
     if (equipFilter) data.equip = equipFilter
     if (brandFilter) data.brand = brandFilter
     if (modelFilter) data.model = modelFilter
+    if (zipFilter) data.zip = zipFilter
     if (dateFrom) data.from = dateFrom
     if (dateTo) data.to = dateTo
     if (overdueFilter) data.overdue = '1'
@@ -1119,6 +1138,7 @@ export default function OSListPage() {
     setEquipFilter(typeof d.equip === 'string' ? d.equip : '')
     setBrandFilter(typeof d.brand === 'string' ? d.brand : '')
     setModelFilter(typeof d.model === 'string' ? d.model : '')
+    setZipFilter(typeof d.zip === 'string' ? d.zip : '')
     setDateFrom(typeof d.from === 'string' ? d.from : '')
     setDateTo(typeof d.to === 'string' ? d.to : '')
     setOverdueFilter(d.overdue === '1')
@@ -1345,6 +1365,15 @@ export default function OSListPage() {
           <option value="">Todos Modelos</option>
           {modelOptions.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
+        {/* Feature 2026-06-01 (Karlão): filtro CEP pra logística por região.
+            Prefix match no backend — digita "01310" pega tudo da região.
+            Cor amber pra distinguir do grupo equipamento (teal). */}
+        <input type="text" value={zipFilter} onChange={e => { setZipFilter(e.target.value); setPage(1) }}
+          title="Filtrar por CEP do cliente (prefix: '01310' pega toda a região)"
+          placeholder="CEP região..."
+          maxLength={9}
+          inputMode="numeric"
+          className={cn('rounded-md border px-2 py-1.5 text-xs w-[110px] font-mono', zipFilter ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-white text-gray-600')} />
         <span className="text-gray-300">|</span>
         {/* Date filters */}
         <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1) }}
@@ -1485,6 +1514,7 @@ export default function OSListPage() {
                     { key: 'os_number', label: 'N\u00ba' },
                     { key: 'created_at', label: 'Data' },
                     { key: 'customer', label: 'Cliente' },
+                    { key: 'address_zip', label: 'CEP/Bairro' },
                     { key: 'equipment_type', label: 'Equip.' },
                     { key: 'equipment_brand', label: 'Marca' },
                     { key: 'equipment_model', label: 'Modelo' },
@@ -1561,6 +1591,22 @@ export default function OSListPage() {
                         )}
                         {effectiveColumns.includes('customer') && (
                           <td className="px-3 py-2.5 text-gray-700 text-xs max-w-[200px] truncate">{tc(os.customers?.legal_name || '') ?? '\u2014'}</td>
+                        )}
+                        {effectiveColumns.includes('address_zip') && (
+                          <td className="px-3 py-2.5 text-gray-600 text-xs max-w-[180px]">
+                            {(() => {
+                              const zip = os.customers?.address_zip || ''
+                              const neigh = os.customers?.address_neighborhood || ''
+                              const zipFmt = zip.length === 8 ? `${zip.slice(0, 5)}-${zip.slice(5)}` : zip
+                              if (!zip && !neigh) return '\u2014'
+                              return (
+                                <div className="flex flex-col leading-tight">
+                                  {neigh && <span className="truncate" title={neigh}>{neigh}</span>}
+                                  {zipFmt && <span className="text-gray-400 font-mono text-[11px]">{zipFmt}</span>}
+                                </div>
+                              )
+                            })()}
+                          </td>
                         )}
                         {effectiveColumns.includes('equipment_type') && (
                           <td className="px-3 py-2.5 text-gray-700 text-xs">{tc(os.equipment_type || '') ?? '\u2014'}</td>
