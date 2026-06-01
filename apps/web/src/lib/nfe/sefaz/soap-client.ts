@@ -53,22 +53,22 @@ function getService(action: string): { xmlns: string; method: string } {
  */
 function buildEnvelope(xmlBody: string, action: string): string {
   const svc = getService(action)
-  // BUG FIX 2026-05-31 (Karlão reportou "SEFAZ HTTP 500 soap:Receiver NPE"):
-  // O commit ec3a92dd (07/abr) adicionou <soap12:Header/> vazio achando que
-  // "SEFAZ SP requires it" — sem evidência. A lib referência da indústria
-  // (nfephp-org/sped-nfe, usada por milhares de empresas em produção) NÃO
-  // emite Header quando objHeader é null (NFe 4.00 não usa nfeCabecMsg).
-  // Header self-closing vazio pode dar NPE no WCF .NET ao tentar dereferenciar
-  // OperationContext.IncomingMessageHeaders. Mantém o rest IGUAL ao
-  // ec3a92dd (sem operation wrapper, nfeDadosMsg com xmlns — formato sped-nfe).
-  // Referência: https://github.com/nfephp-org/sped-common/blob/master/src/Soap/SoapBase.php
+  // BUG FIX 2026-06-01 (hip H4 — NPE persistente após refutar H1/H2/H3):
+  // sped-nfe `sefazDistDFe` (Tools.php:417-419) envelopa com
+  // <nfeDistDFeInteresse><nfeDadosMsg>...</nfeDadosMsg></nfeDistDFeInteresse>.
+  // WSDL distDFe usa estilo "wrapped" (operation envelope element), autorização
+  // usa "bare". Distinção feita via action suffix.
+  // Ref: https://github.com/nfephp-org/sped-nfe/blob/master/src/Tools.php#L417
+  const isDistDFe = action.endsWith('/nfeDistDFeInteresse')
+  const innerBody = `<nfeDadosMsg xmlns="${svc.xmlns}">${xmlBody}</nfeDadosMsg>`
+  const operationBody = isDistDFe
+    ? `<nfeDistDFeInteresse xmlns="${svc.xmlns}">${innerBody}</nfeDistDFeInteresse>`
+    : innerBody
   return [
     '<?xml version="1.0" encoding="utf-8"?>',
     '<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">',
     '<soap12:Body>',
-    `<nfeDadosMsg xmlns="${svc.xmlns}">`,
-    xmlBody,
-    '</nfeDadosMsg>',
+    operationBody,
     '</soap12:Body>',
     '</soap12:Envelope>',
   ].join('')
