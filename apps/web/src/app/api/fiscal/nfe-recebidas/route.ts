@@ -74,7 +74,11 @@ export async function POST(req: NextRequest) {
     ultNSU = String(ultNSU).padStart(15, '0')
 
     // Montar XML de consulta DFe
-    const distXml = `<distDFeInt xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.01">
+    // BUG FIX 2026-06-01 (Karlão NPE persistente): SEFAZ rejeita XML com whitespace
+    // entre tags (mesmo bug do commit 69623cc9 que corrigiu enviNFe mas esqueceu
+    // distDFeInt). Compactação após o template literal: remove whitespace text nodes
+    // entre </tag> e <tag>, alinhando com nfe-xml-builder.ts:306.
+    const distXmlRaw = `<distDFeInt xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.01">
       <tpAmb>${ambiente}</tpAmb>
       <cUFAutor>${cUF}</cUFAutor>
       <CNPJ>${cnpj}</CNPJ>
@@ -82,6 +86,7 @@ export async function POST(req: NextRequest) {
         <ultNSU>${ultNSU}</ultNSU>
       </distNSU>
     </distDFeInt>`
+    const distXml = distXmlRaw.replace(/>\s+</g, '><').trim()
 
     let sefazResponse: string
     try {
