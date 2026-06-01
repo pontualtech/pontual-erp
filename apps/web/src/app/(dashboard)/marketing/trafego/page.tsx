@@ -183,7 +183,16 @@ export default function MarketingTrafegoPage() {
                 </div>
               </div>
 
-              {!site.configured ? (
+              {site.error ? (
+                <div className="p-4 flex items-start gap-3 bg-red-50">
+                  <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                  <div className="text-sm text-red-900">
+                    <p className="font-medium mb-1">Erro ao consultar GA4</p>
+                    <p className="text-xs text-red-700 font-mono break-all">{site.error}</p>
+                    <p className="text-xs text-red-600 mt-1">Checar env <code>GOOGLE_SA_JSON</code> e permissões do service account na propriedade GA4.</p>
+                  </div>
+                </div>
+              ) : !site.configured ? (
                 <div className="p-4 flex items-start gap-3 bg-amber-50">
                   <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
                   <div className="text-sm text-amber-900">
@@ -194,8 +203,6 @@ export default function MarketingTrafegoPage() {
                     </p>
                   </div>
                 </div>
-              ) : site.error ? (
-                <div className="p-4 text-sm text-red-600">{site.error}</div>
               ) : breakdown.total === 0 ? (
                 <div className="p-4 text-sm text-gray-400 text-center">Sem leads neste período</div>
               ) : (

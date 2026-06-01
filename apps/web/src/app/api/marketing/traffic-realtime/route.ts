@@ -48,15 +48,24 @@ async function getWindowBreakdown(
   configured: boolean,
 ): Promise<WindowBreakdown> {
   // 1. Try CWT primeiro
-  const cwt = await getCWTChannelBreakdown(hostname, dateRange).catch(() => null)
+  let cwt: CWTBreakdown | null = null
+  try {
+    cwt = await getCWTChannelBreakdown(hostname, dateRange)
+  } catch (e) {
+    console.error(`[traffic-realtime] CWT falhou (${hostname} ${dateRange.startDate}..${dateRange.endDate}):`, e instanceof Error ? e.message : e)
+  }
   if (cwt && cwt.total > 0) {
     return { ...cwt, source: 'cwt' }
   }
   // 2. Fallback GA4 (se configurado)
   if (configured) {
-    const ga4 = await getEventChannelBreakdown(propertyId, dateRange, LEAD_EVENT).catch(() => null)
-    if (ga4) {
-      return { ...ga4, topKeywords: [], topCampaigns: [], source: 'ga4_fallback' }
+    try {
+      const ga4 = await getEventChannelBreakdown(propertyId, dateRange, LEAD_EVENT)
+      if (ga4) {
+        return { ...ga4, topKeywords: [], topCampaigns: [], source: 'ga4_fallback' }
+      }
+    } catch (e) {
+      console.error(`[traffic-realtime] GA4 fallback falhou (${hostname} property=${propertyId}):`, e instanceof Error ? e.message : e)
     }
   }
   // 3. Nenhum dado
@@ -76,15 +85,28 @@ export async function GET(req: NextRequest) {
     const sites: SiteTraffic[] = await Promise.all(
       SITES.map(async ({ site, propertyId }) => {
         try {
-          const configured = await eventIsConfigured(propertyId, LEAD_EVENT).catch(() => false)
+          // Audit 30/05 + bug-hunt 01/06: separar "GA4 confirma 0 events" (configured=false legítimo)
+          // de "infra falhou" (auth, rede, propriedade). Bug anterior: `.catch(() => false)`
+          // misturava os dois → UI mostrava "tag não configurada" quando GOOGLE_SA_JSON ausente.
+          let configured = false
+          let ga4Error: string | undefined
+          try {
+            configured = await eventIsConfigured(propertyId, LEAD_EVENT)
+          } catch (e) {
+            ga4Error = e instanceof Error ? e.message : String(e)
+            console.error(`[traffic-realtime] eventIsConfigured falhou (${site} property=${propertyId}):`, ga4Error)
+          }
           const [today, yesterday, last7d, last30d, activeNow] = await Promise.all([
             getWindowBreakdown(site, propertyId, { startDate: 'today', endDate: 'today' }, configured),
             getWindowBreakdown(site, propertyId, { startDate: 'yesterday', endDate: 'yesterday' }, configured),
             getWindowBreakdown(site, propertyId, { startDate: '7daysAgo', endDate: 'today' }, configured),
             getWindowBreakdown(site, propertyId, { startDate: '30daysAgo', endDate: 'today' }, configured),
-            getActiveNow(propertyId).catch(() => 0),
+            getActiveNow(propertyId).catch((e) => {
+              console.error(`[traffic-realtime] getActiveNow falhou (${site}):`, e instanceof Error ? e.message : e)
+              return 0
+            }),
           ])
-          return { site, propertyId, configured, today, yesterday, last7d, last30d, activeNow }
+          return { site, propertyId, configured, today, yesterday, last7d, last30d, activeNow, error: ga4Error }
         } catch (e) {
           return {
             site, propertyId, configured: false,
