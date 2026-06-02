@@ -1278,11 +1278,14 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
           existingData.attribution = { ...attribution, captured_at: new Date().toISOString() }
           await prisma.botConversation.upsert({
             where: { chatwoot_conv_id: conversationId },
-            update: { data: existingData },
+            // Fase 0 (2026-06-02): grava na coluna durável `attribution` (além do
+            // data legado). A coluna sobrevive aos resets de `data` do bot.
+            update: { data: existingData, attribution: existingData.attribution },
             create: {
               chatwoot_conv_id: conversationId,
               company_id: cfg.companyId,
               data: existingData,
+              attribution: existingData.attribution,
             },
           })
           console.log(`[Bot/CWT] Attribution captured for conv ${conversationId}: ${JSON.stringify(attribution)}`)
@@ -1336,14 +1339,45 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
           // Audit 2026-05-24 fix #5: filtra strict por company_id (sem OR null fallback).
           // Endpoint /whatsapp-redirect agora resolve company_id via Origin header.
           // Sem isso, redirect de site PT podia ser atribuído a msg do inbox IMP (cross-tenant leak).
-          const redirect = await prisma.marketingWhatsappRedirect.findFirst({
+          // Fase 0 atribuição (2026-06-02, refinado com dado real): match por CANAL.
+          // ANTES pegava "o clique mais recente da empresa" sem chave → cara-ou-coroa.
+          // Simulação sobre 251 cliques humanos reais: regra "candidato único" cobria
+          // ~24-39%; regra "todos os cliques não-consumidos da janela (15min) são do
+          // MESMO canal" cobre ~68% — o canal fica CERTO mesmo sem saber o clique exato
+          // (rajadas são quase sempre do mesmo canal, Google domina). Se a janela mistura
+          // canais, NÃO atribui (evita origem errada). Consome 1 redirect por lead (o mais
+          // recente), distribuindo rajadas do mesmo canal entre os leads que chegam.
+          // Ver project_atribuicao_diagnostico_2026_06_02.
+          const FINGERPRINT_WINDOW_MS = 15 * 60 * 1000
+          const candidates = await prisma.marketingWhatsappRedirect.findMany({
             where: {
               company_id: cfg.companyId,
               consumed_at: null,
-              expires_at: { gt: new Date() },
+              click_at: { gte: new Date(Date.now() - FINGERPRINT_WINDOW_MS) },
             },
             orderBy: { click_at: 'desc' },
+            take: 50,
           })
+          const channelOf = (r: (typeof candidates)[number]): string => {
+            if (r.gclid || r.gbraid) return 'google_ads'
+            if (r.msclkid) return 'microsoft_ads'
+            if (r.fbclid) return 'meta_ads'
+            if (r.li_fat_id) return 'linkedin_ads'
+            if (r.twclid) return 'x_ads'
+            if (r.ttclid) return 'tiktok_ads'
+            const sm = `${r.utm_source || ''}/${r.utm_medium || ''}`.toLowerCase()
+            if (sm.includes('google')) return sm.includes('organic') ? 'google_organic' : 'google_ads'
+            if (sm.includes('bing') || sm.includes('microsoft')) return 'microsoft_ads'
+            if (sm.includes('email') || sm.includes('mautic')) return 'email'
+            return `other:${sm}`
+          }
+          const channelSet = new Set(candidates.map(channelOf))
+          // Atribui quando a janela é homogênea de canal (1 só). redirect = representante (mais recente).
+          const redirect = candidates.length > 0 && channelSet.size === 1 ? candidates[0] : null
+          const matchPrecision = candidates.length === 1 ? 'exact' : 'channel'
+          if (candidates.length > 0 && channelSet.size > 1) {
+            console.log(`[Bot/CWT/Fingerprint] janela 15min mistura ${channelSet.size} canais (${[...channelSet].join(',')}) p/ conv ${conversationId} — NÃO atribuído (evita origem errada)`)
+          }
           if (redirect) {
             const attribution: Record<string, string> = {}
             if (redirect.gclid) attribution.gclid = redirect.gclid
@@ -1362,16 +1396,19 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
               existingData.attribution = {
                 ...attribution,
                 source: 'cwt_fingerprint',
+                match_precision: matchPrecision, // 'exact' = clique único; 'channel' = canal certo, clique aproximado
                 captured_at: new Date().toISOString(),
                 redirect_id: redirect.id,
               }
               await prisma.botConversation.upsert({
                 where: { chatwoot_conv_id: conversationId },
-                update: { data: existingData },
+                // Fase 0 (2026-06-02): coluna durável `attribution` (sobrevive resets de `data`).
+                update: { data: existingData, attribution: existingData.attribution },
                 create: {
                   chatwoot_conv_id: conversationId,
                   company_id: cfg.companyId,
                   data: existingData,
+                  attribution: existingData.attribution,
                 },
               })
               await prisma.marketingWhatsappRedirect.update({

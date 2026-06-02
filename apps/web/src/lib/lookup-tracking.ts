@@ -22,7 +22,7 @@ export type LookupResult = {
  * Deriva `canal_entrada` a partir dos campos de tracking (spec 22/05 aprovada).
  * Precedência: CLIDs > UTM source/medium. Retorna null se não bate nenhum.
  */
-function deriveCanalEntrada(t: Record<string, string>): string | null {
+export function deriveCanalEntrada(t: Record<string, string>): string | null {
   if (t.gclid || t.gbraid || t.wbraid) return 'Google Ads'
   if (t.msclkid) return 'Microsoft Ads'
   if (t.fbclid) return 'Meta Ads'
@@ -57,9 +57,15 @@ export async function lookupTrackingFromConv(
       },
       orderBy: { created_at: 'desc' },
     })
-    const attrRaw = conv?.data && typeof conv.data === 'object' && !Array.isArray(conv.data)
+    // Fase 0 (2026-06-02): lê a coluna durável `attribution` primeiro; fallback
+    // pro legado `data.attribution` (convs antigas capturadas antes do fix).
+    const attrCol = conv?.attribution && typeof conv.attribution === 'object' && !Array.isArray(conv.attribution)
+      ? (conv.attribution as Record<string, string>)
+      : undefined
+    const attrLegacy = conv?.data && typeof conv.data === 'object' && !Array.isArray(conv.data)
       ? ((conv.data as Record<string, any>).attribution as Record<string, string> | undefined)
       : undefined
+    const attrRaw = attrCol || attrLegacy
     if (!attrRaw) return null
 
     const tracking: Record<string, string> = {}

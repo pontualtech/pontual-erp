@@ -5,6 +5,7 @@ import { botSuccess, botError } from '../_lib/response'
 import { rateLimit } from '@/lib/rate-limit'
 import { getNextOsNumber } from '@/lib/os-number'
 import { redactName, redactDoc } from '@/lib/log-redact'
+import { deriveCanalEntrada } from '@/lib/lookup-tracking'
 
 /**
  * POST /api/bot/abrir-os
@@ -311,17 +312,26 @@ export async function POST(req: NextRequest) {
               orderBy: { created_at: 'desc' },
             })
           : null
-        const attrRaw = conv?.data && typeof conv.data === 'object' && !Array.isArray(conv.data)
-          ? ((conv.data as Record<string, any>).attribution as Record<string, string> | undefined)
-          : undefined
+        // Fase 0 (2026-06-02): lê a coluna durável `attribution` primeiro; fallback
+        // pro legado `data.attribution`. Aceita nomes longos (utm_*, do fingerprint)
+        // e curtos (src/med/kw, do [ref:]).
+        const attrRaw: Record<string, any> | undefined =
+          (conv?.attribution && typeof conv.attribution === 'object' && !Array.isArray(conv.attribution))
+            ? (conv.attribution as Record<string, any>)
+            : (conv?.data && typeof conv.data === 'object' && !Array.isArray(conv.data)
+                ? ((conv.data as Record<string, any>).attribution as Record<string, any> | undefined)
+                : undefined)
         if (attrRaw) {
           if (attrRaw.gclid) gclid = attrRaw.gclid
+          if (attrRaw.gbraid) gbraid = attrRaw.gbraid
+          if (attrRaw.wbraid) wbraid = attrRaw.wbraid
           if (attrRaw.msclkid) msclkid = attrRaw.msclkid
-          if (attrRaw.src) utm_source = attrRaw.src
-          if (attrRaw.med) utm_medium = attrRaw.med
-          if (attrRaw.camp) utm_campaign = attrRaw.camp
-          if (attrRaw.kw) utm_term = attrRaw.kw
-          if (attrRaw.cont) utm_content = attrRaw.cont
+          if (attrRaw.fbclid) fbclid = attrRaw.fbclid
+          if (attrRaw.utm_source || attrRaw.src) utm_source = attrRaw.utm_source || attrRaw.src
+          if (attrRaw.utm_medium || attrRaw.med) utm_medium = attrRaw.utm_medium || attrRaw.med
+          if (attrRaw.utm_campaign || attrRaw.camp) utm_campaign = attrRaw.utm_campaign || attrRaw.camp
+          if (attrRaw.utm_term || attrRaw.kw) utm_term = attrRaw.utm_term || attrRaw.kw
+          if (attrRaw.utm_content || attrRaw.cont) utm_content = attrRaw.utm_content || attrRaw.cont
           console.log(`[Bot abrir-os] CWT fallback: tracking recuperado de botConversation ${conv?.id} (phone ${phoneEnd})`)
         }
       } catch (e: any) {
@@ -338,9 +348,12 @@ export async function POST(req: NextRequest) {
       const trackingFields = { gclid, gbraid, wbraid, utm_source, utm_medium, utm_campaign, utm_term, utm_content, fbclid, msclkid }
       const tracking = Object.fromEntries(
         Object.entries(trackingFields).filter(([, v]) => v != null && v !== ''),
-      )
+      ) as Record<string, string>
+      // Fase 0 (2026-06-02): deriva canal_entrada do tracking (spec 22/05). A tela da
+      // OS já lê custom_data.canal_entrada e o atendente pode sobrescrever manualmente.
+      const canalEntrada = Object.keys(tracking).length > 0 ? deriveCanalEntrada(tracking) : null
       const customData = Object.keys(tracking).length > 0
-        ? { tracking, tracking_captured_at: new Date().toISOString() }
+        ? { tracking, tracking_captured_at: new Date().toISOString(), ...(canalEntrada ? { canal_entrada: canalEntrada } : {}) }
         : undefined
 
       const created = await tx.serviceOrder.create({

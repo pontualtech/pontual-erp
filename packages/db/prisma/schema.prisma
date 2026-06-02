@@ -1797,6 +1797,10 @@ model BotConversation {
   dify_conv_id        String? // Dify conversation_id for memory continuity
   step                String    @default("IDLE")
   data                Json      @default("{}")
+  // Origem do lead (gclid/utm/ctwa) — coluna DEDICADA e durável. Fica FORA do
+  // `data` volátil (resetado a cada turn do bot → clobber: 15/15 perdiam). Fonte
+  // de verdade pra abrir-os/lookup-tracking derivarem canal_entrada. Fase 0 atribuição 2026-06-02.
+  attribution         Json?
   message_history     Json      @default("[]") // last 20 messages for context
   human_takeover      Boolean   @default(false)
   last_message_id     String? // for idempotency
