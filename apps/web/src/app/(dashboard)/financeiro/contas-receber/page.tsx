@@ -122,7 +122,8 @@ function getChargeBadge(chargeStatus: string | null) {
 const statusConfig: Record<string, { label: string; color: string }> = {
   PENDENTE: { label: 'Pendente', color: 'bg-blue-100 text-blue-800' },
   VENCIDO: { label: 'Vencido', color: 'bg-red-100 text-red-800' },
-  RECEBIDO: { label: 'Recebido', color: 'bg-green-100 text-green-800' },
+  RECEBIDO: { label: 'Recebido', color: 'bg-amber-100 text-amber-800' },
+  LIQUIDADO: { label: 'Liquidado', color: 'bg-emerald-100 text-emerald-900' },
   CANCELADO: { label: 'Cancelado', color: 'bg-gray-100 text-gray-500' },
   AGRUPADO: { label: 'Agrupado', color: 'bg-purple-100 text-purple-800' },
 }
@@ -1316,12 +1317,13 @@ export default function ContasReceberPage() {
               onChange={(csv) => { setStatusFilter(csv); setPage(1) }}
               accent="emerald"
               options={[
-                { value: 'PENDENTE',  label: 'Pendente',     color: 'bg-amber-500' },
-                { value: 'VENCIDO',   label: 'Vencido',      color: 'bg-red-500' },
-                { value: 'PAGO',      label: 'Pago (balcão)',color: 'bg-emerald-500' },
-                { value: 'RECEBIDO',  label: 'Recebido',     color: 'bg-emerald-500' },
-                { value: 'CANCELADO', label: 'Cancelado',    color: 'bg-gray-400' },
-                { value: 'AGRUPADO',  label: 'Agrupado',     color: 'bg-blue-500' },
+                { value: 'PENDENTE',  label: 'Pendente',                 color: 'bg-amber-500' },
+                { value: 'VENCIDO',   label: 'Vencido',                  color: 'bg-red-500' },
+                { value: 'RECEBIDO',  label: 'Recebido (aguarda conf.)', color: 'bg-amber-500' },
+                { value: 'LIQUIDADO', label: 'Liquidado (conferido)',    color: 'bg-emerald-600' },
+                { value: 'PAGO',      label: 'Pago (legado)',            color: 'bg-emerald-500' },
+                { value: 'CANCELADO', label: 'Cancelado',                color: 'bg-gray-400' },
+                { value: 'AGRUPADO',  label: 'Agrupado',                 color: 'bg-blue-500' },
               ]}
             />
             <div className="min-w-[150px]">

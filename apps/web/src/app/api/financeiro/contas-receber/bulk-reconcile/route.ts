@@ -12,11 +12,13 @@ import { logAudit } from '@/lib/audit'
  * uma vez só.
  *
  * Body: { ids: string[], reconciled: boolean }
- * - reconciled=true → marca como conferido (após bater com extrato)
- * - reconciled=false → desfaz (rebaixa pra "aguardando")
+ * - reconciled=true → status vira LIQUIDADO + cria Transaction CREDIT + balance++
+ * - reconciled=false → desfaz: status volta pra RECEBIDO + reverte Transaction + balance--
  *
- * Não cria Transaction nem altera saldo — apenas flip do flag reconciled.
- * Tenant scoped via updateMany c/ company_id no where.
+ * Regra Karlão (2026-06-02): "saldo só muda quando ADM confere no banco".
+ * RECEBIDO = alegação (cliente/funcionário disse). LIQUIDADO = ADM conferiu
+ * no extrato. Saldo só é atualizado na transição RECEBIDO → LIQUIDADO.
+ * Asaas/webhooks continuam liquidando direto via webhook (banco já confirma).
  */
 export async function POST(req: NextRequest) {
   try {
@@ -37,11 +39,85 @@ export async function POST(req: NextRequest) {
       return error('Máximo 200 itens por operação', 400)
     }
 
-    // Tenant-scoped updateMany — só atualiza AR da mesma empresa do user
-    const result_upd = await prisma.accountReceivable.updateMany({
+    // Busca ARs c/ account_id e received_amount pra atualizar saldos atomicamente.
+    const arsToProcess = await prisma.accountReceivable.findMany({
       where: { id: { in: ids }, company_id: user.companyId, deleted_at: null },
-      data: { reconciled, updated_at: new Date() },
+      select: { id: true, account_id: true, received_amount: true, total_amount: true, status: true, description: true },
     })
+
+    let updated = 0
+    let balanceDelta = 0  // pra retornar ao frontend confirmando o impacto
+
+    // Loop por AR — cada uma com seu próprio account_id e amount.
+    // $transaction atomic dentro do loop garante AR + Transaction + balance
+    // são sempre consistentes pra cada AR individualmente.
+    for (const ar of arsToProcess) {
+      const amount = ar.received_amount || ar.total_amount
+      if (!ar.account_id || !amount) continue
+
+      if (reconciled) {
+        // RECEBIDO → LIQUIDADO: cria Transaction + incrementa saldo.
+        // Idempotência: se já tem Transaction com bank_ref=AR:id, pula save.
+        const existing = await prisma.transaction.findFirst({
+          where: { company_id: user.companyId, bank_ref: `AR:${ar.id}` },
+        })
+        if (existing) {
+          // Provavelmente já liquidada (ex: webhook Asaas, ou backfill manual).
+          await prisma.accountReceivable.update({
+            where: { id: ar.id, company_id: user.companyId },
+            data: { reconciled: true, status: 'LIQUIDADO', updated_at: new Date() },
+          })
+          updated++
+          continue
+        }
+
+        await prisma.$transaction(async (tx) => {
+          await tx.accountReceivable.update({
+            where: { id: ar.id, company_id: user.companyId },
+            data: { reconciled: true, status: 'LIQUIDADO', updated_at: new Date() },
+          })
+          await tx.transaction.create({
+            data: {
+              company_id: user.companyId,
+              account_id: ar.account_id!,
+              transaction_type: 'CREDIT',
+              amount,
+              description: `LIQUIDACAO: ${ar.description}`,
+              transaction_date: new Date(),
+              bank_ref: `AR:${ar.id}`,
+              reconciled: true,
+            },
+          })
+          await tx.account.update({
+            where: { id: ar.account_id! },
+            data: { current_balance: { increment: amount }, updated_at: new Date() },
+          })
+        })
+        balanceDelta += amount
+        updated++
+      } else {
+        // LIQUIDADO → RECEBIDO: reverte Transaction + decrementa saldo.
+        const tx = await prisma.transaction.findFirst({
+          where: { company_id: user.companyId, bank_ref: `AR:${ar.id}` },
+        })
+
+        await prisma.$transaction(async (txc) => {
+          await txc.accountReceivable.update({
+            where: { id: ar.id, company_id: user.companyId },
+            data: { reconciled: false, status: 'RECEBIDO', updated_at: new Date() },
+          })
+          if (tx) {
+            await txc.transaction.delete({ where: { id: tx.id } })
+            await txc.account.update({
+              where: { id: tx.account_id },
+              data: { current_balance: { decrement: tx.amount }, updated_at: new Date() },
+            })
+            balanceDelta -= tx.amount
+          }
+        })
+        updated++
+      }
+    }
 
     logAudit({
       companyId: user.companyId,
@@ -49,13 +125,14 @@ export async function POST(req: NextRequest) {
       module: 'financeiro',
       action: reconciled ? 'bulk_reconcile' : 'bulk_unreconcile',
       entityId: ids.slice(0, 10).join(','), // primeiros 10 IDs no log
-      newValue: { count: result_upd.count, reconciled, ids_total: ids.length },
+      newValue: { count: updated, reconciled, ids_total: ids.length, balance_delta: balanceDelta },
     })
 
     return success({
-      updated: result_upd.count,
+      updated,
       requested: ids.length,
       reconciled,
+      balance_delta: balanceDelta,
     })
   } catch (err) {
     return handleError(err)

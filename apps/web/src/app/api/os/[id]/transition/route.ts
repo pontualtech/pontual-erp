@@ -465,70 +465,16 @@ export async function POST(req: NextRequest, { params }: Params) {
           })
         }
 
-        // Bug fix 2026-06-01 (Karlão reportou OS-60797 "recebida mas saldo não subiu"):
-        // Antes desse fix, /transition criava AR com status=RECEBIDO + received_amount
-        // mas NUNCA criava Transaction CREDIT nem incrementava saldo bancário —
-        // resultado: AR aparecia paga mas saldo Itaú no sistema ficava subdeclarado.
-        // Também o AP da taxa de cartão era criado PENDENTE e nunca pago, escondendo
-        // o desconto da taxa Rede do extrato.
-        // Fix: replica exatamente o que /api/financeiro/contas-receber/[id]/baixa faz —
-        // 1) Transaction CREDIT do recebimento + increment current_balance
-        // 2) Se cardFeeTotal>0: paga AP da taxa + Transaction DEBIT + decrement
-        // Tudo atomic na mesma $transaction. reconciled=false (admin financeiro
-        // confere extrato depois via "Conferi no extrato" — Wave Z regra Karlão).
-        if (receivedNow && defaultAccountId) {
-          await tx.transaction.create({
-            data: {
-              company_id: user.companyId,
-              account_id: defaultAccountId,
-              transaction_type: 'CREDIT',
-              amount: totalAmount,
-              description: `Recebimento: ${receivable.description}`,
-              transaction_date: new Date(),
-              bank_ref: `AR:${receivable.id}`,
-              reconciled: false,
-            },
-          })
-          await tx.account.update({
-            where: { id: defaultAccountId },
-            data: {
-              current_balance: { increment: totalAmount },
-              updated_at: new Date(),
-            },
-          })
-
-          // Pagamento atomic do AP da taxa de cartão (igual /baixa AR linhas 117-146):
-          // marca PAGO + cria Transaction DEBIT + decrementa saldo.
-          if (cardFeeAp && cardFeeTotal > 0) {
-            await tx.accountPayable.update({
-              where: { id: cardFeeAp.id },
-              data: {
-                status: 'PAGO',
-                paid_amount: cardFeeTotal,
-                updated_at: new Date(),
-              },
-            })
-            await tx.transaction.create({
-              data: {
-                company_id: user.companyId,
-                account_id: defaultAccountId,
-                transaction_type: 'DEBIT',
-                amount: cardFeeTotal,
-                description: `Taxa cartão: ${receivable.description}`,
-                transaction_date: new Date(),
-                bank_ref: `AP:${cardFeeAp.id}`,
-                reconciled: false,
-              },
-            })
-            await tx.account.update({
-              where: { id: defaultAccountId },
-              data: {
-                current_balance: { decrement: cardFeeTotal },
-                updated_at: new Date(),
-              },
-            })
-          }
-        }
+        // Wave Z regra Karlão (revertido 2026-06-02):
+        // ANTES (commit 1320c3cb 2026-06-01): /transition criava Transaction CREDIT +
+        // incrementava saldo bancário no momento da entrega com received_now=true.
+        // Karlão refinou regra de negócio: saldo bancário só pode ser atualizado
+        // quando ADM confere fisicamente no extrato do banco (via bulk-reconcile),
+        // EXCETO em contas com confirmação automática (Asaas via webhook).
+        // received_now=true = funcionário/admin marcou "recebido no balcão" = ALEGAÇÃO.
+        // AR fica em status='RECEBIDO' mas saldo NÃO é atualizado aqui — só quando
+        // adm marcar como liquidada via /api/financeiro/contas-receber/bulk-reconcile.
+        // AP da taxa também fica PENDENTE até liquidação efetiva do AR.
 
         receivableCreated = true
 
