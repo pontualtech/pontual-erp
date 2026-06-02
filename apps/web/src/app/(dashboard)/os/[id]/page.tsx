@@ -832,7 +832,7 @@ export default function OSDetailPage() {
       setShowCancelModal(true)
       return
     }
-    const isCancelOrRefuse = /cancel|recusad|doa[dçc]/i.test(target.name)
+    const isCancelOrRefuse = /cancel|recusad/i.test(target.name)
     const isDelivery = (target.is_final && !isCancelOrRefuse)
 
     // Se cliente ja pagou antecipado via portal (ou ha outra AR ativa), pula

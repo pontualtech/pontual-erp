@@ -152,9 +152,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     // Final status (Entregue) com valor: precisa controlar geração de AR.
     // Cancel/recusa não tem cobrança esperada.
-    // 2026-06-02: 'doad' (Doada/Doado) tratado como cancel — equipamento doado pelo cliente
-    // pra empresa não gera AR (não há cobrança). Mesma heurística no frontend page.tsx:836.
-    const isCancelOrRefuse = /cancel|recusad|doa[dçc]/i.test(toStatus.name)
+    const isCancelOrRefuse = /cancel|recusad/i.test(toStatus.name)
     const isFinalDelivery = toStatus.is_final && !isCancelOrRefuse && (os.total_cost ?? 0) > 0
 
     // Se cliente já pagou antecipado via portal, a AR foi criada lá. Nesse caso
