@@ -54,9 +54,9 @@ function fmt(cents: number) {
 function getFinanceStatus(os: OS) {
   const ar = os.accounts_receivable?.[0]
   if (!ar) return null
-  if (ar.status === 'RECEBIDO' || ar.status === 'PAGO') return { label: 'Pago', color: 'bg-green-100 text-green-700' }
+  if (ar.status === 'LIQUIDADO') return { label: 'Liquidado', color: 'bg-emerald-100 text-emerald-800' }
+  if (ar.status === 'RECEBIDO' || ar.status === 'PAGO') return { label: 'Recebido', color: 'bg-amber-100 text-amber-700' }
   if (ar.status === 'CANCELADO') return { label: 'Cancelado', color: 'bg-gray-100 text-gray-500' }
-  const now = new Date()
   // Vencido se passou da data
   return { label: 'Pendente', color: 'bg-amber-100 text-amber-700' }
 }
