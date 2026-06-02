@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { LineChart, Line, ResponsiveContainer } from 'recharts'
-import { ArrowDownRight, ArrowUpRight, type LucideIcon } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, ArrowRight, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface Props {
@@ -85,6 +85,13 @@ export function KPICard({ label, value, sub, icon: Icon, tone, deltaPct, deltaIn
               <Line type="monotone" dataKey="v" stroke={t.stroke} strokeWidth={1.75} dot={false} isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
+        </div>
+      )}
+
+      {href && (
+        <div className="mt-3 flex items-center gap-1 text-xs font-medium text-blue-600 transition-colors group-hover:text-blue-700">
+          Ver detalhes
+          <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
         </div>
       )}
     </Wrapper>
