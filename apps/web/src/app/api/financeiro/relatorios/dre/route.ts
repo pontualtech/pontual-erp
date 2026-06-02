@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
     const baseWhereAR = {
       company_id: user.companyId,
       deleted_at: null,
-      status: { in: ['RECEBIDO', 'PAGO'] },
+      status: { in: ['RECEBIDO', 'LIQUIDADO', 'PAGO'] },
       due_date: { gte: startDate, lte: endDate },
     }
 

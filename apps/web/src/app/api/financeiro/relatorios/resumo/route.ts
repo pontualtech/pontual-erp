@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
       }),
       prisma.accountReceivable.aggregate({
         // Fix 2026-05-26: AR usa ambos 'RECEBIDO' e 'PAGO' (ver dre/route.ts)
-        where: { ...baseWhere, status: { in: ['RECEBIDO', 'PAGO'] }, due_date: dateFilter },
+        where: { ...baseWhere, status: { in: ['RECEBIDO', 'LIQUIDADO', 'PAGO'] }, due_date: dateFilter },
         _sum: { total_amount: true, received_amount: true },
         _count: true,
       }),
@@ -94,7 +94,7 @@ export async function GET(request: NextRequest) {
 
     // Top 5 clients by revenue (receivables)
     const receivablesByClient = await prisma.accountReceivable.findMany({
-      where: { ...baseWhere, due_date: dateFilter, status: { in: ['RECEBIDO', 'PAGO'] } },
+      where: { ...baseWhere, due_date: dateFilter, status: { in: ['RECEBIDO', 'LIQUIDADO', 'PAGO'] } },
       select: {
         total_amount: true,
         received_amount: true,

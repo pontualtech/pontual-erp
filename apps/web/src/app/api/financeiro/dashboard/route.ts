@@ -166,7 +166,7 @@ export async function GET(request: NextRequest) {
         // canonico_recebido) mas projeto aceita ['RECEBIDO','PAGO'] defensivamente pra
         // rows legadas pré-normalização (vide /relatorios/resumo:62, /reports-hub:85).
         tx.accountReceivable.aggregate({
-          where: { ...baseReceivable, status: { in: ['RECEBIDO', 'PAGO'] }, due_date: { gte: from, lte: to } },
+          where: { ...baseReceivable, status: { in: ['RECEBIDO', 'LIQUIDADO', 'PAGO'] }, due_date: { gte: from, lte: to } },
           _sum: { received_amount: true },
           _count: true,
         }),
@@ -177,7 +177,7 @@ export async function GET(request: NextRequest) {
           _sum: { paid_amount: true },
         }),
         tx.accountReceivable.aggregate({
-          where: { ...baseReceivable, status: { in: ['RECEBIDO', 'PAGO'] }, due_date: { gte: prevFrom, lte: prevTo } },
+          where: { ...baseReceivable, status: { in: ['RECEBIDO', 'LIQUIDADO', 'PAGO'] }, due_date: { gte: prevFrom, lte: prevTo } },
           _sum: { received_amount: true },
         }),
 
@@ -206,7 +206,7 @@ export async function GET(request: NextRequest) {
           SELECT day, kind, SUM(cents)::bigint AS cents FROM (
             SELECT date_trunc('day', due_date)::date AS day, 'in' AS kind, COALESCE(received_amount, 0) AS cents
               FROM accounts_receivable
-             WHERE company_id = $1 AND deleted_at IS NULL AND status IN ('RECEBIDO', 'PAGO')
+             WHERE company_id = $1 AND deleted_at IS NULL AND status IN ('RECEBIDO', 'LIQUIDADO', 'PAGO')
                AND due_date >= $2 AND due_date <= $3
                ${accountId ? 'AND account_id = $4' : ''}
             UNION ALL

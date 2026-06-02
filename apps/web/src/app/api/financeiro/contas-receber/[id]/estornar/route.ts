@@ -27,7 +27,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       where: { id: params.id, company_id: user.companyId, deleted_at: null },
     })
     if (!existing) return error('Conta a receber nao encontrada', 404)
-    if (existing.status !== 'RECEBIDO') return error('Apenas ARs com status RECEBIDO podem ser estornadas', 400)
+    if (existing.status !== 'RECEBIDO' && existing.status !== 'LIQUIDADO' && existing.status !== 'PAGO') return error('Apenas ARs com status RECEBIDO/LIQUIDADO podem ser estornadas', 400)
     if (!existing.account_id) return error('AR sem conta bancaria vinculada — nao da pra estornar saldo', 400)
     if (!existing.received_amount || existing.received_amount <= 0) return error('AR sem received_amount valido', 400)
 
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         where: {
           id: params.id,
           company_id: user.companyId,
-          status: { in: ['RECEBIDO', 'PAGO'] },
+          status: { in: ['RECEBIDO', 'LIQUIDADO', 'PAGO'] },
           deleted_at: null,
         },
         data: {

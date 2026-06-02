@@ -107,7 +107,7 @@ export async function GET(request: NextRequest) {
         where: { company_id: user.companyId, deleted_at: null, boleto_url: { not: null }, status: 'PENDENTE', due_date: { gte: new Date(new Date().toDateString()) } },
       }),
       prisma.accountReceivable.count({
-        where: { company_id: user.companyId, deleted_at: null, boleto_url: { not: null }, status: { in: ['RECEBIDO', 'PAGO'] } },
+        where: { company_id: user.companyId, deleted_at: null, boleto_url: { not: null }, status: { in: ['RECEBIDO', 'LIQUIDADO', 'PAGO'] } },
       }),
       prisma.accountReceivable.count({
         where: { company_id: user.companyId, deleted_at: null, boleto_url: { not: null }, status: 'PENDENTE', due_date: { lt: new Date(new Date().toDateString()) } },

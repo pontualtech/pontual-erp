@@ -118,7 +118,7 @@ export async function GET(req: NextRequest) {
         where: {
           company_id: cid,
           deleted_at: null,
-          status: { in: ['RECEBIDO', 'PAGO'] },
+          status: { in: ['RECEBIDO', 'LIQUIDADO', 'PAGO'] },
           updated_at: { gte: monthStart },
         },
         _sum: { total_amount: true },
@@ -130,7 +130,7 @@ export async function GET(req: NextRequest) {
         where: {
           company_id: cid,
           deleted_at: null,
-          status: { in: ['RECEBIDO', 'PAGO'] },
+          status: { in: ['RECEBIDO', 'LIQUIDADO', 'PAGO'] },
           updated_at: { gte: prevMonthStart, lt: prevMonthSameDay },
         },
         _sum: { total_amount: true },

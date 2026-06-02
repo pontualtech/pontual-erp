@@ -718,7 +718,7 @@ export default function ContasReceberPage() {
     setValueMax('')
     setBankAccountFilter('')
     setChargeStatusFilter('')
-    setStatusFilter('PAGO,RECEBIDO')
+    setStatusFilter('PAGO,RECEBIDO,LIQUIDADO')
     setReconciledFilter('pending')
     setPage(1)
     setShowFilters(true)
@@ -1204,7 +1204,7 @@ export default function ContasReceberPage() {
           onClick={applyAguardandoConciliacao}
           className={cn(
             'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all',
-            (statusFilter === 'PAGO,RECEBIDO' && reconciledFilter === 'pending')
+            (statusFilter === 'PAGO,RECEBIDO,LIQUIDADO' && reconciledFilter === 'pending')
               ? 'border-amber-500 bg-amber-50 text-amber-800 shadow-sm'
               : 'border-gray-200 bg-white text-gray-600 hover:border-amber-300 hover:bg-amber-50/50'
           )}
@@ -1213,7 +1213,7 @@ export default function ContasReceberPage() {
           <span aria-hidden>🏦</span>
           Aguardando conferência bancária
         </button>
-        {(statusFilter === 'PAGO,RECEBIDO' && reconciledFilter === 'pending') && (
+        {(statusFilter === 'PAGO,RECEBIDO,LIQUIDADO' && reconciledFilter === 'pending') && (
           <button
             type="button"
             onClick={clearFilters}

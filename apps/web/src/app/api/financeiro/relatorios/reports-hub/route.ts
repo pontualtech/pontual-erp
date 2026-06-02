@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
     const receivablesByClient = await prisma.accountReceivable.findMany({
       where: {
         ...baseWhere,
-        status: { in: ['RECEBIDO', 'PAGO'] },
+        status: { in: ['RECEBIDO', 'LIQUIDADO', 'PAGO'] },
         due_date: { gte: startDate, lte: endDate },
       },
       select: {
@@ -133,7 +133,7 @@ export async function GET(request: NextRequest) {
     const monthlyReceivables = await prisma.accountReceivable.findMany({
       where: {
         ...baseWhere,
-        status: { in: ['RECEBIDO', 'PAGO'] },
+        status: { in: ['RECEBIDO', 'LIQUIDADO', 'PAGO'] },
         due_date: { gte: startDate, lte: endDate },
       },
       select: { received_amount: true, total_amount: true, due_date: true },

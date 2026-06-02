@@ -68,7 +68,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         where: {
           id: params.id,
           company_id: user.companyId,
-          status: { notIn: ['RECEBIDO', 'PAGO', 'CANCELADO'] },
+          status: { notIn: ['RECEBIDO', 'LIQUIDADO', 'PAGO', 'CANCELADO'] },
           deleted_at: null,
         },
         data: {

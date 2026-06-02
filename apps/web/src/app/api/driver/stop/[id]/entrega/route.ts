@@ -314,7 +314,7 @@ export async function POST(
               service_order_id: os.id,
               company_id: auth.companyId,
               deleted_at: null,
-              status: { in: ['PAGO', 'RECEBIDO'] },
+              status: { in: ['PAGO', 'RECEBIDO', 'LIQUIDADO'] },
             },
             select: { id: true, status: true, payment_method: true, description: true },
           })
