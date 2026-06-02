@@ -123,6 +123,12 @@ export async function POST(req: NextRequest) {
     const responseBody = extractSoapBody(sefazResponse)
     const cStat = responseBody.match(/<cStat>(\d+)<\/cStat>/)?.[1] || ''
     const maxNSU = responseBody.match(/<maxNSU>(\d+)<\/maxNSU>/)?.[1] || ultNSU
+    // BUG FIX 2026-06-01 (Karlão cStat 656 com NSU=0 zerado):
+    // cStat 138/137/139 = sucesso (avança ponteiro). Qualquer outro
+    // (656 consumo indevido, 215 schema invalid, etc) NÃO deve sobrescrever
+    // ultimo_nsu — caso contrário SEFAZ devolve <maxNSU>0</maxNSU> em rate-limit
+    // e nosso código persiste 0, criando loop de bloqueio.
+    const isValidSyncResponse = ['138', '137', '139'].includes(cStat)
 
     // Parsear documentos retornados
     const docRegex = /<docZip[^>]*NSU="(\d+)"[^>]*>([\s\S]*?)<\/docZip>/g
@@ -181,12 +187,15 @@ export async function POST(req: NextRequest) {
       } catch { /* skip invalid docs */ }
     }
 
-    // Salvar último NSU
-    await prisma.setting.upsert({
-      where: { company_id_key: { company_id: user.companyId, key: 'nfe.ultimo_nsu' } },
-      create: { company_id: user.companyId, key: 'nfe.ultimo_nsu', value: maxNSU, type: 'string' },
-      update: { value: maxNSU },
-    })
+    // Salvar último NSU APENAS em resposta válida (cStat 138/137/139).
+    // Em erro (656 etc), mantém ponteiro anterior — ver guard isValidSyncResponse.
+    if (isValidSyncResponse) {
+      await prisma.setting.upsert({
+        where: { company_id_key: { company_id: user.companyId, key: 'nfe.ultimo_nsu' } },
+        create: { company_id: user.companyId, key: 'nfe.ultimo_nsu', value: maxNSU, type: 'string' },
+        update: { value: maxNSU },
+      })
+    }
 
     // Salvar log para debug
     await prisma.fiscalLog.create({
