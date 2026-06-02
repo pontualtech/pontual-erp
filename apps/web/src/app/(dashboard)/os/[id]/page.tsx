@@ -1440,7 +1440,7 @@ export default function OSDetailPage() {
           - sem banner: pendente
        */}
       {(() => {
-        const ars = (os.accounts_receivable ?? []).filter((ar: any) => ar.status === 'RECEBIDO' || ar.status === 'PAGO')
+        const ars = (os.accounts_receivable ?? []).filter((ar: any) => ar.status === 'RECEBIDO' || ar.status === 'LIQUIDADO' || ar.status === 'PAGO')
         if (ars.length === 0) return null
         const totalPaid = ars.reduce((s: number, ar: any) => s + (ar.total_amount || 0), 0)
         // reconciled === true e estrito: null/undefined/false tratam como nao-conciliado (defensivo)
@@ -2165,7 +2165,7 @@ export default function OSDetailPage() {
                 // Fix 2026-05-26: banco tem ambos 'RECEBIDO' (legado, 141 rows) e
                 // 'PAGO' (mais novo, 46 rows). Caso OS-60210: status='PAGO' mostrava
                 // como "Pendente" porque check só pegava 'RECEBIDO'.
-                const isPaid = ar.status === 'RECEBIDO' || ar.status === 'PAGO'
+                const isPaid = ar.status === 'RECEBIDO' || ar.status === 'LIQUIDADO' || ar.status === 'PAGO'
                 const isCancelled = ar.status === 'CANCELADO'
                 const remaining = ar.total_amount - ar.received_amount
 

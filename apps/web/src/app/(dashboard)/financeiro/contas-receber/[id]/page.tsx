@@ -116,7 +116,8 @@ function cleanDescription(d: string | null | undefined): string {
 const statusConfig: Record<string, { bg: string; text: string; dot: string; label: string }> = {
   PENDENTE: { bg: 'bg-amber-50 dark:bg-amber-950', text: 'text-amber-700 dark:text-amber-400', dot: 'bg-amber-500', label: 'Pendente' },
   VENCIDO: { bg: 'bg-red-50 dark:bg-red-950', text: 'text-red-700 dark:text-red-400', dot: 'bg-red-500', label: 'Vencido' },
-  RECEBIDO: { bg: 'bg-green-50 dark:bg-green-950', text: 'text-green-700 dark:text-green-400', dot: 'bg-green-500', label: 'Recebido' },
+  RECEBIDO: { bg: 'bg-amber-50 dark:bg-amber-950', text: 'text-amber-700 dark:text-amber-400', dot: 'bg-amber-500', label: 'Recebido (aguarda conf.)' },
+  LIQUIDADO: { bg: 'bg-emerald-50 dark:bg-emerald-950', text: 'text-emerald-700 dark:text-emerald-300', dot: 'bg-emerald-600', label: 'Liquidado' },
   PAGO: { bg: 'bg-green-50 dark:bg-green-950', text: 'text-green-700 dark:text-green-400', dot: 'bg-green-500', label: 'Pago' },
   CANCELADO: { bg: 'bg-gray-100 dark:bg-gray-800', text: 'text-gray-500 dark:text-gray-400', dot: 'bg-gray-400', label: 'Cancelado' },
   AGRUPADO: { bg: 'bg-purple-50 dark:bg-purple-950', text: 'text-purple-700 dark:text-purple-400', dot: 'bg-purple-500', label: 'Agrupado' },
@@ -365,7 +366,7 @@ export default function ContaReceberDetalhePage() {
 
   const remaining = conta.total_amount - (conta.received_amount || 0)
   const pctPaid = conta.total_amount > 0 ? ((conta.received_amount || 0) / conta.total_amount) * 100 : 0
-  const isPaid = conta.status === 'RECEBIDO' || conta.status === 'PAGO'
+  const isPaid = conta.status === 'RECEBIDO' || conta.status === 'LIQUIDADO' || conta.status === 'PAGO'
   const isEditable = !isPaid && conta.status !== 'CANCELADO' && conta.status !== 'AGRUPADO'
   const isGroupParent = conta.group_id && !conta.grouped_into_id
   // A1 fix 22/05: comparacao Y-M-D direto evita TZ drift.
