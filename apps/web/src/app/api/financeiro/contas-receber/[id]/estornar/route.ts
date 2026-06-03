@@ -28,8 +28,12 @@ export async function POST(req: NextRequest, { params }: Params) {
     })
     if (!existing) return error('Conta a receber nao encontrada', 404)
     if (existing.status !== 'RECEBIDO' && existing.status !== 'LIQUIDADO' && existing.status !== 'PAGO') return error('Apenas ARs com status RECEBIDO/LIQUIDADO podem ser estornadas', 400)
-    if (!existing.account_id) return error('AR sem conta bancaria vinculada — nao da pra estornar saldo', 400)
     if (!existing.received_amount || existing.received_amount <= 0) return error('AR sem received_amount valido', 400)
+
+    // 2026-06-03 fix (OS 60548): ARs antigas/portal sem account_id podem ser estornadas
+    // apenas no nível do status — não havia Transaction CREDIT nem balance afetado, então
+    // nada pra reverter financeiramente. Antes: bloqueava com erro 400.
+    const hasAccount = !!existing.account_id
 
     await prisma.$transaction(async (tx: any) => {
       // Bug #67 (audit 31/05 LOOP r7): race em estornar — mesma classe de #41.
@@ -52,26 +56,28 @@ export async function POST(req: NextRequest, { params }: Params) {
         throw new Error('Estorno concorrente — outra requisição já estornou esta conta')
       }
 
-      await tx.transaction.create({
-        data: {
-          company_id: user.companyId,
-          account_id: existing.account_id!,
-          transaction_type: 'DEBIT',
-          amount: existing.received_amount!,
-          description: `Estorno: ${existing.description}${motivo ? ` (${motivo})` : ''}`,
-          transaction_date: new Date(),
-          bank_ref: `AR:${params.id}:estorno`,
-          reconciled: true,
-        },
-      })
+      if (hasAccount) {
+        await tx.transaction.create({
+          data: {
+            company_id: user.companyId,
+            account_id: existing.account_id!,
+            transaction_type: 'DEBIT',
+            amount: existing.received_amount!,
+            description: `Estorno: ${existing.description}${motivo ? ` (${motivo})` : ''}`,
+            transaction_date: new Date(),
+            bank_ref: `AR:${params.id}:estorno`,
+            reconciled: true,
+          },
+        })
 
-      await tx.account.update({
-        where: { id: existing.account_id! },
-        data: {
-          current_balance: { decrement: existing.received_amount! },
-          updated_at: new Date(),
-        },
-      })
+        await tx.account.update({
+          where: { id: existing.account_id! },
+          data: {
+            current_balance: { decrement: existing.received_amount! },
+            updated_at: new Date(),
+          },
+        })
+      }
     })
 
     logAudit({

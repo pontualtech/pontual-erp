@@ -53,7 +53,22 @@ export async function POST(req: NextRequest) {
     // são sempre consistentes pra cada AR individualmente.
     for (const ar of arsToProcess) {
       const amount = ar.received_amount || ar.total_amount
-      if (!ar.account_id || !amount) continue
+      if (!amount) continue
+
+      // 2026-06-03 fix (OS 60548): ARs antigas/portal sem account_id não conseguiam
+      // ser desfeitas porque o loop pulava silenciosamente (updated=0).
+      // Fix: quando account_id=null, só flipa flag+status (sem Transaction nem balance —
+      // não havia o que reverter, pois nunca afetou conta bancária).
+      if (!ar.account_id) {
+        await prisma.accountReceivable.update({
+          where: { id: ar.id, company_id: user.companyId },
+          data: reconciled
+            ? { reconciled: true, status: 'LIQUIDADO', updated_at: new Date() }
+            : { reconciled: false, status: 'RECEBIDO', updated_at: new Date() },
+        })
+        updated++
+        continue
+      }
 
       if (reconciled) {
         // RECEBIDO → LIQUIDADO: cria Transaction + incrementa saldo.
