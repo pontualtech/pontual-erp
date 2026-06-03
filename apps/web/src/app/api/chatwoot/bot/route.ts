@@ -1358,6 +1358,15 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
             orderBy: { click_at: 'desc' },
             take: 50,
           })
+          // Fase 1 (2026-06-03): detecção de orgânico/referral/direto pelo referrer.
+          // Buscador no referrer SEM clique pago = busca orgânica (dado real 02/06:
+          // 25 de 51 cliques sem-clid vinham de google.com). Sem referrer = direto.
+          const SEARCH_ENGINES = /(^|\.)(google|bing|yahoo|duckduckgo|ecosia|ask|yandex|baidu)\.[a-z.]+$/i
+          const refHostOf = (r: (typeof candidates)[number]): string => {
+            const ref = r.referrer || ''
+            if (!ref) return ''
+            try { return new URL(ref).hostname.toLowerCase().replace(/^www\./, '') } catch { return '' }
+          }
           const channelOf = (r: (typeof candidates)[number]): string => {
             if (r.gclid || r.gbraid) return 'google_ads'
             if (r.msclkid) return 'microsoft_ads'
@@ -1366,10 +1375,14 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
             if (r.twclid) return 'x_ads'
             if (r.ttclid) return 'tiktok_ads'
             const sm = `${r.utm_source || ''}/${r.utm_medium || ''}`.toLowerCase()
-            if (sm.includes('google')) return sm.includes('organic') ? 'google_organic' : 'google_ads'
+            if (sm.includes('google')) return sm.includes('organic') ? 'organic' : 'google_ads'
             if (sm.includes('bing') || sm.includes('microsoft')) return 'microsoft_ads'
             if (sm.includes('email') || sm.includes('mautic')) return 'email'
-            return `other:${sm}`
+            if (/\borganic\b/.test(sm)) return 'organic'
+            // Sem clid/utm pago: infere pelo referrer (buscador=orgânico, outro site=referral, vazio=direto)
+            const host = refHostOf(r)
+            if (host) return SEARCH_ENGINES.test(host) ? 'organic' : 'referral'
+            return 'direct'
           }
           const channelSet = new Set(candidates.map(channelOf))
           // Atribui quando a janela é homogênea de canal (1 só). redirect = representante (mais recente).
@@ -1392,6 +1405,21 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
             if (redirect.utm_campaign) attribution.utm_campaign = redirect.utm_campaign
             if (redirect.utm_term) attribution.utm_term = redirect.utm_term
             if (redirect.utm_content) attribution.utm_content = redirect.utm_content
+            // Fase 1 (2026-06-03): se não veio clique pago nem utm, deriva orgânico/referral
+            // do referrer e sintetiza utm_medium — o funil (/atribuicao, canal_entrada) já
+            // entende 'organic'/'referral'. Buscador→organic, outro site→referral.
+            const hasClid = !!(redirect.gclid || redirect.msclkid || redirect.gbraid || redirect.fbclid || redirect.li_fat_id || redirect.twclid || redirect.ttclid)
+            const paidMedium = /cpc|paid/i.test(redirect.utm_medium || '')
+            if (!hasClid && !paidMedium && !attribution.utm_medium) {
+              const host = refHostOf(redirect)
+              if (host && SEARCH_ENGINES.test(host)) {
+                attribution.utm_source = attribution.utm_source || host.split('.')[0]
+                attribution.utm_medium = 'organic'
+              } else if (host) {
+                attribution.utm_source = attribution.utm_source || host
+                attribution.utm_medium = 'referral'
+              }
+            }
             if (Object.keys(attribution).length > 0) {
               existingData.attribution = {
                 ...attribution,
