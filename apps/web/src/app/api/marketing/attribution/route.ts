@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, handleError } from '@/lib/api-response'
-import { getGoogleAdsTotalCostCents } from '@/lib/google-ads-enrichment'
+import { getGoogleAdsTotalCostCents, enrichGclids, getGoogleAdsCampaignCosts } from '@/lib/google-ads-enrichment'
 
 /**
  * Returns OS × Aprovações × Canal breakdown for marketing attribution.
@@ -323,11 +323,68 @@ export async function GET(req: NextRequest) {
       return result
     }).catch(() => ({} as Record<string, { active: number; reactivated: number; other_ended: number }>))
 
+    // ── Atribuição por CAMPANHA (2026-06-03) ─────────────────────────────
+    // Liga campanha ao DINHEIRO (OS→aprovada→R$→CPA), não só canal. Campanha =
+    // utm_campaign direto; senão gclid enriquecido via Google Ads API (best-effort,
+    // dia ≈ created_at da OS). Custo/CPA por campanha do Google via API. Honesto:
+    // o que não resolve cai em "(campanha não identificada)".
+    type CampaignRow = {
+      channel: ChannelKey; label: string; emoji: string; campaign: string
+      os_count: number; approved_count: number; approved_revenue_cents: number
+      cost_cents: number | null; cpa_cents: number | null
+    }
+    const gclidEnrich: { gclid: string; clickAt: Date }[] = []
+    const campPending: { channel: ChannelKey; campaign: string | null; gclid: string | null; approved: number }[] = []
+    for (const os of orders) {
+      const t = (os.custom_data as any)?.tracking || {}
+      const channel = classifyChannel(
+        t.utm_source ?? null, t.utm_medium ?? null, t.gclid ?? null, t.msclkid ?? null,
+        t.fbclid ?? null, t.li_fat_id ?? null, t.twclid ?? null, t.ttclid ?? null,
+      )
+      if (channel === 'sem_tracking') continue
+      const campaign = (t.utm_campaign && String(t.utm_campaign).trim()) || null
+      const gclid = (channel === 'google_ads' && !campaign && t.gclid) ? String(t.gclid) : null
+      if (gclid) gclidEnrich.push({ gclid, clickAt: os.created_at ?? new Date() })
+      campPending.push({ channel, campaign, gclid, approved: os.approved_cost ?? 0 })
+    }
+    const enrichMap: Map<string, { campaignName: string | null; adGroupName: string | null }> =
+      gclidEnrich.length > 0 ? await enrichGclids(gclidEnrich).catch(() => new Map()) : new Map()
+    const campaignCosts = await getGoogleAdsCampaignCosts({ from: since, to: until }).catch(() => null)
+    const campMap = new Map<string, CampaignRow>()
+    for (const p of campPending) {
+      let campaign = p.campaign
+      if (!campaign && p.gclid) campaign = enrichMap.get(p.gclid.replace(/\*/g, '_'))?.campaignName || null
+      const campName = campaign || '(campanha não identificada)'
+      const key = `${p.channel}|${campName}`
+      let row = campMap.get(key)
+      if (!row) {
+        row = {
+          channel: p.channel, label: CHANNEL_META[p.channel].label, emoji: CHANNEL_META[p.channel].emoji,
+          campaign: campName, os_count: 0, approved_count: 0, approved_revenue_cents: 0, cost_cents: null, cpa_cents: null,
+        }
+        campMap.set(key, row)
+      }
+      row.os_count++
+      if (p.approved > 0) { row.approved_count++; row.approved_revenue_cents += p.approved }
+    }
+    if (campaignCosts) {
+      for (const row of campMap.values()) {
+        if (row.campaign === '(campanha não identificada)') continue
+        const c = campaignCosts.get(row.campaign)
+        if (c != null && c > 0) {
+          row.cost_cents = c
+          row.cpa_cents = row.approved_count > 0 ? Math.round(c / row.approved_count) : null
+        }
+      }
+    }
+    const campaigns = Array.from(campMap.values()).sort((a, b) => b.os_count - a.os_count)
+
     return success({
       range,
       since: since.toISOString(),
       totals,
       breakdown: breakdownWithCac,
+      campaigns,
       timeline,
       coverage_pct: totals.os_count > 0 ? (totals.tracked_count / totals.os_count) * 100 : 0,
       investments,

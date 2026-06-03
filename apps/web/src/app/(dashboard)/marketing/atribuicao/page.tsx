@@ -49,6 +49,18 @@ type TimelineRow = {
   other?: number
 }
 
+type CampaignStats = {
+  channel: string
+  label: string
+  emoji: string
+  campaign: string
+  os_count: number
+  approved_count: number
+  approved_revenue_cents: number
+  cost_cents: number | null
+  cpa_cents: number | null
+}
+
 type ApiResponse = {
   range: string
   since: string
@@ -60,6 +72,8 @@ type ApiResponse = {
     tracked_count: number
   }
   breakdown: ChannelStats[]
+  // Atribuição por campanha (2026-06-03): campanha ligada ao dinheiro (OS→aprovada→R$→CPA)
+  campaigns?: CampaignStats[]
   timeline: TimelineRow[]
   coverage_pct: number
   // Frente C (2026-05-29): contadores de journeys de nurture por tipo
@@ -739,6 +753,52 @@ export default function MarketingAttributionPage() {
             Tracking via gclid (Google Ads), msclkid (Microsoft Ads), utm_source/utm_medium (CWT tag desde 2026-05-21).
             &quot;Aprovada&quot; = service_orders.approved_cost &gt; 0. &quot;Receita aprovada&quot; soma approved_cost da OS no canal.
           </div>
+
+          {/* Atribuição por CAMPANHA (2026-06-03) — campanha ligada ao dinheiro */}
+          {data.campaigns && data.campaigns.length > 0 && (
+            <div className="mt-6 bg-white rounded-lg border border-gray-200 p-4">
+              <h2 className="text-base font-semibold text-gray-900 mb-1">Atribuição por campanha</h2>
+              <p className="text-xs text-gray-500 mb-3">
+                OS por campanha (não só por canal). A campanha vem do utm_campaign ou do gclid (via Google Ads API). Custo e CPA por campanha do Google quando disponível.
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="text-left px-4 py-3 font-medium text-gray-700">Canal · Campanha</th>
+                      <th className="text-right px-4 py-3 font-medium text-gray-700">OS</th>
+                      <th className="text-right px-4 py-3 font-medium text-gray-700">Aprov.</th>
+                      <th className="text-right px-4 py-3 font-medium text-gray-700">Taxa</th>
+                      <th className="text-right px-4 py-3 font-medium text-gray-700">Receita</th>
+                      <th className="text-right px-4 py-3 font-medium text-gray-700">Custo</th>
+                      <th className="text-right px-4 py-3 font-medium text-gray-700" title="Custo da campanha ÷ OS aprovadas">CPA real</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.campaigns.map((c, i) => (
+                      <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
+                        <td className="px-4 py-2.5 text-gray-900">
+                          <span className="mr-1">{c.emoji}</span>
+                          <span className="text-gray-500">{c.label}</span>
+                          <span className="mx-1 text-gray-300">·</span>
+                          <span className={c.campaign.startsWith('(') ? 'text-gray-400 italic' : 'font-medium'}>{c.campaign}</span>
+                        </td>
+                        <td className="px-4 py-2.5 text-right text-gray-900">{c.os_count}</td>
+                        <td className="px-4 py-2.5 text-right text-gray-900">{c.approved_count}</td>
+                        <td className="px-4 py-2.5 text-right text-gray-600">{c.os_count > 0 ? Math.round((100 * c.approved_count) / c.os_count) + '%' : '—'}</td>
+                        <td className="px-4 py-2.5 text-right text-gray-900">{c.approved_revenue_cents > 0 ? fmtBRL(c.approved_revenue_cents) : '—'}</td>
+                        <td className="px-4 py-2.5 text-right text-gray-600">{c.cost_cents != null ? fmtBRL(c.cost_cents) : '—'}</td>
+                        <td className="px-4 py-2.5 text-right font-medium text-gray-900">{c.cpa_cents != null ? fmtBRL(c.cpa_cents) : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-3 text-xs text-gray-400">
+                &quot;(campanha não identificada)&quot; = clique sem utm_campaign cujo gclid não resolveu (o PMax não expõe campanha por OS; cliques fora da janela de 90 dias do Google). CPA aparece só quando há custo da campanha.
+              </div>
+            </div>
+          )}
 
           {/* Email engagement (quem chamou pelo email) */}
           {email && (
