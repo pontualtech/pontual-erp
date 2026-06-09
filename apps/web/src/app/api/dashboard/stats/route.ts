@@ -13,13 +13,15 @@ export async function GET(req: NextRequest) {
     // ---- Status IDs lookup ----
     const allStatuses = await prisma.moduleStatus.findMany({
       where: { company_id: cid, module: 'os' },
-      select: { id: true, name: true, color: true, is_final: true, order: true },
+      select: { id: true, name: true, color: true, is_final: true, is_billable: true, order: true },
       orderBy: { order: 'asc' },
     })
     const finalIds = allStatuses.filter(s => s.is_final).map(s => s.id)
-    // Cancelled statuses (subset of final) — exclude from "prontas" count
+    // Cancelled statuses (subset of final) — exclude from "prontas" count.
+    // 2026-06-09: usa flag is_billable (false = Cancelada/Recusada/Doada/etc),
+    // substitui regex /cancel|recusad/i que era frágil.
     const cancelledIds = allStatuses
-      .filter(s => s.is_final && /cancel|recusad/i.test(s.name))
+      .filter(s => s.is_final && s.is_billable === false)
       .map(s => s.id)
     // "Prontas" = ready for delivery by technician (NOT is_final, NOT cancelled)
     // Match: "pronta", "entregar reparado", "em rota", "rota de entrega"

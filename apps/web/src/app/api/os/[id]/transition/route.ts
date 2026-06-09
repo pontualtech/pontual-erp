@@ -151,9 +151,9 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
 
     // Final status (Entregue) com valor: precisa controlar geração de AR.
-    // Cancel/recusa não tem cobrança esperada.
-    const isCancelOrRefuse = /cancel|recusad/i.test(toStatus.name)
-    const isFinalDelivery = toStatus.is_final && !isCancelOrRefuse && (os.total_cost ?? 0) > 0
+    // Status com is_billable=false (Cancelada/Recusada/Doada/Imprimitech) não
+    // gera AR. Flag substitui heurística regex /cancel|recusad/i (2026-06-09).
+    const isFinalDelivery = toStatus.is_final && toStatus.is_billable !== false && (os.total_cost ?? 0) > 0
 
     // Se cliente já pagou antecipado via portal, a AR foi criada lá. Nesse caso
     // não recria (evita duplicata) e não exige o atendente escolher forma de

@@ -51,7 +51,7 @@ interface OSHistoryEntry {
   id: string; from_status_id: string | null; to_status_id: string | null
   changed_by: string | null; changed_by_name: string | null; notes: string | null; created_at: string
 }
-interface StatusDef { id: string; name: string; color: string; order: number; is_final?: boolean; transitions?: string[] }
+interface StatusDef { id: string; name: string; color: string; order: number; is_final?: boolean; is_billable?: boolean | null; transitions?: string[] }
 interface OSDetail {
   id: string; os_number: number; status_id: string; priority: string; os_type: string
   equipment_type: string | null; equipment_brand: string | null; equipment_model: string | null
@@ -832,8 +832,7 @@ export default function OSDetailPage() {
       setShowCancelModal(true)
       return
     }
-    const isCancelOrRefuse = /cancel|recusad/i.test(target.name)
-    const isDelivery = (target.is_final && !isCancelOrRefuse)
+    const isDelivery = (target.is_final && target.is_billable !== false)
 
     // Se cliente ja pagou antecipado via portal (ou ha outra AR ativa), pula
     // modal de pagamento — backend nao recria AR nem exige payment_method

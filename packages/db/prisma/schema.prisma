@@ -310,6 +310,7 @@ model ModuleStatus {
   order                                                                       Int?                  @default(0)
   is_final                                                                    Boolean?              @default(false)
   is_default                                                                  Boolean?              @default(false)
+  is_billable                                                                 Boolean?              @default(true)
   transitions                                                                 Json?                 @default("[]")
   created_at                                                                  DateTime?             @default(now()) @db.Timestamptz(6)
   updated_at                                                                  DateTime?             @updatedAt @default(now()) @db.Timestamptz(6)

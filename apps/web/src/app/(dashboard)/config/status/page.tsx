@@ -11,6 +11,7 @@ interface Status {
   order: number
   is_default: boolean
   is_final: boolean
+  is_billable: boolean | null
   module: string
 }
 
@@ -35,6 +36,7 @@ export default function StatusPage() {
   const [formColor, setFormColor] = useState('#3B82F6')
   const [formIsFinal, setFormIsFinal] = useState(false)
   const [formIsDefault, setFormIsDefault] = useState(false)
+  const [formIsBillable, setFormIsBillable] = useState(true)
 
   function loadStatuses() {
     setLoading(true)
@@ -64,6 +66,7 @@ export default function StatusPage() {
     setFormColor('#3B82F6')
     setFormIsFinal(false)
     setFormIsDefault(false)
+    setFormIsBillable(true)
     setShowModal(true)
   }
 
@@ -73,6 +76,7 @@ export default function StatusPage() {
     setFormColor(s.color)
     setFormIsFinal(s.is_final)
     setFormIsDefault(s.is_default)
+    setFormIsBillable(s.is_billable !== false)
     setShowModal(true)
   }
 
@@ -85,6 +89,7 @@ export default function StatusPage() {
         color: formColor,
         is_final: formIsFinal,
         is_default: formIsDefault,
+        is_billable: formIsBillable,
         module: 'os',
         order: editingStatus ? editingStatus.order : (statuses.length + 1),
       }
@@ -208,6 +213,12 @@ export default function StatusPage() {
                         <Flag className="h-3 w-3" /> Final
                       </span>
                     )}
+                    {s.is_billable === false && (
+                      <span className="flex items-center gap-0.5 rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700"
+                        title="Não gera cobrança ao concluir (ex: Doada, Cancelada, Recusada)">
+                        Sem cobrança
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -233,9 +244,10 @@ export default function StatusPage() {
       </div>
 
       {/* Legend */}
-      <div className="flex gap-4 text-xs text-gray-500">
+      <div className="flex flex-wrap gap-4 text-xs text-gray-500">
         <span className="flex items-center gap-1"><Star className="h-3 w-3 text-blue-500" /> Padrão = status inicial ao criar OS</span>
         <span className="flex items-center gap-1"><Flag className="h-3 w-3 text-green-500" /> Final = OS encerrada (entregue, cancelada)</span>
+        <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded-full bg-orange-400" /> Sem cobrança = não gera AR ao concluir (doada, recusada)</span>
       </div>
 
       {/* Create/Edit modal */}
@@ -279,16 +291,28 @@ export default function StatusPage() {
               </div>
 
               {/* Flags */}
-              <div className="flex gap-6">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={formIsDefault} onChange={e => setFormIsDefault(e.target.checked)}
-                    className="rounded text-blue-600" title="Status padrão" />
-                  <span className="text-sm">Status padrão (inicial)</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={formIsFinal} onChange={e => setFormIsFinal(e.target.checked)}
-                    className="rounded text-blue-600" title="Status final" />
-                  <span className="text-sm">Status final</span>
+              <div className="space-y-2">
+                <div className="flex gap-6">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={formIsDefault} onChange={e => setFormIsDefault(e.target.checked)}
+                      className="rounded text-blue-600" title="Status padrão" />
+                    <span className="text-sm">Status padrão (inicial)</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={formIsFinal} onChange={e => setFormIsFinal(e.target.checked)}
+                      className="rounded text-blue-600" title="Status final" />
+                    <span className="text-sm">Status final</span>
+                  </label>
+                </div>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input type="checkbox" checked={formIsBillable} onChange={e => setFormIsBillable(e.target.checked)}
+                    className="rounded text-blue-600 mt-0.5" title="Gera cobrança ao concluir" />
+                  <span className="text-sm">
+                    Gera cobrança ao concluir
+                    <span className="block text-xs text-gray-500">
+                      Desmarque para status como <em>Doada</em>, <em>Cancelada</em>, <em>Recusada</em> (não criam conta a receber).
+                    </span>
+                  </span>
                 </label>
               </div>
 
