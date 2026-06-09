@@ -161,7 +161,8 @@ export async function POST(req: NextRequest) {
         codigoProduto: item.codigo_produto || item.product_id || String(idx + 1),
         descricao: item.descricao || '',
         ncm: item.ncm || '84433299',
-        cfop: item.cfop || (destino === '1' ? (cfg['nfe.cfop_venda_interna'] || '5102') : (cfg['nfe.cfop_venda_interestadual'] || '6102')),
+        // 2026-06-09: garantir string (UI manda como Number, Prisma InvoiceItem.cfop é String?)
+        cfop: String(item.cfop || (destino === '1' ? (cfg['nfe.cfop_venda_interna'] || '5102') : (cfg['nfe.cfop_venda_interestadual'] || '6102'))),
         unidade: item.unidade || 'UN',
         quantidade: qtd,
         valorUnitario: valorUnit,
