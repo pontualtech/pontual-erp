@@ -263,6 +263,7 @@ export function buildNfeXml(nfe: NfeData): { xml: string; chaveAcesso: string } 
         <xPais>BRASIL</xPais>
       </enderDest>
       <indIEDest>${dest.indIEDest || '9'}</indIEDest>
+      ${(dest.indIEDest === '1' || (!dest.indIEDest && dest.inscricaoEstadual)) && dest.inscricaoEstadual ? `<IE>${dest.inscricaoEstadual.replace(/\D/g, '')}</IE>` : ''}
       ${dest.email ? `<email>${dest.email}</email>` : ''}
     </dest>
     ${itemsXml}
