@@ -372,8 +372,9 @@ export default function EmitirNfePage() {
         })),
         // Pagamentos: tPag=90 (sem pagamento) pra remessa/retorno/devolucao.
         // Venda usa tPag=99 (outros) valor total — Karlao pode ajustar via UI futura.
+        // 2026-06-09: tPag=90 EXIGE vPag=vNF (valor total) — vPag=0 da rejeicao SEFAZ.
         pagamentos: tipoCfg.semPagamento
-          ? [{ forma: '90', valor: 0 }]
+          ? [{ forma: '90', valor: totalReais }]
           : [{ forma: '99', valor: totalReais }],
         chaves_referenciadas: notasReferenciadas.length > 0 ? notasReferenciadas : undefined,
         informacoes_adicionais: infoAdicionais || undefined,

@@ -194,15 +194,12 @@ export function buildNfeXml(nfe: NfeData): { xml: string; chaveAcesso: string } 
   }).join('\n')
 
   // Pagamentos.
-  // 2026-06-09: SEFAZ rejeita <vPag> quando tPag='90' (sem pagamento — usado
-  // em remessa/retorno conserto/devolucao). Motivo: "Informado indevidamente
-  // campo valor de pagamento". Omitir <vPag> nesses casos.
-  const pagXml = nfe.pagamentos.map(pag => {
-    const semPag = pag.forma === '90'
-    return semPag
-      ? `<detPag><tPag>${pag.forma}</tPag></detPag>`
-      : `<detPag><tPag>${pag.forma}</tPag><vPag>${pag.valor.toFixed(2)}</vPag></detPag>`
-  }).join('\n')
+  // 2026-06-09: tPag=90 (sem pagamento) AINDA exige <vPag> no schema NF-e 4.00.
+  // Omitir gera "Falha no Schema XML". Mas vPag=0.00 da "informado indevidamente".
+  // Solucao sped-nfe: vPag = vNF total da nota (declara valor mesmo sem pagamento).
+  const pagXml = nfe.pagamentos.map(pag =>
+    `<detPag><tPag>${pag.forma}</tPag><vPag>${pag.valor.toFixed(2)}</vPag></detPag>`
+  ).join('\n')
 
   // Referências
   const refXml = (nfe.chavesReferenciadas || []).map(ch =>
