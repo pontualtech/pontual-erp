@@ -2087,6 +2087,49 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
               }).join('; ')
               query += `\n[CONTEXTO DO CLIENTE: Nome: ${customer.legal_name || 'N/A'}, Telefone: ${phone}, OS ativas: ${osList}. O cliente JA FOI IDENTIFICADO — NAO pergunte numero da OS, ja informe o status diretamente. SEMPRE inclua na sua resposta a URL "Portal: https://..." COMPLETA da OS relevante (extraida do contexto OS ativas acima). NUNCA escreva apenas "portal.pontualtech.com.br" ou "portal.imprimitech.com.br" sozinho como link — sempre use a URL completa do contexto pra o cliente nao precisar fazer login.]`
               console.log(`[Bot] Auto-identified: ${customer.legal_name} — ${activeOS.length} active OS`)
+
+              // ─── HANDLER DETERMINISTICO: pedido de novo link de acesso ───
+              // 2026-06-09: cliente clica em "Pedir novo acesso pelo WhatsApp"
+              // na pagina /portal/{slug}/entrar (link expirado) e bot Dify nao
+              // gera link novo. Intercepta intent antes do Dify, gera magic link
+              // + short link, responde direto. Cobre variacoes naturais.
+              const PEDIDO_NOVO_LINK = new RegExp([
+                String.raw`(?:link|acesso).*(?:expir|venceu|n[\xe3a]o\s+funcion|perdi|sumiu|deixou\s+de)`,
+                String.raw`(?:manda|envia|enviar|mandar|gera|gerar)\s+(?:um\s+)?(?:novo\s+)?(?:link|acesso|portal)`,
+                String.raw`(?:perdi|preciso\s+de|quero|me\s+manda)\s+(?:um\s+)?(?:o\s+|novo\s+)?(?:link|acesso)`,
+                String.raw`(?:como|onde)\s+(?:eu\s+)?(?:acess|acompanh|vej|ver)\s+.*(?:portal|OS|minha)`,
+                String.raw`novo\s+(?:link|acesso)`,
+              ].join('|'), 'i')
+
+              if (activeOS.length > 0 && PEDIDO_NOVO_LINK.test(content)) {
+                try {
+                  const { buildMagicLink } = await import('@/lib/portal-magic-url')
+                  const { shortenUrl } = await import('@/lib/short-link')
+                  // OS mais recente (activeOS ja vem ordenado por created_at desc em getActiveOrders)
+                  const osPick = activeOS[0]
+                  const slugLimpo = cfg.slug.replace('-suporte', '').replace('-email', '')
+                  const { url } = buildMagicLink({
+                    customerId: customer.id,
+                    companyId: cfg.companyId,
+                    slug: slugLimpo,
+                    osId: osPick.os_id || undefined,
+                  })
+                  let displayUrl = url
+                  try { displayUrl = await shortenUrl(url, cfg.companyId, customer.id) } catch {}
+                  const firstName = (customer.legal_name || '').split(' ')[0] || 'cliente'
+                  const osNumFmt = String(osPick.os_number).padStart(4, '0')
+                  const reply = `Aqui esta seu novo link de acesso, ${firstName}! 🔗\n\n*OS #${osNumFmt}* — ${osPick.equipment || 'Equipamento'}\nStatus: ${osPick.status_name || 'em andamento'}\n\n${displayUrl}\n\nO link e valido por 30 dias e nao pede senha. 😊`
+                  await cwSendMessage(cfg, conversationId, reply)
+                  await logBotMessage(cfg, conversationId, content, reply, 'PORTAL_LINK_REISSUE', phone)
+                  await releaseLock(botConv.id)
+                  console.log(`[Bot] Magic link reissued for ${customer.legal_name} OS #${osNumFmt}`)
+                  return
+                } catch (e) {
+                  console.error('[Bot] Falha ao reissue magic link, caindo no fluxo Dify normal:', e)
+                  // Continua pro Dify se algo falhar — fallback gracioso
+                }
+              }
+              // ──────────────────────────────────────────────────────────
             } else {
               // Customer found but no active OS — still inject name context
               query += `\n[CONTEXTO DO CLIENTE: Nome: ${customer.legal_name || 'N/A'}. NAO tem OS ativa no momento. Se o cliente informou CPF/CNPJ, confirme o nome e pergunte como pode ajudar.]`
