@@ -41,8 +41,21 @@ interface Produto {
 
 interface FiscalConfig {
   has_api_key: boolean
+  certificate_uploaded: boolean
+  certificate_filename: string | null
   environment: string | null
   settings: Record<string, any> | null
+}
+
+interface NfeRecebida {
+  id: string
+  chave_nfe: string
+  numero: number | null
+  serie: string | null
+  cnpj_emitente: string
+  nome_emitente: string
+  valor_total: number
+  data_emissao: string | null
 }
 
 interface ItemForm {
@@ -86,13 +99,29 @@ function parseCurrencyInput(value: string): number {
   return Math.round(parsed * 100)
 }
 
-const TIPO_CONFIG: Record<NfeTipo, { label: string; icon: any; cfop: number; description: string; color: string }> = {
+interface TipoConfig {
+  label: string
+  icon: any
+  cfop: number
+  description: string
+  color: string
+  natureza: string
+  finalidade: '1' | '2' | '3' | '4'  // 1=normal, 2=complementar, 3=ajuste, 4=devolucao
+  tipo_operacao: '0' | '1'           // 0=entrada, 1=saida
+  semPagamento: boolean              // true → pagamento tPag=90 valor=0
+}
+
+const TIPO_CONFIG: Record<NfeTipo, TipoConfig> = {
   venda: {
     label: 'Venda de Mercadoria',
     icon: ShoppingCart,
     cfop: 5102,
     description: 'Venda de produtos adquiridos ou recebidos de terceiros',
     color: 'border-blue-500 bg-blue-50 text-blue-700',
+    natureza: 'VENDA DE MERCADORIA',
+    finalidade: '1',
+    tipo_operacao: '1',
+    semPagamento: false,
   },
   remessa_conserto: {
     label: 'Remessa p/ Conserto',
@@ -100,6 +129,10 @@ const TIPO_CONFIG: Record<NfeTipo, { label: string; icon: any; cfop: number; des
     cfop: 5915,
     description: 'Remessa de equipamento para conserto - ICMS suspenso',
     color: 'border-orange-500 bg-orange-50 text-orange-700',
+    natureza: 'REMESSA P/ CONSERTO',
+    finalidade: '1',
+    tipo_operacao: '1',
+    semPagamento: true,
   },
   retorno_conserto: {
     label: 'Retorno de Conserto',
@@ -107,6 +140,10 @@ const TIPO_CONFIG: Record<NfeTipo, { label: string; icon: any; cfop: number; des
     cfop: 5916,
     description: 'Retorno de mercadoria recebida para conserto - exige NF-e original',
     color: 'border-green-500 bg-green-50 text-green-700',
+    natureza: 'RETORNO DE MERCADORIA RECEBIDA P/ CONSERTO',
+    finalidade: '1',
+    tipo_operacao: '1',
+    semPagamento: true,
   },
   devolucao: {
     label: 'Devolucao',
@@ -114,6 +151,10 @@ const TIPO_CONFIG: Record<NfeTipo, { label: string; icon: any; cfop: number; des
     cfop: 5202,
     description: 'Devolucao de mercadoria adquirida - exige NF-e original',
     color: 'border-red-500 bg-red-50 text-red-700',
+    natureza: 'DEVOLUCAO DE VENDA',
+    finalidade: '4',
+    tipo_operacao: '1',
+    semPagamento: true,
   },
 }
 
@@ -162,6 +203,12 @@ export default function EmitirNfePage() {
   // Notas referenciadas (retorno/devolucao)
   const [notasReferenciadas, setNotasReferenciadas] = useState<string[]>([])
   const [novaChaveRef, setNovaChaveRef] = useState('')
+
+  // Bonus 2026-06-09: importar de NF-e recebida (atalho pra retorno_conserto)
+  const [showRecebidasModal, setShowRecebidasModal] = useState(false)
+  const [nfesRecebidas, setNfesRecebidas] = useState<NfeRecebida[]>([])
+  const [loadingRecebidas, setLoadingRecebidas] = useState(false)
+  const [importingFromRecebida, setImportingFromRecebida] = useState<string | null>(null)
 
   // Info adicionais
   const [infoAdicionais, setInfoAdicionais] = useState('')
@@ -299,24 +346,38 @@ export default function EmitirNfePage() {
     setEmissionResult(null)
 
     try {
+      // 2026-06-09: migrado de /api/fiscal/nfe (Focus NFe terceirizado) para
+      // /api/fiscal/nfe-emitir (SEFAZ direto via cert A1). Body mapping novo.
+      const tipoCfg = TIPO_CONFIG[tipo]
+      const totalReais = items.reduce(
+        (sum, i) => sum + (i.valor_unitario_centavos * i.quantidade), 0
+      ) / 100
       const payload = {
-        tipo,
         customer_id: selectedCliente.id,
+        natureza_operacao: tipoCfg.natureza,
+        tipo_operacao: tipoCfg.tipo_operacao,
+        finalidade: tipoCfg.finalidade,
         items: items.map(item => ({
           product_id: item.product_id || undefined,
           descricao: item.descricao,
           quantidade: item.quantidade,
-          valor_unitario: item.valor_unitario_centavos,
+          // SEFAZ direto espera valor_unitario em REAIS (não centavos)
+          valor_unitario: item.valor_unitario_centavos / 100,
           cfop: item.cfop ? Number(item.cfop) : undefined,
           ncm: item.ncm || undefined,
           unidade: item.unidade || 'UN',
           codigo_produto: item.codigo_produto || undefined,
         })),
-        notas_referenciadas: notasReferenciadas.length > 0 ? notasReferenciadas : undefined,
+        // Pagamentos: tPag=90 (sem pagamento) pra remessa/retorno/devolucao.
+        // Venda usa tPag=99 (outros) valor total — Karlao pode ajustar via UI futura.
+        pagamentos: tipoCfg.semPagamento
+          ? [{ forma: '90', valor: 0 }]
+          : [{ forma: '99', valor: totalReais }],
+        chaves_referenciadas: notasReferenciadas.length > 0 ? notasReferenciadas : undefined,
         informacoes_adicionais: infoAdicionais || undefined,
       }
 
-      const res = await fetch('/api/fiscal/nfe', {
+      const res = await fetch('/api/fiscal/nfe-emitir', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -351,6 +412,87 @@ export default function EmitirNfePage() {
     setNovaChaveRef('')
     setInfoAdicionais('')
     setShowPreview(false)
+  }
+
+  // Bonus 2026-06-09: carrega NF-es recebidas pra atalho de retorno_conserto
+  async function openRecebidasModal() {
+    setShowRecebidasModal(true)
+    setLoadingRecebidas(true)
+    try {
+      const r = await fetch('/api/fiscal/nfe-recebidas?limit=30')
+      const d = await r.json()
+      setNfesRecebidas(d.data?.data ?? d.data ?? [])
+    } catch {
+      toast.error('Erro ao carregar NF-es recebidas')
+    } finally {
+      setLoadingRecebidas(false)
+    }
+  }
+
+  // Importa dados da NF-e recebida: emitente vira destinatario, item replicado,
+  // chave referenciada pre-popula. Cria customer se nao existir (por CNPJ).
+  async function importFromRecebida(nfe: NfeRecebida) {
+    setImportingFromRecebida(nfe.id)
+    try {
+      // 1. Procurar/criar customer pelo CNPJ emitente
+      const cnpj = nfe.cnpj_emitente
+      const searchRes = await fetch(`/api/clientes?search=${cnpj}&limit=1`)
+      const searchData = await searchRes.json()
+      let customer: Cliente | null = (searchData.data ?? [])[0] ?? null
+
+      if (!customer) {
+        // Cria cliente PJ minimo. Karlao pode completar endereco/IE depois em /clientes
+        const createRes = await fetch('/api/clientes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            legal_name: nfe.nome_emitente,
+            document_number: cnpj,
+            person_type: 'PJ',
+          }),
+        })
+        const createData = await createRes.json()
+        if (!createRes.ok) throw new Error(createData.error || 'Erro ao criar cliente')
+        customer = createData.data
+      }
+
+      if (customer) {
+        setSelectedCliente(customer)
+        setClienteSearch(customer.legal_name)
+      }
+
+      // 2. Adiciona chave referenciada
+      if (!notasReferenciadas.includes(nfe.chave_nfe)) {
+        setNotasReferenciadas(prev => [...prev, nfe.chave_nfe])
+      }
+
+      // 3. Pre-popula 1 item com valor da NF original (Karlao ajusta descricao/NCM)
+      const valorReais = nfe.valor_total / 100
+      setItems([{
+        key: ++itemKeyCounter,
+        product_id: '',
+        descricao: `Mercadoria recebida para conserto - NF ${nfe.numero ?? ''}`,
+        quantidade: 1,
+        valor_unitario_display: valorReais.toFixed(2).replace('.', ','),
+        valor_unitario_centavos: nfe.valor_total,
+        ncm: '',
+        cfop: String(TIPO_CONFIG[tipo].cfop),
+        unidade: 'UN',
+        codigo_produto: '',
+      }])
+
+      // 4. Info adicionais padrao retorno conserto (Karlao pode editar)
+      if (tipo === 'retorno_conserto' && !infoAdicionais) {
+        setInfoAdicionais('RETORNO DE MERCADORIA RECEBIDA PARA CONSERTO. ICMS NAO-INCIDENCIA (Art. 7º, Inciso IX, RICMS/SP). IPI NAO-INCIDENCIA (Art. 5º, Incisos XI e XII, Decreto 4.544/2002).')
+      }
+
+      toast.success(`Dados importados da NF ${nfe.numero ?? nfe.chave_nfe.slice(-9)}`)
+      setShowRecebidasModal(false)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao importar NF-e')
+    } finally {
+      setImportingFromRecebida(null)
+    }
   }
 
   // ---------- Render: Loading ----------
@@ -496,11 +638,11 @@ export default function EmitirNfePage() {
         </div>
       )}
 
-      {!config?.has_api_key && (
+      {!config?.certificate_uploaded && (
         <div className="rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 flex items-center gap-2">
           <XCircle className="h-4 w-4 shrink-0" />
           <div>
-            API Key do Focus NFe nao configurada.{' '}
+            Certificado digital A1 nao instalado. Sem ele, nao e possivel emitir NF-e direto na SEFAZ.{' '}
             <Link href="/fiscal/config" className="font-medium underline">Configure aqui</Link>.
           </div>
         </div>
@@ -639,10 +781,22 @@ export default function EmitirNfePage() {
       {/* 3. Notas referenciadas (retorno/devolucao) */}
       {(tipo === 'retorno_conserto' || tipo === 'devolucao') && (
         <div className="rounded-lg border bg-white p-6 shadow-sm">
-          <h2 className="font-semibold text-gray-900 mb-2">Notas Referenciadas</h2>
-          <p className="text-sm text-gray-500 mb-4">
-            Informe a(s) chave(s) da(s) NF-e original(is) de {tipo === 'retorno_conserto' ? 'remessa para conserto' : 'compra'}.
-          </p>
+          <div className="flex items-start justify-between mb-2">
+            <div>
+              <h2 className="font-semibold text-gray-900">Notas Referenciadas</h2>
+              <p className="text-sm text-gray-500 mt-1">
+                Informe a(s) chave(s) da(s) NF-e original(is) de {tipo === 'retorno_conserto' ? 'remessa para conserto' : 'compra'}.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={openRecebidasModal}
+              className="flex items-center gap-1.5 rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100"
+              title="Importa chave + emitente + valor de uma NF-e recebida na SEFAZ"
+            >
+              <Download className="h-3.5 w-3.5" /> Importar de NF Recebida
+            </button>
+          </div>
 
           <div className="flex gap-2 mb-3">
             <input
@@ -1009,6 +1163,82 @@ export default function EmitirNfePage() {
             {/* Tributacao info */}
             <div className="rounded-md bg-gray-100 p-3 text-xs text-gray-500">
               Simples Nacional (Regime 1) | CSOSN {TIPO_CONFIG[tipo].cfop === 5915 || TIPO_CONFIG[tipo].cfop === 5916 ? '400' : '102'} | PIS/COFINS 07 (Isento)
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BONUS: Modal Importar de NF Recebida */}
+      {showRecebidasModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowRecebidasModal(false)}>
+          <div className="w-full max-w-3xl max-h-[80vh] rounded-lg bg-white shadow-xl flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Importar de NF-e Recebida</h2>
+                <p className="text-xs text-gray-500 mt-0.5">Clique numa NF-e pra auto-popular destinatario, chave referenciada e valor.</p>
+              </div>
+              <button type="button" onClick={() => setShowRecebidasModal(false)} title="Fechar modal" aria-label="Fechar" className="p-1 rounded hover:bg-gray-100 text-gray-400">
+                <XCircle className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4">
+              {loadingRecebidas ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
+                </div>
+              ) : nfesRecebidas.length === 0 ? (
+                <div className="text-center py-12 text-gray-500 text-sm">
+                  Nenhuma NF-e recebida encontrada.{' '}
+                  <Link href="/fiscal/recebidas" className="text-blue-600 underline">Sincronizar com SEFAZ</Link>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {nfesRecebidas.map(nfe => {
+                    const isAlreadyAdded = notasReferenciadas.includes(nfe.chave_nfe)
+                    return (
+                      <button
+                        key={nfe.id}
+                        type="button"
+                        onClick={() => importFromRecebida(nfe)}
+                        disabled={importingFromRecebida === nfe.id || isAlreadyAdded}
+                        className="w-full text-left rounded-md border p-3 hover:bg-blue-50 hover:border-blue-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-sm text-gray-900 truncate">{nfe.nome_emitente}</span>
+                              {isAlreadyAdded && (
+                                <span className="text-xs text-green-600">✓ ja adicionada</span>
+                              )}
+                            </div>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              NF {nfe.numero ?? '—'}/{nfe.serie ?? '—'} · CNPJ {formatDocument(nfe.cnpj_emitente)}
+                            </p>
+                            <p className="text-[10px] text-gray-400 font-mono mt-0.5 truncate">{nfe.chave_nfe}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <div className="text-sm font-medium text-gray-900">{formatCurrency(nfe.valor_total)}</div>
+                            <div className="text-xs text-gray-500">
+                              {nfe.data_emissao ? new Date(nfe.data_emissao).toLocaleDateString('pt-BR') : '—'}
+                            </div>
+                            {importingFromRecebida === nfe.id && (
+                              <Loader2 className="h-3 w-3 animate-spin text-blue-500 ml-auto mt-1" />
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-between items-center p-4 border-t bg-gray-50 text-xs text-gray-500">
+              <span>{nfesRecebidas.length} NF-e(s) sincronizadas</span>
+              <Link href="/fiscal/recebidas" className="text-blue-600 hover:underline">
+                Ver todas / Sincronizar SEFAZ →
+              </Link>
             </div>
           </div>
         </div>
