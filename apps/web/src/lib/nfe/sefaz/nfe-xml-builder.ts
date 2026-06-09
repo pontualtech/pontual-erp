@@ -194,12 +194,17 @@ export function buildNfeXml(nfe: NfeData): { xml: string; chaveAcesso: string } 
   }).join('\n')
 
   // Pagamentos.
-  // 2026-06-09: tPag=90 (sem pagamento) AINDA exige <vPag> no schema NF-e 4.00.
-  // Omitir gera "Falha no Schema XML". Mas vPag=0.00 da "informado indevidamente".
-  // Solucao sped-nfe: vPag = vNF total da nota (declara valor mesmo sem pagamento).
-  const pagXml = nfe.pagamentos.map(pag =>
-    `<detPag><tPag>${pag.forma}</tPag><vPag>${pag.valor.toFixed(2)}</vPag></detPag>`
-  ).join('\n')
+  // 2026-06-09 iter 3: padrao replicado da NF Renner remessa autorizada SEFAZ-SP:
+  //   <detPag><indPag>0</indPag><tPag>90</tPag><vPag>0.00</vPag></detPag>
+  // Pra tPag=90 (sem pagamento): incluir <indPag>0</indPag> antes + vPag=0.00.
+  // Iter 1 (vPag=0 sem indPag) e iter 2 (vPag=vNF sem indPag) foram rejeitados
+  // por SEFAZ com "Informado indevidamente campo valor de pagamento".
+  const pagXml = nfe.pagamentos.map(pag => {
+    const semPag = pag.forma === '90'
+    return semPag
+      ? `<detPag><indPag>0</indPag><tPag>${pag.forma}</tPag><vPag>0.00</vPag></detPag>`
+      : `<detPag><tPag>${pag.forma}</tPag><vPag>${pag.valor.toFixed(2)}</vPag></detPag>`
+  }).join('\n')
 
   // Referências
   const refXml = (nfe.chavesReferenciadas || []).map(ch =>
