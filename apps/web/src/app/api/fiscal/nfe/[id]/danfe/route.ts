@@ -431,7 +431,7 @@ ${isCancelled ? '<div class="cancelled-watermark">CANCELADA</div>' : ''}
   <div class="row">
     <div class="cell" style="flex:2;">
       <span class="cell-label">Natureza da Operacao</span>
-      <span class="cell-value">${invoice.nfe_tipo === 'ENTRADA' ? 'ENTRADA' : 'VENDA DE MERCADORIA'}</span>
+      <span class="cell-value">${invoice.nfe_tipo || 'VENDA DE MERCADORIA'}</span>
     </div>
     <div class="cell">
       <span class="cell-label">Protocolo de Autorizacao</span>

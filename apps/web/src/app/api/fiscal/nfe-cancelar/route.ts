@@ -82,11 +82,21 @@ export async function POST(req: NextRequest) {
 
     const cancelado = cStat === '135' || cStat === '155' // 135=cancelado, 155=cancelamento fora prazo aceito
 
-    // Registrar evento
-    await prisma.$executeRawUnsafe(`
-      INSERT INTO nfe_events (company_id, invoice_id, event_type, seq_number, protocol, description, response_data, status)
-      VALUES ($1, $2, 'CANCELAMENTO', 1, $3, $4, $5, $6)
-    `, user.companyId, invoice.id, nProt, justificativa, JSON.stringify({ cStat, xMotivo }), cancelado ? 'SUCCESS' : 'REJECTED')
+    // Registrar evento (2026-06-09 fix: trocou $executeRawUnsafe por client tipado
+    // — raw SQL passava response_data como TEXT mas coluna e JSONB, gerava
+    // Postgres erro 42804 e SOAP ja tinha sido enviado, deixando NF em limbo)
+    await prisma.nfeEvent.create({
+      data: {
+        company_id: user.companyId,
+        invoice_id: invoice.id,
+        event_type: 'CANCELAMENTO',
+        seq_number: 1,
+        protocol: nProt,
+        description: justificativa,
+        response_data: { cStat, xMotivo },
+        status: cancelado ? 'SUCCESS' : 'REJECTED',
+      },
+    })
 
     if (cancelado) {
       await prisma.invoice.update({
