@@ -9,6 +9,7 @@ import {
   Wrench, RotateCcw, ShoppingCart,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { explainSefazError } from '@/lib/nfe/sefaz-error-help'
 
 // ---------- Types ----------
 
@@ -570,12 +571,18 @@ export default function EmitirNfePage() {
         icon: XCircle,
         color: 'text-red-500',
         label: 'NF-e Rejeitada',
-        desc: 'Verifique os dados e tente novamente.',
+        desc: 'Veja abaixo o que aconteceu e clique em "Corrigir esta NF-e" pra ajustar.',
       },
     }
 
     const statusInfo = statusMap[emissionResult.status] || statusMap.PROCESSING
     const StatusIcon = statusInfo.icon
+
+    // Mensagem técnica da SEFAZ vem em emissionResult.notes geralmente no formato:
+    // "NF-e 209 ... | Rejeição: Informado indevidamente campo valor de pagamento"
+    const sefazMsg = (emissionResult.notes || '').split('|').pop()?.trim() || ''
+    const isRejected = emissionResult.status === 'REJECTED'
+    const errorHelp = isRejected ? explainSefazError(sefazMsg) : null
 
     return (
       <div className="max-w-2xl space-y-6">
@@ -583,7 +590,9 @@ export default function EmitirNfePage() {
           <Link href="/fiscal" className="text-gray-400 hover:text-gray-600">
             <ArrowLeft className="h-5 w-5" />
           </Link>
-          <h1 className="text-2xl font-bold text-gray-900">NF-e Emitida</h1>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {isRejected ? 'NF-e Não Autorizada' : 'NF-e Emitida'}
+          </h1>
         </div>
 
         <div className="rounded-lg border bg-white p-6 shadow-sm">
@@ -595,10 +604,28 @@ export default function EmitirNfePage() {
             </div>
           </div>
 
+          {/* Bloco de ajuda humanizada (só quando REJECTED) */}
+          {isRejected && errorHelp && (
+            <div className="rounded-md border border-red-200 bg-red-50 p-4 mb-4 space-y-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-red-700 mb-1">Motivo da SEFAZ</p>
+                <p className="text-sm text-red-900 font-mono">{sefazMsg || '(sem motivo informado)'}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-red-700 mb-1">O que isso significa</p>
+                <p className="text-sm text-gray-800">{errorHelp.explanation}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-red-700 mb-1">O que fazer</p>
+                <p className="text-sm text-gray-800">{errorHelp.suggestion}</p>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-3 border-t pt-4">
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">Tipo</span>
-              <span className="font-medium">{emissionResult.notes || tipo}</span>
+              <span className="font-medium">{emissionResult.notes?.split('|')[0]?.trim() || tipo}</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">Valor Total</span>
@@ -633,6 +660,16 @@ export default function EmitirNfePage() {
                 <Download className="h-4 w-4" /> Download XML
               </a>
             )}
+            {/* Botão prioritário em rejeição: preserva todos os dados pra correção rápida */}
+            {isRejected && (
+              <button
+                type="button"
+                onClick={() => { setEmissionResult(null); setEmissionError(null) }}
+                className="flex items-center gap-2 rounded-md bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600"
+              >
+                <ArrowLeft className="h-4 w-4" /> Corrigir esta NF-e
+              </button>
+            )}
             <Link
               href="/fiscal"
               className="flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
@@ -644,7 +681,7 @@ export default function EmitirNfePage() {
               onClick={resetForm}
               className="flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
             >
-              Emitir Nova NF-e
+              {isRejected ? 'Começar do zero' : 'Emitir Nova NF-e'}
             </button>
           </div>
         </div>
@@ -699,7 +736,10 @@ export default function EmitirNfePage() {
 
       {/* 1. Tipo de NF-e */}
       <div className="rounded-lg border bg-white p-6 shadow-sm">
-        <h2 className="font-semibold text-gray-900 mb-4">Tipo de Operacao</h2>
+        <h2 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-indigo-600 text-xs text-white">1</span>
+          Tipo de operação
+        </h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {(Object.entries(TIPO_CONFIG) as [NfeTipo, typeof TIPO_CONFIG.venda][]).map(([key, cfg]) => {
             const Icon = cfg.icon
@@ -739,7 +779,10 @@ export default function EmitirNfePage() {
 
       {/* 2. Customer */}
       <div className="rounded-lg border bg-white p-6 shadow-sm">
-        <h2 className="font-semibold text-gray-900 mb-4">Destinatario</h2>
+        <h2 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-indigo-600 text-xs text-white">2</span>
+          Destinatário
+        </h2>
         <div className="relative">
           <label className="block text-sm font-medium text-gray-700 mb-1">Cliente</label>
           <div className="relative">
@@ -826,7 +869,10 @@ export default function EmitirNfePage() {
         <div className="rounded-lg border bg-white p-6 shadow-sm">
           <div className="flex items-start justify-between mb-2">
             <div>
-              <h2 className="font-semibold text-gray-900">Notas Referenciadas</h2>
+              <h2 className="font-semibold text-gray-900 flex items-center gap-2">
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-indigo-600 text-xs text-white">★</span>
+                NF-e original (referenciada)
+              </h2>
               <p className="text-sm text-gray-500 mt-1">
                 Informe a(s) chave(s) da(s) NF-e original(is) de {tipo === 'retorno_conserto' ? 'remessa para conserto' : 'compra'}.
               </p>
@@ -885,7 +931,10 @@ export default function EmitirNfePage() {
 
       {/* 4. Items */}
       <div className="rounded-lg border bg-white p-6 shadow-sm">
-        <h2 className="font-semibold text-gray-900 mb-4">Itens da NF-e</h2>
+        <h2 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-indigo-600 text-xs text-white">3</span>
+          Itens da nota
+        </h2>
 
         <div className="space-y-4">
           {items.map((item, idx) => (
@@ -1072,7 +1121,10 @@ export default function EmitirNfePage() {
 
       {/* 5. Informacoes adicionais */}
       <div className="rounded-lg border bg-white p-6 shadow-sm">
-        <h2 className="font-semibold text-gray-900 mb-4">Informacoes Adicionais (opcional)</h2>
+        <h2 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-indigo-600 text-xs text-white">4</span>
+          Informações adicionais <span className="text-xs font-normal text-gray-400">(opcional)</span>
+        </h2>
         <textarea
           rows={3}
           placeholder="Informacoes complementares para o contribuinte..."

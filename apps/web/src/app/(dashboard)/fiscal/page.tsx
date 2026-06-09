@@ -158,29 +158,61 @@ export default function FiscalPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Fiscal - NFS-e</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Fiscal</h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            Gerenciamento de Notas Fiscais de Serviço Eletrônicas
+            NF-e (produto), NFS-e (serviço), notas recebidas e configurações fiscais
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Link href="/fiscal/nfe"
-            className="flex items-center gap-2 rounded-md border border-green-300 bg-green-50 px-4 py-2 text-sm font-medium text-green-700 hover:bg-green-100">
-            NF-e Produto
+            className="flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            Ver NF-e emitidas
           </Link>
           <Link href="/fiscal/nfe/recebidas"
-            className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100">
-            NF-e Recebidas
+            className="flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            Ver NF-e recebidas
           </Link>
           <Link href="/fiscal/config"
             className="flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
-            Config
-          </Link>
-          <Link href="/fiscal/emitir-nfse"
-            className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
-            <Plus className="h-4 w-4" /> NFS-e
+            Configurações
           </Link>
         </div>
+      </div>
+
+      {/* Atalhos rapidos (emissao mais usada) */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <Link href="/fiscal/emitir-nfe?tipo=venda"
+          className="group flex items-start gap-3 rounded-lg border-2 border-indigo-200 bg-indigo-50 p-4 hover:border-indigo-400 hover:bg-indigo-100 transition-colors">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-600 text-white shrink-0">
+            <FileText className="h-5 w-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-indigo-900">Emitir NF-e (produto)</p>
+            <p className="text-xs text-indigo-700 mt-0.5">Venda, remessa, retorno ou devolução</p>
+          </div>
+        </Link>
+
+        <Link href="/fiscal/emitir-nfse"
+          className="group flex items-start gap-3 rounded-lg border-2 border-emerald-200 bg-emerald-50 p-4 hover:border-emerald-400 hover:bg-emerald-100 transition-colors">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-600 text-white shrink-0">
+            <Send className="h-5 w-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-emerald-900">Emitir NFS-e (serviço)</p>
+            <p className="text-xs text-emerald-700 mt-0.5">Reparo, consultoria, mão de obra</p>
+          </div>
+        </Link>
+
+        <Link href="/fiscal/nfe/recebidas"
+          className="group flex items-start gap-3 rounded-lg border-2 border-amber-200 bg-amber-50 p-4 hover:border-amber-400 hover:bg-amber-100 transition-colors">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-600 text-white shrink-0">
+            <Download className="h-5 w-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-amber-900">Importar NF-e recebida</p>
+            <p className="text-xs text-amber-700 mt-0.5">Sincronizar SEFAZ + ver fornecedores</p>
+          </div>
+        </Link>
       </div>
 
       {/* Summary cards */}
