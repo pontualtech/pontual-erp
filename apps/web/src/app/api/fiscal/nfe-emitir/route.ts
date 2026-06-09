@@ -73,6 +73,15 @@ export async function POST(req: NextRequest) {
     })
     if (!customer) return error('Cliente não encontrado', 404)
     if (!customer.document_number) return error('Cliente sem CPF/CNPJ', 400)
+    // 2026-06-09: cMun obrigatório no XML SEFAZ. Sem ele caía em fallback SP
+    // capital e gerava rejeição por inconsistência cMun/xMun. Bloqueia
+    // emissão até admin completar o cadastro do cliente.
+    if (!customer.cod_municipio) {
+      return error(
+        `Cliente "${customer.legal_name}" sem código IBGE do município. Edite o cadastro do cliente em /clientes e informe o cod_municipio (7 dígitos IBGE, ex: '3550308' para São Paulo, '3509205' para Cajamar).`,
+        400
+      )
+    }
 
     // Buscar/incrementar número da série
     const serie = serieParam || '1'
@@ -122,14 +131,16 @@ export async function POST(req: NextRequest) {
     const destinatario: NfeDestinatario = {
       cpfCnpj: docLimpo,
       razaoSocial: customer.legal_name,
-      inscricaoEstadual: (customer as any).inscricao_estadual || '',
+      // state_registration agora e campo direto do schema (nao precisa cast)
+      inscricaoEstadual: customer.state_registration || '',
       email: customer.email || undefined,
       endereco: {
         logradouro: customer.address_street || 'NAO INFORMADO',
         numero: customer.address_number || 'S/N',
-        complemento: (customer as any).address_complement || undefined,
-        bairro: (customer as any).address_neighborhood || 'CENTRO',
-        codigoMunicipio: (customer as any).cod_municipio || '3550308',
+        complemento: customer.address_complement || undefined,
+        bairro: customer.address_neighborhood || 'CENTRO',
+        // cod_municipio agora obrigatorio (validado acima)
+        codigoMunicipio: customer.cod_municipio!,
         municipio: customer.address_city || 'SAO PAULO',
         uf: destUf,
         cep: customer.address_zip || '00000000',

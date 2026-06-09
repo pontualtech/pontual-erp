@@ -56,6 +56,8 @@ interface NfeRecebida {
   nome_emitente: string
   valor_total: number
   data_emissao: string | null
+  // XML data armazenado pra extrair endereco/cMun do emitente quando criar cliente
+  xml_data?: { xml?: string; nsu?: string } | null
 }
 
 interface ItemForm {
@@ -431,29 +433,69 @@ export default function EmitirNfePage() {
 
   // Importa dados da NF-e recebida: emitente vira destinatario, item replicado,
   // chave referenciada pre-popula. Cria customer se nao existir (por CNPJ).
+  // 2026-06-09: tambem extrai endereco completo + cod_municipio do XML emitente
+  // (campo SEFAZ obrigatorio pra emissao - sem ele NF cai em fallback SP capital).
   async function importFromRecebida(nfe: NfeRecebida) {
     setImportingFromRecebida(nfe.id)
     try {
+      // 0. Parse XML pra extrair endereco completo do emitente (vira destinatario do retorno)
+      const xml = nfe.xml_data?.xml || ''
+      const emitMatch = xml.match(/<emit>([\s\S]*?)<\/emit>/)?.[1] || ''
+      const emitData = {
+        xLgr: emitMatch.match(/<xLgr>([^<]+)<\/xLgr>/)?.[1] || '',
+        nro: emitMatch.match(/<nro>([^<]+)<\/nro>/)?.[1] || '',
+        xBairro: emitMatch.match(/<xBairro>([^<]+)<\/xBairro>/)?.[1] || '',
+        cMun: emitMatch.match(/<cMun>(\d{7})<\/cMun>/)?.[1] || '',
+        xMun: emitMatch.match(/<xMun>([^<]+)<\/xMun>/)?.[1] || '',
+        UF: emitMatch.match(/<UF>([A-Z]{2})<\/UF>/)?.[1] || '',
+        CEP: emitMatch.match(/<CEP>(\d+)<\/CEP>/)?.[1] || '',
+        IE: emitMatch.match(/<IE>([^<]+)<\/IE>/)?.[1] || '',
+      }
+
       // 1. Procurar/criar customer pelo CNPJ emitente
       const cnpj = nfe.cnpj_emitente
       const searchRes = await fetch(`/api/clientes?search=${cnpj}&limit=1`)
       const searchData = await searchRes.json()
       let customer: Cliente | null = (searchData.data ?? [])[0] ?? null
 
+      // Payload com endereco completo (criar OU atualizar para preencher cod_municipio se faltar)
+      const customerPayload: Record<string, any> = {
+        legal_name: nfe.nome_emitente,
+        document_number: cnpj,
+        person_type: 'PJ',
+      }
+      if (emitData.xLgr) customerPayload.address_street = emitData.xLgr
+      if (emitData.nro) customerPayload.address_number = emitData.nro
+      if (emitData.xBairro) customerPayload.address_neighborhood = emitData.xBairro
+      if (emitData.xMun) customerPayload.address_city = emitData.xMun
+      if (emitData.UF) customerPayload.address_state = emitData.UF
+      if (emitData.CEP) customerPayload.address_zip = emitData.CEP
+      if (emitData.cMun) customerPayload.cod_municipio = emitData.cMun
+      if (emitData.IE) customerPayload.state_registration = emitData.IE
+
       if (!customer) {
-        // Cria cliente PJ minimo. Karlao pode completar endereco/IE depois em /clientes
         const createRes = await fetch('/api/clientes', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            legal_name: nfe.nome_emitente,
-            document_number: cnpj,
-            person_type: 'PJ',
-          }),
+          body: JSON.stringify(customerPayload),
         })
         const createData = await createRes.json()
         if (!createRes.ok) throw new Error(createData.error || 'Erro ao criar cliente')
         customer = createData.data
+      } else if (!(customer as any).cod_municipio && emitData.cMun) {
+        // Cliente existe mas falta cod_municipio (criado antes do fix 2026-06-09).
+        // Atualiza pra que emissao funcione sem rejeicao da SEFAZ.
+        try {
+          const patchRes = await fetch(`/api/clientes/${customer.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cod_municipio: emitData.cMun }),
+          })
+          if (patchRes.ok) {
+            const patchData = await patchRes.json()
+            customer = patchData.data || customer
+          }
+        } catch { /* nao bloqueia se PATCH falhar - admin pode editar manualmente */ }
       }
 
       if (customer) {

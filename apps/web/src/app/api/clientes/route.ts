@@ -262,6 +262,7 @@ export async function POST(req: NextRequest) {
         address_city: body.address_city,
         address_state: body.address_state,
         address_zip: body.address_zip,
+        cod_municipio: body.cod_municipio,
         state_registration: body.state_registration,
         city_registration: body.city_registration,
         notes: body.notes,

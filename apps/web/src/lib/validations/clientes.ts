@@ -93,6 +93,8 @@ export const createCustomerSchema = z.object({
   address_city: z.string().max(100).optional().nullable(),
   address_state: z.string().max(2).optional().nullable(),
   address_zip: z.string().max(10).optional().nullable(),
+  // 2026-06-09: codigo IBGE 7 digitos do municipio (necessario pra emissao NF-e).
+  cod_municipio: z.string().regex(/^\d{7}$/, 'cod_municipio deve ter 7 dígitos IBGE').optional().nullable(),
   state_registration: z.string().max(30).optional().nullable(),
   city_registration: z.string().max(30).optional().nullable(),
   notes: z.string().max(5000).optional().nullable(),
@@ -120,6 +122,9 @@ export const updateCustomerSchema = z.object({
   address_city: z.string().max(100).nullable().optional(),
   address_state: z.string().max(2).nullable().optional(),
   address_zip: z.string().max(10).nullable().optional(),
+  // 2026-06-09: codigo IBGE 7 digitos do municipio (obrigatorio pra NF-e XML).
+  // Ex: '3509205' Cajamar, '3550308' Sao Paulo.
+  cod_municipio: z.string().regex(/^\d{7}$/, 'cod_municipio deve ter 7 dígitos IBGE').nullable().optional(),
   state_registration: z.string().max(30).nullable().optional(),
   city_registration: z.string().max(30).nullable().optional(),
   notes: z.string().max(5000).nullable().optional(),

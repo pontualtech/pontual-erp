@@ -524,6 +524,10 @@ model Customer {
   address_city         String?
   address_state        String?
   address_zip          String?
+  // codigo IBGE 7 digitos do municipio. Necessario pra emissao NF-e (campo
+  // <cMun> destinatario). Sem isso, emissao cai em fallback SP capital e
+  // SEFAZ rejeita por inconsistencia cMun/xMun.
+  cod_municipio        String?
   // Coordenadas cacheadas — populadas via Google Geocoding uma vez e reutilizadas
   // pra ordenar rotas por proximidade. Recomputar se o endereço for editado.
   address_lat          Decimal?            @db.Decimal(10, 8)
