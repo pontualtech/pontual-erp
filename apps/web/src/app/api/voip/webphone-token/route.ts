@@ -6,7 +6,9 @@
  *
  * Resposta:
  *   { ramal, token, dataClient } — pra montar a URL do script
- *   ou 404 se user não tem ramal mapeado / ramal sem token
+ *   ou { ramal: null } com HTTP 200 se user não tem ramal/token (estado vazio
+ *   válido — não é erro. Antes retornava 404, que o browser logava como
+ *   console-error em todo load do dashboard pra quem não usa Sonax. Eco audit 10/06.)
  */
 
 import { NextRequest } from 'next/server'
@@ -22,7 +24,8 @@ export async function GET(_req: NextRequest) {
     const user = await requireAuth()
     const ramal = getExtensionByEmail(user.email)
     if (!ramal) {
-      return error('User sem ramal SIP mapeado', 404)
+      // Estado vazio válido (não erro): user sem ramal → sem webphone.
+      return success({ ramal: null, token: null, dataClient: null })
     }
     const tokensRaw = process.env.SONAX_WEBPHONE_TOKENS
     if (!tokensRaw) {
@@ -36,7 +39,8 @@ export async function GET(_req: NextRequest) {
     }
     const token = tokens[ramal]
     if (!token) {
-      return error(`Sem token Sonax pro ramal ${ramal}`, 404)
+      // Ramal existe mas sem token Sonax configurado — estado vazio, não erro.
+      return success({ ramal, token: null, dataClient: null })
     }
     const dataClient = process.env.SONAX_WEBPHONE_CLIENT_ID || ''
     return success({ ramal, token, dataClient })

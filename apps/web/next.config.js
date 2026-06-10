@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  // Eco audit 10/06: remove header `X-Powered-By: Next.js` (info disclosure).
+  poweredByHeader: false,
   transpilePackages: ['@pontual/db', '@pontual/types', '@pontual/utils'],
   // Wave AE-2D (2026-05-25): bypass do type-check de build do Next.js.
   // ~100 erros TS pre-existentes bloqueavam build após o module graph

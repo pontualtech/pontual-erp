@@ -16,22 +16,39 @@ interface AuthInfo {
 
 let cached: AuthInfo | null = null
 let cacheTime = 0
+// Promise in-flight compartilhada: sem isto, N componentes montando juntos no
+// primeiro load checam `cached` (ainda null) e disparam N fetches paralelos a
+// /api/auth/me (cache stampede). Cachear a promise dedupe pra 1 request.
+// Mesmo padrão de lib/use-avisos.ts.
+let inflight: Promise<AuthInfo | null> | null = null
 const CACHE_TTL = 60000 // 1 minuto — recarrega permissões periodicamente
+
+function fetchMe(): Promise<AuthInfo | null> {
+  if (cached && Date.now() - cacheTime < CACHE_TTL) return Promise.resolve(cached)
+  if (inflight) return inflight
+  inflight = fetch('/api/auth/me')
+    .then(r => r.json())
+    .then(d => {
+      if (d.data) {
+        d.data.permissions = d.data.permissions ?? []
+        cached = d.data
+        cacheTime = Date.now()
+        return cached
+      }
+      return cached
+    })
+    .catch(() => cached)
+    .finally(() => { inflight = null })
+  return inflight
+}
 
 export function useAuth() {
   const [user, setUser] = useState<AuthInfo | null>(cached)
 
   useEffect(() => {
-    // Usar cache se ainda válido
-    if (cached && Date.now() - cacheTime < CACHE_TTL) { setUser(cached); return }
-    fetch('/api/auth/me').then(r => r.json()).then(d => {
-      if (d.data) {
-        d.data.permissions = d.data.permissions ?? []
-        cached = d.data
-        cacheTime = Date.now()
-        setUser(d.data)
-      }
-    }).catch(() => {})
+    let active = true
+    fetchMe().then(u => { if (active && u) setUser(u) })
+    return () => { active = false }
   }, [])
 
   const isAdmin = user?.role === 'admin'
