@@ -942,11 +942,24 @@ function parseDifyResponse(text: string): ParsedResponse {
   const dataMatch = text.match(/\[VHSYS_DATA\]([\s\S]+?)\[\/VHSYS_DATA\]/)
   if (dataMatch) {
     try {
-      vhsysData = JSON.parse(dataMatch[1].trim())
+      // Eco audit 10/06 (caso Tarsila): Gemini as vezes emite aspas curvas
+      // (“ ” ‘ ’) que quebram JSON.parse → dados se perdem silenciosamente.
+      // Normaliza pra aspas retas antes de parsear.
+      const normalized = dataMatch[1].trim()
+        .replace(/[“”]/g, '"')
+        .replace(/[‘’]/g, "'")
+      vhsysData = JSON.parse(normalized)
     } catch {
       console.error('[Bot] Failed to parse VHSYS_DATA JSON')
     }
     cleanText = cleanText.replace(/\[VHSYS_DATA\]([\s\S]+?)\[\/VHSYS_DATA\]/, '').trim()
+  }
+  // Defensivo (caso Tarsila 10/06): se o LLM emitiu [VHSYS_DATA] SEM o
+  // fechamento [/VHSYS_DATA] (Gemini truncou a resposta antes do fim), o regex
+  // acima nao casa e o bloco JSON inteiro VAZA pro cliente. Remove qualquer
+  // [VHSYS_DATA] residual ate o fim da mensagem.
+  if (cleanText.includes('[VHSYS_DATA]')) {
+    cleanText = cleanText.replace(/\[VHSYS_DATA\][\s\S]*$/, '').trim()
   }
 
   // Detect retention status tags (with optional OS number).
