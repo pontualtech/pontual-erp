@@ -801,7 +801,10 @@ async function transcribeAudio(audioUrl: string): Promise<string> {
 interface ParsedResponse {
   cleanText: string
   vhsysData: Record<string, unknown> | null
-  action: 'ABRIR_OS' | 'ENCERRAR_CONVERSA' | 'TRANSFERIR_HUMANO' | 'TRANSFERIR_RAFAEL' | 'NENHUMA_ACAO' | null
+  // CONFIRMAR_DADOS (eco audit 10/06): bot coletou os dados e quer confirmar
+  // com o cliente ANTES de abrir a OS. O LLM emite [CONFIRMAR_DADOS]+[VHSYS_DATA]
+  // e o CODIGO monta o resumo mascarado (Gemini dropa a PII se tentar ecoar).
+  action: 'ABRIR_OS' | 'CONFIRMAR_DADOS' | 'ENCERRAR_CONVERSA' | 'TRANSFERIR_HUMANO' | 'TRANSFERIR_RAFAEL' | 'NENHUMA_ACAO' | null
   // 2026-05-06: retencao por email — Marta sinaliza transicao de status.
   // NIVEL1 (cliente acha caro/recusa 1a vez) -> Orcar Negociar (tecnico avalia 2o orcamento).
   // NIVEL2 (recusa 2a vez ou irredutivel) -> Renegociar (gerente intervem).
@@ -1034,7 +1037,12 @@ function parseDifyResponse(text: string): ParsedResponse {
   }
 
   // Detect action tags
-  if (text.includes('[ABRIR_OS]')) {
+  if (text.includes('[CONFIRMAR_DADOS]')) {
+    // Coleta concluida — confirmar dados com o cliente antes de abrir OS.
+    // O codigo monta o resumo mascarado (ver buildDataConfirmation).
+    action = 'CONFIRMAR_DADOS'
+    cleanText = cleanText.replace(/\[CONFIRMAR_DADOS\]/g, '').trim()
+  } else if (text.includes('[ABRIR_OS]')) {
     action = 'ABRIR_OS'
     cleanText = cleanText.replace(/\[ABRIR_OS\]/g, '').trim()
   } else if (text.includes('[ENCERRAR_CONVERSA]')) {
@@ -1052,6 +1060,73 @@ function parseDifyResponse(text: string): ParsedResponse {
   }
 
   return { cleanText, vhsysData, action, retentionStatus, retentionOsNumber, isSpam, urgencyLevel, urgencyOsNumber, cancelOsNumber, returnOsNumber, discountNegotiateOsNumber, clienteIrritado, resendChargeOsNumber, emailIntent }
+}
+
+/**
+ * Eco audit 10/06 (Opcao A): monta o resumo de confirmacao de dados de forma
+ * DETERMINISTICA (codigo, nao LLM), com PII mascarada.
+ *
+ * Motivo: o gemini-2.5-flash dropa/trunca a PII quando tenta ecoar
+ * CPF+email+endereco no texto (safety filter do modelo) — gerava "Recebido,
+ * ta tudo certo?" SEM mostrar os dados pro cliente conferir (caso Paula 10/06).
+ * Agora o LLM emite [CONFIRMAR_DADOS]+[VHSYS_DATA] e este helper monta o texto.
+ *
+ * Mascaramento (LGPD + dribla o filtro): CPF 3 ultimos digitos, email 3 chars +
+ * dominio, endereco sem CEP, nome primeiro+ultimo.
+ */
+function buildDataConfirmation(vd: Record<string, unknown>, senderName?: string): string {
+  const val = (...keys: string[]): string => {
+    for (const k of keys) {
+      const r = vd[k]
+      if (r === undefined || r === null) continue
+      const s = String(r).trim()
+      // ignora placeholders literais ("[nome]", "{{x}}", "<y>") e vazios
+      if (s && !/^[[{<]/.test(s)) return s
+    }
+    return ''
+  }
+
+  const nome = val('nome', 'cliente', 'nome_cliente', 'customer_name', 'name') || senderName || ''
+  const docDigits = val('cpf_cnpj', 'cpf', 'cnpj', 'document', 'documento', 'cpfcnpj').replace(/\D/g, '')
+  const email = val('email', 'email_cliente', 'customer_email')
+  const endereco = val('endereco', 'logradouro', 'rua', 'address')
+  const bairro = val('bairro')
+
+  const lines: string[] = ['Deixa eu confirmar pra abrir certinho 😊']
+
+  if (nome) {
+    const parts = nome.split(/\s+/).filter(Boolean)
+    const shortName = parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1]}` : nome
+    lines.push(`• Nome: ${shortName}`)
+  }
+  if (docDigits.length >= 3) lines.push(`• CPF/CNPJ: terminando em ${docDigits.slice(-3)}`)
+  if (email) {
+    const [user, domain] = email.split('@')
+    const maskedUser = user.length > 3 ? `${user.slice(0, 3)}***` : `${user}***`
+    lines.push(`• E-mail: ${maskedUser}${domain ? '@' + domain : ''}`)
+  }
+  if (endereco) {
+    // NUNCA inclui CEP completo (safety filter + LGPD)
+    lines.push(`• Endereço: ${endereco}${bairro ? ` — ${bairro}` : ''}`)
+  }
+
+  // Equipamentos: array (multi) ou campos singulares
+  const arr = Array.isArray((vd as Record<string, any>).equipamentos) ? (vd as Record<string, any>).equipamentos : null
+  if (arr && arr.length) {
+    for (const e of arr) {
+      const desc = [String(e?.marca || '').trim(), String(e?.modelo || '').trim()].filter(Boolean).join(' ')
+      const defeito = String(e?.defeito || '').trim()
+      if (desc) lines.push(`• Equipamento: ${desc}${defeito ? ' — ' + defeito : ''}`)
+    }
+  } else {
+    const desc = [val('marca'), val('modelo', 'equipamento')].filter(Boolean).join(' ')
+    const defeito = val('defeito', 'problema')
+    if (desc) lines.push(`• Equipamento: ${desc}${defeito ? ' — ' + defeito : ''}`)
+  }
+
+  lines.push('')
+  lines.push('Tá tudo certo? Se sim, já abro sua OS. Se algo estiver errado, é só me corrigir! 😊')
+  return lines.join('\n')
 }
 
 // ---------------------------------------------------------------------------
@@ -2382,6 +2457,15 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       // Parse response for action tags
       const parsed = parseDifyResponse(difyResponse.answer)
 
+      // Eco audit 10/06 (Opcao A): confirmacao de dados DETERMINISTICA. O LLM
+      // emite [CONFIRMAR_DADOS]+[VHSYS_DATA] (sem prosa) e o codigo monta o
+      // resumo mascarado aqui — antes do historico/envio, pra tudo ficar
+      // consistente. So abre OS no [ABRIR_OS] (proximo turno, apos cliente
+      // confirmar). Motivo: gemini-2.5-flash dropa a PII se tentar ecoar.
+      if (parsed.action === 'CONFIRMAR_DADOS' && parsed.vhsysData) {
+        parsed.cleanText = buildDataConfirmation(parsed.vhsysData as Record<string, unknown>, sender.name)
+      }
+
       // 2026-05-29 C2: captura email inbox (PontualTech) com classifier LLM.
       // Marta tagueia [INTENT:commercial|support|other] no fim. Comercial dispara
       // welcome series; support/other capturam silenciosamente (LGPD-safe).
@@ -3424,7 +3508,10 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
     // Schedule follow-up if conversation is still active (not ended, not transferred)
     // Skip follow-up for suporte bots (Marta/Aline) — only vendas bots use follow-up
     const isSuporteBot = cfg.slug.includes('suporte') || cfg.botOrigin?.includes('marta') || cfg.botOrigin?.includes('aline')
-    const shouldSchedule = !isSuporteBot && (!parsed.action || parsed.action === 'NENHUMA_ACAO')
+    // CONFIRMAR_DADOS incluido (eco audit 10/06): apos pedir confirmacao dos
+    // dados, se o cliente sumir, o follow-up deve cutucar — mesmo comportamento
+    // de quando o LLM perguntava "ta tudo certo?" com action=null (antes do fix).
+    const shouldSchedule = !isSuporteBot && (!parsed.action || parsed.action === 'NENHUMA_ACAO' || parsed.action === 'CONFIRMAR_DADOS')
     console.log(`[Bot/FU-decision] conv=${conversationId} slug=${cfg.slug} origin=${cfg.botOrigin} isSuporteBot=${isSuporteBot} action=${parsed.action||'null'} shouldResolveConv=${shouldResolveConv} → ${shouldSchedule?'SCHEDULE':'CLEAR'}`)
     if (shouldSchedule) {
       await scheduleFollowUp(cfg.companyId, botConv.id)
