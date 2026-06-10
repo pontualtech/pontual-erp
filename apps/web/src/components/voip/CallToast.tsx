@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { PhoneIncoming, PhoneOutgoing, PhoneMissed, PhoneCall, X, ExternalLink, RotateCw, AlertTriangle } from 'lucide-react'
+import { useCallStream } from '@/lib/voip/use-call-stream'
 
 type VoipEvent = {
   type: 'hello' | 'call.start' | 'call.answered' | 'call.missed' | 'call.completed'
@@ -50,81 +51,49 @@ function formatPhone(raw: string | null | undefined): string {
 
 export function CallToast() {
   const [toasts, setToasts] = useState<ActiveToast[]>([])
-  const esRef = useRef<EventSource | null>(null)
+  // SSE compartilhado (eco audit 10/06: era EventSource proprio → agora singleton).
+  useCallStream((ev: VoipEvent) => {
+    if (ev.type === 'hello') return
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return
+    const externalNumber = ev.direction === 'inbound'
+      ? (ev.fromNumber || '')
+      : (ev.toNumber || '')
 
-    let stopped = false
-    let retryDelay = 1000
-
-    function connect() {
-      if (stopped) return
-      const es = new EventSource('/api/voip/calls/stream')
-      esRef.current = es
-
-      es.onopen = () => { retryDelay = 1000 }
-
-      es.onmessage = (e) => {
-        let ev: VoipEvent
-        try { ev = JSON.parse(e.data) } catch { return }
-        if (ev.type === 'hello') return
-
-        const externalNumber = ev.direction === 'inbound'
-          ? (ev.fromNumber || '')
-          : (ev.toNumber || '')
-
-        if (ev.type === 'call.start') {
-          setToasts(prev => addOrReplace(prev, {
-            uid: ev.voipCallId || ev.callId || crypto.randomUUID(),
-            kind: 'ringing',
-            voipCallId: ev.voipCallId || '',
-            customerId: ev.customerId ?? null,
-            customerName: ev.customerName ?? null,
-            externalNumber,
-            direction: (ev.direction || 'inbound') as 'inbound' | 'outbound',
-            startedAt: Date.now(),
-          }))
-        } else if (ev.type === 'call.missed') {
-          setToasts(prev => addOrReplace(prev, {
-            uid: ev.voipCallId || ev.callId || crypto.randomUUID(),
-            kind: 'missed',
-            voipCallId: ev.voipCallId || '',
-            customerId: ev.customerId ?? null,
-            customerName: ev.customerName ?? null,
-            externalNumber,
-            direction: (ev.direction || 'inbound') as 'inbound' | 'outbound',
-            startedAt: Date.now(),
-          }))
-        } else if (ev.type === 'call.answered' || ev.type === 'call.completed') {
-          setToasts(prev => addOrReplace(prev, {
-            uid: ev.voipCallId || ev.callId || crypto.randomUUID(),
-            kind: 'answered',
-            voipCallId: ev.voipCallId || '',
-            customerId: ev.customerId ?? null,
-            customerName: ev.customerName ?? null,
-            externalNumber,
-            direction: (ev.direction || 'inbound') as 'inbound' | 'outbound',
-            startedAt: Date.now(),
-          }))
-        }
-      }
-
-      es.onerror = () => {
-        es.close()
-        if (stopped) return
-        setTimeout(connect, retryDelay)
-        retryDelay = Math.min(retryDelay * 2, 30_000) // exp backoff até 30s
-      }
+    if (ev.type === 'call.start') {
+      setToasts(prev => addOrReplace(prev, {
+        uid: ev.voipCallId || ev.callId || crypto.randomUUID(),
+        kind: 'ringing',
+        voipCallId: ev.voipCallId || '',
+        customerId: ev.customerId ?? null,
+        customerName: ev.customerName ?? null,
+        externalNumber,
+        direction: (ev.direction || 'inbound') as 'inbound' | 'outbound',
+        startedAt: Date.now(),
+      }))
+    } else if (ev.type === 'call.missed') {
+      setToasts(prev => addOrReplace(prev, {
+        uid: ev.voipCallId || ev.callId || crypto.randomUUID(),
+        kind: 'missed',
+        voipCallId: ev.voipCallId || '',
+        customerId: ev.customerId ?? null,
+        customerName: ev.customerName ?? null,
+        externalNumber,
+        direction: (ev.direction || 'inbound') as 'inbound' | 'outbound',
+        startedAt: Date.now(),
+      }))
+    } else if (ev.type === 'call.answered' || ev.type === 'call.completed') {
+      setToasts(prev => addOrReplace(prev, {
+        uid: ev.voipCallId || ev.callId || crypto.randomUUID(),
+        kind: 'answered',
+        voipCallId: ev.voipCallId || '',
+        customerId: ev.customerId ?? null,
+        customerName: ev.customerName ?? null,
+        externalNumber,
+        direction: (ev.direction || 'inbound') as 'inbound' | 'outbound',
+        startedAt: Date.now(),
+      }))
     }
-
-    connect()
-
-    return () => {
-      stopped = true
-      esRef.current?.close()
-    }
-  }, [])
+  })
 
   // Auto-dismiss: ringing 60s, missed 5min (precisa atenção), answered 10s
   useEffect(() => {

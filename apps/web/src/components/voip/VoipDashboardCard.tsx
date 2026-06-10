@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { PhoneCall, PhoneIncoming, PhoneOutgoing, PhoneMissed, Clock, ArrowRight } from 'lucide-react'
+import { useCallStream } from '@/lib/voip/use-call-stream'
 
 interface Stats {
   today: {
@@ -45,31 +46,11 @@ export function VoipDashboardCard() {
     return () => clearInterval(interval)
   }, [])
 
-  // Atualiza via SSE quando vier evento
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    let stopped = false
-    let retry = 1000
-    function connect() {
-      if (stopped) return
-      const es = new EventSource('/api/voip/calls/stream')
-      es.onopen = () => { retry = 1000 }
-      es.onmessage = (e) => {
-        try {
-          const ev = JSON.parse(e.data)
-          if (ev.type?.startsWith('call.')) refresh()
-        } catch {}
-      }
-      es.onerror = () => {
-        es.close()
-        if (stopped) return
-        setTimeout(connect, retry)
-        retry = Math.min(retry * 2, 30_000)
-      }
-    }
-    connect()
-    return () => { stopped = true }
-  }, [])
+  // Atualiza via SSE compartilhado quando vier evento de chamada
+  // (eco audit 10/06: era EventSource proprio → agora singleton).
+  useCallStream((ev) => {
+    if (ev.type?.startsWith('call.')) refresh()
+  })
 
   return (
     <div className="rounded-xl border bg-white dark:bg-gray-800 dark:border-gray-700 p-4 shadow-sm">

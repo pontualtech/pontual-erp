@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { PhoneMissed, RotateCw } from 'lucide-react'
+import { useCallStream } from '@/lib/voip/use-call-stream'
 
 interface RecentMissed {
   id: string
@@ -67,35 +68,13 @@ export function MissedCallsBell() {
     return () => clearInterval(interval)
   }, [])
 
-  // SSE: se evento call.missed chegar, refresh imediato
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    let stopped = false
-    let retryDelay = 1000
-
-    function connect() {
-      if (stopped) return
-      const es = new EventSource('/api/voip/calls/stream')
-      es.onopen = () => { retryDelay = 1000 }
-      es.onmessage = (e) => {
-        try {
-          const ev = JSON.parse(e.data)
-          if (ev.type === 'call.missed' || ev.type === 'call.answered' || ev.type === 'call.start') {
-            refresh()
-          }
-        } catch {}
-      }
-      es.onerror = () => {
-        es.close()
-        if (stopped) return
-        setTimeout(connect, retryDelay)
-        retryDelay = Math.min(retryDelay * 2, 30_000)
-      }
+  // SSE compartilhado: se evento call.* chegar, refresh imediato
+  // (eco audit 10/06: era EventSource proprio → agora singleton).
+  useCallStream((ev) => {
+    if (ev.type === 'call.missed' || ev.type === 'call.answered' || ev.type === 'call.start') {
+      refresh()
     }
-
-    connect()
-    return () => { stopped = true }
-  }, [])
+  })
 
   // Click fora fecha popover
   useEffect(() => {
