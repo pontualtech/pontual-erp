@@ -9,7 +9,7 @@ import {
   ClipboardList, Wrench, Truck, DollarSign, PackageCheck,
   Bell, Pin, Plus, X, Clock, TrendingUp, Target,
   ArrowRight, Loader2, Settings, Eye, EyeOff, AlertTriangle, User,
-  Megaphone, Users as UsersIcon, BarChart3, FileText,
+  Megaphone, FileText,
   Crown, Activity, Lightbulb,
 } from 'lucide-react'
 import { toast } from 'sonner'
