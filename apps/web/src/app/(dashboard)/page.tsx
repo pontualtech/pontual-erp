@@ -10,6 +10,7 @@ import {
   Bell, Pin, Plus, X, Clock, TrendingUp, Target,
   ArrowRight, Loader2, Settings, Eye, EyeOff, AlertTriangle, User,
   Megaphone, Users as UsersIcon, BarChart3, FileText,
+  Crown, Activity, Lightbulb,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { VoipDashboardCard } from '@/components/voip/VoipDashboardCard'
@@ -17,7 +18,6 @@ import { ChargesSummaryWidget } from './components/ChargesSummaryWidget'
 import { cleanDescription } from '@/lib/payment-display'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend,
 } from 'recharts'
 
 /* ---------- Interfaces ---------- */
@@ -331,6 +331,33 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
         <div className="flex items-center gap-2">
+          {/* Quick actions: CTA primario + 2 secundarios (estilo Bling/Conta Azul) */}
+          <Link
+            href="/os/novo"
+            className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1"
+          >
+            <Plus className="h-4 w-4" />
+            Nova OS
+          </Link>
+          <Link
+            href="/fiscal/emitir-nfe"
+            className="hidden md:flex items-center gap-1.5 rounded-lg border bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 hover:border-gray-300"
+            title="Emitir nova NF-e"
+          >
+            <FileText className="h-4 w-4 text-gray-500" />
+            NF-e
+          </Link>
+          {canViewFinanceiro && (
+            <Link
+              href="/financeiro/contas-receber/novo"
+              className="hidden md:flex items-center gap-1.5 rounded-lg border bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 hover:border-gray-300"
+              title="Nova cobrança / conta a receber"
+            >
+              <DollarSign className="h-4 w-4 text-gray-500" />
+              Cobrança
+            </Link>
+          )}
+          <div className="h-6 w-px bg-gray-200" aria-hidden="true" />
           {/* UX-8 #2: range toggle */}
           <div className="inline-flex rounded-lg border bg-white shadow-sm overflow-hidden" role="tablist" aria-label="Período do dashboard">
             {([
@@ -356,7 +383,7 @@ export default function DashboardPage() {
               </button>
             ))}
           </div>
-          {/* F18 fix 23/05: Modo CEO toggle */}
+          {/* F18 fix 23/05: Modo CEO toggle (icones lucide 09/06: removeu emoji 👔⚙️) */}
           <button
             type="button"
             onClick={toggleCeoMode}
@@ -368,7 +395,7 @@ export default function DashboardPage() {
             )}
             title={ceoMode ? 'Voltar para Modo Operacional' : 'Ativar Modo CEO (foco em KPIs estratégicos)'}
           >
-            <span className="text-base leading-none">{ceoMode ? '👔' : '⚙️'}</span>
+            {ceoMode ? <Crown className="h-4 w-4" /> : <Activity className="h-4 w-4" />}
             {ceoMode ? 'Modo CEO' : 'Modo Operacional'}
           </button>
           <button
@@ -567,12 +594,59 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* ===== Alertas Criticos (UX-2 #6) — derivados dos dados ja carregados
+           Movido pra cima 09/06: hierarquia red flags > insights > KPIs.
+           Background flat (sem gradient) pra alinhar com Pipeline novo. ===== */}
+      {!loading && stats && (() => {
+        const alerts: { label: string; count: number; icon: typeof ClipboardList; color: string; href: string }[] = []
+        // Audit 11 wave 3: ?delayed=1 não existia, /os consome ?overdue=1.
+        if (stats.osAtrasadas > 0) alerts.push({ label: 'OS atrasadas', count: stats.osAtrasadas, icon: AlertTriangle, color: 'text-red-700 bg-red-50 border-red-200', href: '/os?overdue=1' })
+        if (stats.semTecnico > 0) alerts.push({ label: 'OS sem técnico', count: stats.semTecnico, icon: User, color: 'text-amber-700 bg-amber-50 border-amber-200', href: '/os?no_tech=1' })
+        // Audit 12: status DB nunca é setado como 'VENCIDO' (default 'PENDENTE').
+        // Vencido = displayStatus calculado: PENDENTE + due_date < hoje.
+        const todayStr = new Date().toISOString().slice(0, 10)
+        const arVencidas = (stats.recentReceivable || []).filter(r =>
+          r.status === 'PENDENTE' && r.due_date && r.due_date.slice(0, 10) < todayStr
+        ).length
+        if (canViewFinanceiro && arVencidas > 0) alerts.push({ label: 'Contas vencidas', count: arVencidas, icon: DollarSign, color: 'text-red-700 bg-red-50 border-red-200', href: '/financeiro/contas-receber?status=VENCIDO' })
+        if (alerts.length === 0) return null
+        return (
+          <div className="rounded-xl border border-red-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center gap-2 mb-3">
+              <AlertTriangle className="h-5 w-5 text-red-600" />
+              <h2 className="font-bold text-gray-900">Atenção necessária</h2>
+              <span className="text-xs text-gray-500">— {alerts.length} item{alerts.length > 1 ? 's' : ''} aguardando você</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {alerts.map(a => {
+                const I = a.icon
+                return (
+                  <Link
+                    key={a.label}
+                    href={a.href}
+                    className={cn('flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-gray-50', a.color)}
+                  >
+                    <I className="h-5 w-5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-2xl font-bold leading-none">{a.count}</p>
+                      <p className="text-xs font-semibold mt-1">{a.label}</p>
+                    </div>
+                    <ArrowRight className="h-4 w-4 flex-shrink-0 opacity-40" />
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })()}
+
       {/* ===== Insights automáticos (Sprint UX-16) — Linear/ProfitWell pattern ===== */}
       {isWidgetVisible('insights') && insights.length > 0 && (
         <div className="rounded-xl border-2 border-blue-200 dark:border-blue-900 bg-gradient-to-br from-blue-50/40 via-white to-purple-50/30 dark:from-blue-950/20 dark:via-gray-900 dark:to-purple-950/20 p-4 shadow-sm">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
-              <span className="text-base">💡</span> Insights — pontos de atenção hoje
+              <Lightbulb className="h-4 w-4 text-amber-500" />
+              Insights — pontos de atenção hoje
             </h3>
             <span className="text-[10px] text-gray-400">{insights.length} alerta(s)</span>
           </div>
@@ -648,88 +722,25 @@ export default function DashboardPage() {
         })}
       </div>}
 
-      {/* ===== CRM Marketing — card de acesso rápido ===== */}
+      {/* ===== CRM Marketing — link compacto (09/06: era card gigante com gradient
+           tomando todo espaco — agora 1 linha discreta com mesma funcionalidade) ===== */}
       {isWidgetVisible('marketing_card') && (isAdmin || user?.isSuperAdmin) && (
         <Link
           href="/marketing"
           aria-label="Acessar módulo CRM Marketing — contatos, campanhas e segmentos"
-          className="group block overflow-hidden rounded-xl border-2 border-transparent bg-gradient-to-r from-blue-50 via-purple-50 to-pink-50 p-5 shadow-sm transition-all hover:border-blue-300 hover:shadow-lg active:scale-[0.995] dark:from-blue-500/10 dark:via-purple-500/10 dark:to-pink-500/10 dark:hover:border-blue-500/40"
+          className="group flex items-center justify-between gap-3 rounded-lg border bg-white px-4 py-2.5 shadow-sm transition-colors hover:border-indigo-300 hover:bg-indigo-50/30"
         >
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 p-3 text-white shadow-md transition-transform group-hover:scale-110">
-                <Megaphone className="h-6 w-6" />
-              </div>
-              <div>
-                <h2 className="flex items-center gap-2 text-lg font-bold text-gray-900 dark:text-gray-100">
-                  CRM Marketing
-                  <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-semibold uppercase text-white">NOVO</span>
-                </h2>
-                <p className="mt-0.5 text-sm text-gray-600 dark:text-gray-300">
-                  Contatos, campanhas e segmentos com Kanban funcional
-                </p>
-              </div>
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="rounded-lg bg-indigo-100 p-1.5 text-indigo-600">
+              <Megaphone className="h-4 w-4" />
             </div>
-            <div className="hidden items-center gap-4 md:flex">
-              <div className="flex items-center gap-1.5 rounded-lg bg-white/70 px-3 py-1.5 text-xs text-gray-700 shadow-sm dark:bg-gray-800/70 dark:text-gray-200">
-                <UsersIcon className="h-3.5 w-3.5 text-blue-600" /> Contatos
-              </div>
-              <div className="flex items-center gap-1.5 rounded-lg bg-white/70 px-3 py-1.5 text-xs text-gray-700 shadow-sm dark:bg-gray-800/70 dark:text-gray-200">
-                <BarChart3 className="h-3.5 w-3.5 text-purple-600" /> Campanhas
-              </div>
-              <div className="flex items-center gap-1.5 rounded-lg bg-white/70 px-3 py-1.5 text-xs text-gray-700 shadow-sm dark:bg-gray-800/70 dark:text-gray-200">
-                <FileText className="h-3.5 w-3.5 text-emerald-600" /> Segmentos
-              </div>
-              <ArrowRight className="h-5 w-5 text-gray-400 transition-transform group-hover:translate-x-1 group-hover:text-blue-600" />
-            </div>
-            <ArrowRight className="h-5 w-5 text-gray-400 transition-transform group-hover:translate-x-1 group-hover:text-blue-600 md:hidden" />
+            <span className="text-sm font-semibold text-gray-900">CRM Marketing</span>
+            <span className="rounded-full bg-indigo-600 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-white">Novo</span>
+            <span className="hidden sm:inline text-xs text-gray-500 truncate">Contatos, campanhas e segmentos</span>
           </div>
+          <ArrowRight className="h-4 w-4 text-gray-400 transition-transform group-hover:translate-x-0.5 group-hover:text-indigo-600" />
         </Link>
       )}
-
-      {/* ===== Alertas Criticos (UX-2 #6) — derivados dos dados ja carregados ===== */}
-      {!loading && stats && (() => {
-        const alerts: { label: string; count: number; icon: typeof ClipboardList; color: string; href: string }[] = []
-        // Audit 11 wave 3: ?delayed=1 não existia, /os consome ?overdue=1.
-        if (stats.osAtrasadas > 0) alerts.push({ label: 'OS atrasadas', count: stats.osAtrasadas, icon: AlertTriangle, color: 'text-red-700 bg-red-100 border-red-300', href: '/os?overdue=1' })
-        if (stats.semTecnico > 0) alerts.push({ label: 'OS sem técnico', count: stats.semTecnico, icon: User, color: 'text-amber-700 bg-amber-100 border-amber-300', href: '/os?no_tech=1' })
-        // Audit 12: status DB nunca é setado como 'VENCIDO' (default 'PENDENTE').
-        // Vencido = displayStatus calculado: PENDENTE + due_date < hoje.
-        // Antes alert "Contas vencidas" NUNCA aparecia.
-        const todayStr = new Date().toISOString().slice(0, 10)
-        const arVencidas = (stats.recentReceivable || []).filter(r =>
-          r.status === 'PENDENTE' && r.due_date && r.due_date.slice(0, 10) < todayStr
-        ).length
-        if (canViewFinanceiro && arVencidas > 0) alerts.push({ label: 'Contas vencidas', count: arVencidas, icon: DollarSign, color: 'text-red-700 bg-red-100 border-red-300', href: '/financeiro/contas-receber?status=VENCIDO' })
-        if (alerts.length === 0) return null
-        return (
-          <div className="rounded-xl border-2 border-red-200 bg-gradient-to-br from-red-50 to-amber-50 p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <AlertTriangle className="h-5 w-5 text-red-600" />
-              <h2 className="font-bold text-gray-900">Atenção necessária</h2>
-              <span className="text-xs text-gray-600">— {alerts.length} item{alerts.length > 1 ? 's' : ''} aguardando você</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {alerts.map(a => {
-                const I = a.icon
-                return (
-                  <Link
-                    key={a.label}
-                    href={a.href}
-                    className={cn('flex items-center gap-3 rounded-lg border p-3 hover:shadow-md transition-all bg-white', a.color)}
-                  >
-                    <I className="h-5 w-5 flex-shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-2xl font-bold leading-none">{a.count}</p>
-                      <p className="text-xs font-semibold mt-1">{a.label}</p>
-                    </div>
-                  </Link>
-                )
-              })}
-            </div>
-          </div>
-        )
-      })()}
 
       {/* ===== Cobranças Asaas (feature 2026-05-14 feat 3/4) ===== */}
       {isWidgetVisible('charges_summary') && canViewFinanceiro && <ChargesSummaryWidget />}
@@ -779,74 +790,75 @@ export default function DashboardPage() {
           )}
         </div>}
 
-        {/* Pipeline de OS */}
+        {/* Pipeline de OS — funnel horizontal (substitui PieChart 09/06: legibilidade
+            + tomada de decisao instantanea, padrao Pipedrive/Bling) */}
         {isWidgetVisible('chart_pipeline') && <div className="rounded-xl border bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center justify-between gap-3">
             <h2 className="font-semibold text-gray-900">Pipeline de OS</h2>
-            <span className="text-[10px] uppercase tracking-wider text-gray-400">Clique pra filtrar</span>
+            <span className="text-[10px] uppercase tracking-wider text-gray-400">Clique no card pra filtrar</span>
           </div>
           {loading ? (
-            <div className="flex h-52 items-center justify-center">
+            <div className="flex h-40 items-center justify-center">
               <Loader2 className="h-6 w-6 animate-spin text-gray-300" />
             </div>
           ) : (stats?.pipeline?.length ?? 0) === 0 ? (
-            <p className="flex h-52 items-center justify-center text-sm text-gray-400">Sem dados</p>
-          ) : (
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={stats!.pipeline.filter(p => p.count > 0)}
-                  dataKey="count"
-                  nameKey="name"
-                  cx="50%"
-                  cy="40%"
-                  innerRadius={45}
-                  outerRadius={75}
-                  paddingAngle={2}
-                  label={false}
-                  cursor="pointer"
-                  onClick={(e: any) => {
-                    // UX-8 #1 + Audit 9: drill-down — clicar em fatia leva
-                    // pra OS desse status. Frontend filtra por statusId (UUID),
-                    // não por nome. Antes mandava nome → 0 OS retornadas.
-                    const name = e?.name
-                    if (!name) return
-                    const item = stats?.pipeline?.find(p => p.name === name)
-                    const id = item?.id
-                    if (id) router.push(`/os?status=${encodeURIComponent(id)}`)
-                    else router.push(`/os?search=${encodeURIComponent(name)}`)
-                  }}
-                >
-                  {stats!.pipeline.filter(p => p.count > 0).map((entry, index) => (
-                    <Cell key={index} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '13px' }}
-                  formatter={(value: number) => [`${value} OS`, '']}
-                />
-                <Legend
-                  verticalAlign="bottom"
-                  align="center"
-                  layout="horizontal"
-                  wrapperStyle={{ fontSize: '11px', lineHeight: '18px', paddingTop: '8px', cursor: 'pointer' }}
-                  formatter={(value: string) => {
-                    const item = stats!.pipeline.find(p => p.name === value)
-                    return `${value} (${item?.count ?? 0})`
-                  }}
-                  // Bug Pipeline #46 (audit 31/05 Karlão): legenda agora dispara
-                  // mesmo drill-down da fatia (clique em "Coletar (41)" → /os?status=ID).
-                  onClick={(payload: { value?: string } | undefined) => {
-                    const name = payload?.value
-                    if (!name) return
-                    const item = stats?.pipeline?.find(p => p.name === name)
-                    if (item?.id) router.push(`/os?status=${encodeURIComponent(item.id)}`)
-                    else router.push(`/os?search=${encodeURIComponent(name)}`)
-                  }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          )}
+            <p className="flex h-40 items-center justify-center text-sm text-gray-400">Sem dados</p>
+          ) : (() => {
+            const stages = stats!.pipeline
+            const total = stages.reduce((s, p) => s + p.count, 0)
+            const max = Math.max(1, ...stages.map(p => p.count))
+            const goTo = (stage: { id?: string; name: string }) => {
+              if (stage.id) router.push(`/os?status=${encodeURIComponent(stage.id)}`)
+              else router.push(`/os?search=${encodeURIComponent(stage.name)}`)
+            }
+            return (
+              <>
+                <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
+                  {stages.map(stage => {
+                    const pct = total > 0 ? Math.round((stage.count / total) * 100) : 0
+                    const barPct = (stage.count / max) * 100
+                    return (
+                      <button
+                        key={stage.id || stage.name}
+                        type="button"
+                        onClick={() => goTo(stage)}
+                        className="group relative cursor-pointer overflow-hidden rounded-lg border border-gray-200 bg-white p-3 text-left transition-colors hover:border-gray-300 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1"
+                        style={{ borderLeftWidth: '4px', borderLeftColor: stage.color }}
+                        title={`${stage.count} OS em "${stage.name}" (${pct}% do total) — clique pra filtrar`}
+                      >
+                        <div className="flex items-baseline justify-between gap-1">
+                          <span className="text-2xl font-bold leading-none" style={{ color: stage.color }}>
+                            {stage.count}
+                          </span>
+                          <span className="text-[10px] font-medium text-gray-400">{pct}%</span>
+                        </div>
+                        <div className="mt-1.5 truncate text-xs font-medium text-gray-700">{stage.name}</div>
+                        <div className="mt-2 h-1 overflow-hidden rounded-full bg-gray-100">
+                          <div
+                            className="h-full rounded-full transition-all"
+                            style={{ width: `${barPct}%`, backgroundColor: stage.color }}
+                          />
+                        </div>
+                        <ArrowRight className="absolute right-2 top-2 h-3 w-3 text-gray-300 opacity-0 transition-opacity group-hover:opacity-100" />
+                      </button>
+                    )
+                  })}
+                </div>
+                <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
+                  <span>Total ativo: <strong className="text-gray-900">{total}</strong> OS</span>
+                  {stats?.osAtrasadas ? (
+                    <button
+                      type="button"
+                      onClick={() => router.push('/os?overdue=1')}
+                      className="cursor-pointer font-medium text-red-600 hover:underline"
+                    >
+                      {stats.osAtrasadas} atrasadas →
+                    </button>
+                  ) : null}
+                </div>
+              </>
+            )
+          })()}
         </div>}
       </div>
 
