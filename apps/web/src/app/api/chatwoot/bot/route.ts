@@ -924,6 +924,14 @@ function htmlToText(html: string): string {
 
 function parseDifyResponse(text: string): ParsedResponse {
   let cleanText = text
+  // Remove blocos de raciocinio do modelo (gemini-2.5-pro as vezes vaza <thinking>...).
+  // Blocos completos sao removidos; um <thinking> sem fechamento (resposta truncada) e
+  // removido ate o fim — so sobraria raciocinio sem resposta real, entao cai no retry de vazio.
+  cleanText = cleanText
+    .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<thinking>[\s\S]*$/i, '')
+    .trim()
   let vhsysData: Record<string, unknown> | null = null
   let action: ParsedResponse['action'] = null
   let retentionStatus: ParsedResponse['retentionStatus'] = null
@@ -2454,14 +2462,13 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
           console.log('[Bot] Retry succeeded')
           Object.assign(difyResponse, retry)
         } else {
-          console.error('[Bot] Retry also empty — fallback to support link')
-          const supportUrl = `https://wa.me/${(cfg.supportWhatsApp || '').replace(/\D/g, '') || '551126263841'}`
-          // Don't say anything to the client — only internal note for the agent
-          await cwSendMessage(cfg, conversationId, `[BOT] ⚠️ Dify retornou vazio 2x para esta conversa. Atendente precisa assumir. Query: "${query.slice(0, 100)}"`, true)
-          await prisma.botConversation.update({
-            where: { id: botConv.id },
-            data: { human_takeover: true, step: 'HUMAN' },
-          })
+          // Gemini falhou 2x (erro/quota/instabilidade). NAO ghostar o lead: manda uma
+          // mensagem amigavel pedindo pra reenviar — o bot tenta de novo na proxima
+          // mensagem (Gemini costuma se recuperar). Mantem o bot ativo (sem human takeover)
+          // pra preservar autonomia; o atendente pode assumir manualmente pela nota interna.
+          console.error('[Bot] Retry also empty (Gemini vazio 2x) — holding message ao cliente, bot segue ativo')
+          await cwSendMessage(cfg, conversationId, 'Opa, tive uma instabilidade rapidinha por aqui 😅 Pode reenviar sua ultima mensagem? Se preferir, ja me adianta a marca, o modelo e qual o problema da impressora, que eu sigo com voce!', false)
+          await cwSendMessage(cfg, conversationId, `[BOT] ⚠️ Gemini retornou vazio 2x — enviei holding message ao cliente e mantive o bot ativo (sem human takeover). Query: "${query.slice(0, 100)}"`, true)
           await releaseLock(botConv.id)
           return
         }
