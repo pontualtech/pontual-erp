@@ -59,8 +59,26 @@ export async function POST(req: NextRequest) {
       steps_skipped_unsubscribed: 0,
       steps_skipped_bounced: 0,
       steps_skipped_no_phone: 0,
+      steps_skipped_wa_disabled: 0,
       failed: 0,
       details: [] as any[],
+    }
+
+    // Conformidade Meta (10/06): WhatsApp do nurture e OFF por padrao — so envia
+    // se a empresa tiver nurture.wa_enabled='true'. WhatsApp proativo a leads
+    // frios foi causa de flag de spam na conta. O e-mail do nurture continua
+    // normal (nao afeta WhatsApp). Cache por empresa (cron roda 1x/dia).
+    const waEnabledCache = new Map<string, boolean>()
+    async function isWaNurtureEnabled(companyId: string): Promise<boolean> {
+      const hit = waEnabledCache.get(companyId)
+      if (hit !== undefined) return hit
+      const s = await prisma.setting.findFirst({
+        where: { company_id: companyId, key: 'nurture.wa_enabled' },
+        select: { value: true },
+      })
+      const enabled = s?.value === 'true'
+      waEnabledCache.set(companyId, enabled)
+      return enabled
     }
 
     // 1. Detecta reativações primeiro (fechar journeys antes de processar)
@@ -120,6 +138,15 @@ export async function POST(req: NextRequest) {
       } else if (step.channel === 'wa') {
         if (!ctx.phone) {
           stats.steps_skipped_no_phone++
+          continue
+        }
+        // Gate de conformidade Meta: WhatsApp nurture OFF por padrao (anti-spam).
+        // Pula o step de WhatsApp AVANCANDO o journey (nao envia, nao trava) —
+        // assim o proximo tick processa o step seguinte (geralmente e-mail).
+        if (!(await isWaNurtureEnabled(j.company_id))) {
+          if (!dryRun) await recordStepSent(j.id, expectedStep)
+          stats.steps_skipped_wa_disabled++
+          stats.details.push({ kind: 'skipped_wa_disabled', journey_id: j.id, template: (step as any).template })
           continue
         }
         if (dryRun) {
