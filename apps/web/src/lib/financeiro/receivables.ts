@@ -8,6 +8,7 @@
 // Sem splits[]: comportamento atual (1 receivable).
 
 import { prisma } from '@pontual/db'
+import { resolveDestinationAccount } from './account-resolver'
 
 export interface ReceivableSplit {
   payment_method?: string
@@ -36,6 +37,10 @@ export interface CreateReceivableCommonArgs {
   paymentMethod?: string
   accountId?: string | null
   installmentCount?: number
+  // 2026-06-13: origem do pagamento (ex: 'portal') — usada pra resolver a conta
+  // destino quando accountId nao vem. PIX via portal/asaas cai no ASSAS; PIX
+  // presencial cai no Itau. Ver lib/financeiro/account-resolver.
+  source?: string | null
   // Modo split — se preenchido, cria N receivables agrupados
   splits?: ReceivableSplit[]
 }
@@ -179,6 +184,9 @@ export async function createReceivableOrSplit(args: CreateReceivableCommonArgs):
       // Status individual do split: se status geral eh PAGO, distribuir baseado em amount
       const splitStatus = status === 'PAGO' || status === 'RECEBIDO' ? status : 'PENDENTE'
       const splitReceived = splitStatus === 'PAGO' || splitStatus === 'RECEBIDO' ? sp.amount : 0
+      // 2026-06-13: resolve a conta destino quando o split nao a traz (eco audit —
+      // 40% das ARs ficavam sem account_id). Conta explicita do split tem prioridade.
+      const splitAccountId = sp.account_id || await resolveDestinationAccount(prisma, args.companyId, sp.payment_method, args.source)
       const rec = await createOneReceivableInternal({
         companyId: args.companyId,
         customerId: args.customerId || null,
@@ -192,7 +200,7 @@ export async function createReceivableOrSplit(args: CreateReceivableCommonArgs):
         receivedAmount: splitReceived,
         receiptUrl: args.receiptUrl || null,
         paymentMethod: sp.payment_method,
-        accountId: sp.account_id || null,
+        accountId: splitAccountId,
         installmentCount: sp.installment_count || 1,
         groupId,
         reconciled,
@@ -204,6 +212,8 @@ export async function createReceivableOrSplit(args: CreateReceivableCommonArgs):
   }
 
   // Modo UNICO (retrocompat)
+  // 2026-06-13: resolve a conta destino quando o caller nao a passa (eco audit).
+  const unicoAccountId = args.accountId || await resolveDestinationAccount(prisma, args.companyId, args.paymentMethod, args.source)
   const rec = await createOneReceivableInternal({
     companyId: args.companyId,
     customerId: args.customerId || null,
@@ -217,7 +227,7 @@ export async function createReceivableOrSplit(args: CreateReceivableCommonArgs):
     receivedAmount,
     receiptUrl: args.receiptUrl || null,
     paymentMethod: args.paymentMethod,
-    accountId: args.accountId || null,
+    accountId: unicoAccountId,
     installmentCount: args.installmentCount || 1,
     groupId: null,
     reconciled,

@@ -44,7 +44,7 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
   })
   if (!os) return { ok: false, error: 'OS nao encontrada' }
 
-  const [catMdr, catRa, acquirerAccountSetting, fallbackAccount] = await Promise.all([
+  const [catMdr, catRa, acquirerAccountSetting] = await Promise.all([
     prisma.category.findFirst({
       where: { company_id: companyId, module: 'financeiro_despesa', name: { contains: 'Cartao', mode: 'insensitive' } },
       select: { id: true },
@@ -53,20 +53,20 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
       where: { company_id: companyId, module: 'financeiro_despesa', name: { contains: 'Antecipacao', mode: 'insensitive' } },
       select: { id: true },
     }),
-    // C2 fix 22/05: conta destino do credito da maquininha. Karlao configura
-    // via setting `acquirer.{acquirer}.account_id`. Se nao configurou, fallback
-    // pra primeira conta CHECKING ativa.
+    // 2026-06-03 fix (Karlão R$12.464,26 caiu no Inter em vez de Itaú durante 8 dias):
+    // ANTES: fallback silencioso pra primeira CHECKING ASC fez Rede cair no Inter
+    // (criada 26min antes do Itaú). Agora: EXIGE setting `acquirer.{acquirer}.account_id`
+    // explícito. Sem fallback — melhor falhar barulhento que cair em conta errada.
     prisma.setting.findFirst({
       where: { company_id: companyId, key: `acquirer.${txn.acquirer}.account_id` },
       select: { value: true },
     }),
-    prisma.account.findFirst({
-      where: { company_id: companyId, is_active: true, account_type: 'CHECKING' },
-      select: { id: true },
-      orderBy: { created_at: 'asc' },
-    }),
   ])
-  const acquirerAccountId = acquirerAccountSetting?.value || fallbackAccount?.id || null
+  const acquirerAccountId = acquirerAccountSetting?.value || null
+  if (!acquirerAccountId) {
+    console.error(`[perform-match] FALHA: setting acquirer.${txn.acquirer}.account_id não configurado company=${companyId}. Configure em /financeiro/maquininha/configurar antes de conciliar.`)
+    return { ok: false, error: `Conta destino para ${txn.acquirer} não configurada. Vá em /financeiro/maquininha/configurar e defina a conta bancária para esse adquirente.` }
+  }
 
   const billingType = txn.modality === 'debit' ? 'DEBIT_CARD' : 'CREDIT_CARD'
   const osNum = String(os.os_number).padStart(4, '0')
@@ -157,6 +157,10 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
             payment_method: billingType,
             charge_status: 'RECEIVED',
             charge_id: payment.id,
+            // 2026-06-13 (eco audit): liga a conta destino NA AR tambem (nao so na
+            // Transaction de credito) — antes a AR de maquininha nascia sem
+            // account_id e mostrava "Nenhum banco vinculado".
+            account_id: acquirerAccountId,
           },
         })
       }
