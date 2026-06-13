@@ -932,6 +932,11 @@ function parseDifyResponse(text: string): ParsedResponse {
     .replace(/<think>[\s\S]*?<\/think>/gi, '')
     .replace(/<thinking>[\s\S]*$/i, '')
     .trim()
+  // Eco audit 13/06: detectar tags a partir do texto JA SEM <thinking>. Antes os
+  // matches usavam `text` (com o raciocinio) — se o gemini-2.5-pro vazasse um
+  // [VHSYS_DATA]/[ABRIR_OS] dentro do <thinking> (rascunho), o parser agia sobre
+  // ele (abria OS com dado errado). matchSource = texto limpo, tags intactas.
+  const matchSource = cleanText
   let vhsysData: Record<string, unknown> | null = null
   let action: ParsedResponse['action'] = null
   let retentionStatus: ParsedResponse['retentionStatus'] = null
@@ -947,7 +952,7 @@ function parseDifyResponse(text: string): ParsedResponse {
   let emailIntent: ParsedResponse['emailIntent'] = null
 
   // Extract [VHSYS_DATA]{json}[/VHSYS_DATA]
-  const dataMatch = text.match(/\[VHSYS_DATA\]([\s\S]+?)\[\/VHSYS_DATA\]/)
+  const dataMatch = matchSource.match(/\[VHSYS_DATA\]([\s\S]+?)\[\/VHSYS_DATA\]/)
   if (dataMatch) {
     try {
       // Eco audit 10/06 (caso Tarsila): Gemini as vezes emite aspas curvas
@@ -972,13 +977,13 @@ function parseDifyResponse(text: string): ParsedResponse {
 
   // Detect retention status tags (with optional OS number).
   // Matches both [STATUS_ORCAR_NEGOCIAR:60343] and [STATUS_ORCAR_NEGOCIAR].
-  const orcarNegMatch = text.match(/\[STATUS_ORCAR_NEGOCIAR(?::(\d+))?\]/)
+  const orcarNegMatch = matchSource.match(/\[STATUS_ORCAR_NEGOCIAR(?::(\d+))?\]/)
   if (orcarNegMatch) {
     retentionStatus = 'Orcar Negociar'
     if (orcarNegMatch[1]) retentionOsNumber = parseInt(orcarNegMatch[1], 10)
     cleanText = cleanText.replace(/\[STATUS_ORCAR_NEGOCIAR(?::\d+)?\]/g, '').trim()
   }
-  const renegMatch = text.match(/\[STATUS_RENEGOCIAR(?::(\d+))?\]/)
+  const renegMatch = matchSource.match(/\[STATUS_RENEGOCIAR(?::(\d+))?\]/)
   if (renegMatch) {
     retentionStatus = 'Renegociar'
     if (renegMatch[1]) retentionOsNumber = parseInt(renegMatch[1], 10)
@@ -986,20 +991,20 @@ function parseDifyResponse(text: string): ParsedResponse {
   }
 
   // Spam tag — Marta marca como spam e ERP nao envia resposta pro cliente
-  if (text.includes('[SPAM]')) {
+  if (matchSource.includes('[SPAM]')) {
     isSpam = true
     cleanText = cleanText.replace(/\[SPAM\]/g, '').trim()
   }
 
   // 2026-05-07: tags de urgencia (cliente cobrando atraso). URGENTE prioriza
   // sobre ALTA se o modelo emitir as duas (improvavel mas defensivo).
-  const urgenteMatch = text.match(/\[URGENCIA_URGENTE(?::(\d+))?\]/)
+  const urgenteMatch = matchSource.match(/\[URGENCIA_URGENTE(?::(\d+))?\]/)
   if (urgenteMatch) {
     urgencyLevel = 'URGENT'
     if (urgenteMatch[1]) urgencyOsNumber = parseInt(urgenteMatch[1], 10)
     cleanText = cleanText.replace(/\[URGENCIA_URGENTE(?::\d+)?\]/g, '').trim()
   }
-  const altaMatch = text.match(/\[URGENCIA_ALTA(?::(\d+))?\]/)
+  const altaMatch = matchSource.match(/\[URGENCIA_ALTA(?::(\d+))?\]/)
   if (altaMatch && !urgencyLevel) {
     urgencyLevel = 'HIGH'
     if (altaMatch[1]) urgencyOsNumber = parseInt(altaMatch[1], 10)
@@ -1008,12 +1013,12 @@ function parseDifyResponse(text: string): ParsedResponse {
   cleanText = cleanText.replace(/\[URGENCIA_ALTA(?::\d+)?\]/g, '').trim()
 
   // 2026-05-09: tags cancelamento + devolucao logistica
-  const cancelMatch = text.match(/\[STATUS_CANCELADA(?::(\d+))?\]/)
+  const cancelMatch = matchSource.match(/\[STATUS_CANCELADA(?::(\d+))?\]/)
   if (cancelMatch) {
     if (cancelMatch[1]) cancelOsNumber = parseInt(cancelMatch[1], 10)
     cleanText = cleanText.replace(/\[STATUS_CANCELADA(?::\d+)?\]/g, '').trim()
   }
-  const returnMatch = text.match(/\[DEVOLUCAO_LOGISTICA(?::(\d+))?\]/)
+  const returnMatch = matchSource.match(/\[DEVOLUCAO_LOGISTICA(?::(\d+))?\]/)
   if (returnMatch) {
     if (returnMatch[1]) returnOsNumber = parseInt(returnMatch[1], 10)
     cleanText = cleanText.replace(/\[DEVOLUCAO_LOGISTICA(?::\d+)?\]/g, '').trim()
@@ -1024,7 +1029,7 @@ function parseDifyResponse(text: string): ParsedResponse {
   // evitar falso match — a tag DESCONTO contem ORCAR_NEGOCIAR como prefixo.
   // Mas o regex original `STATUS_ORCAR_NEGOCIAR(?::\d+)?\]` ja exige `]`
   // ou `:N]` apos NEGOCIAR, entao nao casa com `_DESCONTO` — sem conflito.
-  const descontoMatch = text.match(/\[STATUS_ORCAR_NEGOCIAR_DESCONTO(?::(\d+))?\]/)
+  const descontoMatch = matchSource.match(/\[STATUS_ORCAR_NEGOCIAR_DESCONTO(?::(\d+))?\]/)
   if (descontoMatch) {
     if (descontoMatch[1]) discountNegotiateOsNumber = parseInt(descontoMatch[1], 10)
     cleanText = cleanText.replace(/\[STATUS_ORCAR_NEGOCIAR_DESCONTO(?::\d+)?\]/g, '').trim()
@@ -1033,7 +1038,7 @@ function parseDifyResponse(text: string): ParsedResponse {
   // 2026-05-09: tag de cliente irritado (sem OS). Diferente de URGENCIA_ALTA
   // (cobrar atraso de OS especifica) — este e geral, abre ticket prioritario
   // sem necessariamente associar a OS.
-  if (text.includes('[STATUS_URGENCIA_ALTA]')) {
+  if (matchSource.includes('[STATUS_URGENCIA_ALTA]')) {
     clienteIrritado = true
     cleanText = cleanText.replace(/\[STATUS_URGENCIA_ALTA\]/g, '').trim()
   }
@@ -1043,7 +1048,7 @@ function parseDifyResponse(text: string): ParsedResponse {
   // reenvia o link da Payment PENDING mais recente da OS (sem criar
   // cobranca nova). Se nao houver cobranca PENDING, cai no fallback da
   // regra 9 (registrar pra financeiro).
-  const resendChargeMatch = text.match(/\[REENVIAR_COBRANCA(?::(\d+))?\]/)
+  const resendChargeMatch = matchSource.match(/\[REENVIAR_COBRANCA(?::(\d+))?\]/)
   if (resendChargeMatch) {
     if (resendChargeMatch[1]) resendChargeOsNumber = parseInt(resendChargeMatch[1], 10)
     cleanText = cleanText.replace(/\[REENVIAR_COBRANCA(?::\d+)?\]/g, '').trim()
@@ -1051,31 +1056,31 @@ function parseDifyResponse(text: string): ParsedResponse {
 
   // 2026-05-29 C2: extract [INTENT:commercial|support|other] from email replies.
   // Marta tagueia no fim da resposta. Limpa antes de enviar pro cliente.
-  const intentMatch = text.match(/\[INTENT:(commercial|support|other)\]/i)
+  const intentMatch = matchSource.match(/\[INTENT:(commercial|support|other)\]/i)
   if (intentMatch) {
     emailIntent = intentMatch[1].toLowerCase() as ParsedResponse['emailIntent']
     cleanText = cleanText.replace(/\[INTENT:(?:commercial|support|other)\]/gi, '').trim()
   }
 
   // Detect action tags
-  if (text.includes('[CONFIRMAR_DADOS]')) {
+  if (matchSource.includes('[CONFIRMAR_DADOS]')) {
     // Coleta concluida — confirmar dados com o cliente antes de abrir OS.
     // O codigo monta o resumo mascarado (ver buildDataConfirmation).
     action = 'CONFIRMAR_DADOS'
     cleanText = cleanText.replace(/\[CONFIRMAR_DADOS\]/g, '').trim()
-  } else if (text.includes('[ABRIR_OS]')) {
+  } else if (matchSource.includes('[ABRIR_OS]')) {
     action = 'ABRIR_OS'
     cleanText = cleanText.replace(/\[ABRIR_OS\]/g, '').trim()
-  } else if (text.includes('[ENCERRAR_CONVERSA]')) {
+  } else if (matchSource.includes('[ENCERRAR_CONVERSA]')) {
     action = 'ENCERRAR_CONVERSA'
     cleanText = cleanText.replace(/\[ENCERRAR_CONVERSA\]/g, '').trim()
-  } else if (text.includes('[TRANSFERIR_RAFAEL]')) {
+  } else if (matchSource.includes('[TRANSFERIR_RAFAEL]')) {
     action = 'TRANSFERIR_RAFAEL'
     cleanText = cleanText.replace(/\[TRANSFERIR_RAFAEL\]/g, '').trim()
-  } else if (text.includes('[TRANSFERIR_HUMANO]')) {
+  } else if (matchSource.includes('[TRANSFERIR_HUMANO]')) {
     action = 'TRANSFERIR_HUMANO'
     cleanText = cleanText.replace(/\[TRANSFERIR_HUMANO\]/g, '').trim()
-  } else if (text.includes('[NENHUMA_ACAO]')) {
+  } else if (matchSource.includes('[NENHUMA_ACAO]')) {
     action = 'NENHUMA_ACAO'
     cleanText = cleanText.replace(/\[NENHUMA_ACAO\]/g, '').trim()
   }
