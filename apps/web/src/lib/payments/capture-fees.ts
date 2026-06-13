@@ -128,6 +128,9 @@ export async function captureFeesForPayment(payment: {
       due_date: earliest,
       status: 'PAGO',
       payment_method: 'Desconto automatico',
+      // 2026-06-13 (eco audit AP): atribui a conta de origem da taxa (a conta
+      // usada na cobranca, ex: ASSAS) — antes a taxa nascia sem account_id.
+      account_id: accountId || null,
       notes: JSON.stringify({
         source: 'capture-fees',
         provider: provider.name,

@@ -183,6 +183,9 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
           data: {
             company_id: companyId,
             category_id: catMdr?.id || null,
+            // 2026-06-13 (eco audit AP): taxa deduzida pela adquirente sai da
+            // conta de liquidacao (acquirerAccountId). Antes nascia sem banco.
+            account_id: acquirerAccountId,
             description: `MDR ${txn.acquirer} — ${txn.card_brand?.toUpperCase() || ''} ${billingType === 'DEBIT_CARD' ? 'debito' : `credito ${txn.installments}x`} — OS-${osNum} — ${txn.mdr_fee_percent.toFixed(2)}%`.trim(),
             total_amount: txn.mdr_fee_amount,
             paid_amount: txn.mdr_fee_amount,
@@ -206,6 +209,9 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
           data: {
             company_id: companyId,
             category_id: catRa?.id || null,
+            // 2026-06-13 (eco audit AP): taxa de antecipacao sai da conta de
+            // liquidacao da adquirente (acquirerAccountId).
+            account_id: acquirerAccountId,
             description: `Antecipacao RA ${txn.acquirer} — OS-${osNum} — ${txn.anticipation_fee_percent.toFixed(2)}% (creditado em ${txn.expected_credit_date ? new Date(txn.expected_credit_date).toLocaleDateString('pt-BR') : 'D+1'})`,
             total_amount: txn.anticipation_fee_amount,
             paid_amount: txn.anticipation_fee_amount,
