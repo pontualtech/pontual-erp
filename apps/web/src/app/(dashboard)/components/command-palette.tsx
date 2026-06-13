@@ -215,9 +215,9 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
                   {matches(['Produtos', 'Estoque', 'Pecas']) && <PaletteItem icon={Package} label="Produtos / Estoque" onSelect={() => navigateTo('/produtos')} />}
                   {matches(['Fiscal', 'NFSe', 'NF-e', 'Notas']) && <PaletteItem icon={FileText} label="Fiscal (NFS-e)" onSelect={() => navigateTo('/fiscal')} />}
                   {matches(['Relatórios BI', 'Relatorios', 'BI', 'Margem', 'Analytics']) && <PaletteItem icon={BarChart3} label="Relatórios BI" onSelect={() => navigateTo('/relatorios-bi')} />}
-                  {matches(['VoIP', 'Chamadas', 'Telefonia', 'Ligar']) && <PaletteItem icon={Phone} label="VoIP / Chamadas" onSelect={() => navigateTo('/voip')} />}
+                  {matches(['VoIP', 'Chamadas', 'Telefonia', 'Ligar']) && <PaletteItem icon={Phone} label="VoIP / Chamadas" onSelect={() => navigateTo('/voip/calls')} />}
                   {matches(['WhatsApp', 'Chat', 'Mensagens']) && <PaletteItem icon={MessageCircle} label="WhatsApp / Chat" onSelect={() => navigateTo('/chat')} />}
-                  {matches(['Configurações', 'Configuracoes', 'Settings', 'Ajustes']) && <PaletteItem icon={Settings} label="Configurações" onSelect={() => navigateTo('/configuracoes')} />}
+                  {matches(['Configurações', 'Configuracoes', 'Settings', 'Ajustes']) && <PaletteItem icon={Settings} label="Configurações" onSelect={() => navigateTo('/config')} />}
                 </Command.Group>
               </>
             )
