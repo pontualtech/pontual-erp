@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Building2, Users, Shield, Tag, Wrench, Bell, Database, Palette, Landmark, FileText, PrinterIcon, FileKey, MessageSquare, Search, Layers, Eye, Mail, Clock, RefreshCw, Receipt, Bot, DollarSign } from 'lucide-react'
+import { Building2, Users, Shield, Tag, Wrench, Bell, Database, Palette, Landmark, FileText, PrinterIcon, FileKey, MessageSquare, Search, Layers, Eye, Mail, Clock, RefreshCw, Receipt, Bot, DollarSign, LayoutDashboard } from 'lucide-react'
 
 const sections = [
   {
@@ -16,6 +16,7 @@ const sections = [
     title: 'Operacional',
     items: [
       { label: 'Visibilidade OS', href: '/config/visibilidade-os', icon: Eye, desc: 'Colunas e filtros por perfil de usuário' },
+      { label: 'Dashboard por Perfil', href: '/config/dashboard-perfis', icon: LayoutDashboard, desc: 'Libere ou bloqueie blocos do dashboard por perfil' },
       { label: 'Status de OS', href: '/config/status', icon: Tag, desc: 'Configurar fluxo de status das OS' },
       { label: 'Tipos de OS', href: '/config/tipos-os', icon: Tag, desc: 'Balcão, Coleta, Campo, Remoto, etc.' },
       { label: 'Locais de OS', href: '/config/locais-os', icon: Tag, desc: 'Loja, Externo, Cliente, etc.' },

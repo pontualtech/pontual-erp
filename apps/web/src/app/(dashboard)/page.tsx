@@ -15,6 +15,7 @@ import {
 import { toast } from 'sonner'
 import { VoipDashboardCard } from '@/components/voip/VoipDashboardCard'
 import { ChargesSummaryWidget } from './components/ChargesSummaryWidget'
+import { ALL_WIDGET_IDS } from '@/lib/dashboard/widget-catalog'
 import { cleanDescription } from '@/lib/payment-display'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -175,6 +176,9 @@ export default function DashboardPage() {
     { id: 'receivables', visible: true },
     { id: 'tech_workload', visible: true },
   ])
+  // Camada por PERFIL (admin controla em /config/dashboard-perfis): blocos que
+  // este perfil PODE ver. Default = todos (sem esconder) até o GET responder.
+  const [allowed, setAllowed] = useState<string[]>(ALL_WIDGET_IDS)
 
   const WIDGET_LABELS: Record<string, string> = {
     avisos: 'Avisos',
@@ -207,6 +211,7 @@ export default function DashboardPage() {
   const CEO_HIDDEN = new Set(['recent_os', 'tech_workload', 'receivables'])
 
   const isWidgetVisible = (id: string) => {
+    if (!allowed.includes(id)) return false // trava por perfil (admin define)
     if (ceoMode && CEO_HIDDEN.has(id)) return false
     return widgetPrefs.find(w => w.id === id)?.visible ?? true
   }
@@ -259,6 +264,7 @@ export default function DashboardPage() {
       fetch(`/api/dashboard/stats?range=${dateRange}`).then(r => r.json()).then(d => setStats(d.data)).catch(() => toast.error('Erro ao carregar dashboard')),
       fetch('/api/dashboard/preferences').then(r => r.json()).then(d => {
         if (d.data?.widgets?.length) setWidgetPrefs(d.data.widgets)
+        if (Array.isArray(d.data?.allowed)) setAllowed(d.data.allowed)
       }).catch(() => {}),
     ]).finally(() => setLoading(false))
     loadAvisos()
@@ -422,7 +428,7 @@ export default function DashboardPage() {
             <div className="max-h-[60vh] overflow-y-auto p-5">
               <p className="mb-4 text-sm text-gray-500">Ative/desative e reordene os widgets do seu dashboard.</p>
               <div className="space-y-1">
-                {widgetPrefs.map((w, idx) => (
+                {widgetPrefs.filter(w => allowed.includes(w.id)).map((w, idx) => (
                   <div key={w.id} className={cn(
                     'flex items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors',
                     w.visible ? 'bg-white border-gray-200' : 'bg-gray-50 border-gray-100 opacity-60'

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { getServerUser } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
+import { ALL_WIDGET_IDS } from '@/lib/dashboard/widget-catalog'
+import { getAllowedWidgetsForUser } from '@/lib/dashboard/role-widgets-server'
 
 /**
  * Dashboard widget preferences stored in UserProfile.preferences.dashboard
@@ -37,7 +39,14 @@ export async function GET() {
     const prefs = (profile?.preferences as Record<string, any>) || {}
     const dashboardPrefs = prefs.dashboard || { widgets: DEFAULT_WIDGETS }
 
-    return success(dashboardPrefs)
+    // Camada por perfil (admin controla): blocos que este usuário PODE ver.
+    const allowed = await getAllowedWidgetsForUser({
+      roleId: user.roleId,
+      companyId: user.companyId,
+      isSuperAdmin: user.isSuperAdmin,
+    })
+
+    return success({ ...dashboardPrefs, allowed })
   } catch (err) {
     return handleError(err)
   }
@@ -55,8 +64,8 @@ export async function PUT(req: NextRequest) {
       return error('widgets deve ser um array', 400)
     }
 
-    // Validate widget IDs
-    const validIds = new Set(DEFAULT_WIDGETS.map(w => w.id))
+    // Validate widget IDs (catálogo central — inclui insights/marketing/charges)
+    const validIds = new Set(ALL_WIDGET_IDS)
     for (const w of widgets) {
       if (!validIds.has(w.id)) {
         return error(`Widget desconhecido: ${w.id}`, 400)
