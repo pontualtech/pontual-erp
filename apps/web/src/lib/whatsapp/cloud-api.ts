@@ -1,7 +1,7 @@
 import { prisma } from '@pontual/db'
 import { sendWhatsAppEvolution } from './evolution'
 import { templateCategory } from './template-category'
-import { isPhoneOptedOut } from './consent'
+import { isPhoneOptedOut, tryConsumeMarketing } from './consent'
 
 /**
  * Send WhatsApp message via Meta Cloud API (official).
@@ -201,7 +201,13 @@ export async function sendWhatsAppTemplate(
       console.warn(`[WhatsApp] categoria ${_cat} OFF — template ${templateName} NAO enviado (company ${companyId.slice(0, 8)})`)
       return { success: false, error: 'notifications_disabled' }
     }
-    if (await isPhoneOptedOut(companyId, phone)) {
+    if (_cat === 'marketing') {
+      // Fase 4: marketing exige opt-in POR CLIENTE + respeita cap de frequencia.
+      if (!(await tryConsumeMarketing(companyId, phone))) {
+        console.warn(`[WhatsApp] marketing sem opt-in ou dentro do cap — template ${templateName} NAO enviado`)
+        return { success: false, error: 'marketing_not_allowed' }
+      }
+    } else if (await isPhoneOptedOut(companyId, phone)) {
       console.warn(`[WhatsApp] cliente opted-out — template ${templateName} NAO enviado`)
       return { success: false, error: 'opted_out' }
     }
@@ -292,7 +298,13 @@ export async function sendWhatsAppTemplateMetaOnly(
       console.warn(`[WhatsApp] categoria ${_cat} OFF — template ${templateName} NAO enviado (company ${companyId.slice(0, 8)})`)
       return { success: false, error: 'notifications_disabled' }
     }
-    if (await isPhoneOptedOut(companyId, phone)) {
+    if (_cat === 'marketing') {
+      // Fase 4: marketing exige opt-in POR CLIENTE + respeita cap de frequencia.
+      if (!(await tryConsumeMarketing(companyId, phone))) {
+        console.warn(`[WhatsApp] marketing sem opt-in ou dentro do cap — template ${templateName} NAO enviado`)
+        return { success: false, error: 'marketing_not_allowed' }
+      }
+    } else if (await isPhoneOptedOut(companyId, phone)) {
       console.warn(`[WhatsApp] cliente opted-out — template ${templateName} NAO enviado`)
       return { success: false, error: 'opted_out' }
     }

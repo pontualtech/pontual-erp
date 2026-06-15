@@ -58,6 +58,8 @@ export default function NovaOSPage() {
   })
   const submittedRef = useRef(false)
   const [draftRestored, setDraftRestored] = useState(false)
+  // Fase 4 conformidade Meta: opt-in de marketing WhatsApp (atendente marca se cliente aceitou).
+  const [acceptMarketing, setAcceptMarketing] = useState(false)
 
   // UX-2 #5: restore draft on mount
   useEffect(() => {
@@ -293,6 +295,7 @@ export default function NovaOSPage() {
         os_location: form.os_location || undefined,
         technician_id: form.technician_id || undefined,
         estimated_delivery: form.estimated_delivery || undefined,
+        accept_marketing: acceptMarketing,
       }
 
       const res = await fetch('/api/os', {
@@ -663,6 +666,15 @@ export default function NovaOSPage() {
             </div>
           </div>
         </div>
+
+        {/* Fase 4 conformidade Meta: opt-in de marketing WhatsApp (marcar so se o cliente concordou) */}
+        <label className="flex items-start gap-2.5 rounded-lg border border-gray-200 bg-gray-50 p-3 cursor-pointer">
+          <input type="checkbox" checked={acceptMarketing} onChange={e => setAcceptMarketing(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+          <span className="text-sm text-gray-600">
+            Cliente <strong>aceitou</strong> receber novidades e ofertas no WhatsApp (opt-in de marketing). Marque apenas se o cliente concordou.
+          </span>
+        </label>
 
         {/* Submit */}
         <div className="flex gap-3">

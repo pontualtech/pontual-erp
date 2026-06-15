@@ -23,6 +23,13 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // Fase 4 conformidade Meta: opt-in de marketing no WhatsApp (checkbox).
+    // So grava se o cliente marcou; nao desativa quando ausente.
+    if (body.accept_marketing === true) {
+      const { setMarketingConsent } = await import('@/lib/whatsapp/consent')
+      await setMarketingConsent(portalUser.customer_id, true, 'os_portal').catch(() => {})
+    }
+
     // Formatar dados no padrão Title Case
     const { formatName, formatUpperCase, formatDescription } = await import('@/lib/format-text')
     equipment_type = formatName(equipment_type)

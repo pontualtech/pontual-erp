@@ -12,6 +12,28 @@ export interface WhatsAppConsent {
   opted_out?: boolean
   source?: string
   updated_at?: string
+  // Fase 4: opt-in de marketing (origem/quando) + ultimo envio de marketing (cap).
+  marketing_source?: string
+  marketing_at?: string
+  last_marketing_at?: string
+}
+
+export interface MarketingDecision {
+  allowed: boolean
+  reason: 'ok' | 'no_optin' | 'opted_out' | 'cap'
+}
+
+/**
+ * Decisao PURA de envio de marketing (Fase 4): exige opt-in, respeita opt-out e
+ * o cap de frequencia (min capDays entre marketings). nowMs/capDays injetados
+ * pra testabilidade. NAO consulta DB.
+ */
+export function marketingDecision(consent: WhatsAppConsent, nowMs: number, capDays: number): MarketingDecision {
+  if (consent.opted_out === true) return { allowed: false, reason: 'opted_out' }
+  if (consent.marketing !== true) return { allowed: false, reason: 'no_optin' }
+  const last = consent.last_marketing_at ? Date.parse(consent.last_marketing_at) : 0
+  if (last && nowMs - last < capDays * 86400000) return { allowed: false, reason: 'cap' }
+  return { allowed: true, reason: 'ok' }
 }
 
 function asObject(v: unknown): Record<string, unknown> | null {
@@ -67,4 +89,29 @@ export async function isPhoneOptedOut(companyId: string, phone: string | null | 
     select: { custom_data: true },
   }).catch(() => null)
   return cust ? isOptedOut(cust.custom_data) : false
+}
+
+/** Captura opt-in de marketing (checkbox portal/OS). optedIn=false desativa. */
+export async function setMarketingConsent(customerId: string, optedIn: boolean, source: string): Promise<void> {
+  await setCustomerConsent(customerId, optedIn
+    ? { marketing: true, marketing_source: source, marketing_at: new Date().toISOString() }
+    : { marketing: false })
+}
+
+/**
+ * Gate de marketing por cliente (Fase 4): true se pode enviar (opt-in + nao
+ * opted_out + fora do cap de capDays). Ao permitir, registra last_marketing_at
+ * (consome a janela — 1 tentativa por janela, conservador). Sem cliente/erro → false.
+ */
+export async function tryConsumeMarketing(companyId: string, phone: string | null | undefined, capDays = 7): Promise<boolean> {
+  const end = phoneEnd(phone)
+  if (!end) return false
+  const cust = await prisma.customer.findFirst({
+    where: { company_id: companyId, deleted_at: null, ...PHONE_OR(end) },
+    select: { id: true, custom_data: true },
+  }).catch(() => null)
+  if (!cust) return false
+  if (!marketingDecision(readConsent(cust.custom_data), Date.now(), capDays).allowed) return false
+  await setCustomerConsent(cust.id, { last_marketing_at: new Date().toISOString() }).catch(() => {})
+  return true
 }

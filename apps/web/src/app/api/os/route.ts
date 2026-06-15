@@ -309,6 +309,13 @@ export async function POST(req: NextRequest) {
     const customerPhone = customer?.phone || customer?.mobile || null
     const customData = await lookupTrackingFromConv(user.companyId, customerPhone)
 
+    // Fase 4 conformidade Meta: opt-in de marketing WhatsApp (checkbox na
+    // abertura de OS pelo atendente). So grava quando marcado.
+    if (body.accept_marketing === true && customerId) {
+      const { setMarketingConsent } = await import('@/lib/whatsapp/consent')
+      await setMarketingConsent(customerId, true, 'os_balcao').catch(() => {})
+    }
+
     // Criar OS com número atômico (prevenir race condition)
     const os = await prisma.$transaction(async (tx) => {
       // Advisory lock por company_id para evitar race condition na numeração
