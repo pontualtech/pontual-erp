@@ -25,6 +25,7 @@ import {
   type ReplyButton,
   type ListRow,
 } from '@/lib/whatsapp/cloud-api'
+import { optOutCustomerByPhone } from '@/lib/whatsapp/consent'
 import {
   getImprimitechHandoffStatusId,
   buildImprimitechHandoffMessage,
@@ -1771,7 +1772,14 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       where: { id: botConv.id },
       data: { follow_up_opted_out: true, follow_up_next_at: null },
     })
-    console.log(`[Bot] Conv ${conversationId}: customer opted out of follow-ups`)
+    // Conformidade Meta (Fase 1, 15/06): opt-out por palavra-chave bloqueia TODO
+    // envio proativo (utility+marketing), nao so follow-up. Grava no consent do
+    // cliente, confirma e encerra — a mensagem foi um comando, nao chama Gemini.
+    // (Este bloco roda ANTES do lock de debounce, entao o return e seguro.)
+    await optOutCustomerByPhone(cfg.companyId, phone).catch(() => {})
+    console.log(`[Bot] Conv ${conversationId}: customer opted out (TODO proativo)`)
+    await cwSendMessage(cfg, conversationId, 'Pronto! Você não receberá mais nossas notificações automáticas no WhatsApp. Se precisar de algo, é só mandar uma mensagem aqui que a gente responde normalmente. 👍', false)
+    return
   }
 
   // -----------------------------------------------------------------------

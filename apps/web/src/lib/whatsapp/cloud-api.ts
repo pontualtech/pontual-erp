@@ -1,6 +1,7 @@
 import { prisma } from '@pontual/db'
 import { sendWhatsAppEvolution } from './evolution'
 import { templateCategory } from './template-category'
+import { isPhoneOptedOut } from './consent'
 
 /**
  * Send WhatsApp message via Meta Cloud API (official).
@@ -186,9 +187,15 @@ export async function sendWhatsAppTemplate(
   channel: WhatsAppChannel = 'suporte'
 ): Promise<CloudSendResult> {
   const _cat = templateCategory(templateName)
-  if (_cat !== 'auth' && !(await categoryEnabled(companyId, _cat))) {
-    console.warn(`[WhatsApp] categoria ${_cat} OFF — template ${templateName} NAO enviado (company ${companyId.slice(0, 8)})`)
-    return { success: false, error: 'notifications_disabled' }
+  if (_cat !== 'auth') {
+    if (!(await categoryEnabled(companyId, _cat))) {
+      console.warn(`[WhatsApp] categoria ${_cat} OFF — template ${templateName} NAO enviado (company ${companyId.slice(0, 8)})`)
+      return { success: false, error: 'notifications_disabled' }
+    }
+    if (await isPhoneOptedOut(companyId, phone)) {
+      console.warn(`[WhatsApp] cliente opted-out — template ${templateName} NAO enviado`)
+      return { success: false, error: 'opted_out' }
+    }
   }
   const config = await getCloudConfig(companyId, channel)
   if (!config) {
@@ -271,9 +278,15 @@ export async function sendWhatsAppTemplateMetaOnly(
   channel: WhatsAppChannel = 'suporte'
 ): Promise<CloudSendResult> {
   const _cat = templateCategory(templateName)
-  if (_cat !== 'auth' && !(await categoryEnabled(companyId, _cat))) {
-    console.warn(`[WhatsApp] categoria ${_cat} OFF — template ${templateName} NAO enviado (company ${companyId.slice(0, 8)})`)
-    return { success: false, error: 'notifications_disabled' }
+  if (_cat !== 'auth') {
+    if (!(await categoryEnabled(companyId, _cat))) {
+      console.warn(`[WhatsApp] categoria ${_cat} OFF — template ${templateName} NAO enviado (company ${companyId.slice(0, 8)})`)
+      return { success: false, error: 'notifications_disabled' }
+    }
+    if (await isPhoneOptedOut(companyId, phone)) {
+      console.warn(`[WhatsApp] cliente opted-out — template ${templateName} NAO enviado`)
+      return { success: false, error: 'opted_out' }
+    }
   }
   const config = await getCloudConfig(companyId, channel)
   if (!config) {
