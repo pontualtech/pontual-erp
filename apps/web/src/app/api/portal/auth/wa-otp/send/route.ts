@@ -141,7 +141,7 @@ export async function POST(req: NextRequest) {
         customerId: customer.id,
         error: tmpl.error,
       })
-      const plain = await sendWhatsAppCloud(company.id, normalizedPhone, otpText)
+      const plain = await sendWhatsAppCloud(company.id, normalizedPhone, otpText, 'suporte', true)
       delivered = plain.success
       lastError = plain.error || tmpl.error
       if (!plain.success) {

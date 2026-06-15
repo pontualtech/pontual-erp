@@ -121,8 +121,17 @@ export async function sendWhatsAppCloud(
   companyId: string,
   phone: string,
   text: string,
-  channel: WhatsAppChannel = 'suporte'
+  channel: WhatsAppChannel = 'suporte',
+  transactional = false
 ): Promise<CloudSendResult> {
+  // Opt-out (Fase 1 conformidade Meta, 15/06): bloqueia envio PROATIVO a quem
+  // pediu pra parar. Chamadas transacionais/conversa (OTP, magic-link, resposta
+  // de ticket, fallback interativo do bot) passam transactional=true e nao sao
+  // gateadas. Default = proativo (gateado).
+  if (!transactional && (await isPhoneOptedOut(companyId, phone))) {
+    console.warn(`[WhatsApp Cloud] cliente opted-out — texto proativo NAO enviado (company ${companyId.slice(0, 8)})`)
+    return { success: false, error: 'opted_out' }
+  }
   const config = await getCloudConfig(companyId, channel)
   if (!config) {
     // PontualTech / Imprimitech operam APENAS via Meta Cloud API oficial
@@ -380,7 +389,7 @@ export async function sendWhatsAppButtons(
   if (!config) {
     // Fallback: send as text with numbered options
     const btnText = buttons.map((b, i) => `${i + 1}. ${b.title}`).join('\n')
-    return sendWhatsAppCloud(companyId, phone, `${header ? `*${header}*\n\n` : ''}${body}\n\n${btnText}${footer ? `\n\n_${footer}_` : ''}`, channel)
+    return sendWhatsAppCloud(companyId, phone, `${header ? `*${header}*\n\n` : ''}${body}\n\n${btnText}${footer ? `\n\n_${footer}_` : ''}`, channel, true)
   }
 
   const cleanPhone = phone.replace(/\D/g, '')
@@ -421,7 +430,7 @@ export async function sendWhatsAppList(
     // Fallback: send as numbered text list
     const items = sections.flatMap(s => s.rows)
     const listText = items.map((r, i) => `${i + 1}. ${r.title}${r.description ? ` — ${r.description}` : ''}`).join('\n')
-    return sendWhatsAppCloud(companyId, phone, `${body}\n\n${listText}`, channel)
+    return sendWhatsAppCloud(companyId, phone, `${body}\n\n${listText}`, channel, true)
   }
 
   const cleanPhone = phone.replace(/\D/g, '')
@@ -465,7 +474,7 @@ export async function sendWhatsAppCtaUrl(
   const config = await getCloudConfig(companyId, channel)
   if (!config) {
     // Fallback: send URL in text
-    return sendWhatsAppCloud(companyId, phone, `${body}\n\n${url}`, channel)
+    return sendWhatsAppCloud(companyId, phone, `${body}\n\n${url}`, channel, true)
   }
 
   const cleanPhone = phone.replace(/\D/g, '')

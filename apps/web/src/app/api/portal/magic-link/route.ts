@@ -137,7 +137,7 @@ async function buildLinkResponse(
     } else {
       const firstName = (customer.legal_name || '').split(' ')[0] || 'Cliente'
       const text = `Olá, ${firstName}!\n\nAqui está seu acesso direto ao portal do cliente da ${company.name}:\n\n${url.toString()}\n\nSalve este link — ele continua valendo para acompanhar suas OS. Nenhuma senha necessária, basta clicar.`
-      const sent = await sendWhatsAppCloud(companyId, String(phone).replace(/\D/g, ''), text)
+      const sent = await sendWhatsAppCloud(companyId, String(phone).replace(/\D/g, ''), text, 'suporte', true)
       waResult = {
         attempted: true,
         success: sent.success,
