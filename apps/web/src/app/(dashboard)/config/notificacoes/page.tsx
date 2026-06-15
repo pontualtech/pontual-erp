@@ -52,10 +52,12 @@ export default function NotificacoesPage() {
   const [internalPhones, setInternalPhones] = useState('')
   const [savingPhones, setSavingPhones] = useState(false)
 
-  // Master kill-switch de notificacoes WhatsApp (proativas/templates). Meta
-  // sinalizou spam — desligavel/religavel aqui. Default = ligado.
-  const [waNotifEnabled, setWaNotifEnabled] = useState(true)
-  const [savingWaNotif, setSavingWaNotif] = useState(false)
+  // Gate de notificacoes WhatsApp por CATEGORIA (conformidade Meta). Utility =
+  // transacional (status/orcamento/pronto/cobranca/coleta); Marketing =
+  // nurture/avaliacao/follow-up (so com opt-in). Auth/OTP sempre passa.
+  const [waUtility, setWaUtility] = useState(true)
+  const [waMarketing, setWaMarketing] = useState(false)
+  const [savingWa, setSavingWa] = useState<'utility' | 'marketing' | null>(null)
 
   useEffect(() => {
     fetch('/api/settings/notificacoes')
@@ -76,8 +78,10 @@ export default function NotificacoesPage() {
       .then(d => {
         const phones = d?.data?.logistics?.['logistics.inactivity_alert.phones']?.value || ''
         setInternalPhones(phones)
-        const wa = d?.data?.whatsapp?.['whatsapp.notifications_enabled']?.value
-        setWaNotifEnabled(wa !== 'false') // default ligado
+        const waU = d?.data?.whatsapp?.['whatsapp.notifications.utility_enabled']?.value
+        const waM = d?.data?.whatsapp?.['whatsapp.notifications.marketing_enabled']?.value
+        setWaUtility(waU !== 'false') // default ligado (transacional)
+        setWaMarketing(waM === 'true') // default desligado (conservador)
       })
       .catch(() => {})
   }, [])
@@ -103,22 +107,23 @@ export default function NotificacoesPage() {
     finally { setSavingPhones(false) }
   }
 
-  async function toggleWaNotif() {
-    const next = !waNotifEnabled
-    setSavingWaNotif(true)
+  async function toggleWaCategory(cat: 'utility' | 'marketing') {
+    const cur = cat === 'utility' ? waUtility : waMarketing
+    const next = !cur
+    setSavingWa(cat)
     try {
       const res = await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          settings: [{ key: 'whatsapp.notifications_enabled', value: next ? 'true' : 'false', type: 'boolean', group: 'whatsapp' }],
+          settings: [{ key: `whatsapp.notifications.${cat}_enabled`, value: next ? 'true' : 'false', type: 'boolean', group: 'whatsapp' }],
         }),
       })
       if (!res.ok) throw new Error()
-      setWaNotifEnabled(next)
-      toast.success(next ? 'Notificações WhatsApp REATIVADAS' : 'Notificações WhatsApp DESATIVADAS (proativas)')
+      if (cat === 'utility') setWaUtility(next); else setWaMarketing(next)
+      toast.success(`${cat === 'utility' ? 'Transacionais (Utility)' : 'Marketing'} ${next ? 'LIGADO' : 'DESLIGADO'}`)
     } catch { toast.error('Falha ao salvar') }
-    finally { setSavingWaNotif(false) }
+    finally { setSavingWa(null) }
   }
 
   function getRule(statusId: string): NotifRule {
@@ -177,28 +182,54 @@ export default function NotificacoesPage() {
         </button>
       </div>
 
-      {/* Master kill-switch — notificacoes WhatsApp proativas (Meta antispam) */}
-      <div className={cn('rounded-xl border-2 p-5', waNotifEnabled ? 'border-emerald-200 bg-emerald-50' : 'border-red-300 bg-red-50')}>
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <MessageSquare className={cn('h-5 w-5 mt-0.5 shrink-0', waNotifEnabled ? 'text-emerald-700' : 'text-red-700')} />
-            <div>
-              <h2 className={cn('font-semibold', waNotifEnabled ? 'text-emerald-900' : 'text-red-900')}>
-                Notificações WhatsApp (proativas) — {waNotifEnabled ? 'LIGADAS' : 'DESLIGADAS'}
-              </h2>
-              <p className={cn('text-sm mt-0.5', waNotifEnabled ? 'text-emerald-800' : 'text-red-800')}>
-                Controla TODO envio proativo via WhatsApp (lembrete de cobrança, follow-up, nurture,
-                &quot;a caminho&quot;, avaliação, status de OS por template). <strong>Não afeta</strong> o bot
-                respondendo o cliente, o OTP de login, nem confirmações dentro da conversa.
-                {!waNotifEnabled && <strong className="block mt-1">Desligado por conformidade com o Meta (antispam).</strong>}
-              </p>
-            </div>
+      {/* Notificacoes WhatsApp por categoria — conformidade Meta */}
+      <div className="rounded-xl border-2 border-gray-200 bg-white p-5 space-y-4">
+        <div className="flex items-start gap-3">
+          <MessageSquare className="h-5 w-5 mt-0.5 shrink-0 text-gray-600" />
+          <div>
+            <h2 className="font-semibold text-gray-900">Notificações WhatsApp (conformidade Meta)</h2>
+            <p className="text-sm text-gray-500 mt-0.5">
+              Controla o envio proativo por categoria. O <strong>OTP de login</strong> e o bot
+              respondendo o cliente <strong>não são afetados</strong>.
+            </p>
           </div>
-          <button type="button" onClick={toggleWaNotif} disabled={savingWaNotif}
+        </div>
+
+        {/* Utility (transacional) */}
+        <div className={cn('flex items-start justify-between gap-4 rounded-lg border p-4', waUtility ? 'border-emerald-200 bg-emerald-50' : 'border-gray-200 bg-gray-50')}>
+          <div>
+            <p className={cn('font-medium', waUtility ? 'text-emerald-900' : 'text-gray-700')}>
+              Transacionais (Utility) — {waUtility ? 'LIGADO' : 'DESLIGADO'}
+            </p>
+            <p className={cn('text-sm mt-0.5', waUtility ? 'text-emerald-800' : 'text-gray-500')}>
+              Updates da OS do próprio cliente: status, orçamento, pronto p/ retirada, cobrança,
+              coleta/&quot;a caminho&quot;. Conforme à política (cliente com serviço ativo).
+            </p>
+          </div>
+          <button type="button" onClick={() => toggleWaCategory('utility')} disabled={savingWa === 'utility'}
             className={cn('shrink-0 flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-50',
-              waNotifEnabled ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700')}>
-            {savingWaNotif ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            {waNotifEnabled ? 'Desligar agora' : 'Religar'}
+              waUtility ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700')}>
+            {savingWa === 'utility' ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {waUtility ? 'Desligar' : 'Ligar'}
+          </button>
+        </div>
+
+        {/* Marketing */}
+        <div className={cn('flex items-start justify-between gap-4 rounded-lg border p-4', waMarketing ? 'border-amber-300 bg-amber-50' : 'border-gray-200 bg-gray-50')}>
+          <div>
+            <p className={cn('font-medium', waMarketing ? 'text-amber-900' : 'text-gray-700')}>
+              Marketing — {waMarketing ? 'LIGADO' : 'DESLIGADO'}
+            </p>
+            <p className={cn('text-sm mt-0.5', waMarketing ? 'text-amber-800' : 'text-gray-500')}>
+              Nurture, avaliação/feedback, follow-up de re-engajamento.
+              <strong className="block mt-0.5">Só ligar com opt-in do cliente — foi isto que gerou o flag de spam do Meta.</strong>
+            </p>
+          </div>
+          <button type="button" onClick={() => toggleWaCategory('marketing')} disabled={savingWa === 'marketing'}
+            className={cn('shrink-0 flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-50',
+              waMarketing ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-600 hover:bg-amber-700')}>
+            {savingWa === 'marketing' ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {waMarketing ? 'Desligar' : 'Ligar'}
           </button>
         </div>
       </div>
