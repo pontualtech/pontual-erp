@@ -52,6 +52,11 @@ export default function NotificacoesPage() {
   const [internalPhones, setInternalPhones] = useState('')
   const [savingPhones, setSavingPhones] = useState(false)
 
+  // Master kill-switch de notificacoes WhatsApp (proativas/templates). Meta
+  // sinalizou spam — desligavel/religavel aqui. Default = ligado.
+  const [waNotifEnabled, setWaNotifEnabled] = useState(true)
+  const [savingWaNotif, setSavingWaNotif] = useState(false)
+
   useEffect(() => {
     fetch('/api/settings/notificacoes')
       .then(r => r.json())
@@ -71,6 +76,8 @@ export default function NotificacoesPage() {
       .then(d => {
         const phones = d?.data?.logistics?.['logistics.inactivity_alert.phones']?.value || ''
         setInternalPhones(phones)
+        const wa = d?.data?.whatsapp?.['whatsapp.notifications_enabled']?.value
+        setWaNotifEnabled(wa !== 'false') // default ligado
       })
       .catch(() => {})
   }, [])
@@ -94,6 +101,24 @@ export default function NotificacoesPage() {
       toast.success('Numeros do alerta interno salvos')
     } catch { toast.error('Falha ao salvar numeros') }
     finally { setSavingPhones(false) }
+  }
+
+  async function toggleWaNotif() {
+    const next = !waNotifEnabled
+    setSavingWaNotif(true)
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          settings: [{ key: 'whatsapp.notifications_enabled', value: next ? 'true' : 'false', type: 'boolean', group: 'whatsapp' }],
+        }),
+      })
+      if (!res.ok) throw new Error()
+      setWaNotifEnabled(next)
+      toast.success(next ? 'Notificações WhatsApp REATIVADAS' : 'Notificações WhatsApp DESATIVADAS (proativas)')
+    } catch { toast.error('Falha ao salvar') }
+    finally { setSavingWaNotif(false) }
   }
 
   function getRule(statusId: string): NotifRule {
@@ -150,6 +175,32 @@ export default function NotificacoesPage() {
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           {saving ? 'Salvando...' : 'Salvar'}
         </button>
+      </div>
+
+      {/* Master kill-switch — notificacoes WhatsApp proativas (Meta antispam) */}
+      <div className={cn('rounded-xl border-2 p-5', waNotifEnabled ? 'border-emerald-200 bg-emerald-50' : 'border-red-300 bg-red-50')}>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <MessageSquare className={cn('h-5 w-5 mt-0.5 shrink-0', waNotifEnabled ? 'text-emerald-700' : 'text-red-700')} />
+            <div>
+              <h2 className={cn('font-semibold', waNotifEnabled ? 'text-emerald-900' : 'text-red-900')}>
+                Notificações WhatsApp (proativas) — {waNotifEnabled ? 'LIGADAS' : 'DESLIGADAS'}
+              </h2>
+              <p className={cn('text-sm mt-0.5', waNotifEnabled ? 'text-emerald-800' : 'text-red-800')}>
+                Controla TODO envio proativo via WhatsApp (lembrete de cobrança, follow-up, nurture,
+                &quot;a caminho&quot;, avaliação, status de OS por template). <strong>Não afeta</strong> o bot
+                respondendo o cliente, o OTP de login, nem confirmações dentro da conversa.
+                {!waNotifEnabled && <strong className="block mt-1">Desligado por conformidade com o Meta (antispam).</strong>}
+              </p>
+            </div>
+          </div>
+          <button type="button" onClick={toggleWaNotif} disabled={savingWaNotif}
+            className={cn('shrink-0 flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-50',
+              waNotifEnabled ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700')}>
+            {savingWaNotif ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {waNotifEnabled ? 'Desligar agora' : 'Religar'}
+          </button>
+        </div>
       </div>
 
       {/* Alertas internos — NAO vao pro cliente */}

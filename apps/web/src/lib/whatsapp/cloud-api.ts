@@ -77,6 +77,39 @@ export function invalidateWhatsAppCloudConfigCache(companyId?: string) {
 }
 
 /**
+ * Master kill-switch de NOTIFICAÇÕES (2026-06-15). Meta sinalizou spam por
+ * envio proativo. Quando `whatsapp.notifications_enabled` = 'false', os envios
+ * de TEMPLATE (mensagens proativas fora da janela 24h) são bloqueados.
+ * Templates de AUTENTICAÇÃO/OTP são isentos (login transacional, pedido pelo
+ * usuário). Conversa/transacional via sendWhatsAppCloud (dentro da janela 24h)
+ * NÃO passa por este gate. Reativável no ERP em /config/notificacoes.
+ * Default = habilitado (não muda comportamento de tenant sem o setting).
+ */
+const notifEnabledCache = new Map<string, { enabled: boolean; expires: number }>()
+
+async function whatsAppNotificationsEnabled(companyId: string): Promise<boolean> {
+  const cached = notifEnabledCache.get(companyId)
+  if (cached && cached.expires > Date.now()) return cached.enabled
+  const s = await prisma.setting.findFirst({
+    where: { company_id: companyId, key: 'whatsapp.notifications_enabled' },
+    select: { value: true },
+  }).catch(() => null)
+  const enabled = s ? s.value === 'true' : true
+  notifEnabledCache.set(companyId, { enabled, expires: Date.now() + 60 * 1000 })
+  return enabled
+}
+
+/** Templates de autenticação/OTP — transacionais, isentos do kill-switch. */
+function isAuthTemplate(templateName: string): boolean {
+  return /otp|auth|c[oó]digo/i.test(templateName)
+}
+
+export function invalidateWhatsAppNotifCache(companyId?: string) {
+  if (!companyId) { notifEnabledCache.clear(); return }
+  notifEnabledCache.delete(companyId)
+}
+
+/**
  * Send a text message via WhatsApp Cloud API.
  * Note: This only works within the 24h window (customer messaged first)
  * or with approved templates.
@@ -150,6 +183,10 @@ export async function sendWhatsAppTemplate(
   fallbackText?: string,
   channel: WhatsAppChannel = 'suporte'
 ): Promise<CloudSendResult> {
+  if (!isAuthTemplate(templateName) && !(await whatsAppNotificationsEnabled(companyId))) {
+    console.warn(`[WhatsApp] notificacoes OFF (kill-switch) — template ${templateName} NAO enviado (company ${companyId.slice(0, 8)})`)
+    return { success: false, error: 'notifications_disabled' }
+  }
   const config = await getCloudConfig(companyId, channel)
   if (!config) {
     // Cloud API not configured — fallback to Evolution API with plain text
@@ -230,6 +267,10 @@ export async function sendWhatsAppTemplateMetaOnly(
   components?: any[],
   channel: WhatsAppChannel = 'suporte'
 ): Promise<CloudSendResult> {
+  if (!isAuthTemplate(templateName) && !(await whatsAppNotificationsEnabled(companyId))) {
+    console.warn(`[WhatsApp] notificacoes OFF (kill-switch) — template ${templateName} NAO enviado (company ${companyId.slice(0, 8)})`)
+    return { success: false, error: 'notifications_disabled' }
+  }
   const config = await getCloudConfig(companyId, channel)
   if (!config) {
     return { success: false, error: 'not_configured' }
