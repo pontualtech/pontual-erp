@@ -1981,7 +1981,13 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
             } catch (e) {
               console.warn('[Bot] falha gerando magic-link para OS enrich, usando URL direta:', e instanceof Error ? e.message : String(e))
             }
-            query += `\n[DADOS DA OS #${osNum}: Status: ${status}, Equipamento: ${equip}, Defeito: ${osData.reported_issue || 'N/A'}, Diagnostico: ${osData.diagnosis || 'N/A'}, Tecnico: ${osData.user_profiles?.name || 'N/A'}, Previsao: ${previsao}, Custo: ${osData.total_cost ? 'R$ ' + (osData.total_cost / 100).toFixed(2) : 'N/A'}, Cliente: ${osData.customers?.legal_name || 'N/A'}, Email: ${osData.customers?.email || 'N/A'}, Portal: ${osPortalUrl}]`
+            // 2026-06-17: modalidade da OS pra discernir retirada x entrega
+            const localOs = osData.os_location === 'LOJA'
+              ? 'LOJA (cliente deixou na sede)'
+              : osData.os_location === 'EXTERNO'
+                ? 'EXTERNO (nos coletamos no cliente)'
+                : (osData.os_location || 'N/I')
+            query += `\n[DADOS DA OS #${osNum}: Status: ${status}, Equipamento: ${equip}, Defeito: ${osData.reported_issue || 'N/A'}, Diagnostico: ${osData.diagnosis || 'N/A'}, Tecnico: ${osData.user_profiles?.name || 'N/A'}, Previsao: ${previsao}, Local: ${localOs}, Custo: ${osData.total_cost ? 'R$ ' + (osData.total_cost / 100).toFixed(2) : 'N/A'}, Cliente: ${osData.customers?.legal_name || 'N/A'}, Email: ${osData.customers?.email || 'N/A'}, Portal: ${osPortalUrl}]`
             console.log(`[Bot] OS enriched: #${osNum} → ${status} (${equip}) with magic-link`)
           } else if (cfg.legacyOsMin > 0 && osNum >= cfg.legacyOsMin && osNum <= cfg.legacyOsMax) {
             // OS LEGADA — transferir direto pro humano, sem passar pelo Dify
@@ -2192,7 +2198,13 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
                 const pagamentoOnline = (o as any).payment_online_allowed
                   ? 'SIM (cliente pode pagar via portal: PIX/Boleto)'
                   : 'NAO (status nao libera pagamento antecipado online — so presencial na entrega OU via atendente humano)'
-                return `OS #${osNum} (${o.equipment}, Status: ${o.status_name}${tecnico}${previsao}, Cobranca ativa: ${cobrancaAtiva}, Pagamento online permitido: ${pagamentoOnline}${portalLink ? `, Portal: ${portalLink}` : ''})`
+                // 2026-06-17: modalidade da OS pra discernir retirada x entrega
+                const local = (o as any).os_location === 'LOJA'
+                  ? 'LOJA (cliente deixou na sede)'
+                  : (o as any).os_location === 'EXTERNO'
+                    ? 'EXTERNO (nos coletamos no cliente)'
+                    : ((o as any).os_location || 'N/I')
+                return `OS #${osNum} (${o.equipment}, Status: ${o.status_name}${tecnico}${previsao}, Local: ${local}, Cobranca ativa: ${cobrancaAtiva}, Pagamento online permitido: ${pagamentoOnline}${portalLink ? `, Portal: ${portalLink}` : ''})`
               }).join('; ')
               query += `\n[CONTEXTO DO CLIENTE: Nome: ${customer.legal_name || 'N/A'}, Telefone: ${phone}, OS ativas: ${osList}. O cliente JA FOI IDENTIFICADO — NAO pergunte numero da OS, ja informe o status diretamente. SEMPRE inclua na sua resposta a URL "Portal: https://..." COMPLETA da OS relevante (extraida do contexto OS ativas acima). NUNCA escreva apenas "portal.pontualtech.com.br" ou "portal.imprimitech.com.br" sozinho como link — sempre use a URL completa do contexto pra o cliente nao precisar fazer login.]`
               console.log(`[Bot] Auto-identified: ${customer.legal_name} — ${activeOS.length} active OS`)
@@ -3874,6 +3886,9 @@ interface OsInfo {
   // 2026-05-11: contexto de pagamento pra Marta nao mentir sobre cobrancas
   has_pending_charge?: boolean    // OS tem Payment status=PENDING (link valido pra reenviar)
   payment_online_allowed?: boolean // status da OS permite pagamento online no Portal
+  // 2026-06-17: modalidade da OS (EXTERNO = nos coletamos / LOJA = cliente deixou)
+  // pra Marta/Aline discernirem retirada x entrega sem promessa indevida
+  os_location?: string | null
 }
 
 // 2026-05-11: status onde o cliente pode pagar online via portal (PIX/Boleto
@@ -4307,6 +4322,7 @@ async function getActiveOrders(customerId: string, companyId: string): Promise<O
       technician_name: os.user_profiles?.name || null,
       has_pending_charge: (os.payments?.length || 0) > 0,
       payment_online_allowed: PAYMENT_ONLINE_ALLOWED_STATUSES.has(statusName),
+      os_location: os.os_location,
     }
   })
 }
