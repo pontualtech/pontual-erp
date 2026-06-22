@@ -16,6 +16,7 @@ describe('templateCategory — conformidade Meta (categoriza templates reais)', 
       'pt_os_aberta_v2',
       'pt_a_caminho_v1', 'pt_a_caminho_v3',
       'pt_rota_iniciada_v1',
+      'pt_avaliacao_google_v6', // 2026-06-22: feedback NEUTRO (Meta classificou UTILITY)
     ]
     for (const t of utility) expect(templateCategory(t), t).toBe('utility')
   })
@@ -24,7 +25,8 @@ describe('templateCategory — conformidade Meta (categoriza templates reais)', 
     const marketing = [
       'nurture_d1_empathy', 'nurture_d7_checkin', 'nurture_d45_pesquisa',
       'pt_followup_v2',
-      'pt_avaliacao_google_v1', 'pt_avaliacao_google_v3',
+      'pt_avaliacao_google_v1', 'pt_avaliacao_google_v2', 'pt_avaliacao_google_v3',
+      'pt_avaliacao_google_v5', // lidera com cupom 10% — Meta=MARKETING (so v6 e utility)
       'pt_feedback_v1',
     ]
     for (const t of marketing) expect(templateCategory(t), t).toBe('marketing')

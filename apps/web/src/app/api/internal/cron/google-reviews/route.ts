@@ -206,31 +206,29 @@ export async function POST(req: NextRequest) {
       // Decisao Karlao 2026-05-05 tarde: prefere mensagens com BOTAO clicavel
       // em vez de free-text com link inline. Mais profissional + melhor CTR.
       //
-      // 2026-05-25: trocado v3 por v5. v3 deletado (oferecia "ganhe 10% se
-      // avaliar" — violava Google Review Policy, risco de suspensao GBP).
-      // v5 desacopla incentivo da review (cupom é "pelo atendimento", review
-      // é opcional). Detalhes em feedback_google_review_policy memory.
+      // 2026-05-25: trocado v3 por v5. 2026-06-22: trocado v5 -> v6.
+      // v5 (e v1/v2/feedback_v1) sao MARKETING na Meta (lideram com cupom 10%);
+      // enviar proativo sem opt-in reabre o flag de spam (caso 10/06). v6 e
+      // UTILITY: texto neutro de feedback, SEM cupom/Google/desconto na msg —
+      // o cupom aparece so no clique (pagina /avaliar). Meta classificou como
+      // UTILITY, entao entrega transacional, sem opt-in e sem risco de flag.
       //
       // Ordem:
-      // 1. pt_avaliacao_google_v5 (MARKETING, botao "Avaliar no Google")
-      //    - Cupom incondicional + review opcional (Google-compliant)
+      // 1. pt_avaliacao_google_v6 (UTILITY, botao "Deixar feedback")
+      //    - Mensagem neutra; incentivo (cupom) revelado apos o clique
       // 2. free-text com link inline
-      //    - Ultimo recurso quando template falhar
+      //    - Ultimo recurso quando template falhar (so vale dentro da janela 24h)
       //    - Fica sem botao (link no body)
-      //
-      // pt_feedback_v1 removido da chain — também violava policy (botao
-      // "Avaliar e ganhar 10%"). Considerar deletar do Meta apos validar v5
-      // em producao por algumas semanas.
       let r = await sendWhatsAppTemplate(
-        os.company_id, normalizedPhone, 'pt_avaliacao_google_v5', 'pt_BR',
+        os.company_id, normalizedPhone, 'pt_avaliacao_google_v6', 'pt_BR',
         [
           { type: 'body', parameters: [{ type: 'text', text: firstName }] },
           { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: token }] },
         ],
         freeText,
       )
-      let channelUsed: 'pt_avaliacao_google_v5' | 'free_text' | null =
-        r.success ? 'pt_avaliacao_google_v5' : null
+      let channelUsed: 'pt_avaliacao_google_v6' | 'free_text' | null =
+        r.success ? 'pt_avaliacao_google_v6' : null
 
       if (!r.success) {
         // Fallback: free-text com link inline (sem botao, mas garante entrega).
