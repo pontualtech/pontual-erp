@@ -239,44 +239,52 @@ export async function POST(req: NextRequest) {
         if (r.success) channelUsed = 'free_text'
       }
 
-      // === E-mail paralelo (fire-and-forget) ===
-      // Independente do resultado WhatsApp — multi-canal cobre falhas Meta.
+      // === E-mail (multi-canal) ===
+      // 2026-06-22 FIX: ANTES era fire-and-forget e o review_request_sent_at
+      // so era marcado no sucesso do WhatsApp. Cliente com WA falhando + email
+      // valido nunca era marcado -> o email reenviava a CADA tick (5min) por
+      // 48h. Caso real: OS 60874-76 (Jaime Ginzburg) ~1700 emails. Agora
+      // aguardamos o email e marcamos a OS se QUALQUER canal (WA OU email)
+      // contatou o cliente — assim nao reenvia.
       const customerEmail = os.customers?.email || null
+      let emailSent = false
       if (customerEmail) {
-        void (async () => {
-          try {
-            const company = await prisma.company.findUnique({
-              where: { id: os.company_id },
-              select: { name: true },
-            })
-            const tpl = await getFeedbackEmail(os.company_id, {
-              cliente: customerName,
-              empresa: company?.name || 'PontualTech',
-              os_number: os.os_number,
-              link,
-            })
-            await sendCompanyEmail(os.company_id, customerEmail, tpl.subject, tpl.html)
-          } catch (err) {
-            console.warn('[reviews] email falhou:', err instanceof Error ? err.message : String(err))
-          }
-        })()
+        try {
+          const company = await prisma.company.findUnique({
+            where: { id: os.company_id },
+            select: { name: true },
+          })
+          const tpl = await getFeedbackEmail(os.company_id, {
+            cliente: customerName,
+            empresa: company?.name || 'PontualTech',
+            os_number: os.os_number,
+            link,
+          })
+          await sendCompanyEmail(os.company_id, customerEmail, tpl.subject, tpl.html)
+          emailSent = true
+        } catch (err) {
+          console.warn('[reviews] email falhou:', err instanceof Error ? err.message : String(err))
+        }
       }
 
-      if (r.success) {
+      if (r.success || emailSent) {
+        // Contatado por ALGUM canal -> marca pra nao reenviar. Sem este
+        // `|| emailSent`, WA falhando + email ok = spam a cada tick (ver acima).
         await prisma.serviceOrder.update({
           where: { id: os.id },
           data: { review_request_sent_at: new Date() },
         })
         sent++
+        const channel = channelUsed || (emailSent ? 'email' : null)
         // Loga qual canal deu certo — possibilita medir CTR real e priorizar
         // canais por deliverability efetiva ao longo do tempo.
-        console.log(`[Cron/GoogleReviews] OS ${os.os_number} sent via ${channelUsed} to ${normalizedPhone.slice(0, 4)}***`)
-        results.push({ os_id: os.id, os_number: os.os_number, sent: true, channel: channelUsed })
+        console.log(`[Cron/GoogleReviews] OS ${os.os_number} sent via ${channel} to ${normalizedPhone.slice(0, 4)}***`)
+        results.push({ os_id: os.id, os_number: os.os_number, sent: true, channel })
       } else {
-        // Falhou WA — NAO marca review_request_sent_at, tenta de novo no
-        // proximo tick ate completar 48h
+        // Nem WA nem email (cliente sem email e WA falhou) — NAO marca,
+        // tenta de novo no proximo tick ate completar 48h
         skipped++
-        results.push({ os_id: os.id, os_number: os.os_number, skipped: 'wa_failed', error: r.error })
+        results.push({ os_id: os.id, os_number: os.os_number, skipped: 'wa_and_email_failed', error: r.error })
       }
     } catch (err: any) {
       skipped++
