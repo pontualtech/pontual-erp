@@ -26,6 +26,7 @@ import {
   type ListRow,
 } from '@/lib/whatsapp/cloud-api'
 import { optOutCustomerByPhone } from '@/lib/whatsapp/consent'
+import { type OsInfo, mapOrderToOsInfo } from '@/lib/bot/os-info'
 import {
   getImprimitechHandoffStatusId,
   buildImprimitechHandoffMessage,
@@ -2083,7 +2084,11 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
                 }
                 // Pick primeiro candidato com OS ativa (igual comportamento original)
                 for (const c of allMatches) {
-                  const os = (byCustomer.get(c.id) || []) as unknown as OsInfo[]
+                  // 2026-06-23 FIX: mapeia as linhas CRUAS pro formato OsInfo.
+                  // Antes era `as unknown as OsInfo[]` (cast) -> equipment/status/
+                  // os_id ficavam undefined -> sem magic-link no contexto -> bot
+                  // mandava link de portal generico. Caso OS 61241 Maria Aparecida.
+                  const os = (byCustomer.get(c.id) || []).map(mapOrderToOsInfo)
                   if (os.length > 0) {
                     customer = c
                     activeOS = os
@@ -3874,30 +3879,9 @@ async function handleButtonClick(
 // Interactive Message Senders (via Meta Cloud API)
 // ---------------------------------------------------------------------------
 
-interface OsInfo {
-  os_number: number
-  status_name: string
-  equipment: string
-  estimated_delivery?: Date | null
-  total_cost?: number | null
-  os_id?: string
-  has_items?: boolean
-  technician_name?: string | null
-  // 2026-05-11: contexto de pagamento pra Marta nao mentir sobre cobrancas
-  has_pending_charge?: boolean    // OS tem Payment status=PENDING (link valido pra reenviar)
-  payment_online_allowed?: boolean // status da OS permite pagamento online no Portal
-  // 2026-06-17: modalidade da OS (EXTERNO = nos coletamos / LOJA = cliente deixou)
-  // pra Marta/Aline discernirem retirada x entrega sem promessa indevida
-  os_location?: string | null
-}
-
-// 2026-05-11: status onde o cliente pode pagar online via portal (PIX/Boleto
-// e futuramente cartao). Em outros status (Aprovado, Em Reparo, Em Bancada,
-// etc), pagamento antecipado so com atendente humano — Marta NAO deve oferecer.
-const PAYMENT_ONLINE_ALLOWED_STATUSES = new Set([
-  'Entregar Reparado',
-  'Entregue',
-])
+// OsInfo, PAYMENT_ONLINE_ALLOWED_STATUSES e mapOrderToOsInfo agora vivem em
+// '@/lib/bot/os-info' (importado no topo) — fonte unica de formatacao, reusada
+// por getActiveOrders E pelo caminho batch por telefone (fix magic-link 23/06).
 
 /** Send OS status with action buttons */
 async function sendOsStatusButtons(cfg: BotCompanyConfig, conversationId: number, phone: string, os: OsInfo) {
@@ -4309,22 +4293,7 @@ async function getActiveOrders(customerId: string, companyId: string): Promise<O
     take: 10,
   })
 
-  return orders.map(os => {
-    const statusName = os.module_statuses?.name || 'Desconhecido'
-    return {
-      os_number: os.os_number,
-      status_name: statusName,
-      equipment: [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' '),
-      estimated_delivery: os.estimated_delivery,
-      total_cost: os.total_cost,
-      os_id: os.id,
-      has_items: (os.service_order_items?.length || 0) > 0,
-      technician_name: os.user_profiles?.name || null,
-      has_pending_charge: (os.payments?.length || 0) > 0,
-      payment_online_allowed: PAYMENT_ONLINE_ALLOWED_STATUSES.has(statusName),
-      os_location: os.os_location,
-    }
-  })
+  return orders.map(mapOrderToOsInfo)
 }
 
 // ---------------------------------------------------------------------------
