@@ -216,6 +216,14 @@ export async function findMatch(txnId: string): Promise<MatchResult> {
       total_cost: txn.gross_amount,
       created_at: { gte: startDate, lte: endDate },
       deleted_at: null,
+      // 2026-06-23 (decisao Karlao "B"): so sugere OS com um lancamento ABERTO
+      // pra conciliar — accounts_receivable nao-cancelado e ainda NAO conciliado
+      // (reconciled=false). Exclui dois casos:
+      //  - OS SEM AR (ex: "Aprovado" paga no cartao antes de finalizar — OS 61185):
+      //    a transacao espera a OS finalizar/gerar o AR pra entao conciliar.
+      //  - OS cujo AR ja foi conciliado/liquidado (ex: OS 60796, reconciled=true):
+      //    nao re-sugere contra algo ja baixado (evita baixa duplicada).
+      accounts_receivable: { some: { deleted_at: null, reconciled: false, status: { not: 'CANCELADO' } } },
     },
     select: {
       id: true,
@@ -237,7 +245,7 @@ export async function findMatch(txnId: string): Promise<MatchResult> {
       best: null,
       candidates: [],
       auto_link: false,
-      reason_skip: 'nenhuma OS com mesmo valor em ±7 dias',
+      reason_skip: 'nenhuma OS com mesmo valor E lancamento (AR ativo) na janela',
     }
   }
 
