@@ -51,6 +51,7 @@ export async function GET() {
       reported_issue: true,
       diagnosis: true,
       total_cost: true,
+      custom_data: true,
       customers: { select: { legal_name: true, mobile: true, phone: true } },
     },
   })
@@ -85,6 +86,10 @@ export async function GET() {
         reported_issue: os.reported_issue,
         diagnosis: os.diagnosis,
         total_cost_cents: os.total_cost || 0,
+        // 2026-06-23: observação de coleta/entrega que o cliente pediu ao bot
+        // (ex: "coletar antes das 15h") — destacada no card pro motorista.
+        coleta_obs: (os.custom_data as any)?.coleta_obs || null,
+        coleta_periodo: (os.custom_data as any)?.coleta_periodo || null,
       } : null,
     }
   })

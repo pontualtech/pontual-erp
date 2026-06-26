@@ -32,7 +32,7 @@ type Stop = {
   notes?: string | null
   completed_at: string | null
   failure_reason: string | null
-  os: { id: string; number: number; equipment: string; total_cost_cents: number } | null
+  os: { id: string; number: number; equipment: string; total_cost_cents: number; coleta_obs?: string | null; coleta_periodo?: string | null } | null
   // Visit notification (optional — endpoint /api/driver/rota/hoje passa os campos se existirem)
   visit_notified_at?: string | null
   visit_confirmed_at?: string | null
@@ -674,6 +674,21 @@ function StopCard({ stop, myLocation, onNotifyCustomer, onMove, onAskPostpone, o
             <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
               <Package className="w-3.5 h-3.5 shrink-0" />
               <span className="truncate">{stop.os.equipment}</span>
+            </div>
+          )}
+
+          {/* 2026-06-23: observação de coleta/entrega que o cliente pediu ao bot — destacada pro motorista não perder a viagem */}
+          {stop.os?.coleta_obs && (
+            <div className="mb-2 rounded-lg border-2 border-amber-400 bg-amber-50 px-3 py-2">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[11px] font-bold uppercase tracking-wide text-amber-800">⏰ Observação</span>
+                {stop.os.coleta_periodo && (
+                  <span className="rounded-full bg-amber-200 text-amber-900 px-2 py-0.5 text-[10px] font-bold border border-amber-400">
+                    {stop.os.coleta_periodo === 'MANHA' ? 'MANHÃ' : stop.os.coleta_periodo}
+                  </span>
+                )}
+              </div>
+              <p className="text-sm font-semibold text-amber-900 mt-0.5 leading-snug">{stop.os.coleta_obs}</p>
             </div>
           )}
 

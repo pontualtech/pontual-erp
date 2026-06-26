@@ -6,6 +6,7 @@ import { rateLimit } from '@/lib/rate-limit'
 import { getNextOsNumber } from '@/lib/os-number'
 import { redactName, redactDoc } from '@/lib/log-redact'
 import { deriveCanalEntrada } from '@/lib/lookup-tracking'
+import { deriveColetaPeriodo } from '@/lib/coleta-periodo'
 
 /**
  * POST /api/bot/abrir-os
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json()
     // Accept aliases from n8n/external systems (Dify Ana/Grazi use portuguese aliases)
-    let { nome, documento, telefone, email, cep, endereco, numero, complemento, bairro, cidade, uf, equipamento, marca, modelo, numero_serie, defeito, observacoes, origem, gclid, gbraid, wbraid, utm_source, utm_medium, utm_campaign, utm_term, utm_content, fbclid, msclkid } = body
+    let { nome, documento, telefone, email, cep, endereco, numero, complemento, bairro, cidade, uf, equipamento, marca, modelo, numero_serie, defeito, observacoes, observacao_coleta, origem, gclid, gbraid, wbraid, utm_source, utm_medium, utm_campaign, utm_term, utm_content, fbclid, msclkid } = body
     nome = nome || body.cliente_nome || body.name || body.customer_name
     documento = documento || body.cpf_cnpj || body.cpf || body.cnpj || body.document || body.documento || body.cpfcnpj
     telefone = telefone || body.cliente_telefone || body.phone || body.mobile || body.phone_number || body.celular || body.whatsapp
@@ -35,6 +36,7 @@ export async function POST(req: NextRequest) {
     bairro = bairro || body.endereco_bairro
     cidade = cidade || body.endereco_cidade || body.localidade || body.municipio
     uf = uf || body.estado || body.endereco_uf || body.endereco_estado
+    observacao_coleta = observacao_coleta || body.coleta_obs || body.obs_coleta
 
     // Sanitize: strip HTML tags to prevent stored XSS
     const stripHtml = (s: string) => s.replace(/<[^>]*>/g, '').trim()
@@ -44,6 +46,7 @@ export async function POST(req: NextRequest) {
     if (marca) marca = stripHtml(marca)
     if (modelo) modelo = stripHtml(modelo)
     if (observacoes) observacoes = stripHtml(observacoes)
+    if (observacao_coleta) observacao_coleta = stripHtml(observacao_coleta)
     if (endereco) endereco = stripHtml(endereco)
     if (numero) numero = stripHtml(String(numero))
     if (complemento) complemento = stripHtml(complemento)
@@ -352,9 +355,21 @@ export async function POST(req: NextRequest) {
       // Fase 0 (2026-06-02): deriva canal_entrada do tracking (spec 22/05). A tela da
       // OS já lê custom_data.canal_entrada e o atendente pode sobrescrever manualmente.
       const canalEntrada = Object.keys(tracking).length > 0 ? deriveCanalEntrada(tracking) : null
-      const customData = Object.keys(tracking).length > 0
-        ? { tracking, tracking_captured_at: new Date().toISOString(), ...(canalEntrada ? { canal_entrada: canalEntrada } : {}) }
-        : undefined
+      // 2026-06-23: observação de coleta/entrega que o cliente passou ao bot
+      // (ex: "coletar antes das 15h") — gravada em custom_data e destacada na
+      // tela da OS + app do motorista. Período derivado best-effort no servidor.
+      const customData: Record<string, any> = {}
+      if (Object.keys(tracking).length > 0) {
+        customData.tracking = tracking
+        customData.tracking_captured_at = new Date().toISOString()
+        if (canalEntrada) customData.canal_entrada = canalEntrada
+      }
+      if (observacao_coleta) {
+        customData.coleta_obs = observacao_coleta
+        const periodo = deriveColetaPeriodo(observacao_coleta)
+        if (periodo) customData.coleta_periodo = periodo
+      }
+      const hasCustomData = Object.keys(customData).length > 0
 
       const created = await tx.serviceOrder.create({
         data: {
@@ -372,7 +387,7 @@ export async function POST(req: NextRequest) {
           reported_issue: defeito || 'Sem descricao',
           reception_notes: observacoes || undefined,
           internal_notes: `[BOT ANA] OS aberta em ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}. Cliente: ${customer.legal_name}. Tel: ${telefone || 'N/I'}.`,
-          ...(customData ? { custom_data: customData } : {}),
+          ...(hasCustomData ? { custom_data: customData } : {}),
         },
       })
 

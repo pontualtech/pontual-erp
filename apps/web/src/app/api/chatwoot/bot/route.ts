@@ -2699,6 +2699,11 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
               marca: eq.marca,
               modelo: eq.modelo,
               defeito: eq.defeito,
+              // 2026-06-23: observação de coleta/entrega que o cliente passou
+              // (ex: "coletar antes das 15h") — vira custom_data.coleta_obs e é
+              // destacada na OS + app do motorista. Antes o bot "prometia" mas
+              // nunca enviava — logística não via e perdia a viagem.
+              observacao_coleta: pick('observacao_coleta', 'coleta_obs', 'obs_coleta', 'observacao_cliente'),
               origem: cfg.botOrigin,
             }),
           })

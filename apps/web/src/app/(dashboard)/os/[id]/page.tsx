@@ -1432,6 +1432,26 @@ export default function OSDetailPage() {
         </div>
       </div>
 
+      {/* ========== OBSERVAÇÃO DE COLETA/ENTREGA (destaque p/ logística — 2026-06-23) ==========
+          Vem do que o cliente pediu ao bot ao abrir a OS (custom_data.coleta_obs).
+          Antes o bot prometia "vou avisar a logística" mas nada era gravado. */}
+      {os.custom_data?.coleta_obs && (
+        <div className="rounded-lg border-2 border-amber-400 bg-amber-50 px-4 py-3 flex items-start gap-2 text-amber-900 shadow-sm">
+          <Clock className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-bold uppercase tracking-wide">Observação de coleta/entrega</span>
+              {os.custom_data?.coleta_periodo && (
+                <span className="rounded-full bg-amber-200 text-amber-900 px-2 py-0.5 text-[10px] font-bold border border-amber-400">
+                  {os.custom_data.coleta_periodo === 'MANHA' ? 'MANHÃ' : os.custom_data.coleta_periodo}
+                </span>
+              )}
+            </div>
+            <p className="text-sm font-semibold mt-0.5 break-words">{os.custom_data.coleta_obs}</p>
+          </div>
+        </div>
+      )}
+
       {/* ========== PAID BANNER (if OS is paid) ==========
           3 estados:
           - Verde: TODAS ARs pagas E TODAS conciliadas (confirmado no extrato bancario)
