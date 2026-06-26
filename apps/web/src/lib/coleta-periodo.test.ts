@@ -10,9 +10,10 @@ describe('deriveColetaPeriodo', () => {
     expect(deriveColetaPeriodo('coletar bem cedo')).toBe('MANHA')
     expect(deriveColetaPeriodo('antes do almoço')).toBe('MANHA')
   })
-  it('deadline cedo (até/antes das ≤13h) → MANHA', () => {
+  it('deadline cedo (até/antes das ≤14h) → MANHA', () => {
     expect(deriveColetaPeriodo('até as 11h')).toBe('MANHA')
     expect(deriveColetaPeriodo('coletar antes das 12h')).toBe('MANHA')
+    expect(deriveColetaPeriodo('só consigo receber até as 14h')).toBe('MANHA')
   })
   it('tarde explícita → TARDE', () => {
     expect(deriveColetaPeriodo('só à tarde')).toBe('TARDE')

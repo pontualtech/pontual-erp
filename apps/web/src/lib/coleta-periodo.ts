@@ -20,12 +20,12 @@ export function deriveColetaPeriodo(obs: string | null | undefined): ColetaPerio
   if (/manh[ãa]|\bcedo\b|antes\s+d\w*\s+almo[çc]o|at[ée]\s+(o\s+)?meio.?dia/.test(t)) {
     return 'MANHA'
   }
-  // Deadline cedo: "até/antes das ≤13h" → coletar de manhã pra não furar.
-  // Deadline tardio (>13h) não indica período → null.
+  // Deadline cedo: "até/antes das ≤14h" → coletar de manhã pra não furar.
+  // Deadline tardio (>14h) não indica período → null.
   const m = t.match(/(?:at[ée]|antes)\s+(?:[àa]s?|d[ao]s?|de\s)?\s*(\d{1,2})\s*(?:h|:|hr|hrs|horas)/)
   if (m) {
     const h = parseInt(m[1], 10)
-    if (h >= 1 && h <= 13) return 'MANHA'
+    if (h >= 1 && h <= 14) return 'MANHA'
   }
   return null
 }
