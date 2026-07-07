@@ -1,4 +1,5 @@
 import { prisma } from '@pontual/db'
+import { isReceivableSettled } from '@/lib/finance/receivable-status'
 
 /**
  * Logica compartilhada de criar Payment + AR + 2 APs ao vincular uma
@@ -110,13 +111,13 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
       })
 
       if (receivable) {
-        // Fix 2026-05-27: guard contra double-credit. Se AR já está RECEBIDO
-        // (webhook Asaas processou antes, /baixa manual, etc), match da
-        // maquininha NÃO soma received_amount novamente — só marca como
-        // reconciled=true e atualiza charge_status. Caso 27/05: 5 ARs com
-        // received_amount = 2x total_amount geradas por esse fluxo
-        // (R$ 2.388,11 fantasma em receita inflada).
-        if (receivable.status === 'RECEBIDO') {
+        // Fix 2026-05-27 + auditoria 2026-06-27: guard contra double-credit. Se
+        // o AR já está QUITADO (RECEBIDO/LIQUIDADO/PAGO ou reconciled — ver
+        // isReceivableSettled), match da maquininha NÃO soma received_amount
+        // novamente — só marca reconciled=true e atualiza charge_status. Caso
+        // 27/05: 5 ARs com received_amount = 2x total (R$ 2.388,11 fantasma).
+        // LIQUIDADO (extrato conferido) escapava do guard antigo `=== 'RECEBIDO'`.
+        if (isReceivableSettled(receivable)) {
           await tx.accountReceivable.update({
             where: { id: receivable.id },
             data: {

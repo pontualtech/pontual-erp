@@ -4,6 +4,7 @@ import { success, error, handleError } from '@/lib/api-response'
 import { getPaymentProviderForAccount, getPaymentProvider } from '@/lib/payments/factory'
 import { captureFeesForPayment } from '@/lib/payments/capture-fees'
 import { logAudit } from '@/lib/audit'
+import { isReceivableSettled } from '@/lib/finance/receivable-status'
 
 /**
  * POST /api/internal/payments/reconcile
@@ -77,6 +78,14 @@ export async function POST(req: NextRequest) {
 
     for (const p of payments) {
       try {
+        // Idempotência (auditoria 27/06): payment já RECEIVED foi reconciliado —
+        // reprocessar o mesmo payment_id somaria received_amount de novo no AR.
+        // Este endpoint é operado manualmente p/ webhook falho, então re-chamar
+        // o mesmo id é o caso de uso esperado.
+        if (p.status === 'RECEIVED') {
+          details.push({ id: p.id, action: 'already_reconciled' })
+          continue
+        }
         const accountId = (p.metadata as Record<string, string> | null)?.account_id
         const provider = accountId
           ? await getPaymentProviderForAccount(accountId, p.company_id)
@@ -115,14 +124,14 @@ export async function POST(req: NextRequest) {
             const ar = await tx.accountReceivable.findFirst({
               where: { id: p.receivable_id, company_id: p.company_id },
             })
-            if (ar && ar.status !== 'RECEBIDO') {
+            if (ar && !isReceivableSettled(ar)) {
               const newReceived = (ar.received_amount || 0) + p.amount
               const fully = newReceived >= ar.total_amount
               await tx.accountReceivable.update({
                 where: { id: ar.id },
                 data: {
                   received_amount: newReceived,
-                  status: fully ? 'RECEBIDO' : 'PENDENTE',
+                  status: fully ? 'RECEBIDO' : 'PARCIAL',
                   charge_status: 'RECEIVED',
                   payment_method: p.billing_type || p.method || ar.payment_method,
                 },

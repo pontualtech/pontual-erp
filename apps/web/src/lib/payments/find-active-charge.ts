@@ -1,4 +1,5 @@
 import { prisma } from '@pontual/db'
+import { TERMINAL_RECEIVABLE_STATUSES } from '@/lib/finance/receivable-status'
 
 /**
  * findActivePendingPaymentForOs — busca a Payment PENDING mais recente
@@ -104,7 +105,10 @@ export async function isOsAlreadyPaid(osId: string, companyId: string): Promise<
     where: {
       service_order_id: osId,
       company_id: companyId,
-      status: 'RECEBIDO',
+      // auditoria 27/06: inclui LIQUIDADO (extrato conferido via bulk-reconcile)
+      // e PAGO (legado) — antes só 'RECEBIDO' deixava o portal gerar nova
+      // cobrança (PIX/boleto real) em OS já paga na entrega/balcão.
+      status: { in: [...TERMINAL_RECEIVABLE_STATUSES] },
       deleted_at: null,
     },
     select: { id: true },

@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
+import { isReceivableSettled } from '@/lib/finance/receivable-status'
 import { z } from 'zod'
 
 // ---------------------------------------------------------------------------
@@ -166,7 +167,9 @@ export async function POST(request: NextRequest) {
           },
         })
         if (!receivable) throw new Error('NOT_FOUND_AR')
-        if (receivable.status === 'RECEBIDO') throw new Error('AR_ALREADY_RECEIVED')
+        // auditoria 27/06: guard terminal (RECEBIDO/LIQUIDADO/PAGO/reconciled) —
+        // AR LIQUIDADO passava e somava absAmount de novo, rebaixando o status.
+        if (isReceivableSettled(receivable)) throw new Error('AR_ALREADY_RECEIVED')
         if (receivable.status === 'CANCELADO') throw new Error('AR_CANCELLED')
 
         const previousReceived = receivable.received_amount || 0
@@ -291,7 +294,7 @@ export async function PUT(request: NextRequest) {
           const receivable = await prisma.accountReceivable.findFirst({
             where: { id: match.record_id, company_id: user.companyId, deleted_at: null },
           })
-          if (!receivable || receivable.status === 'RECEBIDO' || receivable.status === 'CANCELADO') {
+          if (!receivable || isReceivableSettled(receivable) || receivable.status === 'CANCELADO') {
             results.push({ transaction_id: match.transaction_id, success: false, error: 'Conta a receber invalida' })
             continue
           }
