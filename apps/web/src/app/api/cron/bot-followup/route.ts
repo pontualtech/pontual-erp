@@ -88,6 +88,10 @@ const DEFAULTS: Record<string, string> = {
 
 export async function GET(request: NextRequest) {
   // N5 fix (audit pos-fix): advisory lock pra 1 instancia rodando por vez
+  // Auditoria 07/07: rastreia se ADQUIRIMOS o lock pra LIBERAR no finally. Antes
+  // nunca liberava → ficava preso na conexão do pool e crons futuros em outra
+  // conexão pulavam com 'concurrent_run' até parar.
+  let gotLock = false
   try {
     const _lock: Array<{ ok: boolean }> = await (prisma as any).$queryRaw`
       SELECT pg_try_advisory_lock(hashtext('cron:bot-followup')::bigint) AS ok
@@ -95,6 +99,7 @@ export async function GET(request: NextRequest) {
     if (!_lock?.[0]?.ok) {
       return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'concurrent_run' }), { status: 200, headers: { 'content-type': 'application/json' } })
     }
+    gotLock = true
   } catch { /* non-fatal: tabela/conexao indisponivel — segue sem lock */ }
 
   try {
@@ -443,6 +448,14 @@ export async function GET(request: NextRequest) {
     return success({ processed: pendingConvs.length, sent, skipped, errors })
   } catch (err) {
     return handleError(err)
+  } finally {
+    // Auditoria 07/07: libera o advisory lock de sessão (antes nunca liberava).
+    // Caveat pool: se o unlock cair noutra conexão, é no-op — mas na prática de
+    // baixa concorrência a conexão é reusada. Fix durável (backlog): lock por
+    // lease (linha em settings c/ expiry), pooling-safe, p/ todos os crons.
+    if (gotLock) {
+      try { await prisma.$executeRaw`SELECT pg_advisory_unlock(hashtext('cron:bot-followup')::bigint)` } catch { /* noop */ }
+    }
   }
 }
 

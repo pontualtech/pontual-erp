@@ -27,6 +27,7 @@ import {
 } from '@/lib/whatsapp/cloud-api'
 import { optOutCustomerByPhone } from '@/lib/whatsapp/consent'
 import { type OsInfo, mapOrderToOsInfo } from '@/lib/bot/os-info'
+import { hasOptOutKeyword } from '@/lib/bot/opt-out'
 import {
   getImprimitechHandoffStatusId,
   buildImprimitechHandoffMessage,
@@ -1808,7 +1809,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
     UPDATE bot_conversations
     SET processing_lock = NOW()
     WHERE id = ${botConv.id}
-      AND (processing_lock IS NULL OR processing_lock < NOW() - INTERVAL '15 seconds')
+      AND (processing_lock IS NULL OR processing_lock < NOW() - INTERVAL '90 seconds')
   `
 
   if (lockResult === 0) {
@@ -1837,6 +1838,11 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       console.log(`[Bot] Conv ${conversationId}: human takeover activated during debounce, aborting`)
       return
     }
+
+    // Heartbeat (auditoria 07/07): renova o lock a cada loop pra ele NÃO expirar
+    // durante um processamento longo (Dify até 45s/chamada × 3 loops). Sem isso,
+    // uma 2ª requisição roubava o lock aos 15s e respondia em duplicado.
+    await prisma.$executeRaw`UPDATE bot_conversations SET processing_lock = NOW() WHERE id = ${botConv.id}`
 
     // Read pending messages
     const pendingMsgs = (botConv.pending_messages || []) as Array<{ content: string; imageUrls?: string[]; messageId: string; ts: number }>
@@ -4370,7 +4376,8 @@ async function checkFollowUpOptOut(companyId: string, content: string): Promise<
   // Only trigger opt-out if message is short (< 50 chars) or the keyword is the entire message
   // This prevents false positives like "quero parar de ter problema com minha impressora"
   if (normalized.length > 50) return false
-  return keywords.some(kw => normalized.includes(kw))
+  // Auditoria 07/07: palavra INTEIRA, não substring ("pare" ⊂ "aparelho" dava falso opt-out).
+  return hasOptOutKeyword(normalized, keywords)
 }
 
 /** Schedule the first follow-up after bot responds */

@@ -21,18 +21,29 @@ export async function GET() {
   const tomorrow = new Date(today)
   tomorrow.setDate(today.getDate() + 1)
 
-  const route = await prisma.logisticsRoute.findFirst({
-    where: {
-      company_id: auth.companyId,
-      driver_id: auth.id,
-      date: { gte: today, lt: tomorrow },
-    },
-    include: {
-      stops: {
-        orderBy: { sequence: 'asc' },
+  // Auditoria 07/07: prefere a rota PLANEJADA (não a "Avulsa" ad-hoc, tag
+  // notes='Avulsa') e ordena determinístico. Antes: findFirst sem orderBy podia
+  // devolver a Avulsa vazia no lugar da planejada e o motorista perdia a rota do dia.
+  const route =
+    (await prisma.logisticsRoute.findFirst({
+      where: {
+        company_id: auth.companyId,
+        driver_id: auth.id,
+        date: { gte: today, lt: tomorrow },
+        OR: [{ notes: null }, { notes: { not: 'Avulsa' } }],
       },
-    },
-  })
+      orderBy: { created_at: 'desc' },
+      include: { stops: { orderBy: { sequence: 'asc' } } },
+    })) ||
+    (await prisma.logisticsRoute.findFirst({
+      where: {
+        company_id: auth.companyId,
+        driver_id: auth.id,
+        date: { gte: today, lt: tomorrow },
+      },
+      orderBy: { created_at: 'desc' },
+      include: { stops: { orderBy: { sequence: 'asc' } } },
+    }))
 
   if (!route) {
     return NextResponse.json({ data: { route: null, stops: [] } })

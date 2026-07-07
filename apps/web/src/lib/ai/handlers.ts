@@ -378,6 +378,11 @@ async function continueOrcamentoFlow(
           }
         } catch (err) {
           console.error('[Bot] Erro ao criar OS no PontualERP:', err)
+          // Auditoria 07/07: se o create falhou, NÃO confirmar OS ao cliente.
+          // Reseta o número → cai na mensagem de fallback (~L402) e pula a nota
+          // de equipe (~L408). Antes: osNumber já vinha setado de getNextOsNumber,
+          // então o bot dizia "OS #X aberta com sucesso" mesmo sem OS criada.
+          osNumber = 0
         }
 
         clearState(conversationId)
