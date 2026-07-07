@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getMessages, sendMessage, isChatwootConfigured } from '@/lib/chatwoot'
+import { getMessages, sendMessage, isChatwootConfigured, canAccessChatwoot } from '@/lib/chatwoot'
 import { error, handleError } from '@/lib/api-response'
 import { getServerUser } from '@/lib/auth'
 
@@ -9,6 +9,7 @@ export async function GET(req: NextRequest, { params }: Params) {
   try {
     const user = await getServerUser()
     if (!user) return error('Nao autenticado', 401)
+    if (!canAccessChatwoot(user.companyId)) return error('Sem acesso a esta integracao', 403)
 
     if (!isChatwootConfigured()) {
       return error('Chatwoot nao configurado', 503)
@@ -39,6 +40,7 @@ export async function POST(req: NextRequest, { params }: Params) {
   try {
     const postUser = await getServerUser()
     if (!postUser) return error('Nao autenticado', 401)
+    if (!canAccessChatwoot(postUser.companyId)) return error('Sem acesso a esta integracao', 403)
 
     if (!isChatwootConfigured()) {
       return error('Chatwoot nao configurado', 503)

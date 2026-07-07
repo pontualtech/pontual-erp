@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { authenticateBot } from '../../_lib/auth'
+import { getNewOsMin } from '@/lib/bot/os-number'
 import { botSuccess, botError } from '../../_lib/response'
 import { sendCompanyEmail } from '@/lib/send-email'
 import { createAccessToken } from '@/lib/portal-auth'
@@ -28,8 +29,9 @@ export async function POST(req: NextRequest) {
 
     if (!osNum || osNum < 1) return botError('numero_os e obrigatorio')
 
-    // Only ERP OS (>= 60000) — legacy not supported
-    if (osNum < 60000) {
+    // Only ERP OS (>= newOsMin da empresa) — legacy nao suportado (auditoria 27/06:
+    // era hardcode 60000, quebrava a Imprimitech cujas OS comecam em 6000)
+    if (osNum < (await getNewOsMin(auth.companyId))) {
       return botSuccess({
         sucesso: false,
         mensagem: 'Esta OS e do sistema legado. O orcamento deve ser solicitado diretamente ao atendente.',

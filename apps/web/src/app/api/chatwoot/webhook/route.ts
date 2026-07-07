@@ -204,7 +204,7 @@ export async function POST(req: NextRequest) {
               },
             })
             await prisma.botConversation.updateMany({
-              where: { chatwoot_conv_id: conversationId },
+              where: { chatwoot_conv_id: conversationId, company_id: match.company_id },
               data: { human_takeover: true, step: 'HUMAN' },
             })
             console.log(`[Webhook] msg clonada pra stop:${match.id} + marta pausada`)

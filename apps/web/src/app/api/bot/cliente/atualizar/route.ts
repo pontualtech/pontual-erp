@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { authenticateBot } from '../../_lib/auth'
+import { getNewOsMin } from '@/lib/bot/os-number'
 import { botSuccess, botError } from '../../_lib/response'
 
 /**
@@ -53,7 +54,7 @@ export async function PATCH(req: NextRequest) {
 
     if (numero_os) {
       const osNum = parseInt(numero_os, 10)
-      if (osNum < 60000) {
+      if (osNum < (await getNewOsMin(auth.companyId))) {
         return botSuccess({
           sucesso: false,
           mensagem: 'Atualizacao de cadastro nao disponivel para OS do sistema legado. Um atendente pode atualizar para voce.',

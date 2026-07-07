@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { authenticateBot } from '../../_lib/auth'
+import { getNewOsMin } from '@/lib/bot/os-number'
 import { botSuccess, botError } from '../../_lib/response'
 
 const VHSYS_PROXY = 'https://vhsys-proxy.vercel.app'
@@ -62,7 +63,7 @@ export async function GET(req: NextRequest) {
     }
 
     // ── Not found in ERP — try VHSys for OS numbers ──
-    if (!os && searchType === 'os_number' && parseInt(digits, 10) < 60000) {
+    if (!os && searchType === 'os_number' && parseInt(digits, 10) < (await getNewOsMin(auth.companyId))) {
       const vhsysResult = await searchVHSys(parseInt(digits, 10))
       if (vhsysResult) {
         return botSuccess({

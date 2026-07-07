@@ -26,6 +26,17 @@ function headers() {
 // backoff exponencial pra 5xx/network errors. Antes: zero timeout
 // (request infinito se Chatwoot lento) + zero retry (network blip
 // = fail definitivo). Cascade fail comum em produção.
+// Auditoria 27/06: a integração usa UM Chatwoot global (PT). Sem escopo, qualquer
+// usuário logado (de qualquer empresa) lia/enviava em QUALQUER conversa (IDOR
+// cross-tenant). Restringe à empresa dona do Chatwoot via env
+// CHATWOOT_OWNER_COMPANY_ID. Sem a env setada, mantém o comportamento antigo
+// (não quebra) — a env é definida no deploy (pontualtech-001).
+export function canAccessChatwoot(companyId: string | null | undefined): boolean {
+  const owner = process.env.CHATWOOT_OWNER_COMPANY_ID
+  if (!owner) return true
+  return companyId === owner
+}
+
 const CHATWOOT_TIMEOUT_MS = 10_000
 const CHATWOOT_MAX_RETRIES = 3
 

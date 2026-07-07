@@ -1820,7 +1820,10 @@ model BotConversation {
   created_at          DateTime  @default(now()) @db.Timestamptz(6)
   updated_at          DateTime  @updatedAt @db.Timestamptz(6)
 
-  @@unique([chatwoot_conv_id])
+  // Auditoria 27/06: unique composto (company_id + conv_id). Antes só conv_id →
+  // colisão cross-tenant: PT e outra empresa têm Chatwoots separados que numeram
+  // conversas do 1, então o mesmo conv_id de 2 empresas colidia (uma sumia/sobrescrevia).
+  @@unique([company_id, chatwoot_conv_id])
   @@index([customer_phone])
   @@index([chatwoot_contact_id])
   @@index([follow_up_next_at]) // cron queries by this field

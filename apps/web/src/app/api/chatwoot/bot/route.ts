@@ -1267,7 +1267,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
     const convId = body.id || body.conversation?.id
     if (status === 'resolved' && convId) {
       await prisma.botConversation.updateMany({
-        where: { chatwoot_conv_id: convId },
+        where: { chatwoot_conv_id: convId, company_id: cfg.companyId },
         data: {
           human_takeover: false,
           // KEEP dify_conv_id — preserves conversation memory in Dify
@@ -1295,7 +1295,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
     const assignee = body.assignee || body.conversation?.meta?.assignee
     if (convId && assignee && assignee.id !== cfg.botAgentId) {
       await prisma.botConversation.updateMany({
-        where: { chatwoot_conv_id: convId },
+        where: { chatwoot_conv_id: convId, company_id: cfg.companyId },
         data: { human_takeover: true, step: 'HUMAN' },
       })
       console.log(`[Bot] Conversation ${convId} assigned to ${assignee.name} (ID ${assignee.id}) — human takeover`)
@@ -1370,8 +1370,8 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
     })
     if (Object.keys(attribution).length > 0) {
       try {
-        const existing = await prisma.botConversation.findUnique({
-          where: { chatwoot_conv_id: conversationId },
+        const existing = await prisma.botConversation.findFirst({
+          where: { chatwoot_conv_id: conversationId, company_id: cfg.companyId },
         })
         const existingData: Record<string, any> =
           existing?.data && typeof existing.data === 'object' && !Array.isArray(existing.data)
@@ -1380,7 +1380,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
         if (!existingData.attribution) {
           existingData.attribution = { ...attribution, captured_at: new Date().toISOString() }
           await prisma.botConversation.upsert({
-            where: { chatwoot_conv_id: conversationId },
+            where: { company_id_chatwoot_conv_id: { company_id: cfg.companyId, chatwoot_conv_id: conversationId } },
             // Fase 0 (2026-06-02): grava na coluna durável `attribution` (além do
             // data legado). A coluna sobrevive aos resets de `data` do bot.
             update: { data: existingData, attribution: existingData.attribution },
@@ -1430,8 +1430,8 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
     try {
       const isWhatsappChannel = /Channel::Api|Whatsapp/i.test(channelType)
       if (isWhatsappChannel) {
-        const existing = await prisma.botConversation.findUnique({
-          where: { chatwoot_conv_id: conversationId },
+        const existing = await prisma.botConversation.findFirst({
+          where: { chatwoot_conv_id: conversationId, company_id: cfg.companyId },
           select: { data: true },
         })
         const existingData: Record<string, any> =
@@ -1532,7 +1532,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
                 redirect_id: redirect.id,
               }
               await prisma.botConversation.upsert({
-                where: { chatwoot_conv_id: conversationId },
+                where: { company_id_chatwoot_conv_id: { company_id: cfg.companyId, chatwoot_conv_id: conversationId } },
                 // Fase 0 (2026-06-02): coluna durável `attribution` (sobrevive resets de `data`).
                 update: { data: existingData, attribution: existingData.attribution },
                 create: {
@@ -1653,9 +1653,9 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
   console.log(`[Bot] Message from ${phone || 'unknown'} in conv ${conversationId}: "${content.substring(0, 80)}"${buttonPayload ? ` [button: ${buttonPayload}]` : ''}`)
 
   // Find or create BotConversation (atomic upsert to prevent race conditions)
-  const isNew = !(await prisma.botConversation.findUnique({ where: { chatwoot_conv_id: conversationId }, select: { id: true } }))
+  const isNew = !(await prisma.botConversation.findFirst({ where: { chatwoot_conv_id: conversationId, company_id: cfg.companyId }, select: { id: true } }))
   let botConv = await prisma.botConversation.upsert({
-    where: { chatwoot_conv_id: conversationId },
+    where: { company_id_chatwoot_conv_id: { company_id: cfg.companyId, chatwoot_conv_id: conversationId } },
     update: {}, // don't overwrite existing data
     create: {
       company_id: cfg.companyId,
