@@ -604,6 +604,9 @@ model ServiceOrder {
   // limitava o trigger a entregas via motorista. Agora a flag esta na OS,
   // disparada pelo cron sempre que status vira "Entregue" — qualquer caller.
   review_request_sent_at DateTime?             @db.Timestamptz(6)
+  // Lembrete 1-2 dias depois (07/30): enviado 1x só p/ quem recebeu o pedido
+  // e NÃO clicou (sem cupom review) — recupera parte dos ~77% que ignoram a 1ª.
+  review_reminder_sent_at DateTime?            @db.Timestamptz(6)
   payment_method         String?
   custom_data            Json?                 @default("{}")
   warranty_original      ServiceOrder?         @relation("warranty_chain", fields: [warranty_os_id], references: [id], onDelete: NoAction, onUpdate: NoAction)

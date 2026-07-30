@@ -102,6 +102,7 @@ export async function POST(req: NextRequest) {
     select: {
       id: true, company_id: true, status_id: true, os_number: true,
       customer_id: true, actual_delivery: true,
+      equipment_type: true, equipment_brand: true, equipment_model: true,
       customers: { select: { legal_name: true, mobile: true, phone: true, email: true } },
     },
   })
@@ -195,6 +196,8 @@ export async function POST(req: NextRequest) {
       const normalizedPhone = rawPhone.startsWith('55') ? rawPhone : `55${rawPhone}`
       const customerName = os.customers?.legal_name || 'Cliente'
       const firstName = customerName.split(' ')[0]
+      // v7 (07/30): personaliza com o equipamento ({{2}}). Fallback 'equipamento'.
+      const equipamento = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ') || 'equipamento'
 
       // === Token cupom ===
       const customerId: string | null = os.customer_id || null
@@ -220,15 +223,15 @@ export async function POST(req: NextRequest) {
       //    - Ultimo recurso quando template falhar (so vale dentro da janela 24h)
       //    - Fica sem botao (link no body)
       let r = await sendWhatsAppTemplate(
-        os.company_id, normalizedPhone, 'pt_avaliacao_google_v6', 'pt_BR',
+        os.company_id, normalizedPhone, 'pt_avaliacao_google_v7', 'pt_BR',
         [
-          { type: 'body', parameters: [{ type: 'text', text: firstName }] },
+          { type: 'body', parameters: [{ type: 'text', text: firstName }, { type: 'text', text: equipamento }] },
           { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: token }] },
         ],
         freeText,
       )
-      let channelUsed: 'pt_avaliacao_google_v6' | 'free_text' | null =
-        r.success ? 'pt_avaliacao_google_v6' : null
+      let channelUsed: 'pt_avaliacao_google_v7' | 'free_text' | null =
+        r.success ? 'pt_avaliacao_google_v7' : null
 
       if (!r.success) {
         // Fallback: free-text com link inline (sem botao, mas garante entrega).
@@ -290,7 +293,78 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // ===== PASSE 2: LEMBRETE 1-2 dias depois (07/30) =====
+  // Recupera parte dos ~77% que ignoram a 1a mensagem. UM unico lembrete,
+  // SO pra quem NAO clicou (sem cupom review). WhatsApp UTILITY (template
+  // lembrete_v1), sem free-text agressivo. Nao mexe no passe principal acima.
+  const remMin = new Date(now.getTime() - 48 * 60 * 60 * 1000) // review enviado ha >= 24h
+  const remMax = new Date(now.getTime() - 24 * 60 * 60 * 1000) //   e <= 48h
+  let reminded = 0
+  const reminderOrders = await prisma.serviceOrder.findMany({
+    where: {
+      review_request_sent_at: { gte: remMin, lte: remMax },
+      review_reminder_sent_at: null,
+      deleted_at: null,
+    },
+    take: 100,
+    orderBy: { review_request_sent_at: 'asc' },
+    select: {
+      id: true, company_id: true, os_number: true, customer_id: true,
+      equipment_type: true, equipment_brand: true, equipment_model: true,
+      customers: { select: { legal_name: true, mobile: true, phone: true } },
+    },
+  })
+  for (const os of reminderOrders) {
+    try {
+      // Ja clicou (tem cupom review)? Nao precisa lembrete — marca p/ parar de checar.
+      if (os.customer_id) {
+        const clicked = await prisma.coupon.findFirst({
+          where: { company_id: os.company_id, customer_id: os.customer_id, source: 'review' },
+          select: { id: true },
+        })
+        if (clicked) {
+          await prisma.serviceOrder.update({ where: { id: os.id }, data: { review_reminder_sent_at: new Date() } })
+          continue
+        }
+      }
+      let cache = companyCache.get(os.company_id)
+      if (!cache) {
+        const urlSetting = await prisma.setting.findFirst({ where: { company_id: os.company_id, key: 'google_reviews.url' } })
+        cache = { reviewsUrl: urlSetting?.value || null, deliveredIds: [] }
+        companyCache.set(os.company_id, cache)
+      }
+      if (!cache.reviewsUrl) continue // empresa sem review configurado
+      const rawPhone = (os.customers?.mobile || os.customers?.phone || '').replace(/\D/g, '')
+      if (!rawPhone || rawPhone.length < 10) {
+        await prisma.serviceOrder.update({ where: { id: os.id }, data: { review_reminder_sent_at: new Date() } })
+        continue
+      }
+      const normalizedPhone = rawPhone.startsWith('55') ? rawPhone : `55${rawPhone}`
+      const firstName = (os.customers?.legal_name || 'Cliente').split(' ')[0]
+      const equipamento = [os.equipment_type, os.equipment_brand, os.equipment_model].filter(Boolean).join(' ') || 'equipamento'
+      const token = os.customer_id ? buildCouponToken(os.company_id, os.customer_id) : 'sem-token'
+      const link = `${getBaseUrl(os.company_id)}/avaliar/${token}`
+      const freeText = `Ola, ${firstName}! Passando so pra lembrar: sua opiniao sobre o reparo do seu ${equipamento} e muito importante pra gente. Toque no link e conte como foi:\n\n${link}`
+      const rr = await sendWhatsAppTemplate(
+        os.company_id, normalizedPhone, 'pt_avaliacao_google_lembrete_v1', 'pt_BR',
+        [
+          { type: 'body', parameters: [{ type: 'text', text: firstName }, { type: 'text', text: equipamento }] },
+          { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: token }] },
+        ],
+        freeText,
+      )
+      if (rr.success) {
+        await prisma.serviceOrder.update({ where: { id: os.id }, data: { review_reminder_sent_at: new Date() } })
+        reminded++
+        console.log(`[Cron/GoogleReviews] LEMBRETE OS ${os.os_number} -> ${normalizedPhone.slice(0, 4)}***`)
+      }
+      // Falha: NAO marca — tenta de novo enquanto estiver na janela 24-48h.
+    } catch (err) {
+      console.warn(`[reviews/lembrete] OS ${os.os_number} falhou:`, err instanceof Error ? err.message : String(err))
+    }
+  }
+
   return NextResponse.json({
-    data: { processed: orders.length, sent, skipped, details: results.slice(0, 20) },
+    data: { processed: orders.length, sent, skipped, reminded, details: results.slice(0, 20) },
   })
 }
