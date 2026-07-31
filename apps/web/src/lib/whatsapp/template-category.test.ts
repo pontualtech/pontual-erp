@@ -17,6 +17,8 @@ describe('templateCategory — conformidade Meta (categoriza templates reais)', 
       'pt_a_caminho_v1', 'pt_a_caminho_v3',
       'pt_rota_iniciada_v1',
       'pt_avaliacao_google_v6', // 2026-06-22: feedback NEUTRO (Meta classificou UTILITY)
+      'pt_avaliacao_google_v7', // 2026-07-30: v6+equipamento, mesma natureza neutra (Meta=UTILITY)
+      'pt_avaliacao_google_lembrete_v1', // 2026-07-30: lembrete neutro 1-2 dias depois (Meta=UTILITY)
     ]
     for (const t of utility) expect(templateCategory(t), t).toBe('utility')
   })
