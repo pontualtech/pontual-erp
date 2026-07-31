@@ -107,9 +107,12 @@ export async function POST(req: NextRequest) {
     },
   })
 
-  if (orders.length === 0) {
-    return NextResponse.json({ data: { processed: 0, sent: 0, skipped: 0 } })
-  }
+  // NAO retornar cedo quando orders.length === 0. O PASSE 2 (lembrete, no fim
+  // desta funcao) precisa rodar em TODO tick, independente de haver entrega
+  // nova pra notificar. Um early return aqui acoplava o lembrete a existencia
+  // de entrega fresca no mesmo tick de 5min — e como entregas sao esparsas
+  // (~1-2/h) o passe 2 quase nunca rodava (bug 07/30: 0 lembretes disparados
+  // apesar de OS elegiveis). O for abaixo simplesmente itera 0 vezes se vazio.
 
   // Cache per-company: { reviewsUrl, deliveredIds[] }
   const companyCache = new Map<string, { reviewsUrl: string | null; deliveredIds: string[] }>()
