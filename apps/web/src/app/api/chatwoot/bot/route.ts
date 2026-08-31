@@ -18,6 +18,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { resolvePortalDomain } from '@/lib/portal-magic-url'
 import { redactDoc, redactName } from '@/lib/log-redact'
+import { isEmojiOnlyMessage } from '@/lib/bot/emoji-only'
 import {
   sendWhatsAppButtons,
   sendWhatsAppList,
@@ -1607,7 +1608,9 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       // Detectado em 129 conversas reais analisadas — bot ficava em silencio
       // ou respondia coisas confusas. Hint pro modelo perguntar o que cliente
       // quis dizer e oferecer opcoes claras.
-      /^[\p{Emoji}\s]+$/u.test(content) ||
+      // Onda B fix: \p{Emoji} inclui digitos 0-9/#/* (keycap components) —
+      // CEP e numero de casa viravam "figurinha". Helper usa Extended_Pictographic.
+      isEmojiOnlyMessage(content) ||
       /^\[(figurinha|sticker|imagem|gif|foto)\]?$/i.test(content.trim())
     ) {
       content = `${content}\n[HINT INTERNO: cliente enviou apenas emoji/figurinha/sticker (mensagem ambigua). Pergunte gentilmente o que ele quis dizer e ofereca opcoes claras: status de OS, agendamento de coleta, falar com humano. NAO assuma intencao positiva ou negativa — peca esclarecimento.]`
@@ -2456,14 +2459,25 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       )
 
       if (!difyResponse.answer) {
-        // Retry once before giving up — Dify/Gemini sometimes returns empty on first try
-        console.warn('[Bot] Empty Dify response — retrying once...')
-        await new Promise(r => setTimeout(r, 1500))
-        const retry = await callDify(cfg, query, userIdentifier, botConv.dify_conv_id || undefined, imageUrls.length > 0 ? imageUrls : undefined)
-        if (retry.answer) {
-          console.log('[Bot] Retry succeeded')
-          Object.assign(difyResponse, retry)
-        } else {
+        // Onda B (auditoria bots): escada de retry com backoff em vez de 1 unica
+        // tentativa de 1.5s. Medido em 240 conversas reais: 7-18% dos turnos
+        // vinham vazios (Gemini falha transitoria) e a holding message pedindo
+        // "reenvia?" NAO funciona — cliente nao reenvia e a conversa morre
+        // (casos: "confirma que a coleta e sem custo?" -> vacuo; email "ja
+        // paguei" -> vacuo). Blips do Gemini duram segundos: 3 tentativas em
+        // ~30s recuperam a maioria SEM pedir nada ao cliente. So se as 4
+        // chamadas falharem cai na holding message (ultimo recurso).
+        const RETRY_DELAYS_MS = [1500, 8000, 20000]
+        for (let attempt = 0; attempt < RETRY_DELAYS_MS.length && !difyResponse.answer; attempt++) {
+          console.warn(`[Bot] Empty Dify response — retry ${attempt + 1}/${RETRY_DELAYS_MS.length} em ${RETRY_DELAYS_MS[attempt]}ms...`)
+          await new Promise(r => setTimeout(r, RETRY_DELAYS_MS[attempt]))
+          const retry = await callDify(cfg, query, userIdentifier, botConv.dify_conv_id || undefined, imageUrls.length > 0 ? imageUrls : undefined)
+          if (retry.answer) {
+            console.log(`[Bot] Retry ${attempt + 1} succeeded`)
+            Object.assign(difyResponse, retry)
+          }
+        }
+        if (!difyResponse.answer) {
           // Gemini falhou 2x (erro/quota/instabilidade). NAO ghostar o lead: manda uma
           // mensagem amigavel pedindo pra reenviar — o bot tenta de novo na proxima
           // mensagem (Gemini costuma se recuperar). Mantem o bot ativo (sem human takeover)
