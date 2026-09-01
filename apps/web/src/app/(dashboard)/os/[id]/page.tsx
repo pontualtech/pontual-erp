@@ -3348,6 +3348,12 @@ export default function OSDetailPage() {
                         ? 'AR criada como Pago. Aguarda conciliação no extrato bancário.'
                         : 'AR criada como Pendente. Cobrar depois via /financeiro/contas-receber.'}
                     </p>
+                    {/* Fix OS 61857 (golpe do comprovante): PIX declarado sem conferir extrato */}
+                    {receivedNow && paymentMethod.toLowerCase().includes('pix') && (
+                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-1 font-medium">
+                        ⚠️ PIX: confira no app do banco se o valor realmente CAIU antes de confirmar. Comprovante em PDF não garante pagamento (golpe do comprovante). O portal só mostrará &quot;confirmado&quot; ao cliente após a conciliação no extrato.
+                      </p>
+                    )}
                   </div>
                 </label>
                 <label className="flex items-start gap-2 cursor-pointer">

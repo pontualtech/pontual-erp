@@ -44,11 +44,32 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         deleted_at: null,
         status: { notIn: ['CANCELADO'] }, // ignora cancelados
       },
-      select: { id: true, status: true, received_amount: true, total_amount: true },
+      select: { id: true, status: true, received_amount: true, total_amount: true, reconciled: true },
     })
 
     const totalPaid = ars.reduce((sum, ar) => sum + (ar.received_amount || 0), 0)
     const isPaid = totalDue > 0 && totalPaid >= totalDue
+
+    // Fix OS 61857 (01/09): o portal afirmava "Pagamento confirmado / quitada"
+    // com base em AR RECEBIDO declarado MANUALMENTE na entrega (reconciled=false,
+    // sem payment) — golpe do comprovante: cliente mostra PDF frio, atendente
+    // marca recebido, e o portal referendava por escrito. is_confirmed = paga E
+    // (todo AR contribuinte conciliado no extrato OU pagamento confirmado pelo
+    // provedor Asaas). is_paid segue INALTERADO — ele bloqueia cobranca
+    // duplicada e DEVE continuar contando declaracao manual.
+    const contributing = ars.filter(ar => (ar.received_amount || 0) > 0)
+    let isConfirmed = isPaid && contributing.length > 0 && contributing.every(ar => ar.reconciled === true)
+    if (isPaid && !isConfirmed) {
+      const providerPaid = await prisma.payment.findFirst({
+        where: {
+          service_order_id: os.id,
+          company_id: portalUser.company_id,
+          status: { in: ['CONFIRMED', 'RECEIVED'] },
+        },
+        select: { id: true },
+      })
+      isConfirmed = !!providerPaid
+    }
 
     // 2026-05-11: include active PENDING payment pra UI decidir se mostra
     // os 3 botões de pagamento ou ja oferece reenvio direto do existente.
@@ -78,6 +99,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         total_paid: totalPaid,
         total_remaining: Math.max(0, totalDue - totalPaid),
         is_paid: isPaid,
+        is_confirmed: isConfirmed,
         ar_count: ars.length,
         active_payment: activePayment,
       },

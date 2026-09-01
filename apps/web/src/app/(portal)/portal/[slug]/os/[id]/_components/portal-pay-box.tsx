@@ -62,6 +62,9 @@ export default function PortalPayBox({ osId, totalCost, alreadyPaid }: {
   const [boleto, setBoleto] = useState<BoletoPayment | null>(null)
   const [card, setCard] = useState<CardPayment | null>(null)
   const [paid, setPaid] = useState(false)
+  // Fix OS 61857: pagamento DECLARADO na entrega (AR manual, sem conciliacao) —
+  // nao afirma "confirmado" pro cliente; mostra box ambar neutro e nao gera cobranca.
+  const [manualPaid, setManualPaid] = useState(false)
   const [copied, setCopied] = useState(false)
   const [verifying, setVerifying] = useState(false)
   const [mountChecked, setMountChecked] = useState(false)
@@ -79,7 +82,8 @@ export default function PortalPayBox({ osId, totalCost, alreadyPaid }: {
       .then(r => r.ok ? r.json() : null)
       .then(j => {
         if (cancelled) return
-        if (j?.data?.is_paid) setPaid(true)
+        if (j?.data?.is_confirmed) setPaid(true)
+        else if (j?.data?.is_paid) setManualPaid(true)
         if (j?.data?.active_payment) setActivePayment(j.data.active_payment)
         setMountChecked(true)
       })
@@ -221,6 +225,25 @@ export default function PortalPayBox({ osId, totalCost, alreadyPaid }: {
           <div>
             <h3 className="font-bold text-green-900 dark:text-green-200">Pagamento confirmado!</h3>
             <p className="text-sm text-green-700 dark:text-green-300">Obrigado. Sua OS esta quitada.</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (manualPaid) {
+    // Pagamento registrado na entrega mas AINDA NAO conciliado no extrato nem
+    // confirmado por provedor. Tom neutro (sem "confirmado"/"quitada") e sem
+    // botoes de pagamento (mantem o bloqueio de cobranca duplicada).
+    return (
+      <div className="rounded-2xl border-2 border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-5">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-full bg-amber-200 flex items-center justify-center">
+            <Check className="h-7 w-7 text-amber-700" />
+          </div>
+          <div>
+            <h3 className="font-bold text-amber-900 dark:text-amber-200">Pagamento registrado</h3>
+            <p className="text-sm text-amber-700 dark:text-amber-300">Recebemos o registro do seu pagamento na entrega. Nossa equipe esta conferindo a compensacao bancaria — nenhuma acao e necessaria no momento.</p>
           </div>
         </div>
       </div>
