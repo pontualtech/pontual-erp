@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { buildNfeProc } from '@/lib/nfe/sefaz/build-nfeproc'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
@@ -277,6 +278,7 @@ export async function POST(req: NextRequest) {
     let sefazStatus = 'PROCESSING'
     let protocolo = ''
     let motivo = ''
+    let protNfeXml = ''
 
     try {
       sefazResponse = await sendSoapRequest({
@@ -299,6 +301,9 @@ export async function POST(req: NextRequest) {
       const cStatProt = infProt.match(/<cStat>(\d+)<\/cStat>/)?.[1] || ''
       const xMotivoProt = infProt.match(/<xMotivo>([^<]+)<\/xMotivo>/)?.[1] || ''
       protocolo = infProt.match(/<nProt>(\d+)<\/nProt>/)?.[1] || ''
+      // Auditoria 03/09: captura o protNFe COMPLETO pra persistir o nfeProc
+      // distribuivel (guarda legal de 5 anos) — antes o XML autorizado se perdia.
+      protNfeXml = responseBody.match(/<protNFe[\s\S]*?<\/protNFe>/)?.[0] || ''
       motivo = xMotivoProt || responseBody.match(/<xMotivo>([^<]+)<\/xMotivo>/)?.[1] || ''
 
       if (cStat === '100' || cStat === '104') {
@@ -346,7 +351,7 @@ export async function POST(req: NextRequest) {
       data: {
         status: sefazStatus,
         provider_ref: protocolo || null,
-        ...(sefazStatus === 'AUTHORIZED' ? { authorized_at: new Date(), issued_at: new Date() } : {}),
+        ...(sefazStatus === 'AUTHORIZED' ? { authorized_at: new Date(), issued_at: new Date(), xml_content: buildNfeProc(signedXml, protNfeXml) } : {}),
         notes: `${invoice.notes} | ${motivo}`,
       },
     })

@@ -1036,6 +1036,8 @@ model Invoice {
   provider_ref        String?
   provider_name       String?
   xml_url             String?
+  // nfeProc completo (NFe assinada + protNFe) — guarda legal de 5 anos. Auditoria 03/09.
+  xml_content         String?
   danfe_url           String?
   total_amount        Int?          @default(0)
   tax_amount          Int?          @default(0)

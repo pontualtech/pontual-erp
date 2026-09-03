@@ -21,22 +21,13 @@ export async function GET(req: NextRequest, { params }: Params) {
 
     if (!invoice) return error('NF-e nao encontrada', 404)
 
-    // Check if we have the XML stored in fiscal_logs
-    const xmlLog = await prisma.fiscalLog.findFirst({
-      where: {
-        company_id: user.companyId,
-        invoice_id: invoice.id,
-        action: 'nfe_xml_debug',
-      },
-      orderBy: { created_at: 'desc' },
-    })
-
-    const rawXml = (xmlLog?.request as any)?.signed_xml || (xmlLog?.request as any)?.raw_xml || null
-
-    if (rawXml) {
-      // Return stored XML
-      const xmlContent = `<?xml version="1.0" encoding="utf-8"?>\n${rawXml}`
-      return new NextResponse(xmlContent, {
+    // Auditoria 03/09 (NF 211): servir SOMENTE o nfeProc completo persistido na
+    // emissao (invoice.xml_content = NFe assinada + protNFe). Os fallbacks antigos
+    // eram perigosos: o log de debug guarda o XML TRUNCADO em 4000c e o "XML
+    // basico" era um documento FABRICADO sem assinatura/protocolo que parecia
+    // oficial — sem valor fiscal. Melhor um 404 honesto do que entregar isso.
+    if (invoice.xml_content) {
+      return new NextResponse(invoice.xml_content, {
         status: 200,
         headers: {
           'Content-Type': 'application/xml; charset=utf-8',
@@ -45,35 +36,10 @@ export async function GET(req: NextRequest, { params }: Params) {
       })
     }
 
-    // Fallback: generate basic XML from invoice data
-    const chave = invoice.access_key || ''
-    const items = invoice.invoice_items || []
-    const c = invoice.customers
-
-    const xmlItems = items.map((item, i) =>
-      `<det nItem="${i + 1}"><prod><xProd>${item.description || ''}</xProd><NCM>${item.ncm || ''}</NCM><CFOP>${item.cfop || ''}</CFOP><uCom>${item.unidade || 'UN'}</uCom><qCom>${item.quantity}</qCom><vUnCom>${((item.unit_price || 0) / 100).toFixed(2)}</vUnCom><vProd>${((item.total_price || 0) / 100).toFixed(2)}</vProd></prod></det>`
-    ).join('')
-
-    const xml = `<?xml version="1.0" encoding="utf-8"?>
-<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">
-<NFe xmlns="http://www.portalfiscal.inf.br/nfe">
-<infNFe versao="4.00" Id="NFe${chave}">
-<ide><nNF>${invoice.invoice_number}</nNF><serie>${invoice.series || '1'}</serie></ide>
-<dest><xNome>${c?.legal_name || ''}</xNome></dest>
-${xmlItems}
-<total><ICMSTot><vNF>${((invoice.total_amount || 0) / 100).toFixed(2)}</vNF></ICMSTot></total>
-</infNFe>
-</NFe>
-<protNFe versao="4.00"><infProt><chNFe>${chave}</chNFe></infProt></protNFe>
-</nfeProc>`
-
-    return new NextResponse(xml, {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/xml; charset=utf-8',
-        'Content-Disposition': `attachment; filename="NFe_${chave || invoice.invoice_number}.xml"`,
-      },
-    })
+    return error(
+      'XML autorizado nao disponivel para esta NF-e (emitida antes do fix de persistencia de 03/09/2026). O documento pode ser recuperado via consulta na SEFAZ com o certificado A1.',
+      404
+    )
   } catch (err) {
     return handleError(err)
   }

@@ -484,20 +484,32 @@ export default function EmitirNfePage() {
         const createData = await createRes.json()
         if (!createRes.ok) throw new Error(createData.error || 'Erro ao criar cliente')
         customer = createData.data
-      } else if (!(customer as any).cod_municipio && emitData.cMun) {
-        // Cliente existe mas falta cod_municipio (criado antes do fix 2026-06-09).
-        // Atualiza pra que emissao funcione sem rejeicao da SEFAZ.
-        try {
-          const patchRes = await fetch(`/api/clientes/${customer.id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cod_municipio: emitData.cMun }),
-          })
-          if (patchRes.ok) {
-            const patchData = await patchRes.json()
-            customer = patchData.data || customer
-          }
-        } catch { /* nao bloqueia se PATCH falhar - admin pode editar manualmente */ }
+      } else {
+        // Auditoria 03/09 (caso CNCSERV): cliente existente com IE/endereco
+        // VAZIOS nao era atualizado (so cod_municipio era) — IE vazia vira
+        // "Isento" e a SEFAZ rejeita ("NF-e sem informacao da IE", fix 2 Renner).
+        // Preenche campos fiscais FALTANTES a partir do XML; nunca sobrescreve
+        // valor ja preenchido no cadastro.
+        const cur = customer as any
+        const fillPatch: Record<string, string> = {}
+        if (!cur.cod_municipio && emitData.cMun) fillPatch.cod_municipio = emitData.cMun
+        if (!cur.state_registration && emitData.IE) fillPatch.state_registration = emitData.IE
+        if (!cur.address_number && emitData.nro) fillPatch.address_number = emitData.nro
+        if (Object.keys(fillPatch).length > 0) {
+          try {
+            const patchRes = await fetch(`/api/clientes/${customer.id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(fillPatch),
+            })
+            if (patchRes.ok) {
+              const patchData = await patchRes.json()
+              customer = patchData.data || customer
+            } else {
+              toast.error(`Nao consegui completar o cadastro do cliente (${Object.keys(fillPatch).join(', ')}). Confira em Clientes antes de emitir.`)
+            }
+          } catch { /* nao bloqueia se PATCH falhar - admin pode editar manualmente */ }
+        }
       }
 
       if (customer) {
