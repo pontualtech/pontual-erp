@@ -3568,9 +3568,15 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       await logBotMessage(cfg, conversationId, query, parsed.cleanText, parsed.action || 'CHAT', phone)
     } catch (err) {
       console.error('[Bot] Dify call error:', err)
-      // Don't say anything to the client — only internal note
-      await cwSendMessage(cfg, conversationId, `[BOT] ⚠️ Erro ao chamar Dify AI. Atendente precisa assumir. Erro: ${err instanceof Error ? err.message : 'desconhecido'}`, true)
-      break // don't retry on Dify errors
+      // Auditoria 11/09 (leads de anuncio no vacuo): timeout/erro do Dify caía
+      // aqui com nota privada e SILENCIO ao cliente — ghosting. Agora: holding
+      // curta ao cliente (sem pedir reenvio) + nota; o bot-vacuum-watchdog
+      // (cron */10min) re-dispara o pipeline e entrega a resposta real.
+      // O texto DEVE começar com um HOLDING_MARKERS de lib/bot/vacuum.ts —
+      // é assim que o watchdog enxerga através dele e detecta o vácuo.
+      await cwSendMessage(cfg, conversationId, 'Opa, deu uma travadinha aqui 😅 Só um instante que já te respondo!', false)
+      await cwSendMessage(cfg, conversationId, `[BOT] ⚠️ Erro ao chamar Dify AI (watchdog vai re-processar em ate 10min). Erro: ${err instanceof Error ? err.message : 'desconhecido'}`, true)
+      break // don't retry inline — o watchdog re-processa pelo pipeline completo
     }
 
     // Brief pause before checking for stragglers (give webhooks time to save)
