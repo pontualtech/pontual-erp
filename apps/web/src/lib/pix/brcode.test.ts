@@ -30,6 +30,16 @@ describe('buildPixBrCode', () => {
     expect(p).not.toContain('32.772.178')
   })
 
+  it('caracteres nao-ASCII (travessao, emoji) sao removidos — spec BCB conta BYTES', () => {
+    const p = buildPixBrCode({ ...base, merchantName: 'PontualTech — Assistência ✓' })
+    const nome = p.match(/59(\d{2})(.+?)60/)?.[2] || ''
+    expect(/^[\x20-\x7E]*$/.test(nome)).toBe(true)
+    expect(p).not.toContain('—')
+    // comprimento TLV bate com os bytes reais do nome
+    const m = p.match(/59(\d{2})/)
+    expect(parseInt(m![1], 10)).toBe(Buffer.byteLength(nome, 'utf8'))
+  })
+
   it('nome trunca em 25 chars sem acento; cidade 15 uppercase', () => {
     const p = buildPixBrCode(base)
     expect(p).toContain('PONTUALTECH ASSISTENCIA T') // 25 chars

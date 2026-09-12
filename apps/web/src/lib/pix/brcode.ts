@@ -27,7 +27,11 @@ export function crc16ccitt(s: string): string {
 
 const tlv = (id: string, value: string) => `${id}${String(value.length).padStart(2, '0')}${value}`
 
-const semAcento = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '')
+// Remove acentos E qualquer nao-ASCII (travessao, emoji): a spec BCB conta o
+// tamanho TLV em BYTES — um "—" (3 bytes UTF-8) desloca o parse em apps de
+// banco estritos e invalida o QR. So ASCII imprimivel passa.
+const semAcento = (s: string) =>
+  s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\x20-\x7E]/g, ' ').replace(/\s+/g, ' ')
 
 /** Chave CNPJ/CPF/telefone formatada → canônica (só dígitos). Email/EVP passam direto. */
 function canonicalKey(key: string): string {
