@@ -3,6 +3,8 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { error, handleError } from '@/lib/api-response'
 import { toTitleCase } from '@/lib/format-text'
+import QRCode from 'qrcode'
+import { buildPixBrCode } from '@/lib/pix/brcode'
 
 type Params = { params: { id: string } }
 
@@ -163,6 +165,7 @@ const DELIVERY_REPAIR_TEMPLATE = `<!DOCTYPE html><html lang="pt-BR"><head><meta 
 <div class="sec"><div class="sec-t">Laudo Tecnico</div><div class="text-box">{{diagnosis}}</div></div>
 <div class="sec"><div class="sec-t">Servicos Realizados</div>{{items_table}}<div style="text-align:right;margin-top:8px"><strong style="font-size:16px;font-weight:900">TOTAL: {{total_cost}}</strong></div></div>
 <div class="sec"><div class="g2"><div class="f"><label>Forma de Pagamento</label><p><strong>{{payment_method}}</strong></p></div><div class="f"><label>Data Entrega</label><p><strong>{{today}}</strong></p></div></div></div>
+{{pix_block}}
 <div class="warranty-box"><h3>Termo de Garantia — {{warranty_period}}</h3><p style="font-size:9px;line-height:1.6">Garantimos os servicos realizados nesta OS pelo prazo de {{warranty_period}} a partir desta data ({{today}}), conforme Art. 26 do CDC. A garantia cobre exclusivamente os servicos e pecas descritos acima. Nao cobre mau uso, quedas, sobrecarga eletrica ou intervencao de terceiros. Para acionar a garantia, entre em contato: {{company_phone}}.</p></div>
 <div class="receipt-box"><h3>Recibo de Entrega</h3><p style="font-size:9px;line-height:1.6">Declaro que recebi o equipamento {{equipment_full}} (OS {{os_number}}) em perfeito funcionamento, conforme servicos descritos acima, no valor de {{total_cost}}.</p></div>
 <div class="terms" style="margin-top:10px;background:#f0f9ff;border:1px solid #bae6fd"><h3>Acompanhe suas OS Online</h3><p>Acesse: <strong>{{portal_url}}</strong></p><p>Faca login com seu CPF/CNPJ e a senha cadastrada. Consulte status, historico e abra novas solicitacoes.</p><p>WhatsApp Suporte: <strong>{{whatsapp_suporte}}</strong></p></div>
@@ -308,7 +311,30 @@ export async function GET(req: NextRequest, { params }: Params) {
     const warrantyPeriod = settingsMap['quote.warranty'] || '90 dias'
     const today = new Date().toLocaleDateString('pt-BR')
 
+    // QR PIX na entrega (13/09): BR Code estatico com a chave da propria
+    // empresa (settings pix.chave) — cliente escaneia e paga na hora, valor
+    // ja preenchido. So no impresso de entrega reparado e com valor a receber;
+    // falha na geracao nunca bloqueia o impresso.
+    let pixBlock = ''
+    const pixChave = settingsMap['pix.chave']
+    if (template === 'delivery_repair' && pixChave && (os.total_cost ?? 0) > 0) {
+      try {
+        const payload = buildPixBrCode({
+          key: pixChave,
+          merchantName: companyName,
+          merchantCity: 'SAO PAULO',
+          amountCents: os.total_cost ?? 0,
+          txid: `OS${osNum}`,
+        })
+        const qrUrl = await QRCode.toDataURL(payload, { width: 180, margin: 1 })
+        pixBlock = `<div style="margin-top:12px;border:2px solid #16a34a;border-radius:6px;padding:10px 12px;background:#f0fdf4;display:flex;gap:14px;align-items:center;page-break-inside:avoid"><img src="${qrUrl}" style="width:118px;height:118px" alt="QR PIX"/><div><h3 style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;color:#166534">Pague com PIX na entrega</h3><p style="font-size:10px;line-height:1.6">Aponte a camera do app do seu banco para o QR Code ao lado — o valor de <strong>${fmtCents(os.total_cost ?? 0)}</strong> ja vem preenchido.</p><p style="font-size:10px;line-height:1.6">Chave PIX (CNPJ): <strong>${pixChave}</strong>${settingsMap['pix.banco'] ? ' &middot; ' + settingsMap['pix.banco'] : ''}</p></div></div>`
+      } catch (e) {
+        console.warn('[os-pdf] QR PIX nao gerado:', e instanceof Error ? e.message : e)
+      }
+    }
+
     const vars: Record<string, string> = {
+      pix_block: pixBlock,
       os_number: osNum,
       customer_name: toTitleCase(c?.legal_name || '—'),
       customer_document: c?.document_number || '—',
