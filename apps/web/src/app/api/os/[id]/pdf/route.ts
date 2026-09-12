@@ -317,7 +317,7 @@ export async function GET(req: NextRequest, { params }: Params) {
     // falha na geracao nunca bloqueia o impresso.
     let pixBlock = ''
     const pixChave = settingsMap['pix.chave']
-    if (template === 'delivery_repair' && pixChave && (os.total_cost ?? 0) > 0) {
+    if (template === 'os_delivery_repair' && pixChave && (os.total_cost ?? 0) > 0) {
       try {
         const payload = buildPixBrCode({
           key: pixChave,
