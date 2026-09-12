@@ -116,7 +116,7 @@ table td.right, table th.right { text-align: right; }
   </div>
   <div class="payment"><strong>Forma de pagamento:</strong> {{payment_method}}</div>
 </div>
-
+{{pix_block}}
 <div class="terms">
   <h3>Termos e Condicoes</h3>
   <p>1. O prazo de garantia dos servicos prestados e de 90 (noventa) dias, conforme Art. 26 do CDC.</p>
@@ -317,7 +317,10 @@ export async function GET(req: NextRequest, { params }: Params) {
     // falha na geracao nunca bloqueia o impresso.
     let pixBlock = ''
     const pixChave = settingsMap['pix.chave']
-    if (template === 'os_delivery_repair' && pixChave && (os.total_cost ?? 0) > 0) {
+    // os_full incluso (13/09): e a via que a equipe REALMENTE imprime na
+    // entrega (PDF real do Karlao veio sem ?template=). Sem template custom
+    // no banco nas duas empresas — o DEFAULT do codigo e a fonte.
+    if ((template === 'os_delivery_repair' || template === 'os_full') && pixChave && (os.total_cost ?? 0) > 0) {
       try {
         const payload = buildPixBrCode({
           key: pixChave,
