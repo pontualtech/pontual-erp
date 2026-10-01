@@ -160,7 +160,7 @@ async function parsearRespostaSP(soapXml: string): Promise<any> {
   return parsed
 }
 
-function extrairRetornoNFSe(body: any): {
+export function extrairRetornoNFSe(body: any): {
   sucesso: boolean
   numero_nfse?: string
   codigo_verificacao?: string
@@ -195,12 +195,13 @@ function extrairRetornoNFSe(body: any): {
       }
     }
 
-    // Extrair erros
-    const alertas = retorno.Alerta || retorno.Erro || retorno.ListaMensagemRetorno?.MensagemRetorno
+    // Extrair erros — a prefeitura pode retornar <Erro> E <Alerta> juntos
+    // (ex: alerta informativo 1651 do IBS/CBS acompanhando um erro real).
+    // Erro vem primeiro: é o que a UI destaca como causa da rejeição.
     const erros: Array<{ codigo: string; mensagem: string }> = []
-
-    if (alertas) {
-      const lista = Array.isArray(alertas) ? alertas : [alertas]
+    for (const fonte of [retorno.Erro, retorno.Alerta, retorno.ListaMensagemRetorno?.MensagemRetorno]) {
+      if (!fonte) continue
+      const lista = Array.isArray(fonte) ? fonte : [fonte]
       for (const a of lista) {
         erros.push({
           codigo: a.Codigo || a.codigo || '?',

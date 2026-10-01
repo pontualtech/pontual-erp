@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { decrypt } from '@/lib/encryption'
+import { codigoIbgeCapitalSPPorCep } from '@/lib/nfse/cep-municipio'
 import { z } from 'zod'
 
 const emitirSchema = z.object({
@@ -143,7 +144,10 @@ export async function POST(req: NextRequest) {
         tomador_logradouro: customer.address_street || undefined,
         tomador_numero: customer.address_number || undefined,
         tomador_bairro: customer.address_neighborhood || undefined,
-        tomador_cidade: undefined, // omitir endereço — evita erro CEP/município
+        // Cidade/UF obrigatórios p/ tomador CNPJ desde 01/10/2026 (erro 318).
+        // cod_municipio do cadastro; fallback: CEP da capital → 3550308.
+        // Sem código IBGE confiável, omite endereço como antes (evita erro 636).
+        tomador_cidade: customer.cod_municipio || codigoIbgeCapitalSPPorCep(customer.address_zip),
         tomador_uf: customer.address_state || 'SP',
         tomador_cep: customer.address_zip || undefined,
       },
