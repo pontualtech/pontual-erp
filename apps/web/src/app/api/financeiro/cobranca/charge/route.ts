@@ -144,6 +144,10 @@ export async function POST(request: NextRequest) {
         company_id: user.companyId,
         customer_id: customer.id,
         receivable_id: data.receivable_id,
+        // 2026-10-05: sem este vinculo o guard "1 cobranca ativa por OS" do
+        // /api/os/[id]/charge nao enxerga payments criados por aqui (causou
+        // boleto duplicado na OS 62122) e o reenviar/historico da OS quebra.
+        service_order_id: receivable.service_order_id || null,
         provider: provider.name,
         external_id: charge.externalId,
         idempotency_key: `charge_${data.receivable_id}`,
