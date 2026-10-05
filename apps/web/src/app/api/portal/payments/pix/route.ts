@@ -90,6 +90,24 @@ export async function POST(req: NextRequest) {
         },
       }, { status: 409 })
     }
+    // 2026-10-05: PIX ativo mesmo vencido (OVERDUE, PIX-cobrança segue
+    // pagável no Asaas) — reusa em vez de criar 2º. PIX dinâmico expirado
+    // (expires_at passado) cai em expired e segue pro fluxo de criar novo.
+    if (activeCharge && !activeCharge.expired && activeCharge.payment.billing_type === 'PIX' && activeCharge.payment.qr_code) {
+      const p = activeCharge.payment
+      return NextResponse.json({
+        data: {
+          id: p.id,
+          receivable_id: p.receivable_id,
+          qr_code: p.qr_code,
+          qr_code_image: p.qr_code_image,
+          invoice_url: p.invoice_url,
+          amount: p.amount,
+          status: p.status,
+          expires_at: p.expires_at,
+        },
+      })
+    }
 
     // 2. Busca conta bancaria com provider Asaas configurado
     const resolved = await resolveDefaultProviderAccount(portalUser.company_id)

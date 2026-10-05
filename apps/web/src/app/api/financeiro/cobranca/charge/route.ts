@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { logAudit } from '@/lib/audit'
 import { getPaymentProvider } from '@/lib/payments/factory'
 import { isReissuablePaymentStatus } from '@/lib/payments/reissue'
+import { ACTIVE_CHARGE_STATUSES } from '@/lib/payments/charge-rules'
 import type { BillingType } from '@/lib/payments/types'
 import { sendWhatsAppCloud, sendWhatsAppTemplate } from '@/lib/whatsapp/cloud-api'
 import { sendCompanyEmail } from '@/lib/send-email'
@@ -94,10 +95,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Also check for pending charges (belt-and-suspenders)
+    // 2026-10-05: OVERDUE conta como ativa (boleto vencido segue pagável).
     const existingPayment = await prisma.payment.findFirst({
       where: {
         receivable_id: data.receivable_id,
-        status: 'PENDING',
+        status: { in: [...ACTIVE_CHARGE_STATUSES] },
         company_id: user.companyId,
       },
     })

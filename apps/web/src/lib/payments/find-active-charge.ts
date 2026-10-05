@@ -1,5 +1,6 @@
 import { prisma } from '@pontual/db'
 import { TERMINAL_RECEIVABLE_STATUSES } from '@/lib/finance/receivable-status'
+import { ACTIVE_CHARGE_STATUSES, computeChargeExpired } from '@/lib/payments/charge-rules'
 
 /**
  * findActivePendingPaymentForOs — busca a Payment PENDING mais recente
@@ -45,7 +46,10 @@ export async function findActivePendingPaymentForOs(
     where: {
       service_order_id: osId,
       company_id: companyId,
-      status: 'PENDING',
+      // 2026-10-05: OVERDUE conta como ativa — o webhook Asaas muda
+      // PENDING→OVERDUE no vencimento e o boleto segue pagável; buscar só
+      // PENDING deixava criar 2ª cobrança no mesmo débito (OS 62482/61197).
+      status: { in: [...ACTIVE_CHARGE_STATUSES] },
     },
     orderBy: { created_at: 'desc' },
     select: {
@@ -67,26 +71,18 @@ export async function findActivePendingPaymentForOs(
 
   if (!payment) return null
 
-  // Expiração:
-  //   PIX: expires_at (30min)
-  //   Boleto: due_date do AR vinculado (apos 30 dias do vencimento)
-  // A15 fix 22/05: antes boleto vencido bloqueava nova cobranca eternamente
-  // — cliente ficava preso, atendente forcado a cancelar manualmente.
-  // Agora apos 30 dias do vencimento, considera expired e libera nova
-  // cobranca (PIX/cartao). Boleto recente ainda continua valido pra pagamento.
-  const now = new Date()
-  let expired = payment.method === 'PIX' && !!payment.expires_at && payment.expires_at < now
-  if (!expired && payment.method === 'BOLETO' && payment.receivable_id) {
+  // Expiração: regra em charge-rules.ts (A15 + extensão OVERDUE 05/10) —
+  // PIX pelo expires_at; BOLETO e qualquer método OVERDUE liberam 30 dias
+  // após o vencimento do AR (não prende o cliente num link velho).
+  let arDueDate: Date | null = null
+  if ((payment.method === 'BOLETO' || payment.status === 'OVERDUE') && payment.receivable_id) {
     const ar = await prisma.accountReceivable.findFirst({
       where: { id: payment.receivable_id },
       select: { due_date: true },
     })
-    if (ar?.due_date) {
-      const cutoff = new Date(ar.due_date)
-      cutoff.setDate(cutoff.getDate() + 30)
-      if (cutoff < now) expired = true
-    }
+    arDueDate = ar?.due_date ?? null
   }
+  const expired = computeChargeExpired(payment, arDueDate, new Date())
 
   return { payment, expired }
 }

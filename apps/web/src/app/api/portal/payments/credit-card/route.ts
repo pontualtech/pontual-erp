@@ -86,6 +86,20 @@ export async function POST(req: NextRequest) {
         },
       }, { status: 409 })
     }
+    // 2026-10-05: mesmo método ativo (PENDING ou OVERDUE) — reusa o link em
+    // vez de criar 2ª cobrança no Asaas (caso duplicata OS 61197).
+    if (activeCharge && !activeCharge.expired && activeCharge.payment.billing_type === 'CREDIT_CARD') {
+      const p = activeCharge.payment
+      return NextResponse.json({
+        data: {
+          id: p.id,
+          receivable_id: p.receivable_id,
+          invoice_url: p.invoice_url,
+          amount: p.amount,
+          status: p.status,
+        },
+      })
+    }
 
     const resolved = await resolveDefaultProviderAccount(portalUser.company_id)
     if (!resolved) {

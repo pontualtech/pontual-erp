@@ -83,6 +83,21 @@ export async function POST(req: NextRequest) {
         },
       }, { status: 409 })
     }
+    // 2026-10-05: mesmo método ativo (PENDING ou OVERDUE ainda pagável) —
+    // reusa em vez de criar 2º boleto no Asaas (caso duplicata OS 62482).
+    if (activeCharge && !activeCharge.expired && activeCharge.payment.billing_type === 'BOLETO') {
+      const p = activeCharge.payment
+      return NextResponse.json({
+        data: {
+          id: p.id,
+          receivable_id: p.receivable_id,
+          invoice_url: p.invoice_url,
+          bank_slip_url: p.bank_slip_url,
+          amount: p.amount,
+          status: p.status,
+        },
+      })
+    }
 
     const resolved = await resolveDefaultProviderAccount(portalUser.company_id)
     if (!resolved) {
