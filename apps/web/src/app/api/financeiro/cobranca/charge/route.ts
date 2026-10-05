@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { logAudit } from '@/lib/audit'
 import { getPaymentProvider } from '@/lib/payments/factory'
+import { isReissuablePaymentStatus } from '@/lib/payments/reissue'
 import type { BillingType } from '@/lib/payments/types'
 import { sendWhatsAppCloud, sendWhatsAppTemplate } from '@/lib/whatsapp/cloud-api'
 import { sendCompanyEmail } from '@/lib/send-email'
@@ -69,11 +70,18 @@ export async function POST(request: NextRequest) {
     }
 
     // Check for existing charge by idempotency key (prevents race condition on double-click)
+    // 2026-10-05 (caso OS 62122): payment terminal nao-pago (boleto cancelado/
+    // apagado no Asaas) nao bloqueia reemissao — arquiva a key e segue.
     const idempotencyKey = `charge_${data.receivable_id}`
     const byKey = await prisma.payment.findUnique({
       where: { idempotency_key: idempotencyKey },
     })
-    if (byKey) {
+    if (byKey && isReissuablePaymentStatus(byKey.status)) {
+      await prisma.payment.update({
+        where: { id: byKey.id },
+        data: { idempotency_key: `archived_${byKey.id}_${Date.now()}` },
+      })
+    } else if (byKey) {
       return NextResponse.json({
         error: 'Ja existe uma cobranca para esta conta',
         payment: {

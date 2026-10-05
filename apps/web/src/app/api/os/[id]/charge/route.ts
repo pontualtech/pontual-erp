@@ -8,6 +8,7 @@ import { sendWhatsAppTemplate } from '@/lib/whatsapp/cloud-api'
 import { sendCompanyEmail } from '@/lib/send-email'
 import { escapeHtml } from '@/lib/escape-html'
 import { findActivePendingPaymentForOs, isOsAlreadyPaid } from '@/lib/payments/find-active-charge'
+import { isReissuablePaymentStatus } from '@/lib/payments/reissue'
 import { z } from 'zod'
 
 /**
@@ -172,12 +173,21 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       })
     }
 
-    // Idempotency — 1 cobranca ativa por (OS, conta, tipo)
+    // Idempotency — 1 cobranca ativa por (OS, conta, tipo).
+    // 2026-10-05 (caso OS 62122): payment terminal nao-pago (boleto DELETED
+    // no Asaas etc) nao bloqueia mais — arquiva a key (padrao do portal) e
+    // reemite. Duplicidade real segue coberta pelos guards acima
+    // (isOsAlreadyPaid + findActivePendingPaymentForOs).
     const idempotencyKey = `os-charge-${os.id}-${data.account_id}-${data.billing_type}`
     const existing = await prisma.payment.findUnique({
       where: { idempotency_key: idempotencyKey },
     })
-    if (existing) {
+    if (existing && isReissuablePaymentStatus(existing.status)) {
+      await prisma.payment.update({
+        where: { id: existing.id },
+        data: { idempotency_key: `archived_${existing.id}_${Date.now()}` },
+      })
+    } else if (existing) {
       return NextResponse.json({
         error: 'Ja existe uma cobranca ativa com essa conta e tipo',
         payment: {
