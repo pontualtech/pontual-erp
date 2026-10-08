@@ -342,7 +342,8 @@ export async function GET(request: NextRequest) {
   // preenchida, logo 0 vendas chegavam ao Google. Fonte agora = histórico de transições p/ o
   // status Aprovado. Janela de 85d (a ação "OS Approved" tem lookback de 90d sobre o clique);
   // isso também faz o backfill das aprovações recentes ainda não enviadas. Idempotência segue
-  // em custom_data.conversion_uploaded.approved_at. Cap de 100 por run (maxDuration 120s).
+  // em custom_data.conversion_uploaded.approved_at. Cap de 100 UPLOADS TENTADOS por run (no loop
+  // abaixo, não na fila: OS sem gclid nunca são marcadas e, contadas na fila, travavam-na).
   const sinceApproved = new Date(now.getTime() - 85 * 24 * 60 * 60 * 1000)
   const approvedStatus = await prisma.moduleStatus.findFirst({
     where: { company_id: PT_COMPANY_ID, module: 'os', name: { contains: 'Aprovad', mode: 'insensitive' } },
@@ -370,20 +371,20 @@ export async function GET(request: NextRequest) {
   for (const os of osCreatedRecent) {
     byId.set(os.id, { os, needLead: true, needApproved: false })
   }
-  let approvedQueued = 0
+  // Mais novas primeiro: a aprovação recente é o sinal que mais importa pro lance.
+  osApproved.sort((a, b) => (b.created_at?.getTime() || 0) - (a.created_at?.getTime() || 0))
   for (const os of osApproved) {
     const cd = (os.custom_data as Record<string, any> | null) || {}
     if (cd.conversion_uploaded?.approved_at) continue        // já enviada
     if (!os.created_at || os.created_at < sinceApproved) continue // clique fora da janela de 90d → Google rejeitaria (EXPIRED_EVENT)
-    if (approvedQueued >= 100) break
-    approvedQueued++
     const entry = byId.get(os.id)
     if (entry) entry.needApproved = true
     else byId.set(os.id, { os, needLead: false, needApproved: true })
   }
 
   let leadsSent = 0, leadsSkipped = 0, leadsFailed = 0
-  let approvedSent = 0, approvedSkipped = 0, approvedFailed = 0
+  let approvedSent = 0, approvedSkipped = 0, approvedFailed = 0, approvedDeferred = 0
+  const APPROVED_MAX_ATTEMPTS_PER_RUN = 100
   const errors: string[] = []
 
   // OAuth refresh UMA VEZ por cron run (fix 2026-05-28: múltiplos refreshes
@@ -429,7 +430,10 @@ export async function GET(request: NextRequest) {
 
     const approvedValue = os.approved_cost ? Number(os.approved_cost) / 100 : null // approved_cost em centavos
     const approvedAt = approvedAtByOs.get(os.id)
-    if (needApproved && attribution.gclid && approvedValue && approvedValue > 0 && approvedAt && PT_GOOGLE_ADS) {
+    if (needApproved && attribution.gclid && approvedValue && approvedValue > 0 && approvedAt && PT_GOOGLE_ADS
+      && approvedSent + approvedFailed >= APPROVED_MAX_ATTEMPTS_PER_RUN) {
+      approvedDeferred++ // fica pra próxima rodada (6h)
+    } else if (needApproved && attribution.gclid && approvedValue && approvedValue > 0 && approvedAt && PT_GOOGLE_ADS) {
       const r = await uploadGoogleAdsConversion(
         PT_GOOGLE_ADS,
         googleAccessToken,
@@ -463,7 +467,10 @@ export async function GET(request: NextRequest) {
     whatsappResult.errors.push('cwt upload crashed: ' + (e?.message || 'unknown'))
   }
 
-  console.log(`[Cron/UploadConv] candidates=${byId.size} | leads sent=${leadsSent} skipped=${leadsSkipped} failed=${leadsFailed} | approved sent=${approvedSent} skipped=${approvedSkipped} failed=${approvedFailed} | whatsapp_cwt sent=${whatsappResult.sent} skipped=${whatsappResult.skipped} failed=${whatsappResult.failed}`)
+  console.log(`[Cron/UploadConv] candidates=${byId.size} | leads sent=${leadsSent} skipped=${leadsSkipped} failed=${leadsFailed} | approved sent=${approvedSent} skipped=${approvedSkipped} failed=${approvedFailed} deferred=${approvedDeferred} | whatsapp_cwt sent=${whatsappResult.sent} skipped=${whatsappResult.skipped} failed=${whatsappResult.failed}`)
+  // A resposta HTTP costuma morrer no proxy (rodada > 60s) — erros precisam ir pro log do container.
+  for (const e of errors.slice(0, 10)) console.warn('[Cron/UploadConv] ' + e)
+  for (const e of whatsappResult.errors.slice(0, 3)) console.warn('[Cron/UploadConv] cwt: ' + e)
 
   return success({
     candidates: byId.size,
