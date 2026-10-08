@@ -1654,6 +1654,24 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
   const senderEmail = sender.email || ''
   const contactId = sender.id || body.conversation?.contact_inbox?.contact?.id
 
+  // 2026-10-08: e-mail automático (relatórios DMARC, avisos de NFS-e, mailer-daemon, noreply,
+  // newsletters) chegava ao Dify pela inbox de e-mail — 579 conversas em 30d, 79% com resposta
+  // vazia (modelo lia e decidia não responder; custo + risco de responder a noreply/loop).
+  // Filtra ANTES de criar botConversation. WhatsApp intocado.
+  if (isEmailChannel) {
+    const emailMeta = (body.content_attributes?.email || {}) as Record<string, any>
+    const subject = String(emailMeta.subject || '').toLowerCase()
+    const fromRaw = senderEmail || (Array.isArray(emailMeta.from) ? emailMeta.from[0] : emailMeta.from) || ''
+    const fromAddr = String(fromRaw).toLowerCase()
+    const NOISE_FROM = /(^|[.@+_-])(dmarc|noreply|no-reply|no_reply|donotreply|do-not-reply|mailer-daemon|postmaster|notifications?|newsletter|nfs-?e|bounces?)([.@+_-]|$)/
+    const NOISE_SUBJECT = /dmarc|aggregate report|report domain|nfs-?e|nota fiscal|n[aã]o pode ler est|undeliverable|delivery status|mail delivery|out of office|resposta autom[aá]tica|unsubscribe/
+    const NOISE_BODY = /^(this is an? (automated )?.*dmarc|seu cliente de e-?mail n[aã]o pode ler)/i
+    if (NOISE_FROM.test(fromAddr) || NOISE_SUBJECT.test(subject) || NOISE_BODY.test(content)) {
+      console.log(`[Bot/Email] ignorado (automático): from="${fromAddr}" subject="${subject.slice(0, 60)}" conv ${conversationId}`)
+      return
+    }
+  }
+
   console.log(`[Bot] Message from ${phone || 'unknown'} in conv ${conversationId}: "${content.substring(0, 80)}"${buttonPayload ? ` [button: ${buttonPayload}]` : ''}`)
 
   // Find or create BotConversation (atomic upsert to prevent race conditions)
