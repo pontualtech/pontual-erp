@@ -169,7 +169,7 @@ export async function enrichGclids(items: GclidWithDate[]): Promise<Map<string, 
 
       try {
         const res = await fetch(
-          `https://googleads.googleapis.com/v20/customers/${cfg.customerId}/googleAds:searchStream`,
+          `https://googleads.googleapis.com/v22/customers/${cfg.customerId}/googleAds:searchStream`,
           { method: 'POST', headers, body: JSON.stringify({ query }) },
         )
 
@@ -250,7 +250,7 @@ export async function getGoogleAdsTotalCostCents(range: { from: Date; to: Date }
 
   try {
     const res = await fetch(
-      `https://googleads.googleapis.com/v20/customers/${cfg.customerId}/googleAds:searchStream`,
+      `https://googleads.googleapis.com/v22/customers/${cfg.customerId}/googleAds:searchStream`,
       {
         method: 'POST',
         headers,
@@ -309,7 +309,7 @@ export async function getGoogleAdsCampaignCosts(range: { from: Date; to: Date })
 
   try {
     const res = await fetch(
-      `https://googleads.googleapis.com/v20/customers/${cfg.customerId}/googleAds:searchStream`,
+      `https://googleads.googleapis.com/v22/customers/${cfg.customerId}/googleAds:searchStream`,
       {
         method: 'POST',
         headers,

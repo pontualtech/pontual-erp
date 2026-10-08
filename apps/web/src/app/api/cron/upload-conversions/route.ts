@@ -7,7 +7,8 @@
  *
  * Eventos enviados (decisão Karlão 2026-05-21):
  *   - LEAD (OS criada): valor estimado, conversion_action GOOGLE_ADS_LEAD_ACTION_ID
- *   - APPROVED (orçamento aprovado): valor real (quote_total_amount), action GOOGLE_ADS_APPROVED_ACTION_ID
+ *   - APPROVED (orçamento aprovado): valor real (service_orders.approved_cost, data = 1ª transição
+ *     p/ status Aprovado em service_order_history), action GOOGLE_ADS_CONV_ACTION_APPROVED
  *
  * Idempotência: marca custom_data.conversion_uploaded.{event}_at após cada upload.
  * Cron pode rodar 2x sem duplicar.
@@ -203,7 +204,7 @@ async function uploadGoogleAdsConversion(
   // então a substituição é segura. TODO: achar root cause da substituição upstream.
   const sanitizedGclid = gclid.replace(/\*/g, '_')
   try {
-    const url = `https://googleads.googleapis.com/v20/customers/${cfg.customerId}:uploadClickConversions`
+    const url = `https://googleads.googleapis.com/v22/customers/${cfg.customerId}:uploadClickConversions`
     const headers: Record<string, string> = {
       'Authorization': `Bearer ${accessToken}`,
       'developer-token': cfg.developerToken,
@@ -329,29 +330,56 @@ export async function GET(request: NextRequest) {
   // de OS que não é nossa. Multi-tenant violation.
   const PT_COMPANY_ID = process.env.BOT_ANA_COMPANY_ID || 'pontualtech-001'
 
-  // Candidatos: OS criadas no período + OS com quotes aprovadas no período
+  // Candidatos LEAD: OS criadas no período
   const osCreatedRecent = await prisma.serviceOrder.findMany({
     where: { company_id: PT_COMPANY_ID, created_at: { gte: since }, deleted_at: null },
     include: { customers: true },
     take: 500,
   })
-  const quotesApprovedRecent = await prisma.quote.findMany({
-    where: { company_id: PT_COMPANY_ID, approved_at: { gte: since }, status: { not: 'DRAFT' } },
-    include: { service_orders: { include: { customers: true } } },
-    take: 500,
+
+  // Candidatos APPROVED (fix 2026-10-08): a aprovação é gravada na OS (status "Aprovado" +
+  // approved_cost + linha em service_order_history), NÃO em quotes.approved_at — que nunca é
+  // preenchida, logo 0 vendas chegavam ao Google. Fonte agora = histórico de transições p/ o
+  // status Aprovado. Janela de 85d (a ação "OS Approved" tem lookback de 90d sobre o clique);
+  // isso também faz o backfill das aprovações recentes ainda não enviadas. Idempotência segue
+  // em custom_data.conversion_uploaded.approved_at. Cap de 100 por run (maxDuration 120s).
+  const sinceApproved = new Date(now.getTime() - 85 * 24 * 60 * 60 * 1000)
+  const approvedStatus = await prisma.moduleStatus.findFirst({
+    where: { company_id: PT_COMPANY_ID, module: 'os', name: { contains: 'Aprovad', mode: 'insensitive' } },
+    select: { id: true },
   })
+  const approvedAtByOs = new Map<string, Date>() // 1ª transição p/ Aprovado = data da conversão
+  if (approvedStatus) {
+    const hist = await prisma.serviceOrderHistory.findMany({
+      where: { company_id: PT_COMPANY_ID, to_status_id: approvedStatus.id, created_at: { gte: sinceApproved } },
+      select: { service_order_id: true, created_at: true },
+      orderBy: { created_at: 'asc' },
+      take: 2000,
+    })
+    for (const h of hist) {
+      if (h.created_at && !approvedAtByOs.has(h.service_order_id)) approvedAtByOs.set(h.service_order_id, h.created_at)
+    }
+  }
+  const osApproved = approvedAtByOs.size ? await prisma.serviceOrder.findMany({
+    where: { id: { in: [...approvedAtByOs.keys()] }, company_id: PT_COMPANY_ID, approved_cost: { gt: 0 }, deleted_at: null },
+    include: { customers: true },
+  }) : []
 
   // Index por os.id pra evitar processar 2x quando criada+aprovada na mesma janela
-  const byId = new Map<string, { os: any; needLead: boolean; needApproved: boolean; quote?: any }>()
+  const byId = new Map<string, { os: any; needLead: boolean; needApproved: boolean }>()
   for (const os of osCreatedRecent) {
     byId.set(os.id, { os, needLead: true, needApproved: false })
   }
-  for (const q of quotesApprovedRecent) {
-    const os = q.service_orders
-    if (!os || os.deleted_at) continue
+  let approvedQueued = 0
+  for (const os of osApproved) {
+    const cd = (os.custom_data as Record<string, any> | null) || {}
+    if (cd.conversion_uploaded?.approved_at) continue        // já enviada
+    if (!os.created_at || os.created_at < sinceApproved) continue // clique fora da janela de 90d → Google rejeitaria (EXPIRED_EVENT)
+    if (approvedQueued >= 100) break
+    approvedQueued++
     const entry = byId.get(os.id)
-    if (entry) { entry.needApproved = true; entry.quote = q }
-    else byId.set(os.id, { os, needLead: false, needApproved: true, quote: q })
+    if (entry) entry.needApproved = true
+    else byId.set(os.id, { os, needLead: false, needApproved: true })
   }
 
   let leadsSent = 0, leadsSkipped = 0, leadsFailed = 0
@@ -361,9 +389,14 @@ export async function GET(request: NextRequest) {
   // OAuth refresh UMA VEZ por cron run (fix 2026-05-28: múltiplos refreshes
   // em sequência causavam 401 esporádico). access_token válido 3600s.
   const googleAccessToken = PT_GOOGLE_ADS ? await getGoogleAdsAccessToken(PT_GOOGLE_ADS) : null
+  if (PT_GOOGLE_ADS && !googleAccessToken) {
+    // 2026-10-08: refresh token expirado em prod passou meses despercebido — todo upload caía em
+    // "credentials not configured" dentro do JSON de resposta que ninguém lê. Log explícito.
+    console.error('[Cron/UploadConv] Google Ads OAuth refresh FALHOU (GOOGLE_ADS_REFRESH_TOKEN inválido/expirado?) — nenhum upload será feito nesta rodada')
+  }
 
   for (const entry of byId.values()) {
-    const { os, quote } = entry
+    const { os } = entry
     const cd = (os.custom_data as Record<string, any> | null) || {}
     const uploaded = (cd.conversion_uploaded as Record<string, string> | undefined) || {}
     const needLead = entry.needLead && !uploaded.lead_at
@@ -394,15 +427,16 @@ export async function GET(request: NextRequest) {
       else { leadsFailed++; errors.push(`OS #${os.os_number} LEAD: ${r.error}`) }
     }
 
-    const approvedValue = quote?.total_amount ? Number(quote.total_amount) / 100 : null // total_amount em centavos
-    if (needApproved && attribution.gclid && approvedValue && approvedValue > 0 && quote?.approved_at && PT_GOOGLE_ADS) {
+    const approvedValue = os.approved_cost ? Number(os.approved_cost) / 100 : null // approved_cost em centavos
+    const approvedAt = approvedAtByOs.get(os.id)
+    if (needApproved && attribution.gclid && approvedValue && approvedValue > 0 && approvedAt && PT_GOOGLE_ADS) {
       const r = await uploadGoogleAdsConversion(
         PT_GOOGLE_ADS,
         googleAccessToken,
         attribution.gclid,
         PT_GOOGLE_ADS.conversionActionApproved,
         approvedValue,
-        quote.approved_at,
+        approvedAt,
       )
       if (r.ok) { approvedSent++; newUploaded.approved_at = now.toISOString(); newUploaded.approved_value = String(approvedValue); mutated = true }
       else { approvedFailed++; errors.push(`OS #${os.os_number} APPROVED: ${r.error}`) }
@@ -438,6 +472,7 @@ export async function GET(request: NextRequest) {
     whatsapp_cwt: whatsappResult,
     errors: errors.slice(0, 10),
     google_ads_configured: !!PT_GOOGLE_ADS?.developerToken,
+    google_ads_token_ok: !!googleAccessToken,
     bing_ads_configured: !!PT_BING_ADS?.developerToken,
   })
 }
