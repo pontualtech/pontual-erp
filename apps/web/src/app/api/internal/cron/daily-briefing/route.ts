@@ -33,6 +33,41 @@ const PROBES = [
 
 const GRAPH = 'https://graph.facebook.com/v21.0'
 
+/** Conta mensagens de saída "failed" nas conversas ativas das últimas 24h (máx. 30 conversas). */
+async function contarFalhasEntregaChatwoot(companyId: string): Promise<{ total: number; erro: string } | undefined> {
+  try {
+    const cfg = await prisma.setting.findMany({
+      where: { company_id: companyId, key: { in: ['bot.config.cw_url', 'bot.config.cw_account_id'] } },
+      select: { key: true, value: true },
+    })
+    const url = cfg.find(s => s.key === 'bot.config.cw_url')?.value
+    const account = cfg.find(s => s.key === 'bot.config.cw_account_id')?.value || '1'
+    const token = process.env.CHATWOOT_API_TOKEN || process.env.CW_ADMIN_TOKEN
+    if (!url || !token) return undefined
+
+    const base = `${url.replace(/\/$/, '')}/api/v1/accounts/${account}`
+    const headers = { api_access_token: token }
+    const desde = Date.now() / 1000 - 24 * 3600
+    const lista = await fetch(`${base}/conversations?status=all&sort_by=last_activity_at_desc&page=1`, { headers, signal: AbortSignal.timeout(15000) }).then(r => r.json())
+    const convs = ((lista.data?.payload || []) as any[]).filter(c => c.last_activity_at >= desde).slice(0, 30)
+
+    let total = 0
+    let erro = ''
+    for (const c of convs) {
+      const m = await fetch(`${base}/conversations/${c.id}/messages`, { headers, signal: AbortSignal.timeout(15000) }).then(r => r.json())
+      for (const msg of (m.payload || []) as any[]) {
+        if (msg.message_type !== 1 || msg.private || msg.status !== 'failed' || msg.created_at < desde) continue
+        total++
+        if (!erro) erro = String(msg.content_attributes?.external_error || msg.external_error || 'erro de entrega').slice(0, 80)
+      }
+    }
+    return { total, erro }
+  } catch (err) {
+    console.error('[daily-briefing] falhas de entrega Chatwoot:', err instanceof Error ? err.message : err)
+    return undefined
+  }
+}
+
 async function checarWhatsappPT(companyId: string): Promise<string[]> {
   const settings = await prisma.setting.findMany({
     where: {
@@ -66,9 +101,14 @@ async function checarWhatsappPT(companyId: string): Promise<string[]> {
     }
   }
 
+  // Sinal confiável de restrição: a Meta não expõe a restrição por spam na API,
+  // mas o envio falha com 131031 — o Chatwoot marca essas mensagens como failed.
+  const falhasEntrega24h = await contarFalhasEntregaChatwoot(companyId)
+
   return avaliarSaudeWhatsapp({
     phones,
     waba,
+    falhasEntrega24h,
     followupLigado: get('bot.followup.enabled') === 'true',
     marketingLigado: get('whatsapp.notifications.marketing_enabled') === 'true',
   })

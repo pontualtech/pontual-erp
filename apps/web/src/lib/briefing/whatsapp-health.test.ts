@@ -43,6 +43,17 @@ describe('avaliarSaudeWhatsapp', () => {
     expect(p.join(' ')).toMatch(/marketing/i)
   })
 
+  it('falhas de entrega nas últimas 24h denunciam restrição que a API da Meta não mostra (caso 09/10: saúde AVAILABLE e 32 envios "Business Account locked")', () => {
+    const p = avaliarSaudeWhatsapp({ ...saudavel, falhasEntrega24h: { total: 32, erro: '131031: Business Account locked' } })
+    expect(p).toHaveLength(1)
+    expect(p[0]).toContain('32')
+    expect(p[0]).toContain('131031')
+  })
+
+  it('zero falhas de entrega não gera alerta', () => {
+    expect(avaliarSaudeWhatsapp({ ...saudavel, falhasEntrega24h: { total: 0, erro: '' } })).toEqual([])
+  })
+
   it('falha ao consultar a Meta é reportada, não silenciada', () => {
     const p = avaliarSaudeWhatsapp({ ...saudavel, phones: [], waba: null })
     expect(p.join(' ')).toMatch(/n[aã]o consegui consultar/i)
