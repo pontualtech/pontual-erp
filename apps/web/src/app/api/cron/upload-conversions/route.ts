@@ -221,8 +221,26 @@ async function uploadGoogleAdsConversion(
       }],
       partialFailure: true,
     }
-    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })
-    const data = await res.json()
+    let res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })
+    let data = await res.json()
+    // 2026-10-09: rodadas 02:00/05:02 receberam 401 UNAUTHENTICATED a partir da ~8ª chamada com token
+    // recém-emitido (do PC externo o mesmo token/gclid responde 200). Diagnóstico: registrar se houve
+    // redirect (fetch do Node descarta Authorization em redirect cross-origin) e www-authenticate;
+    // mitigação: 1 retry com token novo.
+    if (res.status === 401) {
+      const diag = `redirected=${res.redirected} url=${res.url} www-authenticate=${res.headers.get('www-authenticate') || '-'}`
+      const fresh = await getGoogleAdsAccessToken(cfg)
+      if (fresh && fresh !== accessToken) {
+        headers['Authorization'] = `Bearer ${fresh}`
+        res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })
+        data = await res.json()
+        if (res.ok && !data.partialFailureError) {
+          console.warn(`[Cron/UploadConv] 401 recuperado com token novo (${diag})`)
+          return { ok: true }
+        }
+      }
+      return { ok: false, error: `Google Ads API 401 (${diag}; retry=${fresh ? res.status : 'sem token'}): ${JSON.stringify(data).slice(0, 200)}` }
+    }
     if (!res.ok || data.partialFailureError) {
       return { ok: false, error: `Google Ads API ${res.status}: ${JSON.stringify(data).slice(0, 300)}` }
     }
