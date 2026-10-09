@@ -46,32 +46,12 @@ export async function GET(request: NextRequest) {
       select: { company_id: true },
     })
 
+    // Opt-in explícito: só envia pra empresa com cobranca.enabled='true'.
+    // Antes, sem nenhuma empresa marcada, caía num fallback que processava
+    // TODAS as ativas — a pausa de 15/09 ("cancele todas as notificações de
+    // atraso") foi furada por isso: ~1.000 e-mails até 09/10/2026.
     if (companiesWithCobranca.length === 0) {
-      // Se nenhuma empresa tem config, tentar todas as empresas ativas
-      const allCompanies = await prisma.company.findMany({
-        where: { is_active: true },
-        select: { id: true },
-      })
-
-      let totalSent = 0
-      const allErrors: string[] = []
-
-      for (const company of allCompanies) {
-        try {
-          const { sent, errors } = await sendOverdueReminders(company.id, 'cron')
-          totalSent += sent
-          allErrors.push(...errors)
-        } catch (err) {
-          console.error(`[Cron/Cobranca] Erro empresa ${company.id}:`, err)
-          allErrors.push(`Erro ao processar empresa ${company.id}`)
-        }
-      }
-
-      return success({
-        companies_processed: allCompanies.length,
-        emails_sent: totalSent,
-        errors: allErrors,
-      })
+      return success({ companies_processed: 0, emails_sent: 0, skipped: 'nenhuma empresa com cobranca.enabled=true' })
     }
 
     let totalSent = 0

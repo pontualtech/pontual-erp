@@ -14,7 +14,13 @@ export type EmpresaBriefing = {
   os: { criadas24h: number; prontasAguardando: number }
   financeiro: { concHigh: number; concWatch: number }
 }
-export type BriefingData = { geradoEm: string; empresas: EmpresaBriefing[]; infra: InfraProbe[] }
+export type BriefingData = {
+  geradoEm: string
+  empresas: EmpresaBriefing[]
+  infra: InfraProbe[]
+  /** Problemas do WhatsApp (whatsapp-health.ts); vazio/undefined = saudável */
+  whatsapp?: string[]
+}
 
 export function probeStatus(infra: InfraProbe[]): '🟢' | '🔴' {
   return infra.every(p => p.ok) ? '🟢' : '🔴'
@@ -39,7 +45,16 @@ export function buildBriefingHtml(d: BriefingData): string {
     `<tr><td style="${td}">${p.ok ? '🟢' : '🔴'} ${p.nome}</td><td style="${td}">${p.ok ? 'no ar' : '<strong style="color:#b91c1c">FORA DO AR — verificar!</strong>'}</td></tr>`
   ).join('')
 
-  const fecho = !infraOk
+  const waProblemas = d.whatsapp ?? []
+  const waBloco = `
+    <h2 style="margin:18px 0 6px;font-size:16px">💬 WhatsApp</h2>
+    ${waProblemas.length === 0
+      ? `<p style="font-size:13px;margin:0">🟢 Conta liberada, números conectados e travas anti-spam ativas.</p>`
+      : `<ul style="font-size:13px;margin:0;padding-left:18px;color:#b91c1c">${waProblemas.map(p => `<li><strong>${p}</strong></li>`).join('')}</ul>`}`
+
+  const fecho = waProblemas.length > 0
+    ? '🚨 Alerta no WhatsApp, Comandante — veja a seção acima. Cliente pode estar sem resposta.'
+    : !infraOk
     ? '🚨 Mar agitado hoje, Comandante — tem serviço fora do ar lá em cima. Vale olhar antes do café.'
     : temAlerta
       ? '⚠️ Ventos cruzados: o watchdog precisou chamar reforço humano. De resto, seguimos navegando. 🫡'
@@ -48,6 +63,7 @@ export function buildBriefingHtml(d: BriefingData): string {
   return `
     <p style="font-size:14px">Bom dia, Comandante! Relatório das últimas 24 horas do império. 🚢</p>
     ${d.empresas.map(empresaBloco).join('')}
+    ${d.whatsapp ? waBloco : ''}
     <h2 style="margin:18px 0 6px;font-size:16px">🖥️ Infra</h2>
     <table style="border-collapse:collapse;font-size:13px;width:100%">${infraLinhas}</table>
     <p style="margin-top:18px;font-size:13px">${fecho}</p>

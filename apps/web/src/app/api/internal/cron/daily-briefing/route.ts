@@ -13,6 +13,7 @@ import { prisma } from '@pontual/db'
 import { sendCompanyEmail } from '@/lib/send-email'
 import { receivableAlertLevel } from '@/lib/finance/conciliacao-alert'
 import { buildBriefingHtml, probeStatus, type EmpresaBriefing, type InfraProbe } from '@/lib/briefing/daily'
+import { avaliarSaudeWhatsapp } from '@/lib/briefing/whatsapp-health'
 
 export const maxDuration = 120
 
@@ -29,6 +30,49 @@ const PROBES = [
   { nome: 'Chatwoot PT', url: 'https://chat.pontualtech.work' },
   { nome: 'Chatwoot IMP', url: 'https://chat.imp.pontualtech.work' },
 ]
+
+const GRAPH = 'https://graph.facebook.com/v21.0'
+
+async function checarWhatsappPT(companyId: string): Promise<string[]> {
+  const settings = await prisma.setting.findMany({
+    where: {
+      company_id: companyId,
+      key: { in: ['whatsapp.cloud.access_token', 'whatsapp.cloud.business_account_id', 'bot.followup.enabled', 'whatsapp.notifications.marketing_enabled'] },
+    },
+    select: { key: true, value: true },
+  })
+  const get = (k: string) => settings.find(s => s.key === k)?.value || ''
+  const token = get('whatsapp.cloud.access_token')
+  const wabaId = get('whatsapp.cloud.business_account_id')
+
+  let waba: { canSend: string; erros: string[] } | null = null
+  let phones: { nome: string; status: string; quality: string }[] = []
+  if (token && wabaId) {
+    try {
+      const [w, p] = await Promise.all([
+        fetch(`${GRAPH}/${wabaId}?fields=health_status&access_token=${token}`, { signal: AbortSignal.timeout(10000) }).then(r => r.json()),
+        fetch(`${GRAPH}/${wabaId}/phone_numbers?fields=display_phone_number,status,quality_rating&access_token=${token}`, { signal: AbortSignal.timeout(10000) }).then(r => r.json()),
+      ])
+      if (w.health_status) {
+        const entidade = (w.health_status.entities || []).find((e: any) => e.entity_type === 'WABA')
+        waba = {
+          canSend: w.health_status.can_send_message,
+          erros: (entidade?.errors || []).map((e: any) => `[${e.error_code}] ${String(e.error_description || '').slice(0, 80)}`),
+        }
+      }
+      phones = (p.data || []).map((x: any) => ({ nome: x.display_phone_number, status: x.status, quality: x.quality_rating }))
+    } catch (err) {
+      console.error('[daily-briefing] Meta Graph falhou:', err instanceof Error ? err.message : err)
+    }
+  }
+
+  return avaliarSaudeWhatsapp({
+    phones,
+    waba,
+    followupLigado: get('bot.followup.enabled') === 'true',
+    marketingLigado: get('whatsapp.notifications.marketing_enabled') === 'true',
+  })
+}
 
 export async function POST(req: NextRequest) {
   const expectedKey = process.env.INTERNAL_API_KEY
@@ -106,11 +150,14 @@ export async function POST(req: NextRequest) {
     }
   }))
 
+  // Sentinela WhatsApp (09/10/2026): só a PontualTech usa Meta Cloud (IMP é Evolution).
+  const whatsapp = await checarWhatsappPT(EMPRESAS[0].id)
+
   const geradoEm = now.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
-  const html = buildBriefingHtml({ geradoEm, empresas, infra })
+  const html = buildBriefingHtml({ geradoEm, empresas, infra, whatsapp })
   const status = probeStatus(infra)
   const alertasTot = empresas.reduce((s, e) => s + e.watchdog.alertas, 0)
-  const subject = `${status === '🔴' ? '🚨' : alertasTot > 0 ? '⚠️' : '⛵'} Relatório do Comandante — ${now.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`
+  const subject = `${status === '🔴' || whatsapp.length > 0 ? '🚨' : alertasTot > 0 ? '⚠️' : '⛵'} Relatório do Comandante — ${now.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`
 
   let emailed = false
   try {

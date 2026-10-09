@@ -28,7 +28,7 @@ const FOLLOWUP_KEYS = [
 
 // Defaults
 const DEFAULTS: Record<string, string> = {
-  'bot.followup.enabled': 'true',
+  'bot.followup.enabled': 'false',
   'bot.followup.max_attempts': '3',
   'bot.followup.interval_1_minutes': '60',        // 1h
   'bot.followup.interval_2_minutes': '1440',       // 24h

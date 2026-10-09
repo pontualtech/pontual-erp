@@ -66,7 +66,7 @@ async function getCompanyCwConfig(companyId: string): Promise<BotCompanyConfig |
 
 // Default follow-up settings (used when company has no custom config)
 const DEFAULTS: Record<string, string> = {
-  'bot.followup.enabled': 'true',
+  'bot.followup.enabled': 'false',
   'bot.followup.max_attempts': '3',
   'bot.followup.interval_1_minutes': '60',
   'bot.followup.interval_2_minutes': '1440',

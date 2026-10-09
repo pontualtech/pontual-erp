@@ -29,6 +29,7 @@ import {
 import { optOutCustomerByPhone } from '@/lib/whatsapp/consent'
 import { type OsInfo, mapOrderToOsInfo } from '@/lib/bot/os-info'
 import { hasOptOutKeyword } from '@/lib/bot/opt-out'
+import { isFollowUpAllowedForChannel } from '@/lib/bot/followup-policy'
 import {
   getImprimitechHandoffStatusId,
   buildImprimitechHandoffMessage,
@@ -3570,7 +3571,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
     // CONFIRMAR_DADOS incluido (eco audit 10/06): apos pedir confirmacao dos
     // dados, se o cliente sumir, o follow-up deve cutucar — mesmo comportamento
     // de quando o LLM perguntava "ta tudo certo?" com action=null (antes do fix).
-    const shouldSchedule = !isSuporteBot && (!parsed.action || parsed.action === 'NENHUMA_ACAO' || parsed.action === 'CONFIRMAR_DADOS')
+    const shouldSchedule = !isSuporteBot && isFollowUpAllowedForChannel(channelType) && (!parsed.action || parsed.action === 'NENHUMA_ACAO' || parsed.action === 'CONFIRMAR_DADOS')
     console.log(`[Bot/FU-decision] conv=${conversationId} slug=${cfg.slug} origin=${cfg.botOrigin} isSuporteBot=${isSuporteBot} action=${parsed.action||'null'} shouldResolveConv=${shouldResolveConv} → ${shouldSchedule?'SCHEDULE':'CLEAR'}`)
     if (shouldSchedule) {
       await scheduleFollowUp(cfg.companyId, botConv.id)
@@ -4347,7 +4348,7 @@ async function logBotMessage(
 
 /** Default follow-up settings (same as cron route) */
 const FOLLOWUP_DEFAULTS: Record<string, string> = {
-  'bot.followup.enabled': 'true',
+  'bot.followup.enabled': 'false',
   'bot.followup.interval_1_minutes': '60',
   'bot.followup.opt_out_keywords': 'parar,cancelar,nao quero,sair,stop,pare,nao me mande,nao envie',
 }
