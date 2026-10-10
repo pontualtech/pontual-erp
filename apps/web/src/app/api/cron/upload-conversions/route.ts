@@ -9,6 +9,9 @@
  *   - LEAD (OS criada): valor estimado, conversion_action GOOGLE_ADS_LEAD_ACTION_ID
  *   - APPROVED (orçamento aprovado): valor real (service_orders.approved_cost, data = 1ª transição
  *     p/ status Aprovado em service_order_history), action GOOGLE_ADS_CONV_ACTION_APPROVED
+ *     Só sobe com clique comprovadamente do cliente (portão lib/ads/click-match, 2026-10-10);
+ *     motivo das barradas no log ([Cron/UploadConv] ... unreliable=N {motivos}).
+ *     LEAD ainda sem portão: filtrar leads muda o volume que a Pesquisa (tCPA) enxerga — passo separado.
  *
  * Idempotência: marca custom_data.conversion_uploaded.{event}_at após cada upload.
  * Cron pode rodar 2x sem duplicar.
@@ -25,6 +28,11 @@ import { NextRequest } from 'next/server'
 import { timingSafeEqual } from 'crypto'
 import { prisma } from '@pontual/db'
 import { success, error } from '@/lib/api-response'
+import {
+  decideClickMatch, pickCustomerConsumption, FINGERPRINT_WINDOW_MS, CLOCK_TOLERANCE_MS, CLICK_TO_MESSAGE_MAX_MS,
+  type ClickMatchReason, type CustomerConsumption,
+} from '@/lib/ads/click-match'
+import { getConversationInboxId } from '@/lib/chatwoot'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -156,6 +164,126 @@ async function recoverAttribution(os: any, customer: any): Promise<Attribution> 
     }
   }
   return { source: 'none' }
+}
+
+/**
+ * Portão de venda (2026-10-10): junta as provas do clique — ancoradas no redirect e no DONO dele
+ * (conversa do cliente da OS, pelo telefone), não na origem atual da conversa, que o fingerprint
+ * pode ter reescrito — e decide em lib/ads/click-match. Erro de banco/Chatwoot = não envia.
+ */
+async function checkSaleClick(
+  companyId: string,
+  gclid: string,
+  os: { id: string; customer_id: string; created_at: Date | null; customers?: { mobile?: string | null; phone?: string | null } | null },
+  salesInboxes: Set<number>,
+  ctx: { chatwootDown: boolean },
+): Promise<{ ok: boolean; reason: ClickMatchReason }> {
+  try {
+    const variants = [...new Set([gclid, gclid.replace(/\*/g, '_')])] // mesmo workaround do upload
+    const phone = (os.customers?.mobile || os.customers?.phone || '').replace(/\D/g, '')
+    const customerConvs = phone.length >= 10
+      ? await prisma.botConversation.findMany({
+        where: { company_id: companyId, customer_phone: { endsWith: phone.slice(-10) } },
+        select: { chatwoot_conv_id: true, inbox_id: true, created_at: true },
+      })
+      : []
+    const customerConvIds = new Set(customerConvs.map(c => c.chatwoot_conv_id))
+
+    const clickRows = await prisma.marketingWhatsappRedirect.findMany({
+      where: { company_id: companyId, gclid: { in: variants } },
+      select: { id: true, click_at: true, consumed_at: true, consumed_by_conv_id: true },
+    })
+    const clicks = clickRows.map(r => ({ id: r.id, clickAt: r.click_at, consumedAt: r.consumed_at, consumedByConvId: r.consumed_by_conv_id }))
+
+    // Etiqueta [ref:]: o bot grava a origem sem source/redirect_id (só o fingerprint marca os dois)
+    const withGclid = await prisma.botConversation.findMany({
+      where: { company_id: companyId, OR: variants.map(v => ({ attribution: { path: ['gclid'], equals: v } })) },
+      select: { chatwoot_conv_id: true, attribution: true },
+    })
+    const tokenConvs = withGclid
+      .filter(c => {
+        const a = c.attribution as Record<string, unknown> | null
+        return !!a && a.source == null && a.redirect_id == null
+      })
+      .map(c => {
+        const cap = (c.attribution as Record<string, unknown>).captured_at
+        const ms = typeof cap === 'string' ? Date.parse(cap) : NaN
+        return { chatwootConvId: c.chatwoot_conv_id, capturedAt: Number.isFinite(ms) ? new Date(ms) : null }
+      })
+
+    // Disputa entre clientes: o mesmo gclid na OS de outro cliente, ou consumido pela conversa NOVA
+    // de outro cliente (conversa antiga que "roubou" o clique não disputa a autoria).
+    const otherCustomerOsWithGclid = await prisma.serviceOrder.count({
+      where: {
+        company_id: companyId,
+        id: { not: os.id },
+        customer_id: { not: os.customer_id },
+        deleted_at: null,
+        OR: variants.map(v => ({ custom_data: { path: ['tracking', 'gclid'], equals: v } })),
+      },
+    })
+    const otherRows = clicks.filter(c => c.consumedByConvId != null && !customerConvIds.has(c.consumedByConvId))
+    let otherNewConsumers = 0
+    if (otherRows.length) {
+      const otherConvs = await prisma.botConversation.findMany({
+        where: { company_id: companyId, chatwoot_conv_id: { in: otherRows.map(c => c.consumedByConvId!) } },
+        select: { chatwoot_conv_id: true, created_at: true },
+      })
+      const createdBy = new Map(otherConvs.map(c => [c.chatwoot_conv_id, c.created_at.getTime()]))
+      otherNewConsumers = otherRows.filter(c => {
+        const created = createdBy.get(c.consumedByConvId!)
+        const click = c.clickAt.getTime()
+        return created != null && created >= click - CLOCK_TOLERANCE_MS
+          && !!c.consumedAt && c.consumedAt.getTime() - click <= CLICK_TO_MESSAGE_MAX_MS
+      }).length
+    }
+
+    const picked = pickCustomerConsumption(clicks, customerConvIds)
+    let consumption: CustomerConsumption | null = null
+    let freeClicksInWindow = 0
+    if (picked?.consumedAt && picked.consumedByConvId != null) {
+      const conv = customerConvs.find(c => c.chatwoot_conv_id === picked.consumedByConvId)!
+      consumption = { clickAt: picked.clickAt, consumedAt: picked.consumedAt, conversation: { inboxId: conv.inbox_id, createdAt: conv.created_at } }
+      // Cliques ainda livres na janela do fingerprint no instante do consumo (>0 = o bot pode ter pego o de outro).
+      // Linhas do MESMO gclid (o visitante clicou 2x) não competem.
+      freeClicksInWindow = await prisma.marketingWhatsappRedirect.count({
+        where: {
+          company_id: companyId,
+          id: { not: picked.id },
+          click_at: { gte: new Date(picked.consumedAt.getTime() - FINGERPRINT_WINDOW_MS), lte: picked.consumedAt },
+          AND: [
+            { OR: [{ consumed_at: null }, { consumed_at: { gt: picked.consumedAt } }] },
+            { OR: [{ gclid: null }, { gclid: { notIn: variants } }] },
+          ],
+        },
+      })
+    }
+
+    const input = {
+      clicks, customerConvIds, otherCustomerOsWithGclid, otherNewConsumers, tokenConvs, consumption,
+      freeClicksInWindow, osCreatedAt: os.created_at, salesInboxes,
+    }
+    const first = decideClickMatch(input)
+    if (first.reason !== 'caixa_desconhecida' || !consumption) return first
+    // Tudo passou e só falta a caixa (bot não gravou inbox_id): pergunta ao Chatwoot. Depois da
+    // 1ª falha na rodada não insiste (timeout/retry de ~30 s por chamada atrasaria a rodada).
+    if (ctx.chatwootDown) return { ok: false, reason: 'erro' }
+    let inboxId: number | null
+    try {
+      inboxId = await getConversationInboxId(picked!.consumedByConvId!)
+    } catch (e: any) {
+      // 4xx (conversa apagada/sem acesso) é desta OS só; timeout, 5xx e rede desligam a consulta na rodada.
+      const status = Number((/Chatwoot API (\d{3})/.exec(String(e?.message)) || [])[1])
+      if (status >= 400 && status < 500 && status !== 429) return { ok: false, reason: 'caixa_desconhecida' }
+      ctx.chatwootDown = true
+      console.warn(`[Cron/UploadConv] Chatwoot indisponível p/ o portão de venda: ${e?.message}`)
+      return { ok: false, reason: 'erro' }
+    }
+    return decideClickMatch({ ...input, consumption: { ...consumption, conversation: { ...consumption.conversation, inboxId } } })
+  } catch (e: any) {
+    console.warn(`[Cron/UploadConv] portão de venda falhou (não envia): ${e?.message}`)
+    return { ok: false, reason: 'erro' }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -389,8 +517,9 @@ export async function GET(request: NextRequest) {
   for (const os of osCreatedRecent) {
     byId.set(os.id, { os, needLead: true, needApproved: false })
   }
-  // Mais novas primeiro: a aprovação recente é o sinal que mais importa pro lance.
-  osApproved.sort((a, b) => (b.created_at?.getTime() || 0) - (a.created_at?.getTime() || 0))
+  // Aprovações mais novas primeiro: é o sinal que mais importa pro lance, e (2026-10-10) garante que
+  // a venda aprovada hoje entre no limite de avaliações do portão mesmo com OS antiga.
+  osApproved.sort((a, b) => (approvedAtByOs.get(b.id)?.getTime() || 0) - (approvedAtByOs.get(a.id)?.getTime() || 0))
   for (const os of osApproved) {
     const cd = (os.custom_data as Record<string, any> | null) || {}
     if (cd.conversion_uploaded?.approved_at) continue        // já enviada
@@ -402,8 +531,22 @@ export async function GET(request: NextRequest) {
 
   let leadsSent = 0, leadsSkipped = 0, leadsFailed = 0
   let approvedSent = 0, approvedSkipped = 0, approvedFailed = 0, approvedDeferred = 0
+  let approvedUnreliable = 0
+  const unreliableReasons: Record<string, number> = {}
+  const GATE_MAX_CHECKS_PER_RUN = 200
+  let gateChecks = 0
+  const gateCtx = { chatwootDown: false }
   const APPROVED_MAX_ATTEMPTS_PER_RUN = 100
   const errors: string[] = []
+
+  // Caixas de venda = as da Ana (mesmo setting que o bot usa); sem o setting, o default do bot.
+  const inboxSetting = await prisma.setting.findFirst({
+    where: { company_id: PT_COMPANY_ID, key: 'bot.config.allowed_inboxes' },
+    select: { value: true },
+  })
+  const salesInboxes = new Set(
+    (inboxSetting?.value || '2,4,9').split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n)),
+  )
 
   // OAuth refresh UMA VEZ por cron run (fix 2026-05-28: múltiplos refreshes
   // em sequência causavam 401 esporádico). access_token válido 3600s.
@@ -452,16 +595,31 @@ export async function GET(request: NextRequest) {
       && approvedSent + approvedFailed >= APPROVED_MAX_ATTEMPTS_PER_RUN) {
       approvedDeferred++ // fica pra próxima rodada (6h)
     } else if (needApproved && attribution.gclid && approvedValue && approvedValue > 0 && approvedAt && PT_GOOGLE_ADS) {
-      const r = await uploadGoogleAdsConversion(
-        PT_GOOGLE_ADS,
-        googleAccessToken,
-        attribution.gclid,
-        PT_GOOGLE_ADS.conversionActionApproved,
-        approvedValue,
-        approvedAt,
-      )
-      if (r.ok) { approvedSent++; newUploaded.approved_at = now.toISOString(); newUploaded.approved_value = String(approvedValue); mutated = true }
-      else { approvedFailed++; errors.push(`OS #${os.os_number} APPROVED: ${r.error}`) }
+      // Portão (2026-10-10): venda só sobe com clique comprovadamente do cliente. Barrada não conta
+      // como tentativa no cap e NÃO é marcada na OS por ora (reavaliada a cada rodada; motivos no log)
+      // — marcar só depois de observar algumas rodadas, para não congelar falso negativo.
+      let match: { ok: boolean; reason: ClickMatchReason } | null = null
+      if (gateChecks < GATE_MAX_CHECKS_PER_RUN) {
+        gateChecks++
+        match = await checkSaleClick(PT_COMPANY_ID, attribution.gclid, os, salesInboxes, gateCtx)
+      }
+      if (!match) {
+        approvedDeferred++ // limite de avaliações da rodada (mais novas primeiro) — fica pra próxima
+      } else if (!match.ok) {
+        approvedUnreliable++
+        unreliableReasons[match.reason] = (unreliableReasons[match.reason] || 0) + 1
+      } else {
+        const r = await uploadGoogleAdsConversion(
+          PT_GOOGLE_ADS,
+          googleAccessToken,
+          attribution.gclid,
+          PT_GOOGLE_ADS.conversionActionApproved,
+          approvedValue,
+          approvedAt,
+        )
+        if (r.ok) { approvedSent++; newUploaded.approved_at = now.toISOString(); newUploaded.approved_value = String(approvedValue); mutated = true }
+        else { approvedFailed++; errors.push(`OS #${os.os_number} APPROVED: ${r.error}`) }
+      }
     }
 
     if (mutated) {
@@ -485,7 +643,7 @@ export async function GET(request: NextRequest) {
     whatsappResult.errors.push('cwt upload crashed: ' + (e?.message || 'unknown'))
   }
 
-  console.log(`[Cron/UploadConv] candidates=${byId.size} | leads sent=${leadsSent} skipped=${leadsSkipped} failed=${leadsFailed} | approved sent=${approvedSent} skipped=${approvedSkipped} failed=${approvedFailed} deferred=${approvedDeferred} | whatsapp_cwt sent=${whatsappResult.sent} skipped=${whatsappResult.skipped} failed=${whatsappResult.failed}`)
+  console.log(`[Cron/UploadConv] candidates=${byId.size} | leads sent=${leadsSent} skipped=${leadsSkipped} failed=${leadsFailed} | approved sent=${approvedSent} skipped=${approvedSkipped} failed=${approvedFailed} deferred=${approvedDeferred} unreliable=${approvedUnreliable} ${JSON.stringify(unreliableReasons)} | whatsapp_cwt sent=${whatsappResult.sent} skipped=${whatsappResult.skipped} failed=${whatsappResult.failed}`)
   // A resposta HTTP costuma morrer no proxy (rodada > 60s) — erros precisam ir pro log do container.
   for (const e of errors.slice(0, 10)) console.warn('[Cron/UploadConv] ' + e)
   for (const e of whatsappResult.errors.slice(0, 3)) console.warn('[Cron/UploadConv] cwt: ' + e)
@@ -493,7 +651,7 @@ export async function GET(request: NextRequest) {
   return success({
     candidates: byId.size,
     leads: { sent: leadsSent, skipped: leadsSkipped, failed: leadsFailed },
-    approved: { sent: approvedSent, skipped: approvedSkipped, failed: approvedFailed },
+    approved: { sent: approvedSent, skipped: approvedSkipped, failed: approvedFailed, unreliable: approvedUnreliable, unreliable_reasons: unreliableReasons },
     whatsapp_cwt: whatsappResult,
     errors: errors.slice(0, 10),
     google_ads_configured: !!PT_GOOGLE_ADS?.developerToken,

@@ -120,6 +120,12 @@ export async function getConversations(contactId: number) {
   return data.payload || []
 }
 
+/** Caixa (inbox) real da conversa — o bot nem sempre grava inbox_id em bot_conversations. */
+export async function getConversationInboxId(conversationId: number): Promise<number | null> {
+  const conv = await chatwootFetch<{ inbox_id?: number }>(`/conversations/${conversationId}`)
+  return typeof conv?.inbox_id === 'number' ? conv.inbox_id : null
+}
+
 export async function listConversations(status?: string, inboxId?: number, page?: number) {
   const params = new URLSearchParams()
   if (status) params.set('status', status)
