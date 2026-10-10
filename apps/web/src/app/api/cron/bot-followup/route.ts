@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { timingSafeEqual } from 'crypto'
 import { prisma } from '@pontual/db'
 import { success, error, handleError } from '@/lib/api-response'
+import { isFollowUpAllowedForChannel } from '@/lib/bot/followup-policy'
 
 // Next 14: route depende de cookies/headers/searchParams — força runtime
 export const dynamic = 'force-dynamic'
@@ -188,6 +189,7 @@ export async function GET(request: NextRequest) {
         //   4. Cliente respondeu apos ultimo bot message (conversa ativa)
         let shouldSkip = false
         let skipReason = ''
+        let canal = ''
 
         try {
           const convRes = await fetch(
@@ -202,6 +204,7 @@ export async function GET(request: NextRequest) {
             skipReason = 'Chatwoot conv nao existe mais (404)'
           } else if (convRes.ok) {
             const convData = await convRes.json()
+            canal = convData.channel || ''
             // Guard 1: conversa resolved
             if (convData.status === 'resolved') {
               shouldSkip = true
@@ -221,6 +224,14 @@ export async function GET(request: NextRequest) {
             }
           }
         } catch {} // Chatwoot down — prossegue com outros guards
+
+        // Guard de canal (09/10/2026, restrição Meta por spam): follow-up só em
+        // canais permitidos. Cobre agendamentos antigos que sobraram de antes da
+        // trava e, se o canal não puder ser confirmado (Chatwoot fora), NÃO envia.
+        if (!shouldSkip && !isFollowUpAllowedForChannel(canal)) {
+          shouldSkip = true
+          skipReason = `canal ${canal || 'desconhecido'} não permite follow-up automático`
+        }
 
         // Guard 3: Cliente tem OS aberta (status nao-final) criada nas ultimas
         // 72h. Se sim, o caso ja esta sendo resolvido — nao faz sentido o bot

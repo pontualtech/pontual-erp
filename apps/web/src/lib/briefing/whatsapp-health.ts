@@ -19,6 +19,33 @@ export type WhatsappHealthInput = {
    * envio falha com 131031 "Business Account locked".
    */
   falhasEntrega24h?: { total: number; erro: string }
+  /** Templates cuja qualidade a Meta rebaixou (ex.: 'pt_cobranca_v3:RED') */
+  templatesRuins?: string[]
+  /** Mensagem de detectarPicoDeVolume, quando o volume de ontem fugiu do padrão */
+  picoVolume?: string | null
+}
+
+const PICO_FATOR = 1.3
+const PICO_MINIMO = 400
+const HISTORICO_MINIMO_DIAS = 7
+
+/**
+ * Pico de volume de envio: alerta precoce de loop/disparo em massa (a restrição
+ * de 09/10/2026 veio depois de dias de envio acima do necessário).
+ * `porDia` em ordem cronológica; o ÚLTIMO elemento é o dia fechado mais recente
+ * e os anteriores formam o histórico. Dispara quando o dia passa 30% do MAIOR
+ * dia do histórico E tem pelo menos 400 mensagens — fim de semana e conta
+ * restrita (volume baixo) nunca alertam, e pouco histórico não gera falso alarme.
+ */
+export function detectarPicoDeVolume(porDia: number[]): string | null {
+  if (porDia.length < HISTORICO_MINIMO_DIAS + 1) return null
+  const ontem = porDia[porDia.length - 1]
+  const historico = porDia.slice(-1 - HISTORICO_MINIMO_DIAS, -1)
+  const maximo = Math.max(...historico)
+  if (ontem >= PICO_MINIMO && ontem > maximo * PICO_FATOR) {
+    return `Volume de ontem (${ontem} mensagens) passou 30% do maior dia da semana anterior (${maximo}) — conferir se algo está disparando em massa`
+  }
+  return null
 }
 
 export function avaliarSaudeWhatsapp(i: WhatsappHealthInput): string[] {
@@ -40,6 +67,9 @@ export function avaliarSaudeWhatsapp(i: WhatsappHealthInput): string[] {
   if (i.falhasEntrega24h && i.falhasEntrega24h.total > 0) {
     problemas.push(`${i.falhasEntrega24h.total} mensagem(ns) do WhatsApp FALHARAM na entrega nas últimas 24h — ${i.falhasEntrega24h.erro} (clientes sem resposta; pode ser restrição da Meta)`)
   }
+
+  for (const t of i.templatesRuins ?? []) problemas.push(`Template com qualidade rebaixada pela Meta: ${t}`)
+  if (i.picoVolume) problemas.push(i.picoVolume)
 
   if (i.followupLigado) problemas.push('Follow-up automático do bot está LIGADO (causou a restrição de 09/10)')
   if (i.marketingLigado) problemas.push('Marketing por WhatsApp está LIGADO (causou o aviso de 10/06)')

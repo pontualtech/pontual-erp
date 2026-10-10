@@ -13,7 +13,7 @@ import { prisma } from '@pontual/db'
 import { sendCompanyEmail } from '@/lib/send-email'
 import { receivableAlertLevel } from '@/lib/finance/conciliacao-alert'
 import { buildBriefingHtml, probeStatus, type EmpresaBriefing, type InfraProbe } from '@/lib/briefing/daily'
-import { avaliarSaudeWhatsapp } from '@/lib/briefing/whatsapp-health'
+import { avaliarSaudeWhatsapp, detectarPicoDeVolume } from '@/lib/briefing/whatsapp-health'
 
 export const maxDuration = 120
 
@@ -105,10 +105,34 @@ async function checarWhatsappPT(companyId: string): Promise<string[]> {
   // mas o envio falha com 131031 — o Chatwoot marca essas mensagens como failed.
   const falhasEntrega24h = await contarFalhasEntregaChatwoot(companyId)
 
+  // Alertas precoces: pico de volume de envio e template rebaixado pela Meta.
+  let picoVolume: string | null = null
+  let templatesRuins: string[] = []
+  if (token && wabaId) {
+    try {
+      const fimDiaFechado = new Date(); fimDiaFechado.setUTCHours(0, 0, 0, 0)
+      const fim = Math.floor(fimDiaFechado.getTime() / 1000)
+      const ini = fim - 9 * 86400
+      const [a, tp] = await Promise.all([
+        fetch(`${GRAPH}/${wabaId}?fields=analytics.start(${ini}).end(${fim}).granularity(DAY)&access_token=${token}`, { signal: AbortSignal.timeout(10000) }).then(r => r.json()),
+        fetch(`${GRAPH}/${wabaId}/message_templates?fields=name,quality_score&limit=100&access_token=${token}`, { signal: AbortSignal.timeout(10000) }).then(r => r.json()),
+      ])
+      const porDia = ((a.analytics?.data_points || []) as any[]).map(d => Number(d.sent) || 0)
+      picoVolume = detectarPicoDeVolume(porDia)
+      templatesRuins = ((tp.data || []) as any[])
+        .filter(t => t.quality_score?.score && !['GREEN', 'UNKNOWN'].includes(t.quality_score.score))
+        .map(t => `${t.name}:${t.quality_score.score}`)
+    } catch (err) {
+      console.error('[daily-briefing] Meta analytics falhou:', err instanceof Error ? err.message : err)
+    }
+  }
+
   return avaliarSaudeWhatsapp({
     phones,
     waba,
     falhasEntrega24h,
+    picoVolume,
+    templatesRuins,
     followupLigado: get('bot.followup.enabled') === 'true',
     marketingLigado: get('whatsapp.notifications.marketing_enabled') === 'true',
   })

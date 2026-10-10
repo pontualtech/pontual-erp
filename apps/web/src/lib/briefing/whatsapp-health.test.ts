@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { avaliarSaudeWhatsapp } from './whatsapp-health'
+import { avaliarSaudeWhatsapp, detectarPicoDeVolume } from './whatsapp-health'
 
 const saudavel = {
   phones: [{ nome: 'Suporte 2626-3841', status: 'CONNECTED', quality: 'GREEN' }],
@@ -57,5 +57,41 @@ describe('avaliarSaudeWhatsapp', () => {
   it('falha ao consultar a Meta é reportada, não silenciada', () => {
     const p = avaliarSaudeWhatsapp({ ...saudavel, phones: [], waba: null })
     expect(p.join(' ')).toMatch(/n[aã]o consegui consultar/i)
+  })
+})
+
+describe('detectarPicoDeVolume', () => {
+  // volumes reais da PT (Meta analytics, 28/09–08/10): dias úteis 367–688
+  const semanaNormal = [688, 685, 541, 367, 510, 112, 43]
+
+  it('dia dentro da faixa histórica não alerta', () => {
+    expect(detectarPicoDeVolume([...semanaNormal, 529])).toBeNull()
+    expect(detectarPicoDeVolume([...semanaNormal, 700])).toBeNull()
+  })
+
+  it('pico claramente acima do histórico alerta com os números', () => {
+    const r = detectarPicoDeVolume([...semanaNormal, 1500])
+    expect(r).toContain('1500')
+    expect(r).toContain('688')
+  })
+
+  it('volume baixo (sábado/domingo ou conta restrita) nunca alerta', () => {
+    expect(detectarPicoDeVolume([...semanaNormal, 20])).toBeNull()
+  })
+
+  it('pouco histórico não gera falso alarme', () => {
+    expect(detectarPicoDeVolume([100, 5000])).toBeNull()
+  })
+})
+
+describe('qualidade de templates', () => {
+  it('template com qualidade ruim vira alerta', () => {
+    const p = avaliarSaudeWhatsapp({ ...saudavel, templatesRuins: ['pt_cobranca_v3:RED'] })
+    expect(p.join(' ')).toMatch(/pt_cobranca_v3:RED/)
+  })
+
+  it('pico de volume entra na lista de problemas', () => {
+    const p = avaliarSaudeWhatsapp({ ...saudavel, picoVolume: 'Volume ontem 1500 msgs (máx 688)' })
+    expect(p.join(' ')).toContain('1500')
   })
 })
