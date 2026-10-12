@@ -1400,15 +1400,19 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
           // 2026-10-12: a etiqueta é o próprio clique — consome os registros dele para o fingerprint
           // não entregá-lo a outra conversa nos próximos 15 min.
           if (attribution.gclid) {
-            await prisma.marketingWhatsappRedirect.updateMany({
-              where: {
-                company_id: cfg.companyId,
-                gclid: attribution.gclid,
-                consumed_at: null,
-                click_at: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
-              },
-              data: { consumed_at: new Date(), consumed_by_conv_id: conversationId },
-            })
+            try {
+              await prisma.marketingWhatsappRedirect.updateMany({
+                where: {
+                  company_id: cfg.companyId,
+                  gclid: { in: [...new Set([attribution.gclid, attribution.gclid.replace(/\*/g, '_')])] },
+                  consumed_at: null,
+                  click_at: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+                },
+                data: { consumed_at: new Date(), consumed_by_conv_id: conversationId },
+              })
+            } catch (e: any) {
+              console.warn(`[Bot/CWT] não consumiu os cliques da etiqueta (segue): ${e?.message}`)
+            }
           }
 
           // 2026-05-21: posta nota privada legivel + tenta deletar msg original
@@ -1450,20 +1454,19 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       if (isWhatsappChannel) {
         const existing = await prisma.botConversation.findFirst({
           where: { chatwoot_conv_id: conversationId, company_id: cfg.companyId },
-          select: { data: true, attribution: true, created_at: true },
+          select: { data: true, attribution: true },
         })
         const existingData: Record<string, any> =
           existing?.data && typeof existing.data === 'object' && !Array.isArray(existing.data)
             ? { ...(existing.data as Record<string, any>) }
             : {}
-        // 2026-10-12: só em conversa NOVA da Ana e sem origem na coluna durável — antes olhava só
-        // data.attribution (zerado a cada turno) e reatribuía conversas em andamento. Ver lib/bot/fingerprint-policy.
+        // 2026-10-12: só na 1ª mensagem de conversa nova da Ana e sem origem na coluna durável — antes
+        // olhava só data.attribution (zerado a cada turno) e reatribuía conversas em andamento. Ver lib/bot/fingerprint-policy.
         const runFingerprint = shouldRunFingerprint({
           isWhatsappChannel,
           isSupportBot: cfg.slug.includes('suporte') || !!cfg.botOrigin?.includes('marta') || !!cfg.botOrigin?.includes('aline'),
           hasAttribution: !!existingData.attribution || !!existing?.attribution,
-          conversationCreatedAt: existing?.created_at ?? null,
-          now: new Date(),
+          conversationExists: !!existing,
         })
         if (runFingerprint) {
           // Audit 2026-05-24 fix #5: filtra strict por company_id (sem OR null fallback).
@@ -1553,7 +1556,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
             if (Object.keys(attribution).length > 0) {
               existingData.attribution = {
                 // 2026-10-12: com vários cliques possíveis ('channel') guarda só canal/utm, sem IDs de clique
-                ...attributionForPrecision(attribution, matchPrecision),
+                ...attributionForPrecision(attribution, matchPrecision, channelOf(redirect)),
                 source: 'cwt_fingerprint',
                 match_precision: matchPrecision, // 'exact' = clique único; 'channel' = canal certo, clique aproximado
                 captured_at: new Date().toISOString(),
@@ -1571,11 +1574,15 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
                   attribution: existingData.attribution,
                 },
               })
-              await prisma.marketingWhatsappRedirect.update({
-                where: { id: redirect.id },
-                data: { consumed_at: new Date(), consumed_by_conv_id: conversationId },
-              })
-              console.log(`[Bot/CWT/Fingerprint] Attribution matched conv ${conversationId} via redirect ${redirect.id}: ${JSON.stringify(attribution)}`)
+              // 2026-10-12: só consome o clique quando ele é desta conversa ('exact'). Em 'channel' o
+              // clique pode ser de outra pessoa — consumi-lo tirava da fila o clique do verdadeiro dono.
+              if (matchPrecision === 'exact') {
+                await prisma.marketingWhatsappRedirect.update({
+                  where: { id: redirect.id },
+                  data: { consumed_at: new Date(), consumed_by_conv_id: conversationId },
+                })
+              }
+              console.log(`[Bot/CWT/Fingerprint] Attribution matched conv ${conversationId} via redirect ${redirect.id} (${matchPrecision}): ${JSON.stringify(existingData.attribution)}`)
 
               // Posta nota privada igual ao path do [ref:]
               const srcLabel = (() => {
@@ -1589,10 +1596,10 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
                 const m: Record<string, string> = { google: 'Google Ads', bing: 'Microsoft Ads', meta: 'Meta Ads', facebook: 'Meta Ads', instagram: 'Instagram', linkedin: 'LinkedIn', twitter: 'X (Twitter)', x: 'X (Twitter)', tiktok: 'TikTok', direct: 'Direto' }
                 return m[src.toLowerCase()] || (src ? src.charAt(0).toUpperCase() + src.slice(1) : 'Origem desconhecida')
               })()
-              const noteLines = [`📊 *Origem: ${srcLabel}* (via fingerprint)`]
+              const noteLines = [`📊 *Origem: ${srcLabel}* (via fingerprint${matchPrecision === 'channel' ? '; canal certo, clique não identificado' : ''})`]
               if (attribution.utm_term) noteLines.push(`🔎 Palavra-chave: ${attribution.utm_term}`)
               if (attribution.utm_campaign) noteLines.push(`📣 Campanha: ${attribution.utm_campaign}`)
-              if (attribution.gclid) noteLines.push(`gclid: ${attribution.gclid.slice(0, 20)}...`)
+              if (matchPrecision === 'exact' && attribution.gclid) noteLines.push(`gclid: ${attribution.gclid.slice(0, 20)}...`)
               await cwSendMessage(cfg, conversationId, noteLines.join('\n'), true)
             }
           }

@@ -7,32 +7,49 @@
  * rodava no Suporte (nenhum botão do site leva lá) e gravava gclid mesmo com vários cliques
  * possíveis na janela. Isso ensinava o Google errado (vendas/leads com clique de terceiro).
  */
-export const NEW_CONVERSATION_MAX_AGE_MS = 2 * 60 * 1000
-
 export function shouldRunFingerprint(input: {
   isWhatsappChannel: boolean
   isSupportBot: boolean
   /** Origem já gravada na coluna durável `attribution` OU na cópia legada `data.attribution`. */
   hasAttribution: boolean
-  /** created_at da linha em bot_conversations (null = conversa ainda sem linha = nova). */
-  conversationCreatedAt: Date | null
-  now: Date
+  /**
+   * A conversa já tem linha em bot_conversations? A linha só nasce depois da 1ª mensagem, então
+   * linha existente = mensagem 2 em diante — e um clique livre agora é posterior ao início da
+   * conversa: por definição não é dela.
+   */
+  conversationExists: boolean
 }): boolean {
-  if (!input.isWhatsappChannel || input.isSupportBot || input.hasAttribution) return false
-  if (!input.conversationCreatedAt) return true
-  return input.now.getTime() - input.conversationCreatedAt.getTime() <= NEW_CONVERSATION_MAX_AGE_MS
+  return input.isWhatsappChannel && !input.isSupportBot && !input.hasAttribution && !input.conversationExists
 }
 
 const CLICK_ID_KEYS = ['gclid', 'gbraid', 'wbraid', 'msclkid', 'fbclid', 'li_fat_id', 'twclid', 'ttclid'] as const
+const CHANNEL_UTM: Record<string, { utm_source: string; utm_medium: string }> = {
+  google_ads: { utm_source: 'google', utm_medium: 'cpc' },
+  microsoft_ads: { utm_source: 'bing', utm_medium: 'cpc' },
+  meta_ads: { utm_source: 'facebook', utm_medium: 'paid' },
+  linkedin_ads: { utm_source: 'linkedin', utm_medium: 'paid' },
+  x_ads: { utm_source: 'twitter', utm_medium: 'paid' },
+  tiktok_ads: { utm_source: 'tiktok', utm_medium: 'paid' },
+}
 
 /**
  * Com 1 só clique livre na janela ('exact') o clique é guardado inteiro. Com vários ('channel')
- * o canal está certo mas o clique pode ser de outra pessoa: guarda só a origem (utm/canal, que
- * alimenta canal_entrada e relatórios) e descarta os IDs de clique, que iriam para o Google.
+ * o canal está certo mas o clique pode ser de outra pessoa: descarta os IDs de clique (iriam ao
+ * Google) e garante utm de canal (anúncio só com auto-tagging não tem utm — sem isso o canal
+ * sumia de canal_entrada e dos relatórios).
  */
-export function attributionForPrecision<T extends Record<string, string>>(attribution: T, precision: 'exact' | 'channel'): Partial<T> {
+export function attributionForPrecision(
+  attribution: Record<string, string>,
+  precision: 'exact' | 'channel',
+  channel?: string,
+): Record<string, string> {
   if (precision === 'exact') return attribution
   const out: Record<string, string> = { ...attribution }
   for (const k of CLICK_ID_KEYS) delete out[k]
-  return out as Partial<T>
+  const utm = channel ? CHANNEL_UTM[channel] : undefined
+  if (utm) {
+    out.utm_source = out.utm_source || utm.utm_source
+    out.utm_medium = out.utm_medium || utm.utm_medium
+  }
+  return out
 }
