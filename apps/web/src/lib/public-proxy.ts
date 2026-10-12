@@ -118,6 +118,9 @@ export async function forwardToBot(
     method,
     headers: { ...fwdHeaders, ...(init?.headers as Record<string, string> | undefined) },
     body,
+    // 2026-10-12: as rotas públicas são force-dynamic e, no Next 14, isso NÃO desliga o Data Cache —
+    // sem no-store a resposta de cada OS ficava em cache até o próximo deploy (status velho no site).
+    cache: 'no-store',
     // Pequeno timeout — site público não pode ficar pendurado
     signal: AbortSignal.timeout(20_000),
   })
