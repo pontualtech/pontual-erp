@@ -30,6 +30,7 @@ import { optOutCustomerByPhone } from '@/lib/whatsapp/consent'
 import { type OsInfo, mapOrderToOsInfo } from '@/lib/bot/os-info'
 import { hasOptOutKeyword } from '@/lib/bot/opt-out'
 import { isFollowUpAllowedForChannel } from '@/lib/bot/followup-policy'
+import { shouldRunFingerprint, attributionForPrecision } from '@/lib/bot/fingerprint-policy'
 import {
   getImprimitechHandoffStatusId,
   buildImprimitechHandoffMessage,
@@ -1390,11 +1391,25 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
             create: {
               chatwoot_conv_id: conversationId,
               company_id: cfg.companyId,
+              inbox_id: inboxId || null, // 2026-10-12: antes ficava NULL nas conversas criadas aqui
               data: existingData,
               attribution: existingData.attribution,
             },
           })
           console.log(`[Bot/CWT] Attribution captured for conv ${conversationId}: ${JSON.stringify(attribution)}`)
+          // 2026-10-12: a etiqueta é o próprio clique — consome os registros dele para o fingerprint
+          // não entregá-lo a outra conversa nos próximos 15 min.
+          if (attribution.gclid) {
+            await prisma.marketingWhatsappRedirect.updateMany({
+              where: {
+                company_id: cfg.companyId,
+                gclid: attribution.gclid,
+                consumed_at: null,
+                click_at: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+              },
+              data: { consumed_at: new Date(), consumed_by_conv_id: conversationId },
+            })
+          }
 
           // 2026-05-21: posta nota privada legivel + tenta deletar msg original
           // pra atendente nao ver o [ref:...] raw. Se delete falhar (chatwoot
@@ -1435,13 +1450,22 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       if (isWhatsappChannel) {
         const existing = await prisma.botConversation.findFirst({
           where: { chatwoot_conv_id: conversationId, company_id: cfg.companyId },
-          select: { data: true },
+          select: { data: true, attribution: true, created_at: true },
         })
         const existingData: Record<string, any> =
           existing?.data && typeof existing.data === 'object' && !Array.isArray(existing.data)
             ? { ...(existing.data as Record<string, any>) }
             : {}
-        if (!existingData.attribution) {
+        // 2026-10-12: só em conversa NOVA da Ana e sem origem na coluna durável — antes olhava só
+        // data.attribution (zerado a cada turno) e reatribuía conversas em andamento. Ver lib/bot/fingerprint-policy.
+        const runFingerprint = shouldRunFingerprint({
+          isWhatsappChannel,
+          isSupportBot: cfg.slug.includes('suporte') || !!cfg.botOrigin?.includes('marta') || !!cfg.botOrigin?.includes('aline'),
+          hasAttribution: !!existingData.attribution || !!existing?.attribution,
+          conversationCreatedAt: existing?.created_at ?? null,
+          now: new Date(),
+        })
+        if (runFingerprint) {
           // Audit 2026-05-24 fix #5: filtra strict por company_id (sem OR null fallback).
           // Endpoint /whatsapp-redirect agora resolve company_id via Origin header.
           // Sem isso, redirect de site PT podia ser atribuído a msg do inbox IMP (cross-tenant leak).
@@ -1528,7 +1552,8 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
             }
             if (Object.keys(attribution).length > 0) {
               existingData.attribution = {
-                ...attribution,
+                // 2026-10-12: com vários cliques possíveis ('channel') guarda só canal/utm, sem IDs de clique
+                ...attributionForPrecision(attribution, matchPrecision),
                 source: 'cwt_fingerprint',
                 match_precision: matchPrecision, // 'exact' = clique único; 'channel' = canal certo, clique aproximado
                 captured_at: new Date().toISOString(),
@@ -1541,6 +1566,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
                 create: {
                   chatwoot_conv_id: conversationId,
                   company_id: cfg.companyId,
+                  inbox_id: inboxId || null, // 2026-10-12: antes ficava NULL nas conversas criadas aqui
                   data: existingData,
                   attribution: existingData.attribution,
                 },
