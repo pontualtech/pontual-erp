@@ -7,6 +7,7 @@ import { getNextOsNumber } from '@/lib/os-number'
 import { redactName, redactDoc } from '@/lib/log-redact'
 import { deriveCanalEntrada } from '@/lib/lookup-tracking'
 import { deriveColetaPeriodo } from '@/lib/coleta-periodo'
+import { trackingSourceFor } from '@/lib/ads/tracking-source'
 
 /**
  * POST /api/bot/abrir-os
@@ -362,6 +363,8 @@ export async function POST(req: NextRequest) {
       if (Object.keys(tracking).length > 0) {
         customData.tracking = tracking
         customData.tracking_captured_at = new Date().toISOString()
+        // 2026-10-12: de onde veio o gclid — o portão de vendas aceita só 'site_form' como prova direta
+        customData.tracking_source = trackingSourceFor({ bodyHadTracking: hasAnyTracking, origem })
         if (canalEntrada) customData.canal_entrada = canalEntrada
       }
       if (observacao_coleta) {

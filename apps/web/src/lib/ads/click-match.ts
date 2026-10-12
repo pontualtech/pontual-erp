@@ -11,6 +11,7 @@
  * A prova é ancorada no CLIQUE (marketing_whatsapp_redirects) e no DONO dele (conversa do
  * próprio cliente da OS, pelo telefone) — não na origem atual da conversa, que pode ter sido
  * reescrita. Só passa venda cujo clique:
+ *   - veio no formulário do site (gclid do cookie do próprio navegador; tracking_source 'site_form'); ou
  *   - veio pela etiqueta [ref:] numa conversa do cliente, antes da OS; ou
  *   - foi consumido por conversa NOVA do cliente numa caixa de venda, era o ÚNICO clique livre
  *     na janela do fingerprint naquele instante, teve a 1ª mensagem até 3 min depois e a OS foi
@@ -26,6 +27,7 @@ export const CLOCK_TOLERANCE_MS = 5 * 1000
 export const FINGERPRINT_WINDOW_MS = 15 * 60 * 1000 // mesma janela do fingerprint do bot
 
 export type ClickMatchReason =
+  | 'formulario'
   | 'etiqueta'
   | 'exato'
   | 'gclid_em_outra_os'
@@ -66,6 +68,8 @@ export interface ClickMatchInput {
   otherNewConsumers: number
   /** Conversas (de qualquer cliente) com esse gclid vindo da etiqueta [ref:]. */
   tokenConvs: Array<{ chatwootConvId: number; capturedAt: Date | null }>
+  /** O gclid da OS veio do formulário do site (cookie do próprio navegador) — custom_data.tracking_source. */
+  siteFormOrigin?: boolean
   /** 1º consumo do clique por conversa do cliente (ver pickCustomerConsumption). */
   consumption: CustomerConsumption | null
   /** Outros cliques livres na janela do fingerprint no instante desse consumo (sem o mesmo gclid). */
@@ -88,6 +92,10 @@ export function decideClickMatch(input: ClickMatchInput): { ok: boolean; reason:
   // 1) Etiqueta [ref:] do próprio cliente: prova de 1ª mão — vence disputa (o bot não consome o
   //    clique de quem veio pela etiqueta, então o fingerprint pode tê-lo dado a outra conversa).
   //    Só exige ser anterior à OS; referência = 1º clique registrado (o bot regrava captured_at).
+  // 0) Formulário do site: o gclid veio do cookie do navegador que enviou o pedido — prova de 1ª mão,
+  //    vence disputa (o fingerprint pode ter dado o mesmo clique, registrado no botão WA, a outra conversa).
+  if (input.siteFormOrigin) return { ok: true, reason: 'formulario' }
+
   const myToken = tokenConvs.find(t => customerConvIds.has(t.chatwootConvId))
   if (myToken) {
     const firstClick = clicks.length ? Math.min(...clicks.map(c => c.clickAt.getTime())) : myToken.capturedAt?.getTime()

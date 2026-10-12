@@ -32,6 +32,16 @@ describe('decideClickMatch', () => {
     expect(decideClickMatch(base({ customerConvIds: new Set(), consumption: null })).reason).toBe('sem_conversa_do_cliente')
   })
 
+  describe('formulário do site', () => {
+    it('gclid veio do formulário (cookie do próprio navegador) → passa mesmo sem conversa', () => {
+      expect(decideClickMatch(base({ siteFormOrigin: true, customerConvIds: new Set(), consumption: null, clicks: [] })))
+        .toEqual({ ok: true, reason: 'formulario' })
+    })
+    it('vence disputa: o fingerprint pode ter dado o mesmo clique a outra conversa', () => {
+      expect(decideClickMatch(base({ siteFormOrigin: true, otherNewConsumers: 1, otherCustomerOsWithGclid: 1 })).reason).toBe('formulario')
+    })
+  })
+
   describe('disputa entre clientes', () => {
     it('mesmo gclid na OS de outro cliente → barra (não dá para saber de quem é)', () => {
       expect(decideClickMatch(base({ otherCustomerOsWithGclid: 1 })).reason).toBe('gclid_em_outra_os')

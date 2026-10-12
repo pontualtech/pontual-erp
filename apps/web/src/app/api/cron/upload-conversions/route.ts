@@ -178,11 +178,19 @@ async function recoverAttribution(os: any, customer: any): Promise<Attribution> 
 async function checkSaleClick(
   companyId: string,
   gclid: string,
-  os: { id: string; customer_id: string; created_at: Date | null; customers?: { mobile?: string | null; phone?: string | null } | null },
+  os: { id: string; customer_id: string; created_at: Date | null; custom_data?: unknown; customers?: { mobile?: string | null; phone?: string | null } | null },
   salesInboxes: Set<number>,
   ctx: { chatwootDown: boolean },
 ): Promise<{ ok: boolean; reason: ClickMatchReason }> {
   try {
+    // Formulário do site (gclid do cookie do próprio navegador) é prova direta — decide sem consultar.
+    const cd = (os.custom_data || {}) as Record<string, any>
+    if (cd.tracking_source === 'site_form' && cd.tracking?.gclid === gclid) {
+      return decideClickMatch({
+        clicks: [], customerConvIds: new Set(), otherCustomerOsWithGclid: 0, otherNewConsumers: 0, tokenConvs: [],
+        consumption: null, freeClicksInWindow: 0, osCreatedAt: os.created_at, salesInboxes, siteFormOrigin: true,
+      })
+    }
     const variants = [...new Set([gclid, gclid.replace(/\*/g, '_')])] // mesmo workaround do upload
     const phone = (os.customers?.mobile || os.customers?.phone || '').replace(/\D/g, '')
     const customerConvs = phone.length >= 10
