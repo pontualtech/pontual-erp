@@ -25,7 +25,7 @@
  */
 
 import { NextRequest } from 'next/server'
-import { timingSafeEqual } from 'crypto'
+import { timingSafeEqual, createHash } from 'crypto'
 import { prisma } from '@pontual/db'
 import { success, error } from '@/lib/api-response'
 import {
@@ -35,6 +35,10 @@ import {
 import { getConversationInboxId } from '@/lib/chatwoot'
 
 export const dynamic = 'force-dynamic'
+// 2026-10-12: rota só-GET no Next 14 não desliga o Data Cache com force-dynamic — o fetch do token
+// OAuth ficava em cache para sempre (mesmo token em toda rodada → 401 invalid_token 1h após cada
+// deploy; o "retry com token novo" recebia o mesmo token do cache). Nenhum fetch desta rota pode ser cacheado.
+export const fetchCache = 'force-no-store'
 export const runtime = 'nodejs'
 export const maxDuration = 120
 
@@ -656,6 +660,8 @@ export async function GET(request: NextRequest) {
     errors: errors.slice(0, 10),
     google_ads_configured: !!PT_GOOGLE_ADS?.developerToken,
     google_ads_token_ok: !!googleAccessToken,
+    // Impressão do token (hash curto, não revela o token): muda a cada rodada; se repetir, voltou o cache.
+    google_ads_token_fp: googleAccessToken ? createHash('sha256').update(googleAccessToken).digest('hex').slice(0, 8) : null,
     bing_ads_configured: !!PT_BING_ADS?.developerToken,
   })
 }
