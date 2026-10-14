@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { Plus, X, Search, Loader2, CheckCircle, Building2, User, ChevronDown, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
+import { COMO_CONHECEU_OPTIONS } from '@/lib/os/como-conheceu'
 
 interface Cliente { id: string; legal_name: string; trade_name: string | null }
 interface UserProfile { id: string; name: string }
@@ -55,6 +56,7 @@ export default function NovaOSPage() {
     os_location: '',
     technician_id: '',
     estimated_delivery: '',
+    como_conheceu: '',
   })
   const submittedRef = useRef(false)
   const [draftRestored, setDraftRestored] = useState(false)
@@ -110,6 +112,7 @@ export default function NovaOSPage() {
       os_location: '',
       technician_id: '',
       estimated_delivery: '',
+      como_conheceu: '',
     })
     setDraftRestored(false)
     toast.success('Rascunho descartado')
@@ -179,6 +182,7 @@ export default function NovaOSPage() {
             os_location: os.os_location || 'LOJA',
             technician_id: os.technician_id || '',
             estimated_delivery: '',
+            como_conheceu: '',
           })
           if (os.equipment_brand) setMarcaSearch(os.equipment_brand)
           if (os.equipment_model) setModeloSearch(os.equipment_model)
@@ -271,6 +275,7 @@ export default function NovaOSPage() {
     if (!form.customer_id) newErrors.customer_id = 'Selecione um cliente'
     if (!form.equipment_type) newErrors.equipment_type = 'Informe o tipo de equipamento'
     if (!form.reported_issue) newErrors.reported_issue = 'Descreva o problema relatado'
+    if (!form.como_conheceu) newErrors.como_conheceu = 'Pergunte como o cliente conheceu a empresa'
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors)
@@ -296,6 +301,7 @@ export default function NovaOSPage() {
         technician_id: form.technician_id || undefined,
         estimated_delivery: form.estimated_delivery || undefined,
         accept_marketing: acceptMarketing,
+        como_conheceu: form.como_conheceu,
       }
 
       const res = await fetch('/api/os', {
@@ -459,6 +465,18 @@ export default function NovaOSPage() {
               </>
             )}
             {errors.customer_id && <p className="mt-1 text-sm text-red-500">{errors.customer_id}</p>}
+          </div>
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">Como o cliente conheceu a empresa? *</label>
+            <select value={form.como_conheceu} onChange={e => updateForm('como_conheceu', e.target.value)}
+              title="Como o cliente conheceu a empresa"
+              className={`w-full px-3 py-2 border rounded-md ${errors.como_conheceu ? 'border-red-400' : ''}`}>
+              <option value="">Pergunte ao cliente…</option>
+              {COMO_CONHECEU_OPTIONS.map(o => (
+                <option key={o.key} value={o.key}>{o.label}</option>
+              ))}
+            </select>
+            {errors.como_conheceu && <p className="mt-1 text-sm text-red-500">{errors.como_conheceu}</p>}
           </div>
         </div>
 

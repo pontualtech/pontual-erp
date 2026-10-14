@@ -6,6 +6,7 @@ import { logAudit } from '@/lib/audit'
 import { getNextOsNumber } from '@/lib/os-number'
 import { getOverdueOsWhereClause } from '@/lib/os-overdue'
 import { lookupTrackingFromConv } from '@/lib/lookup-tracking'
+import { normalizeComoConheceu } from '@/lib/os/como-conheceu'
 
 export async function GET(req: NextRequest) {
   try {
@@ -307,7 +308,10 @@ export async function POST(req: NextRequest) {
     // Sprint 1 Gargalo 1 (2026-05-29) / Frente D refactor: propaga tracking quando
     // atendente abre OS manual. Helper compartilhado com portal/webhook/v1.
     const customerPhone = customer?.phone || customer?.mobile || null
-    const customData = await lookupTrackingFromConv(user.companyId, customerPhone)
+    const trackingData = await lookupTrackingFromConv(user.companyId, customerPhone)
+    // 2026-10-14: origem informada pelo atendente ("como nos conheceu") — ver lib/os/como-conheceu
+    const comoConheceu = normalizeComoConheceu(body.como_conheceu)
+    const customData = comoConheceu ? { ...(trackingData || {}), como_conheceu: comoConheceu } : trackingData
 
     // Fase 4 conformidade Meta: opt-in de marketing WhatsApp (checkbox na
     // abertura de OS pelo atendente). So grava quando marcado.
