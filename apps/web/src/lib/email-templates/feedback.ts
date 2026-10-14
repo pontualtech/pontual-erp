@@ -12,7 +12,8 @@ import { prisma } from '@pontual/db'
  *   {{cliente}}       nome do cliente
  *   {{empresa}}       nome da empresa
  *   {{os_number}}     numero da OS
- *   {{link}}          URL de avaliacao (com token de cupom)
+ *   {{link}}          URL de avaliacao (token só identifica o cliente; NUNCA oferecer benefício pela
+ *                     avaliação — política do Google. O cupom de fidelidade é dado na entrega.)
  *   {{primeiro_nome}} primeiro nome do cliente
  */
 export type FeedbackVars = {
@@ -46,11 +47,11 @@ const DEFAULT_HTML = `<!DOCTYPE html>
             <td style="padding:32px;color:#1f2937;font-size:15px;line-height:1.6;">
               <p style="margin:0 0 12px 0;">Ola <strong>{{primeiro_nome}}</strong>,</p>
               <p style="margin:0 0 16px 0;">Acabamos de concluir o servico da OS <strong>#{{os_number}}</strong>. Queriamos saber: como foi a experiencia?</p>
-              <p style="margin:0 0 24px 0;">Leva menos de 1 minuto pra avaliar nosso atendimento no Google. Como forma de agradecimento pelo feedback, voce ganha <strong>10% de desconto</strong> no proximo servico ou produto.</p>
+              <p style="margin:0 0 24px 0;">Se puder, conte no Google como foi o atendimento. Leva menos de 1 minuto e ajuda outras pessoas aqui de São Paulo a escolher onde consertar a impressora.</p>
               <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
                 <tr>
                   <td align="center" style="padding:8px 0;">
-                    <a href="{{link}}" target="_blank" style="display:inline-block;background-color:#4f46e5;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;padding:14px 32px;border-radius:10px;box-shadow:0 2px 6px rgba(79,70,229,0.25);">Avaliar e ganhar 10%</a>
+                    <a href="{{link}}" target="_blank" style="display:inline-block;background-color:#4f46e5;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;padding:14px 32px;border-radius:10px;box-shadow:0 2px 6px rgba(79,70,229,0.25);">Avaliar no Google</a>
                   </td>
                 </tr>
               </table>

@@ -8,8 +8,11 @@ import crypto from 'crypto'
  * Endpoint publico que o cliente acessa via link WhatsApp (enviado
  * pelo cron google-reviews). Fluxo:
  *  1. Decodifica token (HMAC com company_id + customer_id)
- *  2. Cria cupom permanente de 10% pro cliente (se ainda nao tem)
+ *  2. Registra o clique nas OS recentes do cliente (review_reminder_sent_at) p/ não mandar lembrete
  *  3. Redireciona pra URL do Google Meu Negocio da empresa
+ *
+ * 2026-10-14: NÃO cria mais cupom aqui. Cupom ligado ao clique de avaliação é incentivo condicionado
+ * (proibido pelo Google); o cupom de fidelidade agora é dado na entrega (lib/loyalty/delivery-coupon).
  *
  * Confiamos no clique: se a pessoa clicou no link, assumimos que esta
  * indo avaliar. API do Google My Business pra verificacao real exige
@@ -27,11 +30,12 @@ function getSecret(): string {
   }
   return 'fallback-dev-secret-local-only'
 }
-const DEFAULT_PERCENT = 10
 // Token expira em 90 dias — evita reutilizacao indefinida se cliente
 // re-encaminhar o link apos meses. 90d e folga confortavel pra cliente
 // que demora pra abrir a mensagem.
 const TOKEN_TTL_MS = 90 * 24 * 60 * 60 * 1000
+// O lembrete sai 24–48h após o pedido; 3 dias cobre o pedido que gerou este clique.
+const CLICK_MARK_WINDOW_MS = 3 * 24 * 60 * 60 * 1000
 
 function verifyToken(token: string): { companyId: string; customerId: string } | null {
   try {
@@ -50,15 +54,10 @@ function verifyToken(token: string): { companyId: string; customerId: string } |
   }
 }
 
-function generateCode(): string {
-  const rand = crypto.randomBytes(4).toString('hex').toUpperCase()
-  return `REVIEW-${rand}`
-}
-
 export async function GET(req: NextRequest, { params }: { params: { token: string } }) {
   const decoded = verifyToken(params.token)
 
-  // Tentativa de token invalido — manda direto pro site (sem criar cupom)
+  // Tentativa de token invalido — manda direto pro site
   if (!decoded) {
     return NextResponse.redirect('https://www.pontualtech.com.br/', 302)
   }
@@ -69,55 +68,26 @@ export async function GET(req: NextRequest, { params }: { params: { token: strin
   })
   const reviewsUrl = setting?.value
 
-  // Audit #16 (2026-05-29): fail-closed se URL nao configurada.
-  // Antes caia em fallback 'google.com' generico + criava cupom mesmo assim
-  // = cliente ganhava 10% sem deixar avaliacao (perda direta).
-  // Agora: redireciona pro site sem criar cupom + log warning pro admin notar.
+  // Audit #16 (2026-05-29): fail-closed se URL nao configurada — redireciona pro site + log pro admin notar.
   if (!reviewsUrl) {
-    console.warn(`[cupom-avaliacao] google_reviews.url nao configurado pra company_id=${decoded.companyId} — abortando criacao de cupom`)
+    console.warn(`[cupom-avaliacao] google_reviews.url nao configurado pra company_id=${decoded.companyId}`)
     return NextResponse.redirect('https://www.pontualtech.com.br/', 302)
   }
 
+  // Marca as OS recentes do cliente como 'já clicou' — o passe de lembrete (cron google-reviews) só
+  // considera OS com review_reminder_sent_at nulo. Falha aqui não impede o cliente de avaliar.
   try {
-    // Unique constraint (company_id, customer_id, source='review')
-    // garante 1 cupom por cliente. Create atomico — se ja existe, P2002
-    // e tratado como "ja ganhou". Evita race quando cliente clica 2x.
-    const pctSetting = await prisma.setting.findFirst({
-      where: { company_id: decoded.companyId, key: 'loyalty.review_coupon_percent' },
+    await prisma.serviceOrder.updateMany({
+      where: {
+        company_id: decoded.companyId,
+        customer_id: decoded.customerId,
+        review_request_sent_at: { gte: new Date(Date.now() - CLICK_MARK_WINDOW_MS) },
+        review_reminder_sent_at: null,
+      },
+      data: { review_reminder_sent_at: new Date() },
     })
-    const percent = pctSetting ? Math.max(1, Math.min(50, parseInt(pctSetting.value, 10) || DEFAULT_PERCENT)) : DEFAULT_PERCENT
-
-    for (let i = 0; i < 5; i++) {
-      const code = generateCode()
-      try {
-        await prisma.coupon.create({
-          data: {
-            company_id: decoded.companyId,
-            customer_id: decoded.customerId,
-            code,
-            source: 'review',
-            discount_type: 'percent',
-            discount_value: percent,
-            notes: `Gerado via clique no link de avaliacao Google (${new Date().toISOString()})`,
-          },
-        })
-        break
-      } catch (err: any) {
-        if (err?.code === 'P2002') {
-          // Conflito: ou codigo existente (retry com novo code), ou ja
-          // tem cupom review desse cliente (unique na source — 'ja ganhou').
-          // target nos logs indica qual constraint bateu.
-          const target = err.meta?.target || []
-          const isCodeClash = Array.isArray(target) && target.includes('code')
-          if (isCodeClash) continue // gera outro code
-          break // ja tem cupom review — sai silenciosamente
-        }
-        throw err
-      }
-    }
   } catch (err) {
-    // Falha ao criar cupom nao impede o redirect — prioridade e o cliente avaliar
-    console.warn('[cupom-avaliacao] falha ao criar cupom:', err instanceof Error ? err.message : String(err))
+    console.warn('[cupom-avaliacao] falha ao registrar clique:', err instanceof Error ? err.message : String(err))
   }
 
   return NextResponse.redirect(reviewsUrl, 302)

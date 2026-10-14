@@ -3,11 +3,12 @@ import { prisma } from '@pontual/db'
 import { sendWhatsAppTemplate, sendWhatsAppCloud } from '@/lib/whatsapp/cloud-api'
 import { sendCompanyEmail } from '@/lib/send-email'
 import { getFeedbackEmail } from '@/lib/email-templates/feedback'
+import { grantDeliveryCoupon } from '@/lib/loyalty/delivery-coupon'
 import crypto from 'crypto'
 
 /**
- * Gera token HMAC pro link /cupom-avaliacao/[token]. Mesma logica do
- * endpoint publico — se o cliente clicar, ganha cupom e vai pro Google.
+ * Gera token HMAC pro link /cupom-avaliacao/[token] (alias /avaliar). O clique só registra que o
+ * cliente abriu o link (para não mandar lembrete) e leva ao Google — o cupom é dado na entrega.
  *
  * C9 fix (audit): SEM fallback hardcoded 'fallback-dev-secret'. Atacante
  * que conheça essa string forjava tokens de cupom de qualquer customer.
@@ -46,8 +47,8 @@ const DELIVERED_STATUS_ALIASES = ['Entregue', 'Entregue Reparado']
 /**
  * POST /api/internal/cron/google-reviews
  *
- * Envia link de avaliacao do Google Meu Negocio + cupom 10% pra clientes
- * com OS em status "Entregue/Entregue Reparado". Trigger e baseado em
+ * Dá o cupom de fidelidade e envia o link de avaliacao do Google Meu Negocio (sem ligação entre os
+ * dois) pra clientes com OS em status "Entregue/Entregue Reparado". Trigger e baseado em
  * ServiceOrder (nao em LogisticsStop) — assim cobre QUALQUER caller que
  * marque a OS como entregue: motorista, atendente ERP, bot, portal.
  *
@@ -182,6 +183,11 @@ export async function POST(req: NextRequest) {
         results.push({ os_id: os.id, os_number: os.os_number, skipped: 'os_no_longer_delivered' })
         continue
       }
+
+      // === Cupom de fidelidade (2026-10-14) ===
+      // Todo cliente entregue ganha o cupom, ANTES e independente do pedido de avaliação — antes ele
+      // era criado no clique do link de avaliação (incentivo condicionado, proibido pelo Google).
+      if (os.customer_id) await grantDeliveryCoupon(os.company_id, os.customer_id, os.os_number)
 
       // === Telefone valido ===
       const rawPhone = (os.customers?.mobile || os.customers?.phone || '').replace(/\D/g, '')
@@ -319,17 +325,9 @@ export async function POST(req: NextRequest) {
   })
   for (const os of reminderOrders) {
     try {
-      // Ja clicou (tem cupom review)? Nao precisa lembrete — marca p/ parar de checar.
-      if (os.customer_id) {
-        const clicked = await prisma.coupon.findFirst({
-          where: { company_id: os.company_id, customer_id: os.customer_id, source: 'review' },
-          select: { id: true },
-        })
-        if (clicked) {
-          await prisma.serviceOrder.update({ where: { id: os.id }, data: { review_reminder_sent_at: new Date() } })
-          continue
-        }
-      }
+      // Quem já clicou no link não entra aqui: o clique (/cupom-avaliacao) marca review_reminder_sent_at.
+      // Antes isto olhava o cupom 'review' como sinal de clique — com o cupom dado na entrega (2026-10-14),
+      // todo cliente tem cupom e nenhum lembrete sairia.
       let cache = companyCache.get(os.company_id)
       if (!cache) {
         const urlSetting = await prisma.setting.findFirst({ where: { company_id: os.company_id, key: 'google_reviews.url' } })
