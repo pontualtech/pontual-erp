@@ -6,6 +6,8 @@ import { logAudit } from '@/lib/audit'
 import { sendCompanyEmail } from '@/lib/send-email'
 import { sendWhatsAppCloud, sendWhatsAppTemplate } from '@/lib/whatsapp/cloud-api'
 import { whatsappTemplates, getTemplateForStatus } from '@/lib/whatsapp/templates'
+import { deliveredCouponPercent } from '@/lib/loyalty/delivery-coupon'
+import { loyaltyCouponBoxHtml } from '@/lib/email-templates/loyalty-coupon-box'
 import { createAccessToken } from '@/lib/portal-auth'
 import { buildMagicLink } from '@/lib/portal-magic-url'
 import { createReceivableOrSplit } from '@/lib/financeiro/receivables'
@@ -95,9 +97,10 @@ export async function POST(req: NextRequest, { params }: Params) {
             osId: os.id,
           }).url
 
+          const loyaltyCouponPercent = await deliveredCouponPercent(user.companyId, os.customer_id, toStatus.name, os.os_number)
           const emailHtml = buildOsStatusEmailHtml({
             customerFirstName, osNum, equipment, friendlyFrom, friendlyTo,
-            companyName, companyPhone, companyEmail, portalUrl,
+            companyName, companyPhone, companyEmail, portalUrl, loyaltyCouponPercent,
           })
           sendCompanyEmail(
             user.companyId,
@@ -684,9 +687,11 @@ export async function POST(req: NextRequest, { params }: Params) {
           osId: os.id,
         }).url
 
+        // 2026-10-14: na entrega, garante o cupom de fidelidade e avisa no e-mail (só e-mail, nunca WhatsApp)
+        const loyaltyCouponPercent = await deliveredCouponPercent(user.companyId, os.customer_id, toStatus.name, os.os_number)
         const emailHtml = buildOsStatusEmailHtml({
           customerFirstName, osNum, equipment, friendlyFrom, friendlyTo,
-          companyName, companyPhone, companyEmail, portalUrl,
+          companyName, companyPhone, companyEmail, portalUrl, loyaltyCouponPercent,
         })
 
         sendCompanyEmail(
@@ -721,6 +726,7 @@ function buildOsStatusEmailHtml(p: {
   companyPhone: string
   companyEmail: string
   portalUrl: string
+  loyaltyCouponPercent?: number | null // só no e-mail de entrega — ver lib/email-templates/loyalty-coupon-box
 }): string {
   const statusMessages: Record<string, string> = {
     'Recebido': 'Recebemos seu equipamento! Em breve iniciaremos a analise.',
@@ -764,6 +770,7 @@ function buildOsStatusEmailHtml(p: {
           <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px;margin:0 0 24px;">
             <p style="margin:0;font-size:14px;color:#1e40af;line-height:1.5;">${statusMsg}</p>
           </div>
+          ${p.loyaltyCouponPercent ? loyaltyCouponBoxHtml(p.loyaltyCouponPercent) : ''}
           <div style="text-align:center;margin:0 0 8px;">
             <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr><td style="background:#2563eb;border-radius:8px;">
               <a href="${p.portalUrl}" style="display:inline-block;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:14px 32px;">VER MINHA OS</a>

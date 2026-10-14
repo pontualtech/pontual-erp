@@ -20,6 +20,30 @@ function generateCode(): string {
   return `REVIEW-${crypto.randomBytes(4).toString('hex').toUpperCase()}`
 }
 
+/** Status que significam "equipamento entregue ao cliente" (PT: Entregue; IMP: Entregue Reparado). */
+export const DELIVERED_STATUS_NAMES = ['Entregue', 'Entregue Reparado']
+
+/**
+ * Para o e-mail de OS entregue: garante o cupom e devolve o percentual do cupom de fidelidade ainda NÃO
+ * usado do cliente (null se o status não é de entrega, se não há cliente ou se o cupom já foi usado).
+ * Nunca lança.
+ */
+export async function deliveredCouponPercent(companyId: string, customerId: string | null, statusName: string, osNumber: number | string): Promise<number | null> {
+  if (!customerId || !DELIVERED_STATUS_NAMES.includes(statusName)) return null
+  try {
+    await grantDeliveryCoupon(companyId, customerId, osNumber)
+    const c = await prisma.coupon.findFirst({
+      where: { company_id: companyId, customer_id: customerId, source: 'review', used_at: null, discount_type: 'percent' },
+      select: { discount_value: true },
+    })
+    const v = c ? Number(c.discount_value) : NaN
+    return Number.isFinite(v) && v > 0 ? v : null
+  } catch (err) {
+    console.warn('[loyalty] falha ao consultar cupom p/ e-mail:', err instanceof Error ? err.message : String(err))
+    return null
+  }
+}
+
 /** Cria o cupom de fidelidade do cliente se ele ainda não tem. Nunca lança: falha só é logada. */
 export async function grantDeliveryCoupon(companyId: string, customerId: string, osNumber: number | string): Promise<'created' | 'exists' | 'failed'> {
   try {
