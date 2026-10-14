@@ -25,6 +25,20 @@ import { verifyUnsubscribeToken } from '@/lib/email-unsub-token'
  *  - Compatibilidade com Gmail/Outlook RFC 8058 mantida (POST one-click funciona)
  */
 
+// 2026-10-14: a página pontualtech.com.br/descadastrar.html chama esta rota de outro domínio. Sem CORS o
+// navegador bloqueava a chamada e o cliente via "Erro de conexão" — o descadastro pelo site nunca funcionou.
+const ALLOWED_ORIGINS = ['https://pontualtech.com.br', 'https://www.pontualtech.com.br']
+
+function corsHeaders(origin: string | null): Record<string, string> {
+  return {
+    'Access-Control-Allow-Origin': origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0],
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Max-Age': '86400',
+    'Vary': 'Origin',
+  }
+}
+
 const RATE_LIMIT_WINDOW_MS = 60_000
 const RATE_LIMIT_MAX_PER_KEY = 5  // 5 req/min por (email+IP) — ainda flexivel pra cliques duplos
 const rateMap = new Map<string, number[]>()
@@ -159,5 +173,11 @@ export async function POST(req: NextRequest) {
 
   const email = normalizeEmail(rawEmail)
   const wantsHtml = (req.headers.get('accept') || '').includes('text/html')
-  return handle(req, email, token, wantsHtml)
+  const res = await handle(req, email, token, wantsHtml)
+  for (const [k, v] of Object.entries(corsHeaders(req.headers.get('origin')))) res.headers.set(k, v)
+  return res
+}
+
+export async function OPTIONS(req: NextRequest) {
+  return new NextResponse(null, { status: 204, headers: corsHeaders(req.headers.get('origin')) })
 }
