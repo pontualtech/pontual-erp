@@ -8,6 +8,7 @@ export const COMO_CONHECEU_OPTIONS = [
   { key: 'maps', label: 'Google Maps' },
   { key: 'indicacao', label: 'Indicação' },
   { key: 'ja_cliente', label: 'Já é cliente' },
+  { key: 'email', label: 'E-mail da PontualTech' },
   { key: 'fachada', label: 'Passou na frente da loja' },
   { key: 'redes_sociais', label: 'Instagram / Facebook' },
   { key: 'reclame_aqui', label: 'Reclame Aqui' },
