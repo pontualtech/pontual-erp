@@ -1727,12 +1727,27 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
   })
 
   if (isNew) {
-    // Assign conversation to bot agent so messages show as bot's name
-    fetch(`${cwBase(cfg)}/conversations/${conversationId}/assignments`, {
-      method: 'POST',
-      headers: cwHeaders(cfg),
-      body: JSON.stringify({ assignee_id: cfg.botAgentId }),
-    }).catch(() => {})
+    // 2026-10-15 — conversa nova que nasceu de um "aviso de rota" da rotina (etiqueta aviso_rota: "seu endereço é o
+    // próximo da rota do nosso motorista"): o bot não toma a conversa nem responde — a rotina repassa a resposta do
+    // cliente ao motorista e agradece. Sem isso a Marta respondia "me passa o número da OS" (condomínio, 62928).
+    // Não dá pra usar "já atribuída a um humano": a caixa 11 (Vendas PT) tem distribuição automática ligada.
+    let avisoRota = false
+    try {
+      const r = await fetch(`${cwBase(cfg)}/conversations/${conversationId}/labels`, { headers: cwHeaders(cfg) })
+      const j: any = r.ok ? await r.json() : null
+      avisoRota = Array.isArray(j?.payload) && j.payload.includes('aviso_rota')
+    } catch { /* sem etiqueta legível = fluxo normal do bot */ }
+    if (avisoRota) {
+      botConv = await prisma.botConversation.update({ where: { id: botConv.id }, data: { human_takeover: true, step: 'HUMAN' } })
+      console.log(`[Bot] Conv ${conversationId} nova com etiqueta aviso_rota — bot não responde`)
+    } else {
+      // Assign conversation to bot agent so messages show as bot's name
+      fetch(`${cwBase(cfg)}/conversations/${conversationId}/assignments`, {
+        method: 'POST',
+        headers: cwHeaders(cfg),
+        body: JSON.stringify({ assignee_id: cfg.botAgentId }),
+      }).catch(() => {})
+    }
   }
 
   // Idempotency check
@@ -2981,8 +2996,8 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
       await cwSendMessage(cfg, conversationId, '[BOT] OS do sistema legado — transferindo para Rafael.', true)
       if (!isBusinessHoursR) {
         await cwSendMessage(cfg, conversationId,
-          'O Rafael cuida pessoalmente desses casos. Nosso horário de atendimento é de segunda a quinta das 08:00 às 18:00 e sexta das 08:00 às 17:00.\n\n' +
-          'Sua solicitação já foi registrada e ele vai te atender no próximo dia útil.\n\n' +
+          'Um dos nossos atendentes cuida pessoalmente desses casos. Nosso horário de atendimento é de segunda a quinta das 08:00 às 18:00 e sexta das 08:00 às 17:00.\n\n' +
+          'Sua solicitação já foi registrada e um atendente vai te atender no próximo dia útil.\n\n' +
           'Posso te ajudar com mais alguma coisa enquanto isso?'
         )
         updateData.step = 'IDLE'
@@ -3009,7 +3024,7 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
         await cwSendMessage(cfg, conversationId, '[BOT] Fora do horário comercial. Atribuído ao Rafael para atender no próximo dia útil.', true)
         await cwSendMessage(cfg, conversationId,
           'Nosso horário de atendimento humano é de segunda a quinta das 08:00 às 18:00 e sexta das 08:00 às 17:00.\n\n' +
-          'Sua solicitação já foi registrada e o Rafael vai te atender no próximo dia útil.\n\n' +
+          'Sua solicitação já foi registrada e um atendente vai te atender no próximo dia útil.\n\n' +
           'Enquanto isso, posso te ajudar com mais alguma coisa? Consigo consultar status de OS, verificar orçamentos e direcionar ao portal do cliente.'
         )
         // Assign to Rafael but keep bot active (don't set human_takeover)
