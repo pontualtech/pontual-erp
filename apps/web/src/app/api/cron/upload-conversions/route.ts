@@ -344,7 +344,7 @@ async function uploadGoogleAdsConversion(
   // então a substituição é segura. TODO: achar root cause da substituição upstream.
   const sanitizedGclid = gclid.replace(/\*/g, '_')
   try {
-    const url = `https://googleads.googleapis.com/v22/customers/${cfg.customerId}:uploadClickConversions`
+    const url = `https://googleads.googleapis.com/v24/customers/${cfg.customerId}:uploadClickConversions`
     const headers: Record<string, string> = {
       'Authorization': `Bearer ${accessToken}`,
       'developer-token': cfg.developerToken,
