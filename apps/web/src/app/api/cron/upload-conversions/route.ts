@@ -33,6 +33,7 @@ import {
   type ClickMatchReason, type CustomerConsumption,
 } from '@/lib/ads/click-match'
 import { getConversationInboxId } from '@/lib/chatwoot'
+import { needsCloudSale, buildCloudSale, isCloudSalesAck, type CloudSalePayload } from '@/lib/ads/cloud-sales'
 
 export const dynamic = 'force-dynamic'
 // 2026-10-12: rota só-GET no Next 14 não desliga o Data Cache com force-dynamic — o fetch do token
@@ -299,6 +300,74 @@ async function checkSaleClick(
 }
 
 // ---------------------------------------------------------------------------
+// Vendas aprovadas → base de rastreio da nuvem (lib/ads/cloud-sales). A nuvem só manda a venda ao
+// Google/Microsoft com o clique EXATO do cliente; registrar aqui não envia nada.
+// ---------------------------------------------------------------------------
+const CLOUD_RASTREIO_URL = (process.env.CLOUD_RASTREIO_URL || '').replace(/\/$/, '')
+const CLOUD_RASTREIO_SECRET = process.env.CLOUD_RASTREIO_SECRET || ''
+
+async function registrarVendasNaNuvem(
+  companyId: string,
+  osIds: string[],
+  approvedAtByOs: Map<string, Date>,
+): Promise<{ sent: number; skipped: number; failed: number; errors: string[] }> {
+  const out = { sent: 0, skipped: 0, failed: 0, errors: [] as string[] }
+  if (!CLOUD_RASTREIO_URL || !CLOUD_RASTREIO_SECRET || !osIds.length) return out
+  // Relê do banco: o laço principal pode ter acabado de gravar approved_at nesta mesma rodada.
+  const fresh = await prisma.serviceOrder.findMany({
+    where: { id: { in: osIds }, company_id: companyId, deleted_at: null },
+    select: { id: true, os_number: true, approved_cost: true, custom_data: true, customers: { select: { mobile: true, phone: true } } },
+  })
+  const itens: Array<{ id: string; payload: CloudSalePayload }> = []
+  for (const os of fresh) {
+    if (!needsCloudSale(os.custom_data)) continue
+    const phone = (os.customers?.mobile || os.customers?.phone || '').replace(/\D/g, '')
+    const convs = phone.length >= 10
+      ? await prisma.botConversation.findMany({
+        where: { company_id: companyId, customer_phone: { endsWith: phone.slice(-10) } },
+        select: { chatwoot_conv_id: true },
+      })
+      : []
+    const payload = buildCloudSale({
+      osNumber: os.os_number,
+      approvedCostCents: os.approved_cost == null ? null : Number(os.approved_cost),
+      approvedAt: approvedAtByOs.get(os.id),
+      convIds: convs.map(c => c.chatwoot_conv_id),
+    })
+    if (!payload) { out.skipped++; continue }
+    itens.push({ id: os.id, payload })
+  }
+  for (let i = 0; i < itens.length; i += 200) {
+    const lote = itens.slice(i, i + 200)
+    try {
+      const res = await fetch(`${CLOUD_RASTREIO_URL}/vendas?s=${encodeURIComponent(CLOUD_RASTREIO_SECRET)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vendas: lote.map(x => x.payload) }),
+        signal: AbortSignal.timeout(20000),
+      })
+      const body = await res.json().catch(() => null)
+      // Versão antiga da função responde 200 genérico: sem "gravadas" NÃO marca nada.
+      if (!res.ok || !isCloudSalesAck(body)) throw new Error(`HTTP ${res.status} ${JSON.stringify(body).slice(0, 120)}`)
+      const agora = new Date().toISOString()
+      for (const x of lote) {
+        const cur = await prisma.serviceOrder.findUnique({ where: { id: x.id }, select: { custom_data: true } })
+        const cd = (cur?.custom_data as Record<string, any> | null) || {}
+        await prisma.serviceOrder.update({
+          where: { id: x.id },
+          data: { custom_data: { ...cd, conversion_uploaded: { ...(cd.conversion_uploaded || {}), cloud_sale_at: agora } } },
+        })
+      }
+      out.sent += lote.length
+    } catch (e: any) {
+      out.failed += lote.length
+      out.errors.push(`nuvem vendas: ${e?.message || 'erro'}`)
+    }
+  }
+  return out
+}
+
+// ---------------------------------------------------------------------------
 // Google Ads Click Conversion Import API
 // ---------------------------------------------------------------------------
 
@@ -535,6 +604,7 @@ export async function GET(request: NextRequest) {
   for (const os of osApproved) {
     const cd = (os.custom_data as Record<string, any> | null) || {}
     if (cd.conversion_uploaded?.approved_at) continue        // já enviada
+    if (cd.conversion_uploaded?.cloud_sale_at) continue      // registrada na nuvem (que envia só com clique exato) — não duplica
     if (!os.created_at || os.created_at < sinceApproved) continue // clique fora da janela de 90d → Google rejeitaria (EXPIRED_EVENT)
     const entry = byId.get(os.id)
     if (entry) entry.needApproved = true
@@ -574,7 +644,7 @@ export async function GET(request: NextRequest) {
     const cd = (os.custom_data as Record<string, any> | null) || {}
     const uploaded = (cd.conversion_uploaded as Record<string, string> | undefined) || {}
     const needLead = entry.needLead && !uploaded.lead_at
-    const needApproved = entry.needApproved && !uploaded.approved_at
+    const needApproved = entry.needApproved && !uploaded.approved_at && !uploaded.cloud_sale_at
     if (!needLead && !needApproved) continue
 
     const attribution = await recoverAttribution(os, os.customers)
@@ -655,16 +725,26 @@ export async function GET(request: NextRequest) {
     whatsappResult.errors.push('cwt upload crashed: ' + (e?.message || 'unknown'))
   }
 
-  console.log(`[Cron/UploadConv] candidates=${byId.size} | leads sent=${leadsSent} skipped=${leadsSkipped} failed=${leadsFailed} | approved sent=${approvedSent} skipped=${approvedSkipped} failed=${approvedFailed} deferred=${approvedDeferred} unreliable=${approvedUnreliable} ${JSON.stringify(unreliableReasons)} | whatsapp_cwt sent=${whatsappResult.sent} skipped=${whatsappResult.skipped} failed=${whatsappResult.failed}`)
+  // Vendas aprovadas → base de rastreio da nuvem (17/10/2026). Isolado: falha aqui não afeta o que veio antes.
+  let cloudSalesResult = { sent: 0, skipped: 0, failed: 0, errors: [] as string[] }
+  try {
+    cloudSalesResult = await registrarVendasNaNuvem(PT_COMPANY_ID, osApproved.map(o => o.id), approvedAtByOs)
+  } catch (e: any) {
+    cloudSalesResult.errors.push('nuvem vendas crashed: ' + (e?.message || 'unknown'))
+  }
+
+  console.log(`[Cron/UploadConv] candidates=${byId.size} | leads sent=${leadsSent} skipped=${leadsSkipped} failed=${leadsFailed} | approved sent=${approvedSent} skipped=${approvedSkipped} failed=${approvedFailed} deferred=${approvedDeferred} unreliable=${approvedUnreliable} ${JSON.stringify(unreliableReasons)} | whatsapp_cwt sent=${whatsappResult.sent} skipped=${whatsappResult.skipped} failed=${whatsappResult.failed} | nuvem_vendas sent=${cloudSalesResult.sent} skipped=${cloudSalesResult.skipped} failed=${cloudSalesResult.failed}`)
   // A resposta HTTP costuma morrer no proxy (rodada > 60s) — erros precisam ir pro log do container.
   for (const e of errors.slice(0, 10)) console.warn('[Cron/UploadConv] ' + e)
   for (const e of whatsappResult.errors.slice(0, 3)) console.warn('[Cron/UploadConv] cwt: ' + e)
+  for (const e of cloudSalesResult.errors.slice(0, 3)) console.warn('[Cron/UploadConv] ' + e)
 
   return success({
     candidates: byId.size,
     leads: { sent: leadsSent, skipped: leadsSkipped, failed: leadsFailed },
     approved: { sent: approvedSent, skipped: approvedSkipped, failed: approvedFailed, unreliable: approvedUnreliable, unreliable_reasons: unreliableReasons },
     whatsapp_cwt: whatsappResult,
+    cloud_sales: cloudSalesResult,
     errors: errors.slice(0, 10),
     google_ads_configured: !!PT_GOOGLE_ADS?.developerToken,
     google_ads_token_ok: !!googleAccessToken,
