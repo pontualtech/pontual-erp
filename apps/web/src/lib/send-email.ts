@@ -1,5 +1,6 @@
 import { prisma } from '@pontual/db'
 import { createTransport } from 'nodemailer'
+import { parseRecipients } from './email-recipients'
 
 // ─────────────────────────────────────────────
 // Email config cache (per company, TTL 5min)
@@ -88,7 +89,13 @@ async function sendViaResend(
 ): Promise<boolean> {
   try {
     const headers = buildListUnsubHeaders(opts?.unsubscribeUrl)
-    const payload: any = { from, to, subject, html }
+    // Cadastro com 2+ e-mails ("a@x;b@y") → lista; a string inteira o Resend recusa com 422.
+    const destinatarios = parseRecipients(to)
+    if (!destinatarios.length) {
+      console.error('[Email:Resend] Sem destinatário válido')
+      return false
+    }
+    const payload: any = { from, to: destinatarios.length > 1 ? destinatarios : destinatarios[0], subject, html }
     if (headers) payload.headers = headers
     if (opts?.replyTo) payload.reply_to = opts.replyTo
 
@@ -139,7 +146,7 @@ async function sendViaSMTP(
     })
 
     const headers = buildListUnsubHeaders(opts?.unsubscribeUrl)
-    const mail: any = { from, to, subject, html }
+    const mail: any = { from, to: parseRecipients(to).join(', '), subject, html }
     if (headers) mail.headers = headers
     if (opts?.replyTo) mail.replyTo = opts.replyTo
 
