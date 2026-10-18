@@ -19,6 +19,7 @@ import { prisma } from '@pontual/db'
 import { resolvePortalDomain } from '@/lib/portal-magic-url'
 import { redactDoc, redactName } from '@/lib/log-redact'
 import { isEmojiOnlyMessage } from '@/lib/bot/emoji-only'
+import { crossReferralSuspenso } from '@/lib/bot/cross-referral'
 import {
   sendWhatsAppButtons,
   sendWhatsAppList,
@@ -2347,7 +2348,8 @@ async function processWebhook(cfg: BotCompanyConfig, body: any) {
             const isSuporteBotLocal = cfg.slug.includes('suporte')
               || cfg.botOrigin?.includes('marta') || cfg.botOrigin?.includes('aline')
             const otherCompanyId = CROSS_TENANT_PAIR[cfg.companyId]
-            if (!isSuporteBotLocal && otherCompanyId) {
+            // Loja fechada (lib/bot/cross-referral): sem a tag, para não mandar cliente a portão fechado
+            if (!isSuporteBotLocal && otherCompanyId && !crossReferralSuspenso(cfg.companyId, otherCompanyId)) {
               try {
                 const cAny = customer as any
                 let custCoords: { lat: number; lng: number } | null = null
