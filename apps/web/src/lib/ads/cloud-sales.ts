@@ -5,6 +5,11 @@
  *
  * Regra anti-duplicidade: OS já enviada pela API (conversion_uploaded.approved_at) não vai para a nuvem;
  * OS registrada na nuvem (conversion_uploaded.cloud_sale_at) não volta para a API.
+ *
+ * 21/10/2026 (Karlão): venda real = OS "Entregue" (reparada e retirada). Aprovada que o cliente não buscou,
+ * recusada depois (ex.: OS 62387, Zebra R$9.698, "Aprovado" → "Entregue Recusado") ou doada NÃO é venda.
+ * OS registrada na aprovação pela regra antiga e ainda não entregue é "segurada": reenviada à nuvem SEM
+ * conversas, então a nuvem não acha prova de clique e não a manda; quando for entregue, volta com as conversas.
  */
 
 export interface CloudSalePayload {
@@ -14,11 +19,27 @@ export interface CloudSalePayload {
   aprovado_em: string
 }
 
-/** A OS ainda precisa ser registrada na nuvem? */
-export function needsCloudSale(customData: unknown): boolean {
+/** O que fazer com a OS na nuvem: registrar (entregue), segurar (registrada pela regra antiga e não entregue) ou nada. */
+export function cloudSaleAction(customData: unknown, deliveredAt: Date | null | undefined): 'register' | 'hold' | 'none' {
   const cd = (customData && typeof customData === 'object' && !Array.isArray(customData)) ? customData as Record<string, any> : {}
   const up = (cd.conversion_uploaded && typeof cd.conversion_uploaded === 'object') ? cd.conversion_uploaded : {}
-  return !up.approved_at && !up.cloud_sale_at
+  if (up.approved_at) return 'none'
+  const entregue = deliveredAt instanceof Date && !isNaN(deliveredAt.getTime())
+  if (entregue) return up.cloud_delivered_at ? 'none' : 'register'
+  return up.cloud_sale_at && !up.cloud_hold_at && !up.cloud_delivered_at ? 'hold' : 'none'
+}
+
+/** 1ª passagem para "Entregue" (ids em deliveredStatusIds) a partir da aprovação; null se não houve. */
+export function firstDeliveredAt(
+  history: Array<{ to_status_id: string | null; created_at: Date | null }>,
+  approvedAt: Date | null | undefined,
+  deliveredStatusIds: Set<string>,
+): Date | null {
+  if (!approvedAt) return null
+  const ts = history
+    .filter(h => h.to_status_id && deliveredStatusIds.has(h.to_status_id) && h.created_at && h.created_at >= approvedAt)
+    .map(h => (h.created_at as Date).getTime())
+  return ts.length ? new Date(Math.min(...ts)) : null
 }
 
 /** Monta o registro da venda; null se faltar dado essencial (número, valor > 0, data da aprovação). */

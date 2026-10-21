@@ -33,7 +33,7 @@ import {
   type ClickMatchReason, type CustomerConsumption,
 } from '@/lib/ads/click-match'
 import { getConversationInboxId } from '@/lib/chatwoot'
-import { needsCloudSale, buildCloudSale, isCloudSalesAck, type CloudSalePayload } from '@/lib/ads/cloud-sales'
+import { cloudSaleAction, firstDeliveredAt, buildCloudSale, isCloudSalesAck, type CloudSalePayload } from '@/lib/ads/cloud-sales'
 
 export const dynamic = 'force-dynamic'
 // 2026-10-12: rota só-GET no Next 14 não desliga o Data Cache com force-dynamic — o fetch do token
@@ -310,18 +310,21 @@ async function registrarVendasNaNuvem(
   companyId: string,
   osIds: string[],
   approvedAtByOs: Map<string, Date>,
-): Promise<{ sent: number; skipped: number; failed: number; errors: string[] }> {
-  const out = { sent: 0, skipped: 0, failed: 0, errors: [] as string[] }
+  deliveredAtByOs: Map<string, Date>,
+): Promise<{ sent: number; held: number; skipped: number; failed: number; errors: string[] }> {
+  const out = { sent: 0, held: 0, skipped: 0, failed: 0, errors: [] as string[] }
   if (!CLOUD_RASTREIO_URL || !CLOUD_RASTREIO_SECRET || !osIds.length) return out
   // Relê do banco: o laço principal pode ter acabado de gravar approved_at nesta mesma rodada.
   const fresh = await prisma.serviceOrder.findMany({
     where: { id: { in: osIds }, company_id: companyId, deleted_at: null },
     select: { id: true, os_number: true, approved_cost: true, custom_data: true, customers: { select: { mobile: true, phone: true } } },
   })
-  const itens: Array<{ id: string; payload: CloudSalePayload }> = []
+  const itens: Array<{ id: string; payload: CloudSalePayload; acao: 'register' | 'hold' }> = []
   for (const os of fresh) {
-    if (!needsCloudSale(os.custom_data)) continue
-    const phone = (os.customers?.mobile || os.customers?.phone || '').replace(/\D/g, '')
+    const acao = cloudSaleAction(os.custom_data, deliveredAtByOs.get(os.id))
+    if (acao === 'none') continue
+    // Segurar = mandar SEM conversas: a nuvem não acha prova de clique e não envia a venda.
+    const phone = acao === 'register' ? (os.customers?.mobile || os.customers?.phone || '').replace(/\D/g, '') : ''
     const convs = phone.length >= 10
       ? await prisma.botConversation.findMany({
         where: { company_id: companyId, customer_phone: { endsWith: phone.slice(-10) } },
@@ -335,7 +338,7 @@ async function registrarVendasNaNuvem(
       convIds: convs.map(c => c.chatwoot_conv_id),
     })
     if (!payload) { out.skipped++; continue }
-    itens.push({ id: os.id, payload })
+    itens.push({ id: os.id, payload, acao })
   }
   for (let i = 0; i < itens.length; i += 200) {
     const lote = itens.slice(i, i + 200)
@@ -353,12 +356,16 @@ async function registrarVendasNaNuvem(
       for (const x of lote) {
         const cur = await prisma.serviceOrder.findUnique({ where: { id: x.id }, select: { custom_data: true } })
         const cd = (cur?.custom_data as Record<string, any> | null) || {}
+        const up = { ...(cd.conversion_uploaded || {}) }
+        if (x.acao === 'register') { up.cloud_delivered_at = agora; up.cloud_sale_at = up.cloud_sale_at || agora }
+        else up.cloud_hold_at = agora
         await prisma.serviceOrder.update({
           where: { id: x.id },
-          data: { custom_data: { ...cd, conversion_uploaded: { ...(cd.conversion_uploaded || {}), cloud_sale_at: agora } } },
+          data: { custom_data: { ...cd, conversion_uploaded: up } },
         })
+        if (x.acao === 'register') out.sent++
+        else out.held++
       }
-      out.sent += lote.length
     } catch (e: any) {
       out.failed += lote.length
       out.errors.push(`nuvem vendas: ${e?.message || 'erro'}`)
@@ -593,6 +600,27 @@ export async function GET(request: NextRequest) {
     include: { customers: true },
   }) : []
 
+  // 21/10/2026 (Karlão): venda real = OS "Entregue" (reparada e retirada) — data/valor da venda seguem os da
+  // aprovação, mas ela só sobe depois da entrega. Nome EXATO (não pega "Entregue Recusado").
+  const deliveredStatuses = await prisma.moduleStatus.findMany({
+    where: { company_id: PT_COMPANY_ID, module: 'os', name: 'Entregue' },
+    select: { id: true },
+  })
+  const deliveredIds = new Set(deliveredStatuses.map(s => s.id))
+  const deliveredAtByOs = new Map<string, Date>()
+  if (deliveredIds.size && osApproved.length) {
+    const histEnt = await prisma.serviceOrderHistory.findMany({
+      where: { company_id: PT_COMPANY_ID, service_order_id: { in: osApproved.map(o => o.id) }, to_status_id: { in: [...deliveredIds] } },
+      select: { service_order_id: true, to_status_id: true, created_at: true },
+    })
+    const porOs = new Map<string, typeof histEnt>()
+    for (const h of histEnt) porOs.set(h.service_order_id, [...(porOs.get(h.service_order_id) || []), h])
+    for (const [id, hs] of porOs) {
+      const d = firstDeliveredAt(hs, approvedAtByOs.get(id), deliveredIds)
+      if (d) deliveredAtByOs.set(id, d)
+    }
+  }
+
   // Index por os.id pra evitar processar 2x quando criada+aprovada na mesma janela
   const byId = new Map<string, { os: any; needLead: boolean; needApproved: boolean }>()
   for (const os of osCreatedRecent) {
@@ -605,6 +633,8 @@ export async function GET(request: NextRequest) {
     const cd = (os.custom_data as Record<string, any> | null) || {}
     if (cd.conversion_uploaded?.approved_at) continue        // já enviada
     if (cd.conversion_uploaded?.cloud_sale_at) continue      // registrada na nuvem (que envia só com clique exato) — não duplica
+    if (cd.conversion_uploaded?.cloud_delivered_at) continue
+    if (!deliveredAtByOs.has(os.id)) continue                // venda só depois de "Entregue" (21/10/2026)
     if (!os.created_at || os.created_at < sinceApproved) continue // clique fora da janela de 90d → Google rejeitaria (EXPIRED_EVENT)
     const entry = byId.get(os.id)
     if (entry) entry.needApproved = true
@@ -644,7 +674,7 @@ export async function GET(request: NextRequest) {
     const cd = (os.custom_data as Record<string, any> | null) || {}
     const uploaded = (cd.conversion_uploaded as Record<string, string> | undefined) || {}
     const needLead = entry.needLead && !uploaded.lead_at
-    const needApproved = entry.needApproved && !uploaded.approved_at && !uploaded.cloud_sale_at
+    const needApproved = entry.needApproved && !uploaded.approved_at && !uploaded.cloud_sale_at && !uploaded.cloud_delivered_at
     if (!needLead && !needApproved) continue
 
     const attribution = await recoverAttribution(os, os.customers)
@@ -726,14 +756,14 @@ export async function GET(request: NextRequest) {
   }
 
   // Vendas aprovadas → base de rastreio da nuvem (17/10/2026). Isolado: falha aqui não afeta o que veio antes.
-  let cloudSalesResult = { sent: 0, skipped: 0, failed: 0, errors: [] as string[] }
+  let cloudSalesResult = { sent: 0, held: 0, skipped: 0, failed: 0, errors: [] as string[] }
   try {
-    cloudSalesResult = await registrarVendasNaNuvem(PT_COMPANY_ID, osApproved.map(o => o.id), approvedAtByOs)
+    cloudSalesResult = await registrarVendasNaNuvem(PT_COMPANY_ID, osApproved.map(o => o.id), approvedAtByOs, deliveredAtByOs)
   } catch (e: any) {
     cloudSalesResult.errors.push('nuvem vendas crashed: ' + (e?.message || 'unknown'))
   }
 
-  console.log(`[Cron/UploadConv] candidates=${byId.size} | leads sent=${leadsSent} skipped=${leadsSkipped} failed=${leadsFailed} | approved sent=${approvedSent} skipped=${approvedSkipped} failed=${approvedFailed} deferred=${approvedDeferred} unreliable=${approvedUnreliable} ${JSON.stringify(unreliableReasons)} | whatsapp_cwt sent=${whatsappResult.sent} skipped=${whatsappResult.skipped} failed=${whatsappResult.failed} | nuvem_vendas sent=${cloudSalesResult.sent} skipped=${cloudSalesResult.skipped} failed=${cloudSalesResult.failed}`)
+  console.log(`[Cron/UploadConv] candidates=${byId.size} | leads sent=${leadsSent} skipped=${leadsSkipped} failed=${leadsFailed} | approved sent=${approvedSent} skipped=${approvedSkipped} failed=${approvedFailed} deferred=${approvedDeferred} unreliable=${approvedUnreliable} ${JSON.stringify(unreliableReasons)} | whatsapp_cwt sent=${whatsappResult.sent} skipped=${whatsappResult.skipped} failed=${whatsappResult.failed} | nuvem_vendas sent=${cloudSalesResult.sent} held=${cloudSalesResult.held} skipped=${cloudSalesResult.skipped} failed=${cloudSalesResult.failed} entregues=${deliveredAtByOs.size}`)
   // A resposta HTTP costuma morrer no proxy (rodada > 60s) — erros precisam ir pro log do container.
   for (const e of errors.slice(0, 10)) console.warn('[Cron/UploadConv] ' + e)
   for (const e of whatsappResult.errors.slice(0, 3)) console.warn('[Cron/UploadConv] cwt: ' + e)

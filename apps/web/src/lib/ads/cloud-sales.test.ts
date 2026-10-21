@@ -1,17 +1,52 @@
 import { describe, it, expect } from 'vitest'
-import { needsCloudSale, buildCloudSale, isCloudSalesAck } from './cloud-sales'
+import { cloudSaleAction, firstDeliveredAt, buildCloudSale, isCloudSalesAck } from './cloud-sales'
 
-describe('needsCloudSale', () => {
-  it('OS sem envio nenhum precisa', () => {
-    expect(needsCloudSale({})).toBe(true)
-    expect(needsCloudSale(null)).toBe(true)
-    expect(needsCloudSale({ conversion_uploaded: { lead_at: 'x' } })).toBe(true)
+// 21/10/2026 (Karlão): venda real = OS "Entregue" (reparada e retirada). Aprovada que não foi buscada,
+// recusada depois ou doada NÃO é venda.
+describe('cloudSaleAction', () => {
+  const entregue = new Date('2026-10-20T15:00:00Z')
+  it('entregue e ainda não registrada como entregue: registra', () => {
+    expect(cloudSaleAction({}, entregue)).toBe('register')
+    expect(cloudSaleAction(null, entregue)).toBe('register')
+    expect(cloudSaleAction({ conversion_uploaded: { cloud_sale_at: 'x', cloud_hold_at: 'y' } }, entregue)).toBe('register')
+  })
+  it('aprovada mas não entregue: não registra', () => {
+    expect(cloudSaleAction({}, null)).toBe('none')
+    expect(cloudSaleAction({ conversion_uploaded: { lead_at: 'x' } }, undefined)).toBe('none')
+  })
+  it('registrada na aprovação (regra antiga) e não entregue: segura (tira as conversas na nuvem)', () => {
+    expect(cloudSaleAction({ conversion_uploaded: { cloud_sale_at: '2026-10-17T10:00:00Z' } }, null)).toBe('hold')
+  })
+  it('já segurada ou já registrada como entregue: nada a fazer', () => {
+    expect(cloudSaleAction({ conversion_uploaded: { cloud_sale_at: 'x', cloud_hold_at: 'y' } }, null)).toBe('none')
+    expect(cloudSaleAction({ conversion_uploaded: { cloud_delivered_at: 'x' } }, entregue)).toBe('none')
   })
   it('já enviada pela API não vai (evita venda em dobro)', () => {
-    expect(needsCloudSale({ conversion_uploaded: { approved_at: '2026-10-17T10:00:00Z' } })).toBe(false)
+    expect(cloudSaleAction({ conversion_uploaded: { approved_at: '2026-10-17T10:00:00Z' } }, entregue)).toBe('none')
   })
-  it('já registrada na nuvem não vai de novo', () => {
-    expect(needsCloudSale({ conversion_uploaded: { cloud_sale_at: '2026-10-17T10:00:00Z' } })).toBe(false)
+  it('data de entrega inválida conta como não entregue', () => {
+    expect(cloudSaleAction({}, new Date('x'))).toBe('none')
+  })
+})
+
+describe('firstDeliveredAt', () => {
+  const ENT = new Set(['st-entregue'])
+  const aprov = new Date('2026-10-01T12:00:00Z')
+  const h = (id: string, iso: string) => ({ to_status_id: id, created_at: new Date(iso) })
+  it('primeira passagem para Entregue depois da aprovação', () => {
+    expect(firstDeliveredAt([
+      h('st-aprovado', '2026-10-01T12:00:00Z'),
+      h('st-entregue', '2026-10-15T10:00:00Z'),
+      h('st-entregue', '2026-10-16T10:00:00Z'),
+    ], aprov, ENT)).toEqual(new Date('2026-10-15T10:00:00Z'))
+  })
+  it('Entregue de antes da aprovação (OS anterior reaberta) não conta', () => {
+    expect(firstDeliveredAt([h('st-entregue', '2026-09-01T10:00:00Z')], aprov, ENT)).toBeNull()
+  })
+  it('sem Entregue (ex.: Entregue Recusado, outro id) ou sem aprovação: null', () => {
+    expect(firstDeliveredAt([h('st-entregue-recusado', '2026-10-15T10:00:00Z')], aprov, ENT)).toBeNull()
+    expect(firstDeliveredAt([h('st-entregue', '2026-10-15T10:00:00Z')], undefined, ENT)).toBeNull()
+    expect(firstDeliveredAt([], aprov, ENT)).toBeNull()
   })
 })
 
