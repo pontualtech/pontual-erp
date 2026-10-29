@@ -152,7 +152,12 @@ sejam confiáveis para decisão.
   em 29/10: R$ 26.117,00, fechando 29/10, vencimento 11/11).
 
 ### 5.6 Corte e Ajuste de caixa ("a partir de hoje")
-- Corte = início de 29/10. Por conta: `ajuste = saldo real no fim de 28/10 − saldo do ERP considerando só o que
+- Corte = **fim de 29/10** (corrigido no plano: a conciliação grava o crédito com a data do clique, então um corte
+  por data contaria em dobro o dinheiro que caiu antes e foi liquidado depois). Em 30/10 cedo, depois da
+  conciliação e antes do livro: por conta, `ajuste = saldo real no fim de 29/10 − saldo do ERP naquele momento`;
+  1 `Transaction` "Ajuste de caixa" (CREDIT ou DEBIT), categoria Ajuste de caixa, datado 29/10. O livro lança a
+  partir de 30/10 (29/10 fica dentro do ajuste).
+- (versão anterior, substituída:) `ajuste = saldo real no fim de 28/10 − saldo do ERP considerando só o que
   é anterior ao corte`. Lança 1 `Transaction` "Ajuste de caixa — saldo real em 28/10" (CREDIT ou DEBIT) com
   categoria Ajuste de caixa, datado 28/10.
 - Saldos reais do fim de 28/10: Itaú R$ 99.446,36 (linha "SALDO TOTAL DISPONÍVEL DIA" 28/out); Asaas: saldo do
