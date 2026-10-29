@@ -113,3 +113,16 @@ export function escolherOrfao(linha: LinhaBanco, candidatos: CandidatoOrfao[]): 
   }
   return melhor
 }
+
+/**
+ * Um crédito (citado em `links`) só serve para cobrir a linha se foi criado DEPOIS do ajuste de caixa
+ * (o que existia antes já foi absorvido por ele) e não foi tomado por OUTRA linha (LIGADA:<outra chave>).
+ */
+export function creditoUsavelParaVinculo(
+  c: { created_at: Date | null; source_text: string | null },
+  chave: string,
+  limite: Date,
+): boolean {
+  if (!c.created_at || c.created_at.getTime() <= limite.getTime()) return false
+  return c.source_text === null || !c.source_text.startsWith('LIGADA:') || c.source_text === `LIGADA:${chave}`
+}

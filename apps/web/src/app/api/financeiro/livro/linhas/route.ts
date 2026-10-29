@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
-import { classificar, planejarLinha, escolherOrfao, limitesJanelaOrfao } from '@/lib/financeiro/livro'
+import { classificar, planejarLinha, escolherOrfao, limitesJanelaOrfao, creditoUsavelParaVinculo } from '@/lib/financeiro/livro'
 import { dataValida } from '@/lib/financeiro/livro-ajuste'
 import { garantirCategoriasERegras } from '@/lib/financeiro/livro-categorias'
 
@@ -113,12 +113,12 @@ export async function POST(req: NextRequest) {
         links.length > 0
           ? await db.transaction.findMany({
               where: { company_id: user.companyId, account_id: body.account_id, bank_ref: { in: links } },
-              select: { bank_ref: true, amount: true, source_text: true },
+              select: { bank_ref: true, amount: true, source_text: true, created_at: true },
             })
           : []
-      // Vínculo já tomado por OUTRA linha (LIGADA:<outra chave>) conta como ausente: o dinheiro é criado.
+      // Ausente: já tomado por OUTRA linha (LIGADA:<outra chave>) ou criado até o ajuste (já absorvido por ele).
       const creditosExistentes = creditos
-        .filter((c) => c.source_text === null || !c.source_text.startsWith('LIGADA:') || c.source_text === `LIGADA:${linha.chave}`)
+        .filter((c) => creditoUsavelParaVinculo(c, linha.chave, limiteOrfao))
         .map((c) => ({ bank_ref: c.bank_ref as string, amount: c.amount }))
       return planejarLinha(linha, body.corte, jaLancada, creditosExistentes)
     }

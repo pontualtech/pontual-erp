@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { classificar, planejarLinha, escolherOrfao, limitesJanelaOrfao, type LinhaBanco } from './livro'
+import { classificar, planejarLinha, escolherOrfao, limitesJanelaOrfao, creditoUsavelParaVinculo, type LinhaBanco } from './livro'
 
 const CORTE = '2026-10-29'
 
@@ -168,5 +168,33 @@ describe('limitesJanelaOrfao', () => {
     const { de, ate } = limitesJanelaOrfao('2026-10-30')
     expect(de.toISOString()).toBe('2026-10-27T00:00:00.000Z')
     expect(ate.toISOString()).toBe('2026-10-31T00:00:00.000Z')
+  })
+})
+
+describe('creditoUsavelParaVinculo', () => {
+  const limite = new Date('2026-10-29T20:00:00.000Z')
+  const c = (p: { created_at?: Date | null; source_text?: string | null }) => ({
+    created_at: new Date('2026-10-30T10:00:00.000Z') as Date | null,
+    source_text: null as string | null,
+    ...p,
+  })
+  it('criado depois do ajuste -> usável', () => {
+    expect(creditoUsavelParaVinculo(c({}), 'k1', limite)).toBe(true)
+  })
+  it('criado antes do ajuste -> ausente', () => {
+    expect(creditoUsavelParaVinculo(c({ created_at: new Date('2026-10-29T10:00:00.000Z') }), 'k1', limite)).toBe(false)
+  })
+  it('criado exatamente no limite -> ausente', () => {
+    expect(creditoUsavelParaVinculo(c({ created_at: limite }), 'k1', limite)).toBe(false)
+  })
+  it('created_at nulo -> ausente', () => {
+    expect(creditoUsavelParaVinculo(c({ created_at: null }), 'k1', limite)).toBe(false)
+  })
+  it('LIGADA de outra chave -> ausente; da mesma chave -> usável', () => {
+    expect(creditoUsavelParaVinculo(c({ source_text: 'LIGADA:k2' }), 'k1', limite)).toBe(false)
+    expect(creditoUsavelParaVinculo(c({ source_text: 'LIGADA:k1' }), 'k1', limite)).toBe(true)
+  })
+  it('source_text qualquer não-LIGADA -> usável', () => {
+    expect(creditoUsavelParaVinculo(c({ source_text: 'x' }), 'k1', limite)).toBe(true)
   })
 })
