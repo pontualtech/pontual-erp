@@ -1,5 +1,5 @@
 import { prisma } from '@pontual/db'
-import { isReceivableSettled } from '@/lib/finance/receivable-status'
+import { novoEstadoReceivable, planoTaxas } from './match-rules'
 
 /**
  * Logica compartilhada de criar Payment + AR + 2 APs ao vincular uma
@@ -19,6 +19,9 @@ export interface PerformMatchInput {
   companyId: string
   matchMethod: 'MANUAL' | 'AUTO'
   matchConfidence?: number
+  // Dia em que o líquido da venda caiu no banco (visto no extrato pela conciliação da manhã).
+  // Com ele a AR vira LIQUIDADO e o crédito/parcelas ficam com essa data (Karlão 29/10).
+  creditDate?: Date
 }
 
 export interface PerformMatchResult {
@@ -31,7 +34,7 @@ export interface PerformMatchResult {
 }
 
 export async function performMatch(input: PerformMatchInput): Promise<PerformMatchResult> {
-  const { transactionId, serviceOrderId, companyId, matchMethod, matchConfidence } = input
+  const { transactionId, serviceOrderId, companyId, matchMethod, matchConfidence, creditDate } = input
 
   const txn = await prisma.acquirerTransaction.findFirst({
     where: { id: transactionId, company_id: companyId },
@@ -114,31 +117,12 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
         // Fix 2026-05-27 + auditoria 2026-06-27: guard contra double-credit. Se
         // o AR já está QUITADO (RECEBIDO/LIQUIDADO/PAGO ou reconciled — ver
         // isReceivableSettled), match da maquininha NÃO soma received_amount
-        // novamente — só marca reconciled=true e atualiza charge_status. Caso
-        // 27/05: 5 ARs com received_amount = 2x total (R$ 2.388,11 fantasma).
-        // LIQUIDADO (extrato conferido) escapava do guard antigo `=== 'RECEBIDO'`.
-        if (isReceivableSettled(receivable)) {
-          await tx.accountReceivable.update({
-            where: { id: receivable.id },
-            data: {
-              reconciled: true,
-              charge_status: 'RECEIVED',
-            },
-          })
-        } else {
-          const newReceived = (receivable.received_amount || 0) + txn.gross_amount
-          const fully = newReceived >= receivable.total_amount
-          await tx.accountReceivable.update({
-            where: { id: receivable.id },
-            data: {
-              received_amount: newReceived,
-              status: fully ? 'RECEBIDO' : 'PARCIAL',
-              charge_status: 'RECEIVED',
-              payment_method: billingType,
-              ...(fully ? { reconciled: true } : {}),
-            },
-          })
-        }
+        // novamente (caso 27/05: R$ 2.388,11 fantasma). Regras em match-rules.ts;
+        // com creditDate (banco confirmou) a AR vira LIQUIDADO.
+        await tx.accountReceivable.update({
+          where: { id: receivable.id },
+          data: novoEstadoReceivable(receivable, txn.gross_amount, billingType, !!creditDate),
+        })
       } else {
         const cat = await tx.category.findFirst({
           where: { company_id: companyId, module: 'financeiro_receita', name: { mode: 'insensitive', contains: 'Venda de Servi' } },
@@ -154,7 +138,8 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
             total_amount: txn.gross_amount,
             received_amount: txn.gross_amount,
             due_date: txn.expected_credit_date || txn.transaction_date,
-            status: 'RECEBIDO',
+            status: creditDate ? 'LIQUIDADO' : 'RECEBIDO',
+            ...(creditDate ? { reconciled: true } : {}),
             payment_method: billingType,
             charge_status: 'RECEIVED',
             charge_id: payment.id,
@@ -178,8 +163,22 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
         },
       })
 
+      // Taxa estimada da entrega × taxa real da adquirente: "não pode ser lançado a taxa em dobro" (Karlão 29/10).
+      // Estimada PENDENTE → cancelada; estimada já PAGA → não lança a real.
+      const apsDaOS = await tx.accountPayable.findMany({
+        where: { company_id: companyId, deleted_at: null, status: { not: 'CANCELADO' }, description: { contains: `OS-${osNum}`, mode: 'insensitive' } },
+        select: { id: true, description: true, status: true },
+      })
+      const taxas = planoTaxas(apsDaOS, os.os_number)
+      if (taxas.cancelar.length) {
+        await tx.accountPayable.updateMany({
+          where: { id: { in: taxas.cancelar }, company_id: companyId },
+          data: { status: 'CANCELADO', notes: `Cancelada: taxa estimada na entrega substituída pela taxa real da ${txn.acquirer} (NSU ${txn.external_id}).`, updated_at: new Date() },
+        })
+      }
+
       // AP MDR
-      if (txn.mdr_fee_amount > 0) {
+      if (taxas.lancarReal && txn.mdr_fee_amount > 0) {
         await tx.accountPayable.create({
           data: {
             company_id: companyId,
@@ -205,7 +204,7 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
       }
 
       // AP RA
-      if (txn.anticipation_fee_amount > 0) {
+      if (taxas.lancarReal && txn.anticipation_fee_amount > 0) {
         await tx.accountPayable.create({
           data: {
             company_id: companyId,
@@ -244,7 +243,7 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
             transaction_type: 'CREDIT',
             amount: netAmount,
             description: `Maquininha ${txn.acquirer} — OS-${osNum} — ${billingType === 'DEBIT_CARD' ? 'debito' : `credito ${txn.installments}x`}`,
-            transaction_date: txn.expected_credit_date || txn.transaction_date,
+            transaction_date: creditDate || txn.expected_credit_date || txn.transaction_date,
             bank_ref: `acquirer:${txn.acquirer}:${txn.external_id}`,
             reconciled: true,
           },
@@ -271,7 +270,7 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
           },
           data: {
             status: 'RECEBIDO',
-            paid_at: txn.expected_credit_date || txn.transaction_date,
+            paid_at: creditDate || txn.expected_credit_date || txn.transaction_date,
           },
         })
       }
@@ -280,7 +279,9 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
       const valorBRL = (txn.gross_amount / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
       const dataStr = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
       const metodo = billingType === 'DEBIT_CARD' ? 'Cartao Debito' : `Cartao Credito ${txn.installments}x`
-      const sufixo = matchMethod === 'AUTO' ? ` — match auto ${matchConfidence}%` : ''
+      const sufixo = (matchMethod === 'AUTO' ? ` — match auto ${matchConfidence}%` : '')
+        + (creditDate ? ` — creditado no banco em ${creditDate.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })} (liquidado)` : '')
+        + (taxas.lancarReal ? '' : ' — taxa real NÃO lançada: a taxa estimada já estava paga')
       const novaNota = `[${dataStr}] ✓ Pagamento confirmado (maquininha ${txn.acquirer}): ${metodo} ${valorBRL} — NSU ${txn.external_id} — terminal ${txn.terminal_code || '?'}${sufixo}`
       const so = await tx.serviceOrder.findUnique({ where: { id: os.id }, select: { internal_notes: true } })
       const notesAtual = so?.internal_notes ? so.internal_notes + '\n' : ''

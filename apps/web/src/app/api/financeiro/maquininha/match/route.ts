@@ -10,7 +10,8 @@ import { performMatch } from '@/lib/acquirer/perform-match'
  * Vincula 1 acquirer_transaction a 1 service_order (match manual).
  * Cria atomicamente Payment + AR + 2 APs (MDR e RA) + nota interna.
  *
- * Body: { transaction_id: string, service_order_id: string }
+ * Body: { transaction_id: string, service_order_id: string, credit_date?: 'AAAA-MM-DD' }
+ * credit_date = dia em que o líquido caiu no banco (conciliação da manhã): AR vira LIQUIDADO nessa data.
  * Permission: financeiro.edit
  */
 export async function POST(req: NextRequest) {
@@ -19,9 +20,12 @@ export async function POST(req: NextRequest) {
     if (result instanceof NextResponse) return result
     const user = result
 
-    const { transaction_id, service_order_id } = await req.json()
+    const { transaction_id, service_order_id, credit_date } = await req.json()
     if (!transaction_id || !service_order_id) {
       return error('transaction_id e service_order_id obrigatorios', 400)
+    }
+    if (credit_date !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(String(credit_date))) {
+      return error('credit_date deve ser AAAA-MM-DD', 400)
     }
 
     const r = await performMatch({
@@ -29,6 +33,8 @@ export async function POST(req: NextRequest) {
       serviceOrderId: service_order_id,
       companyId: user.companyId,
       matchMethod: 'MANUAL',
+      // meio-dia de Brasília: a data não escorrega de dia por fuso
+      creditDate: credit_date ? new Date(`${credit_date}T12:00:00-03:00`) : undefined,
     })
     if (!r.ok) {
       const code = /nao encontrad/i.test(r.error || '') ? 404 : 422

@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
+import { refsCreditoAdquirente } from '@/lib/acquirer/match-rules'
 
 /**
  * Wave S (audit 2026-05-24): POST /api/financeiro/contas-receber/bulk-reconcile
@@ -73,8 +74,14 @@ export async function POST(req: NextRequest) {
       if (reconciled) {
         // RECEBIDO → LIQUIDADO: cria Transaction + incrementa saldo.
         // Idempotência: se já tem Transaction com bank_ref=AR:id, pula save.
+        // 29/10: idem se a maquininha já creditou o LÍQUIDO desta AR (acquirer:<provider>:<NSU>) —
+        // senão o "Conferi" somava o BRUTO por cima e o dinheiro contava 2x.
+        const pagamentos = await prisma.payment.findMany({
+          where: { company_id: user.companyId, receivable_id: ar.id },
+          select: { provider: true, external_id: true },
+        })
         const existing = await prisma.transaction.findFirst({
-          where: { company_id: user.companyId, bank_ref: `AR:${ar.id}` },
+          where: { company_id: user.companyId, bank_ref: { in: [`AR:${ar.id}`, ...refsCreditoAdquirente(pagamentos)] } },
         })
         if (existing) {
           // Provavelmente já liquidada (ex: webhook Asaas, ou backfill manual).
