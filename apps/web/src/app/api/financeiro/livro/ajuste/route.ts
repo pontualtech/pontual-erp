@@ -4,19 +4,23 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
-import { calcularAjuste } from '@/lib/financeiro/livro-ajuste'
+import { calcularAjuste, dataValida } from '@/lib/financeiro/livro-ajuste'
 import { garantirCategoriasERegras } from '@/lib/financeiro/livro-categorias'
 
 /**
  * Livro-razão — ajuste de caixa único por conta no corte: zera o passado para o saldo do ERP
  * ficar EXATAMENTE igual ao saldo real do banco. Idempotente por bank_ref 'AJUSTE:conta:data'.
+ * Se já não há diferença, grava um marcador de valor zero (abre o portão da varredura diária).
  */
 const bodySchema = z.object({
   account_id: z.string().min(1),
   saldo_real_centavos: z.number().int(),
-  data_corte: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  data_corte: z.string().refine(dataValida, 'Data inválida (use AAAA-MM-DD)'),
   simular: z.boolean().optional(),
 })
+
+const assinado = (t: { transaction_type: string; amount: number }) =>
+  t.transaction_type === 'CREDIT' ? t.amount : -t.amount
 
 export async function POST(req: NextRequest) {
   try {
@@ -32,34 +36,46 @@ export async function POST(req: NextRequest) {
     if (!account) return error('Conta não encontrada', 404)
 
     const bankRef = `AJUSTE:${body.account_id}:${body.data_corte}`
-    const existente = await prisma.transaction.findFirst({
-      where: { company_id: user.companyId, account_id: body.account_id, bank_ref: bankRef },
-    })
-    if (existente) {
-      return success({
-        saldo_erp_atual: account.current_balance ?? 0,
-        ajuste_centavos: existente.transaction_type === 'CREDIT' ? existente.amount : -existente.amount,
-        transaction_id: existente.id,
+
+    // Simulação: somente leitura, sem trava nem transação.
+    if (body.simular === true) {
+      const existente = await prisma.transaction.findFirst({
+        where: { company_id: user.companyId, account_id: body.account_id, bank_ref: bankRef },
       })
+      const saldoErp = account.current_balance ?? 0
+      if (existente) {
+        return success({ saldo_erp_atual: saldoErp, ajuste_centavos: assinado(existente), transaction_id: existente.id })
+      }
+      const { tipo, amount } = calcularAjuste(body.saldo_real_centavos, saldoErp)
+      return success({ saldo_erp_atual: saldoErp, ajuste_centavos: tipo === 'DEBIT' ? -amount : amount })
     }
 
-    const saldoErp = account.current_balance ?? 0
-    const { tipo, amount } = calcularAjuste(body.saldo_real_centavos, saldoErp)
-    const ajuste = tipo === 'DEBIT' ? -amount : amount
+    // Categorias antes de travar a conta (idempotente, transação curta própria).
+    const categorias = await prisma.$transaction((tx) => garantirCategoriasERegras(tx, user.companyId))
 
-    if (tipo === null || body.simular === true) {
-      return success({ saldo_erp_atual: saldoErp, ajuste_centavos: ajuste })
-    }
+    const feito = await prisma.$transaction(async (tx) => {
+      // Trava a conta e lê o saldo já travado: webhooks concorrentes esperam; um ajuste concorrente vê o existente.
+      const travada = await tx.$queryRaw<
+        { current_balance: number | null }[]
+      >`SELECT current_balance FROM accounts WHERE id = ${body.account_id} AND company_id = ${user.companyId} FOR UPDATE`
+      const saldoErp = Number(travada[0]?.current_balance ?? 0)
 
-    const criada = await prisma.$transaction(async (tx) => {
-      const categorias = await garantirCategoriasERegras(tx, user.companyId)
-      const t = await tx.transaction.create({
+      const existente = await tx.transaction.findFirst({
+        where: { company_id: user.companyId, account_id: body.account_id, bank_ref: bankRef },
+      })
+      if (existente) return { existente, criada: null, saldoErp, ajuste: assinado(existente) }
+
+      const { tipo, amount } = calcularAjuste(body.saldo_real_centavos, saldoErp)
+      const criada = await tx.transaction.create({
         data: {
           company_id: user.companyId,
           account_id: body.account_id,
-          transaction_type: tipo,
+          transaction_type: tipo ?? 'CREDIT',
           amount,
-          description: `Ajuste de caixa — saldo real do fim de ${body.data_corte}`,
+          description:
+            tipo === null
+              ? `Ajuste de caixa — saldo conferido, sem diferença em ${body.data_corte}`
+              : `Ajuste de caixa — saldo real do fim de ${body.data_corte}`,
           transaction_date: new Date(body.data_corte + 'T00:00:00.000Z'),
           bank_ref: bankRef,
           origin: 'AJUSTE',
@@ -67,25 +83,35 @@ export async function POST(req: NextRequest) {
           reconciled: true,
         },
       })
-      // Grava o saldo exatamente igual ao real (em vez de incrementar), para terminar sem diferença.
-      await tx.account.update({
-        where: { id: body.account_id },
-        data: { current_balance: body.saldo_real_centavos, updated_at: new Date() },
-      })
-      return t
+      if (tipo !== null) {
+        // Saldo travado + diferença = saldo real exato.
+        await tx.account.update({
+          where: { id: body.account_id },
+          data: { current_balance: body.saldo_real_centavos, updated_at: new Date() },
+        })
+      }
+      return { existente: null, criada, saldoErp, ajuste: tipo === 'DEBIT' ? -amount : amount }
     })
+
+    if (feito.existente) {
+      return success({ saldo_erp_atual: feito.saldoErp, ajuste_centavos: feito.ajuste, transaction_id: feito.existente.id })
+    }
 
     logAudit({
       companyId: user.companyId,
       userId: user.id,
       module: 'financeiro',
       action: 'livro.ajuste',
-      entityId: criada.id,
-      oldValue: { current_balance: saldoErp },
-      newValue: { account_id: body.account_id, saldo_real_centavos: body.saldo_real_centavos, ajuste_centavos: ajuste },
+      entityId: feito.criada!.id,
+      oldValue: { current_balance: feito.saldoErp },
+      newValue: {
+        account_id: body.account_id,
+        saldo_real_centavos: body.saldo_real_centavos,
+        ajuste_centavos: feito.ajuste,
+      },
     })
 
-    return success({ saldo_erp_atual: saldoErp, ajuste_centavos: ajuste, transaction_id: criada.id })
+    return success({ saldo_erp_atual: feito.saldoErp, ajuste_centavos: feito.ajuste, transaction_id: feito.criada!.id })
   } catch (e) {
     if (e instanceof z.ZodError) {
       return error(e.errors[0]?.message || 'Dados inválidos', 422)

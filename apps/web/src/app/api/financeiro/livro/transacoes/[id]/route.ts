@@ -11,6 +11,7 @@ import { logAudit } from '@/lib/audit'
  */
 const bodySchema = z.object({
   category_id: z.string().min(1),
+  simular: z.boolean().optional(),
   criar_regra: z
     .object({
       pattern: z.string(),
@@ -46,6 +47,27 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       if (!pattern) return error('Padrão da regra não pode ser vazio', 400)
     }
 
+    const regraExiste = async (db: Pick<typeof prisma, 'classificationRule'>) =>
+      (await db.classificationRule.findFirst({
+        where: {
+          company_id: user.companyId,
+          active: true,
+          pattern: pattern as string,
+          direction: body.criar_regra?.direction ?? null,
+        },
+        select: { id: true },
+      })) !== null
+
+    // Simulação: valida tudo acima e só informa o que mudaria, sem gravar.
+    if (body.simular === true) {
+      return success({
+        id: params.id,
+        category_id: body.category_id,
+        regra_criada: !!body.criar_regra && !(await regraExiste(prisma)),
+        simulado: true,
+      })
+    }
+
     let regraCriada = false
     await prisma.$transaction(async (tx) => {
       await tx.transaction.update({
@@ -53,15 +75,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         data: { category_id: body.category_id },
       })
       if (body.criar_regra && pattern) {
-        const jaExiste = await tx.classificationRule.findFirst({
-          where: {
-            company_id: user.companyId,
-            active: true,
-            pattern,
-            direction: body.criar_regra.direction,
-          },
-          select: { id: true },
-        })
+        const jaExiste = await regraExiste(tx)
         if (!jaExiste) {
           await tx.classificationRule.create({
             data: {

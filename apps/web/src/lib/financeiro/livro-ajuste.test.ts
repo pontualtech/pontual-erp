@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { calcularAjuste } from './livro-ajuste'
+import { calcularAjuste, dataValida } from './livro-ajuste'
 
 describe('calcularAjuste', () => {
   it('saldo do ERP maior que o real → DEBIT da diferença', () => {
@@ -10,5 +10,15 @@ describe('calcularAjuste', () => {
   })
   it('saldos iguais → nenhum ajuste', () => {
     expect(calcularAjuste(5, 5)).toEqual({ tipo: null, amount: 0 })
+  })
+})
+
+describe('dataValida', () => {
+  it('aceita datas reais e rejeita impossíveis ou mal formatadas', () => {
+    expect(dataValida('2026-10-29')).toBe(true)
+    expect(dataValida('2024-02-29')).toBe(true)
+    expect(dataValida('2026-02-31')).toBe(false)
+    expect(dataValida('2026-13-01')).toBe(false)
+    expect(dataValida('29/10/2026')).toBe(false)
   })
 })
