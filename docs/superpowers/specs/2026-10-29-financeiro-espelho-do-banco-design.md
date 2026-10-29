@@ -180,13 +180,15 @@ vermelho no resumo) → pendências novas no `pendencias.md` → resumo 18:15.
 - Publicação do ERP: só `main`, tag de restauração antes, avisar o Karlão, sem rajada.
 - Testes antes do código (vitest no ERP; `node --test` na rotina); simulação (`--simular`) antes de gravar.
 
-## 7. Pendente de decisão do Karlão
-- **Como separar as compras do cartão Inter 1090 (IMP)**, já que a fatura do site não diz o cartão. Opções: (a)
-  regras por estabelecimento/tipo de compra que só a IMP faz; (b) PDF da fatura pelo app (costuma separar por
-  cartão) — 1 ação por mês; (c) pedir ao Inter um cartão na conta da **própria IMP** (separação limpa, o
-  recomendado a médio prazo).
-- Ativar no Inter uma integração de API com escopo de **extrato** (gera certificado e pede aprovação no app) para
-  a conta Inter dispensar login.
+## 7. Decisões finais e pendências
+- **Separar as compras do cartão Inter 1090 (IMP): opção B (Karlão 29/10: "vamos de b, no futuro vou pedir um
+  cartão só para imprimitech").** Uma vez por mês o Karlão baixa o PDF da fatura do Inter pelo app (o PDF separa
+  por cartão) e salva na pasta `C:\Users\pontu\OneDrive\Faturas Inter` (decisão minha; sincroniza do celular). A
+  rotina detecta o PDF novo, lê as compras por cartão e reclassifica as do 1090 para "a receber da IMP". Até o PDF
+  chegar, as compras da fatura Inter ficam lançadas como "a classificar — cartão Inter". Quando existir o cartão
+  próprio da IMP, essa etapa some.
+- Pendente: ativar no Inter uma integração de API com escopo de **extrato** (gera certificado e pede aprovação no
+  app) para a conta Inter dispensar login — só com OK do Karlão.
 
 ## 8. Deixado ao construtor
 - Modelagem exata da conta-cartão (novo `account_type` ou convenção), tabela de regras de classificação, campo de
