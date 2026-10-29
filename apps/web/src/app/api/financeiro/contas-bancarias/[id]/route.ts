@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
+import { contaSemSegredos } from '@/lib/financeiro/conta-segura'
 import { z } from 'zod'
 
 const updateAccountSchema = z.object({
@@ -34,7 +35,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
     })
 
     if (!account) return error('Conta bancária não encontrada', 404)
-    return success(account)
+    return success(contaSemSegredos(account))
   } catch (err) {
     return handleError(err)
   }
@@ -86,7 +87,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       newValue: data as Record<string, unknown>,
     })
 
-    return success(account!)
+    return success(contaSemSegredos(account!))
   } catch (err) {
     return handleError(err)
   }

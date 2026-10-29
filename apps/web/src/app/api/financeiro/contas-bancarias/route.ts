@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
+import { contaSemSegredos } from '@/lib/financeiro/conta-segura'
 import { z } from 'zod'
 
 const createAccountSchema = z.object({
@@ -28,7 +29,7 @@ export async function GET(_req: NextRequest) {
       orderBy: { name: 'asc' },
     })
 
-    return success(accounts)
+    return success(accounts.map(contaSemSegredos))
   } catch (err) {
     return handleError(err)
   }
@@ -76,7 +77,7 @@ export async function POST(req: NextRequest) {
       newValue: { name: data.name, account_type: data.account_type, initial_balance: data.initial_balance },
     })
 
-    return success(account, 201)
+    return success(contaSemSegredos(account), 201)
   } catch (err) {
     return handleError(err)
   }
