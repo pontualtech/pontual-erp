@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { z } from 'zod'
+import { isReceivableSettled } from '@/lib/finance/receivable-status'
 
 const desagruparSchema = z.object({
   group_receivable_id: z.string().min(1),
@@ -32,7 +33,7 @@ export async function POST(req: NextRequest) {
       return error('Conta agrupada nao encontrada', 404)
     }
 
-    if (grouped.status === 'RECEBIDO') {
+    if (isReceivableSettled(grouped)) {
       return error('Nao e possivel desagrupar uma conta ja recebida', 400)
     }
     // A11 fix 22/05: bloqueia desagrupar se group ja teve recebimento parcial.

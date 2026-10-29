@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { success, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { getBoletoProvider } from '@/lib/boleto'
+import { isReceivableSettled } from '@/lib/finance/receivable-status'
 
 /**
  * GET /api/financeiro/boletos/[id]
@@ -47,7 +48,7 @@ export async function GET(
 
     // Determine display status
     let boletoStatus = boletoMeta.boletoStatus || 'REGISTERED'
-    if (receivable.status === 'RECEBIDO') boletoStatus = 'PAID'
+    if (isReceivableSettled(receivable)) boletoStatus = 'PAID'
     else if (receivable.status === 'CANCELADO') boletoStatus = 'CANCELLED'
     else if (receivable.status === 'PENDENTE' && new Date(receivable.due_date) < new Date(new Date().toDateString())) {
       boletoStatus = 'OVERDUE'
@@ -108,7 +109,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Esta conta nao possui boleto gerado' }, { status: 404 })
     }
 
-    if (receivable.status === 'RECEBIDO') {
+    if (isReceivableSettled(receivable)) {
       return NextResponse.json({ error: 'Nao e possivel cancelar boleto de conta ja recebida' }, { status: 400 })
     }
 

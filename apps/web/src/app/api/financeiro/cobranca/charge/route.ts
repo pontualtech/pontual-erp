@@ -10,6 +10,7 @@ import { sendWhatsAppCloud, sendWhatsAppTemplate } from '@/lib/whatsapp/cloud-ap
 import { sendCompanyEmail } from '@/lib/send-email'
 import { z } from 'zod'
 import { escapeHtml } from '@/lib/escape-html'
+import { isReceivableSettled } from '@/lib/finance/receivable-status'
 
 const createChargeSchema = z.object({
   receivable_id: z.string().min(1),
@@ -53,7 +54,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Conta a receber nao encontrada' }, { status: 404 })
     }
 
-    if (receivable.status === 'RECEBIDO') {
+    if (isReceivableSettled(receivable)) {
       return NextResponse.json({ error: 'Conta ja recebida' }, { status: 400 })
     }
 

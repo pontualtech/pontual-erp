@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { getPaymentProvider } from '@/lib/payments/factory'
 import { captureFeesForPayment } from '@/lib/payments/capture-fees'
+import { estadoArConfirmado, estadoArRecebido, valorCreditoAsaas, dataCreditoAsaas } from '@/lib/payments/asaas-rules'
 import { isImprimitechHandoffStatus } from '@/lib/imprimitech-handoff'
 
 // Valid status transitions — reject anything not in this map
@@ -405,42 +406,26 @@ export async function POST(req: NextRequest) {
         })
 
         if (receivable) {
-          // 2026-05-11: idempotencia AR baixa — so baixa se ainda PENDENTE.
-          // Se CONFIRMED ja baixou antes, RECEIVED nao baixa de novo (evita
-          // double credit). Mas Transaction + FiscalEntry SEMPRE rodam aqui
-          // porque sao do regime caixa (so quando dinheiro REALMENTE entra).
-          if (receivable.status !== 'RECEBIDO') {
-            const newReceived = (receivable.received_amount || 0) + fresh.amount
-            const isFullyPaid = newReceived >= receivable.total_amount
-            // Wave AS-1 (2026-05-27): calcula data esperada de credito baseado em
-            // billing_type + settings da empresa. Asaas credito sem antecipacao = D+32.
-            // Fluxo de caixa le este campo pra mostrar "RECEBIDO aguardando credito".
-            const expectedCreditDate = isFullyPaid
-              ? await computeExpectedCreditDate(tx, fresh.company_id, fresh.billing_type || fresh.method || null)
-              : null
-            await tx.accountReceivable.update({
-              where: { id: fresh.receivable_id },
-              data: {
-                received_amount: newReceived,
-                status: isFullyPaid ? 'RECEBIDO' : 'PENDENTE',
-                // 2026-05-20: webhook Asaas e origem confiavel — dinheiro ja esta na conta Asaas.
-                // Marca reconciled=true junto com RECEBIDO. Pagamento parcial fica PENDENTE
-                // (reconciled fica como esta — sera marcado true so quando virar RECEBIDO).
-                ...(isFullyPaid ? { reconciled: true } : {}),
-                ...(expectedCreditDate ? { expected_credit_date: expectedCreditDate } : {}),
-                charge_status: newStatus,
-                payment_method: fresh.billing_type || fresh.method || receivable.payment_method,
-                updated_at: new Date(),
-              },
-            })
-          } else {
-            // AR ja RECEBIDO (CONFIRMED veio antes). So atualiza charge_status.
-            // Garante reconciled=true caso CONFIRMED tenha vindo de fluxo manual antes.
-            await tx.accountReceivable.update({
-              where: { id: fresh.receivable_id },
-              data: { charge_status: newStatus, reconciled: true, updated_at: new Date() },
-            })
-          }
+          // 2026-05-11: idempotencia AR baixa — só soma received_amount se a AR ainda não estava quitada
+          // (CONFIRMED já somou no cartão/boleto). Transaction + FiscalEntry SEMPRE rodam aqui (regime caixa).
+          // 29/10 (Karlão "liquidar quando cair o dinheiro"): RECEIVED = dinheiro creditado na conta Asaas →
+          // AR LIQUIDADO + conciliado (regras em lib/payments/asaas-rules). Antes ficava RECEBIDO, e uma AR
+          // já LIQUIDADO (Conferi manual) somava received_amount de novo.
+          const estado = estadoArRecebido(receivable, fresh.amount)
+          // Wave AS-1 (2026-05-27): data esperada de crédito (fluxo de caixa) quando quita agora.
+          const expectedCreditDate = estado.status === 'LIQUIDADO' && 'received_amount' in estado
+            ? await computeExpectedCreditDate(tx, fresh.company_id, fresh.billing_type || fresh.method || null)
+            : null
+          await tx.accountReceivable.update({
+            where: { id: fresh.receivable_id },
+            data: {
+              ...estado,
+              ...(expectedCreditDate ? { expected_credit_date: expectedCreditDate } : {}),
+              charge_status: newStatus,
+              payment_method: fresh.billing_type || fresh.method || receivable.payment_method,
+              updated_at: new Date(),
+            },
+          })
 
           // Audit 14 BUG 3 fix: criar Transaction + atualizar saldo da conta
           // bancária quando o webhook auto-baixa um pagamento. Antes:
@@ -481,21 +466,24 @@ export async function POST(req: NextRequest) {
               select: { id: true },
             })
             if (!existingCredit) {
+              // 29/10: entra o LÍQUIDO (o Asaas já desconta a taxa, que vira AP PAGO em capture-fees) na data
+              // em que o dinheiro foi creditado — assim o saldo do ERP bate com o saldo real da conta Asaas.
+              const creditAmount = valorCreditoAsaas(asaasPayment, fresh.amount)
               await tx.transaction.create({
                 data: {
                   company_id: fresh.company_id,
                   account_id: creditAccountId,
                   transaction_type: 'CREDIT',
-                  amount: fresh.amount,
-                  description: `Recebimento Asaas (${billingType || 'PIX'}): ${receivable.description}`,
+                  amount: creditAmount,
+                  description: `Recebimento Asaas (${billingType || 'PIX'}${creditAmount < fresh.amount ? ', líquido' : ''}): ${receivable.description}`,
                   bank_ref: asaasPayment.id,
-                  transaction_date: new Date(),
+                  transaction_date: dataCreditoAsaas(asaasPayment) || new Date(),
                 },
               })
               await tx.account.update({
                 where: { id: creditAccountId },
                 data: {
-                  current_balance: { increment: fresh.amount },
+                  current_balance: { increment: creditAmount },
                   updated_at: new Date(),
                 },
               })
@@ -590,17 +578,14 @@ export async function POST(req: NextRequest) {
         const receivable = await tx.accountReceivable.findFirst({
           where: { id: fresh.receivable_id, company_id: fresh.company_id },
         })
-        if (receivable && receivable.status !== 'RECEBIDO') {
-          const newReceived = (receivable.received_amount || 0) + fresh.amount
-          const isFullyPaid = newReceived >= receivable.total_amount
+        // 29/10 (Karlão): CONFIRMED = pagou, mas o dinheiro ainda não está na conta → RECEBIDO SEM conciliar
+        // (antes marcava reconciled=true aqui). Concilia/liquida no RECEIVED. Regras em lib/payments/asaas-rules.
+        const estado = receivable ? estadoArConfirmado(receivable, fresh.amount) : null
+        if (receivable && estado) {
           await tx.accountReceivable.update({
             where: { id: fresh.receivable_id },
             data: {
-              received_amount: newReceived,
-              status: isFullyPaid ? 'RECEBIDO' : 'PENDENTE',
-              // 2026-05-20: Asaas CONFIRMED ja garante que dinheiro vai cair (PIX instantaneo,
-              // boleto compensado, cartao autorizado). Marca reconciled=true junto com RECEBIDO.
-              ...(isFullyPaid ? { reconciled: true } : {}),
+              ...estado,
               charge_status: 'CONFIRMED',
               payment_method: fresh.billing_type || fresh.method || receivable.payment_method,
               updated_at: new Date(),

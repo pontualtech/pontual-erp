@@ -340,6 +340,23 @@ export class AsaasProvider implements PaymentProvider {
       return []
     }
   }
+
+  /** Saldo disponível na conta Asaas, em reais (GET /finance/balance). Conciliação diária (29/10). */
+  async getBalance(): Promise<number> {
+    const data = await this.request('GET', '/finance/balance')
+    return Number(data?.balance)
+  }
+
+  /** Extrato da conta Asaas entre duas datas AAAA-MM-DD, todas as páginas (até 2.000 lançamentos). */
+  async listFinancialTransactions(startDate: string, finishDate: string): Promise<any[]> {
+    const out: any[] = []
+    for (let offset = 0; offset < 2000; offset += 100) {
+      const data = await this.request('GET', `/financialTransactions?startDate=${startDate}&finishDate=${finishDate}&limit=100&offset=${offset}`)
+      out.push(...((data?.data || []) as any[]))
+      if (!data?.hasMore) break
+    }
+    return out
+  }
 }
 
 /**

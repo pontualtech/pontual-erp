@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { z } from 'zod'
+import { isReceivableSettled } from '@/lib/finance/receivable-status'
 
 type Params = { params: { id: string } }
 
@@ -150,7 +151,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     // received_amount > 0 deixava inconsistente. Forçar uso de /estornar.
     if (
       data.status === 'PENDENTE' &&
-      (existing.status === 'RECEBIDO' || existing.status === 'PAGO') &&
+      isReceivableSettled(existing) &&
       (existing.received_amount ?? 0) > 0
     ) {
       return error('Para reverter RECEBIDO→PENDENTE use o botão Estornar (zera received_amount e cria transação compensatória).', 400)
@@ -198,7 +199,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     // são canônicos pra AR — projeto migrou 26/05 mas defensivo mantém ambos).
     // Recebimento criou lançamento bancário que NÃO é revertido pelo soft-delete.
     if (
-      (existing.status === 'RECEBIDO' || existing.status === 'PAGO') &&
+      isReceivableSettled(existing) &&
       (existing.received_amount ?? 0) > 0
     ) {
       return error(

@@ -5,6 +5,7 @@ import { success, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { getBoletoProvider } from '@/lib/boleto'
 import { z } from 'zod'
+import { isReceivableSettled } from '@/lib/finance/receivable-status'
 
 const generateBoletoSchema = z.object({
   receivable_id: z.string().min(1, 'ID da conta a receber e obrigatorio'),
@@ -77,7 +78,7 @@ export async function GET(request: NextRequest) {
 
       // Determine display status
       let boletoStatus = boletoMeta.boletoStatus || 'REGISTERED'
-      if (b.status === 'RECEBIDO' || b.status === 'PAGO') boletoStatus = 'PAID'
+      if (isReceivableSettled(b)) boletoStatus = 'PAID'
       else if (b.status === 'CANCELADO') boletoStatus = 'CANCELLED'
       else if (b.status === 'PENDENTE' && new Date(b.due_date) < new Date(new Date().toDateString())) {
         boletoStatus = 'OVERDUE'

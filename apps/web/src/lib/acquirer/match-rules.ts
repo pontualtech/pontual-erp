@@ -47,7 +47,11 @@ export function planoTaxas(aps: { id: string; description: string | null; status
   return { cancelar: estimadas.filter(a => a.status === 'PENDENTE').map(a => a.id), lancarReal: true }
 }
 
-/** bank_ref dos créditos que o performMatch já lançou para os pagamentos da AR (acquirer:<provider>:<NSU>). */
+/**
+ * bank_ref dos créditos que já entraram no saldo para os pagamentos da AR: performMatch da maquininha grava
+ * `acquirer:<provider>:<NSU>`; o webhook Asaas grava o próprio id do pagamento (pay_xxx).
+ */
 export function refsCreditoAdquirente(payments: { provider: string | null; external_id: string | null }[]): string[] {
-  return payments.filter(p => p.provider === 'rede' && p.external_id).map(p => `acquirer:${p.provider}:${p.external_id}`)
+  return payments.filter(p => p.external_id && (p.provider === 'asaas' || p.provider === 'rede'))
+    .map(p => (p.provider === 'asaas' ? p.external_id! : `acquirer:${p.provider}:${p.external_id}`))
 }

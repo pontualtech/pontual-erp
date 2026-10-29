@@ -62,7 +62,11 @@ describe('planoTaxas — taxa real da Rede × taxa estimada da entrega (nunca em
 
 describe('refsCreditoAdquirente — créditos da maquininha já lançados para a AR', () => {
   it('monta o bank_ref que o performMatch grava (acquirer:<provider>:<NSU>)', () => {
-    expect(refsCreditoAdquirente([{ provider: 'rede', external_id: '185457004' }, { provider: 'asaas', external_id: 'pay_1' }, { provider: 'rede', external_id: null }]))
+    expect(refsCreditoAdquirente([{ provider: 'rede', external_id: '185457004' }, { provider: 'rede', external_id: null }]))
       .toEqual(['acquirer:rede:185457004'])
+  })
+  it('crédito do webhook Asaas usa o próprio id do pagamento (pay_xxx) como bank_ref', () => {
+    expect(refsCreditoAdquirente([{ provider: 'asaas', external_id: 'pay_1' }, { provider: 'rede', external_id: '9' }, { provider: 'manual', external_id: 'x' }]))
+      .toEqual(['pay_1', 'acquirer:rede:9'])
   })
 })

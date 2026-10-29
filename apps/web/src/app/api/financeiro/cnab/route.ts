@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { logAudit } from '@/lib/audit'
 import { gerarRemessaCNAB400, parsearRetornoCNAB400, type BoletoRemessa400, type CedenteConfig400 } from '@/lib/boleto/cnab/cnab400-inter'
 import { handleError } from '@/lib/api-response'
+import { isReceivableSettled } from '@/lib/finance/receivable-status'
 
 /**
  * GET /api/financeiro/cnab — Gerar arquivo de remessa CNAB 400
@@ -291,8 +292,8 @@ export async function POST(req: NextRequest) {
         // C14 fix 22/05: idempotencia — se ja existe Transaction com
         // bank_ref=cnab:{nossoNumero} OU AR ja esta RECEBIDO, pula.
         // Antes, reimport do .ret criava 2 CREDIT + saldo 2x.
-        if (receivable.status === 'RECEBIDO') {
-          console.log(`[CNAB] AR ${receivable.id} ja RECEBIDO, pulando duplicata`)
+        if (isReceivableSettled(receivable)) {
+          console.log(`[CNAB] AR ${receivable.id} ja ${receivable.status}, pulando duplicata`)
           continue
         }
         if (ret.nossoNumero) {

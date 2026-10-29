@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { baixaSchema } from '@/lib/validations/financeiro'
+import { isReceivableSettled } from '@/lib/finance/receivable-status'
 
 type Params = { params: { id: string } }
 
@@ -17,7 +18,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       where: { id: params.id, company_id: user.companyId, deleted_at: null },
     })
     if (!existing) return error('Conta a receber nao encontrada', 404)
-    if (existing.status === 'RECEBIDO') return error('Conta ja foi recebida', 400)
+    if (isReceivableSettled(existing)) return error('Conta ja foi recebida', 400)
     if (existing.status === 'CANCELADO') return error('Conta cancelada nao pode ser recebida', 400)
 
     const body = await req.json()
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         where: { id: params.id, company_id: user.companyId, deleted_at: null },
       })
       if (!fresh) throw new Error('AR sumiu durante a baixa')
-      if (fresh.status === 'RECEBIDO') throw new Error('Conta ja foi recebida (outra baixa em paralelo)')
+      if (isReceivableSettled(fresh)) throw new Error('Conta ja foi recebida (outra baixa em paralelo)')
       if (fresh.status === 'CANCELADO') throw new Error('Conta cancelada durante a baixa')
       const previousReceived = fresh.received_amount || 0
       const newReceivedTotal = previousReceived + data.received_amount

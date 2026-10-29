@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
+import { isReceivableSettled } from '@/lib/finance/receivable-status'
 
 type Params = { params: { id: string } }
 
@@ -23,7 +24,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       return error('Antecipação disponível apenas para recebíveis de cartão', 400)
     }
 
-    if (receivable.status === 'RECEBIDO') return error('Conta já foi recebida', 400)
+    if (isReceivableSettled(receivable)) return error('Conta já foi recebida', 400)
     if (receivable.status === 'CANCELADO') return error('Conta cancelada', 400)
     if (receivable.anticipated_at) return error('Conta já foi antecipada', 400)
 
