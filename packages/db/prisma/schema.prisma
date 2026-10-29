@@ -113,6 +113,7 @@ model Company {
   fixed_expenses                FixedExpense[]
   apiKeys                       ApiKey[]
   categories                    Category[]
+  classification_rules          ClassificationRule[]
   company_modules               CompanyModule[]
   cost_centers                  CostCenter[]
   custom_fields                 CustomField[]
@@ -371,6 +372,8 @@ model Category {
   categories          Category?           @relation("categoriesTocategories", fields: [parent_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   other_categories    Category[]          @relation("categoriesTocategories")
   products            Product[]
+  transactions        Transaction[]
+  classification_rules ClassificationRule[]
 
   @@index([company_id, module])
   @@map("categories")
@@ -1000,10 +1003,33 @@ model Transaction {
   reconciled       Boolean?  @default(false)
   transaction_date DateTime  @db.Date
   created_at       DateTime? @default(now()) @db.Timestamptz(6)
+  category_id      String?
+  origin           String?
+  source_text      String?
+  counterparty     String?
   accounts         Account   @relation(fields: [account_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  categories       Category? @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([company_id])
+  @@index([category_id])
   @@map("transactions")
+}
+
+model ClassificationRule {
+  id          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  company_id  String
+  pattern     String
+  direction   String?
+  account_id  String?
+  category_id String
+  priority    Int       @default(100)
+  active      Boolean   @default(true)
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+  companies   Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  categories  Category  @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([company_id])
+  @@map("classification_rules")
 }
 
 model FiscalConfig {
