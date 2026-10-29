@@ -183,7 +183,8 @@ vermelho no resumo) → pendências novas no `pendencias.md` → resumo 18:15.
 ## 7. Decisões finais e pendências
 - **Separar as compras do cartão Inter 1090 (IMP): opção B (Karlão 29/10: "vamos de b, no futuro vou pedir um
   cartão só para imprimitech").** Uma vez por mês o Karlão baixa o PDF da fatura do Inter pelo app (o PDF separa
-  por cartão) e salva na pasta `C:\Users\pontu\OneDrive\Faturas Inter` (decisão minha; sincroniza do celular). A
+  por cartão) e salva no **Google Drive**, pasta `Faturas Inter` (Karlão: "sincronizamos no google drive é
+  melhor"; no PC: `G:\Meu Drive\Faturas Inter`). A
   rotina detecta o PDF novo, lê as compras por cartão e reclassifica as do 1090 para "a receber da IMP". Até o PDF
   chegar, as compras da fatura Inter ficam lançadas como "a classificar — cartão Inter". Quando existir o cartão
   próprio da IMP, essa etapa some.
