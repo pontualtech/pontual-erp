@@ -71,3 +71,36 @@ export function planejarLinha(
     identificar: soma < linha.valor_centavos,
   }
 }
+
+export interface CandidatoOrfao {
+  id: string
+  amount: number
+  transaction_type: 'CREDIT' | 'DEBIT'
+  transaction_date: string // AAAA-MM-DD
+}
+
+const MS_DIA = 86_400_000
+const diaUtc = (d: string) => Date.parse(d + 'T00:00:00.000Z')
+
+/**
+ * Escolhe, entre transações já existentes ("órfãs"), a que corresponde à linha do banco:
+ * mesmo sinal, mesmo valor e data em [data − 3 dias, data + 1 dia]. Vence a data mais próxima;
+ * empate → o primeiro do array. Nenhum → null.
+ */
+export function escolherOrfao(linha: LinhaBanco, candidatos: CandidatoOrfao[]): string | null {
+  const tipo = linha.valor_centavos > 0 ? 'CREDIT' : 'DEBIT'
+  const alvo = diaUtc(linha.data)
+  let melhor: string | null = null
+  let melhorDist = Infinity
+  for (const c of candidatos) {
+    if (c.transaction_type !== tipo || c.amount !== Math.abs(linha.valor_centavos)) continue
+    const dif = Math.round((diaUtc(c.transaction_date) - alvo) / MS_DIA)
+    if (dif < -3 || dif > 1) continue
+    const dist = Math.abs(dif)
+    if (dist < melhorDist) {
+      melhor = c.id
+      melhorDist = dist
+    }
+  }
+  return melhor
+}

@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
-import { classificar, planejarLinha } from '@/lib/financeiro/livro'
+import { classificar, planejarLinha, escolherOrfao } from '@/lib/financeiro/livro'
 import { dataValida } from '@/lib/financeiro/livro-ajuste'
 import { garantirCategoriasERegras } from '@/lib/financeiro/livro-categorias'
 
@@ -42,6 +42,8 @@ interface Resultado {
   valor_centavos?: number
   categoria?: string | null
   transaction_id?: string
+  refs?: string[]
+  origem?: 'orfao'
 }
 
 export async function POST(req: NextRequest) {
@@ -109,6 +111,43 @@ export async function POST(req: NextRequest) {
       return planejarLinha(linha, body.corte, jaLancada, creditosExistentes)
     }
 
+    // Procura crédito/débito já existente ("órfão") que corresponda à linha, na mesma empresa e conta.
+    // Só vale p/ linha sem vínculo nenhum; ignora órfãos já usados neste pedido.
+    const buscarOrfao = async (db: Pick<typeof prisma, 'transaction'>, linha: Linha, usados: Set<string>) => {
+      const dia = 86_400_000
+      const base = Date.parse(linha.data + 'T00:00:00.000Z')
+      const candidatos = await db.transaction.findMany({
+        where: {
+          company_id: user.companyId,
+          account_id: body.account_id,
+          origin: null,
+          source_text: null,
+          transaction_type: linha.valor_centavos > 0 ? 'CREDIT' : 'DEBIT',
+          amount: Math.abs(linha.valor_centavos),
+          transaction_date: { gte: new Date(base - 3 * dia), lte: new Date(base + dia) },
+        },
+        select: { id: true, amount: true, transaction_type: true, transaction_date: true },
+      })
+      return escolherOrfao(
+        linha,
+        candidatos
+          .filter((c) => !usados.has(c.id))
+          .map((c) => ({
+            id: c.id,
+            amount: c.amount,
+            transaction_type: c.transaction_type as 'CREDIT' | 'DEBIT',
+            transaction_date: c.transaction_date.toISOString().slice(0, 10),
+          })),
+      )
+    }
+
+    // Marca as transações ligadas por esta linha (sem sobrescrever quem já foi ligada por outra).
+    const marcarLigadas = (tx: Pick<typeof prisma, 'transaction'>, refs: string[], chave: string) =>
+      tx.transaction.updateMany({
+        where: { company_id: user.companyId, account_id: body.account_id, bank_ref: { in: refs }, source_text: null },
+        data: { source_text: `LIGADA:${chave}` },
+      })
+
     const categoriaDe = (linha: Linha, valor: number, identificar: boolean) => {
       const { category_id: porRegra } = classificar(linha, regras, body.account_id)
       const nomeFallback = identificar || valor > 0 ? 'Receita a identificar' : 'A classificar'
@@ -120,6 +159,7 @@ export async function POST(req: NextRequest) {
 
     const resultados: Resultado[] = []
     const vistas = new Set<string>()
+    const orfaosUsados = new Set<string>()
     let saldoSimulado = account.current_balance ?? 0
 
     for (const linha of body.linhas) {
@@ -135,6 +175,14 @@ export async function POST(req: NextRequest) {
 
       if (simular) {
         const plano = await planejar(prisma, linha)
+        if (plano.acao === 'CRIAR' && plano.refs_ligadas.length === 0) {
+          const orfaoId = await buscarOrfao(prisma, linha, orfaosUsados)
+          if (orfaoId) {
+            orfaosUsados.add(orfaoId)
+            resultados.push({ chave: linha.chave, acao: 'LIGAR', refs: [orfaoId], origem: 'orfao' })
+            continue
+          }
+        }
         if (plano.acao === 'CRIAR') {
           saldoSimulado += plano.valor_centavos
           const cat = categoriaDe(linha, plano.valor_centavos, plano.identificar)
@@ -164,7 +212,22 @@ export async function POST(req: NextRequest) {
             where: { company_id: user.companyId, account_id: body.account_id, bank_ref: { in: plano.refs } },
             data: { reconciled: true },
           })
+          await marcarLigadas(tx, plano.refs, linha.chave)
           return { chave: linha.chave, acao: 'LIGAR' }
+        }
+
+        // Linha sem vínculo: tenta ligar a um órfão existente antes de criar (não conta o dinheiro 2x).
+        if (plano.refs_ligadas.length === 0) {
+          const orfaoId = await buscarOrfao(tx, linha, orfaosUsados)
+          if (orfaoId) {
+            orfaosUsados.add(orfaoId)
+            const r = await tx.transaction.updateMany({
+              where: { id: orfaoId, company_id: user.companyId, account_id: body.account_id, source_text: null },
+              data: { source_text: `LIGADA:${linha.chave}`, reconciled: true },
+            })
+            if (r.count === 1) return { chave: linha.chave, acao: 'LIGAR', refs: [orfaoId], origem: 'orfao' }
+            // Alguém levou o órfão antes: segue para CRIAR.
+          }
         }
 
         const valor = plano.valor_centavos
@@ -194,6 +257,7 @@ export async function POST(req: NextRequest) {
             where: { company_id: user.companyId, account_id: body.account_id, bank_ref: { in: plano.refs_ligadas } },
             data: { reconciled: true },
           })
+          await marcarLigadas(tx, plano.refs_ligadas, linha.chave)
         }
         return { chave: linha.chave, acao: 'CRIAR', valor_centavos: valor, categoria: cat.nome, transaction_id: t.id }
       })

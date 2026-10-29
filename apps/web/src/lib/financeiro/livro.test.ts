@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { classificar, planejarLinha, type LinhaBanco } from './livro'
+import { classificar, planejarLinha, escolherOrfao, type LinhaBanco } from './livro'
 
 const CORTE = '2026-10-29'
 
@@ -119,5 +119,45 @@ describe('classificar', () => {
       { id: 'c', pattern: 'FOO', direction: null, account_id: null, category_id: 'cc', priority: 10 },
     ]
     expect(classificar(linha({ descricao: 'foo' }), rs, 'acc')).toEqual({ category_id: 'cb', regra_id: 'b' })
+  })
+})
+
+describe('escolherOrfao', () => {
+  const cand = (id: string, transaction_date: string, p: Record<string, unknown> = {}) => ({
+    id,
+    amount: 10000,
+    transaction_type: 'CREDIT' as const,
+    transaction_date,
+    ...p,
+  })
+  // linha() tem data 2026-10-30 e valor +10000
+
+  it('mesmo valor, sinal e data -> id', () => {
+    expect(escolherOrfao(linha(), [cand('a', '2026-10-30')])).toBe('a')
+  })
+  it('data -3 e +1 aceitas', () => {
+    expect(escolherOrfao(linha(), [cand('a', '2026-10-27')])).toBe('a')
+    expect(escolherOrfao(linha(), [cand('b', '2026-10-31')])).toBe('b')
+  })
+  it('data -4 e +2 recusadas', () => {
+    expect(escolherOrfao(linha(), [cand('a', '2026-10-26')])).toBeNull()
+    expect(escolherOrfao(linha(), [cand('b', '2026-11-01')])).toBeNull()
+  })
+  it('sinal oposto recusado (CREDIT x linha negativa e DEBIT x linha positiva)', () => {
+    expect(escolherOrfao(linha(), [cand('a', '2026-10-30', { transaction_type: 'DEBIT' })])).toBeNull()
+    expect(escolherOrfao(linha({ valor_centavos: -10000 }), [cand('a', '2026-10-30')])).toBeNull()
+    expect(
+      escolherOrfao(linha({ valor_centavos: -10000 }), [cand('a', '2026-10-30', { transaction_type: 'DEBIT' })]),
+    ).toBe('a')
+  })
+  it('valor diferente recusado', () => {
+    expect(escolherOrfao(linha(), [cand('a', '2026-10-30', { amount: 10001 })])).toBeNull()
+  })
+  it('dois candidatos -> o de data mais proxima; empate -> o primeiro', () => {
+    expect(escolherOrfao(linha(), [cand('longe', '2026-10-28'), cand('perto', '2026-10-29')])).toBe('perto')
+    expect(escolherOrfao(linha(), [cand('x', '2026-10-29'), cand('y', '2026-10-31')])).toBe('x')
+  })
+  it('lista vazia -> null', () => {
+    expect(escolherOrfao(linha(), [])).toBeNull()
   })
 })
