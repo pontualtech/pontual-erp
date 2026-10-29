@@ -82,6 +82,15 @@ export interface CandidatoOrfao {
 const MS_DIA = 86_400_000
 const diaUtc = (d: string) => Date.parse(d + 'T00:00:00.000Z')
 
+/** Janela (em dias) em que um órfão pode corresponder à linha: [data − antes, data + depois]. */
+export const JANELA_ORFAO = { antes: 3, depois: 1 }
+
+/** Limites da janela como datas UTC (as datas são @db.Date), a partir de 'AAAA-MM-DD'. */
+export function limitesJanelaOrfao(data: string): { de: Date; ate: Date } {
+  const base = diaUtc(data)
+  return { de: new Date(base - JANELA_ORFAO.antes * MS_DIA), ate: new Date(base + JANELA_ORFAO.depois * MS_DIA) }
+}
+
 /**
  * Escolhe, entre transações já existentes ("órfãs"), a que corresponde à linha do banco:
  * mesmo sinal, mesmo valor e data em [data − 3 dias, data + 1 dia]. Vence a data mais próxima;
@@ -95,7 +104,7 @@ export function escolherOrfao(linha: LinhaBanco, candidatos: CandidatoOrfao[]): 
   for (const c of candidatos) {
     if (c.transaction_type !== tipo || c.amount !== Math.abs(linha.valor_centavos)) continue
     const dif = Math.round((diaUtc(c.transaction_date) - alvo) / MS_DIA)
-    if (dif < -3 || dif > 1) continue
+    if (dif < -JANELA_ORFAO.antes || dif > JANELA_ORFAO.depois) continue
     const dist = Math.abs(dif)
     if (dist < melhorDist) {
       melhor = c.id

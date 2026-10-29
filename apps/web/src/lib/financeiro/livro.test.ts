@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { classificar, planejarLinha, escolherOrfao, type LinhaBanco } from './livro'
+import { classificar, planejarLinha, escolherOrfao, limitesJanelaOrfao, type LinhaBanco } from './livro'
 
 const CORTE = '2026-10-29'
 
@@ -156,8 +156,17 @@ describe('escolherOrfao', () => {
   it('dois candidatos -> o de data mais proxima; empate -> o primeiro', () => {
     expect(escolherOrfao(linha(), [cand('longe', '2026-10-28'), cand('perto', '2026-10-29')])).toBe('perto')
     expect(escolherOrfao(linha(), [cand('x', '2026-10-29'), cand('y', '2026-10-31')])).toBe('x')
+    expect(escolherOrfao(linha(), [cand('y', '2026-10-31'), cand('x', '2026-10-29')])).toBe('y')
   })
   it('lista vazia -> null', () => {
     expect(escolherOrfao(linha(), [])).toBeNull()
+  })
+})
+
+describe('limitesJanelaOrfao', () => {
+  it('data-3 .. data+1 em UTC', () => {
+    const { de, ate } = limitesJanelaOrfao('2026-10-30')
+    expect(de.toISOString()).toBe('2026-10-27T00:00:00.000Z')
+    expect(ate.toISOString()).toBe('2026-10-31T00:00:00.000Z')
   })
 })

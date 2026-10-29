@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
-import { classificar, planejarLinha, escolherOrfao } from '@/lib/financeiro/livro'
+import { classificar, planejarLinha, escolherOrfao, limitesJanelaOrfao } from '@/lib/financeiro/livro'
 import { dataValida } from '@/lib/financeiro/livro-ajuste'
 import { garantirCategoriasERegras } from '@/lib/financeiro/livro-categorias'
 
@@ -61,17 +61,21 @@ export async function POST(req: NextRequest) {
     if (!account) return error('Conta não encontrada', 404)
 
     // Real: o ajuste de caixa do corte precisa existir (é ele que zera o passado); simular não exige.
-    if (!simular) {
-      const ajuste = await prisma.transaction.findFirst({
-        where: {
-          company_id: user.companyId,
-          account_id: body.account_id,
-          bank_ref: `AJUSTE:${body.account_id}:${body.corte}`,
-        },
-        select: { id: true },
-      })
-      if (!ajuste) return error('ajuste de caixa ainda não lançado para esta conta/corte', 409)
-    }
+    const ajuste = await prisma.transaction.findFirst({
+      where: {
+        company_id: user.companyId,
+        account_id: body.account_id,
+        bank_ref: `AJUSTE:${body.account_id}:${body.corte}`,
+      },
+      select: { id: true, created_at: true },
+    })
+    if (!simular && !ajuste) return error('ajuste de caixa ainda não lançado para esta conta/corte', 409)
+    // Órfãos só valem se criados DEPOIS do ajuste (os anteriores já foram absorvidos por ele).
+    // Simulação sem ajuste: "agora" — se o ajuste rodasse agora, tudo o que existe seria absorvido.
+    const limiteOrfao = ajuste?.created_at ?? new Date()
+
+    // Créditos citados em `links` por qualquer linha do pedido: não podem ser tomados como órfãos.
+    const linksDoPedido = new Set(body.linhas.flatMap((l) => l.links ?? []))
 
     // Categorias (nome → id): na simulação só lê; no real garante (idempotente) numa transação curta,
     // ANTES de travar a conta nas linhas.
@@ -94,9 +98,14 @@ export async function POST(req: NextRequest) {
 
     // Decide a linha usando o cliente informado (prisma na simulação; tx travada no real).
     const planejar = async (db: Pick<typeof prisma, 'transaction'>, linha: Linha) => {
+      // Já lançada: criada com esta chave OU usada para ligar a um órfão (LIGADA:<chave>).
       const jaLancada =
         (await db.transaction.findFirst({
-          where: { company_id: user.companyId, account_id: body.account_id, bank_ref: linha.chave },
+          where: {
+            company_id: user.companyId,
+            account_id: body.account_id,
+            OR: [{ bank_ref: linha.chave }, { source_text: `LIGADA:${linha.chave}` }],
+          },
           select: { id: true },
         })) !== null
       const links = linha.links ?? []
@@ -104,18 +113,20 @@ export async function POST(req: NextRequest) {
         links.length > 0
           ? await db.transaction.findMany({
               where: { company_id: user.companyId, account_id: body.account_id, bank_ref: { in: links } },
-              select: { bank_ref: true, amount: true },
+              select: { bank_ref: true, amount: true, source_text: true },
             })
           : []
-      const creditosExistentes = creditos.map((c) => ({ bank_ref: c.bank_ref as string, amount: c.amount }))
+      // Vínculo já tomado por OUTRA linha (LIGADA:<outra chave>) conta como ausente: o dinheiro é criado.
+      const creditosExistentes = creditos
+        .filter((c) => c.source_text === null || !c.source_text.startsWith('LIGADA:') || c.source_text === `LIGADA:${linha.chave}`)
+        .map((c) => ({ bank_ref: c.bank_ref as string, amount: c.amount }))
       return planejarLinha(linha, body.corte, jaLancada, creditosExistentes)
     }
 
     // Procura crédito/débito já existente ("órfão") que corresponda à linha, na mesma empresa e conta.
     // Só vale p/ linha sem vínculo nenhum; ignora órfãos já usados neste pedido.
     const buscarOrfao = async (db: Pick<typeof prisma, 'transaction'>, linha: Linha, usados: Set<string>) => {
-      const dia = 86_400_000
-      const base = Date.parse(linha.data + 'T00:00:00.000Z')
+      const { de, ate } = limitesJanelaOrfao(linha.data)
       const candidatos = await db.transaction.findMany({
         where: {
           company_id: user.companyId,
@@ -124,14 +135,16 @@ export async function POST(req: NextRequest) {
           source_text: null,
           transaction_type: linha.valor_centavos > 0 ? 'CREDIT' : 'DEBIT',
           amount: Math.abs(linha.valor_centavos),
-          transaction_date: { gte: new Date(base - 3 * dia), lte: new Date(base + dia) },
+          transaction_date: { gte: de, lte: ate },
+          created_at: { gt: limiteOrfao },
         },
-        select: { id: true, amount: true, transaction_type: true, transaction_date: true },
+        orderBy: [{ transaction_date: 'asc' }, { created_at: 'asc' }, { id: 'asc' }],
+        select: { id: true, amount: true, transaction_type: true, transaction_date: true, bank_ref: true },
       })
       return escolherOrfao(
         linha,
         candidatos
-          .filter((c) => !usados.has(c.id))
+          .filter((c) => !usados.has(c.id) && !(c.bank_ref !== null && linksDoPedido.has(c.bank_ref)))
           .map((c) => ({
             id: c.id,
             amount: c.amount,
@@ -195,7 +208,7 @@ export async function POST(req: NextRequest) {
         } else if (plano.acao === 'IGNORAR') {
           resultados.push({ chave: linha.chave, acao: 'IGNORAR', motivo: plano.motivo })
         } else {
-          resultados.push({ chave: linha.chave, acao: 'LIGAR' })
+          resultados.push({ chave: linha.chave, acao: 'LIGAR', refs: plano.refs })
         }
         continue
       }
@@ -213,7 +226,7 @@ export async function POST(req: NextRequest) {
             data: { reconciled: true },
           })
           await marcarLigadas(tx, plano.refs, linha.chave)
-          return { chave: linha.chave, acao: 'LIGAR' }
+          return { chave: linha.chave, acao: 'LIGAR', refs: plano.refs }
         }
 
         // Linha sem vínculo: tenta ligar a um órfão existente antes de criar (não conta o dinheiro 2x).
