@@ -2,6 +2,9 @@
 
 export type ModuloCategoria = 'financeiro_despesa' | 'financeiro_receita'
 
+// Categoria de receita já existente em produção; usada ao categorizar baixas de OS.
+export const CATEGORIA_RECEITA_SERVICOS = 'Venda de Servicos'
+
 export const CATEGORIAS_LIVRO: { nome: string; modulo: ModuloCategoria }[] = [
   { nome: 'Ajuste de caixa', modulo: 'financeiro_despesa' },
   { nome: 'A classificar', modulo: 'financeiro_despesa' },
@@ -9,6 +12,7 @@ export const CATEGORIAS_LIVRO: { nome: string; modulo: ModuloCategoria }[] = [
   { nome: 'Transferência entre empresas', modulo: 'financeiro_despesa' },
   { nome: 'Receita a identificar', modulo: 'financeiro_receita' },
   { nome: 'Rendimentos', modulo: 'financeiro_receita' },
+  { nome: 'Venda de Servicos', modulo: 'financeiro_receita' },
   { nome: 'Anúncios', modulo: 'financeiro_despesa' },
   { nome: 'Sistemas e Assinaturas', modulo: 'financeiro_despesa' },
   { nome: 'Telefone e Internet', modulo: 'financeiro_despesa' },

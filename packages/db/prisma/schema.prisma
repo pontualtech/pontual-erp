@@ -1006,12 +1006,14 @@ model Transaction {
   category_id      String?
   origin           String?
   source_text      String?
+  linked_ref       String?
   counterparty     String?
   accounts         Account   @relation(fields: [account_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   categories       Category? @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([company_id])
   @@index([category_id])
+  @@index([linked_ref])
   @@map("transactions")
 }
 
