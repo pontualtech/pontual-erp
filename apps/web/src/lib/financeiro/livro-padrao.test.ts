@@ -6,7 +6,19 @@ describe('padraoDaLinha', () => {
     ['PIX ENVIADO ELVIS FERREIRA', 'ELVIS FERREIRA'],
     ['Transação via Pix com chave para ELVIS FERREIRA DE FRANCA', 'ELVIS FERREIRA DE FRANCA'],
     ['Transação via Pix com QR Code para MINISTERIO DA FAZENDA', 'MINISTERIO DA FAZENDA'],
-    ['PIX RECEBIDO ROGERIO29/10', 'ROGERIO'],
+    // Itaú trunca o nome do PIX recebido (~7 letras) → regra genérica demais ('ROGERIO', 'JOAO DE').
+    ['PIX RECEBIDO ROGERIO29/10', null],
+    ['PIX RECEBIDO ARTUS A28/10', null],
+    ['PIX RECEBIDO JOAO DE29/10', null],
+    ['PIX RECEBIDO M JOSE01/10', null],
+    ['PIX QRS CONDOMINIO RESIDENC', null],
+    // Asaas: o texto fixo venceria o nome do cliente (já existe a regra explícita 'Cobrança recebida').
+    ['Cobrança recebida - fatura nr. 921607930 LAURA MORAES (líquido da taxa)', null],
+    ['Cobrança recebida - fatura nr. 932264422 KALUNGA SA (líquido da taxa)', null],
+    ['Cobrança recebida - fatura nr. 946509767 GHEE BANQUETERIA SERVICOS DE BUFFET E EVENTOS LTDA (líquido da taxa)', null],
+    // Depósito em dinheiro: o padrão cobriria todo depósito.
+    ['DEP DIN ATM N. 104245945', null],
+    ['Taxa de mensageria - fatura nr. 921607930 LAURA MORAES', 'TAXA DE MENSAGERIA - FATURA NR.'],
     ['PIX ENVIADO', null],
     ['TAR PACOTE 123456', 'TAR PACOTE'],
     ['TED 12345678', null],

@@ -280,7 +280,8 @@ export default function ExtratoPage() {
   // Quick edit: open modal and load full record from API
   async function openQuickEdit(item: ExtratoItem) {
     if (item.origem === 'transacao' && item.livro) {
-      setLivroForm({ category_id: item.category_id || '', nota: '', aplicar: true })
+      // Entradas: nome do pagador costuma vir truncado → "aplicar aos próximos" só se marcar.
+      setLivroForm({ category_id: item.category_id || '', nota: '', aplicar: item.tipo !== 'ENTRADA' })
       setEditItem(item)
       return
     }

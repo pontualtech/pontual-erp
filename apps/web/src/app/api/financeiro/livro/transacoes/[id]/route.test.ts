@@ -29,7 +29,7 @@ const patch = (body: unknown) => PATCH(
 beforeEach(() => {
   Object.values(m).forEach((f) => f.mockReset())
   m.txFindFirst.mockResolvedValue({ id: 't1', category_id: 'fb', source_text: 'PIX ENVIADO ELVIS FERREIRA', description: 'x' })
-  m.catFindFirst.mockResolvedValue({ id: 'cat1' })
+  m.catFindFirst.mockResolvedValue({ id: 'cat1', name: 'Telefone e Internet' })
   m.catFindMany.mockResolvedValue([{ id: 'fb1' }, { id: 'fb2' }])
   m.ruleFindFirst.mockResolvedValue(null)
   m.txUpdateMany.mockResolvedValue({ count: 3 })
@@ -103,6 +103,30 @@ describe('PATCH livro/transacoes/[id] — regra derivada + retroativo', () => {
       where: { id: 't1' },
       data: { category_id: 'cat1', description: 'PIX ENVIADO ELVIS FERREIRA — aluguel' },
     })
+  })
+
+  it('categoria escolhida é fallback: não cria/atualiza regra nem recategoriza', async () => {
+    m.catFindFirst.mockResolvedValue({ id: 'fb1', name: 'A classificar' })
+    m.ruleFindFirst.mockResolvedValue({ id: 'r1', category_id: 'antiga' })
+    const j = (await (await patch({ category_id: 'fb1', criar_regra: { direction: 'OUT' } })).json()).data
+    expect(m.txUpdate).toHaveBeenCalledWith({ where: { id: 't1' }, data: { category_id: 'fb1' } })
+    expect(m.ruleCreate).not.toHaveBeenCalled()
+    expect(m.ruleUpdate).not.toHaveBeenCalled()
+    expect(m.txUpdateMany).not.toHaveBeenCalled()
+    expect(j.regra).toBeNull()
+    expect(j.motivo_sem_regra).toBe('categoria provisória não vira regra')
+    expect(j.regra_criada).toBe(false)
+    expect(j.regra_atualizada).toBe(false)
+    expect(j.recategorizadas).toBe(0)
+  })
+
+  it('simular com categoria fallback: regra null com o motivo', async () => {
+    m.catFindFirst.mockResolvedValue({ id: 'fb2', name: 'Receita a identificar' })
+    const j = (await (await patch({ category_id: 'fb2', simular: true, criar_regra: { pattern: 'FULANO', direction: 'IN' } })).json()).data
+    expect(j.regra).toBeNull()
+    expect(j.motivo_sem_regra).toBe('categoria provisória não vira regra')
+    expect(j.regra_criada).toBe(false)
+    expect(j.recategorizadas).toBe(0)
   })
 
   it('(a) regra existente com outra categoria: atualiza a regra, não cria', async () => {

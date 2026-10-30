@@ -6,7 +6,11 @@
  * pois `classificar` casa por substring. Por isso não removemos acentos nem colapsamos espaços internos.
  */
 const PREFIXOS =
-  /^\s*(?:PIX ENVIADO|PIX RECEBIDO|PIX QRS|TRANSA[ÇC][ÃA]O VIA PIX COM (?:CHAVE|QR CODE|DADOS MANUAIS) PARA|PAGAMENTO|PAG BOLETO|TED|DOC|SISPAG)(?![\p{L}\d])\s*/u
+  /^\s*(?:PIX ENVIADO|TRANSA[ÇC][ÃA]O VIA PIX COM (?:CHAVE|QR CODE|DADOS MANUAIS) PARA|PAGAMENTO|PAG BOLETO|TED|DOC|SISPAG)(?![\p{L}\d])\s*/u
+
+// Textos cujo resto não identifica ninguém com segurança: PIX recebido/QRS (o Itaú trunca o nome em ~7 letras),
+// cobrança do Asaas (o texto fixo venceria o nome; já há a regra explícita 'Cobrança recebida') e depósito em dinheiro.
+const SEM_PADRAO = /^\s*(?:PIX RECEBIDO|PIX QRS|COBRAN[ÇC]A RECEBIDA - FATURA NR|DEP DIN ATM)(?![\p{L}\d])/u
 
 const PROIBIDOS = new Set([
   'PIX', 'TED', 'DOC', 'TAR', 'TARIFA', 'BOLETO', 'TRANSF', 'PAGAMENTO', 'RECEBIDO', 'ENVIADO',
@@ -15,6 +19,7 @@ const PROIBIDOS = new Set([
 const letras = (s: string) => (s.match(/\p{L}/gu) ?? []).length
 
 export function padraoDaLinha(texto: string): string | null {
+  if (SEM_PADRAO.test(texto.toUpperCase())) return null
   let t = texto.toUpperCase().replace(PREFIXOS, '')
   // Data colada no fim (ex.: "ROGERIO29/10").
   t = t.replace(/\d{2}\/\d{2}$/, '')

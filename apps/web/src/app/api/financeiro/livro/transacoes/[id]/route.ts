@@ -41,7 +41,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     const categoria = await prisma.category.findFirst({
       where: { id: body.category_id, company_id: user.companyId },
-      select: { id: true },
+      select: { id: true, name: true },
     })
     if (!categoria) return error('Categoria inválida', 400)
 
@@ -50,7 +50,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     let pattern: string | null = null
     let motivoSemRegra: string | undefined
-    if (body.criar_regra) {
+    if (body.criar_regra && (CATEGORIAS_FALLBACK as readonly string[]).includes(categoria.name)) {
+      // "A classificar"/"Receita a identificar" é resposta provisória: vira regra só a categoria definitiva.
+      motivoSemRegra = 'categoria provisória não vira regra'
+    } else if (body.criar_regra) {
       const informado = body.criar_regra.pattern
       if (typeof informado === 'string') {
         pattern = informado.trim()
