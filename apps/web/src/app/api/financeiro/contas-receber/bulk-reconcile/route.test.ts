@@ -4,13 +4,13 @@ import { NextRequest } from 'next/server'
 const { m, db } = vi.hoisted(() => { const m = {
   arFindMany: vi.fn(), arUpdate: vi.fn(),
   payFindMany: vi.fn(),
-  txFindFirst: vi.fn(), txFindMany: vi.fn(), txCreate: vi.fn(), txUpdate: vi.fn(), txDelete: vi.fn(),
+  txFindFirst: vi.fn(), txFindMany: vi.fn(), txCreate: vi.fn(), txUpdate: vi.fn(), txUpdateMany: vi.fn(), txDelete: vi.fn(),
   accUpdate: vi.fn(), catFindFirst: vi.fn(),
 }
 const db = {
   accountReceivable: { findMany: m.arFindMany, update: m.arUpdate },
   payment: { findMany: m.payFindMany },
-  transaction: { findFirst: m.txFindFirst, findMany: m.txFindMany, create: m.txCreate, update: m.txUpdate, delete: m.txDelete },
+  transaction: { findFirst: m.txFindFirst, findMany: m.txFindMany, create: m.txCreate, update: m.txUpdate, updateMany: m.txUpdateMany, delete: m.txDelete },
   account: { update: m.accUpdate },
   category: { findFirst: m.catFindFirst },
   $transaction: async (cb: (tx: unknown) => unknown) => cb(db),
@@ -36,6 +36,7 @@ beforeEach(() => {
   Object.values(m).forEach((f) => f.mockReset())
   m.payFindMany.mockResolvedValue([])
   m.txFindFirst.mockResolvedValue(null)
+  m.txUpdateMany.mockResolvedValue({ count: 1 })
   m.catFindFirst.mockImplementation(async ({ where }: any) => ({ id: `cat:${where.name}` }))
 })
 
@@ -49,8 +50,8 @@ describe('bulk-reconcile — liga ao lançamento do livro', () => {
     expect(m.txCreate).not.toHaveBeenCalled()
     expect(m.accUpdate).not.toHaveBeenCalled()
     expect(m.txDelete).not.toHaveBeenCalled()
-    expect(m.txUpdate).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 't1' },
+    expect(m.txUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 't1', company_id: 'c1', linked_ref: null },
       data: expect.objectContaining({ linked_ref: 'AR:a1', category_id: 'cat:Venda de Servicos' }),
     }))
     expect(m.arUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'LIQUIDADO' }) }))
@@ -76,6 +77,19 @@ describe('bulk-reconcile — liga ao lançamento do livro', () => {
     expect(m.txCreate).not.toHaveBeenCalled()
     expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'Lançamento do livro já está categorizado' }])
     expect(j.data.updated).toBe(0)
+  })
+
+  it('linha já ligada por outra baixa (count 0): vai em erros e não cria nada', async () => {
+    m.arFindMany.mockResolvedValue([AR])
+    m.txFindMany.mockResolvedValue([livro()])
+    m.txFindFirst.mockResolvedValue(null)
+    m.txUpdateMany.mockResolvedValue({ count: 0 })
+    const res = await POST(req({ ids: ['a1'], reconciled: true }))
+    const j = await res.json()
+    expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'lançamento do livro já ligado por outra baixa' }])
+    expect(j.data.updated).toBe(0)
+    expect(m.txCreate).not.toHaveBeenCalled()
+    expect(m.accUpdate).not.toHaveBeenCalled()
   })
 
   it('(c) desfazer AR ligada: limpa linked_ref, volta categoria, sem delete e sem saldo', async () => {

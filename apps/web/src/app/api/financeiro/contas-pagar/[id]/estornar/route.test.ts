@@ -33,7 +33,7 @@ beforeEach(() => {
 
 describe('estorno de AP — livro-razão', () => {
   it('AP ligada: desliga o lançamento, sem delete, sem CREDIT e sem mexer no saldo', async () => {
-    m.txFindMany.mockResolvedValue([{ id: 't1', source_text: 'PGTO ENEL', description: 'Pgto: Luz · banco: PGTO ENEL' }])
+    m.txFindMany.mockResolvedValue([{ id: 't1', amount: 5000, source_text: 'PGTO ENEL', description: 'Pgto: Luz · banco: PGTO ENEL' }])
     const res = await POST(req(), { params: { id: 'p1' } })
     expect(res.status).toBe(200)
     expect(m.txUpdate).toHaveBeenCalledWith({
@@ -43,6 +43,17 @@ describe('estorno de AP — livro-razão', () => {
     expect(m.txDelete).not.toHaveBeenCalled()
     expect(m.txCreate).not.toHaveBeenCalled()
     expect(m.accUpdate).not.toHaveBeenCalled()
+  })
+
+  it('baixa mista (3000 criada + 2000 ligada): desliga e compensa só o resto 3000', async () => {
+    m.apFindFirst.mockResolvedValue({ id: 'p1', status: 'PAGO', account_id: 'acc1', paid_amount: 5000, description: 'Luz' })
+    m.txFindMany.mockResolvedValue([{ id: 't1', amount: 2000, source_text: 'PGTO ENEL', description: 'x' }])
+    await POST(req(), { params: { id: 'p1' } })
+    expect(m.txUpdate).toHaveBeenCalledTimes(1)
+    expect(m.txDelete).not.toHaveBeenCalled()
+    expect(m.txCreate).toHaveBeenCalledTimes(1)
+    expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ transaction_type: 'CREDIT', amount: 3000 }) })
+    expect(m.accUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ current_balance: { increment: 3000 } }) }))
   })
 
   it('AP sem lançamento ligado: estorno como hoje (CREDIT + saldo)', async () => {

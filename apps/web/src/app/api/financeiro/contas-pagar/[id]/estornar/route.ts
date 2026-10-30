@@ -63,8 +63,9 @@ export async function POST(req: NextRequest, { params }: Params) {
       // sem CREDIT compensatório e sem mexer no saldo (o lançamento do banco continua valendo).
       const ligados = await tx.transaction.findMany({
         where: { company_id: user.companyId, linked_ref: `AP:${params.id}` },
-        select: { id: true, source_text: true, description: true },
+        select: { id: true, amount: true, source_text: true, description: true },
       })
+      let remanescente = existing.paid_amount!
       if (ligados.length > 0) {
         const fallback = await categoriaId(tx, user.companyId, 'A classificar')
         for (const l of ligados) {
@@ -72,8 +73,10 @@ export async function POST(req: NextRequest, { params }: Params) {
             where: { id: l.id },
             data: { linked_ref: null, category_id: fallback, description: l.source_text ?? l.description },
           })
+          remanescente -= l.amount
         }
-        return
+        // Baixa mista: parte criou DEBIT próprio (saldo já debitado) — só esse resto é compensado.
+        if (remanescente <= 0) return
       }
 
       // 2. Criar Transaction CREDIT compensatoria (reverte o DEBIT original)
@@ -83,7 +86,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           company_id: user.companyId,
           account_id: existing.account_id!,
           transaction_type: 'CREDIT',
-          amount: existing.paid_amount!,
+          amount: remanescente,
           description: `Estorno: ${existing.description}${motivo ? ` (${motivo})` : ''}`,
           transaction_date: new Date(),
           bank_ref: `AP:${params.id}:estorno`,
@@ -95,7 +98,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       await tx.account.update({
         where: { id: existing.account_id! },
         data: {
-          current_balance: { increment: existing.paid_amount! },
+          current_balance: { increment: remanescente },
           updated_at: new Date(),
         },
       })

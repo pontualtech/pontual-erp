@@ -8,6 +8,9 @@ import { decidirBaixa } from '@/lib/financeiro/livro-baixa'
 import { candidatosLivro, categoriaId, hojeSP } from '@/lib/financeiro/livro-baixa-db'
 import { CATEGORIA_RECEITA_SERVICOS } from '@/lib/financeiro/livro-categorias'
 
+// Lançamento do livro foi ligado por outra baixa concorrente → desfaz a $transaction desta AR.
+class LivroJaLigado extends Error {}
+
 /**
  * Wave S (audit 2026-05-24): POST /api/financeiro/contas-receber/bulk-reconcile
  *
@@ -100,7 +103,9 @@ export async function POST(req: NextRequest) {
           continue
         }
 
-        const resultado: { erro?: string; ligada?: boolean } = await prisma.$transaction(async (tx): Promise<{ erro?: string; ligada?: boolean }> => {
+        let resultado: { erro?: string; ligada?: boolean }
+        try {
+          resultado = await prisma.$transaction(async (tx): Promise<{ erro?: string; ligada?: boolean }> => {
           // Decide ANTES de escrever: explícito inválido não baixa nada.
           const candidatos = await candidatosLivro(tx, user.companyId, ar.account_id!, 'CREDIT', hojeSP(), livro?.[ar.id] ?? null)
           const decisao = decidirBaixa({ tipo: 'CREDIT', amount, data: hojeSP() }, livro?.[ar.id] ?? null, candidatos)
@@ -119,8 +124,9 @@ export async function POST(req: NextRequest) {
               where: { id: decisao.usar, company_id: user.companyId },
               select: { source_text: true },
             })
-            await tx.transaction.update({
-              where: { id: decisao.usar },
+            // Guard atômico (como Bug #41/#67): só liga se a linha ainda estiver livre.
+            const ligou = await tx.transaction.updateMany({
+              where: { id: decisao.usar, company_id: user.companyId, linked_ref: null },
               data: {
                 linked_ref: `AR:${ar.id}`,
                 category_id: categoria,
@@ -128,6 +134,7 @@ export async function POST(req: NextRequest) {
                 reconciled: true,
               },
             })
+            if (ligou.count === 0) throw new LivroJaLigado()
             return { ligada: true }
           }
           await tx.transaction.create({
@@ -149,6 +156,10 @@ export async function POST(req: NextRequest) {
           })
           return { ligada: false }
         })
+        } catch (e) {
+          if (!(e instanceof LivroJaLigado)) throw e
+          resultado = { erro: 'lançamento do livro já ligado por outra baixa' }
+        }
         if (resultado.erro) {
           erros.push({ ar: ar.id, motivo: resultado.erro })
           continue

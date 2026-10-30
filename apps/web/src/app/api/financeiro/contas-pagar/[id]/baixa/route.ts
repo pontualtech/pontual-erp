@@ -9,6 +9,8 @@ import { candidatosLivro, hojeSP } from '@/lib/financeiro/livro-baixa-db'
 
 // Escolha explícita de lançamento do livro inválida → 422 sem escrever nada.
 class LivroInvalido extends Error {}
+// Lançamento já ligado por outra baixa concorrente → 409, nada escrito.
+class LivroJaLigado extends Error {}
 
 type Params = { params: { id: string } }
 
@@ -125,8 +127,9 @@ export async function POST(req: NextRequest, { params }: Params) {
           where: { id: decisao.usar, company_id: user.companyId },
           select: { source_text: true },
         })
-        await tx.transaction.update({
-          where: { id: decisao.usar },
+        // Guard atômico (como Bug #41/#67): só liga se a linha ainda estiver livre.
+        const ligou = await tx.transaction.updateMany({
+          where: { id: decisao.usar, company_id: user.companyId, linked_ref: null },
           data: {
             linked_ref: `AP:${params.id}`,
             // sem categoria na AP → mantém a atual ("A classificar")
@@ -135,6 +138,7 @@ export async function POST(req: NextRequest, { params }: Params) {
             reconciled: true,
           },
         })
+        if (ligou.count === 0) throw new LivroJaLigado()
         ligada = true
         return { updated, previousPaid, newPaidTotal }
       }
@@ -164,6 +168,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     })
     } catch (e) {
       if (e instanceof LivroInvalido) return error(e.message, 422)
+      if (e instanceof LivroJaLigado) return error('lançamento do livro já ligado por outra baixa', 409)
       throw e
     }
 
