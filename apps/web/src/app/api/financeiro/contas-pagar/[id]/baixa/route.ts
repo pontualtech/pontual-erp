@@ -4,6 +4,11 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { z } from 'zod'
+import { decidirBaixa } from '@/lib/financeiro/livro-baixa'
+import { candidatosLivro, hojeSP } from '@/lib/financeiro/livro-baixa-db'
+
+// Escolha explícita de lançamento do livro inválida → 422 sem escrever nada.
+class LivroInvalido extends Error {}
 
 type Params = { params: { id: string } }
 
@@ -14,6 +19,8 @@ const baixaSchema = z.object({
   paid_amount: z.number().int().positive('Valor pago deve ser positivo'),
   paid_at: z.string().optional(),
   account_id: z.string().uuid('Conta bancaria/caixa obrigatoria'),
+  // 30/10 (livro-razão): lançamento do banco já existente a ligar em vez de criar outra saída.
+  livro_transaction_id: z.string().optional(),
 })
 
 export async function POST(req: NextRequest, { params }: Params) {
@@ -58,7 +65,10 @@ export async function POST(req: NextRequest, { params }: Params) {
     // decrementavam saldo 3x. Fix: updateMany com where status != PAGO
     // como guard atomic — só a primeira a commitar dá count=1; as outras
     // retornam count=0 e abortam ANTES de criar Transaction/decrementar saldo.
-    const payable = await prisma.$transaction(async (tx) => {
+    let ligada = false
+    let payable
+    try {
+    payable = await prisma.$transaction(async (tx) => {
       const fresh = await tx.accountPayable.findFirst({
         where: { id: params.id, company_id: user.companyId, deleted_at: null },
       })
@@ -73,6 +83,12 @@ export async function POST(req: NextRequest, { params }: Params) {
         throw new Error(`Valor da baixa (R$ ${(data.paid_amount/100).toFixed(2)}) excede o saldo restante (R$ ${((fresh.total_amount - previousPaid)/100).toFixed(2)})`)
       }
       const isPaidInFull = newPaidTotal >= fresh.total_amount
+
+      // Livro-razão: se a saída já foi lançada pelo banco, liga a ela (decide antes de escrever).
+      const dataBaixa = data.paid_at ? new Date(data.paid_at).toISOString().slice(0, 10) : hojeSP()
+      const candidatos = await candidatosLivro(tx, user.companyId, data.account_id, 'DEBIT', dataBaixa, data.livro_transaction_id ?? null)
+      const decisao = decidirBaixa({ tipo: 'DEBIT', amount: data.paid_amount, data: dataBaixa }, data.livro_transaction_id ?? null, candidatos)
+      if ('erro' in decisao) throw new LivroInvalido(decisao.erro)
 
       // Guard atomic: só roda se ainda não estiver PAGO. updateMany retorna
       // count=0 se outra tx concorrente já marcou PAGO entre nosso findFirst
@@ -103,6 +119,26 @@ export async function POST(req: NextRequest, { params }: Params) {
       // e debitamos saldo. C1 fix: bank_ref + reconciled=true marca a Transaction
       // como ja conciliada com o lancamento — quando OFX importar a mesma
       // transferencia, dedup por bank_ref evita DOUBLE COUNT do saldo.
+      if ('usar' in decisao) {
+        // Liga ao lançamento do livro: o saldo já foi movido pelo banco — NÃO cria transação nem mexe na conta.
+        const alvo = await tx.transaction.findFirst({
+          where: { id: decisao.usar, company_id: user.companyId },
+          select: { source_text: true },
+        })
+        await tx.transaction.update({
+          where: { id: decisao.usar },
+          data: {
+            linked_ref: `AP:${params.id}`,
+            // sem categoria na AP → mantém a atual ("A classificar")
+            ...(fresh.category_id ? { category_id: fresh.category_id } : {}),
+            description: `Pgto: ${fresh.description} · banco: ${alvo?.source_text ?? ''}`,
+            reconciled: true,
+          },
+        })
+        ligada = true
+        return { updated, previousPaid, newPaidTotal }
+      }
+
       await tx.transaction.create({
         data: {
           company_id: user.companyId,
@@ -126,6 +162,10 @@ export async function POST(req: NextRequest, { params }: Params) {
 
       return { updated, previousPaid, newPaidTotal }
     })
+    } catch (e) {
+      if (e instanceof LivroInvalido) return error(e.message, 422)
+      throw e
+    }
 
     const { updated: payableData, previousPaid, newPaidTotal } = payable as any
 
@@ -139,7 +179,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       newValue: { paid_amount: newPaidTotal, status: payableData.status, account_id: data.account_id },
     })
 
-    return success(payableData)
+    return success({ ...payableData, ligada })
   } catch (err) {
     return handleError(err)
   }

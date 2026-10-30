@@ -4,6 +4,9 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { refsCreditoAdquirente } from '@/lib/acquirer/match-rules'
+import { decidirBaixa } from '@/lib/financeiro/livro-baixa'
+import { candidatosLivro, categoriaId, hojeSP } from '@/lib/financeiro/livro-baixa-db'
+import { CATEGORIA_RECEITA_SERVICOS } from '@/lib/financeiro/livro-categorias'
 
 /**
  * Wave S (audit 2026-05-24): POST /api/financeiro/contas-receber/bulk-reconcile
@@ -12,7 +15,9 @@ import { refsCreditoAdquirente } from '@/lib/acquirer/match-rules'
  * marca várias contas como conciliadas (após conferir extrato bancário) de
  * uma vez só.
  *
- * Body: { ids: string[], reconciled: boolean }
+ * Body: { ids: string[], reconciled: boolean, livro?: Record<arId, transactionId> }
+ * 30/10 (livro-razão): se a linha do banco já está no livro (origin BANCO, categoria fallback),
+ * a baixa LIGA a ela (linked_ref) em vez de criar outra transação — saldo não muda.
  * - reconciled=true → status vira LIQUIDADO + cria Transaction CREDIT + balance++
  * - reconciled=false → desfaz: status volta pra RECEBIDO + reverte Transaction + balance--
  *
@@ -28,7 +33,7 @@ export async function POST(req: NextRequest) {
     const user = result
 
     const body = await req.json().catch(() => ({}))
-    const { ids, reconciled } = body as { ids?: string[]; reconciled?: boolean }
+    const { ids, reconciled, livro } = body as { ids?: string[]; reconciled?: boolean; livro?: Record<string, string> }
 
     if (!Array.isArray(ids) || ids.length === 0) {
       return error('ids é obrigatório (array não vazio)', 400)
@@ -43,10 +48,12 @@ export async function POST(req: NextRequest) {
     // Busca ARs c/ account_id e received_amount pra atualizar saldos atomicamente.
     const arsToProcess = await prisma.accountReceivable.findMany({
       where: { id: { in: ids }, company_id: user.companyId, deleted_at: null },
-      select: { id: true, account_id: true, received_amount: true, total_amount: true, status: true, description: true },
+      select: { id: true, account_id: true, received_amount: true, total_amount: true, status: true, description: true, category_id: true },
     })
 
     let updated = 0
+    let ligadas = 0
+    const erros: { ar: string; motivo: string }[] = []
     let balanceDelta = 0  // pra retornar ao frontend confirmando o impacto
 
     // Loop por AR — cada uma com seu próprio account_id e amount.
@@ -81,7 +88,7 @@ export async function POST(req: NextRequest) {
           select: { provider: true, external_id: true },
         })
         const existing = await prisma.transaction.findFirst({
-          where: { company_id: user.companyId, bank_ref: { in: [`AR:${ar.id}`, ...refsCreditoAdquirente(pagamentos)] } },
+          where: { company_id: user.companyId, OR: [{ bank_ref: { in: [`AR:${ar.id}`, ...refsCreditoAdquirente(pagamentos)] } }, { linked_ref: `AR:${ar.id}` }] },
         })
         if (existing) {
           // Provavelmente já liquidada (ex: webhook Asaas, ou backfill manual).
@@ -93,11 +100,36 @@ export async function POST(req: NextRequest) {
           continue
         }
 
-        await prisma.$transaction(async (tx) => {
+        const resultado: { erro?: string; ligada?: boolean } = await prisma.$transaction(async (tx): Promise<{ erro?: string; ligada?: boolean }> => {
+          // Decide ANTES de escrever: explícito inválido não baixa nada.
+          const candidatos = await candidatosLivro(tx, user.companyId, ar.account_id!, 'CREDIT', hojeSP(), livro?.[ar.id] ?? null)
+          const decisao = decidirBaixa({ tipo: 'CREDIT', amount, data: hojeSP() }, livro?.[ar.id] ?? null, candidatos)
+          if ('erro' in decisao) return { erro: decisao.erro }
+
+          const categoria = ar.category_id
+            ?? await categoriaId(tx, user.companyId, CATEGORIA_RECEITA_SERVICOS, 'financeiro_receita')
+
           await tx.accountReceivable.update({
             where: { id: ar.id, company_id: user.companyId },
             data: { reconciled: true, status: 'LIQUIDADO', updated_at: new Date() },
           })
+          if ('usar' in decisao) {
+            // Liga ao lançamento do livro: o dinheiro já está no saldo — NÃO cria transação nem mexe na conta.
+            const alvo = await tx.transaction.findFirst({
+              where: { id: decisao.usar, company_id: user.companyId },
+              select: { source_text: true },
+            })
+            await tx.transaction.update({
+              where: { id: decisao.usar },
+              data: {
+                linked_ref: `AR:${ar.id}`,
+                category_id: categoria,
+                description: `LIQUIDACAO: ${ar.description} · banco: ${alvo?.source_text ?? ''}`,
+                reconciled: true,
+              },
+            })
+            return { ligada: true }
+          }
           await tx.transaction.create({
             data: {
               company_id: user.companyId,
@@ -107,6 +139,7 @@ export async function POST(req: NextRequest) {
               description: `LIQUIDACAO: ${ar.description}`,
               transaction_date: new Date(),
               bank_ref: `AR:${ar.id}`,
+              category_id: categoria,
               reconciled: true,
             },
           })
@@ -114,21 +147,35 @@ export async function POST(req: NextRequest) {
             where: { id: ar.account_id! },
             data: { current_balance: { increment: amount }, updated_at: new Date() },
           })
+          return { ligada: false }
         })
-        balanceDelta += amount
+        if (resultado.erro) {
+          erros.push({ ar: ar.id, motivo: resultado.erro })
+          continue
+        }
+        if (resultado.ligada) ligadas++
+        else balanceDelta += amount
         updated++
       } else {
         // LIQUIDADO → RECEBIDO: reverte Transaction + decrementa saldo.
         const tx = await prisma.transaction.findFirst({
-          where: { company_id: user.companyId, bank_ref: `AR:${ar.id}` },
+          where: { company_id: user.companyId, OR: [{ bank_ref: `AR:${ar.id}` }, { linked_ref: `AR:${ar.id}` }] },
         })
+        // Lançamento do livro ligado: só desliga (volta ao fallback), sem apagar nem mexer no saldo.
+        const ligado = tx?.linked_ref === `AR:${ar.id}`
+        const fallback = ligado ? await categoriaId(prisma, user.companyId, 'Receita a identificar') : null
 
         await prisma.$transaction(async (txc) => {
           await txc.accountReceivable.update({
             where: { id: ar.id, company_id: user.companyId },
             data: { reconciled: false, status: 'RECEBIDO', updated_at: new Date() },
           })
-          if (tx) {
+          if (tx && ligado) {
+            await txc.transaction.update({
+              where: { id: tx.id },
+              data: { linked_ref: null, category_id: fallback, description: tx.source_text ?? tx.description },
+            })
+          } else if (tx) {
             await txc.transaction.delete({ where: { id: tx.id } })
             await txc.account.update({
               where: { id: tx.account_id },
@@ -155,6 +202,8 @@ export async function POST(req: NextRequest) {
       requested: ids.length,
       reconciled,
       balance_delta: balanceDelta,
+      ligadas,
+      erros,
     })
   } catch (err) {
     return handleError(err)

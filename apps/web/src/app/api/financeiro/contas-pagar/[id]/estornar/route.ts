@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
+import { categoriaId } from '@/lib/financeiro/livro-baixa-db'
 
 /**
  * POST /api/financeiro/contas-pagar/[id]/estornar
@@ -56,6 +57,23 @@ export async function POST(req: NextRequest, { params }: Params) {
       })
       if (claim.count === 0) {
         throw new Error('Estorno concorrente — outra requisição já estornou esta conta')
+      }
+
+      // 30/10 (livro-razão): baixa que só LIGOU a um lançamento do banco → desliga (volta a "A classificar"),
+      // sem CREDIT compensatório e sem mexer no saldo (o lançamento do banco continua valendo).
+      const ligados = await tx.transaction.findMany({
+        where: { company_id: user.companyId, linked_ref: `AP:${params.id}` },
+        select: { id: true, source_text: true, description: true },
+      })
+      if (ligados.length > 0) {
+        const fallback = await categoriaId(tx, user.companyId, 'A classificar')
+        for (const l of ligados) {
+          await tx.transaction.update({
+            where: { id: l.id },
+            data: { linked_ref: null, category_id: fallback, description: l.source_text ?? l.description },
+          })
+        }
+        return
       }
 
       // 2. Criar Transaction CREDIT compensatoria (reverte o DEBIT original)
