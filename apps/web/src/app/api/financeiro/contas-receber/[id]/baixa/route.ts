@@ -5,6 +5,12 @@ import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { baixaSchema } from '@/lib/validations/financeiro'
 import { isReceivableSettled } from '@/lib/finance/receivable-status'
+import { decidirBaixa, recebeCategoria } from '@/lib/financeiro/livro-baixa'
+import { candidatosLivro, categoriaId, hojeSP, nomeCategoria } from '@/lib/financeiro/livro-baixa-db'
+import { CATEGORIA_RECEITA_SERVICOS } from '@/lib/financeiro/livro-categorias'
+
+// Lançamento já ligado por outra baixa concorrente → 409, nada escrito.
+class LivroJaLigado extends Error {}
 
 type Params = { params: { id: string } }
 
@@ -48,7 +54,10 @@ export async function POST(req: NextRequest, { params }: Params) {
     // pra evitar 2 baixas simultaneas somarem ao mesmo received_amount. Tambem
     // re-checa status — se outra baixa ja completou, retorna erro em vez de
     // criar received_amount > total.
-    const receivable = await prisma.$transaction(async (tx) => {
+    let ligada = false
+    let receivable
+    try {
+    receivable = await prisma.$transaction(async (tx) => {
       const fresh = await tx.accountReceivable.findFirst({
         where: { id: params.id, company_id: user.companyId, deleted_at: null },
       })
@@ -62,6 +71,14 @@ export async function POST(req: NextRequest, { params }: Params) {
         throw new Error(`Valor do recebimento (R$ ${(data.received_amount/100).toFixed(2)}) excede o saldo restante (R$ ${((fresh.total_amount - previousReceived)/100).toFixed(2)})`)
       }
       const isReceivedInFull = newReceivedTotal >= fresh.total_amount
+
+      // Livro-razão (30/10): se a entrada já foi lançada pelo banco, liga a ela (decide antes de escrever).
+      const dataBaixa = data.received_at ? new Date(data.received_at).toISOString().slice(0, 10) : hojeSP()
+      const candidatos = await candidatosLivro(tx, user.companyId, data.account_id, 'CREDIT', dataBaixa, null)
+      const categoria = fresh.category_id
+        ?? await categoriaId(tx, user.companyId, CATEGORIA_RECEITA_SERVICOS, 'financeiro_receita')
+      const nomeAlvo = fresh.category_id ? await nomeCategoria(tx, user.companyId, fresh.category_id) : CATEGORIA_RECEITA_SERVICOS
+      const decisao = decidirBaixa({ tipo: 'CREDIT', amount: data.received_amount, data: dataBaixa, categoria: nomeAlvo }, null, candidatos)
 
       // Bug #41 (audit 31/05): mesmo race condition de AP — findFirst+update
       // não trava row. Guard atomic com updateMany where status != RECEBIDO.
@@ -87,31 +104,52 @@ export async function POST(req: NextRequest, { params }: Params) {
         where: { id: params.id, company_id: user.companyId },
       })
 
-      // account_id e obrigatorio agora — sempre cria Transaction + ajusta saldo.
-      // bank_ref+reconciled=true (C1 fix 22/05): marca a transacao como ja
-      // conciliada com o lancamento do ERP. Quando OFX bancario importar
-      // a mesma entrada, dedup por bank_ref evita DOUBLE COUNT no saldo.
-      await tx.transaction.create({
-        data: {
-          company_id: user.companyId,
-          account_id: data.account_id,
-          transaction_type: 'CREDIT',
-          amount: data.received_amount,
-          description: `Recebimento: ${existing.description}`,
-          transaction_date: data.received_at ? new Date(data.received_at) : new Date(),
-          bank_ref: `AR:${params.id}`,
-          reconciled: true,
-        },
-      })
+      if ('usar' in decisao) {
+        // Liga ao lançamento do livro: o dinheiro já está no saldo — NÃO cria transação nem mexe na conta.
+        const alvo = await tx.transaction.findFirst({
+          where: { id: decisao.usar, company_id: user.companyId },
+          select: { source_text: true },
+        })
+        // Linha já categorizada (ex.: Venda de Servicos) mantém a sua categoria.
+        const linha = candidatos.find((c) => c.id === decisao.usar)
+        // Guard atômico (como Bug #41/#67): só liga se a linha ainda estiver livre.
+        const ligou = await tx.transaction.updateMany({
+          where: { id: decisao.usar, company_id: user.companyId, linked_ref: null },
+          data: {
+            linked_ref: `AR:${params.id}`,
+            ...(recebeCategoria(linha?.categoria ?? null) ? { category_id: categoria } : {}),
+            description: `Recebimento: ${existing.description} · banco: ${alvo?.source_text ?? ''}`,
+            reconciled: true,
+          },
+        })
+        if (ligou.count === 0) throw new LivroJaLigado()
+        ligada = true
+      } else {
+        // bank_ref+reconciled=true (C1 fix 22/05): marca a transacao como ja
+        // conciliada com o lancamento do ERP. Quando OFX bancario importar
+        // a mesma entrada, dedup por bank_ref evita DOUBLE COUNT no saldo.
+        await tx.transaction.create({
+          data: {
+            company_id: user.companyId,
+            account_id: data.account_id,
+            transaction_type: 'CREDIT',
+            amount: data.received_amount,
+            description: `Recebimento: ${existing.description}`,
+            transaction_date: data.received_at ? new Date(data.received_at) : new Date(),
+            bank_ref: `AR:${params.id}`,
+            reconciled: true,
+          },
+        })
 
-      // Atualizar saldo da conta bancária
-      await tx.account.update({
-        where: { id: data.account_id },
-        data: {
-          current_balance: { increment: data.received_amount },
-          updated_at: new Date(),
-        },
-      })
+        // Atualizar saldo da conta bancária
+        await tx.account.update({
+          where: { id: data.account_id },
+          data: {
+            current_balance: { increment: data.received_amount },
+            updated_at: new Date(),
+          },
+        })
+      }
 
       // Auto-pay card fee when receivable is fully paid
       // Audit 14 fix: usa service_order_id (nao description regex frágil)
@@ -151,6 +189,10 @@ export async function POST(req: NextRequest, { params }: Params) {
 
       return { updated, previousReceived, newReceivedTotal, isReceivedInFull, freshStatus: fresh.status, group_id: fresh.group_id }
     })
+    } catch (e) {
+      if (e instanceof LivroJaLigado) return error('lançamento do livro já ligado por outra baixa', 409)
+      throw e
+    }
 
     const { updated: receivableData, previousReceived, newReceivedTotal, isReceivedInFull, freshStatus, group_id } = receivable as any
 
@@ -186,7 +228,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       newValue: { received_amount: newReceivedTotal, status: receivableData.status, account_id: data.account_id },
     })
 
-    return success(receivableData)
+    return success({ ...receivableData, ligada })
   } catch (err) {
     return handleError(err)
   }
