@@ -5,7 +5,7 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { refsCreditoAdquirente } from '@/lib/acquirer/match-rules'
-import { decidirBaixa, recebeCategoria } from '@/lib/financeiro/livro-baixa'
+import { categoriaAoDesligar, decidirBaixa, recebeCategoria } from '@/lib/financeiro/livro-baixa'
 import { candidatosLivro, categoriaId, hojeSP, nomeCategoria } from '@/lib/financeiro/livro-baixa-db'
 import { CATEGORIA_RECEITA_SERVICOS } from '@/lib/financeiro/livro-categorias'
 
@@ -185,9 +185,12 @@ export async function POST(req: NextRequest) {
         const tx = await prisma.transaction.findFirst({
           where: { company_id: user.companyId, OR: [{ bank_ref: `AR:${ar.id}` }, { linked_ref: `AR:${ar.id}` }] },
         })
-        // Lançamento do livro ligado: só desliga (volta ao fallback), sem apagar nem mexer no saldo.
+        // Lançamento do livro ligado: só desliga (volta ao fallback se a categoria veio da baixa), sem apagar nem mexer no saldo.
         const ligado = tx?.linked_ref === `AR:${ar.id}`
         const fallback = ligado ? await categoriaId(prisma, user.companyId, 'Receita a identificar') : null
+        const daBaixa = ligado
+          ? ar.category_id ?? await categoriaId(prisma, user.companyId, CATEGORIA_RECEITA_SERVICOS, 'financeiro_receita')
+          : null
 
         await prisma.$transaction(async (txc) => {
           await txc.accountReceivable.update({
@@ -197,7 +200,7 @@ export async function POST(req: NextRequest) {
           if (tx && ligado) {
             await txc.transaction.update({
               where: { id: tx.id },
-              data: { linked_ref: null, category_id: fallback, description: tx.source_text ?? tx.description },
+              data: { linked_ref: null, category_id: categoriaAoDesligar(tx.category_id, daBaixa, fallback), description: tx.source_text ?? tx.description },
             })
           } else if (tx) {
             await txc.transaction.delete({ where: { id: tx.id } })

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { decidirBaixa, recebeCategoria } from './livro-baixa'
+import { categoriaAoDesligar, decidirBaixa, recebeCategoria } from './livro-baixa'
 
 const base = { transaction_type: 'CREDIT' as const, origin: 'BANCO', linked_ref: null, categoria: 'Receita a identificar' }
 
@@ -65,5 +65,16 @@ describe('decidirBaixa', () => {
     expect(decidirBaixa(alvo, 'X', [])).toHaveProperty('erro')
     expect(decidirBaixa(alvo, 'L', [{ ...base, id: 'L', amount: 100, transaction_date: '2026-10-30', linked_ref: 'AR:y' }])).toHaveProperty('erro')
     expect(decidirBaixa(alvo, 'L', [{ ...base, id: 'L', amount: 201, transaction_date: '2026-10-30' }])).toHaveProperty('erro')
+  })
+})
+
+describe('categoriaAoDesligar', () => {
+  it('volta ao fallback só se a linha está na categoria que a baixa põe', () => {
+    expect(categoriaAoDesligar('catEnergia', 'catEnergia', 'fb')).toBe('fb')
+    expect(categoriaAoDesligar(null, null, 'fb')).toBe('fb')
+  })
+  it('categoria diferente era da linha antes do vínculo e fica', () => {
+    expect(categoriaAoDesligar('catEnergia', 'catLuz', 'fb')).toBe('catEnergia')
+    expect(categoriaAoDesligar('fbAtual', null, 'fb')).toBe('fbAtual')
   })
 })

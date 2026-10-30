@@ -3,6 +3,9 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
+import { categoriaAoDesligar } from '@/lib/financeiro/livro-baixa'
+import { categoriaId } from '@/lib/financeiro/livro-baixa-db'
+import { CATEGORIA_RECEITA_SERVICOS } from '@/lib/financeiro/livro-categorias'
 
 /**
  * POST /api/financeiro/contas-receber/[id]/estornar
@@ -56,13 +59,46 @@ export async function POST(req: NextRequest, { params }: Params) {
         throw new Error('Estorno concorrente — outra requisição já estornou esta conta')
       }
 
-      if (hasAccount) {
+      // 30/10 (livro-razão): baixa que só LIGOU a um lançamento do banco → desliga, sem DEBIT compensatório
+      // e sem mexer no saldo (o lançamento do banco continua valendo). Espelha o estorno de AP.
+      const ligados = await tx.transaction.findMany({
+        where: { company_id: user.companyId, linked_ref: `AR:${params.id}` },
+        select: { id: true, source_text: true, description: true, category_id: true },
+      })
+      let remanescente = existing.received_amount!
+      if (ligados.length > 0) {
+        const fallback = await categoriaId(tx, user.companyId, 'Receita a identificar')
+        const daBaixa = existing.category_id
+          ?? await categoriaId(tx, user.companyId, CATEGORIA_RECEITA_SERVICOS, 'financeiro_receita')
+        for (const l of ligados) {
+          await tx.transaction.update({
+            where: { id: l.id },
+            data: {
+              linked_ref: null,
+              category_id: categoriaAoDesligar(l.category_id, daBaixa, fallback),
+              description: l.source_text ?? l.description,
+            },
+          })
+        }
+        // Baixa mista: compensa só o que o próprio ERP creditou (AR:id), menos estornos anteriores.
+        const proprias = await tx.transaction.findMany({
+          where: { company_id: user.companyId, bank_ref: { in: [`AR:${params.id}`, `AR:${params.id}:estorno`] } },
+          select: { amount: true, transaction_type: true, bank_ref: true },
+        })
+        remanescente = 0
+        for (const t of proprias) {
+          if (t.bank_ref === `AR:${params.id}` && t.transaction_type === 'CREDIT') remanescente += t.amount
+          if (t.bank_ref === `AR:${params.id}:estorno` && t.transaction_type === 'DEBIT') remanescente -= t.amount
+        }
+      }
+
+      if (hasAccount && remanescente > 0) {
         await tx.transaction.create({
           data: {
             company_id: user.companyId,
             account_id: existing.account_id!,
             transaction_type: 'DEBIT',
-            amount: existing.received_amount!,
+            amount: remanescente,
             description: `Estorno: ${existing.description}${motivo ? ` (${motivo})` : ''}`,
             transaction_date: new Date(),
             bank_ref: `AR:${params.id}:estorno`,
@@ -73,7 +109,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         await tx.account.update({
           where: { id: existing.account_id! },
           data: {
-            current_balance: { decrement: existing.received_amount! },
+            current_balance: { decrement: remanescente },
             updated_at: new Date(),
           },
         })

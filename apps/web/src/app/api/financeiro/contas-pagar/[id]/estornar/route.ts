@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
+import { categoriaAoDesligar } from '@/lib/financeiro/livro-baixa'
 import { categoriaId } from '@/lib/financeiro/livro-baixa-db'
 
 /**
@@ -59,11 +60,11 @@ export async function POST(req: NextRequest, { params }: Params) {
         throw new Error('Estorno concorrente — outra requisição já estornou esta conta')
       }
 
-      // 30/10 (livro-razão): baixa que só LIGOU a um lançamento do banco → desliga (volta a "A classificar"),
+      // 30/10 (livro-razão): baixa que só LIGOU a um lançamento do banco → desliga (volta a "A classificar" se a categoria veio da baixa),
       // sem CREDIT compensatório e sem mexer no saldo (o lançamento do banco continua valendo).
       const ligados = await tx.transaction.findMany({
         where: { company_id: user.companyId, linked_ref: `AP:${params.id}` },
-        select: { id: true, amount: true, source_text: true, description: true },
+        select: { id: true, source_text: true, description: true, category_id: true },
       })
       let remanescente = existing.paid_amount!
       if (ligados.length > 0) {
@@ -71,11 +72,24 @@ export async function POST(req: NextRequest, { params }: Params) {
         for (const l of ligados) {
           await tx.transaction.update({
             where: { id: l.id },
-            data: { linked_ref: null, category_id: fallback, description: l.source_text ?? l.description },
+            data: {
+              linked_ref: null,
+              category_id: categoriaAoDesligar(l.category_id, existing.category_id, fallback),
+              description: l.source_text ?? l.description,
+            },
           })
-          remanescente -= l.amount
         }
-        // Baixa mista: parte criou DEBIT próprio (saldo já debitado) — só esse resto é compensado.
+        // Baixa mista: compensa só o que o próprio ERP debitou (AP:id), menos estornos anteriores —
+        // não paid_amount − ligadas (a diferença de até R$ 1 do vínculo explícito viraria crédito falso).
+        const proprias = await tx.transaction.findMany({
+          where: { company_id: user.companyId, bank_ref: { in: [`AP:${params.id}`, `AP:${params.id}:estorno`] } },
+          select: { amount: true, transaction_type: true, bank_ref: true },
+        })
+        remanescente = 0
+        for (const t of proprias) {
+          if (t.bank_ref === `AP:${params.id}` && t.transaction_type === 'DEBIT') remanescente += t.amount
+          if (t.bank_ref === `AP:${params.id}:estorno` && t.transaction_type === 'CREDIT') remanescente -= t.amount
+        }
         if (remanescente <= 0) return
       }
 

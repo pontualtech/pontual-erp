@@ -141,7 +141,7 @@ describe('bulk-reconcile — liga ao lançamento do livro', () => {
 
   it('(c) desfazer AR ligada: limpa linked_ref, volta categoria, sem delete e sem saldo', async () => {
     m.arFindMany.mockResolvedValue([AR])
-    m.txFindFirst.mockResolvedValue(livro({ linked_ref: 'AR:a1', bank_ref: 'linha1', source_text: 'PIX CLIENTE' }))
+    m.txFindFirst.mockResolvedValue(livro({ linked_ref: 'AR:a1', bank_ref: 'linha1', source_text: 'PIX CLIENTE', category_id: 'cat:Venda de Servicos' }))
     await POST(req({ ids: ['a1'], reconciled: false }))
     expect(m.txUpdate).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: 't1' },
@@ -150,5 +150,16 @@ describe('bulk-reconcile — liga ao lançamento do livro', () => {
     expect(m.txDelete).not.toHaveBeenCalled()
     expect(m.accUpdate).not.toHaveBeenCalled()
     expect(m.arUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'RECEBIDO' }) }))
+  })
+
+  it('desfazer AR ligada a linha que já tinha outra categoria: mantém a categoria da linha', async () => {
+    m.arFindMany.mockResolvedValue([AR])
+    m.txFindFirst.mockResolvedValue(livro({ linked_ref: 'AR:a1', bank_ref: 'linha1', source_text: 'REND PAGO APLIC', category_id: 'cat:Rendimentos' }))
+    await POST(req({ ids: ['a1'], reconciled: false }))
+    expect(m.txUpdate).toHaveBeenCalledWith({
+      where: { id: 't1' },
+      data: { linked_ref: null, category_id: 'cat:Rendimentos', description: 'REND PAGO APLIC' },
+    })
+    expect(m.accUpdate).not.toHaveBeenCalled()
   })
 })

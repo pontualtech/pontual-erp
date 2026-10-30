@@ -37,6 +37,12 @@ export function recebeCategoria(categoria: string | null): boolean {
   return categoria === null || emFallback(categoria)
 }
 
+// Ao desligar (estorno/desfazer): a linha volta ao fallback só se estiver na categoria que a baixa põe
+// (estava em fallback ao ligar); categoria diferente já era da linha antes do vínculo e fica. Ids.
+export function categoriaAoDesligar(atual: string | null, daBaixa: string | null, fallback: string | null): string | null {
+  return atual === daBaixa ? fallback : atual
+}
+
 // `alvo.categoria` = nome da categoria da conta a pagar/receber (desempate: mesma categoria antes das outras).
 export function decidirBaixa(
   alvo: { tipo: 'CREDIT' | 'DEBIT'; amount: number; data: string; categoria?: string | null },

@@ -24,16 +24,20 @@ import { POST } from './route'
 
 const req = () => new NextRequest('http://x/api', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
 
+// findMany: linhas ligadas (where.linked_ref) × transações próprias da AP (where.bank_ref).
+const transacoes = (ligados: unknown[], proprias: unknown[] = []) =>
+  m.txFindMany.mockImplementation(async ({ where }: any) => (where.linked_ref ? ligados : proprias))
+
 beforeEach(() => {
   Object.values(m).forEach((f) => f.mockReset())
-  m.apFindFirst.mockResolvedValue({ id: 'p1', status: 'PAGO', account_id: 'acc1', paid_amount: 5000, description: 'Luz' })
+  m.apFindFirst.mockResolvedValue({ id: 'p1', status: 'PAGO', account_id: 'acc1', paid_amount: 5000, description: 'Luz', category_id: 'catEnergia' })
   m.apUpdateMany.mockResolvedValue({ count: 1 })
   m.catFindFirst.mockResolvedValue({ id: 'catAClassificar' })
 })
 
 describe('estorno de AP — livro-razão', () => {
   it('AP ligada: desliga o lançamento, sem delete, sem CREDIT e sem mexer no saldo', async () => {
-    m.txFindMany.mockResolvedValue([{ id: 't1', amount: 5000, source_text: 'PGTO ENEL', description: 'Pgto: Luz · banco: PGTO ENEL' }])
+    transacoes([{ id: 't1', amount: 5000, source_text: 'PGTO ENEL', description: 'Pgto: Luz · banco: PGTO ENEL', category_id: 'catEnergia' }])
     const res = await POST(req(), { params: { id: 'p1' } })
     expect(res.status).toBe(200)
     expect(m.txUpdate).toHaveBeenCalledWith({
@@ -46,9 +50,14 @@ describe('estorno de AP — livro-razão', () => {
   })
 
   it('baixa mista (3000 criada + 2000 ligada): desliga e compensa só o resto 3000', async () => {
-    m.apFindFirst.mockResolvedValue({ id: 'p1', status: 'PAGO', account_id: 'acc1', paid_amount: 5000, description: 'Luz' })
-    m.txFindMany.mockResolvedValue([{ id: 't1', amount: 2000, source_text: 'PGTO ENEL', description: 'x' }])
+    transacoes(
+      [{ id: 't1', amount: 2000, source_text: 'PGTO ENEL', description: 'x', category_id: 'catEnergia' }],
+      [{ amount: 3000, transaction_type: 'DEBIT', bank_ref: 'AP:p1' }],
+    )
     await POST(req(), { params: { id: 'p1' } })
+    expect(m.txFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { company_id: 'c1', bank_ref: { in: ['AP:p1', 'AP:p1:estorno'] } },
+    }))
     expect(m.txUpdate).toHaveBeenCalledTimes(1)
     expect(m.txDelete).not.toHaveBeenCalled()
     expect(m.txCreate).toHaveBeenCalledTimes(1)
@@ -56,8 +65,36 @@ describe('estorno de AP — livro-razão', () => {
     expect(m.accUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ current_balance: { increment: 3000 } }) }))
   })
 
+  it('vínculo explícito com diferença (pago 5085, linha 5000): sem CREDIT falso de 85', async () => {
+    m.apFindFirst.mockResolvedValue({ id: 'p1', status: 'PAGO', account_id: 'acc1', paid_amount: 5085, description: 'Luz', category_id: 'catEnergia' })
+    transacoes([{ id: 't1', amount: 5000, source_text: 'PGTO ENEL', description: 'x', category_id: 'catEnergia' }])
+    await POST(req(), { params: { id: 'p1' } })
+    expect(m.txUpdate).toHaveBeenCalledTimes(1)
+    expect(m.txCreate).not.toHaveBeenCalled()
+    expect(m.accUpdate).not.toHaveBeenCalled()
+  })
+
+  it('DEBIT próprio já compensado por estorno anterior não é compensado de novo', async () => {
+    transacoes(
+      [{ id: 't1', amount: 5000, source_text: 'PGTO ENEL', description: 'x', category_id: 'catEnergia' }],
+      [{ amount: 5000, transaction_type: 'DEBIT', bank_ref: 'AP:p1' }, { amount: 5000, transaction_type: 'CREDIT', bank_ref: 'AP:p1:estorno' }],
+    )
+    await POST(req(), { params: { id: 'p1' } })
+    expect(m.txCreate).not.toHaveBeenCalled()
+    expect(m.accUpdate).not.toHaveBeenCalled()
+  })
+
+  it('linha que já tinha outra categoria (regra) mantém a dela ao desligar', async () => {
+    transacoes([{ id: 't1', amount: 5000, source_text: 'ELETROPAULO', description: 'x', category_id: 'catOutra' }])
+    await POST(req(), { params: { id: 'p1' } })
+    expect(m.txUpdate).toHaveBeenCalledWith({
+      where: { id: 't1' },
+      data: { linked_ref: null, category_id: 'catOutra', description: 'ELETROPAULO' },
+    })
+  })
+
   it('AP sem lançamento ligado: estorno como hoje (CREDIT + saldo)', async () => {
-    m.txFindMany.mockResolvedValue([])
+    transacoes([])
     await POST(req(), { params: { id: 'p1' } })
     expect(m.txCreate).toHaveBeenCalledTimes(1)
     expect(m.accUpdate).toHaveBeenCalledTimes(1)
