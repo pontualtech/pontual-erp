@@ -80,6 +80,106 @@ function presetRange(months: number, offset = 0) {
   return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) }
 }
 
+interface ResumoLinha { categoria: string; total: number }
+interface ResumoRealizado {
+  entradas: ResumoLinha[]
+  saidas: ResumoLinha[]
+  total_entradas: number
+  total_saidas: number
+  fora_do_total: ResumoLinha[]
+}
+
+// Quadro "Realizado no banco por categoria": o que de fato entrou/saiu no banco (livro), no período da página
+function RealizadoPorCategoria({ from, to, accountId }: { from: string; to: string; accountId: string }) {
+  const [resumo, setResumo] = useState<ResumoRealizado | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [erro, setErro] = useState(false)
+
+  useEffect(() => {
+    const ac = new AbortController()
+    setLoading(true)
+    setErro(false)
+    const params = new URLSearchParams()
+    if (from) params.set('from', from)
+    if (to) params.set('to', to)
+    if (accountId) params.set('account_id', accountId)
+    fetch(`/api/financeiro/livro/resumo?${params}`, { signal: ac.signal })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.data) setResumo(d.data)
+        else { setResumo(null); setErro(true) }
+      })
+      .catch((err) => {
+        if (err?.name !== 'AbortError') { setResumo(null); setErro(true); toast.error('Erro ao carregar realizado no banco') }
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setLoading(false)
+      })
+    return () => ac.abort()
+  }, [from, to, accountId])
+
+  const tabela = (titulo: string, linhas: ResumoLinha[], total: number, cor: string) => (
+    <div className="overflow-hidden rounded-lg border border-gray-100">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-gray-100 bg-gray-50/50 text-left text-[11px] font-medium uppercase tracking-wider text-gray-500">
+            <th className="px-4 py-2">{titulo}</th>
+            <th className="px-4 py-2 text-right">Total</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {linhas.length === 0 ? (
+            <tr><td colSpan={2} className="px-4 py-4 text-center text-sm text-gray-400">Nenhum lançamento</td></tr>
+          ) : linhas.map((l) => (
+            <tr key={l.categoria}>
+              <td className="px-4 py-2 text-gray-900">{l.categoria}</td>
+              <td className={cn('px-4 py-2 text-right font-medium tabular-nums', cor)}>{formatCurrency(l.total)}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="border-t border-gray-200 bg-gray-50/80 text-sm font-semibold">
+            <td className="px-4 py-2 text-gray-900">Total</td>
+            <td className={cn('px-4 py-2 text-right tabular-nums', cor)}>{formatCurrency(total)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  )
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-[0_1px_2px_rgb(0,0,0,0.04)]">
+      <h2 className="text-base font-semibold text-gray-900">Realizado no banco por categoria</h2>
+      <p className="mt-0.5 mb-4 text-xs text-gray-500">O que de fato entrou e saiu no banco no período (livro-razão)</p>
+      {loading ? (
+        <div className="py-8 text-center text-sm text-gray-400">Carregando…</div>
+      ) : erro || !resumo ? (
+        <div className="py-8 text-center text-sm text-red-600">Não foi possível carregar o realizado no banco</div>
+      ) : (
+        <>
+          <div className="grid gap-4 md:grid-cols-2">
+            {tabela('Entradas', resumo.entradas, resumo.total_entradas, 'text-emerald-600')}
+            {tabela('Saídas', resumo.saidas, resumo.total_saidas, 'text-red-600')}
+          </div>
+          {resumo.fora_do_total.length > 0 && (
+            <div className="mt-4 text-xs text-gray-400">
+              <p className="font-medium uppercase tracking-wider">Fora do total</p>
+              <ul className="mt-1 space-y-0.5">
+                {resumo.fora_do_total.map((l) => (
+                  <li key={l.categoria} className="flex justify-between">
+                    <span>{l.categoria}</span>
+                    <span className="tabular-nums">{formatCurrency(l.total)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function FluxoCaixaPage() {
   const [data, setData] = useState<FluxoData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -377,6 +477,8 @@ export default function FluxoCaixaPage() {
           </p>
         )}
       </div>
+
+      <RealizadoPorCategoria from={fromDate} to={toDate} accountId={accountId} />
 
       {/* Tabela mensal */}
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-[0_1px_2px_rgb(0,0,0,0.04)]">
