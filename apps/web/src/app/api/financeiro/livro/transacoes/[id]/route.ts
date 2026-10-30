@@ -64,11 +64,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       }
     }
 
-    const regraExiste = async (db: Pick<typeof prisma, 'classificationRule'>) =>
-      (await db.classificationRule.findFirst({
+    const regraAtiva = (db: Pick<typeof prisma, 'classificationRule'>) =>
+      db.classificationRule.findFirst({
         where: { company_id: user.companyId, active: true, pattern: pattern as string, direction },
-        select: { id: true },
-      })) !== null
+        select: { id: true, category_id: true },
+      })
 
     // Outras linhas BANCO ainda em categoria de fallback que casam com o padrão (e a direção).
     const filtroRetroativo = async (db: Pick<typeof prisma, 'category'>) => {
@@ -91,18 +91,22 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     // Simulação: valida tudo acima e só informa o que mudaria, sem gravar.
     if (body.simular === true) {
+      const existente = pattern ? await regraAtiva(prisma) : null
       return success({
         id: params.id,
         category_id: body.category_id,
         regra: regraSaida,
         ...(motivoSemRegra ? { motivo_sem_regra: motivoSemRegra } : {}),
-        regra_criada: !!pattern && !(await regraExiste(prisma)),
+        regra_criada: !!pattern && !existente,
+        regra_atualizada: !!existente && existente.category_id !== body.category_id,
         recategorizadas: pattern ? await prisma.transaction.count({ where: await filtroRetroativo(prisma) }) : 0,
         simulado: true,
       })
     }
 
     let regraCriada = false
+    let regraAtualizada = false
+    let categoriaAnteriorRegra: string | null = null
     let recategorizadas = 0
     await prisma.$transaction(async (tx) => {
       await tx.transaction.update({
@@ -113,7 +117,18 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         },
       })
       if (pattern) {
-        if (!(await regraExiste(tx))) {
+        const existente = await regraAtiva(tx)
+        if (existente) {
+          // A última resposta do dono vale: regra existente com outra categoria passa para a escolhida.
+          if (existente.category_id !== body.category_id) {
+            categoriaAnteriorRegra = existente.category_id
+            await tx.classificationRule.update({
+              where: { id: existente.id },
+              data: { category_id: body.category_id },
+            })
+            regraAtualizada = true
+          }
+        } else {
           await tx.classificationRule.create({
             data: {
               company_id: user.companyId,
@@ -141,8 +156,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       module: 'financeiro',
       action: 'livro.classificar',
       entityId: params.id,
-      oldValue: { category_id: transacao.category_id },
-      newValue: { category_id: body.category_id, regra_criada: regraCriada, pattern, recategorizadas },
+      oldValue: { category_id: transacao.category_id, regra_category_id: categoriaAnteriorRegra },
+      newValue: {
+        category_id: body.category_id, regra_criada: regraCriada, regra_atualizada: regraAtualizada,
+        regra_category_id: pattern ? body.category_id : null, pattern, recategorizadas,
+      },
     })
 
     return success({
@@ -151,6 +169,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       regra: regraSaida,
       ...(motivoSemRegra ? { motivo_sem_regra: motivoSemRegra } : {}),
       regra_criada: regraCriada,
+      regra_atualizada: regraAtualizada,
       recategorizadas,
     })
   } catch (e) {

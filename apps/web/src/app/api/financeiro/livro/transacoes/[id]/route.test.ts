@@ -4,12 +4,12 @@ import { NextRequest } from 'next/server'
 const { m, db } = vi.hoisted(() => { const m = {
   txFindFirst: vi.fn(), txUpdate: vi.fn(), txUpdateMany: vi.fn(), txCount: vi.fn(),
   catFindFirst: vi.fn(), catFindMany: vi.fn(),
-  ruleFindFirst: vi.fn(), ruleCreate: vi.fn(),
+  ruleFindFirst: vi.fn(), ruleCreate: vi.fn(), ruleUpdate: vi.fn(),
 }
 const db = {
   transaction: { findFirst: m.txFindFirst, update: m.txUpdate, updateMany: m.txUpdateMany, count: m.txCount },
   category: { findFirst: m.catFindFirst, findMany: m.catFindMany },
-  classificationRule: { findFirst: m.ruleFindFirst, create: m.ruleCreate },
+  classificationRule: { findFirst: m.ruleFindFirst, create: m.ruleCreate, update: m.ruleUpdate },
   $transaction: async (cb: (tx: unknown) => unknown) => cb(db),
 }
 return { m, db } })
@@ -63,7 +63,7 @@ describe('PATCH livro/transacoes/[id] — regra derivada + retroativo', () => {
   })
 
   it('regra já existente: não cria, mas ainda recategoriza', async () => {
-    m.ruleFindFirst.mockResolvedValue({ id: 'r1' })
+    m.ruleFindFirst.mockResolvedValue({ id: 'r1', category_id: 'cat1' })
     const j = (await (await patch({ category_id: 'cat1', criar_regra: { direction: 'OUT' } })).json()).data
     expect(m.ruleCreate).not.toHaveBeenCalled()
     expect(m.txUpdateMany).toHaveBeenCalled()
@@ -103,5 +103,34 @@ describe('PATCH livro/transacoes/[id] — regra derivada + retroativo', () => {
       where: { id: 't1' },
       data: { category_id: 'cat1', description: 'PIX ENVIADO ELVIS FERREIRA — aluguel' },
     })
+  })
+
+  it('(a) regra existente com outra categoria: atualiza a regra, não cria', async () => {
+    m.ruleFindFirst.mockResolvedValue({ id: 'r1', category_id: 'antiga' })
+    const j = (await (await patch({ category_id: 'cat1', criar_regra: { direction: 'OUT' } })).json()).data
+    expect(m.ruleUpdate).toHaveBeenCalledWith({ where: { id: 'r1' }, data: { category_id: 'cat1' } })
+    expect(m.ruleCreate).not.toHaveBeenCalled()
+    expect(j.regra_atualizada).toBe(true)
+    expect(j.regra_criada).toBe(false)
+  })
+
+  it('(b) regra existente com a mesma categoria: nada de create/update', async () => {
+    m.ruleFindFirst.mockResolvedValue({ id: 'r1', category_id: 'cat1' })
+    const j = (await (await patch({ category_id: 'cat1', criar_regra: { direction: 'OUT' } })).json()).data
+    expect(m.ruleUpdate).not.toHaveBeenCalled()
+    expect(m.ruleCreate).not.toHaveBeenCalled()
+    expect(j.regra_atualizada).toBe(false)
+    expect(j.regra_criada).toBe(false)
+  })
+
+  it('(c) simular com regra de outra categoria: informa regra_atualizada e não grava', async () => {
+    m.ruleFindFirst.mockResolvedValue({ id: 'r1', category_id: 'antiga' })
+    const j = (await (await patch({ category_id: 'cat1', simular: true, criar_regra: { direction: 'OUT' } })).json()).data
+    expect(j.regra_atualizada).toBe(true)
+    expect(j.regra_criada).toBe(false)
+    expect(m.ruleUpdate).not.toHaveBeenCalled()
+    expect(m.ruleCreate).not.toHaveBeenCalled()
+    expect(m.txUpdate).not.toHaveBeenCalled()
+    expect(m.txUpdateMany).not.toHaveBeenCalled()
   })
 })
