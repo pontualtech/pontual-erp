@@ -4,8 +4,8 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { z } from 'zod'
-import { decidirBaixa } from '@/lib/financeiro/livro-baixa'
-import { candidatosLivro, hojeSP } from '@/lib/financeiro/livro-baixa-db'
+import { decidirBaixa, recebeCategoria } from '@/lib/financeiro/livro-baixa'
+import { candidatosLivro, hojeSP, nomeCategoria } from '@/lib/financeiro/livro-baixa-db'
 
 // Escolha explícita de lançamento do livro inválida → 422 sem escrever nada.
 class LivroInvalido extends Error {}
@@ -89,7 +89,8 @@ export async function POST(req: NextRequest, { params }: Params) {
       // Livro-razão: se a saída já foi lançada pelo banco, liga a ela (decide antes de escrever).
       const dataBaixa = data.paid_at ? new Date(data.paid_at).toISOString().slice(0, 10) : hojeSP()
       const candidatos = await candidatosLivro(tx, user.companyId, data.account_id, 'DEBIT', dataBaixa, data.livro_transaction_id ?? null)
-      const decisao = decidirBaixa({ tipo: 'DEBIT', amount: data.paid_amount, data: dataBaixa }, data.livro_transaction_id ?? null, candidatos)
+      const categoriaAP = await nomeCategoria(tx, user.companyId, fresh.category_id)
+      const decisao = decidirBaixa({ tipo: 'DEBIT', amount: data.paid_amount, data: dataBaixa, categoria: categoriaAP }, data.livro_transaction_id ?? null, candidatos)
       if ('erro' in decisao) throw new LivroInvalido(decisao.erro)
 
       // Guard atomic: só roda se ainda não estiver PAGO. updateMany retorna
@@ -127,13 +128,16 @@ export async function POST(req: NextRequest, { params }: Params) {
           where: { id: decisao.usar, company_id: user.companyId },
           select: { source_text: true },
         })
+        // Linha já categorizada (ex.: regra ELETROPAULO → Energia) mantém a sua categoria.
+        const linha = candidatos.find((c) => c.id === decisao.usar)
+        const trocaCategoria = !!fresh.category_id && recebeCategoria(linha?.categoria ?? null)
         // Guard atômico (como Bug #41/#67): só liga se a linha ainda estiver livre.
         const ligou = await tx.transaction.updateMany({
           where: { id: decisao.usar, company_id: user.companyId, linked_ref: null },
           data: {
             linked_ref: `AP:${params.id}`,
             // sem categoria na AP → mantém a atual ("A classificar")
-            ...(fresh.category_id ? { category_id: fresh.category_id } : {}),
+            ...(trocaCategoria ? { category_id: fresh.category_id } : {}),
             description: `Pgto: ${fresh.description} · banco: ${alvo?.source_text ?? ''}`,
             reconciled: true,
           },

@@ -1,5 +1,6 @@
 // Decisão pura da baixa (AR/AP) sobre o Livro-razão: ligar ao lançamento do banco já existente
 // em vez de criar um segundo (que contaria o dinheiro duas vezes). Sem banco de dados, sem I/O.
+import { CATEGORIAS_FORA_DO_TOTAL } from './livro-resumo'
 
 export const CATEGORIAS_FALLBACK = ['A classificar', 'Receita a identificar'] as const
 
@@ -31,8 +32,14 @@ function emFallback(categoria: string | null): boolean {
   return categoria !== null && (CATEGORIAS_FALLBACK as readonly string[]).includes(categoria)
 }
 
+// Ao ligar: só a linha sem categoria ou em fallback recebe a categoria da baixa; as demais mantêm a sua.
+export function recebeCategoria(categoria: string | null): boolean {
+  return categoria === null || emFallback(categoria)
+}
+
+// `alvo.categoria` = nome da categoria da conta a pagar/receber (desempate: mesma categoria antes das outras).
 export function decidirBaixa(
-  alvo: { tipo: 'CREDIT' | 'DEBIT'; amount: number; data: string },
+  alvo: { tipo: 'CREDIT' | 'DEBIT'; amount: number; data: string; categoria?: string | null },
   explicito: string | null,
   candidatos: CandidatoLivro[],
 ): DecisaoBaixa {
@@ -47,14 +54,17 @@ export function decidirBaixa(
     return { usar: c.id }
   }
 
-  let melhor: { id: string; dist: number } | null = null
+  // Automático: qualquer linha do banco livre, de mesmo tipo e valor, na janela — exceto ajuste/transferências.
+  // Preferência: fallback (ou sem categoria) > mesma categoria do alvo > outras; depois a data mais próxima.
+  let melhor: { id: string; rank: number; dist: number } | null = null
   for (const c of candidatos) {
     if (c.origin !== 'BANCO' || c.transaction_type !== alvo.tipo || c.amount !== alvo.amount) continue
-    if (c.linked_ref || !emFallback(c.categoria)) continue
+    if (c.linked_ref || (c.categoria !== null && CATEGORIAS_FORA_DO_TOTAL.includes(c.categoria))) continue
     const delta = diasEntre(c.transaction_date, alvo.data) // negativo = antes da baixa
     if (delta < -JANELA_BAIXA.antes || delta > JANELA_BAIXA.depois) continue
+    const rank = recebeCategoria(c.categoria) ? 0 : alvo.categoria && c.categoria === alvo.categoria ? 1 : 2
     const dist = Math.abs(delta)
-    if (!melhor || dist < melhor.dist) melhor = { id: c.id, dist }
+    if (!melhor || rank < melhor.rank || (rank === melhor.rank && dist < melhor.dist)) melhor = { id: c.id, rank, dist }
   }
   return melhor ? { usar: melhor.id } : { criar: true }
 }

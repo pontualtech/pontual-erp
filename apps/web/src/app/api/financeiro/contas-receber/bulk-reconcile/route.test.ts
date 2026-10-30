@@ -68,6 +68,23 @@ describe('bulk-reconcile — liga ao lançamento do livro', () => {
     expect(m.txUpdate).not.toHaveBeenCalled()
   })
 
+  it('Conferir sobre linha já categorizada (Venda de Servicos): liga sem criar/creditar e mantém a categoria da linha', async () => {
+    m.arFindMany.mockResolvedValue([AR])
+    m.txFindMany.mockResolvedValue([livro({ categories: { name: 'Venda de Servicos' } })])
+    m.txFindFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ source_text: 'PIX RECEBIDO FULANO' })
+    const res = await POST(req({ ids: ['a1'], reconciled: true }))
+    const j = await res.json()
+    expect(m.txCreate).not.toHaveBeenCalled()
+    expect(m.accUpdate).not.toHaveBeenCalled()
+    expect(m.txUpdateMany).toHaveBeenCalledTimes(1)
+    const arg = m.txUpdateMany.mock.calls[0][0]
+    expect(arg.where).toEqual({ id: 't1', company_id: 'c1', linked_ref: null })
+    expect(arg.data).not.toHaveProperty('category_id')
+    expect(arg.data).toEqual(expect.objectContaining({ linked_ref: 'AR:a1', description: 'LIQUIDACAO: OS 1 · banco: PIX RECEBIDO FULANO' }))
+    expect(j.data.ligadas).toBe(1)
+    expect(j.data.balance_delta).toBe(0)
+  })
+
   it('explícito inválido: AR não é baixada e vai em erros', async () => {
     m.arFindMany.mockResolvedValue([AR])
     m.txFindMany.mockResolvedValue([livro({ categories: { name: 'Energia' } })])

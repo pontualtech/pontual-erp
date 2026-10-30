@@ -58,3 +58,10 @@ export async function categoriaId(tx: any, companyId: string, name: string, modu
   })
   return c?.id ?? null
 }
+
+// Nome da categoria pelo id na empresa; null se não houver id ou categoria.
+export async function nomeCategoria(tx: any, companyId: string, id: string | null): Promise<string | null> {
+  if (!id) return null
+  const c = await tx.category.findFirst({ where: { id, company_id: companyId }, select: { name: true } })
+  return c?.name ?? null
+}

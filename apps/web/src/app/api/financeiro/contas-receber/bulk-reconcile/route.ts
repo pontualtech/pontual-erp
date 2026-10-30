@@ -4,8 +4,8 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { refsCreditoAdquirente } from '@/lib/acquirer/match-rules'
-import { decidirBaixa } from '@/lib/financeiro/livro-baixa'
-import { candidatosLivro, categoriaId, hojeSP } from '@/lib/financeiro/livro-baixa-db'
+import { decidirBaixa, recebeCategoria } from '@/lib/financeiro/livro-baixa'
+import { candidatosLivro, categoriaId, hojeSP, nomeCategoria } from '@/lib/financeiro/livro-baixa-db'
 import { CATEGORIA_RECEITA_SERVICOS } from '@/lib/financeiro/livro-categorias'
 
 // Lançamento do livro foi ligado por outra baixa concorrente → desfaz a $transaction desta AR.
@@ -106,13 +106,14 @@ export async function POST(req: NextRequest) {
         let resultado: { erro?: string; ligada?: boolean }
         try {
           resultado = await prisma.$transaction(async (tx): Promise<{ erro?: string; ligada?: boolean }> => {
-          // Decide ANTES de escrever: explícito inválido não baixa nada.
-          const candidatos = await candidatosLivro(tx, user.companyId, ar.account_id!, 'CREDIT', hojeSP(), livro?.[ar.id] ?? null)
-          const decisao = decidirBaixa({ tipo: 'CREDIT', amount, data: hojeSP() }, livro?.[ar.id] ?? null, candidatos)
-          if ('erro' in decisao) return { erro: decisao.erro }
-
           const categoria = ar.category_id
             ?? await categoriaId(tx, user.companyId, CATEGORIA_RECEITA_SERVICOS, 'financeiro_receita')
+          const nomeAlvo = ar.category_id ? await nomeCategoria(tx, user.companyId, ar.category_id) : CATEGORIA_RECEITA_SERVICOS
+
+          // Decide ANTES de escrever: explícito inválido não baixa nada.
+          const candidatos = await candidatosLivro(tx, user.companyId, ar.account_id!, 'CREDIT', hojeSP(), livro?.[ar.id] ?? null)
+          const decisao = decidirBaixa({ tipo: 'CREDIT', amount, data: hojeSP(), categoria: nomeAlvo }, livro?.[ar.id] ?? null, candidatos)
+          if ('erro' in decisao) return { erro: decisao.erro }
 
           await tx.accountReceivable.update({
             where: { id: ar.id, company_id: user.companyId },
@@ -124,12 +125,14 @@ export async function POST(req: NextRequest) {
               where: { id: decisao.usar, company_id: user.companyId },
               select: { source_text: true },
             })
+            // Linha já categorizada (ex.: Venda de Servicos) mantém a sua categoria.
+            const linha = candidatos.find((c) => c.id === decisao.usar)
             // Guard atômico (como Bug #41/#67): só liga se a linha ainda estiver livre.
             const ligou = await tx.transaction.updateMany({
               where: { id: decisao.usar, company_id: user.companyId, linked_ref: null },
               data: {
                 linked_ref: `AR:${ar.id}`,
-                category_id: categoria,
+                ...(recebeCategoria(linha?.categoria ?? null) ? { category_id: categoria } : {}),
                 description: `LIQUIDACAO: ${ar.description} · banco: ${alvo?.source_text ?? ''}`,
                 reconciled: true,
               },
