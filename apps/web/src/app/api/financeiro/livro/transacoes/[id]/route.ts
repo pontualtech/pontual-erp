@@ -6,6 +6,7 @@ import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { CATEGORIAS_FALLBACK } from '@/lib/financeiro/livro-baixa'
 import { padraoDaLinha } from '@/lib/financeiro/livro-padrao'
+import { classificar } from '@/lib/financeiro/livro'
 
 /**
  * Livro-razão — classifica uma transação (troca a categoria) e, opcionalmente, cria uma regra
@@ -35,7 +36,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     const transacao = await prisma.transaction.findFirst({
       where: { id: params.id, company_id: user.companyId },
-      select: { id: true, category_id: true, source_text: true, description: true },
+      select: {
+        id: true, category_id: true, source_text: true, description: true,
+        account_id: true, transaction_type: true, counterparty: true,
+      },
     })
     if (!transacao) return error('Transação não encontrada', 404)
 
@@ -69,9 +73,24 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     const regraAtiva = (db: Pick<typeof prisma, 'classificationRule'>) =>
       db.classificationRule.findFirst({
-        where: { company_id: user.companyId, active: true, pattern: pattern as string, direction },
-        select: { id: true, category_id: true },
+        where: { company_id: user.companyId, active: true, pattern: { equals: pattern as string, mode: 'insensitive' }, direction },
+        select: { id: true, category_id: true, priority: true },
       })
+
+    // A última resposta vence: menor prioridade entre as OUTRAS regras ativas que já casam com esta linha
+    // (mesma semântica do classificar: texto + contraparte, direção e conta); null se nenhuma casa.
+    const menorPrioridadeQueCasa = async (db: Pick<typeof prisma, 'classificationRule'>, ignorar: string | null) => {
+      const regras = await db.classificationRule.findMany({
+        where: { company_id: user.companyId, active: true },
+        select: { id: true, pattern: true, direction: true, account_id: true, category_id: true, priority: true },
+      })
+      const linha = {
+        chave: params.id, data: '', descricao: textoLinha, contraparte: transacao.counterparty ?? undefined,
+        valor_centavos: transacao.transaction_type === 'CREDIT' ? 1 : -1,
+      }
+      const casam = regras.filter((r) => r.id !== ignorar && classificar(linha, [r], transacao.account_id).regra_id !== null)
+      return casam.length > 0 ? Math.min(...casam.map((r) => r.priority)) : null
+    }
 
     // Outras linhas BANCO ainda em categoria de fallback que casam com o padrão (e a direção).
     const filtroRetroativo = async (db: Pick<typeof prisma, 'category'>) => {
@@ -121,13 +140,20 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       })
       if (pattern) {
         const existente = await regraAtiva(tx)
+        const menor = await menorPrioridadeQueCasa(tx, existente?.id ?? null)
         if (existente) {
-          // A última resposta do dono vale: regra existente com outra categoria passa para a escolhida.
-          if (existente.category_id !== body.category_id) {
-            categoriaAnteriorRegra = existente.category_id
+          // A última resposta do dono vale: regra existente com outra categoria passa para a escolhida
+          // e fica à frente de qualquer outra regra que case com esta linha.
+          const trocaCategoria = existente.category_id !== body.category_id
+          const novaPrioridade = menor !== null && menor <= existente.priority ? menor - 1 : null
+          if (trocaCategoria || novaPrioridade !== null) {
+            if (trocaCategoria) categoriaAnteriorRegra = existente.category_id
             await tx.classificationRule.update({
               where: { id: existente.id },
-              data: { category_id: body.category_id },
+              data: {
+                ...(trocaCategoria ? { category_id: body.category_id } : {}),
+                ...(novaPrioridade !== null ? { priority: novaPrioridade } : {}),
+              },
             })
             regraAtualizada = true
           }
@@ -139,7 +165,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
               direction,
               category_id: body.category_id,
               account_id: null,
-              priority: 100,
+              priority: menor !== null ? Math.min(100, menor - 1) : 100,
               active: true,
             },
           })
