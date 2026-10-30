@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, handleError } from '@/lib/api-response'
+import { itemDeTransacao } from '@/lib/financeiro/extrato-itens'
 
 /**
  * GET /api/financeiro/extrato — Extrato financeiro completo
@@ -125,13 +126,18 @@ export async function GET(request: NextRequest) {
         account_id: accountId,
         transaction_date: { gte: startDate, lte: endDate },
       }
+      if (categoryId) txWhere.category_id = categoryId
       if (search) txWhere.description = { contains: search, mode: 'insensitive' }
       if (tipo === 'ENTRADA') txWhere.transaction_type = 'CREDIT'
       if (tipo === 'SAIDA') txWhere.transaction_type = 'DEBIT'
 
       bankTransactions = await prisma.transaction.findMany({
         where: txWhere,
-        select: { id: true, amount: true, transaction_type: true, description: true, bank_ref: true, reconciled: true, transaction_date: true },
+        select: {
+          id: true, amount: true, transaction_type: true, description: true, bank_ref: true, reconciled: true, transaction_date: true,
+          category_id: true, origin: true, source_text: true, created_at: true,
+          categories: { select: { name: true } },
+        },
         orderBy: { transaction_date: 'desc' },
       })
     }
@@ -160,6 +166,10 @@ export async function GET(request: NextRequest) {
       origem: 'receber' | 'pagar' | 'transacao'
       status: string | null  // RECEBIDO|PAGO|PENDENTE|CANCELADO|null (transacao bancaria nao tem status)
       reconciliado?: boolean
+      category_id?: string | null
+      livro?: boolean
+      texto_banco?: string | null
+      criado_em?: string | null
     }
 
     const items: ExtratoItem[] = []
@@ -205,21 +215,7 @@ export async function GET(request: NextRequest) {
     if (accountId && !skipTransacao) {
       const accountName = accounts.find(a => a.id === accountId)?.name || '—'
       for (const t of bankTransactions) {
-        items.push({
-          id: t.id,
-          data: t.transaction_date ? new Date(t.transaction_date).toISOString() : '',
-          descricao: t.description || `Transação ${t.bank_ref || ''}`,
-          entidade: '—',
-          conta_bancaria: accountName,
-          centro_custo: '—',
-          categoria: '—',
-          forma_pagamento: '—',
-          valor: t.amount,
-          tipo: t.transaction_type === 'CREDIT' ? 'ENTRADA' : 'SAIDA',
-          origem: 'transacao',
-          status: t.reconciled ? 'CONCILIADO' : 'NAO_CONCILIADO',
-          reconciliado: t.reconciled,
-        })
+        items.push(itemDeTransacao(t, accountName))
       }
     }
 

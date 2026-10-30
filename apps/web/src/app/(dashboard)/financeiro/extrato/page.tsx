@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils'
 import { exportToExcel, exportToCSV, exportToPDF } from '@/lib/export-data'
 import { MoneyInput } from '@/app/(dashboard)/components/money-input'
 import { cleanDescription, prettyPaymentMethod } from '@/lib/payment-display'
+import { padraoDaLinha } from '@/lib/financeiro/livro-padrao'
 
 // ─── Types ───────────────────────────────────────────────
 interface ExtratoItem {
@@ -21,6 +22,7 @@ interface ExtratoItem {
   conta_bancaria: string; centro_custo: string; categoria: string
   forma_pagamento: string; valor: number; tipo: 'ENTRADA' | 'SAIDA'
   origem: string; status?: string; reconciliado?: boolean
+  category_id?: string | null; livro?: boolean; texto_banco?: string | null; criado_em?: string | null
 }
 
 interface Resumo {
@@ -127,6 +129,8 @@ export default function ExtratoPage() {
   const [editItem, setEditItem] = useState<ExtratoItem | null>(null)
   const [editForm, setEditForm] = useState({ category_id: '', payment_method: '', cost_center_id: '', valor: '', vencimento: '', notes: '' })
   const [editSaving, setEditSaving] = useState(false)
+  // Lançamento do livro (transação bancária): categoria + regra para os próximos iguais
+  const [livroForm, setLivroForm] = useState({ category_id: '', nota: '', aplicar: true })
 
   // Debounce busca por texto (400ms)
   useEffect(() => {
@@ -275,6 +279,11 @@ export default function ExtratoPage() {
 
   // Quick edit: open modal and load full record from API
   async function openQuickEdit(item: ExtratoItem) {
+    if (item.origem === 'transacao' && item.livro) {
+      setLivroForm({ category_id: item.category_id || '', nota: '', aplicar: true })
+      setEditItem(item)
+      return
+    }
     if (item.origem !== 'receber' && item.origem !== 'pagar') return
     setEditItem(item)
     try {
@@ -295,8 +304,31 @@ export default function ExtratoPage() {
     } catch { toast.error('Erro ao carregar dados') }
   }
 
+  async function saveLivroEdit() {
+    if (!editItem) return
+    if (!livroForm.category_id) { toast.error('Escolha uma categoria'); return }
+    setEditSaving(true)
+    try {
+      const padrao = padraoDaLinha(editItem.texto_banco || '')
+      const body: Record<string, unknown> = { category_id: livroForm.category_id }
+      if (livroForm.nota.trim()) body.nota = livroForm.nota.trim()
+      if (padrao && livroForm.aplicar) body.criar_regra = { direction: editItem.tipo === 'ENTRADA' ? 'IN' : 'OUT' }
+      const res = await fetch(`/api/financeiro/livro/transacoes/${editItem.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Erro ao salvar')
+      const r = d.data
+      if (r?.regra_criada && r.regra) toast.success(`regra '${r.regra.pattern}' criada · ${r.recategorizadas} parecidos corrigidos`)
+      else if (r?.regra_atualizada && r.regra) toast.success(`regra '${r.regra.pattern}' atualizada · ${r.recategorizadas} parecidos corrigidos`)
+      else toast.success('categoria salva')
+      setEditItem(null)
+      loadData()
+    } catch (err) { toast.error(err instanceof Error ? err.message : 'Erro ao salvar') }
+    finally { setEditSaving(false) }
+  }
+
   async function saveQuickEdit() {
     if (!editItem) return
+    if (editItem.origem === 'transacao') return saveLivroEdit()
     setEditSaving(true)
     try {
       const endpoint = editItem.origem === 'receber' ? `/api/financeiro/contas-receber/${editItem.id}` : `/api/financeiro/contas-pagar/${editItem.id}`
@@ -637,13 +669,13 @@ export default function ExtratoPage() {
                 onClick={() => openQuickEdit(item)}
                 className={cn(
                   'hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors',
-                  (item.origem === 'receber' || item.origem === 'pagar') && 'cursor-pointer'
+                  (item.origem === 'receber' || item.origem === 'pagar' || (item.origem === 'transacao' && item.livro)) && 'cursor-pointer'
                 )}>
                 <td className="px-4 py-3 text-gray-700 dark:text-gray-300 whitespace-nowrap text-xs">{safeDate(item.data)}</td>
                 <td className="px-4 py-3">
                   <p className={cn(
                     'font-medium text-sm',
-                    (item.origem === 'receber' || item.origem === 'pagar')
+                    (item.origem === 'receber' || item.origem === 'pagar' || (item.origem === 'transacao' && item.livro))
                       ? 'text-blue-700 dark:text-blue-400 hover:underline'
                       : 'text-gray-900 dark:text-white'
                   )}>{cleanDescription(item.descricao)}</p>
@@ -736,13 +768,51 @@ export default function ExtratoPage() {
                   else if (s === 'NAO_CONCILIADO') { label = 'Não conciliado'; cls = 'bg-amber-50 text-amber-700' }
                   return <span className={cn('text-xs px-2 py-0.5 rounded font-medium', cls)}>{label}</span>
                 })()}
-                <a href={editItem.origem === 'receber' ? `/financeiro/contas-receber/${editItem.id}?from=extrato` : `/financeiro/contas-pagar/${editItem.id}?from=extrato`}
+                {editItem.origem !== 'transacao' && <a href={editItem.origem === 'receber' ? `/financeiro/contas-receber/${editItem.id}?from=extrato` : `/financeiro/contas-pagar/${editItem.id}?from=extrato`}
                   target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-blue-600 transition-colors" title="Abrir detalhe completo">
                   <ExternalLink className="h-4 w-4" />
-                </a>
+                </a>}
               </div>
             </div>
 
+            {editItem.origem === 'transacao' ? (() => {
+              const padrao = padraoDaLinha(editItem.texto_banco || '')
+              const entrada = editItem.tipo === 'ENTRADA'
+              const opcoes = categorias.filter(c => entrada ? c.module === 'financeiro_receita' : c.module !== 'financeiro_receita')
+              return (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Texto do banco</label>
+                    <p className="rounded-lg bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm font-mono text-gray-700 dark:text-gray-300 break-words">{editItem.texto_banco || editItem.descricao}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{entrada ? '+ ' : '- '}{fmt(editItem.valor)} · {safeDate(editItem.data)}</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Categoria</label>
+                    <select title="Categoria" value={livroForm.category_id}
+                      onChange={e => setLivroForm(f => ({ ...f, category_id: e.target.value }))}
+                      className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2.5 text-sm text-gray-900 dark:text-white">
+                      <option value="">Selecione...</option>
+                      {opcoes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                  <label className={cn('flex items-start gap-2 text-sm', padrao ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500')}>
+                    <input type="checkbox" className="mt-1" disabled={!padrao} checked={!!padrao && livroForm.aplicar}
+                      onChange={e => setLivroForm(f => ({ ...f, aplicar: e.target.checked }))} />
+                    <span>
+                      aplicar também aos próximos iguais
+                      {padrao ? <> (<span className="font-mono">{padrao}</span>)</> : <> — texto genérico, sem regra</>}
+                    </span>
+                  </label>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">observação</label>
+                    <textarea rows={2} value={livroForm.nota}
+                      onChange={e => setLivroForm(f => ({ ...f, nota: e.target.value }))}
+                      placeholder="observação..."
+                      className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 resize-none" />
+                  </div>
+                </div>
+              )
+            })() : (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -799,6 +869,7 @@ export default function ExtratoPage() {
                   className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 resize-none" />
               </div>
             </div>
+            )}
 
             <div className="flex gap-3 mt-6 justify-end">
               <button type="button" onClick={() => setEditItem(null)}
