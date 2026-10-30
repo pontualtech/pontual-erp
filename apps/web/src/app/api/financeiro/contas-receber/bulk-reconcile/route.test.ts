@@ -85,6 +85,36 @@ describe('bulk-reconcile — liga ao lançamento do livro', () => {
     expect(j.data.balance_delta).toBe(0)
   })
 
+  it('livro explícito e a AR já tem outro lançamento: vai em erros, sem baixar nem ligar', async () => {
+    m.arFindMany.mockResolvedValue([AR])
+    m.txFindFirst.mockResolvedValue({ id: 'x9', bank_ref: 'AR:a1', linked_ref: null })
+    const res = await POST(req({ ids: ['a1'], reconciled: true, livro: { a1: 't1' } }))
+    const j = await res.json()
+    expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'conta a receber já tem lançamento; vínculo não feito' }])
+    expect(j.data.updated).toBe(0)
+    expect(m.arUpdate).not.toHaveBeenCalled()
+    expect(m.txUpdateMany).not.toHaveBeenCalled()
+    expect(m.txCreate).not.toHaveBeenCalled()
+  })
+
+  it('livro explícito já ligado a esta AR: idempotente (LIQUIDADO, sem erro)', async () => {
+    m.arFindMany.mockResolvedValue([AR])
+    m.txFindFirst.mockResolvedValue({ id: 't1', bank_ref: 'linha1', linked_ref: 'AR:a1' })
+    const j = await (await POST(req({ ids: ['a1'], reconciled: true, livro: { a1: 't1' } }))).json()
+    expect(j.data.erros).toEqual([])
+    expect(j.data.updated).toBe(1)
+    expect(m.arUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'LIQUIDADO' }) }))
+  })
+
+  it('corpo `livro` inválido: 422 sem processar nada', async () => {
+    for (const livroInvalido of [{ a1: 123 }, 'x', ['t1']]) {
+      m.arFindMany.mockClear()
+      const res = await POST(req({ ids: ['a1'], reconciled: true, livro: livroInvalido }))
+      expect(res.status).toBe(422)
+      expect(m.arFindMany).not.toHaveBeenCalled()
+    }
+  })
+
   it('explícito inválido: AR não é baixada e vai em erros', async () => {
     m.arFindMany.mockResolvedValue([AR])
     m.txFindMany.mockResolvedValue([livro({ categories: { name: 'Energia' } })])

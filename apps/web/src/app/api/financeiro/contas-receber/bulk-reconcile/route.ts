@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
@@ -10,6 +11,9 @@ import { CATEGORIA_RECEITA_SERVICOS } from '@/lib/financeiro/livro-categorias'
 
 // Lançamento do livro foi ligado por outra baixa concorrente → desfaz a $transaction desta AR.
 class LivroJaLigado extends Error {}
+
+// Vínculo explícito AR → lançamento do livro (rotina): { [arId]: transactionId }.
+const livroSchema = z.record(z.string()).optional()
 
 /**
  * Wave S (audit 2026-05-24): POST /api/financeiro/contas-receber/bulk-reconcile
@@ -36,7 +40,8 @@ export async function POST(req: NextRequest) {
     const user = result
 
     const body = await req.json().catch(() => ({}))
-    const { ids, reconciled, livro } = body as { ids?: string[]; reconciled?: boolean; livro?: Record<string, string> }
+    const { ids, reconciled } = body as { ids?: string[]; reconciled?: boolean }
+    const livro = livroSchema.parse((body as { livro?: unknown }).livro)
 
     if (!Array.isArray(ids) || ids.length === 0) {
       return error('ids é obrigatório (array não vazio)', 400)
@@ -93,6 +98,11 @@ export async function POST(req: NextRequest) {
         const existing = await prisma.transaction.findFirst({
           where: { company_id: user.companyId, OR: [{ bank_ref: { in: [`AR:${ar.id}`, ...refsCreditoAdquirente(pagamentos)] } }, { linked_ref: `AR:${ar.id}` }] },
         })
+        if (existing && livro?.[ar.id] && existing.id !== livro[ar.id]) {
+          // Vínculo explícito pedido, mas a AR já tem outro lançamento: não troca nem baixa em silêncio.
+          erros.push({ ar: ar.id, motivo: 'conta a receber já tem lançamento; vínculo não feito' })
+          continue
+        }
         if (existing) {
           // Provavelmente já liquidada (ex: webhook Asaas, ou backfill manual).
           await prisma.accountReceivable.update({
