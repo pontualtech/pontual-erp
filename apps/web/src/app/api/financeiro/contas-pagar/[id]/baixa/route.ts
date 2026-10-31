@@ -91,6 +91,11 @@ export async function POST(req: NextRequest, { params }: Params) {
       // F6: vínculo explícito com linha a até R$ 1 do restante quita a AP por inteiro (paid = restante);
       // a diferença bancária fica registrada nas notes da AP.
       const linhaExplicita = data.livro_transaction_id ? candidatos.find((c) => c.id === data.livro_transaction_id) : undefined
+      // Onda 3 (E8): o valor informado também tem de bater com a linha escolhida (até R$ 1) — senão a quitação
+      // pelo vínculo sobreporia em silêncio o valor que o usuário digitou.
+      if (linhaExplicita && Math.abs(data.paid_amount - linhaExplicita.amount) > TOLERANCIA_EXPLICITO) {
+        throw new LivroInvalido('valor informado difere da linha do banco')
+      }
       const quitaPeloVinculo = !!linhaExplicita && Math.abs(linhaExplicita.amount - restante) <= TOLERANCIA_EXPLICITO
       const valorBaixa = quitaPeloVinculo ? restante : data.paid_amount
       const diferencaBancaria = quitaPeloVinculo ? Math.abs(linhaExplicita!.amount - restante) : 0

@@ -223,6 +223,26 @@ describe('baixa de AP — livro-razão', () => {
       expect(m.txCreate).not.toHaveBeenCalled()
     })
 
+    it('E8: valor informado longe da linha explícita (5000 × linha 9950): 422, nada gravado', async () => {
+      m.txFindMany.mockResolvedValue([livro({ amount: 9950 })])
+      const res = await baixa(5000)
+      expect(res.status).toBe(422)
+      expect((await res.json()).error).toBe('valor informado difere da linha do banco')
+      expect(m.apUpdateMany).not.toHaveBeenCalled()
+      expect(m.txUpdateMany).not.toHaveBeenCalled()
+      expect(m.txCreate).not.toHaveBeenCalled()
+      expect(m.accUpdate).not.toHaveBeenCalled()
+    })
+
+    it('E8: diferença de R$ 1,01 entre valor informado e linha: 422; de R$ 1,00: aceita', async () => {
+      m.txFindMany.mockResolvedValue([livro({ amount: 9950 })])
+      expect((await baixa(9849)).status).toBe(422)
+      expect(m.apUpdateMany).not.toHaveBeenCalled()
+      const res = await baixa(9850)
+      expect(res.status).toBe(200)
+      expect(m.apUpdateMany.mock.calls[0][0].data).toEqual(expect.objectContaining({ paid_amount: 10000, status: 'PAGO' }))
+    })
+
     it('linha explícita de pagamento parcial (5000 de 10000): baixa parcial como hoje (PENDENTE, paid 5000, sem nota)', async () => {
       m.apFindFirstOrThrow.mockResolvedValue({ ...AP10, status: 'PENDENTE' })
       m.txFindMany.mockResolvedValue([livro({ amount: 5000 })])
