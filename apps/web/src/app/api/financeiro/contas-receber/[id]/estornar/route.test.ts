@@ -147,6 +147,20 @@ describe('estorno de AR — livro-razão', () => {
     expect(m.accUpdate).toHaveBeenCalledWith({ where: { id: 'acc1' }, data: expect.objectContaining({ current_balance: { decrement: 3000 } }) })
   })
 
+  it('E9: AR antecipada: 409 "conta antecipada — desfaça a antecipação antes", nada gravado', async () => {
+    for (const status of ['RECEBIDO', 'LIQUIDADO', 'PENDENTE']) {
+      m.arFindFirst.mockResolvedValue({ ...AR, status, anticipated_at: new Date('2026-10-20T12:00:00Z') })
+      transacoes([], [{ amount: 14000, transaction_type: 'CREDIT', bank_ref: 'AR:r1:anticipation', account_id: 'acc1', source_text: null }])
+      const res = await POST(req(), { params: { id: 'r1' } })
+      expect(res.status).toBe(409)
+      expect((await res.json()).error).toBe('conta antecipada — desfaça a antecipação antes')
+    }
+    expect(m.arUpdateMany).not.toHaveBeenCalled()
+    expect(m.txUpdate).not.toHaveBeenCalled()
+    expect(m.txCreate).not.toHaveBeenCalled()
+    expect(m.accUpdate).not.toHaveBeenCalled()
+  })
+
   describe('E4: estorno parcial (AR PENDENTE)', () => {
     const PARCIAL = { ...AR, status: 'PENDENTE', received_amount: 5000, total_amount: 15000 }
 

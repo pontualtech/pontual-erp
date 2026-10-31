@@ -30,6 +30,8 @@ export async function POST(req: NextRequest, { params }: Params) {
       where: { id: params.id, company_id: user.companyId, deleted_at: null },
     })
     if (!existing) return error('Conta a receber nao encontrada', 404)
+    // Onda 3 (E9): o crédito da antecipação (AR:id:anticipation) não é compensado aqui — desfazer a antecipação primeiro.
+    if (existing.anticipated_at) return error('conta antecipada — desfaça a antecipação antes', 409)
     // Onda 3 (E4): estorno parcial — AR PENDENTE com recebimento parcial (ou com lançamento do ERP/linha ligada)
     // desfaz tudo o que o ERP criou/ligou para a conta e zera received_amount.
     const quitada = existing.status === 'RECEBIDO' || existing.status === 'LIQUIDADO' || existing.status === 'PAGO'
