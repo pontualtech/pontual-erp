@@ -11,6 +11,8 @@ import { candidatosLivro, hojeSP, nomeCategoria } from '@/lib/financeiro/livro-b
 class LivroInvalido extends Error {}
 // Lançamento já ligado por outra baixa concorrente → 409, nada escrito.
 class LivroJaLigado extends Error {}
+// Valor acima do restante detectado dentro da tx (a pré-checagem tolera R$ 1 com vínculo explícito) → 400, nada escrito.
+class ValorExcedeRestante extends Error {}
 
 type Params = { params: { id: string } }
 
@@ -97,7 +99,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       // Bug #53 (audit 31/05): baixa com valor > total causava 500 (overflow).
       // Cap em total_amount — qualquer excedente vira erro 400 com mensagem clara.
       if (newPaidTotal > fresh.total_amount) {
-        throw new Error(`Valor da baixa (R$ ${(data.paid_amount/100).toFixed(2)}) excede o saldo restante (R$ ${((fresh.total_amount - previousPaid)/100).toFixed(2)})`)
+        throw new ValorExcedeRestante(`Valor da baixa (R$ ${(data.paid_amount/100).toFixed(2)}) excede o saldo restante (R$ ${((fresh.total_amount - previousPaid)/100).toFixed(2)})`)
       }
       const isPaidInFull = newPaidTotal >= fresh.total_amount
 
@@ -189,6 +191,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     } catch (e) {
       if (e instanceof LivroInvalido) return error(e.message, 422)
       if (e instanceof LivroJaLigado) return error('lançamento do livro já ligado por outra baixa', 409)
+      if (e instanceof ValorExcedeRestante) return error(e.message, 400)
       throw e
     }
 

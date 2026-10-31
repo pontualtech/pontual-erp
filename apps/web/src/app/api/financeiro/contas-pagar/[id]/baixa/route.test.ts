@@ -171,6 +171,16 @@ describe('baixa de AP — livro-razão', () => {
       expect(m.apUpdateMany).not.toHaveBeenCalled()
     })
 
+    it('tolerância da pré-checagem não vira 500: valor 10080 com linha 10150 (fora de R$ 1 do restante) → 400 sem escrever', async () => {
+      m.txFindMany.mockResolvedValue([livro({ amount: 10150 })])
+      const res = await baixa(10080)
+      expect(res.status).toBe(400)
+      expect((await res.json()).error).toMatch(/excede o saldo restante/)
+      expect(m.apUpdateMany).not.toHaveBeenCalled()
+      expect(m.txUpdateMany).not.toHaveBeenCalled()
+      expect(m.txCreate).not.toHaveBeenCalled()
+    })
+
     it('linha explícita de pagamento parcial (5000 de 10000): baixa parcial como hoje (PENDENTE, paid 5000, sem nota)', async () => {
       m.apFindFirstOrThrow.mockResolvedValue({ ...AP10, status: 'PENDENTE' })
       m.txFindMany.mockResolvedValue([livro({ amount: 5000 })])
