@@ -124,4 +124,25 @@ describe('estorno de AR — livro-razão', () => {
     expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ account_id: 'acc3', amount: 15000, bank_ref: 'AR:r1:estorno' }) })
     expect(m.accUpdate).toHaveBeenCalledWith({ where: { id: 'acc3' }, data: expect.objectContaining({ current_balance: { decrement: 15000 } }) })
   })
+
+  it('E2: crédito AR:id já LIGADO pelo livro (source_text LIGADA:…) é o dinheiro do banco: não é compensado', async () => {
+    transacoes([], [{ amount: 15000, transaction_type: 'CREDIT', bank_ref: 'AR:r1', account_id: 'acc1', source_text: 'LIGADA:itau:2026-10-29:15000' }])
+    const res = await POST(req(), { params: { id: 'r1' } })
+    expect(res.status).toBe(200)
+    expect(m.arUpdateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'PENDENTE', received_amount: 0 }) }))
+    expect(m.txCreate).not.toHaveBeenCalled()
+    expect(m.txDelete).not.toHaveBeenCalled()
+    expect(m.accUpdate).not.toHaveBeenCalled()
+  })
+
+  it('E2: crédito LIGADA + crédito próprio sem banco: compensa só o sem banco', async () => {
+    transacoes([], [
+      { amount: 12000, transaction_type: 'CREDIT', bank_ref: 'AR:r1', account_id: 'acc1', source_text: 'LIGADA:k1' },
+      { amount: 3000, transaction_type: 'CREDIT', bank_ref: 'AR:r1', account_id: 'acc1', source_text: null },
+    ])
+    await POST(req(), { params: { id: 'r1' } })
+    expect(m.txCreate).toHaveBeenCalledTimes(1)
+    expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ account_id: 'acc1', transaction_type: 'DEBIT', amount: 3000, bank_ref: 'AR:r1:estorno' }) })
+    expect(m.accUpdate).toHaveBeenCalledWith({ where: { id: 'acc1' }, data: expect.objectContaining({ current_balance: { decrement: 3000 } }) })
+  })
 })

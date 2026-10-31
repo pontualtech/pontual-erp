@@ -81,12 +81,15 @@ export async function POST(req: NextRequest, { params }: Params) {
       // Onda 2 (F2): o que compensar e EM QUAL conta vem SEMPRE das transações próprias da AR
       // (CREDIT AR:id − DEBIT AR:id:estorno, por conta) — nunca de received_amount/existing.account_id.
       // Sem crédito próprio (ex.: o crédito era a linha do banco, já desligada) → só volta o status.
+      // Onda 3 (E2): crédito AR:id que o livro LIGOU a uma linha do banco (source_text 'LIGADA:…') é o dinheiro
+      // que entrou de verdade — não é compensado nem apagado.
       const proprias = await tx.transaction.findMany({
         where: { company_id: user.companyId, bank_ref: { in: [`AR:${params.id}`, `AR:${params.id}:estorno`] } },
-        select: { amount: true, transaction_type: true, bank_ref: true, account_id: true },
+        select: { amount: true, transaction_type: true, bank_ref: true, account_id: true, source_text: true },
       })
       const remanescentePorConta = new Map<string, number>()
       for (const t of proprias) {
+        if (t.transaction_type === 'CREDIT' && t.source_text?.startsWith('LIGADA:')) continue
         const sinal = t.bank_ref === `AR:${params.id}` && t.transaction_type === 'CREDIT' ? 1
           : t.bank_ref === `AR:${params.id}:estorno` && t.transaction_type === 'DEBIT' ? -1 : 0
         if (sinal !== 0) remanescentePorConta.set(t.account_id, (remanescentePorConta.get(t.account_id) ?? 0) + sinal * t.amount)

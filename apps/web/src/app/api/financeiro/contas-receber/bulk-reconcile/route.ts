@@ -208,7 +208,9 @@ export async function POST(req: NextRequest) {
             })
             return {}
           }
-          if (t) {
+          // Onda 3 (E2): crédito AR:id LIGADO pelo livro a uma linha do banco (source_text 'LIGADA:…') é o dinheiro
+          // que entrou de verdade — não apaga nem mexe no saldo; só volta o status.
+          if (t && !t.source_text?.startsWith('LIGADA:')) {
             await tx.transaction.delete({ where: { id: t.id } })
             await tx.account.update({
               where: { id: t.account_id },

@@ -311,6 +311,17 @@ describe('bulk-reconcile — liga ao lançamento do livro', () => {
     expect(m.arUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'RECEBIDO' }) }))
   })
 
+  it('E2: desfazer com crédito AR:id já LIGADO pelo livro (dinheiro do banco): não apaga nem debita, só volta o status', async () => {
+    comAR({ ...AR, status: 'LIQUIDADO', reconciled: true })
+    m.txFindFirst.mockResolvedValue({ id: 'x1', bank_ref: 'AR:a1', linked_ref: null, source_text: 'LIGADA:itau:k1', account_id: 'acc1', amount: 15000 })
+    const j = await (await POST(req({ ids: ['a1'], reconciled: false }))).json()
+    expect(m.txDelete).not.toHaveBeenCalled()
+    expect(m.accUpdate).not.toHaveBeenCalled()
+    expect(m.txUpdate).not.toHaveBeenCalled()
+    expect(m.arUpdate).toHaveBeenCalledWith({ where: { id: 'a1', company_id: 'c1' }, data: expect.objectContaining({ reconciled: false, status: 'RECEBIDO' }) })
+    expect(j.data).toEqual(expect.objectContaining({ updated: 1, balance_delta: 0, erros: [] }))
+  })
+
   it('desfazer AR ligada a linha que já tinha outra categoria: mantém a categoria da linha', async () => {
     comAR(AR)
     m.txFindFirst.mockResolvedValue(livro({ linked_ref: 'AR:a1', bank_ref: 'linha1', source_text: 'REND PAGO APLIC', category_id: 'cat:Rendimentos' }))
