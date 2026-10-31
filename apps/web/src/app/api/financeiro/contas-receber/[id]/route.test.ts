@@ -110,6 +110,37 @@ describe('DELETE conta a receber — livro-razão (F9)', () => {
     expect(m.arUpdateMany.mock.invocationCallOrder[0]).toBeGreaterThan(m.txFindFirst.mock.invocationCallOrder[0])
   })
 
+  describe('G2: a guarda de recebida usa a releitura com a linha travada', () => {
+    // Antes da trava (SELECT … FOR UPDATE) a leitura devolve `antes`; depois, `depois` (outra requisição comitou).
+    const releitura = (antes: unknown, depois: unknown) =>
+      m.arFindFirst.mockImplementation(async () => (m.queryRaw.mock.calls.length > 0 ? depois : antes))
+
+    it('AR ficou recebida enquanto esperava a trava: 409 da guarda, nada apagado', async () => {
+      releitura(AR, { ...AR, status: 'RECEBIDO', received_amount: 15000 })
+      const res = await DELETE(req(), { params: { id: 'r1' } })
+      expect(res.status).toBe(409)
+      expect((await res.json()).error).toBe('Esta conta está recebida. Estorne o recebimento antes de excluir (botão Estornar) para reverter o lançamento bancário.')
+      expect(m.arUpdateMany).not.toHaveBeenCalled()
+    })
+
+    it('AR que estava recebida foi estornada antes da trava: a releitura libera a exclusão', async () => {
+      releitura({ ...AR, status: 'RECEBIDO', received_amount: 15000 }, AR)
+      const res = await DELETE(req(), { params: { id: 'r1' } })
+      expect(res.status).toBe(200)
+      expect(m.arUpdateMany).toHaveBeenCalledTimes(1)
+    })
+
+    it('relê a conta depois da trava, com deleted_at null; excluída em paralelo → 404', async () => {
+      releitura(AR, null)
+      const res = await DELETE(req(), { params: { id: 'r1' } })
+      expect(res.status).toBe(404)
+      expect((await res.json()).error).toBe('Conta a receber nao encontrada')
+      expect(m.arFindFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'r1', company_id: 'c1', deleted_at: null } }))
+      expect(m.arFindFirst.mock.invocationCallOrder.slice(-1)[0]).toBeGreaterThan(m.queryRaw.mock.invocationCallOrder[0])
+      expect(m.arUpdateMany).not.toHaveBeenCalled()
+    })
+  })
+
   it('AR recebida continua bloqueada pelo guard antigo (409)', async () => {
     m.arFindFirst.mockResolvedValue({ ...AR, status: 'RECEBIDO', received_amount: 15000 })
     const res = await DELETE(req(), { params: { id: 'r1' } })

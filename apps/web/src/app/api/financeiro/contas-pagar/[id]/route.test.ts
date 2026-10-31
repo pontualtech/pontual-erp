@@ -102,6 +102,37 @@ describe('DELETE conta a pagar — livro-razão (F9)', () => {
     expect(m.apUpdateMany.mock.invocationCallOrder[0]).toBeGreaterThan(m.txFindFirst.mock.invocationCallOrder[0])
   })
 
+  describe('G2: a guarda de paga usa a releitura com a linha travada', () => {
+    // Antes da trava (SELECT … FOR UPDATE) a leitura devolve `antes`; depois, `depois` (outra requisição comitou).
+    const releitura = (antes: unknown, depois: unknown) =>
+      m.apFindFirst.mockImplementation(async () => (m.queryRaw.mock.calls.length > 0 ? depois : antes))
+
+    it('AP ficou paga enquanto esperava a trava: 409 da guarda, nada apagado', async () => {
+      releitura(AP, { ...AP, status: 'PAGO', paid_amount: 5000 })
+      const res = await DELETE(req(), { params: { id: 'p1' } })
+      expect(res.status).toBe(409)
+      expect((await res.json()).error).toBe('Esta conta está paga. Estorne o pagamento antes de excluir (botão Estornar) para reverter o lançamento bancário.')
+      expect(m.apUpdateMany).not.toHaveBeenCalled()
+    })
+
+    it('AP que estava paga foi estornada antes da trava: a releitura libera a exclusão', async () => {
+      releitura({ ...AP, status: 'PAGO', paid_amount: 5000 }, AP)
+      const res = await DELETE(req(), { params: { id: 'p1' } })
+      expect(res.status).toBe(200)
+      expect(m.apUpdateMany).toHaveBeenCalledTimes(1)
+    })
+
+    it('relê a conta depois da trava, com deleted_at null; excluída em paralelo → 404', async () => {
+      releitura(AP, null)
+      const res = await DELETE(req(), { params: { id: 'p1' } })
+      expect(res.status).toBe(404)
+      expect((await res.json()).error).toBe('Conta a pagar nao encontrada')
+      expect(m.apFindFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'p1', company_id: 'c1', deleted_at: null } }))
+      expect(m.apFindFirst.mock.invocationCallOrder.slice(-1)[0]).toBeGreaterThan(m.queryRaw.mock.invocationCallOrder[0])
+      expect(m.apUpdateMany).not.toHaveBeenCalled()
+    })
+  })
+
   it('AP paga continua bloqueada pelo guard antigo (409)', async () => {
     m.apFindFirst.mockResolvedValue({ ...AP, status: 'PAGO', paid_amount: 5000 })
     const res = await DELETE(req(), { params: { id: 'p1' } })

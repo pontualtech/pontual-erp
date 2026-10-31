@@ -151,26 +151,24 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     if (result instanceof NextResponse) return result
     const user = result
 
-    const existing = await prisma.accountPayable.findFirst({
-      where: { id: params.id, company_id: user.companyId, deleted_at: null },
-    })
-    if (!existing) return error('Conta a pagar nao encontrada', 404)
-
-    // Bug #8 (audit 31/05 Karlão): bloquear delete de AP pago pra evitar
-    // saldo bancário órfão. Pagamento criou lançamento bancário que NÃO é
-    // revertido pelo soft-delete do AP → diff silencioso no saldo.
-    if (existing.status === 'PAGO' && (existing.paid_amount ?? 0) > 0) {
-      return error(
-        'Esta conta está paga. Estorne o pagamento antes de excluir (botão Estornar) para reverter o lançamento bancário.',
-        409,
-      )
-    }
-
     // Onda 3 (E4 + round 1): com a linha travada (fecha a corrida com a baixa), recusa se os lançamentos próprios
     // (AP:id, :estorno) não se anulam (DEBIT AP:id − CREDIT :estorno ≠ 0) ou se há linha do banco ligada — ficariam órfãos.
     // Conta já estornada (líquido 0, sem linha ligada) pode ser excluída. O soft delete roda na mesma tx.
-    const bloqueio = await prisma.$transaction(async (tx): Promise<string | null> => {
+    const bloqueio = await prisma.$transaction(async (tx): Promise<{ status: 404 | 409; erro: string } | null> => {
       await tx.$queryRaw`SELECT id FROM accounts_payable WHERE id = ${params.id} AND company_id = ${user.companyId} FOR UPDATE`
+      // Onda 3 (G2): relida com a linha travada — é esta leitura que decide (não a de antes da trava).
+      const existing = await tx.accountPayable.findFirst({
+        where: { id: params.id, company_id: user.companyId, deleted_at: null },
+      })
+      if (!existing) return { status: 404, erro: 'Conta a pagar nao encontrada' }
+
+      // Bug #8 (audit 31/05 Karlão): bloquear delete de AP pago pra evitar
+      // saldo bancário órfão. Pagamento criou lançamento bancário que NÃO é
+      // revertido pelo soft-delete do AP → diff silencioso no saldo.
+      if (existing.status === 'PAGO' && (existing.paid_amount ?? 0) > 0) {
+        return { status: 409, erro: 'Esta conta está paga. Estorne o pagamento antes de excluir (botão Estornar) para reverter o lançamento bancário.' }
+      }
+
       const proprias = await tx.transaction.findMany({
         where: { company_id: user.companyId, bank_ref: { in: [`AP:${params.id}`, `AP:${params.id}:estorno`] } },
         select: { amount: true, transaction_type: true, bank_ref: true },
@@ -180,19 +178,19 @@ export async function DELETE(req: NextRequest, { params }: Params) {
         t.transaction_type === 'DEBIT' && t.bank_ref === `AP:${params.id}` ? 1
           : t.transaction_type === 'CREDIT' && t.bank_ref === `AP:${params.id}:estorno` ? -1 : 0
       const liquido = proprias.reduce((soma, t) => soma + sinal(t) * t.amount, 0)
-      if (proprias.some((t) => sinal(t) === 0) || liquido !== 0) return 'há lançamentos financeiros desta conta; estorne antes de excluir'
+      if (proprias.some((t) => sinal(t) === 0) || liquido !== 0) return { status: 409, erro: 'há lançamentos financeiros desta conta; estorne antes de excluir' }
       const ligada = await tx.transaction.findFirst({
         where: { company_id: user.companyId, linked_ref: `AP:${params.id}` },
         select: { id: true },
       })
-      if (ligada) return 'Há lançamento do banco ligado; estorne antes de excluir.'
+      if (ligada) return { status: 409, erro: 'Há lançamento do banco ligado; estorne antes de excluir.' }
       await tx.accountPayable.updateMany({
         where: { id: params.id, company_id: user.companyId },
         data: { deleted_at: new Date() },
       })
       return null
     })
-    if (bloqueio) return error(bloqueio, 409)
+    if (bloqueio) return error(bloqueio.erro, bloqueio.status)
 
     logAudit({
       companyId: user.companyId,
