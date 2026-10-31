@@ -6,6 +6,7 @@ import { resolveDefaultProviderAccount } from '@/lib/payments/resolve-account'
 import { canCustomerPayOS, PAYMENT_BLOCKED_MESSAGE } from '@/lib/os-payment-rules'
 import { findActivePendingPaymentForOs, isOsAlreadyPaid } from '@/lib/payments/find-active-charge'
 import { isImprimitechHandoffStatus } from '@/lib/imprimitech-handoff'
+import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
 
 /**
  * POST /api/portal/payments/boleto
@@ -119,14 +120,7 @@ export async function POST(req: NextRequest) {
     dueDate.setDate(dueDate.getDate() + dueDays)
 
     if (!receivable) {
-      const cat = await prisma.category.findFirst({
-        where: {
-          company_id: portalUser.company_id,
-          module: 'financeiro_receita',
-          name: { mode: 'insensitive', contains: 'Venda de Servi' },
-        },
-        select: { id: true },
-      }).catch(() => null)
+      const cat = await categoriaReceitaPadraoId(prisma, portalUser.company_id).then((id) => ({ id })).catch(() => null)
 
       receivable = await prisma.accountReceivable.create({
         data: {

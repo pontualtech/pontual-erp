@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
+import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
 
 type Params = { params: { id: string } }
 
@@ -134,10 +135,7 @@ export async function POST(req: NextRequest, { params }: Params) {
                 })
 
                 if (!existingAR) {
-                  const category = await tx.category.findFirst({
-                    where: { company_id: user.companyId, module: 'financeiro_receita' },
-                    orderBy: { name: 'asc' },
-                  })
+                  const category = { id: await categoriaReceitaPadraoId(tx, user.companyId) }
 
                   await tx.accountReceivable.create({
                     data: {

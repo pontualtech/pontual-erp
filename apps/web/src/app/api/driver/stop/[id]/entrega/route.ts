@@ -6,6 +6,7 @@ import { sendCompanyEmail } from '@/lib/send-email'
 import { getReciboEmail } from '@/lib/email-templates/recibo'
 import { buildMagicLink } from '@/lib/portal-magic-url'
 import { createReceivableOrSplit } from '@/lib/financeiro/receivables'
+import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
 
 function fmtBRL(cents: number): string {
   return (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -470,15 +471,7 @@ export async function POST(
               // como "Venda de Serviços" vs "Venda de Servicos".
               let serviceRevenueCategoryId: string | null = null
               try {
-                const cat = await prisma.category.findFirst({
-                  where: {
-                    company_id: auth.companyId,
-                    module: 'financeiro_receita',
-                    name: { mode: 'insensitive', contains: 'Venda de Servi' },
-                  },
-                  select: { id: true },
-                })
-                serviceRevenueCategoryId = cat?.id || null
+                serviceRevenueCategoryId = (await categoriaReceitaPadraoId(prisma, auth.companyId)) || null
               } catch { /* silent — AR fica sem categoria */ }
 
               // Comprovante capturado pelo motorista (PIX screenshot, foto maquininha)

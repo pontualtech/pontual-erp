@@ -23,6 +23,7 @@ import { isOsAlreadyPaid, findActivePendingPaymentForOs } from '@/lib/payments/f
 import { createReceivableOrSplit } from '@/lib/financeiro/receivables'
 import { logAudit } from '@/lib/audit'
 import { isImprimitechHandoffStatus } from '@/lib/imprimitech-handoff'
+import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
 
 type BillingMethod = 'PIX' | 'BOLETO' | 'CREDIT_CARD'
 
@@ -131,10 +132,7 @@ export async function POST(req: NextRequest) {
     if (!provider) return NextResponse.json({ error: 'Provider indisponivel' }, { status: 503 })
 
     // 6. Categoria padrao de receita
-    const cat = await prisma.category.findFirst({
-      where: { company_id: portalUser.company_id, module: 'financeiro_receita', name: { mode: 'insensitive', contains: 'Venda de Servi' } },
-      select: { id: true },
-    }).catch(() => null)
+    const cat = await categoriaReceitaPadraoId(prisma, portalUser.company_id).then((id) => ({ id })).catch(() => null)
 
     // 7. Cria N ARs via lib compartilhada (com group_id UUID gerado automaticamente)
     const { receivables, groupId } = await createReceivableOrSplit({

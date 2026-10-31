@@ -10,6 +10,7 @@ import { deliveredCouponPercent } from '@/lib/loyalty/delivery-coupon'
 import { loyaltyCouponBoxHtml } from '@/lib/email-templates/loyalty-coupon-box'
 import { createAccessToken } from '@/lib/portal-auth'
 import { buildMagicLink } from '@/lib/portal-magic-url'
+import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
 import { createReceivableOrSplit } from '@/lib/financeiro/receivables'
 
 type Params = { params: { id: string } }
@@ -275,10 +276,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         // 2026-05-20 Fase D split balcao: usa lib compartilhada quando body trouxe splits[].
         // Lib cuida de N receivables com group_id, parcelas, card fee, etc.
         // received_now: true (default no balcao) => status=PAGO + reconciled=false.
-        const category = await tx.category.findFirst({
-          where: { company_id: user.companyId, module: 'financeiro_receita' },
-          orderBy: { name: 'asc' },
-        })
+        const category = { id: await categoriaReceitaPadraoId(tx, user.companyId) }
         const totalAmount = os.total_cost ?? 0
         // Fix 2026-05-26: 'RECEBIDO' canônico em AR (ver dre/route.ts pra justificativa)
         const splitStatus = receivedNow ? 'RECEBIDO' : 'PENDENTE'
@@ -317,10 +315,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           },
         })
       } else if (needsNewReceivable) {
-        const category = await tx.category.findFirst({
-          where: { company_id: user.companyId, module: 'financeiro_receita' },
-          orderBy: { name: 'asc' },
-        })
+        const category = { id: await categoriaReceitaPadraoId(tx, user.companyId) }
 
         // Buscar conta bancária padrão para esta forma de pagamento
         const defaultAccountSetting = await tx.setting.findFirst({

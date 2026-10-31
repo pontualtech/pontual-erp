@@ -155,10 +155,11 @@ export async function POST(req: NextRequest) {
     }
 
     // Marca as transações ligadas por esta linha (sem sobrescrever quem já foi ligada por outra).
-    const marcarLigadas = (tx: Pick<typeof prisma, 'transaction'>, refs: string[], chave: string) =>
+    const marcarLigadas = (tx: Pick<typeof prisma, 'transaction'>, refs: string[], chave: string, data: string) =>
       tx.transaction.updateMany({
         where: { company_id: user.companyId, account_id: body.account_id, bank_ref: { in: refs }, source_text: null },
-        data: { source_text: `LIGADA:${chave}` },
+        // A data do banco é a data real do caixa (a baixa da AR gera o crédito no dia da baixa).
+        data: { source_text: `LIGADA:${chave}`, transaction_date: new Date(data + 'T00:00:00.000Z') },
       })
 
     const categoriaDe = (linha: Linha, valor: number, identificar: boolean) => {
@@ -225,7 +226,7 @@ export async function POST(req: NextRequest) {
             where: { company_id: user.companyId, account_id: body.account_id, bank_ref: { in: plano.refs } },
             data: { reconciled: true },
           })
-          await marcarLigadas(tx, plano.refs, linha.chave)
+          await marcarLigadas(tx, plano.refs, linha.chave, linha.data)
           return { chave: linha.chave, acao: 'LIGAR', refs: plano.refs }
         }
 
@@ -236,7 +237,7 @@ export async function POST(req: NextRequest) {
             orfaosUsados.add(orfaoId)
             const r = await tx.transaction.updateMany({
               where: { id: orfaoId, company_id: user.companyId, account_id: body.account_id, source_text: null },
-              data: { source_text: `LIGADA:${linha.chave}`, reconciled: true },
+              data: { source_text: `LIGADA:${linha.chave}`, reconciled: true, transaction_date: new Date(linha.data + 'T00:00:00.000Z') },
             })
             if (r.count === 1) return { chave: linha.chave, acao: 'LIGAR', refs: [orfaoId], origem: 'orfao' }
             // Alguém levou o órfão antes: segue para CRIAR.
@@ -270,7 +271,7 @@ export async function POST(req: NextRequest) {
             where: { company_id: user.companyId, account_id: body.account_id, bank_ref: { in: plano.refs_ligadas } },
             data: { reconciled: true },
           })
-          await marcarLigadas(tx, plano.refs_ligadas, linha.chave)
+          await marcarLigadas(tx, plano.refs_ligadas, linha.chave, linha.data)
         }
         return { chave: linha.chave, acao: 'CRIAR', valor_centavos: valor, categoria: cat.nome, transaction_id: t.id }
       })
