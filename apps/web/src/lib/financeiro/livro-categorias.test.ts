@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { CATEGORIAS_LIVRO, REGRAS_INICIAIS, garantirCategoriasERegras, opcoesCategoriaLinha } from './livro-categorias'
+import { CATEGORIAS_FORA_DO_TOTAL } from './livro-resumo'
 
 const EXISTENTES = ['Impostos', 'Salarios', 'Retirada Socios', 'Combustiveis', 'Taxas de Cartao (Operadora)']
 
@@ -74,6 +75,12 @@ describe('opcoesCategoriaLinha (F13)', () => {
     expect(nomes(opcoesCategoriaLinha(cats, true))).toEqual([
       'Venda de Servicos', 'Receita a identificar', 'Transferência entre contas', 'Transferência entre empresas', 'Ajuste de caixa',
     ])
+  })
+  it('E11: entrada aceita toda categoria fora do total (lista derivada de CATEGORIAS_FORA_DO_TOTAL, inclusive Estornos)', () => {
+    const neutras = CATEGORIAS_FORA_DO_TOTAL.map((name, i) => ({ id: `n${i}`, name, module: 'financeiro_despesa' }))
+    expect(nomes(opcoesCategoriaLinha([...neutras, { id: 'e', name: 'Energia', module: 'financeiro_despesa' }], true)))
+      .toEqual([...CATEGORIAS_FORA_DO_TOTAL])
+    expect(CATEGORIAS_FORA_DO_TOTAL).toContain('Estornos')
   })
   it('saída: tudo que não é receita (como antes)', () => {
     expect(nomes(opcoesCategoriaLinha(cats, false))).toEqual([

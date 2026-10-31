@@ -25,7 +25,9 @@ beforeEach(() => {
 })
 afterEach(() => {
   vi.useRealTimers()
-  process.env.TZ = TZ_ORIGINAL
+  // Atribuir undefined grava a string "undefined"; sem TZ original, remove a variável.
+  if (TZ_ORIGINAL === undefined) delete process.env.TZ
+  else process.env.TZ = TZ_ORIGINAL
 })
 
 describe('GET livro/resumo (F15)', () => {
@@ -61,6 +63,11 @@ describe('GET livro/resumo (F15)', () => {
     expect(m.txFindMany.mock.calls[0][0].where.transaction_date).toEqual({
       gte: new Date('2026-10-01T00:00:00.000Z'), lte: new Date('2026-10-31T00:00:00.000Z'),
     })
+  })
+
+  it('E11: process.env.TZ volta ao original depois do teste com TZ=UTC (sem virar a string "undefined")', () => {
+    expect(process.env.TZ).toBe(TZ_ORIGINAL)
+    expect('TZ' in process.env).toBe(TZ_ORIGINAL !== undefined)
   })
 
   it('mês padrão de fevereiro em ano não bissexto termina no dia 28', async () => {

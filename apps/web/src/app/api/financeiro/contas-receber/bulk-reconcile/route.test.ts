@@ -20,8 +20,13 @@ return { m, db } })
 vi.mock('@pontual/db', () => ({ prisma: db }))
 vi.mock('@/lib/auth', () => ({ requirePermission: async () => ({ id: 'u1', companyId: 'c1' }) }))
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }))
+vi.mock('@/lib/financeiro/livro-baixa-db', async (importOriginal) => {
+  const o = await importOriginal<typeof import('@/lib/financeiro/livro-baixa-db')>()
+  return { ...o, hojeSP: vi.fn(o.hojeSP) }
+})
 
 import { POST } from './route'
+import { hojeSP } from '@/lib/financeiro/livro-baixa-db'
 
 const req = (body: unknown) => new NextRequest('http://x/api/financeiro/contas-receber/bulk-reconcile', {
   method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
@@ -42,6 +47,7 @@ const comAR = (...lista: Record<string, unknown>[]) => {
 beforeEach(() => {
   Object.values(m).forEach((f) => f.mockReset())
   m.queryRaw.mockImplementation(async (_sql: unknown, id: string) => [{ id }])
+  vi.mocked(hojeSP).mockReset() // volta à implementação real (descarta mockReturnValueOnce pendente)
   m.payFindMany.mockResolvedValue([])
   m.txFindFirst.mockResolvedValue(null)
   m.txUpdateMany.mockResolvedValue({ count: 1 })
@@ -225,6 +231,17 @@ describe('bulk-reconcile — liga ao lançamento do livro', () => {
       { id: 't1' },
     ])
     expect(j.data.ligadas).toBe(1)
+  })
+
+  it('E11: hojeSP uma vez por AR — virada da meia-noite entre a busca e a decisão não muda a janela', async () => {
+    vi.mocked(hojeSP).mockReturnValueOnce('2026-10-30').mockReturnValueOnce('2026-10-31')
+    comAR(AR)
+    // 30 dias antes de 30/10 (dentro); seria 31 antes de 31/10 (fora) se a decisão relesse a data.
+    m.txFindMany.mockResolvedValue([livro({ transaction_date: new Date('2026-09-30T00:00:00Z') })])
+    const j = await (await POST(req({ ids: ['a1'], reconciled: true }))).json()
+    expect(m.txFindMany.mock.calls[0][0].where.OR[0].transaction_date.gte).toEqual(new Date('2026-09-30T00:00:00Z'))
+    expect(j.data.ligadas).toBe(1)
+    expect(m.txCreate).not.toHaveBeenCalled()
   })
 
   it('(b) sem candidato: cria como hoje, com a categoria Receita de serviços', async () => {

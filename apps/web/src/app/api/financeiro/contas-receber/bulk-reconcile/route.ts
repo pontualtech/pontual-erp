@@ -143,8 +143,10 @@ export async function POST(req: NextRequest) {
             // Decide ANTES de escrever: explícito inválido não baixa nada.
             // Sem vínculo explícito, Conferir (ancorado em hoje) olha 30 dias para trás (E3); a linha pedida entra por id.
             const janela = pedido ? JANELA_BAIXA : JANELA_CONFERIR
-            const candidatos = await candidatosLivro(tx, user.companyId, ar.account_id, 'CREDIT', hojeSP(), pedido, janela)
-            const decisao = decidirBaixa({ tipo: 'CREDIT', amount, data: hojeSP(), categoria: nomeAlvo }, pedido, candidatos, janela)
+            // Uma data só por AR: busca e decisão no mesmo dia mesmo se a meia-noite virar no meio.
+            const hoje = hojeSP()
+            const candidatos = await candidatosLivro(tx, user.companyId, ar.account_id, 'CREDIT', hoje, pedido, janela)
+            const decisao = decidirBaixa({ tipo: 'CREDIT', amount, data: hoje, categoria: nomeAlvo }, pedido, candidatos, janela)
             if ('erro' in decisao) return { erro: decisao.erro }
 
             await tx.accountReceivable.update({

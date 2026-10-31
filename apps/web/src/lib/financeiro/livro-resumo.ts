@@ -1,7 +1,7 @@
 // Resumo do realizado no banco por categoria (livro-razão). Lógica pura, em centavos.
-import { CATEGORIA_RECEITA_SERVICOS } from './livro-categorias'
+import { CATEGORIA_RECEITA_SERVICOS, CATEGORIAS_FORA_DO_TOTAL } from './livro-categorias'
 
-export const CATEGORIAS_FORA_DO_TOTAL = ['Ajuste de caixa', 'Transferência entre contas', 'Transferência entre empresas', 'Estornos']
+export { CATEGORIAS_FORA_DO_TOTAL }
 
 type LinhaResumo = { transaction_type: string; amount: number; bank_ref: string | null; categoria: string | null }
 type TotalCategoria = { categoria: string; total: number }
