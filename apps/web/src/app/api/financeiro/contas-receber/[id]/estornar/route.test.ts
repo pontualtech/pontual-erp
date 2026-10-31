@@ -4,12 +4,12 @@ import { NextRequest } from 'next/server'
 const { m, db } = vi.hoisted(() => {
   const m = {
     arFindFirst: vi.fn(), arUpdateMany: vi.fn(),
-    txFindMany: vi.fn(), txCreate: vi.fn(), txUpdate: vi.fn(), txDelete: vi.fn(),
+    txFindFirst: vi.fn(), txFindMany: vi.fn(), txCreate: vi.fn(), txUpdate: vi.fn(), txDelete: vi.fn(),
     accUpdate: vi.fn(), catFindFirst: vi.fn(),
   }
   const db = {
     accountReceivable: { findFirst: m.arFindFirst, updateMany: m.arUpdateMany },
-    transaction: { findMany: m.txFindMany, create: m.txCreate, update: m.txUpdate, delete: m.txDelete },
+    transaction: { findFirst: m.txFindFirst, findMany: m.txFindMany, create: m.txCreate, update: m.txUpdate, delete: m.txDelete },
     account: { update: m.accUpdate },
     category: { findFirst: m.catFindFirst, findMany: async () => [{ id: 'cat:Venda de Servicos', name: 'Venda de Servicos' }] },
     $transaction: async (cb: (tx: unknown) => unknown) => cb(db),
@@ -34,6 +34,7 @@ beforeEach(() => {
   m.arFindFirst.mockResolvedValue(AR)
   m.arUpdateMany.mockResolvedValue({ count: 1 })
   m.catFindFirst.mockImplementation(async ({ where }: any) => ({ id: `cat:${where.name}` }))
+  m.txFindFirst.mockResolvedValue(null)
 })
 
 describe('estorno de AR — livro-razão', () => {
@@ -144,5 +145,59 @@ describe('estorno de AR — livro-razão', () => {
     expect(m.txCreate).toHaveBeenCalledTimes(1)
     expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ account_id: 'acc1', transaction_type: 'DEBIT', amount: 3000, bank_ref: 'AR:r1:estorno' }) })
     expect(m.accUpdate).toHaveBeenCalledWith({ where: { id: 'acc1' }, data: expect.objectContaining({ current_balance: { decrement: 3000 } }) })
+  })
+
+  describe('E4: estorno parcial (AR PENDENTE)', () => {
+    const PARCIAL = { ...AR, status: 'PENDENTE', received_amount: 5000, total_amount: 15000 }
+
+    it('PENDENTE com recebimento parcial ligado: desliga a linha e zera received_amount', async () => {
+      m.arFindFirst.mockResolvedValue(PARCIAL)
+      transacoes([{ id: 't1', amount: 5000, source_text: 'PIX PARCIAL', description: 'Recebimento: OS 1 · banco: PIX PARCIAL', category_id: 'cat:Venda de Servicos' }])
+      const res = await POST(req(), { params: { id: 'r1' } })
+      expect(res.status).toBe(200)
+      expect(m.arUpdateMany).toHaveBeenCalledWith({
+        where: { id: 'r1', company_id: 'c1', status: { in: ['RECEBIDO', 'LIQUIDADO', 'PAGO', 'PENDENTE'] }, deleted_at: null },
+        data: expect.objectContaining({ status: 'PENDENTE', received_amount: 0, reconciled: false }),
+      })
+      expect(m.txUpdate).toHaveBeenCalledWith({ where: { id: 't1' }, data: { linked_ref: null, category_id: 'cat:Receita a identificar', description: 'PIX PARCIAL' } })
+      expect(m.txCreate).not.toHaveBeenCalled()
+      expect(m.accUpdate).not.toHaveBeenCalled()
+    })
+
+    it('PENDENTE com crédito próprio parcial (AR:id): compensa o crédito próprio', async () => {
+      m.arFindFirst.mockResolvedValue(PARCIAL)
+      transacoes([], [{ amount: 5000, transaction_type: 'CREDIT', bank_ref: 'AR:r1', account_id: 'acc1', source_text: null }])
+      const res = await POST(req(), { params: { id: 'r1' } })
+      expect(res.status).toBe(200)
+      expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ account_id: 'acc1', transaction_type: 'DEBIT', amount: 5000, bank_ref: 'AR:r1:estorno' }) })
+      expect(m.accUpdate).toHaveBeenCalledWith({ where: { id: 'acc1' }, data: expect.objectContaining({ current_balance: { decrement: 5000 } }) })
+    })
+
+    it('PENDENTE sem valor recebido mas com lançamento próprio/linha ligada: aceita (o que o ERP criou é desfeito)', async () => {
+      m.arFindFirst.mockResolvedValue({ ...PARCIAL, received_amount: 0 })
+      m.txFindFirst.mockResolvedValue({ id: 't1' })
+      transacoes([{ id: 't1', amount: 5000, source_text: 'PIX', description: 'x', category_id: 'cat:Venda de Servicos' }])
+      const res = await POST(req(), { params: { id: 'r1' } })
+      expect(res.status).toBe(200)
+      expect(m.txFindFirst).toHaveBeenCalledWith(expect.objectContaining({
+        where: { company_id: 'c1', OR: [{ bank_ref: { in: ['AR:r1', 'AR:r1:anticipation', 'AR:r1:estorno'] } }, { linked_ref: 'AR:r1' }] },
+      }))
+      expect(m.txUpdate).toHaveBeenCalledTimes(1)
+    })
+
+    it('PENDENTE sem valor recebido e sem lançamento: 400, nada gravado', async () => {
+      m.arFindFirst.mockResolvedValue({ ...PARCIAL, received_amount: 0 })
+      const res = await POST(req(), { params: { id: 'r1' } })
+      expect(res.status).toBe(400)
+      expect(m.arUpdateMany).not.toHaveBeenCalled()
+      expect(m.txCreate).not.toHaveBeenCalled()
+    })
+
+    it('CANCELADO continua recusado (400)', async () => {
+      m.arFindFirst.mockResolvedValue({ ...PARCIAL, status: 'CANCELADO' })
+      const res = await POST(req(), { params: { id: 'r1' } })
+      expect(res.status).toBe(400)
+      expect(m.arUpdateMany).not.toHaveBeenCalled()
+    })
   })
 })

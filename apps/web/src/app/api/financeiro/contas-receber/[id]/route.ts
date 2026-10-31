@@ -208,17 +208,26 @@ export async function DELETE(req: NextRequest, { params }: Params) {
       )
     }
 
-    // Onda 2 (F9): linha do banco ligada a esta conta (ex.: baixa parcial) ficaria com linked_ref órfão.
-    const ligada = await prisma.transaction.findFirst({
-      where: { company_id: user.companyId, linked_ref: `AR:${params.id}` },
-      select: { id: true },
+    // Onda 3 (E4): com a linha travada (fecha a corrida com a baixa), recusa se houver QUALQUER lançamento
+    // financeiro desta conta — transação própria (AR:id, :anticipation, :estorno) ou linha do banco ligada —,
+    // que ficaria órfão; o soft delete roda na mesma tx.
+    const temLancamento = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM accounts_receivable WHERE id = ${params.id} AND company_id = ${user.companyId} FOR UPDATE`
+      const lancamento = await tx.transaction.findFirst({
+        where: {
+          company_id: user.companyId,
+          OR: [{ bank_ref: { in: [`AR:${params.id}`, `AR:${params.id}:anticipation`, `AR:${params.id}:estorno`] } }, { linked_ref: `AR:${params.id}` }],
+        },
+        select: { id: true },
+      })
+      if (lancamento) return true
+      await tx.accountReceivable.updateMany({
+        where: { id: params.id, company_id: user.companyId },
+        data: { deleted_at: new Date() },
+      })
+      return false
     })
-    if (ligada) return error('Há lançamento do banco ligado; estorne antes de excluir.', 409)
-
-    await prisma.accountReceivable.updateMany({
-      where: { id: params.id, company_id: user.companyId },
-      data: { deleted_at: new Date() },
-    })
+    if (temLancamento) return error('Há lançamentos financeiros desta conta; estorne antes de excluir.', 409)
 
     logAudit({
       companyId: user.companyId,

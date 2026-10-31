@@ -32,9 +32,22 @@ export async function POST(req: NextRequest, { params }: Params) {
       where: { id: params.id, company_id: user.companyId, deleted_at: null },
     })
     if (!existing) return error('Conta a pagar nao encontrada', 404)
-    if (existing.status !== 'PAGO') return error('Apenas APs com status PAGO podem ser estornadas', 400)
+    // Onda 3 (E4): estorno parcial — AP PENDENTE com pagamento parcial (ou com lançamento do ERP/linha ligada)
+    // desfaz tudo o que o ERP criou/ligou para a conta e zera paid_amount.
+    const paga = existing.status === 'PAGO'
+    if (!paga && existing.status !== 'PENDENTE') return error('Apenas APs com status PAGO (ou PENDENTE com pagamento parcial) podem ser estornadas', 400)
     if (!existing.account_id) return error('AP sem conta bancaria vinculada — nao da pra estornar saldo', 400)
-    if (!existing.paid_amount || existing.paid_amount <= 0) return error('AP sem paid_amount valido', 400)
+    if (!existing.paid_amount || existing.paid_amount <= 0) {
+      if (paga) return error('AP sem paid_amount valido', 400)
+      const lancamento = await prisma.transaction.findFirst({
+        where: {
+          company_id: user.companyId,
+          OR: [{ bank_ref: { in: [`AP:${params.id}`, `AP:${params.id}:estorno`] } }, { linked_ref: `AP:${params.id}` }],
+        },
+        select: { id: true },
+      })
+      if (!lancamento) return error('AP pendente sem pagamento nem lançamento — nada a estornar', 400)
+    }
 
     await prisma.$transaction(async (tx: any) => {
       // Bug #67 (audit 31/05 LOOP r7): MESMA classe de #41 mas em /estornar!
@@ -46,7 +59,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         where: {
           id: params.id,
           company_id: user.companyId,
-          status: 'PAGO',
+          status: { in: ['PAGO', 'PENDENTE'] },
           deleted_at: null,
         },
         data: {
@@ -124,7 +137,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       module: 'financeiro',
       action: 'payable.estorno',
       entityId: params.id,
-      oldValue: { status: 'PAGO', paid_amount: existing.paid_amount },
+      oldValue: { status: existing.status, paid_amount: existing.paid_amount },
       newValue: { status: 'PENDENTE', paid_amount: 0, motivo },
     })
 

@@ -4,12 +4,12 @@ import { NextRequest } from 'next/server'
 const { m, db } = vi.hoisted(() => {
   const m = {
     apFindFirst: vi.fn(), apUpdateMany: vi.fn(),
-    txFindMany: vi.fn(), txCreate: vi.fn(), txUpdate: vi.fn(), txDelete: vi.fn(),
+    txFindFirst: vi.fn(), txFindMany: vi.fn(), txCreate: vi.fn(), txUpdate: vi.fn(), txDelete: vi.fn(),
     accUpdate: vi.fn(), catFindFirst: vi.fn(),
   }
   const db = {
     accountPayable: { findFirst: m.apFindFirst, updateMany: m.apUpdateMany },
-    transaction: { findMany: m.txFindMany, create: m.txCreate, update: m.txUpdate, delete: m.txDelete },
+    transaction: { findFirst: m.txFindFirst, findMany: m.txFindMany, create: m.txCreate, update: m.txUpdate, delete: m.txDelete },
     account: { update: m.accUpdate },
     category: { findFirst: m.catFindFirst },
     $transaction: async (cb: (tx: unknown) => unknown) => cb(db),
@@ -33,6 +33,7 @@ beforeEach(() => {
   m.apFindFirst.mockResolvedValue({ id: 'p1', status: 'PAGO', account_id: 'acc1', paid_amount: 5000, description: 'Luz', category_id: 'catEnergia' })
   m.apUpdateMany.mockResolvedValue({ count: 1 })
   m.catFindFirst.mockResolvedValue({ id: 'catAClassificar' })
+  m.txFindFirst.mockResolvedValue(null)
 })
 
 describe('estorno de AP — livro-razão', () => {
@@ -98,5 +99,59 @@ describe('estorno de AP — livro-razão', () => {
     await POST(req(), { params: { id: 'p1' } })
     expect(m.txCreate).toHaveBeenCalledTimes(1)
     expect(m.accUpdate).toHaveBeenCalledTimes(1)
+  })
+
+  describe('E4: estorno parcial (AP PENDENTE)', () => {
+    const PARCIAL = { id: 'p1', status: 'PENDENTE', account_id: 'acc1', paid_amount: 2000, total_amount: 5000, description: 'Luz', category_id: 'catEnergia' }
+
+    it('PENDENTE com pagamento parcial ligado: desliga a linha e zera paid_amount, sem CREDIT', async () => {
+      m.apFindFirst.mockResolvedValue(PARCIAL)
+      transacoes([{ id: 't1', amount: 2000, source_text: 'PGTO ENEL', description: 'Pgto: Luz · banco: PGTO ENEL', category_id: 'catEnergia' }])
+      const res = await POST(req(), { params: { id: 'p1' } })
+      expect(res.status).toBe(200)
+      expect(m.apUpdateMany).toHaveBeenCalledWith({
+        where: { id: 'p1', company_id: 'c1', status: { in: ['PAGO', 'PENDENTE'] }, deleted_at: null },
+        data: expect.objectContaining({ status: 'PENDENTE', paid_amount: 0, reconciled: false }),
+      })
+      expect(m.txUpdate).toHaveBeenCalledWith({ where: { id: 't1' }, data: { linked_ref: null, category_id: 'catAClassificar', description: 'PGTO ENEL' } })
+      expect(m.txCreate).not.toHaveBeenCalled()
+      expect(m.accUpdate).not.toHaveBeenCalled()
+    })
+
+    it('PENDENTE com débito próprio parcial (AP:id): compensa o débito próprio', async () => {
+      m.apFindFirst.mockResolvedValue(PARCIAL)
+      transacoes([], [{ amount: 2000, transaction_type: 'DEBIT', bank_ref: 'AP:p1', account_id: 'acc1', source_text: null }])
+      const res = await POST(req(), { params: { id: 'p1' } })
+      expect(res.status).toBe(200)
+      expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ account_id: 'acc1', transaction_type: 'CREDIT', amount: 2000, bank_ref: 'AP:p1:estorno' }) })
+      expect(m.accUpdate).toHaveBeenCalledWith({ where: { id: 'acc1' }, data: expect.objectContaining({ current_balance: { increment: 2000 } }) })
+    })
+
+    it('PENDENTE sem valor pago mas com lançamento próprio/linha ligada: aceita', async () => {
+      m.apFindFirst.mockResolvedValue({ ...PARCIAL, paid_amount: 0 })
+      m.txFindFirst.mockResolvedValue({ id: 't1' })
+      transacoes([{ id: 't1', amount: 2000, source_text: 'PGTO', description: 'x', category_id: 'catEnergia' }])
+      const res = await POST(req(), { params: { id: 'p1' } })
+      expect(res.status).toBe(200)
+      expect(m.txFindFirst).toHaveBeenCalledWith(expect.objectContaining({
+        where: { company_id: 'c1', OR: [{ bank_ref: { in: ['AP:p1', 'AP:p1:estorno'] } }, { linked_ref: 'AP:p1' }] },
+      }))
+      expect(m.txUpdate).toHaveBeenCalledTimes(1)
+    })
+
+    it('PENDENTE sem valor pago e sem lançamento: 400, nada gravado', async () => {
+      m.apFindFirst.mockResolvedValue({ ...PARCIAL, paid_amount: 0 })
+      const res = await POST(req(), { params: { id: 'p1' } })
+      expect(res.status).toBe(400)
+      expect(m.apUpdateMany).not.toHaveBeenCalled()
+      expect(m.txCreate).not.toHaveBeenCalled()
+    })
+
+    it('CANCELADO continua recusado (400)', async () => {
+      m.apFindFirst.mockResolvedValue({ ...PARCIAL, status: 'CANCELADO' })
+      const res = await POST(req(), { params: { id: 'p1' } })
+      expect(res.status).toBe(400)
+      expect(m.apUpdateMany).not.toHaveBeenCalled()
+    })
   })
 })

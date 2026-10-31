@@ -30,8 +30,21 @@ export async function POST(req: NextRequest, { params }: Params) {
       where: { id: params.id, company_id: user.companyId, deleted_at: null },
     })
     if (!existing) return error('Conta a receber nao encontrada', 404)
-    if (existing.status !== 'RECEBIDO' && existing.status !== 'LIQUIDADO' && existing.status !== 'PAGO') return error('Apenas ARs com status RECEBIDO/LIQUIDADO podem ser estornadas', 400)
-    if (!existing.received_amount || existing.received_amount <= 0) return error('AR sem received_amount valido', 400)
+    // Onda 3 (E4): estorno parcial — AR PENDENTE com recebimento parcial (ou com lançamento do ERP/linha ligada)
+    // desfaz tudo o que o ERP criou/ligou para a conta e zera received_amount.
+    const quitada = existing.status === 'RECEBIDO' || existing.status === 'LIQUIDADO' || existing.status === 'PAGO'
+    if (!quitada && existing.status !== 'PENDENTE') return error('Apenas ARs com status RECEBIDO/LIQUIDADO (ou PENDENTE com recebimento parcial) podem ser estornadas', 400)
+    if (!existing.received_amount || existing.received_amount <= 0) {
+      if (quitada) return error('AR sem received_amount valido', 400)
+      const lancamento = await prisma.transaction.findFirst({
+        where: {
+          company_id: user.companyId,
+          OR: [{ bank_ref: { in: [`AR:${params.id}`, `AR:${params.id}:anticipation`, `AR:${params.id}:estorno`] } }, { linked_ref: `AR:${params.id}` }],
+        },
+        select: { id: true },
+      })
+      if (!lancamento) return error('AR pendente sem recebimento nem lançamento — nada a estornar', 400)
+    }
 
     // 2026-06-03 fix (OS 60548): ARs antigas/portal sem Transaction CREDIT própria são estornadas
     // apenas no nível do status — nada pra reverter financeiramente. Antes: bloqueava com erro 400.
@@ -42,7 +55,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         where: {
           id: params.id,
           company_id: user.companyId,
-          status: { in: ['RECEBIDO', 'LIQUIDADO', 'PAGO'] },
+          status: { in: ['RECEBIDO', 'LIQUIDADO', 'PAGO', 'PENDENTE'] },
           deleted_at: null,
         },
         data: {
@@ -126,7 +139,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       module: 'financeiro',
       action: 'receivable.estorno',
       entityId: params.id,
-      oldValue: { status: 'RECEBIDO', received_amount: existing.received_amount },
+      oldValue: { status: existing.status, received_amount: existing.received_amount },
       newValue: { status: 'PENDENTE', received_amount: 0, motivo },
     })
 
