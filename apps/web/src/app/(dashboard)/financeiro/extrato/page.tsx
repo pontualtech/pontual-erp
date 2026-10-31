@@ -15,6 +15,7 @@ import { exportToExcel, exportToCSV, exportToPDF } from '@/lib/export-data'
 import { MoneyInput } from '@/app/(dashboard)/components/money-input'
 import { cleanDescription, prettyPaymentMethod } from '@/lib/payment-display'
 import { padraoDaLinha } from '@/lib/financeiro/livro-padrao'
+import { opcoesCategoriaLinha } from '@/lib/financeiro/livro-categorias'
 
 // ─── Types ───────────────────────────────────────────────
 interface ExtratoItem {
@@ -780,7 +781,7 @@ export default function ExtratoPage() {
             {editItem.origem === 'transacao' ? (() => {
               const padrao = padraoDaLinha(editItem.texto_banco || '')
               const entrada = editItem.tipo === 'ENTRADA'
-              const opcoes = categorias.filter(c => entrada ? c.module === 'financeiro_receita' : c.module !== 'financeiro_receita')
+              const opcoes = opcoesCategoriaLinha(categorias, entrada)
               return (
                 <div className="space-y-4">
                   <div>

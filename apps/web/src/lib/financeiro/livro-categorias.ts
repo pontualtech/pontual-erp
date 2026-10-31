@@ -21,6 +21,16 @@ export const CATEGORIAS_LIVRO: { nome: string; modulo: ModuloCategoria }[] = [
   { nome: 'Peças e Fornecedores', modulo: 'financeiro_despesa' },
 ]
 
+// Categorias neutras (nem receita nem despesa) que também classificam um crédito do banco.
+const NEUTRAS_ENTRADA = ['Transferência entre contas', 'Transferência entre empresas', 'Ajuste de caixa']
+
+/** Opções de categoria para uma linha do banco: entrada = receita + transferências/ajuste (por nome); saída = tudo que não é receita. */
+export function opcoesCategoriaLinha<T extends { name: string; module: string }>(categorias: T[], entrada: boolean): T[] {
+  return categorias.filter((c) => entrada
+    ? c.module === 'financeiro_receita' || NEUTRAS_ENTRADA.includes(c.name)
+    : c.module !== 'financeiro_receita')
+}
+
 // Categorias que já existem em produção (as regras podem apontar para elas; não são recriadas aqui).
 const CATEGORIAS_EXISTENTES: { nome: string; modulo: ModuloCategoria }[] = [
   { nome: 'Impostos', modulo: 'financeiro_despesa' },

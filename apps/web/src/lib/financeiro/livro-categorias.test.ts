@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { CATEGORIAS_LIVRO, REGRAS_INICIAIS, garantirCategoriasERegras } from './livro-categorias'
+import { CATEGORIAS_LIVRO, REGRAS_INICIAIS, garantirCategoriasERegras, opcoesCategoriaLinha } from './livro-categorias'
 
 const EXISTENTES = ['Impostos', 'Salarios', 'Retirada Socios', 'Combustiveis', 'Taxas de Cartao (Operadora)']
 
@@ -57,6 +57,30 @@ function fakeTx() {
     },
   }
 }
+
+describe('opcoesCategoriaLinha (F13)', () => {
+  const cats = [
+    { id: '1', name: 'Venda de Servicos', module: 'financeiro_receita' },
+    { id: '2', name: 'Receita a identificar', module: 'financeiro_receita' },
+    { id: '3', name: 'Transferência entre contas', module: 'financeiro_despesa' },
+    { id: '4', name: 'Transferência entre empresas', module: 'financeiro_despesa' },
+    { id: '5', name: 'Ajuste de caixa', module: 'financeiro_despesa' },
+    { id: '6', name: 'Energia', module: 'financeiro_despesa' },
+    { id: '7', name: 'A classificar', module: 'financeiro_despesa' },
+  ]
+  const nomes = (l: { name: string }[]) => l.map((c) => c.name)
+
+  it('entrada: receita + transferências e ajuste de caixa (por nome)', () => {
+    expect(nomes(opcoesCategoriaLinha(cats, true))).toEqual([
+      'Venda de Servicos', 'Receita a identificar', 'Transferência entre contas', 'Transferência entre empresas', 'Ajuste de caixa',
+    ])
+  })
+  it('saída: tudo que não é receita (como antes)', () => {
+    expect(nomes(opcoesCategoriaLinha(cats, false))).toEqual([
+      'Transferência entre contas', 'Transferência entre empresas', 'Ajuste de caixa', 'Energia', 'A classificar',
+    ])
+  })
+})
 
 describe('garantirCategoriasERegras', () => {
   it('é idempotente e devolve nome → id', async () => {
