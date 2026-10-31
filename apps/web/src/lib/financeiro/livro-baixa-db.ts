@@ -4,6 +4,14 @@ import type { CandidatoLivro, JanelaBaixa } from './livro-baixa'
 
 const DIA_MS = 86_400_000
 
+// Conflito de concorrência na baixa (outra requisição mudou a conta entre a leitura e a gravação) → 409;
+// valor acima do restante só visto dentro da tx → 422. Lançado dentro da $transaction: nada fica gravado.
+export class ConflitoBaixa extends Error {
+  constructor(message: string, readonly status: 409 | 422 = 409) {
+    super(message)
+  }
+}
+
 // Data de hoje em America/Sao_Paulo como 'AAAA-MM-DD' (en-CA já formata assim).
 export function hojeSP(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date())

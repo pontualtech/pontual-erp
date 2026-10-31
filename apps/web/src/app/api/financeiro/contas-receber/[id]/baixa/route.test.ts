@@ -105,4 +105,32 @@ describe('Receber (baixa de AR) — livro-razão', () => {
     expect(m.txCreate).not.toHaveBeenCalled()
     expect(m.accUpdate).not.toHaveBeenCalled()
   })
+
+  describe('E7: conflito de concorrência na baixa não vira 500', () => {
+    it('outra baixa venceu a claim (count 0): 409, nada criado nem creditado', async () => {
+      m.txFindMany.mockResolvedValue([])
+      m.arUpdateMany.mockResolvedValue({ count: 0 })
+      const res = await receber()
+      expect(res.status).toBe(409)
+      expect((await res.json()).error).toMatch(/Baixa concorrente detectada/)
+      expect(m.txCreate).not.toHaveBeenCalled()
+      expect(m.accUpdate).not.toHaveBeenCalled()
+    })
+
+    it('a releitura na tx mostra a conta já recebida por outra baixa: 409', async () => {
+      m.arFindFirst.mockResolvedValueOnce(AR).mockResolvedValueOnce(AR).mockResolvedValueOnce({ ...AR, status: 'RECEBIDO', received_amount: 15000 })
+      const res = await receber()
+      expect(res.status).toBe(409)
+      expect(m.arUpdateMany).not.toHaveBeenCalled()
+    })
+
+    it('a releitura na tx mostra recebimento parcial concorrente e o valor passa do restante: 422', async () => {
+      m.arFindFirst.mockResolvedValueOnce(AR).mockResolvedValueOnce(AR).mockResolvedValueOnce({ ...AR, received_amount: 5000 })
+      const res = await receber()
+      expect(res.status).toBe(422)
+      expect((await res.json()).error).toMatch(/excede o saldo restante/)
+      expect(m.arUpdateMany).not.toHaveBeenCalled()
+      expect(m.txCreate).not.toHaveBeenCalled()
+    })
+  })
 })

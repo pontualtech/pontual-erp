@@ -5,7 +5,7 @@ import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { z } from 'zod'
 import { decidirBaixa, JANELA_BAIXA, recebeCategoria, TOLERANCIA_EXPLICITO } from '@/lib/financeiro/livro-baixa'
-import { candidatosLivro, hojeSP, nomeCategoria } from '@/lib/financeiro/livro-baixa-db'
+import { candidatosLivro, ConflitoBaixa, hojeSP, nomeCategoria } from '@/lib/financeiro/livro-baixa-db'
 
 // Escolha explícita de lançamento do livro inválida → 422 sem escrever nada.
 class LivroInvalido extends Error {}
@@ -78,9 +78,9 @@ export async function POST(req: NextRequest, { params }: Params) {
       const fresh = await tx.accountPayable.findFirst({
         where: { id: params.id, company_id: user.companyId, deleted_at: null },
       })
-      if (!fresh) throw new Error('AP sumiu durante a baixa')
-      if (fresh.status === 'PAGO') throw new Error('Conta ja paga (outra baixa em paralelo)')
-      if (fresh.status === 'CANCELADO') throw new Error('Conta cancelada durante a baixa')
+      if (!fresh) throw new ConflitoBaixa('AP sumiu durante a baixa')
+      if (fresh.status === 'PAGO') throw new ConflitoBaixa('Conta ja paga (outra baixa em paralelo)')
+      if (fresh.status === 'CANCELADO') throw new ConflitoBaixa('Conta cancelada durante a baixa')
       const previousPaid = fresh.paid_amount || 0
       const restante = fresh.total_amount - previousPaid
 
@@ -131,7 +131,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         },
       })
       if (claim.count === 0) {
-        throw new Error('Baixa concorrente detectada — esta conta já foi paga por outra requisição')
+        throw new ConflitoBaixa('Baixa concorrente detectada — esta conta já foi paga por outra requisição')
       }
 
       const updated = await tx.accountPayable.findFirstOrThrow({
@@ -194,6 +194,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       if (e instanceof LivroInvalido) return error(e.message, 422)
       if (e instanceof LivroJaLigado) return error('lançamento do livro já ligado por outra baixa', 409)
       if (e instanceof ValorExcedeRestante) return error(e.message, 400)
+      if (e instanceof ConflitoBaixa) return error(e.message, e.status)
       throw e
     }
 

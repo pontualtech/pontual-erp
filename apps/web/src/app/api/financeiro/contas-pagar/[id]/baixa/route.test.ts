@@ -111,6 +111,27 @@ describe('baixa de AP — livro-razão', () => {
     expect(m.apUpdateMany.mock.calls[0][0].data).not.toHaveProperty('account_id')
   })
 
+  describe('E7: conflito de concorrência na baixa não vira 500', () => {
+    it('outra baixa venceu a claim (count 0): 409, nada criado nem debitado', async () => {
+      m.txFindMany.mockResolvedValue([])
+      m.apUpdateMany.mockResolvedValue({ count: 0 })
+      const res = await POST(req({ paid_amount: 5000, account_id: ACC, paid_at: '2026-10-29' }), { params: { id: 'p1' } })
+      expect(res.status).toBe(409)
+      expect((await res.json()).error).toMatch(/Baixa concorrente detectada/)
+      expect(m.txCreate).not.toHaveBeenCalled()
+      expect(m.accUpdate).not.toHaveBeenCalled()
+    })
+
+    it('a releitura na tx mostra a conta já paga / cancelada / sumida: 409', async () => {
+      for (const fresh of [{ ...AP, status: 'PAGO' }, { ...AP, status: 'CANCELADO' }, null]) {
+        m.apFindFirst.mockResolvedValueOnce(AP).mockResolvedValueOnce(AP).mockResolvedValueOnce(fresh)
+        const res = await POST(req({ paid_amount: 5000, account_id: ACC, paid_at: '2026-10-29' }), { params: { id: 'p1' } })
+        expect(res.status).toBe(409)
+      }
+      expect(m.apUpdateMany).not.toHaveBeenCalled()
+    })
+  })
+
   it('sem candidato: cria e debita como hoje', async () => {
     m.txFindMany.mockResolvedValue([])
     const res = await POST(req({ paid_amount: 5000, account_id: ACC, paid_at: '2026-10-29' }), { params: { id: 'p1' } })

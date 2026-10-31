@@ -6,7 +6,7 @@ import { logAudit } from '@/lib/audit'
 import { baixaSchema } from '@/lib/validations/financeiro'
 import { isReceivableSettled } from '@/lib/finance/receivable-status'
 import { decidirBaixa, JANELA_BAIXA, recebeCategoria } from '@/lib/financeiro/livro-baixa'
-import { candidatosLivro, categoriaId, hojeSP, nomeCategoria } from '@/lib/financeiro/livro-baixa-db'
+import { candidatosLivro, categoriaId, ConflitoBaixa, hojeSP, nomeCategoria } from '@/lib/financeiro/livro-baixa-db'
 import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
 import { CATEGORIA_RECEITA_SERVICOS } from '@/lib/financeiro/livro-categorias'
 
@@ -62,14 +62,14 @@ export async function POST(req: NextRequest, { params }: Params) {
       const fresh = await tx.accountReceivable.findFirst({
         where: { id: params.id, company_id: user.companyId, deleted_at: null },
       })
-      if (!fresh) throw new Error('AR sumiu durante a baixa')
-      if (isReceivableSettled(fresh)) throw new Error('Conta ja foi recebida (outra baixa em paralelo)')
-      if (fresh.status === 'CANCELADO') throw new Error('Conta cancelada durante a baixa')
+      if (!fresh) throw new ConflitoBaixa('AR sumiu durante a baixa')
+      if (isReceivableSettled(fresh)) throw new ConflitoBaixa('Conta ja foi recebida (outra baixa em paralelo)')
+      if (fresh.status === 'CANCELADO') throw new ConflitoBaixa('Conta cancelada durante a baixa')
       const previousReceived = fresh.received_amount || 0
       const newReceivedTotal = previousReceived + data.received_amount
       // Bug #53 (audit 31/05): baixa com valor > total causava 500. Cap explícito.
       if (newReceivedTotal > fresh.total_amount) {
-        throw new Error(`Valor do recebimento (R$ ${(data.received_amount/100).toFixed(2)}) excede o saldo restante (R$ ${((fresh.total_amount - previousReceived)/100).toFixed(2)})`)
+        throw new ConflitoBaixa(`Valor do recebimento (R$ ${(data.received_amount/100).toFixed(2)}) excede o saldo restante (R$ ${((fresh.total_amount - previousReceived)/100).toFixed(2)})`, 422)
       }
       const isReceivedInFull = newReceivedTotal >= fresh.total_amount
 
@@ -98,7 +98,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         },
       })
       if (claim.count === 0) {
-        throw new Error('Baixa concorrente detectada — esta conta já foi recebida por outra requisição')
+        throw new ConflitoBaixa('Baixa concorrente detectada — esta conta já foi recebida por outra requisição')
       }
 
       const updated = await tx.accountReceivable.findFirstOrThrow({
@@ -192,6 +192,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     })
     } catch (e) {
       if (e instanceof LivroJaLigado) return error('lançamento do livro já ligado por outra baixa', 409)
+      if (e instanceof ConflitoBaixa) return error(e.message, e.status)
       throw e
     }
 
