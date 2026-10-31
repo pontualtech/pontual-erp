@@ -107,6 +107,80 @@ describe('baixa de AP — livro-razão', () => {
     expect(m.txUpdate).not.toHaveBeenCalled()
   })
 
+  describe('F6: vínculo explícito com diferença ≤ R$ 1 quita a AP por inteiro', () => {
+    const AP10 = { ...AP, total_amount: 10000, notes: null }
+    const baixa = (paid_amount: number, extra: Record<string, unknown> = { livro_transaction_id: 't1' }) =>
+      POST(req({ paid_amount, account_id: ACC, ...extra }), { params: { id: 'p1' } })
+
+    beforeEach(() => {
+      m.apFindFirst.mockResolvedValue(AP10)
+      m.txFindFirst.mockResolvedValue({ source_text: 'PGTO ENEL' })
+    })
+
+    it('AP 10000, linha 9950 → PAGO (paid 10000), ligada, nota com 0,50', async () => {
+      m.txFindMany.mockResolvedValue([livro({ amount: 9950 })])
+      const res = await baixa(9950)
+      expect(res.status).toBe(200)
+      expect((await res.json()).data.ligada).toBe(true)
+      const data = m.apUpdateMany.mock.calls[0][0].data
+      expect(data).toEqual(expect.objectContaining({ paid_amount: 10000, status: 'PAGO' }))
+      expect(data.notes).toBe('diferença bancária de R$ 0,50')
+      expect(m.txUpdateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 't1', company_id: 'c1', linked_ref: null } }))
+      expect(m.txCreate).not.toHaveBeenCalled()
+      expect(m.accUpdate).not.toHaveBeenCalled()
+    })
+
+    it('AP 10000, linha 10050 (excede o restante em 0,50) → PAGO (paid 10000), ligada; nota anexada às notes existentes', async () => {
+      m.apFindFirst.mockResolvedValue({ ...AP10, notes: 'boleto ENEL' })
+      m.txFindMany.mockResolvedValue([livro({ amount: 10050 })])
+      const res = await baixa(10050)
+      expect(res.status).toBe(200)
+      expect((await res.json()).data.ligada).toBe(true)
+      const data = m.apUpdateMany.mock.calls[0][0].data
+      expect(data).toEqual(expect.objectContaining({ paid_amount: 10000, status: 'PAGO', notes: 'boleto ENEL — diferença bancária de R$ 0,50' }))
+      expect(m.txCreate).not.toHaveBeenCalled()
+      expect(m.accUpdate).not.toHaveBeenCalled()
+    })
+
+    it('linha igual ao restante: PAGO sem nota', async () => {
+      m.txFindMany.mockResolvedValue([livro({ amount: 10000 })])
+      await baixa(10000)
+      const data = m.apUpdateMany.mock.calls[0][0].data
+      expect(data).toEqual(expect.objectContaining({ paid_amount: 10000, status: 'PAGO' }))
+      expect(data).not.toHaveProperty('notes')
+    })
+
+    it('AP parcialmente paga (3000 de 10000), linha 6990 do restante 7000 → PAGO (paid 10000)', async () => {
+      m.apFindFirst.mockResolvedValue({ ...AP10, paid_amount: 3000 })
+      m.txFindMany.mockResolvedValue([livro({ amount: 6990 })])
+      await baixa(6990)
+      expect(m.apUpdateMany.mock.calls[0][0].data).toEqual(expect.objectContaining({ paid_amount: 10000, status: 'PAGO', notes: 'diferença bancária de R$ 0,10' }))
+    })
+
+    it('sem livro_transaction_id, 10050 continua excedendo o restante: 400 sem escrever', async () => {
+      m.txFindMany.mockResolvedValue([livro({ amount: 10050 })])
+      const res = await baixa(10050, {})
+      expect(res.status).toBe(400)
+      expect(m.apUpdateMany).not.toHaveBeenCalled()
+    })
+
+    it('com livro_transaction_id, valor acima do restante + R$ 1: 400 sem escrever', async () => {
+      m.txFindMany.mockResolvedValue([livro({ amount: 10101 })])
+      const res = await baixa(10101)
+      expect(res.status).toBe(400)
+      expect(m.apUpdateMany).not.toHaveBeenCalled()
+    })
+
+    it('linha explícita de pagamento parcial (5000 de 10000): baixa parcial como hoje (PENDENTE, paid 5000, sem nota)', async () => {
+      m.apFindFirstOrThrow.mockResolvedValue({ ...AP10, status: 'PENDENTE' })
+      m.txFindMany.mockResolvedValue([livro({ amount: 5000 })])
+      await baixa(5000)
+      const data = m.apUpdateMany.mock.calls[0][0].data
+      expect(data).toEqual(expect.objectContaining({ paid_amount: 5000, status: 'PENDENTE' }))
+      expect(data).not.toHaveProperty('notes')
+    })
+  })
+
   it('F5: livro_transaction_id em linha da mesma categoria da AP (Energia): liga, sem criar nem debitar', async () => {
     m.txFindMany.mockResolvedValue([livro({ categories: { name: 'Energia' } })])
     m.txFindFirst.mockResolvedValue({ source_text: 'ELETROPAULO' })

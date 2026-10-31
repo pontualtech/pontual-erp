@@ -9,7 +9,7 @@ export const CATEGORIAS_FALLBACK = ['A classificar', 'Receita a identificar'] as
 export const JANELA_BAIXA = { antes: 30, depois: 3 }
 
 // Diferença máxima (centavos) aceita quando o usuário escolhe o lançamento explicitamente.
-const TOLERANCIA_EXPLICITO = 100
+export const TOLERANCIA_EXPLICITO = 100
 
 export interface CandidatoLivro {
   id: string

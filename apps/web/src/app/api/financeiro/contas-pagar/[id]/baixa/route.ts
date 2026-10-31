@@ -4,7 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { z } from 'zod'
-import { decidirBaixa, recebeCategoria } from '@/lib/financeiro/livro-baixa'
+import { decidirBaixa, recebeCategoria, TOLERANCIA_EXPLICITO } from '@/lib/financeiro/livro-baixa'
 import { candidatosLivro, hojeSP, nomeCategoria } from '@/lib/financeiro/livro-baixa-db'
 
 // Escolha explícita de lançamento do livro inválida → 422 sem escrever nada.
@@ -57,7 +57,9 @@ export async function POST(req: NextRequest, { params }: Params) {
     })
     if (apForCheck) {
       const remainingCents = apForCheck.total_amount - (apForCheck.paid_amount || 0)
-      if (data.paid_amount > remainingCents) {
+      // Vínculo explícito (F6): a linha do banco pode exceder o restante em até R$ 1 — a baixa quita pelo restante.
+      const tolerancia = data.livro_transaction_id ? TOLERANCIA_EXPLICITO : 0
+      if (data.paid_amount > remainingCents + tolerancia) {
         return error(`Valor da baixa (R$ ${(data.paid_amount/100).toFixed(2)}) excede o saldo restante (R$ ${(remainingCents/100).toFixed(2)})`, 400)
       }
     }
@@ -78,7 +80,20 @@ export async function POST(req: NextRequest, { params }: Params) {
       if (fresh.status === 'PAGO') throw new Error('Conta ja paga (outra baixa em paralelo)')
       if (fresh.status === 'CANCELADO') throw new Error('Conta cancelada durante a baixa')
       const previousPaid = fresh.paid_amount || 0
-      const newPaidTotal = previousPaid + data.paid_amount
+      const restante = fresh.total_amount - previousPaid
+
+      // Livro-razão: se a saída já foi lançada pelo banco, liga a ela (decide antes de escrever).
+      const dataBaixa = data.paid_at ? new Date(data.paid_at).toISOString().slice(0, 10) : hojeSP()
+      const candidatos = await candidatosLivro(tx, user.companyId, data.account_id, 'DEBIT', dataBaixa, data.livro_transaction_id ?? null)
+
+      // F6: vínculo explícito com linha a até R$ 1 do restante quita a AP por inteiro (paid = restante);
+      // a diferença bancária fica registrada nas notes da AP.
+      const linhaExplicita = data.livro_transaction_id ? candidatos.find((c) => c.id === data.livro_transaction_id) : undefined
+      const quitaPeloVinculo = !!linhaExplicita && Math.abs(linhaExplicita.amount - restante) <= TOLERANCIA_EXPLICITO
+      const valorBaixa = quitaPeloVinculo ? restante : data.paid_amount
+      const diferencaBancaria = quitaPeloVinculo ? Math.abs(linhaExplicita!.amount - restante) : 0
+
+      const newPaidTotal = previousPaid + valorBaixa
       // Bug #53 (audit 31/05): baixa com valor > total causava 500 (overflow).
       // Cap em total_amount — qualquer excedente vira erro 400 com mensagem clara.
       if (newPaidTotal > fresh.total_amount) {
@@ -86,12 +101,12 @@ export async function POST(req: NextRequest, { params }: Params) {
       }
       const isPaidInFull = newPaidTotal >= fresh.total_amount
 
-      // Livro-razão: se a saída já foi lançada pelo banco, liga a ela (decide antes de escrever).
-      const dataBaixa = data.paid_at ? new Date(data.paid_at).toISOString().slice(0, 10) : hojeSP()
-      const candidatos = await candidatosLivro(tx, user.companyId, data.account_id, 'DEBIT', dataBaixa, data.livro_transaction_id ?? null)
       const categoriaAP = await nomeCategoria(tx, user.companyId, fresh.category_id)
-      const decisao = decidirBaixa({ tipo: 'DEBIT', amount: data.paid_amount, data: dataBaixa, categoria: categoriaAP }, data.livro_transaction_id ?? null, candidatos)
+      const decisao = decidirBaixa({ tipo: 'DEBIT', amount: valorBaixa, data: dataBaixa, categoria: categoriaAP }, data.livro_transaction_id ?? null, candidatos)
       if ('erro' in decisao) throw new LivroInvalido(decisao.erro)
+      const notaDiferenca = diferencaBancaria > 0
+        ? `diferença bancária de R$ ${(diferencaBancaria / 100).toFixed(2).replace('.', ',')}`
+        : null
 
       // Guard atomic: só roda se ainda não estiver PAGO. updateMany retorna
       // count=0 se outra tx concorrente já marcou PAGO entre nosso findFirst
@@ -107,6 +122,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           paid_amount: newPaidTotal,
           status: isPaidInFull ? 'PAGO' : 'PENDENTE',
           payment_method: fresh.payment_method,
+          ...(notaDiferenca ? { notes: fresh.notes ? `${fresh.notes} — ${notaDiferenca}` : notaDiferenca } : {}),
           updated_at: new Date(),
         },
       })
