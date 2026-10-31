@@ -14,6 +14,7 @@ import {
 import { useAuth } from '@/lib/use-auth'
 import { cn } from '@/lib/utils'
 import { MoneyInput } from '@/app/(dashboard)/components/money-input'
+import { resultadoConferencia } from '@/lib/financeiro/conferencia'
 
 // ─── Types ───────────────────────────────────
 interface ContaReceber {
@@ -305,8 +306,12 @@ export default function ContaReceberDetalhePage() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: [id], reconciled: true }),
       })
-      if (!recRes.ok) { const d = await recRes.json(); throw new Error(d.error || 'Erro ao marcar conciliado') }
-      toast.success('Banco vinculado + conferido no extrato')
+      const d = await recRes.json()
+      if (!recRes.ok) throw new Error(d.error || 'Erro ao marcar conciliado')
+      // Resposta 200 pode trazer a AR em erros (ex.: já conciliada) → não mostrar sucesso.
+      const r = resultadoConferencia(d.data, 'Banco vinculado + conferido no extrato')
+      if (!r.ok) throw new Error(r.mensagem)
+      toast.success(r.mensagem)
       setShowConferirSemBanco(false); setConferirBancoId(''); loadConta()
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Erro') }
     finally { setConferirSaving(false) }
@@ -461,7 +466,10 @@ export default function ContaReceberDetalhePage() {
                   })
                   const data = await res.json()
                   if (!res.ok) throw new Error(data.error || 'Erro')
-                  toast.success('Conferido no extrato — AR marcada como conciliada')
+                  // Resposta 200 pode trazer a AR em erros (ex.: vínculo não feito, já conciliada) → não mostrar sucesso.
+                  const r = resultadoConferencia(data.data, 'Conferido no extrato — AR marcada como conciliada')
+                  if (!r.ok) throw new Error(r.mensagem)
+                  toast.success(r.mensagem)
                   loadConta()
                 } catch (e) {
                   toast.error(e instanceof Error ? e.message : 'Erro ao marcar como conferido')

@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/use-auth'
 import { exportToExcel, exportToCSV, exportToPDF, importFromFile } from '@/lib/export-data'
 import { cleanDescription } from '@/lib/payment-display'
+import { resultadoConferencia } from '@/lib/financeiro/conferencia'
 import { DateInputBR } from '@/app/(dashboard)/components/date-input-br'
 import { MultiStatusPicker } from '@/app/(dashboard)/financeiro/_components/multi-status-picker'
 
@@ -672,7 +673,10 @@ export default function ContasReceberPage() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Erro')
-      toast.success(`${data.data?.updated ?? 0} conta(s) ${markAsReconciled ? 'conferidas' : 'desconferidas'}`)
+      // Resposta 200 pode trazer contas em erros (ex.: já conciliada) → toast de erro com os motivos.
+      const r = resultadoConferencia(data.data, `${data.data?.updated ?? 0} conta(s) ${markAsReconciled ? 'conferidas' : 'desconferidas'}`)
+      if (r.ok) toast.success(r.mensagem)
+      else toast.error(r.mensagem)
       setSelected(new Set())
       loadContas()
     } catch (err) {
