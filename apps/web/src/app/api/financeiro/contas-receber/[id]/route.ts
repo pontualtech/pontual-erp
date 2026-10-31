@@ -208,6 +208,13 @@ export async function DELETE(req: NextRequest, { params }: Params) {
       )
     }
 
+    // Onda 2 (F9): linha do banco ligada a esta conta (ex.: baixa parcial) ficaria com linked_ref órfão.
+    const ligada = await prisma.transaction.findFirst({
+      where: { company_id: user.companyId, linked_ref: `AR:${params.id}` },
+      select: { id: true },
+    })
+    if (ligada) return error('Há lançamento do banco ligado; estorne antes de excluir.', 409)
+
     await prisma.accountReceivable.updateMany({
       where: { id: params.id, company_id: user.companyId },
       data: { deleted_at: new Date() },
