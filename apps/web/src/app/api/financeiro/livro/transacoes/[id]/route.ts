@@ -8,6 +8,9 @@ import { CATEGORIAS_FALLBACK } from '@/lib/financeiro/livro-baixa'
 import { padraoDaLinha } from '@/lib/financeiro/livro-padrao'
 import { classificar } from '@/lib/financeiro/livro'
 
+// A linha foi ligada/desligada (ou deixou de ser do banco) entre a leitura e a gravação → 409, nada gravado.
+class LancamentoMudou extends Error {}
+
 /**
  * Livro-razão — classifica uma transação (troca a categoria) e, opcionalmente, cria uma regra
  * para que linhas parecidas já entrem classificadas nas próximas varreduras. A regra (nova ou já
@@ -137,13 +140,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     let categoriaAnteriorRegra: string | null = null
     let recategorizadas = 0
     await prisma.$transaction(async (tx) => {
-      await tx.transaction.update({
-        where: { id: params.id },
+      // Onda 3 (E6): `ligada` (regra/nota) foi decidido na leitura acima — só grava se a linha continua do banco
+      // e ligada/desligada como foi lida; senão desfaz a tx (nenhuma regra nem retroativo).
+      const gravou = await tx.transaction.updateMany({
+        where: { id: params.id, company_id: user.companyId, origin: 'BANCO', linked_ref: ligada ? { not: null } : null },
         data: {
           category_id: body.category_id,
           ...(body.nota ? { description: `${ligada ? transacao.description ?? textoLinha : textoLinha} — ${body.nota}` } : {}),
         },
       })
+      if (gravou.count === 0) throw new LancamentoMudou()
       if (pattern) {
         const existente = await regraAtiva(tx)
         const menor = await menorPrioridadeQueCasa(tx, existente?.id ?? null)
@@ -208,6 +214,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       recategorizadas,
     })
   } catch (e) {
+    if (e instanceof LancamentoMudou) return error('lançamento mudou (ligado/desligado) — recarregue', 409)
     if (e instanceof z.ZodError) {
       return error(e.errors[0]?.message || 'Dados inválidos', 422)
     }

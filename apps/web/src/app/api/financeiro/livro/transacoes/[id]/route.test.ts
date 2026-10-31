@@ -27,6 +27,12 @@ const patch = (body: unknown) => PATCH(
   { params: { id: 't1' } },
 )
 
+// updateMany da própria linha (where.id = 't1') × recategorização retroativa das outras (where.id = { not: 't1' }).
+const linhaGravada = () => m.txUpdateMany.mock.calls.map((c) => c[0]).filter((a) => typeof a.where.id === 'string')
+const retroativo = () => m.txUpdateMany.mock.calls.map((c) => c[0]).filter((a) => typeof a.where.id !== 'string')
+const ONDE_DESLIGADA = { id: 't1', company_id: 'c1', origin: 'BANCO', linked_ref: null }
+const ONDE_LIGADA = { id: 't1', company_id: 'c1', origin: 'BANCO', linked_ref: { not: null } }
+
 beforeEach(() => {
   Object.values(m).forEach((f) => f.mockReset())
   m.txFindFirst.mockResolvedValue({ id: 't1', category_id: 'fb', source_text: 'PIX ENVIADO ELVIS FERREIRA', description: 'x', origin: 'BANCO', linked_ref: null })
@@ -59,7 +65,7 @@ describe('PATCH livro/transacoes/[id] — regra derivada + retroativo', () => {
 
   it('direção null não filtra por tipo', async () => {
     await patch({ category_id: 'cat1', criar_regra: { pattern: 'abc loja', direction: null } })
-    const where = m.txUpdateMany.mock.calls[0][0].where
+    const where = retroativo()[0].where
     expect(where).not.toHaveProperty('transaction_type')
     expect(where.source_text.contains).toBe('abc loja')
   })
@@ -68,7 +74,7 @@ describe('PATCH livro/transacoes/[id] — regra derivada + retroativo', () => {
     m.ruleFindFirst.mockResolvedValue({ id: 'r1', category_id: 'cat1' })
     const j = (await (await patch({ category_id: 'cat1', criar_regra: { direction: 'OUT' } })).json()).data
     expect(m.ruleCreate).not.toHaveBeenCalled()
-    expect(m.txUpdateMany).toHaveBeenCalled()
+    expect(retroativo()).toHaveLength(1)
     expect(j.regra_criada).toBe(false)
     expect(j.regra).toEqual({ pattern: 'ELVIS FERREIRA', direction: 'OUT' })
   })
@@ -85,7 +91,7 @@ describe('PATCH livro/transacoes/[id] — regra derivada + retroativo', () => {
   it('pattern null: não cria regra nem recategoriza outras', async () => {
     const j = (await (await patch({ category_id: 'cat1', criar_regra: { pattern: null, direction: 'OUT' } })).json()).data
     expect(m.ruleCreate).not.toHaveBeenCalled()
-    expect(m.txUpdateMany).not.toHaveBeenCalled()
+    expect(retroativo()).toEqual([])
     expect(j.regra).toBeNull()
     expect(j.motivo_sem_regra).toBeTruthy()
     expect(j.recategorizadas).toBe(0)
@@ -101,20 +107,20 @@ describe('PATCH livro/transacoes/[id] — regra derivada + retroativo', () => {
 
   it('nota: description = source_text + " — " + nota', async () => {
     await patch({ category_id: 'cat1', nota: 'aluguel' })
-    expect(m.txUpdate).toHaveBeenCalledWith({
-      where: { id: 't1' },
+    expect(linhaGravada()).toEqual([{
+      where: ONDE_DESLIGADA,
       data: { category_id: 'cat1', description: 'PIX ENVIADO ELVIS FERREIRA — aluguel' },
-    })
+    }])
   })
 
   it('categoria escolhida é fallback: não cria/atualiza regra nem recategoriza', async () => {
     m.catFindFirst.mockResolvedValue({ id: 'fb1', name: 'A classificar' })
     m.ruleFindFirst.mockResolvedValue({ id: 'r1', category_id: 'antiga' })
     const j = (await (await patch({ category_id: 'fb1', criar_regra: { direction: 'OUT' } })).json()).data
-    expect(m.txUpdate).toHaveBeenCalledWith({ where: { id: 't1' }, data: { category_id: 'fb1' } })
+    expect(linhaGravada()).toEqual([{ where: ONDE_DESLIGADA, data: { category_id: 'fb1' } }])
     expect(m.ruleCreate).not.toHaveBeenCalled()
     expect(m.ruleUpdate).not.toHaveBeenCalled()
-    expect(m.txUpdateMany).not.toHaveBeenCalled()
+    expect(retroativo()).toEqual([])
     expect(j.regra).toBeNull()
     expect(j.motivo_sem_regra).toBe('categoria provisória não vira regra')
     expect(j.regra_criada).toBe(false)
@@ -188,8 +194,8 @@ describe('PATCH livro/transacoes/[id] — regra derivada + retroativo', () => {
       expect(j.recategorizadas).toBe(0)
       expect(m.ruleCreate).not.toHaveBeenCalled()
       expect(m.ruleUpdate).not.toHaveBeenCalled()
-      expect(m.txUpdateMany).not.toHaveBeenCalled()
-      expect(m.txUpdate).toHaveBeenCalledWith({ where: { id: 't1' }, data: { category_id: 'cat1' } })
+      expect(retroativo()).toEqual([])
+      expect(linhaGravada()).toEqual([{ where: ONDE_LIGADA, data: { category_id: 'cat1' } }])
     })
 
     it('linha ligada + simular: regra null com o motivo', async () => {
@@ -204,10 +210,36 @@ describe('PATCH livro/transacoes/[id] — regra derivada + retroativo', () => {
     it('linha ligada + nota: anexa à description atual (mantém a trilha Pgto: … · banco: …)', async () => {
       m.txFindFirst.mockResolvedValue(ligada)
       await patch({ category_id: 'cat1', nota: 'conta de outubro' })
-      expect(m.txUpdate).toHaveBeenCalledWith({
-        where: { id: 't1' },
+      expect(linhaGravada()).toEqual([{
+        where: ONDE_LIGADA,
         data: { category_id: 'cat1', description: 'Pgto: Luz · banco: PGTO ELETROPAULO — conta de outubro' },
+      }])
+    })
+  })
+
+  describe('E6: a linha só é gravada se continua ligada/desligada como foi lida', () => {
+    const mudou = () => m.txUpdateMany.mockImplementation(async ({ where }: any) => ({ count: typeof where.id === 'string' ? 0 : 3 }))
+
+    it('lida desligada, ligada antes de gravar (count 0): 409, sem regra nem retroativo', async () => {
+      mudou()
+      const res = await patch({ category_id: 'cat1', nota: 'x', criar_regra: { direction: 'OUT' } })
+      expect(res.status).toBe(409)
+      expect((await res.json()).error).toBe('lançamento mudou (ligado/desligado) — recarregue')
+      expect(linhaGravada()).toEqual([{ where: ONDE_DESLIGADA, data: expect.anything() }])
+      expect(m.ruleCreate).not.toHaveBeenCalled()
+      expect(m.ruleUpdate).not.toHaveBeenCalled()
+      expect(retroativo()).toEqual([])
+    })
+
+    it('lida ligada, desligada antes de gravar (count 0): 409', async () => {
+      m.txFindFirst.mockResolvedValue({
+        id: 't1', category_id: 'catEnergia', source_text: 'PGTO ELETROPAULO', description: 'Pgto: Luz · banco: PGTO ELETROPAULO',
+        account_id: 'acc1', transaction_type: 'DEBIT', counterparty: null, origin: 'BANCO', linked_ref: 'AP:p1',
       })
+      mudou()
+      const res = await patch({ category_id: 'cat1', nota: 'x' })
+      expect(res.status).toBe(409)
+      expect(linhaGravada()).toEqual([{ where: ONDE_LIGADA, data: expect.anything() }])
     })
   })
 
