@@ -3,8 +3,8 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { resumoRealizado } from '@/lib/financeiro/livro-resumo'
-
-const DATA_RE = /^\d{4}-\d{2}-\d{2}$/
+import { dataValida } from '@/lib/financeiro/livro-ajuste'
+import { hojeSP } from '@/lib/financeiro/livro-baixa-db'
 
 // GET ?from=AAAA-MM-DD&to=AAAA-MM-DD&account_id= — realizado no banco por categoria (contas do livro por padrão)
 export async function GET(request: NextRequest) {
@@ -14,13 +14,14 @@ export async function GET(request: NextRequest) {
     const user = result
 
     const sp = new URL(request.url).searchParams
-    // Padrão: mês corrente
-    const hoje = new Date()
-    const ym = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`
-    const ultimoDia = String(new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate()).padStart(2, '0')
+    // Padrão: mês corrente em America/Sao_Paulo (o servidor roda em UTC)
+    const [ano, mes] = hojeSP().split('-').map(Number)
+    const ym = `${ano}-${String(mes).padStart(2, '0')}`
+    const ultimoDia = String(new Date(Date.UTC(ano, mes, 0)).getUTCDate()).padStart(2, '0')
     const from = sp.get('from') ?? `${ym}-01`
     const to = sp.get('to') ?? `${ym}-${ultimoDia}`
-    if (!DATA_RE.test(from) || !DATA_RE.test(to) || isNaN(Date.parse(from)) || isNaN(Date.parse(to))) {
+    // Mesma validação do livro: rejeita data inexistente (2026-02-31), que o Date normalizaria.
+    if (!dataValida(from) || !dataValida(to)) {
       return error('Período inválido (use AAAA-MM-DD)', 400)
     }
 
@@ -31,8 +32,12 @@ export async function GET(request: NextRequest) {
       orderBy: { name: 'asc' },
     })
     const accountId = sp.get('account_id')
+    if (accountId) {
+      // Conta tem de ser da empresa; sem linha BANCO ela só não tem realizado (resumo vazio, 200).
+      const conta = await prisma.account.findFirst({ where: { id: accountId, company_id: user.companyId }, select: { id: true } })
+      if (!conta) return error('Conta não encontrada', 400)
+    }
     const contas = accountId ? contasLivro.filter((c) => c.id === accountId) : contasLivro
-    if (accountId && contas.length === 0) return error('Conta não encontrada', 400)
 
     const txs = await prisma.transaction.findMany({
       where: {
