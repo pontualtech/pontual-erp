@@ -2,17 +2,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 
 const { m, db } = vi.hoisted(() => { const m = {
-  arFindMany: vi.fn(), arUpdate: vi.fn(), arUpdateMany: vi.fn(),
-  payFindMany: vi.fn(),
+  arFindMany: vi.fn(), arFindFirst: vi.fn(), arUpdate: vi.fn(), arUpdateMany: vi.fn(),
+  payFindMany: vi.fn(), queryRaw: vi.fn(),
   txFindFirst: vi.fn(), txFindMany: vi.fn(), txCreate: vi.fn(), txUpdate: vi.fn(), txUpdateMany: vi.fn(), txDelete: vi.fn(),
   accUpdate: vi.fn(), catFindFirst: vi.fn(),
 }
 const db = {
-  accountReceivable: { findMany: m.arFindMany, update: m.arUpdate, updateMany: m.arUpdateMany },
+  accountReceivable: { findMany: m.arFindMany, findFirst: m.arFindFirst, update: m.arUpdate, updateMany: m.arUpdateMany },
   payment: { findMany: m.payFindMany },
   transaction: { findFirst: m.txFindFirst, findMany: m.txFindMany, create: m.txCreate, update: m.txUpdate, updateMany: m.txUpdateMany, delete: m.txDelete },
   account: { update: m.accUpdate },
   category: { findFirst: m.catFindFirst, findMany: async () => [{ id: 'cat:Venda de Servicos', name: 'Venda de Servicos' }] },
+  $queryRaw: m.queryRaw,
   $transaction: async (cb: (tx: unknown) => unknown) => cb(db),
 }
 return { m, db } })
@@ -32,8 +33,15 @@ const livro = (over: Record<string, unknown> = {}) => ({
   linked_ref: null, origin: 'BANCO', categories: { name: 'Receita a identificar' }, ...over,
 })
 
+// A lista de fora (findMany) só dá os ids; a AR que decide é a relida dentro da tx (findFirst), depois da trava.
+const comAR = (...lista: Record<string, unknown>[]) => {
+  m.arFindMany.mockResolvedValue(lista)
+  m.arFindFirst.mockImplementation(async ({ where }: any) => lista.find((a) => a.id === where.id) ?? null)
+}
+
 beforeEach(() => {
   Object.values(m).forEach((f) => f.mockReset())
+  m.queryRaw.mockImplementation(async (_sql: unknown, id: string) => [{ id }])
   m.payFindMany.mockResolvedValue([])
   m.txFindFirst.mockResolvedValue(null)
   m.txUpdateMany.mockResolvedValue({ count: 1 })
@@ -43,7 +51,7 @@ beforeEach(() => {
 
 describe('bulk-reconcile — liga ao lançamento do livro', () => {
   it('(a) AR com lançamento do livro casando: liga, sem criar transação nem mexer no saldo', async () => {
-    m.arFindMany.mockResolvedValue([AR])
+    comAR(AR)
     m.txFindMany.mockResolvedValue([livro({ source_text: 'PIX CLIENTE' })])
     m.txFindFirst.mockResolvedValueOnce(null) // idempotência
     const res = await POST(req({ ids: ['a1'], reconciled: true }))
@@ -55,32 +63,117 @@ describe('bulk-reconcile — liga ao lançamento do livro', () => {
       where: { id: 't1', company_id: 'c1', linked_ref: null },
       data: expect.objectContaining({ linked_ref: 'AR:a1', category_id: 'cat:Venda de Servicos' }),
     }))
-    expect(m.arUpdateMany).toHaveBeenCalledWith({
-      where: { id: 'a1', company_id: 'c1', OR: [{ reconciled: false }, { reconciled: null }] },
+    expect(m.arUpdate).toHaveBeenCalledWith({
+      where: { id: 'a1', company_id: 'c1' },
       data: expect.objectContaining({ reconciled: true, status: 'LIQUIDADO' }),
     })
+    expect(m.arUpdateMany).not.toHaveBeenCalled()
     expect(j.data.ligadas).toBe(1)
     expect(j.data.erros).toEqual([])
   })
 
-  it('F7: AR já conciliada por outra conferência concorrente (guard count 0): vai em erros, sem criar, ligar nem creditar', async () => {
-    m.arFindMany.mockResolvedValue([AR])
-    m.arUpdateMany.mockResolvedValue({ count: 0 })
-    for (const linhas of [[], [livro()]]) {
-      m.txCreate.mockClear(); m.accUpdate.mockClear(); m.txUpdateMany.mockClear()
-      m.txFindMany.mockResolvedValue(linhas)
+  describe('E1: AR travada (FOR UPDATE) e relida dentro da tx', () => {
+    // Simula outra requisição que comitou enquanto esta esperava a trava: só aparece depois do SELECT … FOR UPDATE.
+    const depoisDaTrava = (valor: unknown) => async () => (m.queryRaw.mock.calls.length > 0 ? valor : null)
+
+    it('trava a linha da AR antes de reler a AR, os pagamentos e o lançamento', async () => {
+      comAR(AR)
+      m.txFindMany.mockResolvedValue([])
+      await POST(req({ ids: ['a1'], reconciled: true }))
+      expect(m.queryRaw).toHaveBeenCalledTimes(1)
+      const [sql, ...valores] = m.queryRaw.mock.calls[0]
+      expect((sql as string[]).join('?')).toBe('SELECT id FROM accounts_receivable WHERE id = ? AND company_id = ? FOR UPDATE')
+      expect(valores).toEqual(['a1', 'c1'])
+      const trava = m.queryRaw.mock.invocationCallOrder[0]
+      expect(m.arFindFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'a1', company_id: 'c1', deleted_at: null } }))
+      expect(m.arFindFirst.mock.invocationCallOrder[0]).toBeGreaterThan(trava)
+      expect(m.payFindMany.mock.invocationCallOrder[0]).toBeGreaterThan(trava)
+      expect(m.txFindFirst.mock.invocationCallOrder[0]).toBeGreaterThan(trava)
+    })
+
+    it('Receber comitado enquanto esperava a trava: o crédito aparece na releitura → só LIQUIDADO, nada criado nem ligado', async () => {
+      comAR(AR)
+      m.txFindMany.mockResolvedValue([livro()])
+      m.txFindFirst.mockImplementation(depoisDaTrava({ id: 'x1', bank_ref: 'AR:a1', linked_ref: null }))
       const j = await (await POST(req({ ids: ['a1'], reconciled: true }))).json()
-      expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'já conciliada' }])
-      expect(j.data.updated).toBe(0)
-      expect(j.data.balance_delta).toBe(0)
       expect(m.txCreate).not.toHaveBeenCalled()
       expect(m.accUpdate).not.toHaveBeenCalled()
       expect(m.txUpdateMany).not.toHaveBeenCalled()
-    }
+      expect(m.arUpdate).toHaveBeenCalledWith({ where: { id: 'a1', company_id: 'c1' }, data: expect.objectContaining({ reconciled: true, status: 'LIQUIDADO' }) })
+      expect(j.data).toEqual(expect.objectContaining({ updated: 1, ligadas: 0, balance_delta: 0, erros: [] }))
+    })
+
+    it('PENDENTE (a lista de fora dizia RECEBIDO; a releitura diz PENDENTE): erro "conta não recebida", nada gravado', async () => {
+      m.arFindMany.mockResolvedValue([AR])
+      m.arFindFirst.mockResolvedValue({ ...AR, status: 'PENDENTE' })
+      m.txFindMany.mockResolvedValue([livro()])
+      for (const corpo of [{}, { livro: { a1: 't1' } }]) {
+        const j = await (await POST(req({ ids: ['a1'], reconciled: true, ...corpo }))).json()
+        expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'conta não recebida' }])
+        expect(j.data.updated).toBe(0)
+      }
+      expect(m.arUpdate).not.toHaveBeenCalled()
+      expect(m.arUpdateMany).not.toHaveBeenCalled()
+      expect(m.txCreate).not.toHaveBeenCalled()
+      expect(m.txUpdateMany).not.toHaveBeenCalled()
+      expect(m.accUpdate).not.toHaveBeenCalled()
+    })
+
+    it('PENDENTE sem conta bancária também não vira LIQUIDADO', async () => {
+      comAR({ ...AR, status: 'PENDENTE', account_id: null })
+      const j = await (await POST(req({ ids: ['a1'], reconciled: true }))).json()
+      expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'conta não recebida' }])
+      expect(m.arUpdate).not.toHaveBeenCalled()
+    })
+
+    it('webhook Inter marcou reconciled=true sem lançar crédito: Conferir cria o crédito (não "já conciliada")', async () => {
+      comAR({ ...AR, reconciled: true })
+      m.arUpdateMany.mockResolvedValue({ count: 0 }) // o guard antigo (reconciled false|null) não pegaria esta linha
+      m.txFindMany.mockResolvedValue([])
+      const j = await (await POST(req({ ids: ['a1'], reconciled: true }))).json()
+      expect(j.data.erros).toEqual([])
+      expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ account_id: 'acc1', transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1' }) })
+      expect(m.accUpdate).toHaveBeenCalledWith({ where: { id: 'acc1' }, data: expect.objectContaining({ current_balance: { increment: 15000 } }) })
+      expect(m.arUpdate).toHaveBeenCalledWith({ where: { id: 'a1', company_id: 'c1' }, data: expect.objectContaining({ reconciled: true, status: 'LIQUIDADO' }) })
+      expect(j.data.balance_delta).toBe(15000)
+    })
+
+    it('a conta bancária que vale é a relida (PATCH comitado antes): cria o crédito nela', async () => {
+      m.arFindMany.mockResolvedValue([{ ...AR, account_id: null }])
+      m.arFindFirst.mockResolvedValue({ ...AR, account_id: 'acc7' })
+      m.txFindMany.mockResolvedValue([])
+      await POST(req({ ids: ['a1'], reconciled: true }))
+      expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ account_id: 'acc7', bank_ref: 'AR:a1' }) })
+      expect(m.accUpdate).toHaveBeenCalledWith({ where: { id: 'acc7' }, data: expect.anything() })
+    })
+
+    it('AR excluída enquanto esperava a trava: vai em erros, nada gravado', async () => {
+      m.arFindMany.mockResolvedValue([AR])
+      m.arFindFirst.mockResolvedValue(null)
+      for (const reconciled of [true, false]) {
+        const j = await (await POST(req({ ids: ['a1'], reconciled }))).json()
+        expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'conta a receber não encontrada' }])
+        expect(j.data.updated).toBe(0)
+      }
+      expect(m.arUpdate).not.toHaveBeenCalled()
+      expect(m.txCreate).not.toHaveBeenCalled()
+      expect(m.txDelete).not.toHaveBeenCalled()
+    })
+
+    it('Desfazer concorrente com Conferir: o crédito do Conferir aparece na releitura → apaga e debita', async () => {
+      comAR({ ...AR, status: 'LIQUIDADO', reconciled: true })
+      m.txFindFirst.mockImplementation(depoisDaTrava({ id: 'x1', bank_ref: 'AR:a1', linked_ref: null, account_id: 'acc1', amount: 15000 }))
+      const j = await (await POST(req({ ids: ['a1'], reconciled: false }))).json()
+      expect(m.queryRaw).toHaveBeenCalledTimes(1)
+      expect(m.txDelete).toHaveBeenCalledWith({ where: { id: 'x1' } })
+      expect(m.accUpdate).toHaveBeenCalledWith({ where: { id: 'acc1' }, data: expect.objectContaining({ current_balance: { decrement: 15000 } }) })
+      expect(m.arUpdate).toHaveBeenCalledWith({ where: { id: 'a1', company_id: 'c1' }, data: expect.objectContaining({ reconciled: false, status: 'RECEBIDO' }) })
+      expect(j.data.balance_delta).toBe(-15000)
+    })
   })
 
   it('F11: livro explícito e AR sem conta bancária: vai em erros, NÃO liquida', async () => {
-    m.arFindMany.mockResolvedValue([{ ...AR, account_id: null }])
+    comAR({ ...AR, account_id: null })
     const j = await (await POST(req({ ids: ['a1'], reconciled: true, livro: { a1: 't1' } }))).json()
     expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'conta a receber sem conta bancária; vínculo não feito' }])
     expect(j.data.updated).toBe(0)
@@ -90,7 +183,7 @@ describe('bulk-reconcile — liga ao lançamento do livro', () => {
   })
 
   it('F11: livro explícito e AR sem valor: vai em erros (antes: pulava em silêncio)', async () => {
-    m.arFindMany.mockResolvedValue([{ ...AR, received_amount: 0, total_amount: 0 }])
+    comAR({ ...AR, received_amount: 0, total_amount: 0 })
     const j = await (await POST(req({ ids: ['a1'], reconciled: true, livro: { a1: 't1' } }))).json()
     expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'conta a receber sem valor; vínculo não feito' }])
     expect(j.data.updated).toBe(0)
@@ -99,7 +192,7 @@ describe('bulk-reconcile — liga ao lançamento do livro', () => {
   })
 
   it('sem livro explícito, AR sem conta bancária continua só virando LIQUIDADO', async () => {
-    m.arFindMany.mockResolvedValue([{ ...AR, account_id: null }])
+    comAR({ ...AR, account_id: null })
     const j = await (await POST(req({ ids: ['a1'], reconciled: true }))).json()
     expect(j.data.erros).toEqual([])
     expect(j.data.updated).toBe(1)
@@ -110,7 +203,7 @@ describe('bulk-reconcile — liga ao lançamento do livro', () => {
   it('F3: Conferir 20 dias depois do crédito do banco liga (janela 30 antes / 3 depois), sem criar nem creditar', async () => {
     const DIA = 86_400_000
     const base = Date.parse(`${hoje}T00:00:00Z`)
-    m.arFindMany.mockResolvedValue([AR])
+    comAR(AR)
     m.txFindMany.mockResolvedValue([livro({ transaction_date: new Date(base - 20 * DIA) })])
     const j = await (await POST(req({ ids: ['a1'], reconciled: true }))).json()
     expect(m.txFindMany.mock.calls[0][0].where.OR[0]).toEqual({
@@ -122,7 +215,7 @@ describe('bulk-reconcile — liga ao lançamento do livro', () => {
   })
 
   it('(b) sem candidato: cria como hoje, com a categoria Receita de serviços', async () => {
-    m.arFindMany.mockResolvedValue([AR])
+    comAR(AR)
     m.txFindMany.mockResolvedValue([])
     await POST(req({ ids: ['a1'], reconciled: true }))
     expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ bank_ref: 'AR:a1', category_id: 'cat:Venda de Servicos' }) })
@@ -131,7 +224,7 @@ describe('bulk-reconcile — liga ao lançamento do livro', () => {
   })
 
   it('Conferir sobre linha já categorizada (Venda de Servicos): liga sem criar/creditar e mantém a categoria da linha', async () => {
-    m.arFindMany.mockResolvedValue([AR])
+    comAR(AR)
     m.txFindMany.mockResolvedValue([livro({ categories: { name: 'Venda de Servicos' } })])
     m.txFindFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ source_text: 'PIX RECEBIDO FULANO' })
     const res = await POST(req({ ids: ['a1'], reconciled: true }))
@@ -148,7 +241,7 @@ describe('bulk-reconcile — liga ao lançamento do livro', () => {
   })
 
   it('livro explícito e a AR já tem outro lançamento: vai em erros, sem baixar nem ligar', async () => {
-    m.arFindMany.mockResolvedValue([AR])
+    comAR(AR)
     m.txFindFirst.mockResolvedValue({ id: 'x9', bank_ref: 'AR:a1', linked_ref: null })
     const res = await POST(req({ ids: ['a1'], reconciled: true, livro: { a1: 't1' } }))
     const j = await res.json()
@@ -160,7 +253,7 @@ describe('bulk-reconcile — liga ao lançamento do livro', () => {
   })
 
   it('livro explícito já ligado a esta AR: idempotente (LIQUIDADO, sem erro, ligadas 1)', async () => {
-    m.arFindMany.mockResolvedValue([AR])
+    comAR(AR)
     m.txFindFirst.mockResolvedValue({ id: 't1', bank_ref: 'linha1', linked_ref: 'AR:a1' })
     const j = await (await POST(req({ ids: ['a1'], reconciled: true, livro: { a1: 't1' } }))).json()
     expect(j.data.erros).toEqual([])
@@ -181,7 +274,7 @@ describe('bulk-reconcile — liga ao lançamento do livro', () => {
   })
 
   it('explícito inválido: AR não é baixada e vai em erros', async () => {
-    m.arFindMany.mockResolvedValue([AR])
+    comAR(AR)
     m.txFindMany.mockResolvedValue([livro({ categories: { name: 'Energia' } })])
     const res = await POST(req({ ids: ['a1'], reconciled: true, livro: { a1: 't1' } }))
     const j = await res.json()
@@ -193,7 +286,7 @@ describe('bulk-reconcile — liga ao lançamento do livro', () => {
   })
 
   it('linha já ligada por outra baixa (count 0): vai em erros e não cria nada', async () => {
-    m.arFindMany.mockResolvedValue([AR])
+    comAR(AR)
     m.txFindMany.mockResolvedValue([livro()])
     m.txFindFirst.mockResolvedValue(null)
     m.txUpdateMany.mockResolvedValue({ count: 0 })
@@ -206,7 +299,7 @@ describe('bulk-reconcile — liga ao lançamento do livro', () => {
   })
 
   it('(c) desfazer AR ligada: limpa linked_ref, volta categoria, sem delete e sem saldo', async () => {
-    m.arFindMany.mockResolvedValue([AR])
+    comAR(AR)
     m.txFindFirst.mockResolvedValue(livro({ linked_ref: 'AR:a1', bank_ref: 'linha1', source_text: 'PIX CLIENTE', category_id: 'cat:Venda de Servicos' }))
     await POST(req({ ids: ['a1'], reconciled: false }))
     expect(m.txUpdate).toHaveBeenCalledWith(expect.objectContaining({
@@ -219,7 +312,7 @@ describe('bulk-reconcile — liga ao lançamento do livro', () => {
   })
 
   it('desfazer AR ligada a linha que já tinha outra categoria: mantém a categoria da linha', async () => {
-    m.arFindMany.mockResolvedValue([AR])
+    comAR(AR)
     m.txFindFirst.mockResolvedValue(livro({ linked_ref: 'AR:a1', bank_ref: 'linha1', source_text: 'REND PAGO APLIC', category_id: 'cat:Rendimentos' }))
     await POST(req({ ids: ['a1'], reconciled: false }))
     expect(m.txUpdate).toHaveBeenCalledWith({

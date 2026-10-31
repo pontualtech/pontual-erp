@@ -13,6 +13,9 @@ import { CATEGORIA_RECEITA_SERVICOS } from '@/lib/financeiro/livro-categorias'
 // Lançamento do livro foi ligado por outra baixa concorrente → desfaz a $transaction desta AR.
 class LivroJaLigado extends Error {}
 
+// Resultado de cada AR: erro (vai em erros), pular (sem valor; não conta), ligada / delta de saldo.
+type ResultadoAR = { erro?: string; pular?: boolean; ligada?: boolean; delta?: number }
+
 // Vínculo explícito AR → lançamento do livro (rotina): { [arId]: transactionId }.
 const livroSchema = z.record(z.string()).optional()
 
@@ -54,10 +57,11 @@ export async function POST(req: NextRequest) {
       return error('Máximo 200 itens por operação', 400)
     }
 
-    // Busca ARs c/ account_id e received_amount pra atualizar saldos atomicamente.
+    // Daqui só saem os ids: tudo o que decide (status, valor, conta, lançamento existente) é relido
+    // DENTRO da $transaction de cada AR, depois de travar a linha (E1).
     const arsToProcess = await prisma.accountReceivable.findMany({
       where: { id: { in: ids }, company_id: user.companyId, deleted_at: null },
-      select: { id: true, account_id: true, received_amount: true, total_amount: true, status: true, description: true, category_id: true },
+      select: { id: true },
     })
 
     let updated = 0
@@ -68,166 +72,164 @@ export async function POST(req: NextRequest) {
     // Loop por AR — cada uma com seu próprio account_id e amount.
     // $transaction atomic dentro do loop garante AR + Transaction + balance
     // são sempre consistentes pra cada AR individualmente.
-    for (const ar of arsToProcess) {
-      const amount = ar.received_amount || ar.total_amount
+    for (const { id: arId } of arsToProcess) {
       // Vínculo explícito pedido (só na conferência): se não puder ser feito, NÃO liquida — vai em erros (F11).
-      const pedido = reconciled ? livro?.[ar.id] ?? null : null
-      if (!amount) {
-        if (pedido) erros.push({ ar: ar.id, motivo: 'conta a receber sem valor; vínculo não feito' })
-        continue
-      }
+      const pedido = reconciled ? livro?.[arId] ?? null : null
 
-      // 2026-06-03 fix (OS 60548): ARs antigas/portal sem account_id não conseguiam
-      // ser desfeitas porque o loop pulava silenciosamente (updated=0).
-      // Fix: quando account_id=null, só flipa flag+status (sem Transaction nem balance —
-      // não havia o que reverter, pois nunca afetou conta bancária).
-      if (!ar.account_id) {
-        if (pedido) {
-          erros.push({ ar: ar.id, motivo: 'conta a receber sem conta bancária; vínculo não feito' })
-          continue
-        }
-        await prisma.accountReceivable.update({
-          where: { id: ar.id, company_id: user.companyId },
-          data: reconciled
-            ? { reconciled: true, status: 'LIQUIDADO', updated_at: new Date() }
-            : { reconciled: false, status: 'RECEBIDO', updated_at: new Date() },
-        })
-        updated++
-        continue
-      }
-
-      if (reconciled) {
-        // RECEBIDO → LIQUIDADO: cria Transaction + incrementa saldo.
-        // Idempotência: se já tem Transaction com bank_ref=AR:id, pula save.
-        // 29/10: idem se a maquininha já creditou o LÍQUIDO desta AR (acquirer:<provider>:<NSU>) —
-        // senão o "Conferi" somava o BRUTO por cima e o dinheiro contava 2x.
-        const pagamentos = await prisma.payment.findMany({
-          where: { company_id: user.companyId, receivable_id: ar.id },
-          select: { provider: true, external_id: true },
-        })
-        const existing = await prisma.transaction.findFirst({
-          where: { company_id: user.companyId, OR: [{ bank_ref: { in: [`AR:${ar.id}`, ...refsCreditoAdquirente(pagamentos)] } }, { linked_ref: `AR:${ar.id}` }] },
-        })
-        if (existing && pedido && existing.id !== pedido) {
-          // Vínculo explícito pedido, mas a AR já tem outro lançamento: não troca nem baixa em silêncio.
-          erros.push({ ar: ar.id, motivo: 'conta a receber já tem lançamento; vínculo não feito' })
-          continue
-        }
-        if (existing) {
-          // Provavelmente já liquidada (ex: webhook Asaas, ou backfill manual).
-          await prisma.accountReceivable.update({
-            where: { id: ar.id, company_id: user.companyId },
-            data: { reconciled: true, status: 'LIQUIDADO', updated_at: new Date() },
+      let resultado: ResultadoAR
+      try {
+        resultado = await prisma.$transaction(async (tx): Promise<ResultadoAR> => {
+          // E1: trava a linha da AR — Receber, Desfazer, webhook e outro Conferir atualizam esta mesma linha,
+          // então esperam aqui; a releitura abaixo já enxerga o que eles comitaram.
+          await tx.$queryRaw`SELECT id FROM accounts_receivable WHERE id = ${arId} AND company_id = ${user.companyId} FOR UPDATE`
+          const ar = await tx.accountReceivable.findFirst({
+            where: { id: arId, company_id: user.companyId, deleted_at: null },
+            select: { id: true, account_id: true, received_amount: true, total_amount: true, status: true, description: true, category_id: true },
           })
-          // Idempotente: o vínculo pedido já estava feito para a mesma linha.
-          if (pedido) ligadas++
-          updated++
-          continue
-        }
+          if (!ar) return { erro: 'conta a receber não encontrada' }
+          // Conferir exige conta recebida: PENDENTE não vira LIQUIDADO nem ganha crédito.
+          if (reconciled && ar.status !== 'RECEBIDO' && ar.status !== 'LIQUIDADO') return { erro: 'conta não recebida' }
 
-        let resultado: { erro?: string; ligada?: boolean }
-        try {
-          resultado = await prisma.$transaction(async (tx): Promise<{ erro?: string; ligada?: boolean }> => {
-          const categoria = ar.category_id
-            ?? await categoriaReceitaPadraoId(tx, user.companyId)
-          const nomeAlvo = ar.category_id ? await nomeCategoria(tx, user.companyId, ar.category_id) : CATEGORIA_RECEITA_SERVICOS
+          const amount = ar.received_amount || ar.total_amount
+          if (!amount) return pedido ? { erro: 'conta a receber sem valor; vínculo não feito' } : { pular: true }
 
-          // Decide ANTES de escrever: explícito inválido não baixa nada.
-          const candidatos = await candidatosLivro(tx, user.companyId, ar.account_id!, 'CREDIT', hojeSP(), pedido)
-          const decisao = decidirBaixa({ tipo: 'CREDIT', amount, data: hojeSP(), categoria: nomeAlvo }, pedido, candidatos)
-          if ('erro' in decisao) return { erro: decisao.erro }
-
-          // Guard atômico (F7): `existing` foi lido fora da $transaction — só a primeira conferência concorrente
-          // vira a AR; a outra (count 0) não cria nem liga nada. reconciled null = ainda não conferida (como na UI).
-          const claim = await tx.accountReceivable.updateMany({
-            where: { id: ar.id, company_id: user.companyId, OR: [{ reconciled: false }, { reconciled: null }] },
-            data: { reconciled: true, status: 'LIQUIDADO', updated_at: new Date() },
-          })
-          if (claim.count === 0) return { erro: 'já conciliada' }
-          if ('usar' in decisao) {
-            // Liga ao lançamento do livro: o dinheiro já está no saldo — NÃO cria transação nem mexe na conta.
-            const alvo = await tx.transaction.findFirst({
-              where: { id: decisao.usar, company_id: user.companyId },
-              select: { source_text: true },
+          // 2026-06-03 fix (OS 60548): ARs antigas/portal sem account_id não conseguiam
+          // ser desfeitas porque o loop pulava silenciosamente (updated=0).
+          // Fix: quando account_id=null, só flipa flag+status (sem Transaction nem balance —
+          // não havia o que reverter, pois nunca afetou conta bancária).
+          if (!ar.account_id) {
+            if (pedido) return { erro: 'conta a receber sem conta bancária; vínculo não feito' }
+            await tx.accountReceivable.update({
+              where: { id: ar.id, company_id: user.companyId },
+              data: reconciled
+                ? { reconciled: true, status: 'LIQUIDADO', updated_at: new Date() }
+                : { reconciled: false, status: 'RECEBIDO', updated_at: new Date() },
             })
-            // Linha já categorizada (ex.: Venda de Servicos) mantém a sua categoria.
-            const linha = candidatos.find((c) => c.id === decisao.usar)
-            // Guard atômico (como Bug #41/#67): só liga se a linha ainda estiver livre.
-            const ligou = await tx.transaction.updateMany({
-              where: { id: decisao.usar, company_id: user.companyId, linked_ref: null },
+            return {}
+          }
+
+          if (reconciled) {
+            // RECEBIDO → LIQUIDADO: cria Transaction + incrementa saldo.
+            // Idempotência: se já tem Transaction com bank_ref=AR:id, pula save.
+            // 29/10: idem se a maquininha já creditou o LÍQUIDO desta AR (acquirer:<provider>:<NSU>) —
+            // senão o "Conferi" somava o BRUTO por cima e o dinheiro contava 2x.
+            const pagamentos = await tx.payment.findMany({
+              where: { company_id: user.companyId, receivable_id: ar.id },
+              select: { provider: true, external_id: true },
+            })
+            const existing = await tx.transaction.findFirst({
+              where: { company_id: user.companyId, OR: [{ bank_ref: { in: [`AR:${ar.id}`, ...refsCreditoAdquirente(pagamentos)] } }, { linked_ref: `AR:${ar.id}` }] },
+            })
+            if (existing && pedido && existing.id !== pedido) {
+              // Vínculo explícito pedido, mas a AR já tem outro lançamento: não troca nem baixa em silêncio.
+              return { erro: 'conta a receber já tem lançamento; vínculo não feito' }
+            }
+            if (existing) {
+              // Já tem crédito (ex: webhook Asaas, Receber, backfill manual): só vira conferida — nada criado nem ligado.
+              await tx.accountReceivable.update({
+                where: { id: ar.id, company_id: user.companyId },
+                data: { reconciled: true, status: 'LIQUIDADO', updated_at: new Date() },
+              })
+              // Idempotente: o vínculo pedido já estava feito para a mesma linha.
+              return { ligada: !!pedido }
+            }
+
+            // Sem crédito: decide ligar/criar mesmo que já esteja reconciled (ex.: webhook Inter marcou sem lançar);
+            // a trava garante que ninguém mais lança para esta AR enquanto isso.
+            const categoria = ar.category_id
+              ?? await categoriaReceitaPadraoId(tx, user.companyId)
+            const nomeAlvo = ar.category_id ? await nomeCategoria(tx, user.companyId, ar.category_id) : CATEGORIA_RECEITA_SERVICOS
+
+            // Decide ANTES de escrever: explícito inválido não baixa nada.
+            const candidatos = await candidatosLivro(tx, user.companyId, ar.account_id, 'CREDIT', hojeSP(), pedido)
+            const decisao = decidirBaixa({ tipo: 'CREDIT', amount, data: hojeSP(), categoria: nomeAlvo }, pedido, candidatos)
+            if ('erro' in decisao) return { erro: decisao.erro }
+
+            await tx.accountReceivable.update({
+              where: { id: ar.id, company_id: user.companyId },
+              data: { reconciled: true, status: 'LIQUIDADO', updated_at: new Date() },
+            })
+            if ('usar' in decisao) {
+              // Liga ao lançamento do livro: o dinheiro já está no saldo — NÃO cria transação nem mexe na conta.
+              const alvo = await tx.transaction.findFirst({
+                where: { id: decisao.usar, company_id: user.companyId },
+                select: { source_text: true },
+              })
+              // Linha já categorizada (ex.: Venda de Servicos) mantém a sua categoria.
+              const linha = candidatos.find((c) => c.id === decisao.usar)
+              // Guard atômico (como Bug #41/#67): só liga se a linha ainda estiver livre.
+              const ligou = await tx.transaction.updateMany({
+                where: { id: decisao.usar, company_id: user.companyId, linked_ref: null },
+                data: {
+                  linked_ref: `AR:${ar.id}`,
+                  ...(recebeCategoria(linha?.categoria ?? null) ? { category_id: categoria } : {}),
+                  description: `LIQUIDACAO: ${ar.description} · banco: ${alvo?.source_text ?? ''}`,
+                  reconciled: true,
+                },
+              })
+              if (ligou.count === 0) throw new LivroJaLigado()
+              return { ligada: true }
+            }
+            await tx.transaction.create({
               data: {
-                linked_ref: `AR:${ar.id}`,
-                ...(recebeCategoria(linha?.categoria ?? null) ? { category_id: categoria } : {}),
-                description: `LIQUIDACAO: ${ar.description} · banco: ${alvo?.source_text ?? ''}`,
+                company_id: user.companyId,
+                account_id: ar.account_id,
+                transaction_type: 'CREDIT',
+                amount,
+                description: `LIQUIDACAO: ${ar.description}`,
+                transaction_date: new Date(),
+                bank_ref: `AR:${ar.id}`,
+                category_id: categoria,
                 reconciled: true,
               },
             })
-            if (ligou.count === 0) throw new LivroJaLigado()
-            return { ligada: true }
+            await tx.account.update({
+              where: { id: ar.account_id },
+              data: { current_balance: { increment: amount }, updated_at: new Date() },
+            })
+            return { delta: amount }
           }
-          await tx.transaction.create({
-            data: {
-              company_id: user.companyId,
-              account_id: ar.account_id!,
-              transaction_type: 'CREDIT',
-              amount,
-              description: `LIQUIDACAO: ${ar.description}`,
-              transaction_date: new Date(),
-              bank_ref: `AR:${ar.id}`,
-              category_id: categoria,
-              reconciled: true,
-            },
-          })
-          await tx.account.update({
-            where: { id: ar.account_id! },
-            data: { current_balance: { increment: amount }, updated_at: new Date() },
-          })
-          return { ligada: false }
-        })
-        } catch (e) {
-          if (!(e instanceof LivroJaLigado)) throw e
-          resultado = { erro: 'lançamento do livro já ligado por outra baixa' }
-        }
-        if (resultado.erro) {
-          erros.push({ ar: ar.id, motivo: resultado.erro })
-          continue
-        }
-        if (resultado.ligada) ligadas++
-        else balanceDelta += amount
-        updated++
-      } else {
-        // LIQUIDADO → RECEBIDO: reverte Transaction + decrementa saldo.
-        const tx = await prisma.transaction.findFirst({
-          where: { company_id: user.companyId, OR: [{ bank_ref: `AR:${ar.id}` }, { linked_ref: `AR:${ar.id}` }] },
-        })
-        // Lançamento do livro ligado: só desliga (volta ao fallback se a categoria veio da baixa), sem apagar nem mexer no saldo.
-        const ligado = tx?.linked_ref === `AR:${ar.id}`
-        const fallback = ligado ? await categoriaId(prisma, user.companyId, 'Receita a identificar') : null
-        const daBaixa = ligado
-          ? ar.category_id ?? await categoriaReceitaPadraoId(prisma, user.companyId)
-          : null
 
-        await prisma.$transaction(async (txc) => {
-          await txc.accountReceivable.update({
+          // LIQUIDADO → RECEBIDO: reverte Transaction + decrementa saldo. Relido com a AR travada (E1).
+          const t = await tx.transaction.findFirst({
+            where: { company_id: user.companyId, OR: [{ bank_ref: `AR:${ar.id}` }, { linked_ref: `AR:${ar.id}` }] },
+          })
+          await tx.accountReceivable.update({
             where: { id: ar.id, company_id: user.companyId },
             data: { reconciled: false, status: 'RECEBIDO', updated_at: new Date() },
           })
-          if (tx && ligado) {
-            await txc.transaction.update({
-              where: { id: tx.id },
-              data: { linked_ref: null, category_id: categoriaAoDesligar(tx.category_id, daBaixa, fallback), description: tx.source_text ?? tx.description },
+          if (t && t.linked_ref === `AR:${ar.id}`) {
+            // Lançamento do livro ligado: só desliga (volta ao fallback se a categoria veio da baixa), sem apagar nem mexer no saldo.
+            const fallback = await categoriaId(tx, user.companyId, 'Receita a identificar')
+            const daBaixa = ar.category_id ?? await categoriaReceitaPadraoId(tx, user.companyId)
+            await tx.transaction.update({
+              where: { id: t.id },
+              data: { linked_ref: null, category_id: categoriaAoDesligar(t.category_id, daBaixa, fallback), description: t.source_text ?? t.description },
             })
-          } else if (tx) {
-            await txc.transaction.delete({ where: { id: tx.id } })
-            await txc.account.update({
-              where: { id: tx.account_id },
-              data: { current_balance: { decrement: tx.amount }, updated_at: new Date() },
-            })
-            balanceDelta -= tx.amount
+            return {}
           }
+          if (t) {
+            await tx.transaction.delete({ where: { id: t.id } })
+            await tx.account.update({
+              where: { id: t.account_id },
+              data: { current_balance: { decrement: t.amount }, updated_at: new Date() },
+            })
+            return { delta: -t.amount }
+          }
+          return {}
         })
-        updated++
+      } catch (e) {
+        if (!(e instanceof LivroJaLigado)) throw e
+        resultado = { erro: 'lançamento do livro já ligado por outra baixa' }
       }
+      if (resultado.erro) {
+        erros.push({ ar: arId, motivo: resultado.erro })
+        continue
+      }
+      if (resultado.pular) continue
+      if (resultado.ligada) ligadas++
+      balanceDelta += resultado.delta ?? 0
+      updated++
     }
 
     logAudit({
