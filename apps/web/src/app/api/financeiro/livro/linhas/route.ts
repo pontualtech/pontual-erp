@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { prisma, type Prisma } from '@pontual/db'
+import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { classificar, planejarLinha, escolherOrfao, limitesJanelaOrfao, creditoUsavelParaVinculo } from '@/lib/financeiro/livro'
@@ -154,52 +154,12 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Liga transações existentes à linha do banco: marca LIGADA:<chave>, leva a data do banco (data real do
-    // caixa; a baixa da AR gera o crédito no dia da baixa) e, se a data mudou, guarda a data da baixa na descrição.
-    const ligarComDataBanco = async (
-      tx: Pick<typeof prisma, 'transaction'>,
-      where: Prisma.TransactionWhereInput,
-      extra: { reconciled?: boolean },
-      chave: string,
-      dataBanco: Date,
-    ) => {
-      const alvos = await tx.transaction.findMany({ where, select: { id: true, transaction_date: true, description: true } })
-      const novaData = dataBanco.toISOString().slice(0, 10)
-      let count = 0
-      for (const t of alvos) {
-        const antes = t.transaction_date.toISOString().slice(0, 10)
-        const dataBR = t.transaction_date.toLocaleDateString('pt-BR', { timeZone: 'UTC' })
-        const r = await tx.transaction.updateMany({
-          where: { ...where, id: t.id },
-          data: {
-            ...extra,
-            source_text: `LIGADA:${chave}`,
-            transaction_date: dataBanco,
-            ...(antes !== novaData
-              ? { description: t.description ? `${t.description} (lançado no ERP em ${dataBR})` : `Lançado no ERP em ${dataBR}` }
-              : {}),
-          },
-        })
-        count += r.count
-      }
-      return count
-    }
-
     // Marca as transações ligadas por esta linha (sem sobrescrever quem já foi ligada por outra).
-    const marcarLigadas = (tx: Pick<typeof prisma, 'transaction'>, refs: string[], chave: string, dataBanco: Date) =>
-      ligarComDataBanco(
-        tx,
-        {
-          company_id: user.companyId,
-          account_id: body.account_id,
-          bank_ref: { in: refs },
-          // Mesmo critério de creditoUsavelParaVinculo: qualquer crédito ainda não tomado por outra linha.
-          OR: [{ source_text: null }, { NOT: { source_text: { startsWith: 'LIGADA:' } } }],
-        },
-        {},
-        chave,
-        dataBanco,
-      )
+    const marcarLigadas = (tx: Pick<typeof prisma, 'transaction'>, refs: string[], chave: string) =>
+      tx.transaction.updateMany({
+        where: { company_id: user.companyId, account_id: body.account_id, bank_ref: { in: refs }, source_text: null },
+        data: { source_text: `LIGADA:${chave}` },
+      })
 
     const categoriaDe = (linha: Linha, valor: number, identificar: boolean) => {
       const { category_id: porRegra } = classificar(linha, regras, body.account_id)
@@ -257,7 +217,6 @@ export async function POST(req: NextRequest) {
         // Primeira instrução: trava a conta. Chamadas concorrentes esperam aqui e já enxergam a linha gravada.
         await tx.$queryRaw`SELECT current_balance FROM accounts WHERE id = ${body.account_id} AND company_id = ${user.companyId} FOR UPDATE`
         const plano = await planejar(tx, linha)
-        const dataBanco = new Date(linha.data + 'T00:00:00.000Z')
 
         if (plano.acao === 'IGNORAR') return { chave: linha.chave, acao: 'IGNORAR', motivo: plano.motivo }
 
@@ -266,7 +225,7 @@ export async function POST(req: NextRequest) {
             where: { company_id: user.companyId, account_id: body.account_id, bank_ref: { in: plano.refs } },
             data: { reconciled: true },
           })
-          await marcarLigadas(tx, plano.refs, linha.chave, dataBanco)
+          await marcarLigadas(tx, plano.refs, linha.chave)
           return { chave: linha.chave, acao: 'LIGAR', refs: plano.refs }
         }
 
@@ -275,14 +234,11 @@ export async function POST(req: NextRequest) {
           const orfaoId = await buscarOrfao(tx, linha, orfaosUsados)
           if (orfaoId) {
             orfaosUsados.add(orfaoId)
-            const ligadas = await ligarComDataBanco(
-              tx,
-              { id: orfaoId, company_id: user.companyId, account_id: body.account_id, source_text: null },
-              { reconciled: true },
-              linha.chave,
-              dataBanco,
-            )
-            if (ligadas === 1) return { chave: linha.chave, acao: 'LIGAR', refs: [orfaoId], origem: 'orfao' }
+            const r = await tx.transaction.updateMany({
+              where: { id: orfaoId, company_id: user.companyId, account_id: body.account_id, source_text: null },
+              data: { source_text: `LIGADA:${linha.chave}`, reconciled: true },
+            })
+            if (r.count === 1) return { chave: linha.chave, acao: 'LIGAR', refs: [orfaoId], origem: 'orfao' }
             // Alguém levou o órfão antes: segue para CRIAR.
           }
         }
@@ -296,7 +252,7 @@ export async function POST(req: NextRequest) {
             transaction_type: valor > 0 ? 'CREDIT' : 'DEBIT',
             amount: Math.abs(valor),
             description: linha.descricao,
-            transaction_date: dataBanco,
+            transaction_date: new Date(linha.data + 'T00:00:00.000Z'),
             bank_ref: linha.chave,
             origin: 'BANCO',
             source_text: linha.descricao,
@@ -314,7 +270,7 @@ export async function POST(req: NextRequest) {
             where: { company_id: user.companyId, account_id: body.account_id, bank_ref: { in: plano.refs_ligadas } },
             data: { reconciled: true },
           })
-          await marcarLigadas(tx, plano.refs_ligadas, linha.chave, dataBanco)
+          await marcarLigadas(tx, plano.refs_ligadas, linha.chave)
         }
         return { chave: linha.chave, acao: 'CRIAR', valor_centavos: valor, categoria: cat.nome, transaction_id: t.id }
       })
