@@ -125,6 +125,24 @@ describe('bulk-reconcile — liga ao lançamento do livro', () => {
       expect(m.accUpdate).not.toHaveBeenCalled()
     })
 
+    it('AR legada PAGO (recebida) é conferida: cria o crédito e vira LIQUIDADO', async () => {
+      comAR({ ...AR, status: 'PAGO' })
+      m.txFindMany.mockResolvedValue([])
+      const j = await (await POST(req({ ids: ['a1'], reconciled: true }))).json()
+      expect(j.data.erros).toEqual([])
+      expect(j.data.updated).toBe(1)
+      expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ bank_ref: 'AR:a1', amount: 15000 }) })
+      expect(m.arUpdate).toHaveBeenCalledWith({ where: { id: 'a1', company_id: 'c1' }, data: expect.objectContaining({ reconciled: true, status: 'LIQUIDADO' }) })
+    })
+
+    it('CANCELADO também não é conferido', async () => {
+      comAR({ ...AR, status: 'CANCELADO' })
+      const j = await (await POST(req({ ids: ['a1'], reconciled: true }))).json()
+      expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'conta não recebida' }])
+      expect(m.arUpdate).not.toHaveBeenCalled()
+      expect(m.txCreate).not.toHaveBeenCalled()
+    })
+
     it('PENDENTE sem conta bancária também não vira LIQUIDADO', async () => {
       comAR({ ...AR, status: 'PENDENTE', account_id: null })
       const j = await (await POST(req({ ids: ['a1'], reconciled: true }))).json()

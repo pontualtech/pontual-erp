@@ -87,8 +87,8 @@ export async function POST(req: NextRequest) {
             select: { id: true, account_id: true, received_amount: true, total_amount: true, status: true, description: true, category_id: true },
           })
           if (!ar) return { erro: 'conta a receber não encontrada' }
-          // Conferir exige conta recebida: PENDENTE não vira LIQUIDADO nem ganha crédito.
-          if (reconciled && ar.status !== 'RECEBIDO' && ar.status !== 'LIQUIDADO') return { erro: 'conta não recebida' }
+          // Conferir exige conta recebida (PAGO = status legado de recebida): PENDENTE não vira LIQUIDADO nem ganha crédito.
+          if (reconciled && ar.status !== 'RECEBIDO' && ar.status !== 'LIQUIDADO' && ar.status !== 'PAGO') return { erro: 'conta não recebida' }
 
           const amount = ar.received_amount || ar.total_amount
           if (!amount) return pedido ? { erro: 'conta a receber sem valor; vínculo não feito' } : { pular: true }
