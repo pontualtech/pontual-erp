@@ -4,7 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { z } from 'zod'
-import { decidirBaixa, recebeCategoria, TOLERANCIA_EXPLICITO } from '@/lib/financeiro/livro-baixa'
+import { decidirBaixa, JANELA_BAIXA, recebeCategoria, TOLERANCIA_EXPLICITO } from '@/lib/financeiro/livro-baixa'
 import { candidatosLivro, hojeSP, nomeCategoria } from '@/lib/financeiro/livro-baixa-db'
 
 // Escolha explícita de lançamento do livro inválida → 422 sem escrever nada.
@@ -86,7 +86,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
       // Livro-razão: se a saída já foi lançada pelo banco, liga a ela (decide antes de escrever).
       const dataBaixa = data.paid_at ? new Date(data.paid_at).toISOString().slice(0, 10) : hojeSP()
-      const candidatos = await candidatosLivro(tx, user.companyId, data.account_id, 'DEBIT', dataBaixa, data.livro_transaction_id ?? null)
+      const candidatos = await candidatosLivro(tx, user.companyId, data.account_id, 'DEBIT', dataBaixa, data.livro_transaction_id ?? null, JANELA_BAIXA)
 
       // F6: vínculo explícito com linha a até R$ 1 do restante quita a AP por inteiro (paid = restante);
       // a diferença bancária fica registrada nas notes da AP.
@@ -104,7 +104,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       const isPaidInFull = newPaidTotal >= fresh.total_amount
 
       const categoriaAP = await nomeCategoria(tx, user.companyId, fresh.category_id)
-      const decisao = decidirBaixa({ tipo: 'DEBIT', amount: valorBaixa, data: dataBaixa, categoria: categoriaAP }, data.livro_transaction_id ?? null, candidatos)
+      const decisao = decidirBaixa({ tipo: 'DEBIT', amount: valorBaixa, data: dataBaixa, categoria: categoriaAP }, data.livro_transaction_id ?? null, candidatos, JANELA_BAIXA)
       if ('erro' in decisao) throw new LivroInvalido(decisao.erro)
       const notaDiferenca = diferencaBancaria > 0
         ? `diferença bancária de R$ ${(diferencaBancaria / 100).toFixed(2).replace('.', ',')}`

@@ -214,6 +214,19 @@ describe('bulk-reconcile — liga ao lançamento do livro', () => {
     expect(m.accUpdate).not.toHaveBeenCalled()
   })
 
+  it('E3: Conferir com vínculo explícito busca a linha pedida por id e a janela do Receber (10/3)', async () => {
+    const DIA = 86_400_000
+    const base = Date.parse(`${hoje}T00:00:00Z`)
+    comAR(AR)
+    m.txFindMany.mockResolvedValue([livro()])
+    const j = await (await POST(req({ ids: ['a1'], reconciled: true, livro: { a1: 't1' } }))).json()
+    expect(m.txFindMany.mock.calls[0][0].where.OR).toEqual([
+      { transaction_date: { gte: new Date(base - 10 * DIA), lte: new Date(base + 3 * DIA) } },
+      { id: 't1' },
+    ])
+    expect(j.data.ligadas).toBe(1)
+  })
+
   it('(b) sem candidato: cria como hoje, com a categoria Receita de serviços', async () => {
     comAR(AR)
     m.txFindMany.mockResolvedValue([])

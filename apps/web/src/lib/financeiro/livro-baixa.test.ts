@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { categoriaAoDesligar, decidirBaixa, JANELA_BAIXA, recebeCategoria } from './livro-baixa'
+import { categoriaAoDesligar, decidirBaixa, JANELA_BAIXA, JANELA_CONFERIR, recebeCategoria } from './livro-baixa'
 
 const base = { transaction_type: 'CREDIT' as const, origin: 'BANCO', linked_ref: null, categoria: 'Receita a identificar' }
 
@@ -66,17 +66,26 @@ describe('decidirBaixa', () => {
     expect(decidirBaixa({ tipo: 'CREDIT', amount: 100, data: '2026-10-30' }, 'L4',
       [{ ...base, transaction_type: 'DEBIT', id: 'L4', amount: 100, transaction_date: '2026-10-30' }])).toHaveProperty('erro')
   })
-  it('F1/F3: janela = 30 dias antes e 3 dias depois (bordas inclusivas)', () => {
+  it('E3: Receber/Pagar (padrão JANELA_BAIXA) = 10 dias antes e 3 depois (bordas inclusivas)', () => {
     const alvo = { tipo: 'CREDIT' as const, amount: 100, data: '2026-10-30' }
     const em = (transaction_date: string) => decidirBaixa(alvo, null, [{ ...base, id: 'L5', amount: 100, transaction_date }])
-    expect(em('2026-09-30')).toEqual({ usar: 'L5' }) // 30 dias antes (Conferir tardio)
-    expect(em('2026-09-29')).toEqual({ criar: true }) // 31 dias antes
-    expect(em('2026-10-19')).toEqual({ usar: 'L5' }) // 11 dias antes (antes da onda 2: criava)
+    expect(em('2026-10-20')).toEqual({ usar: 'L5' }) // 10 dias antes
+    expect(em('2026-10-19')).toEqual({ criar: true }) // 11 dias antes (linha antiga, talvez de outro cliente)
+    expect(em('2026-09-30')).toEqual({ criar: true }) // 30 dias antes
     expect(em('2026-11-02')).toEqual({ usar: 'L5' }) // 3 dias depois (baixa retroativa)
     expect(em('2026-11-03')).toEqual({ criar: true }) // 4 dias depois
   })
-  it('JANELA_BAIXA = { antes: 30, depois: 3 }', () => {
-    expect(JANELA_BAIXA).toEqual({ antes: 30, depois: 3 })
+  it('E3: Conferir sem vínculo explícito (JANELA_CONFERIR) = 30 dias antes e 3 depois', () => {
+    const alvo = { tipo: 'CREDIT' as const, amount: 100, data: '2026-10-30' }
+    const em = (transaction_date: string) => decidirBaixa(alvo, null, [{ ...base, id: 'L5', amount: 100, transaction_date }], JANELA_CONFERIR)
+    expect(em('2026-09-30')).toEqual({ usar: 'L5' }) // 30 dias antes (Conferir tardio)
+    expect(em('2026-09-29')).toEqual({ criar: true }) // 31 dias antes
+    expect(em('2026-11-02')).toEqual({ usar: 'L5' })
+    expect(em('2026-11-03')).toEqual({ criar: true })
+  })
+  it('JANELA_BAIXA = { antes: 10, depois: 3 }; JANELA_CONFERIR = { antes: 30, depois: 3 }', () => {
+    expect(JANELA_BAIXA).toEqual({ antes: 10, depois: 3 })
+    expect(JANELA_CONFERIR).toEqual({ antes: 30, depois: 3 })
   })
   it('automático escolhe o mais próximo da data', () => {
     expect(decidirBaixa({ tipo: 'CREDIT', amount: 100, data: '2026-10-30' }, null, [

@@ -1,6 +1,6 @@
 // Acesso ao banco da baixa sobre o Livro-razão (a decisão pura fica em livro-baixa.ts).
 // Recebe o `tx` do Prisma para rodar dentro da mesma $transaction da baixa.
-import { JANELA_BAIXA, type CandidatoLivro } from './livro-baixa'
+import type { CandidatoLivro, JanelaBaixa } from './livro-baixa'
 
 const DIA_MS = 86_400_000
 
@@ -9,7 +9,8 @@ export function hojeSP(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date())
 }
 
-// Lançamentos do livro (origin BANCO) da MESMA conta dentro da janela em torno de `data`;
+// Lançamentos do livro (origin BANCO) da MESMA conta dentro da `janela` em torno de `data` (JANELA_BAIXA no
+// Receber/Pagar, JANELA_CONFERIR no Conferir sem vínculo explícito — a mesma passada a decidirBaixa);
 // o lançamento escolhido explicitamente entra mesmo fora da janela. `categoria` = nome da categoria.
 export async function candidatosLivro(
   tx: any,
@@ -18,12 +19,13 @@ export async function candidatosLivro(
   tipo: 'CREDIT' | 'DEBIT',
   data: string,
   explicito: string | null,
+  janela: JanelaBaixa,
 ): Promise<CandidatoLivro[]> {
   const base = Date.parse(`${data}T00:00:00Z`)
-  const janela = {
+  const naJanela = {
     transaction_date: {
-      gte: new Date(base - JANELA_BAIXA.antes * DIA_MS),
-      lte: new Date(base + JANELA_BAIXA.depois * DIA_MS),
+      gte: new Date(base - janela.antes * DIA_MS),
+      lte: new Date(base + janela.depois * DIA_MS),
     },
   }
   const rows: any[] = await tx.transaction.findMany({
@@ -32,7 +34,7 @@ export async function candidatosLivro(
       account_id: accountId,
       transaction_type: tipo,
       origin: 'BANCO',
-      OR: explicito ? [janela, { id: explicito }] : [janela],
+      OR: explicito ? [naJanela, { id: explicito }] : [naJanela],
     },
     select: {
       id: true, amount: true, transaction_type: true, transaction_date: true,

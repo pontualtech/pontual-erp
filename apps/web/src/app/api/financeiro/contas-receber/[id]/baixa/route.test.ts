@@ -86,6 +86,17 @@ describe('Receber (baixa de AR) — livro-razão', () => {
     expect(m.accUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ current_balance: { increment: 15000 } }) }))
   })
 
+  it('E3: janela do Receber = 10 dias antes / 3 depois da data real; linha de 20 dias antes não é ligada (cria)', async () => {
+    m.txFindMany.mockResolvedValue([livro({ transaction_date: new Date('2026-10-09T00:00:00Z') })])
+    const j = await (await receber()).json()
+    expect(m.txFindMany.mock.calls[0][0].where.OR[0]).toEqual({
+      transaction_date: { gte: new Date('2026-10-19T00:00:00Z'), lte: new Date('2026-11-01T00:00:00Z') },
+    })
+    expect(j.data.ligada).toBe(false)
+    expect(m.txUpdateMany).not.toHaveBeenCalled()
+    expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ bank_ref: 'AR:r1', amount: 15000 }) })
+  })
+
   it('linha já ligada por outra baixa (count 0): 409, sem criar nem creditar', async () => {
     m.txFindMany.mockResolvedValue([livro()])
     m.txUpdateMany.mockResolvedValue({ count: 0 })

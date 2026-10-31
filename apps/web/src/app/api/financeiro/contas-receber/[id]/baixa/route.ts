@@ -5,7 +5,7 @@ import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { baixaSchema } from '@/lib/validations/financeiro'
 import { isReceivableSettled } from '@/lib/finance/receivable-status'
-import { decidirBaixa, recebeCategoria } from '@/lib/financeiro/livro-baixa'
+import { decidirBaixa, JANELA_BAIXA, recebeCategoria } from '@/lib/financeiro/livro-baixa'
 import { candidatosLivro, categoriaId, hojeSP, nomeCategoria } from '@/lib/financeiro/livro-baixa-db'
 import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
 import { CATEGORIA_RECEITA_SERVICOS } from '@/lib/financeiro/livro-categorias'
@@ -75,11 +75,11 @@ export async function POST(req: NextRequest, { params }: Params) {
 
       // Livro-razão (30/10): se a entrada já foi lançada pelo banco, liga a ela (decide antes de escrever).
       const dataBaixa = data.received_at ? new Date(data.received_at).toISOString().slice(0, 10) : hojeSP()
-      const candidatos = await candidatosLivro(tx, user.companyId, data.account_id, 'CREDIT', dataBaixa, null)
+      const candidatos = await candidatosLivro(tx, user.companyId, data.account_id, 'CREDIT', dataBaixa, null, JANELA_BAIXA)
       const categoria = fresh.category_id
         ?? await categoriaReceitaPadraoId(tx, user.companyId)
       const nomeAlvo = fresh.category_id ? await nomeCategoria(tx, user.companyId, fresh.category_id) : CATEGORIA_RECEITA_SERVICOS
-      const decisao = decidirBaixa({ tipo: 'CREDIT', amount: data.received_amount, data: dataBaixa, categoria: nomeAlvo }, null, candidatos)
+      const decisao = decidirBaixa({ tipo: 'CREDIT', amount: data.received_amount, data: dataBaixa, categoria: nomeAlvo }, null, candidatos, JANELA_BAIXA)
 
       // Bug #41 (audit 31/05): mesmo race condition de AP — findFirst+update
       // não trava row. Guard atomic com updateMany where status != RECEBIDO.

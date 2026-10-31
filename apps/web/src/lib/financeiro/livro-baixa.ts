@@ -5,8 +5,12 @@ import { CATEGORIAS_FORA_DO_TOTAL } from './livro-resumo'
 export const CATEGORIAS_FALLBACK = ['A classificar', 'Receita a identificar'] as const
 
 // Janela (dias) em torno da data da baixa para achar o lançamento do livro.
-// antes: 30 → "Conferir" (ancorado em hoje) semanas depois do crédito ainda liga; depois: 3 → baixa com data retroativa.
-export const JANELA_BAIXA = { antes: 30, depois: 3 }
+export type JanelaBaixa = { antes: number; depois: number }
+// Receber/Pagar, ancorados na data real da baixa: antes: 10 (linha mais antiga pode ser de outro cliente);
+// depois: 3 → baixa com data retroativa.
+export const JANELA_BAIXA: JanelaBaixa = { antes: 10, depois: 3 }
+// Conferir sem vínculo explícito (bulk-reconcile, ancorado em hoje): semanas depois do crédito ainda liga.
+export const JANELA_CONFERIR: JanelaBaixa = { antes: 30, depois: 3 }
 
 // Diferença máxima (centavos) aceita quando o usuário escolhe o lançamento explicitamente.
 export const TOLERANCIA_EXPLICITO = 100
@@ -49,6 +53,7 @@ export function decidirBaixa(
   alvo: { tipo: 'CREDIT' | 'DEBIT'; amount: number; data: string; categoria?: string | null },
   explicito: string | null,
   candidatos: CandidatoLivro[],
+  janela: JanelaBaixa = JANELA_BAIXA, // a mesma passada a candidatosLivro
 ): DecisaoBaixa {
   if (explicito) {
     const c = candidatos.find((x) => x.id === explicito)
@@ -71,7 +76,7 @@ export function decidirBaixa(
     if (c.origin !== 'BANCO' || c.transaction_type !== alvo.tipo || c.amount !== alvo.amount) continue
     if (c.linked_ref || (c.categoria !== null && CATEGORIAS_FORA_DO_TOTAL.includes(c.categoria))) continue
     const delta = diasEntre(c.transaction_date, alvo.data) // negativo = antes da baixa
-    if (delta < -JANELA_BAIXA.antes || delta > JANELA_BAIXA.depois) continue
+    if (delta < -janela.antes || delta > janela.depois) continue
     const rank = recebeCategoria(c.categoria) ? 0 : alvo.categoria && c.categoria === alvo.categoria ? 1 : 2
     if (rank === 2) continue
     const dist = Math.abs(delta)

@@ -90,6 +90,17 @@ describe('baixa de AP — livro-razão', () => {
     expect(m.accUpdate).not.toHaveBeenCalled()
   })
 
+  it('E3: janela do Pagar = 10 dias antes / 3 depois da data real; linha de 20 dias antes não é ligada (cria)', async () => {
+    m.txFindMany.mockResolvedValue([livro({ transaction_date: new Date('2026-10-09T00:00:00Z') })])
+    const res = await POST(req({ paid_amount: 5000, account_id: ACC, paid_at: '2026-10-29' }), { params: { id: 'p1' } })
+    expect(m.txFindMany.mock.calls[0][0].where.OR[0]).toEqual({
+      transaction_date: { gte: new Date('2026-10-19T00:00:00Z'), lte: new Date('2026-11-01T00:00:00Z') },
+    })
+    expect((await res.json()).data.ligada).toBe(false)
+    expect(m.txUpdateMany).not.toHaveBeenCalled()
+    expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ bank_ref: 'AP:p1', amount: 5000 }) })
+  })
+
   it('sem candidato: cria e debita como hoje', async () => {
     m.txFindMany.mockResolvedValue([])
     const res = await POST(req({ paid_amount: 5000, account_id: ACC, paid_at: '2026-10-29' }), { params: { id: 'p1' } })

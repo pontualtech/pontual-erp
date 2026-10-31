@@ -5,7 +5,7 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { refsCreditoAdquirente } from '@/lib/acquirer/match-rules'
-import { categoriaAoDesligar, decidirBaixa, recebeCategoria } from '@/lib/financeiro/livro-baixa'
+import { categoriaAoDesligar, decidirBaixa, JANELA_BAIXA, JANELA_CONFERIR, recebeCategoria } from '@/lib/financeiro/livro-baixa'
 import { candidatosLivro, categoriaId, hojeSP, nomeCategoria } from '@/lib/financeiro/livro-baixa-db'
 import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
 import { CATEGORIA_RECEITA_SERVICOS } from '@/lib/financeiro/livro-categorias'
@@ -141,8 +141,10 @@ export async function POST(req: NextRequest) {
             const nomeAlvo = ar.category_id ? await nomeCategoria(tx, user.companyId, ar.category_id) : CATEGORIA_RECEITA_SERVICOS
 
             // Decide ANTES de escrever: explícito inválido não baixa nada.
-            const candidatos = await candidatosLivro(tx, user.companyId, ar.account_id, 'CREDIT', hojeSP(), pedido)
-            const decisao = decidirBaixa({ tipo: 'CREDIT', amount, data: hojeSP(), categoria: nomeAlvo }, pedido, candidatos)
+            // Sem vínculo explícito, Conferir (ancorado em hoje) olha 30 dias para trás (E3); a linha pedida entra por id.
+            const janela = pedido ? JANELA_BAIXA : JANELA_CONFERIR
+            const candidatos = await candidatosLivro(tx, user.companyId, ar.account_id, 'CREDIT', hojeSP(), pedido, janela)
+            const decisao = decidirBaixa({ tipo: 'CREDIT', amount, data: hojeSP(), categoria: nomeAlvo }, pedido, candidatos, janela)
             if ('erro' in decisao) return { erro: decisao.erro }
 
             await tx.accountReceivable.update({
