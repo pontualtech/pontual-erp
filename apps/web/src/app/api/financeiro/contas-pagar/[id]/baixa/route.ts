@@ -124,6 +124,9 @@ export async function POST(req: NextRequest, { params }: Params) {
           company_id: user.companyId,
           status: { notIn: ['PAGO', 'CANCELADO'] },
           deleted_at: null,
+          // Onda 3 (G1): só vence se o valor pago ainda é o relido — duas baixas parciais concorrentes
+          // (duplo clique) ficam PENDENTE e passariam as duas pelo status; a 2ª dá count 0 → 409.
+          ...(previousPaid === 0 ? { OR: [{ paid_amount: 0 }, { paid_amount: null }] } : { paid_amount: previousPaid }),
         },
         data: {
           paid_amount: newPaidTotal,

@@ -106,6 +106,42 @@ describe('Receber (baixa de AR) — livro-razão', () => {
     expect(m.accUpdate).not.toHaveBeenCalled()
   })
 
+  describe('G1: a claim só vence se o valor recebido ainda é o relido (duplo clique de baixa parcial)', () => {
+    // Linha real no banco com `received_amount` = valor (outra baixa já comitou); a releitura (findFirst) pode estar defasada.
+    const linhaReal = (valor: number) => m.arUpdateMany.mockImplementation(async ({ where }: any) => {
+      const casa = 'OR' in where
+        ? where.OR.some((c: any) => c.received_amount === valor)
+        : !('received_amount' in where) || where.received_amount === valor
+      return { count: casa ? 1 : 0 }
+    })
+    const receberValor = (v: number) => POST(req({ received_amount: v, account_id: ACC, received_at: '2026-10-29' }), { params: { id: 'r1' } })
+
+    it('AR sem nada recebido: a claim exige received_amount 0 ou null', async () => {
+      m.txFindMany.mockResolvedValue([])
+      await receber()
+      expect(m.arUpdateMany.mock.calls[0][0].where).toEqual(expect.objectContaining({ OR: [{ received_amount: 0 }, { received_amount: null }] }))
+    })
+
+    it('AR com parcial 5000 relido: a claim exige received_amount 5000', async () => {
+      m.arFindFirst.mockResolvedValue({ ...AR, received_amount: 5000 })
+      m.txFindMany.mockResolvedValue([])
+      await receberValor(5000)
+      expect(m.arUpdateMany.mock.calls[0][0].where).toEqual(expect.objectContaining({ received_amount: 5000 }))
+      expect(m.arUpdateMany.mock.calls[0][0].where).not.toHaveProperty('OR')
+    })
+
+    it('duplo clique: a 1ª baixa parcial já comitou 5000 (releitura defasada mostra 0) → 409, nada criado nem creditado', async () => {
+      m.txFindMany.mockResolvedValue([])
+      linhaReal(5000)
+      const res = await receberValor(5000)
+      expect(res.status).toBe(409)
+      expect((await res.json()).error).toMatch(/Baixa concorrente detectada/)
+      expect(m.txCreate).not.toHaveBeenCalled()
+      expect(m.txUpdateMany).not.toHaveBeenCalled()
+      expect(m.accUpdate).not.toHaveBeenCalled()
+    })
+  })
+
   describe('E7: conflito de concorrência na baixa não vira 500', () => {
     it('outra baixa venceu a claim (count 0): 409, nada criado nem creditado', async () => {
       m.txFindMany.mockResolvedValue([])

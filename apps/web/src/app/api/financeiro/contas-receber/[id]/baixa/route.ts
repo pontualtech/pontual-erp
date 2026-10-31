@@ -89,6 +89,9 @@ export async function POST(req: NextRequest, { params }: Params) {
           company_id: user.companyId,
           status: { notIn: ['RECEBIDO', 'LIQUIDADO', 'PAGO', 'CANCELADO'] },
           deleted_at: null,
+          // Onda 3 (G1): só vence se o valor recebido ainda é o relido — duas baixas parciais concorrentes
+          // (duplo clique) ficam PENDENTE e passariam as duas pelo status; a 2ª dá count 0 → 409.
+          ...(previousReceived === 0 ? { OR: [{ received_amount: 0 }, { received_amount: null }] } : { received_amount: previousReceived }),
         },
         data: {
           received_amount: newReceivedTotal,
