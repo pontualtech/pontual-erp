@@ -61,7 +61,7 @@ describe('estorno de AR — livro-razão', () => {
   it('baixa mista (3000 criada + 12000 ligada): desliga e compensa só o crédito próprio 3000', async () => {
     transacoes(
       [{ id: 't1', amount: 12000, source_text: 'PIX', description: 'x', category_id: 'cat:Venda de Servicos' }],
-      [{ amount: 3000, transaction_type: 'CREDIT', bank_ref: 'AR:r1' }],
+      [{ amount: 3000, transaction_type: 'CREDIT', bank_ref: 'AR:r1', account_id: 'acc1' }],
     )
     await POST(req(), { params: { id: 'r1' } })
     expect(m.txFindMany).toHaveBeenCalledWith(expect.objectContaining({
@@ -79,11 +79,49 @@ describe('estorno de AR — livro-razão', () => {
     expect(m.accUpdate).not.toHaveBeenCalled()
   })
 
-  it('AR sem lançamento ligado: estorno como hoje (DEBIT + saldo)', async () => {
-    transacoes([])
+  it('AR sem lançamento ligado e com crédito próprio AR:id: DEBIT + saldo pelo crédito próprio', async () => {
+    transacoes([], [{ amount: 15000, transaction_type: 'CREDIT', bank_ref: 'AR:r1', account_id: 'acc1' }])
     await POST(req(), { params: { id: 'r1' } })
+    expect(m.txFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { company_id: 'c1', bank_ref: { in: ['AR:r1', 'AR:r1:estorno'] } },
+    }))
     expect(m.txUpdate).not.toHaveBeenCalled()
-    expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ transaction_type: 'DEBIT', amount: 15000, bank_ref: 'AR:r1:estorno' }) })
-    expect(m.accUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ current_balance: { decrement: 15000 } }) }))
+    expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ account_id: 'acc1', transaction_type: 'DEBIT', amount: 15000, bank_ref: 'AR:r1:estorno' }) })
+    expect(m.accUpdate).toHaveBeenCalledWith({ where: { id: 'acc1' }, data: expect.objectContaining({ current_balance: { decrement: 15000 } }) })
+  })
+
+  it('F2: Receber ligou → Conferir → Desfazer desligou → Estornar (sem crédito próprio nem linha ligada): só volta o status, nada de DEBIT nem saldo', async () => {
+    transacoes([], [])
+    const res = await POST(req(), { params: { id: 'r1' } })
+    expect(res.status).toBe(200)
+    expect(m.arUpdateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'PENDENTE', received_amount: 0 }) }))
+    expect(m.txCreate).not.toHaveBeenCalled()
+    expect(m.accUpdate).not.toHaveBeenCalled()
+  })
+
+  it('F2: a conta do DEBIT vem do crédito próprio (não de existing.account_id)', async () => {
+    transacoes([], [{ amount: 15000, transaction_type: 'CREDIT', bank_ref: 'AR:r1', account_id: 'acc2' }])
+    await POST(req(), { params: { id: 'r1' } })
+    expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ account_id: 'acc2', amount: 15000 }) })
+    expect(m.accUpdate).toHaveBeenCalledWith({ where: { id: 'acc2' }, data: expect.objectContaining({ current_balance: { decrement: 15000 } }) })
+    expect(m.accUpdate).toHaveBeenCalledTimes(1)
+  })
+
+  it('F2: crédito próprio já estornado antes (CREDIT − DEBIT :estorno = 0): nada de DEBIT nem saldo', async () => {
+    transacoes([], [
+      { amount: 15000, transaction_type: 'CREDIT', bank_ref: 'AR:r1', account_id: 'acc1' },
+      { amount: 15000, transaction_type: 'DEBIT', bank_ref: 'AR:r1:estorno', account_id: 'acc1' },
+    ])
+    await POST(req(), { params: { id: 'r1' } })
+    expect(m.txCreate).not.toHaveBeenCalled()
+    expect(m.accUpdate).not.toHaveBeenCalled()
+  })
+
+  it('F2: AR sem account_id mas com crédito próprio numa conta: compensa naquela conta', async () => {
+    m.arFindFirst.mockResolvedValue({ ...AR, account_id: null })
+    transacoes([], [{ amount: 15000, transaction_type: 'CREDIT', bank_ref: 'AR:r1', account_id: 'acc3' }])
+    await POST(req(), { params: { id: 'r1' } })
+    expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ account_id: 'acc3', amount: 15000, bank_ref: 'AR:r1:estorno' }) })
+    expect(m.accUpdate).toHaveBeenCalledWith({ where: { id: 'acc3' }, data: expect.objectContaining({ current_balance: { decrement: 15000 } }) })
   })
 })

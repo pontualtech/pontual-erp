@@ -12,8 +12,8 @@ import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-pad
  *
  * C10 fix 22/05: estorno de AR ja recebida. Reverte:
  *   1. Marca AR como PENDENTE (received_amount → 0)
- *   2. Cria Transaction DEBIT (reverte o CREDIT original) na mesma conta
- *   3. Atualiza current_balance (-= received_amount)
+ *   2. Cria Transaction DEBIT (reverte o CREDIT original) na conta do CREDIT
+ *   3. Atualiza current_balance (-= o que o ERP creditou e ainda não foi estornado)
  */
 type Params = { params: { id: string } }
 
@@ -33,11 +33,8 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (existing.status !== 'RECEBIDO' && existing.status !== 'LIQUIDADO' && existing.status !== 'PAGO') return error('Apenas ARs com status RECEBIDO/LIQUIDADO podem ser estornadas', 400)
     if (!existing.received_amount || existing.received_amount <= 0) return error('AR sem received_amount valido', 400)
 
-    // 2026-06-03 fix (OS 60548): ARs antigas/portal sem account_id podem ser estornadas
-    // apenas no nível do status — não havia Transaction CREDIT nem balance afetado, então
-    // nada pra reverter financeiramente. Antes: bloqueava com erro 400.
-    const hasAccount = !!existing.account_id
-
+    // 2026-06-03 fix (OS 60548): ARs antigas/portal sem Transaction CREDIT própria são estornadas
+    // apenas no nível do status — nada pra reverter financeiramente. Antes: bloqueava com erro 400.
     await prisma.$transaction(async (tx: any) => {
       // Bug #67 (audit 31/05 LOOP r7): race em estornar — mesma classe de #41.
       // Guard atomic com updateMany where status='RECEBIDO' (ou 'PAGO' defensivo).
@@ -65,7 +62,6 @@ export async function POST(req: NextRequest, { params }: Params) {
         where: { company_id: user.companyId, linked_ref: `AR:${params.id}` },
         select: { id: true, source_text: true, description: true, category_id: true },
       })
-      let remanescente = existing.received_amount!
       if (ligados.length > 0) {
         const fallback = await categoriaId(tx, user.companyId, 'Receita a identificar')
         const daBaixa = existing.category_id
@@ -80,23 +76,28 @@ export async function POST(req: NextRequest, { params }: Params) {
             },
           })
         }
-        // Baixa mista: compensa só o que o próprio ERP creditou (AR:id), menos estornos anteriores.
-        const proprias = await tx.transaction.findMany({
-          where: { company_id: user.companyId, bank_ref: { in: [`AR:${params.id}`, `AR:${params.id}:estorno`] } },
-          select: { amount: true, transaction_type: true, bank_ref: true },
-        })
-        remanescente = 0
-        for (const t of proprias) {
-          if (t.bank_ref === `AR:${params.id}` && t.transaction_type === 'CREDIT') remanescente += t.amount
-          if (t.bank_ref === `AR:${params.id}:estorno` && t.transaction_type === 'DEBIT') remanescente -= t.amount
-        }
       }
 
-      if (hasAccount && remanescente > 0) {
+      // Onda 2 (F2): o que compensar e EM QUAL conta vem SEMPRE das transações próprias da AR
+      // (CREDIT AR:id − DEBIT AR:id:estorno, por conta) — nunca de received_amount/existing.account_id.
+      // Sem crédito próprio (ex.: o crédito era a linha do banco, já desligada) → só volta o status.
+      const proprias = await tx.transaction.findMany({
+        where: { company_id: user.companyId, bank_ref: { in: [`AR:${params.id}`, `AR:${params.id}:estorno`] } },
+        select: { amount: true, transaction_type: true, bank_ref: true, account_id: true },
+      })
+      const remanescentePorConta = new Map<string, number>()
+      for (const t of proprias) {
+        const sinal = t.bank_ref === `AR:${params.id}` && t.transaction_type === 'CREDIT' ? 1
+          : t.bank_ref === `AR:${params.id}:estorno` && t.transaction_type === 'DEBIT' ? -1 : 0
+        if (sinal !== 0) remanescentePorConta.set(t.account_id, (remanescentePorConta.get(t.account_id) ?? 0) + sinal * t.amount)
+      }
+
+      for (const [contaId, remanescente] of remanescentePorConta) {
+        if (remanescente <= 0) continue
         await tx.transaction.create({
           data: {
             company_id: user.companyId,
-            account_id: existing.account_id!,
+            account_id: contaId,
             transaction_type: 'DEBIT',
             amount: remanescente,
             description: `Estorno: ${existing.description}${motivo ? ` (${motivo})` : ''}`,
@@ -107,7 +108,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         })
 
         await tx.account.update({
-          where: { id: existing.account_id! },
+          where: { id: contaId },
           data: {
             current_balance: { decrement: remanescente },
             updated_at: new Date(),
