@@ -7,6 +7,7 @@ import { logAudit } from '@/lib/audit'
 import { refsCreditoAdquirente } from '@/lib/acquirer/match-rules'
 import { categoriaAoDesligar, decidirBaixa, recebeCategoria } from '@/lib/financeiro/livro-baixa'
 import { candidatosLivro, categoriaId, hojeSP, nomeCategoria } from '@/lib/financeiro/livro-baixa-db'
+import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
 import { CATEGORIA_RECEITA_SERVICOS } from '@/lib/financeiro/livro-categorias'
 
 // Lançamento do livro foi ligado por outra baixa concorrente → desfaz a $transaction desta AR.
@@ -117,7 +118,7 @@ export async function POST(req: NextRequest) {
         try {
           resultado = await prisma.$transaction(async (tx): Promise<{ erro?: string; ligada?: boolean }> => {
           const categoria = ar.category_id
-            ?? await categoriaId(tx, user.companyId, CATEGORIA_RECEITA_SERVICOS, 'financeiro_receita')
+            ?? await categoriaReceitaPadraoId(tx, user.companyId)
           const nomeAlvo = ar.category_id ? await nomeCategoria(tx, user.companyId, ar.category_id) : CATEGORIA_RECEITA_SERVICOS
 
           // Decide ANTES de escrever: explícito inválido não baixa nada.
@@ -189,7 +190,7 @@ export async function POST(req: NextRequest) {
         const ligado = tx?.linked_ref === `AR:${ar.id}`
         const fallback = ligado ? await categoriaId(prisma, user.companyId, 'Receita a identificar') : null
         const daBaixa = ligado
-          ? ar.category_id ?? await categoriaId(prisma, user.companyId, CATEGORIA_RECEITA_SERVICOS, 'financeiro_receita')
+          ? ar.category_id ?? await categoriaReceitaPadraoId(prisma, user.companyId)
           : null
 
         await prisma.$transaction(async (txc) => {

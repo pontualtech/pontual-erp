@@ -5,7 +5,7 @@ import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { categoriaAoDesligar } from '@/lib/financeiro/livro-baixa'
 import { categoriaId } from '@/lib/financeiro/livro-baixa-db'
-import { CATEGORIA_RECEITA_SERVICOS } from '@/lib/financeiro/livro-categorias'
+import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
 
 /**
  * POST /api/financeiro/contas-receber/[id]/estornar
@@ -69,7 +69,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       if (ligados.length > 0) {
         const fallback = await categoriaId(tx, user.companyId, 'Receita a identificar')
         const daBaixa = existing.category_id
-          ?? await categoriaId(tx, user.companyId, CATEGORIA_RECEITA_SERVICOS, 'financeiro_receita')
+          ?? await categoriaReceitaPadraoId(tx, user.companyId)
         for (const l of ligados) {
           await tx.transaction.update({
             where: { id: l.id },

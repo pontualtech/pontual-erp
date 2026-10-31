@@ -168,13 +168,16 @@ export async function POST(req: NextRequest) {
       let count = 0
       for (const t of alvos) {
         const antes = t.transaction_date.toISOString().slice(0, 10)
+        const dataBR = t.transaction_date.toLocaleDateString('pt-BR', { timeZone: 'UTC' })
         const r = await tx.transaction.updateMany({
           where: { ...where, id: t.id },
           data: {
             ...extra,
             source_text: `LIGADA:${chave}`,
             transaction_date: dataBanco,
-            ...(antes !== novaData ? { description: `${t.description ?? ''} (baixa no ERP em ${antes})` } : {}),
+            ...(antes !== novaData
+              ? { description: t.description ? `${t.description} (lançado no ERP em ${dataBR})` : `Lançado no ERP em ${dataBR}` }
+              : {}),
           },
         })
         count += r.count
@@ -186,7 +189,13 @@ export async function POST(req: NextRequest) {
     const marcarLigadas = (tx: Pick<typeof prisma, 'transaction'>, refs: string[], chave: string, dataBanco: Date) =>
       ligarComDataBanco(
         tx,
-        { company_id: user.companyId, account_id: body.account_id, bank_ref: { in: refs }, source_text: null },
+        {
+          company_id: user.companyId,
+          account_id: body.account_id,
+          bank_ref: { in: refs },
+          // Mesmo critério de creditoUsavelParaVinculo: qualquer crédito ainda não tomado por outra linha.
+          OR: [{ source_text: null }, { NOT: { source_text: { startsWith: 'LIGADA:' } } }],
+        },
         {},
         chave,
         dataBanco,

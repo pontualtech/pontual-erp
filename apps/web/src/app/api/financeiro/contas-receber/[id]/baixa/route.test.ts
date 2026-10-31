@@ -14,7 +14,7 @@ const { m, db } = vi.hoisted(() => {
     accountPayable: { findFirst: m.apFindFirst, update: m.apUpdate },
     account: { findFirst: m.accFindFirst, update: m.accUpdate },
     transaction: { findFirst: m.txFindFirst, findMany: m.txFindMany, create: m.txCreate, updateMany: m.txUpdateMany },
-    category: { findFirst: m.catFindFirst },
+    category: { findFirst: m.catFindFirst, findMany: async () => [{ id: 'cat:Venda de Servicos', name: 'Venda de Servicos' }] },
     $transaction: async (cb: (tx: unknown) => unknown) => cb(db),
   }
   return { m, db }

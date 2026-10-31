@@ -7,6 +7,7 @@ import { baixaSchema } from '@/lib/validations/financeiro'
 import { isReceivableSettled } from '@/lib/finance/receivable-status'
 import { decidirBaixa, recebeCategoria } from '@/lib/financeiro/livro-baixa'
 import { candidatosLivro, categoriaId, hojeSP, nomeCategoria } from '@/lib/financeiro/livro-baixa-db'
+import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
 import { CATEGORIA_RECEITA_SERVICOS } from '@/lib/financeiro/livro-categorias'
 
 // Lançamento já ligado por outra baixa concorrente → 409, nada escrito.
@@ -76,7 +77,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       const dataBaixa = data.received_at ? new Date(data.received_at).toISOString().slice(0, 10) : hojeSP()
       const candidatos = await candidatosLivro(tx, user.companyId, data.account_id, 'CREDIT', dataBaixa, null)
       const categoria = fresh.category_id
-        ?? await categoriaId(tx, user.companyId, CATEGORIA_RECEITA_SERVICOS, 'financeiro_receita')
+        ?? await categoriaReceitaPadraoId(tx, user.companyId)
       const nomeAlvo = fresh.category_id ? await nomeCategoria(tx, user.companyId, fresh.category_id) : CATEGORIA_RECEITA_SERVICOS
       const decisao = decidirBaixa({ tipo: 'CREDIT', amount: data.received_amount, data: dataBaixa, categoria: nomeAlvo }, null, candidatos)
 

@@ -12,7 +12,7 @@ const db = {
   payment: { findMany: m.payFindMany },
   transaction: { findFirst: m.txFindFirst, findMany: m.txFindMany, create: m.txCreate, update: m.txUpdate, updateMany: m.txUpdateMany, delete: m.txDelete },
   account: { update: m.accUpdate },
-  category: { findFirst: m.catFindFirst },
+  category: { findFirst: m.catFindFirst, findMany: async () => [{ id: 'cat:Venda de Servicos', name: 'Venda de Servicos' }] },
   $transaction: async (cb: (tx: unknown) => unknown) => cb(db),
 }
 return { m, db } })
