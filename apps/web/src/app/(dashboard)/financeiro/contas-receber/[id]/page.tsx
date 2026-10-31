@@ -308,10 +308,11 @@ export default function ContaReceberDetalhePage() {
       })
       const d = await recRes.json()
       if (!recRes.ok) throw new Error(d.error || 'Erro ao marcar conciliado')
-      // Resposta 200 pode trazer a AR em erros (ex.: já conciliada) → não mostrar sucesso.
+      // Resposta 200 pode trazer a AR em erros (ex.: conta não recebida) → toast de erro, não de sucesso; nos dois
+      // casos o modal fecha e a tela recarrega (o PATCH acima já vinculou o banco).
       const r = resultadoConferencia(d.data, 'Banco vinculado + conferido no extrato')
-      if (!r.ok) throw new Error(r.mensagem)
-      toast.success(r.mensagem)
+      if (r.ok) toast.success(r.mensagem)
+      else toast.error(r.mensagem)
       setShowConferirSemBanco(false); setConferirBancoId(''); loadConta()
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Erro') }
     finally { setConferirSaving(false) }
@@ -466,10 +467,11 @@ export default function ContaReceberDetalhePage() {
                   })
                   const data = await res.json()
                   if (!res.ok) throw new Error(data.error || 'Erro')
-                  // Resposta 200 pode trazer a AR em erros (ex.: vínculo não feito, já conciliada) → não mostrar sucesso.
+                  // Resposta 200 pode trazer a AR em erros (ex.: conta não recebida) → toast de erro, não de sucesso;
+                  // nos dois casos a tela recarrega (o estado da conta pode ter mudado no servidor).
                   const r = resultadoConferencia(data.data, 'Conferido no extrato — AR marcada como conciliada')
-                  if (!r.ok) throw new Error(r.mensagem)
-                  toast.success(r.mensagem)
+                  if (r.ok) toast.success(r.mensagem)
+                  else toast.error(r.mensagem)
                   loadConta()
                 } catch (e) {
                   toast.error(e instanceof Error ? e.message : 'Erro ao marcar como conferido')

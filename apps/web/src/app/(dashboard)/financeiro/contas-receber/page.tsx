@@ -673,7 +673,7 @@ export default function ContasReceberPage() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Erro')
-      // Resposta 200 pode trazer contas em erros (ex.: já conciliada) → toast de erro com os motivos.
+      // Resposta 200 pode trazer contas em erros (ex.: conta não recebida) → toast de erro com os motivos; a lista recarrega igual.
       const r = resultadoConferencia(data.data, `${data.data?.updated ?? 0} conta(s) ${markAsReconciled ? 'conferidas' : 'desconferidas'}`)
       if (r.ok) toast.success(r.mensagem)
       else toast.error(r.mensagem)
