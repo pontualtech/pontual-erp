@@ -1,15 +1,18 @@
 // Resumo do realizado no banco por categoria (livro-razão). Lógica pura, em centavos.
 import { CATEGORIA_RECEITA_SERVICOS } from './livro-categorias'
 
-export const CATEGORIAS_FORA_DO_TOTAL = ['Ajuste de caixa', 'Transferência entre contas', 'Transferência entre empresas']
+export const CATEGORIAS_FORA_DO_TOTAL = ['Ajuste de caixa', 'Transferência entre contas', 'Transferência entre empresas', 'Estornos']
 
 type LinhaResumo = { transaction_type: string; amount: number; bank_ref: string | null; categoria: string | null }
 type TotalCategoria = { categoria: string; total: number }
 
 export function categoriaEfetiva(t: { transaction_type: string; bank_ref: string | null; categoria: string | null }): string {
   if (t.categoria) return t.categoria
+  const ref = t.bank_ref ?? ''
+  // Sem categoria: estorno (AR:x:estorno / AP:x:estorno) e transferência não são receita nem despesa.
+  if (ref.endsWith(':estorno')) return 'Estornos'
+  if (ref.startsWith('TRANSFER:')) return 'Transferência entre contas'
   if (t.transaction_type === 'CREDIT') {
-    const ref = t.bank_ref ?? ''
     if (ref.startsWith('AR:') || ref.startsWith('acquirer:') || ref.startsWith('pay_')) return CATEGORIA_RECEITA_SERVICOS
     return 'Receita a identificar'
   }
