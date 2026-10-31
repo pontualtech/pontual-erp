@@ -124,6 +124,8 @@ export async function POST(req: NextRequest, { params }: Params) {
           paid_amount: newPaidTotal,
           status: isPaidInFull ? 'PAGO' : 'PENDENTE',
           payment_method: fresh.payment_method,
+          // E5: AP sem conta ganha a da baixa (o estorno compensa pela conta do próprio DEBIT, não por esta).
+          ...(fresh.account_id ? {} : { account_id: data.account_id }),
           ...(notaDiferenca ? { notes: fresh.notes ? `${fresh.notes} — ${notaDiferenca}` : notaDiferenca } : {}),
           updated_at: new Date(),
         },

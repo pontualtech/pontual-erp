@@ -53,7 +53,7 @@ describe('estorno de AP — livro-razão', () => {
   it('baixa mista (3000 criada + 2000 ligada): desliga e compensa só o resto 3000', async () => {
     transacoes(
       [{ id: 't1', amount: 2000, source_text: 'PGTO ENEL', description: 'x', category_id: 'catEnergia' }],
-      [{ amount: 3000, transaction_type: 'DEBIT', bank_ref: 'AP:p1' }],
+      [{ amount: 3000, transaction_type: 'DEBIT', bank_ref: 'AP:p1', account_id: 'acc1' }],
     )
     await POST(req(), { params: { id: 'p1' } })
     expect(m.txFindMany).toHaveBeenCalledWith(expect.objectContaining({
@@ -78,7 +78,7 @@ describe('estorno de AP — livro-razão', () => {
   it('DEBIT próprio já compensado por estorno anterior não é compensado de novo', async () => {
     transacoes(
       [{ id: 't1', amount: 5000, source_text: 'PGTO ENEL', description: 'x', category_id: 'catEnergia' }],
-      [{ amount: 5000, transaction_type: 'DEBIT', bank_ref: 'AP:p1' }, { amount: 5000, transaction_type: 'CREDIT', bank_ref: 'AP:p1:estorno' }],
+      [{ amount: 5000, transaction_type: 'DEBIT', bank_ref: 'AP:p1', account_id: 'acc1' }, { amount: 5000, transaction_type: 'CREDIT', bank_ref: 'AP:p1:estorno', account_id: 'acc1' }],
     )
     await POST(req(), { params: { id: 'p1' } })
     expect(m.txCreate).not.toHaveBeenCalled()
@@ -94,11 +94,65 @@ describe('estorno de AP — livro-razão', () => {
     })
   })
 
-  it('AP sem lançamento ligado: estorno como hoje (CREDIT + saldo)', async () => {
-    transacoes([])
+  it('AP sem lançamento ligado e com DEBIT próprio AP:id: CREDIT + saldo pelo débito próprio', async () => {
+    transacoes([], [{ amount: 5000, transaction_type: 'DEBIT', bank_ref: 'AP:p1', account_id: 'acc1', source_text: null }])
     await POST(req(), { params: { id: 'p1' } })
+    expect(m.txFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { company_id: 'c1', bank_ref: { in: ['AP:p1', 'AP:p1:estorno'] } },
+    }))
     expect(m.txCreate).toHaveBeenCalledTimes(1)
-    expect(m.accUpdate).toHaveBeenCalledTimes(1)
+    expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ account_id: 'acc1', transaction_type: 'CREDIT', amount: 5000, bank_ref: 'AP:p1:estorno' }) })
+    expect(m.accUpdate).toHaveBeenCalledWith({ where: { id: 'acc1' }, data: expect.objectContaining({ current_balance: { increment: 5000 } }) })
+  })
+
+  describe('E5: espelha o estorno de AR (só o que o ERP debitou, por conta)', () => {
+    it('sem DEBIT próprio e sem linha ligada: só volta status/paid_amount, sem CREDIT nem saldo', async () => {
+      transacoes([], [])
+      const res = await POST(req(), { params: { id: 'p1' } })
+      expect(res.status).toBe(200)
+      expect(m.apUpdateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'PENDENTE', paid_amount: 0 }) }))
+      expect(m.txCreate).not.toHaveBeenCalled()
+      expect(m.accUpdate).not.toHaveBeenCalled()
+    })
+
+    it('a conta do CREDIT vem do DEBIT próprio (não de existing.account_id)', async () => {
+      transacoes([], [{ amount: 5000, transaction_type: 'DEBIT', bank_ref: 'AP:p1', account_id: 'acc2', source_text: null }])
+      await POST(req(), { params: { id: 'p1' } })
+      expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ account_id: 'acc2', amount: 5000 }) })
+      expect(m.accUpdate).toHaveBeenCalledWith({ where: { id: 'acc2' }, data: expect.objectContaining({ current_balance: { increment: 5000 } }) })
+      expect(m.accUpdate).toHaveBeenCalledTimes(1)
+    })
+
+    it('AP sem account_id deixa de ser 400: compensa na conta do DEBIT próprio', async () => {
+      m.apFindFirst.mockResolvedValue({ id: 'p1', status: 'PAGO', account_id: null, paid_amount: 5000, description: 'Luz', category_id: 'catEnergia' })
+      transacoes([], [{ amount: 5000, transaction_type: 'DEBIT', bank_ref: 'AP:p1', account_id: 'acc3', source_text: null }])
+      const res = await POST(req(), { params: { id: 'p1' } })
+      expect(res.status).toBe(200)
+      expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ account_id: 'acc3', amount: 5000, bank_ref: 'AP:p1:estorno' }) })
+      expect(m.accUpdate).toHaveBeenCalledWith({ where: { id: 'acc3' }, data: expect.objectContaining({ current_balance: { increment: 5000 } }) })
+    })
+
+    it('DEBIT AP:id LIGADO pelo livro (source_text LIGADA:…) é o dinheiro do banco: não é compensado', async () => {
+      transacoes([], [
+        { amount: 3000, transaction_type: 'DEBIT', bank_ref: 'AP:p1', account_id: 'acc1', source_text: 'LIGADA:itau:k1' },
+        { amount: 2000, transaction_type: 'DEBIT', bank_ref: 'AP:p1', account_id: 'acc1', source_text: null },
+      ])
+      await POST(req(), { params: { id: 'p1' } })
+      expect(m.txCreate).toHaveBeenCalledTimes(1)
+      expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ account_id: 'acc1', transaction_type: 'CREDIT', amount: 2000 }) })
+      expect(m.accUpdate).toHaveBeenCalledWith({ where: { id: 'acc1' }, data: expect.objectContaining({ current_balance: { increment: 2000 } }) })
+    })
+
+    it('DEBITs próprios em duas contas: um CREDIT por conta, cada um no seu saldo', async () => {
+      transacoes([], [
+        { amount: 3000, transaction_type: 'DEBIT', bank_ref: 'AP:p1', account_id: 'acc1', source_text: null },
+        { amount: 2000, transaction_type: 'DEBIT', bank_ref: 'AP:p1', account_id: 'acc2', source_text: null },
+      ])
+      await POST(req(), { params: { id: 'p1' } })
+      expect(m.txCreate).toHaveBeenCalledTimes(2)
+      expect(m.accUpdate).toHaveBeenCalledWith({ where: { id: 'acc1' }, data: expect.objectContaining({ current_balance: { increment: 3000 } }) })
+      expect(m.accUpdate).toHaveBeenCalledWith({ where: { id: 'acc2' }, data: expect.objectContaining({ current_balance: { increment: 2000 } }) })
+    })
   })
 
   describe('E4: estorno parcial (AP PENDENTE)', () => {

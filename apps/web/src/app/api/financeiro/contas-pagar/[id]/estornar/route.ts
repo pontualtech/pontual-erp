@@ -11,8 +11,8 @@ import { categoriaId } from '@/lib/financeiro/livro-baixa-db'
  *
  * C10 fix 22/05: estorno de AP ja paga. Reverte:
  *   1. Marca AP como PENDENTE (paid_amount → 0)
- *   2. Cria Transaction CREDIT (reverte o DEBIT original) na mesma conta
- *   3. Atualiza current_balance (+= paid_amount)
+ *   2. Cria Transaction CREDIT (reverte o DEBIT original) na conta do DEBIT
+ *   3. Atualiza current_balance (+= o que o ERP debitou e ainda não foi estornado)
  *
  * Antes, mexer em AP paga só era possível via DELETE (soft delete) que
  * deixava a Transaction DEBIT órfã + saldo deflacionado sem rastro.
@@ -36,7 +36,6 @@ export async function POST(req: NextRequest, { params }: Params) {
     // desfaz tudo o que o ERP criou/ligou para a conta e zera paid_amount.
     const paga = existing.status === 'PAGO'
     if (!paga && existing.status !== 'PENDENTE') return error('Apenas APs com status PAGO (ou PENDENTE com pagamento parcial) podem ser estornadas', 400)
-    if (!existing.account_id) return error('AP sem conta bancaria vinculada — nao da pra estornar saldo', 400)
     if (!existing.paid_amount || existing.paid_amount <= 0) {
       if (paga) return error('AP sem paid_amount valido', 400)
       const lancamento = await prisma.transaction.findFirst({
@@ -79,7 +78,6 @@ export async function POST(req: NextRequest, { params }: Params) {
         where: { company_id: user.companyId, linked_ref: `AP:${params.id}` },
         select: { id: true, source_text: true, description: true, category_id: true },
       })
-      let remanescente = existing.paid_amount!
       if (ligados.length > 0) {
         const fallback = await categoriaId(tx, user.companyId, 'A classificar')
         for (const l of ligados) {
@@ -92,43 +90,48 @@ export async function POST(req: NextRequest, { params }: Params) {
             },
           })
         }
-        // Baixa mista: compensa só o que o próprio ERP debitou (AP:id), menos estornos anteriores —
-        // não paid_amount − ligadas (a diferença de até R$ 1 do vínculo explícito viraria crédito falso).
-        const proprias = await tx.transaction.findMany({
-          where: { company_id: user.companyId, bank_ref: { in: [`AP:${params.id}`, `AP:${params.id}:estorno`] } },
-          select: { amount: true, transaction_type: true, bank_ref: true },
-        })
-        remanescente = 0
-        for (const t of proprias) {
-          if (t.bank_ref === `AP:${params.id}` && t.transaction_type === 'DEBIT') remanescente += t.amount
-          if (t.bank_ref === `AP:${params.id}:estorno` && t.transaction_type === 'CREDIT') remanescente -= t.amount
-        }
-        if (remanescente <= 0) return
       }
 
-      // 2. Criar Transaction CREDIT compensatoria (reverte o DEBIT original)
-      //    bank_ref aponta pra "AP:{id}:estorno" pra distinguir do DEBIT original
-      await tx.transaction.create({
-        data: {
-          company_id: user.companyId,
-          account_id: existing.account_id!,
-          transaction_type: 'CREDIT',
-          amount: remanescente,
-          description: `Estorno: ${existing.description}${motivo ? ` (${motivo})` : ''}`,
-          transaction_date: new Date(),
-          bank_ref: `AP:${params.id}:estorno`,
-          reconciled: true,
-        },
+      // Onda 3 (E5, espelha o F2 do AR): o que compensar e EM QUAL conta vem SEMPRE das transações próprias da AP
+      // (DEBIT AP:id − CREDIT AP:id:estorno, por conta) — nunca de paid_amount/existing.account_id. Sem débito
+      // próprio (ex.: só havia linha do banco ligada, já desligada) → só volta o status. DEBIT AP:id que o livro
+      // LIGOU a uma linha do banco (source_text 'LIGADA:…') é o dinheiro que saiu de verdade — não é compensado.
+      const proprias = await tx.transaction.findMany({
+        where: { company_id: user.companyId, bank_ref: { in: [`AP:${params.id}`, `AP:${params.id}:estorno`] } },
+        select: { amount: true, transaction_type: true, bank_ref: true, account_id: true, source_text: true },
       })
+      const remanescentePorConta = new Map<string, number>()
+      for (const t of proprias) {
+        if (t.transaction_type === 'DEBIT' && t.source_text?.startsWith('LIGADA:')) continue
+        const sinal = t.bank_ref === `AP:${params.id}` && t.transaction_type === 'DEBIT' ? 1
+          : t.bank_ref === `AP:${params.id}:estorno` && t.transaction_type === 'CREDIT' ? -1 : 0
+        if (sinal !== 0) remanescentePorConta.set(t.account_id, (remanescentePorConta.get(t.account_id) ?? 0) + sinal * t.amount)
+      }
 
-      // 3. Reverter saldo da conta
-      await tx.account.update({
-        where: { id: existing.account_id! },
-        data: {
-          current_balance: { increment: remanescente },
-          updated_at: new Date(),
-        },
-      })
+      for (const [contaId, remanescente] of remanescentePorConta) {
+        if (remanescente <= 0) continue
+        // CREDIT compensatório (reverte o DEBIT original): bank_ref "AP:{id}:estorno" distingue do DEBIT.
+        await tx.transaction.create({
+          data: {
+            company_id: user.companyId,
+            account_id: contaId,
+            transaction_type: 'CREDIT',
+            amount: remanescente,
+            description: `Estorno: ${existing.description}${motivo ? ` (${motivo})` : ''}`,
+            transaction_date: new Date(),
+            bank_ref: `AP:${params.id}:estorno`,
+            reconciled: true,
+          },
+        })
+
+        await tx.account.update({
+          where: { id: contaId },
+          data: {
+            current_balance: { increment: remanescente },
+            updated_at: new Date(),
+          },
+        })
+      }
     })
 
     logAudit({

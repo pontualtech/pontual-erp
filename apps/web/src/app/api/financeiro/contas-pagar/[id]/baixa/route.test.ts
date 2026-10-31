@@ -101,6 +101,16 @@ describe('baixa de AP — livro-razão', () => {
     expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ bank_ref: 'AP:p1', amount: 5000 }) })
   })
 
+  it('E5: AP sem account_id ganha a conta da baixa; AP com conta mantém a sua', async () => {
+    m.txFindMany.mockResolvedValue([])
+    await POST(req({ paid_amount: 5000, account_id: ACC, paid_at: '2026-10-29' }), { params: { id: 'p1' } })
+    expect(m.apUpdateMany.mock.calls[0][0].data).toEqual(expect.objectContaining({ account_id: ACC }))
+    m.apUpdateMany.mockClear()
+    m.apFindFirst.mockResolvedValue({ ...AP, account_id: 'outra' })
+    await POST(req({ paid_amount: 5000, account_id: ACC, paid_at: '2026-10-29' }), { params: { id: 'p1' } })
+    expect(m.apUpdateMany.mock.calls[0][0].data).not.toHaveProperty('account_id')
+  })
+
   it('sem candidato: cria e debita como hoje', async () => {
     m.txFindMany.mockResolvedValue([])
     const res = await POST(req({ paid_amount: 5000, account_id: ACC, paid_at: '2026-10-29' }), { params: { id: 'p1' } })
