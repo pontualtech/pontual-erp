@@ -471,7 +471,7 @@ export async function POST(
               // como "Venda de Serviços" vs "Venda de Servicos".
               let serviceRevenueCategoryId: string | null = null
               try {
-                serviceRevenueCategoryId = (await categoriaReceitaPadraoId(prisma, auth.companyId)) || null
+                serviceRevenueCategoryId = await categoriaReceitaPadraoId(prisma, auth.companyId)
               } catch { /* silent — AR fica sem categoria */ }
 
               // Comprovante capturado pelo motorista (PIX screenshot, foto maquininha)

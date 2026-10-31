@@ -119,7 +119,7 @@ export async function POST(req: NextRequest) {
     })
 
     if (!receivable) {
-      const cat = await categoriaReceitaPadraoId(prisma, portalUser.company_id).then((id) => ({ id })).catch(() => null)
+      const categoryId = await categoriaReceitaPadraoId(prisma, portalUser.company_id).catch(() => null)
 
       receivable = await prisma.accountReceivable.create({
         data: {
@@ -127,7 +127,7 @@ export async function POST(req: NextRequest) {
           customer_id: portalUser.customer_id,
           service_order_id: os.id,
           account_id: resolved.accountId,
-          category_id: cat?.id || null,
+          category_id: categoryId,
           description: `Cobranca OS #${os.os_number} (cartao via portal)`,
           total_amount: os.total_cost,
           received_amount: 0,

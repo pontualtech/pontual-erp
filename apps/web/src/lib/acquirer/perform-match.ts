@@ -1,5 +1,6 @@
 import { prisma } from '@pontual/db'
 import { novoEstadoReceivable, planoTaxas } from './match-rules'
+import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
 
 /**
  * Logica compartilhada de criar Payment + AR + 2 APs ao vincular uma
@@ -124,16 +125,13 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
           data: novoEstadoReceivable(receivable, txn.gross_amount, billingType, !!creditDate),
         })
       } else {
-        const cat = await tx.category.findFirst({
-          where: { company_id: companyId, module: 'financeiro_receita', name: { mode: 'insensitive', contains: 'Venda de Servi' } },
-          select: { id: true },
-        }).catch(() => null)
+        const categoryId = await categoriaReceitaPadraoId(tx, companyId).catch(() => null)
         receivable = await tx.accountReceivable.create({
           data: {
             company_id: companyId,
             customer_id: os.customer_id,
             service_order_id: os.id,
-            category_id: cat?.id || null,
+            category_id: categoryId,
             description: `OS-${osNum} (cartao na maquininha — ${txn.acquirer})`,
             total_amount: txn.gross_amount,
             received_amount: txn.gross_amount,

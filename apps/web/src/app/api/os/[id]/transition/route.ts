@@ -276,7 +276,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         // 2026-05-20 Fase D split balcao: usa lib compartilhada quando body trouxe splits[].
         // Lib cuida de N receivables com group_id, parcelas, card fee, etc.
         // received_now: true (default no balcao) => status=PAGO + reconciled=false.
-        const category = { id: await categoriaReceitaPadraoId(tx, user.companyId) }
+        const categoryId = await categoriaReceitaPadraoId(tx, user.companyId)
         const totalAmount = os.total_cost ?? 0
         // Fix 2026-05-26: 'RECEBIDO' canônico em AR (ver dre/route.ts pra justificativa)
         const splitStatus = receivedNow ? 'RECEBIDO' : 'PENDENTE'
@@ -286,7 +286,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           serviceOrderId: os.id,
           description: `OS-${String(os.os_number).padStart(4, '0')} — ${os.equipment_type || 'Serviço'} ${os.equipment_brand || ''} ${os.equipment_model || ''}`.trim(),
           dueDate: new Date(),
-          categoryId: category?.id || null,
+          categoryId,
           totalAmount,
           status: splitStatus,
           receivedAmount: receivedNow ? totalAmount : 0,
@@ -315,7 +315,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           },
         })
       } else if (needsNewReceivable) {
-        const category = { id: await categoriaReceitaPadraoId(tx, user.companyId) }
+        const categoryId = await categoriaReceitaPadraoId(tx, user.companyId)
 
         // Buscar conta bancária padrão para esta forma de pagamento
         const defaultAccountSetting = await tx.setting.findFirst({
@@ -392,7 +392,7 @@ export async function POST(req: NextRequest, { params }: Params) {
             company_id: user.companyId,
             customer_id: os.customer_id,
             service_order_id: os.id,
-            category_id: category?.id || null,
+            category_id: categoryId,
             account_id: defaultAccountId,
             description: `OS-${String(os.os_number).padStart(4, '0')} — ${os.equipment_type || 'Serviço'} ${os.equipment_brand || ''} ${os.equipment_model || ''}`.trim(),
             total_amount: totalAmount,

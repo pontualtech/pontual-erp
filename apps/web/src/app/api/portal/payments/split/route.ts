@@ -132,7 +132,7 @@ export async function POST(req: NextRequest) {
     if (!provider) return NextResponse.json({ error: 'Provider indisponivel' }, { status: 503 })
 
     // 6. Categoria padrao de receita
-    const cat = await categoriaReceitaPadraoId(prisma, portalUser.company_id).then((id) => ({ id })).catch(() => null)
+    const categoryId = await categoriaReceitaPadraoId(prisma, portalUser.company_id).catch(() => null)
 
     // 7. Cria N ARs via lib compartilhada (com group_id UUID gerado automaticamente)
     const { receivables, groupId } = await createReceivableOrSplit({
@@ -141,7 +141,7 @@ export async function POST(req: NextRequest) {
       serviceOrderId: os.id,
       description: `Cobranca OS #${os.os_number} (split portal cliente)`,
       dueDate: new Date(),
-      categoryId: cat?.id || null,
+      categoryId,
       totalAmount: os.total_cost,
       status: 'PENDENTE',
       reconciled: false,

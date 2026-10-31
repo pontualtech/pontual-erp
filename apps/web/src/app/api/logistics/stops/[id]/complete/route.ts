@@ -135,14 +135,14 @@ export async function POST(req: NextRequest, { params }: Params) {
                 })
 
                 if (!existingAR) {
-                  const category = { id: await categoriaReceitaPadraoId(tx, user.companyId) }
+                  const categoryId = await categoriaReceitaPadraoId(tx, user.companyId)
 
                   await tx.accountReceivable.create({
                     data: {
                       company_id: user.companyId,
                       customer_id: os.customer_id,
                       service_order_id: os.id,
-                      category_id: category?.id || null,
+                      category_id: categoryId,
                       description: `OS-${String(os.os_number).padStart(4, '0')} — ${os.equipment_type || 'Serviço'} ${os.equipment_brand || ''} ${os.equipment_model || ''}`.trim(),
                       total_amount: os.total_cost ?? 0,
                       received_amount: 0,
