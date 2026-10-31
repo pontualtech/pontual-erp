@@ -70,13 +70,22 @@ export async function POST(req: NextRequest) {
     // são sempre consistentes pra cada AR individualmente.
     for (const ar of arsToProcess) {
       const amount = ar.received_amount || ar.total_amount
-      if (!amount) continue
+      // Vínculo explícito pedido (só na conferência): se não puder ser feito, NÃO liquida — vai em erros (F11).
+      const pedido = reconciled ? livro?.[ar.id] ?? null : null
+      if (!amount) {
+        if (pedido) erros.push({ ar: ar.id, motivo: 'conta a receber sem valor; vínculo não feito' })
+        continue
+      }
 
       // 2026-06-03 fix (OS 60548): ARs antigas/portal sem account_id não conseguiam
       // ser desfeitas porque o loop pulava silenciosamente (updated=0).
       // Fix: quando account_id=null, só flipa flag+status (sem Transaction nem balance —
       // não havia o que reverter, pois nunca afetou conta bancária).
       if (!ar.account_id) {
+        if (pedido) {
+          erros.push({ ar: ar.id, motivo: 'conta a receber sem conta bancária; vínculo não feito' })
+          continue
+        }
         await prisma.accountReceivable.update({
           where: { id: ar.id, company_id: user.companyId },
           data: reconciled
@@ -99,7 +108,7 @@ export async function POST(req: NextRequest) {
         const existing = await prisma.transaction.findFirst({
           where: { company_id: user.companyId, OR: [{ bank_ref: { in: [`AR:${ar.id}`, ...refsCreditoAdquirente(pagamentos)] } }, { linked_ref: `AR:${ar.id}` }] },
         })
-        if (existing && livro?.[ar.id] && existing.id !== livro[ar.id]) {
+        if (existing && pedido && existing.id !== pedido) {
           // Vínculo explícito pedido, mas a AR já tem outro lançamento: não troca nem baixa em silêncio.
           erros.push({ ar: ar.id, motivo: 'conta a receber já tem lançamento; vínculo não feito' })
           continue
@@ -110,6 +119,8 @@ export async function POST(req: NextRequest) {
             where: { id: ar.id, company_id: user.companyId },
             data: { reconciled: true, status: 'LIQUIDADO', updated_at: new Date() },
           })
+          // Idempotente: o vínculo pedido já estava feito para a mesma linha.
+          if (pedido) ligadas++
           updated++
           continue
         }
@@ -122,14 +133,17 @@ export async function POST(req: NextRequest) {
           const nomeAlvo = ar.category_id ? await nomeCategoria(tx, user.companyId, ar.category_id) : CATEGORIA_RECEITA_SERVICOS
 
           // Decide ANTES de escrever: explícito inválido não baixa nada.
-          const candidatos = await candidatosLivro(tx, user.companyId, ar.account_id!, 'CREDIT', hojeSP(), livro?.[ar.id] ?? null)
-          const decisao = decidirBaixa({ tipo: 'CREDIT', amount, data: hojeSP(), categoria: nomeAlvo }, livro?.[ar.id] ?? null, candidatos)
+          const candidatos = await candidatosLivro(tx, user.companyId, ar.account_id!, 'CREDIT', hojeSP(), pedido)
+          const decisao = decidirBaixa({ tipo: 'CREDIT', amount, data: hojeSP(), categoria: nomeAlvo }, pedido, candidatos)
           if ('erro' in decisao) return { erro: decisao.erro }
 
-          await tx.accountReceivable.update({
-            where: { id: ar.id, company_id: user.companyId },
+          // Guard atômico (F7): `existing` foi lido fora da $transaction — só a primeira conferência concorrente
+          // vira a AR; a outra (count 0) não cria nem liga nada. reconciled null = ainda não conferida (como na UI).
+          const claim = await tx.accountReceivable.updateMany({
+            where: { id: ar.id, company_id: user.companyId, OR: [{ reconciled: false }, { reconciled: null }] },
             data: { reconciled: true, status: 'LIQUIDADO', updated_at: new Date() },
           })
+          if (claim.count === 0) return { erro: 'já conciliada' }
           if ('usar' in decisao) {
             // Liga ao lançamento do livro: o dinheiro já está no saldo — NÃO cria transação nem mexe na conta.
             const alvo = await tx.transaction.findFirst({
