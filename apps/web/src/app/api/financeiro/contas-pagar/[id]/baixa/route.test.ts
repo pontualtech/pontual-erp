@@ -98,12 +98,23 @@ describe('baixa de AP — livro-razão', () => {
     expect(m.accUpdate).toHaveBeenCalledTimes(1)
   })
 
-  it('livro_transaction_id inválido: 422 e nada escrito', async () => {
-    m.txFindMany.mockResolvedValue([livro({ categories: { name: 'Energia' } })])
+  it('livro_transaction_id inválido (linha de categoria alheia): 422 e nada escrito', async () => {
+    m.txFindMany.mockResolvedValue([livro({ categories: { name: 'Anúncios' } })])
     const res = await POST(req({ paid_amount: 5000, account_id: ACC, livro_transaction_id: 't1' }), { params: { id: 'p1' } })
     expect(res.status).toBe(422)
     expect(m.txCreate).not.toHaveBeenCalled()
     expect(m.accUpdate).not.toHaveBeenCalled()
     expect(m.txUpdate).not.toHaveBeenCalled()
+  })
+
+  it('F5: livro_transaction_id em linha da mesma categoria da AP (Energia): liga, sem criar nem debitar', async () => {
+    m.txFindMany.mockResolvedValue([livro({ categories: { name: 'Energia' } })])
+    m.txFindFirst.mockResolvedValue({ source_text: 'ELETROPAULO' })
+    const res = await POST(req({ paid_amount: 5000, account_id: ACC, livro_transaction_id: 't1' }), { params: { id: 'p1' } })
+    expect(res.status).toBe(200)
+    expect((await res.json()).data.ligada).toBe(true)
+    expect(m.txUpdateMany.mock.calls[0][0].data).not.toHaveProperty('category_id')
+    expect(m.txCreate).not.toHaveBeenCalled()
+    expect(m.accUpdate).not.toHaveBeenCalled()
   })
 })

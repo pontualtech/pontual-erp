@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { categoriaAoDesligar, decidirBaixa, recebeCategoria } from './livro-baixa'
+import { categoriaAoDesligar, decidirBaixa, JANELA_BAIXA, recebeCategoria } from './livro-baixa'
 
 const base = { transaction_type: 'CREDIT' as const, origin: 'BANCO', linked_ref: null, categoria: 'Receita a identificar' }
 
@@ -12,9 +12,19 @@ describe('decidirBaixa', () => {
     expect(decidirBaixa({ tipo: 'CREDIT', amount: 63627, data: '2026-10-30' }, null,
       [{ ...base, id: 'L1', amount: 63627, transaction_date: '2026-10-29', linked_ref: 'AR:x' }])).toEqual({ criar: true })
   })
-  it('automático usa lançamento já categorizado por regra (ex.: Energia) — senão o dinheiro conta 2x', () => {
-    expect(decidirBaixa({ tipo: 'DEBIT', amount: 5000, data: '2026-10-30' }, null,
+  it('automático usa lançamento já categorizado por regra na MESMA categoria do alvo (Energia) — senão o dinheiro conta 2x', () => {
+    expect(decidirBaixa({ tipo: 'DEBIT', amount: 5000, data: '2026-10-30', categoria: 'Energia' }, null,
       [{ ...base, transaction_type: 'DEBIT', id: 'L2', amount: 5000, transaction_date: '2026-10-30', categoria: 'Energia' }])).toEqual({ usar: 'L2' })
+  })
+  it('F5: automático nunca usa linha de categoria alheia (Anúncios para AP Energia) → cria', () => {
+    expect(decidirBaixa({ tipo: 'DEBIT', amount: 5000, data: '2026-10-30', categoria: 'Energia' }, null,
+      [{ ...base, transaction_type: 'DEBIT', id: 'L2', amount: 5000, transaction_date: '2026-10-30', categoria: 'Anúncios' }])).toEqual({ criar: true })
+  })
+  it('F5: alvo sem categoria só usa linha em fallback/sem categoria; linha categorizada → cria', () => {
+    expect(decidirBaixa({ tipo: 'DEBIT', amount: 5000, data: '2026-10-30', categoria: null }, null,
+      [{ ...base, transaction_type: 'DEBIT', id: 'L2', amount: 5000, transaction_date: '2026-10-30', categoria: 'Energia' }])).toEqual({ criar: true })
+    expect(decidirBaixa({ tipo: 'DEBIT', amount: 5000, data: '2026-10-30' }, null,
+      [{ ...base, transaction_type: 'DEBIT', id: 'L3', amount: 5000, transaction_date: '2026-10-30', categoria: null }])).toEqual({ usar: 'L3' })
   })
   it('automático nunca usa ajuste de caixa nem transferências', () => {
     for (const categoria of ['Ajuste de caixa', 'Transferência entre contas', 'Transferência entre empresas']) {
@@ -22,7 +32,7 @@ describe('decidirBaixa', () => {
         [{ ...base, transaction_type: 'DEBIT', id: 'L2', amount: 5000, transaction_date: '2026-10-30', categoria }])).toEqual({ criar: true })
     }
   })
-  it('automático prefere fallback > mesma categoria do alvo > outras (antes da data)', () => {
+  it('automático prefere fallback > mesma categoria do alvo; outras nunca (antes da data)', () => {
     const alvo = { tipo: 'DEBIT' as const, amount: 5000, data: '2026-10-30', categoria: 'Energia' }
     const d = { ...base, transaction_type: 'DEBIT' as const, amount: 5000 }
     const outra = { ...d, id: 'O', transaction_date: '2026-10-30', categoria: 'Anúncios' }
@@ -30,10 +40,16 @@ describe('decidirBaixa', () => {
     const fallback = { ...d, id: 'F', transaction_date: '2026-10-21', categoria: 'A classificar' }
     expect(decidirBaixa(alvo, null, [outra, mesma, fallback])).toEqual({ usar: 'F' })
     expect(decidirBaixa(alvo, null, [outra, mesma])).toEqual({ usar: 'M' })
-    expect(decidirBaixa(alvo, null, [outra])).toEqual({ usar: 'O' })
+    expect(decidirBaixa(alvo, null, [outra])).toEqual({ criar: true })
   })
-  it('explícito continua exigindo fallback', () => {
+  it('F5: explícito aceita linha da mesma categoria do alvo (Energia para AP Energia)', () => {
     expect(decidirBaixa({ tipo: 'DEBIT', amount: 5000, data: '2026-10-30', categoria: 'Energia' }, 'L2',
+      [{ ...base, transaction_type: 'DEBIT', id: 'L2', amount: 5000, transaction_date: '2026-10-30', categoria: 'Energia' }])).toEqual({ usar: 'L2' })
+  })
+  it('explícito em linha de categoria alheia (Anúncios para AP Energia, ou alvo sem categoria) dá erro', () => {
+    expect(decidirBaixa({ tipo: 'DEBIT', amount: 5000, data: '2026-10-30', categoria: 'Energia' }, 'L2',
+      [{ ...base, transaction_type: 'DEBIT', id: 'L2', amount: 5000, transaction_date: '2026-10-30', categoria: 'Anúncios' }])).toEqual({ erro: 'Lançamento do livro já está categorizado' })
+    expect(decidirBaixa({ tipo: 'DEBIT', amount: 5000, data: '2026-10-30', categoria: null }, 'L2',
       [{ ...base, transaction_type: 'DEBIT', id: 'L2', amount: 5000, transaction_date: '2026-10-30', categoria: 'Energia' }])).toEqual({ erro: 'Lançamento do livro já está categorizado' })
   })
   it('recebeCategoria: só linha sem categoria ou em fallback recebe a categoria da baixa', () => {
@@ -50,9 +66,17 @@ describe('decidirBaixa', () => {
     expect(decidirBaixa({ tipo: 'CREDIT', amount: 100, data: '2026-10-30' }, 'L4',
       [{ ...base, transaction_type: 'DEBIT', id: 'L4', amount: 100, transaction_date: '2026-10-30' }])).toHaveProperty('erro')
   })
-  it('fora da janela (11 dias antes) cria', () => {
-    expect(decidirBaixa({ tipo: 'CREDIT', amount: 100, data: '2026-10-30' }, null,
-      [{ ...base, id: 'L5', amount: 100, transaction_date: '2026-10-19' }])).toEqual({ criar: true })
+  it('F1/F3: janela = 30 dias antes e 3 dias depois (bordas inclusivas)', () => {
+    const alvo = { tipo: 'CREDIT' as const, amount: 100, data: '2026-10-30' }
+    const em = (transaction_date: string) => decidirBaixa(alvo, null, [{ ...base, id: 'L5', amount: 100, transaction_date }])
+    expect(em('2026-09-30')).toEqual({ usar: 'L5' }) // 30 dias antes (Conferir tardio)
+    expect(em('2026-09-29')).toEqual({ criar: true }) // 31 dias antes
+    expect(em('2026-10-19')).toEqual({ usar: 'L5' }) // 11 dias antes (antes da onda 2: criava)
+    expect(em('2026-11-02')).toEqual({ usar: 'L5' }) // 3 dias depois (baixa retroativa)
+    expect(em('2026-11-03')).toEqual({ criar: true }) // 4 dias depois
+  })
+  it('JANELA_BAIXA = { antes: 30, depois: 3 }', () => {
+    expect(JANELA_BAIXA).toEqual({ antes: 30, depois: 3 })
   })
   it('automático escolhe o mais próximo da data', () => {
     expect(decidirBaixa({ tipo: 'CREDIT', amount: 100, data: '2026-10-30' }, null, [

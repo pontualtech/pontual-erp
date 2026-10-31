@@ -59,6 +59,20 @@ describe('bulk-reconcile — liga ao lançamento do livro', () => {
     expect(j.data.erros).toEqual([])
   })
 
+  it('F3: Conferir 20 dias depois do crédito do banco liga (janela 30 antes / 3 depois), sem criar nem creditar', async () => {
+    const DIA = 86_400_000
+    const base = Date.parse(`${hoje}T00:00:00Z`)
+    m.arFindMany.mockResolvedValue([AR])
+    m.txFindMany.mockResolvedValue([livro({ transaction_date: new Date(base - 20 * DIA) })])
+    const j = await (await POST(req({ ids: ['a1'], reconciled: true }))).json()
+    expect(m.txFindMany.mock.calls[0][0].where.OR[0]).toEqual({
+      transaction_date: { gte: new Date(base - 30 * DIA), lte: new Date(base + 3 * DIA) },
+    })
+    expect(j.data.ligadas).toBe(1)
+    expect(m.txCreate).not.toHaveBeenCalled()
+    expect(m.accUpdate).not.toHaveBeenCalled()
+  })
+
   it('(b) sem candidato: cria como hoje, com a categoria Receita de serviços', async () => {
     m.arFindMany.mockResolvedValue([AR])
     m.txFindMany.mockResolvedValue([])

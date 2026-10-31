@@ -5,7 +5,8 @@ import { CATEGORIAS_FORA_DO_TOTAL } from './livro-resumo'
 export const CATEGORIAS_FALLBACK = ['A classificar', 'Receita a identificar'] as const
 
 // Janela (dias) em torno da data da baixa para achar o lançamento do livro.
-export const JANELA_BAIXA = { antes: 10, depois: 1 }
+// antes: 30 → "Conferir" (ancorado em hoje) semanas depois do crédito ainda liga; depois: 3 → baixa com data retroativa.
+export const JANELA_BAIXA = { antes: 30, depois: 3 }
 
 // Diferença máxima (centavos) aceita quando o usuário escolhe o lançamento explicitamente.
 const TOLERANCIA_EXPLICITO = 100
@@ -55,13 +56,16 @@ export function decidirBaixa(
     if (c.origin !== 'BANCO') return { erro: 'Lançamento não é do livro (banco)' }
     if (c.transaction_type !== alvo.tipo) return { erro: 'Lançamento do livro é de outro tipo' }
     if (c.linked_ref) return { erro: 'Lançamento do livro já está ligado a outra baixa' }
-    if (!emFallback(c.categoria)) return { erro: 'Lançamento do livro já está categorizado' }
+    // Aceita linha em fallback ou já na MESMA categoria da conta (ex.: regra ELETROPAULO → Energia para AP Energia).
+    const mesmaCategoria = !!alvo.categoria && c.categoria === alvo.categoria
+    if (!emFallback(c.categoria) && !mesmaCategoria) return { erro: 'Lançamento do livro já está categorizado' }
     if (Math.abs(c.amount - alvo.amount) > TOLERANCIA_EXPLICITO) return { erro: 'Valor do lançamento difere mais de R$ 1,00 da baixa' }
     return { usar: c.id }
   }
 
-  // Automático: qualquer linha do banco livre, de mesmo tipo e valor, na janela — exceto ajuste/transferências.
-  // Preferência: fallback (ou sem categoria) > mesma categoria do alvo > outras; depois a data mais próxima.
+  // Automático: linha do banco livre, de mesmo tipo e valor, na janela — exceto ajuste/transferências.
+  // Só aceita fallback (ou sem categoria) > mesma categoria do alvo; categoria alheia NUNCA (seria o lançamento
+  // de outro favorecido). Depois, a data mais próxima.
   let melhor: { id: string; rank: number; dist: number } | null = null
   for (const c of candidatos) {
     if (c.origin !== 'BANCO' || c.transaction_type !== alvo.tipo || c.amount !== alvo.amount) continue
@@ -69,6 +73,7 @@ export function decidirBaixa(
     const delta = diasEntre(c.transaction_date, alvo.data) // negativo = antes da baixa
     if (delta < -JANELA_BAIXA.antes || delta > JANELA_BAIXA.depois) continue
     const rank = recebeCategoria(c.categoria) ? 0 : alvo.categoria && c.categoria === alvo.categoria ? 1 : 2
+    if (rank === 2) continue
     const dist = Math.abs(delta)
     if (!melhor || rank < melhor.rank || (rank === melhor.rank && dist < melhor.dist)) melhor = { id: c.id, rank, dist }
   }
