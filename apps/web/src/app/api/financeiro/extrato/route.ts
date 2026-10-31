@@ -135,7 +135,7 @@ export async function GET(request: NextRequest) {
         where: txWhere,
         select: {
           id: true, amount: true, transaction_type: true, description: true, bank_ref: true, reconciled: true, transaction_date: true,
-          category_id: true, origin: true, source_text: true, created_at: true,
+          category_id: true, origin: true, source_text: true, created_at: true, linked_ref: true,
           categories: { select: { name: true } },
         },
         orderBy: { transaction_date: 'desc' },
@@ -168,6 +168,7 @@ export async function GET(request: NextRequest) {
       reconciliado?: boolean
       category_id?: string | null
       livro?: boolean
+      ligada?: boolean
       texto_banco?: string | null
       criado_em?: string | null
     }

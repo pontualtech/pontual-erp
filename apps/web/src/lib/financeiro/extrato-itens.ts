@@ -12,6 +12,7 @@ export interface TransacaoExtratoRow {
   source_text: string | null
   created_at: Date | null
   categories: { name: string } | null
+  linked_ref: string | null
 }
 
 export function itemDeTransacao(t: TransacaoExtratoRow, contaNome: string) {
@@ -31,6 +32,8 @@ export function itemDeTransacao(t: TransacaoExtratoRow, contaNome: string) {
     status: t.reconciled ? 'CONCILIADO' : 'NAO_CONCILIADO',
     reconciliado: t.reconciled,
     livro: t.origin === 'BANCO',
+    // Linha do banco já ligada a uma conta a receber/pagar (a tela não oferece regra para ela).
+    ligada: t.linked_ref != null,
     texto_banco: t.source_text ?? null,
     criado_em: t.created_at ? new Date(t.created_at).toISOString() : null,
   }

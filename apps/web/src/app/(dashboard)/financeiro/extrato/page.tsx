@@ -22,7 +22,7 @@ interface ExtratoItem {
   conta_bancaria: string; centro_custo: string; categoria: string
   forma_pagamento: string; valor: number; tipo: 'ENTRADA' | 'SAIDA'
   origem: string; status?: string; reconciliado?: boolean
-  category_id?: string | null; livro?: boolean; texto_banco?: string | null; criado_em?: string | null
+  category_id?: string | null; livro?: boolean; ligada?: boolean; texto_banco?: string | null; criado_em?: string | null
 }
 
 interface Resumo {
@@ -281,7 +281,8 @@ export default function ExtratoPage() {
   async function openQuickEdit(item: ExtratoItem) {
     if (item.origem === 'transacao' && item.livro) {
       // Entradas: nome do pagador costuma vir truncado → "aplicar aos próximos" só se marcar.
-      setLivroForm({ category_id: item.category_id || '', nota: '', aplicar: item.tipo !== 'ENTRADA' })
+      // Linha ligada a conta a receber/pagar nunca vira regra.
+      setLivroForm({ category_id: item.category_id || '', nota: '', aplicar: item.tipo !== 'ENTRADA' && !item.ligada })
       setEditItem(item)
       return
     }
@@ -313,7 +314,7 @@ export default function ExtratoPage() {
       const padrao = padraoDaLinha(editItem.texto_banco || '')
       const body: Record<string, unknown> = { category_id: livroForm.category_id }
       if (livroForm.nota.trim()) body.nota = livroForm.nota.trim()
-      if (padrao && livroForm.aplicar) body.criar_regra = { direction: editItem.tipo === 'ENTRADA' ? 'IN' : 'OUT' }
+      if (padrao && livroForm.aplicar && !editItem.ligada) body.criar_regra = { direction: editItem.tipo === 'ENTRADA' ? 'IN' : 'OUT' }
       const res = await fetch(`/api/financeiro/livro/transacoes/${editItem.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Erro ao salvar')
@@ -796,6 +797,11 @@ export default function ExtratoPage() {
                       {opcoes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                   </div>
+                  {editItem.ligada ? (
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      ligado à conta a {entrada ? 'receber' : 'pagar'} — não vira regra; a observação é anexada à descrição.
+                    </p>
+                  ) : (
                   <label className={cn('flex items-start gap-2 text-sm', padrao ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500')}>
                     <input type="checkbox" className="mt-1" disabled={!padrao} checked={!!padrao && livroForm.aplicar}
                       onChange={e => setLivroForm(f => ({ ...f, aplicar: e.target.checked }))} />
@@ -804,6 +810,7 @@ export default function ExtratoPage() {
                       {padrao ? <> (<span className="font-mono">{padrao}</span>)</> : <> — texto genérico, sem regra</>}
                     </span>
                   </label>
+                  )}
                   <div>
                     <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">observação</label>
                     <textarea rows={2} value={livroForm.nota}

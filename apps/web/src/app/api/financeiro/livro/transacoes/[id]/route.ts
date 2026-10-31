@@ -38,10 +38,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       where: { id: params.id, company_id: user.companyId },
       select: {
         id: true, category_id: true, source_text: true, description: true,
-        account_id: true, transaction_type: true, counterparty: true,
+        account_id: true, transaction_type: true, counterparty: true, origin: true, linked_ref: true,
       },
     })
     if (!transacao) return error('Transação não encontrada', 404)
+    // Onda 2 (F12): só linha do livro (banco) é classificada aqui; lançamento do ERP tem a trilha própria.
+    if (transacao.origin !== 'BANCO') return error('Só lançamentos do banco (livro) podem ser classificados aqui', 422)
+    // Linha ligada a conta a receber/pagar: não vira regra e a nota só anexa (mantém 'Pgto:/LIQUIDACAO: … · banco: …').
+    const ligada = transacao.linked_ref != null
 
     const categoria = await prisma.category.findFirst({
       where: { id: body.category_id, company_id: user.companyId },
@@ -54,7 +58,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     let pattern: string | null = null
     let motivoSemRegra: string | undefined
-    if (body.criar_regra && (CATEGORIAS_FALLBACK as readonly string[]).includes(categoria.name)) {
+    if (body.criar_regra && ligada) {
+      motivoSemRegra = 'lançamento ligado a conta a receber/pagar'
+    } else if (body.criar_regra && (CATEGORIAS_FALLBACK as readonly string[]).includes(categoria.name)) {
       // "A classificar"/"Receita a identificar" é resposta provisória: vira regra só a categoria definitiva.
       motivoSemRegra = 'categoria provisória não vira regra'
     } else if (body.criar_regra) {
@@ -135,7 +141,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         where: { id: params.id },
         data: {
           category_id: body.category_id,
-          ...(body.nota ? { description: `${textoLinha} — ${body.nota}` } : {}),
+          ...(body.nota ? { description: `${ligada ? transacao.description ?? textoLinha : textoLinha} — ${body.nota}` } : {}),
         },
       })
       if (pattern) {

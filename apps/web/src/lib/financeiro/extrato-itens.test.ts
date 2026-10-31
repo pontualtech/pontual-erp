@@ -14,6 +14,7 @@ const base = {
   source_text: 'PIX RECEBIDO ACME LTDA',
   created_at: new Date('2026-10-06T12:00:00.000Z'),
   categories: { name: 'Receita a identificar' },
+  linked_ref: null,
 }
 
 describe('itemDeTransacao', () => {
@@ -28,6 +29,12 @@ describe('itemDeTransacao', () => {
     expect(i.tipo).toBe('ENTRADA')
     expect(i.conta_bancaria).toBe('Itaú')
     expect(i.data).toBe('2026-10-05T00:00:00.000Z')
+  })
+
+  it('F12: ligada = linked_ref != null', () => {
+    expect(itemDeTransacao(base, 'x').ligada).toBe(false)
+    expect(itemDeTransacao({ ...base, linked_ref: 'AR:a1' }, 'x').ligada).toBe(true)
+    expect(itemDeTransacao({ ...base, linked_ref: 'AP:p1' }, 'x').ligada).toBe(true)
   })
 
   it('livro só é true com origin BANCO', () => {

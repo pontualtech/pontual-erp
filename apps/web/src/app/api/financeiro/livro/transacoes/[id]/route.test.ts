@@ -29,7 +29,7 @@ const patch = (body: unknown) => PATCH(
 
 beforeEach(() => {
   Object.values(m).forEach((f) => f.mockReset())
-  m.txFindFirst.mockResolvedValue({ id: 't1', category_id: 'fb', source_text: 'PIX ENVIADO ELVIS FERREIRA', description: 'x' })
+  m.txFindFirst.mockResolvedValue({ id: 't1', category_id: 'fb', source_text: 'PIX ENVIADO ELVIS FERREIRA', description: 'x', origin: 'BANCO', linked_ref: null })
   m.catFindFirst.mockResolvedValue({ id: 'cat1', name: 'Telefone e Internet' })
   m.catFindMany.mockResolvedValue([{ id: 'fb1' }, { id: 'fb2' }])
   m.ruleFindFirst.mockResolvedValue(null)
@@ -92,7 +92,7 @@ describe('PATCH livro/transacoes/[id] — regra derivada + retroativo', () => {
   })
 
   it('texto genérico sem padrão seguro: regra null com motivo', async () => {
-    m.txFindFirst.mockResolvedValue({ id: 't1', category_id: 'fb', source_text: 'PIX ENVIADO', description: 'x' })
+    m.txFindFirst.mockResolvedValue({ id: 't1', category_id: 'fb', source_text: 'PIX ENVIADO', description: 'x', origin: 'BANCO', linked_ref: null })
     const j = (await (await patch({ category_id: 'cat1', criar_regra: { direction: 'OUT' } })).json()).data
     expect(m.ruleCreate).not.toHaveBeenCalled()
     expect(j.regra).toBeNull()
@@ -160,9 +160,60 @@ describe('PATCH livro/transacoes/[id] — regra derivada + retroativo', () => {
     expect(m.txUpdateMany).not.toHaveBeenCalled()
   })
 
+  describe('F12: só linha do banco; linha ligada não vira regra e nota só anexa', () => {
+    const ligada = {
+      id: 't1', category_id: 'catEnergia', source_text: 'PGTO ELETROPAULO', description: 'Pgto: Luz · banco: PGTO ELETROPAULO',
+      account_id: 'acc1', transaction_type: 'DEBIT', counterparty: null, origin: 'BANCO', linked_ref: 'AP:p1',
+    }
+
+    it('linha que não é do banco (origin ≠ BANCO): 422 e nada gravado', async () => {
+      for (const origin of [null, 'OFX', 'ERP']) {
+        m.txFindFirst.mockResolvedValue({ id: 't1', category_id: 'fb', source_text: null, description: 'Recebimento: OS 1', origin, linked_ref: null })
+        const res = await patch({ category_id: 'cat1', nota: 'x', criar_regra: { direction: 'OUT' } })
+        expect(res.status).toBe(422)
+      }
+      expect(m.txUpdate).not.toHaveBeenCalled()
+      expect(m.ruleCreate).not.toHaveBeenCalled()
+      expect(m.txUpdateMany).not.toHaveBeenCalled()
+    })
+
+    it('linha ligada: criar_regra ignorado (regra null + motivo), sem regra nem retroativo', async () => {
+      m.txFindFirst.mockResolvedValue(ligada)
+      const res = await patch({ category_id: 'cat1', criar_regra: { direction: 'OUT' } })
+      expect(res.status).toBe(200)
+      const j = (await res.json()).data
+      expect(j.regra).toBeNull()
+      expect(j.motivo_sem_regra).toBe('lançamento ligado a conta a receber/pagar')
+      expect(j.regra_criada).toBe(false)
+      expect(j.recategorizadas).toBe(0)
+      expect(m.ruleCreate).not.toHaveBeenCalled()
+      expect(m.ruleUpdate).not.toHaveBeenCalled()
+      expect(m.txUpdateMany).not.toHaveBeenCalled()
+      expect(m.txUpdate).toHaveBeenCalledWith({ where: { id: 't1' }, data: { category_id: 'cat1' } })
+    })
+
+    it('linha ligada + simular: regra null com o motivo', async () => {
+      m.txFindFirst.mockResolvedValue(ligada)
+      const j = (await (await patch({ category_id: 'cat1', simular: true, criar_regra: { pattern: 'ELETROPAULO', direction: 'OUT' } })).json()).data
+      expect(j.regra).toBeNull()
+      expect(j.motivo_sem_regra).toBe('lançamento ligado a conta a receber/pagar')
+      expect(j.recategorizadas).toBe(0)
+      expect(m.txCount).not.toHaveBeenCalled()
+    })
+
+    it('linha ligada + nota: anexa à description atual (mantém a trilha Pgto: … · banco: …)', async () => {
+      m.txFindFirst.mockResolvedValue(ligada)
+      await patch({ category_id: 'cat1', nota: 'conta de outubro' })
+      expect(m.txUpdate).toHaveBeenCalledWith({
+        where: { id: 't1' },
+        data: { category_id: 'cat1', description: 'Pgto: Luz · banco: PGTO ELETROPAULO — conta de outubro' },
+      })
+    })
+  })
+
   describe('a última resposta vence (prioridade)', () => {
     const CLARO = { id: 'seed', pattern: 'CLARO', direction: 'OUT', account_id: null, category_id: 'catTel', priority: 100 }
-    const linhaClaro = { id: 't1', category_id: 'catTel', source_text: 'DA CLARO CELULAR 6', description: 'x', account_id: 'acc1', transaction_type: 'DEBIT', counterparty: null }
+    const linhaClaro = { id: 't1', category_id: 'catTel', source_text: 'DA CLARO CELULAR 6', description: 'x', account_id: 'acc1', transaction_type: 'DEBIT', counterparty: null, origin: 'BANCO', linked_ref: null }
 
     it('regra nova fica com prioridade menor que a da regra antiga que casa (CLARO 100 → 99) e vence o classificar', async () => {
       m.txFindFirst.mockResolvedValue(linhaClaro)
