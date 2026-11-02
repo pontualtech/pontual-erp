@@ -258,6 +258,12 @@ export function criarBanco() {
               }
             }
           }
+          // Fix 3 (m14): o que o gancho APAGOU também comitou — sai da foto (não ressuscita no rollback).
+          for (const [m, ls] of Object.entries(antes)) {
+            const vivas = new Set((tabelas[m] ?? []).map((x) => x.id))
+            const apagadas = new Set(ls.filter((x) => !vivas.has(x.id)).map((x) => x.id))
+            if (apagadas.size > 0 && foto[m]) foto[m] = foto[m].filter((x) => !apagadas.has(x.id))
+          }
         }
       }
     }
