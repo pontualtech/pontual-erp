@@ -5,16 +5,12 @@ vi.mock('@pontual/db', async () => ({ prisma: (await import('@/test-utils/banco-
 vi.mock('@/lib/auth', () => ({ requirePermission: async () => ({ id: 'u1', companyId: 'c1' }) }))
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }))
 vi.mock('@/lib/observability', () => ({ logError: vi.fn(async () => undefined) }))
-// F3-F: o webhook Asaas roda no mesmo banco-falso (dedupe do crédito que o Conferir criou).
-vi.mock('@/lib/payments/factory', () => ({ getPaymentProvider: () => ({ validateWebhook: () => true }) }))
-vi.mock('@/lib/payments/capture-fees', () => ({ captureFeesForPayment: vi.fn(async () => ({ ok: true, fees_count: 0 })) }))
 vi.mock('@/lib/financeiro/livro-baixa-db', async (importOriginal) => {
   const o = await importOriginal<typeof import('@/lib/financeiro/livro-baixa-db')>()
   return { ...o, hojeSP: vi.fn(o.hojeSP) }
 })
 
 import { POST } from './route'
-import { POST as webhookAsaas } from '@/app/api/webhooks/payment/route'
 import { POST as lancarLinhas } from '@/app/api/financeiro/livro/linhas/route'
 import { hojeSP } from '@/lib/financeiro/livro-baixa-db'
 import { banco } from '@/test-utils/banco-falso'
@@ -491,13 +487,6 @@ describe('F3-F (#7): Conferir de AR com Payment Asaas RECEIVED sem crédito pay_
   const recebido = (over: Record<string, unknown> = {}) => banco.pagamento({
     receivable_id: 'a1', provider: 'asaas', external_id: 'pay_x', status: 'RECEIVED', amount: 15000, billing_type: 'PIX', ...over,
   })
-  // AP PAGO de taxa do capture-fees (TRANSACTION = PAYMENT_FEE, a que o Asaas desconta do pagamento; mensageria é à parte).
-  const taxa = () => banco.ap({
-    status: 'PAGO', total_amount: 549, paid_amount: 549, payment_method: 'Desconto automatico', account_id: ACC,
-    notes: JSON.stringify({ source: 'capture-fees', provider: 'asaas', external_id: 'pay_x', fees_breakdown: [
-      { type: 'TRANSACTION', billingType: 'PIX', amount: 450 }, { type: 'NOTIFICATION', amount: 99 },
-    ] }),
-  })
   const comRef = (ref: string) => banco.tabelas.transaction.filter((t) => t.bank_ref === ref || t.linked_ref === ref)
 
   it('(1) linha ASAAS:PAY:<pay> livre (líquida, valor ≠ bruto) → liga com linked_ref = pay, categoria da AR, sem saldo; nada de AR:id', async () => {
@@ -534,109 +523,52 @@ describe('F3-F (#7): Conferir de AR com Payment Asaas RECEIVED sem crédito pay_
     await conferir()
     expect(banco.tx_('t1')).toEqual(expect.objectContaining({ linked_ref: 'pay_x', category_id: 'cat:Venda de Servicos' }))
   })
-
-  it('(2) sem linha: cria o CREDIT nocional bank_ref = pay pelo LÍQUIDO (bruto − taxa PAYMENT_FEE) e soma no saldo', async () => {
-    banco.ar(AR)
-    recebido()
-    taxa()
-    // Linha livre de mesmo valor BRUTO noutra origem não é o dinheiro deste pagamento: não é ligada pelo valor.
-    linhaLivro()
-    const { j } = await conferir()
-    expect(j.data).toEqual(expect.objectContaining({ updated: 1, ligadas: 0, balance_delta: 14550, erros: [] }))
-    expect(comRef('pay_x')).toEqual([expect.objectContaining({
-      account_id: ACC, transaction_type: 'CREDIT', amount: 14550, category_id: 'cat:Venda de Servicos', reconciled: true, origin: null,
-    })])
-    expect(creditosAR()).toEqual([])
-    expect(banco.tx_('t1')!.linked_ref).toBeNull()
-    expect(banco.saldo(ACC)).toBe(114550)
-    expect(ar()).toEqual(expect.objectContaining({ status: 'LIQUIDADO', reconciled: true }))
-  })
-
-  it('(2) sem AP de taxa: entra o bruto (como valorCreditoAsaas sem líquido coerente)', async () => {
-    banco.ar(AR)
-    recebido()
-    const { j } = await conferir()
-    expect(j.data.balance_delta).toBe(15000)
-    expect(comRef('pay_x')).toEqual([expect.objectContaining({ amount: 15000, bank_ref: 'pay_x' })])
-  })
-
-  it('webhook RECEIVED chegando depois (DISPUTED → RECEIVED) acha o crédito do Conferir por ondeRef(pay): sem 2º crédito', async () => {
-    banco.ar(AR)
-    const p = recebido()
-    taxa()
-    await conferir()
-    expect(banco.saldo(ACC)).toBe(114550)
-    p.status = 'DISPUTED'
-    vi.spyOn(console, 'log').mockImplementation(() => {})
-    const res = await webhookAsaas(new NextRequest('http://x/api/webhooks/payment', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: 'evt_f3f', event: 'PAYMENT_RECEIVED', payment: { id: 'pay_x', value: 150, netValue: 145.5 } }),
-    }))
-    expect(res.status).toBe(200)
-    expect(comRef('pay_x')).toHaveLength(1)
-    expect(banco.saldo(ACC)).toBe(114550)
-  })
 })
 
-describe('F4-B (#3, #10, m6, m8, m9, m14..m17): Asaas RECEIVED sem crédito — um só caminho, na conta Asaas', () => {
-  const ITAU = ACC
+describe('F4-B / F6-B: Asaas RECEIVED sem crédito — liga a linha do extrato; o Conferir nunca cria dinheiro Asaas', () => {
   const ASAAS = '99999999-9999-4999-8999-999999999999'
+  const AVISO = 'pagamento Asaas sem lançamento: o dinheiro entra pela linha do extrato Asaas (ou já está no ajuste de caixa, se anterior ao corte)'
   const recebido = (over: Record<string, unknown> = {}) => banco.pagamento({
     receivable_id: 'a1', provider: 'asaas', external_id: 'pay_x', status: 'RECEIVED', amount: 15000, billing_type: 'PIX',
     paid_at: new Date('2026-10-01T15:00:00Z'), ...over,
   })
   const comRef = (ref: string) => banco.tabelas.transaction.filter((t) => t.bank_ref === ref || t.linked_ref === ref)
 
-  it('#3/#10: AR no Itaú, cobrada pelo Asaas → nocional pay_x na conta Asaas (não no Itaú), travada; o livro da conta Asaas com links [pay_x] LIGA', async () => {
-    banco.conta({ id: ASAAS, name: 'Asaas', current_balance: 0 })
-    const CORTE = '2026-10-29'
-    banco.transacao({ id: 'aj', account_id: ASAAS, transaction_type: 'CREDIT', amount: 0, bank_ref: `AJUSTE:${ASAAS}:${CORTE}`, origin: 'AJUSTE', transaction_date: diaRel(-5), created_at: new Date(Date.now() - 60_000) })
-    banco.ar(AR) // conta Itaú
-    recebido()
+  it('#2: pagamento ANTES do corte (paid_at 10/09), sem linha → nada criado, saldo intocado, LIQUIDADO com aviso', async () => {
+    banco.ar(AR)
+    recebido({ paid_at: new Date('2026-09-10T15:00:00Z') })
     const { j } = await conferir()
-    expect(j.data).toEqual(expect.objectContaining({ updated: 1, balance_delta: 15000, erros: [] }))
-    expect(comRef('pay_x')).toEqual([expect.objectContaining({ account_id: ASAAS, amount: 15000, transaction_type: 'CREDIT' })])
-    expect([banco.saldo(ITAU), banco.saldo(ASAAS)]).toEqual([100000, 15000])
-    expect(banco.travas.filter((t) => t.tabela === 'accounts').map((t) => t.id)).toContain(ASAAS)
+    expect(j.data).toEqual(expect.objectContaining({ updated: 1, ligadas: 0, balance_delta: 0, erros: [], avisos: [{ ar: 'a1', motivo: AVISO }] }))
+    expect(comRef('pay_x')).toEqual([])
+    expect(creditosAR()).toEqual([])
+    expect(banco.saldo(ACC)).toBe(100000)
+    expect(ar()).toEqual(expect.objectContaining({ status: 'LIQUIDADO', reconciled: true }))
+  })
+
+  it('pós-corte sem linha → idem (o dinheiro entra pela linha do extrato); a linha que chega depois nasce ligada ao pay_x (F6-A)', async () => {
+    banco.conta({ id: ASAAS, name: 'ASSAS', provider_config: { provider: 'asaas' }, current_balance: 0 })
+    const CORTE = '2026-10-29'
+    banco.transacao({ id: 'aj', account_id: ASAAS, transaction_type: 'CREDIT', amount: 0, bank_ref: `AJUSTE:${ASAAS}:${CORTE}`, origin: 'AJUSTE', transaction_date: diaRel(-5) })
+    banco.ar(AR)
+    recebido({ paid_at: new Date() })
+    const { j } = await conferir()
+    expect(j.data).toEqual(expect.objectContaining({ balance_delta: 0, avisos: [{ ar: 'a1', motivo: AVISO }] }))
+    expect(comRef('pay_x')).toEqual([])
     const res = await lancarLinhas(new NextRequest('http://x/api/financeiro/livro/linhas', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ account_id: ASAAS, corte: CORTE, linhas: [{ chave: 'ASAAS:PAY:pay_x', data: hoje, descricao: 'Cobrança recebida', valor_centavos: 15000, links: ['pay_x'] }] }),
+      body: JSON.stringify({ account_id: ASAAS, corte: CORTE, linhas: [{ chave: 'ASAAS:PAY:pay_x', data: hoje, descricao: 'Cobrança recebida', valor_centavos: 14801, links: ['pay_x'] }] }),
     }))
-    expect((await res.json()).data.resultados[0]).toEqual(expect.objectContaining({ acao: 'LIGAR', refs: ['pay_x'] }))
-    expect(banco.saldo(ASAAS)).toBe(15000) // um só lançamento
+    expect((await res.json()).data.resultados[0]).toEqual(expect.objectContaining({ acao: 'CRIAR', vinculo: 'pay_x' }))
+    expect(comRef('pay_x')).toEqual([expect.objectContaining({ account_id: ASAAS, origin: 'BANCO', linked_ref: 'pay_x', amount: 14801 })])
+    expect([banco.saldo(ACC), banco.saldo(ASAAS)]).toEqual([100000, 14801])
   })
 
-  it('a conta do Payment (metadata.account_id, da empresa) vence a conta Asaas genérica; de outra empresa não vale', async () => {
-    const ASAAS2 = '88888888-8888-4888-8888-888888888888'
-    banco.conta({ id: ASAAS, name: 'Asaas', current_balance: 0 })
-    banco.conta({ id: ASAAS2, name: 'Cobranças', current_balance: 0 })
-    banco.ar(AR)
-    recebido({ metadata: { account_id: ASAAS2 } })
-    await conferir()
-    expect(comRef('pay_x')).toEqual([expect.objectContaining({ account_id: ASAAS2 })])
-    banco.reset(); banco.categoriasPadrao(); banco.conta({ id: ACC, current_balance: 100000 }); banco.conta({ id: ASAAS, name: 'Asaas' })
-    banco.inserir('account', { id: 'alheia', company_id: 'c2', name: 'Asaas outra empresa', is_active: true, current_balance: 0 })
-    banco.ar(AR)
-    recebido({ metadata: { account_id: 'alheia' } })
-    await conferir()
-    expect(comRef('pay_x')).toEqual([expect.objectContaining({ account_id: ASAAS })])
-  })
-
-  it('m17: o nocional é datado como o webhook (data de crédito; sem ela, o dia da conferência), não pelo paid_at', async () => {
-    banco.ar(AR)
-    recebido()
-    await conferir()
-    const t = comRef('pay_x')[0]
-    expect(Math.abs((t.transaction_date as Date).getTime() - Date.now())).toBeLessThan(60_000)
-  })
-
-  it('m9: AR SEM conta também segue o caminho do webhook (nocional na conta Asaas), não só vira LIQUIDADO', async () => {
-    banco.conta({ id: ASAAS, name: 'Asaas', current_balance: 0 })
+  it('m9: AR SEM conta → só status + aviso (sem erro, sem crédito)', async () => {
     banco.ar({ ...AR, account_id: null })
     recebido()
     const { j } = await conferir()
-    expect(j.data).toEqual(expect.objectContaining({ updated: 1, balance_delta: 15000, erros: [] }))
-    expect(comRef('pay_x')).toEqual([expect.objectContaining({ account_id: ASAAS, amount: 15000 })])
+    expect(j.data).toEqual(expect.objectContaining({ updated: 1, balance_delta: 0, erros: [], avisos: [{ ar: 'a1', motivo: AVISO }] }))
+    expect(banco.tabelas.transaction).toEqual([])
     expect(ar()).toEqual(expect.objectContaining({ status: 'LIQUIDADO', reconciled: true }))
   })
 
@@ -668,15 +600,38 @@ describe('F4-B (#3, #10, m6, m8, m9, m14..m17): Asaas RECEIVED sem crédito — 
     expect(banco.tx_('t1')!.linked_ref).toBe('AR:a1')
   })
 
-  it('m15: dois pagamentos RECEIVED — um com linha ASAAS:PAY (liga) e outro sem (nocional); delta = só o nocional', async () => {
+  it('m15: dois pagamentos RECEIVED — um com linha ASAAS:PAY (liga) e outro sem (nada criado, aviso); delta 0', async () => {
     banco.ar({ ...AR, total_amount: 30000, received_amount: 30000 })
     recebido()
     recebido({ external_id: 'pay_y', amount: 15000 })
     linhaLivro({ bank_ref: 'ASAAS:PAY:pay_x', amount: 14550 })
     const { j } = await conferir()
-    expect(j.data).toEqual(expect.objectContaining({ updated: 1, ligadas: 1, balance_delta: 15000, erros: [] }))
+    expect(j.data).toEqual(expect.objectContaining({ updated: 1, ligadas: 1, balance_delta: 0, erros: [], avisos: [{ ar: 'a1', motivo: AVISO }] }))
     expect(banco.tx_('t1')!.linked_ref).toBe('pay_x')
-    expect(comRef('pay_y')).toEqual([expect.objectContaining({ bank_ref: 'pay_y', amount: 15000 })])
+    expect(comRef('pay_y')).toEqual([])
+  })
+
+  it('m10: livro[ar] = linha ASAAS:PAY e a AR já tem o nocional AR:a1 do Receber manual na mesma conta → liga pay_x + SWAP (sem bruto × líquido)', async () => {
+    banco.ar(AR)
+    recebido({ billing_type: 'CREDIT_CARD' })
+    banco.transacao({ id: 'noc', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1' })
+    banco.tabelas.account[0].current_balance = 115000
+    linhaLivro({ bank_ref: 'ASAAS:PAY:pay_x', amount: 14400 })
+    const { j } = await conferir(['a1'], { a1: 't1' })
+    expect(j.data).toEqual(expect.objectContaining({ updated: 1, ligadas: 1, balance_delta: -15000, erros: [] }))
+    expect(banco.tx_('t1')!.linked_ref).toBe('pay_x')
+    expect(banco.tx_('noc')).toBeUndefined()
+    expect(banco.saldo(ACC)).toBe(100000)
+  })
+
+  it('m13: portão do CONFIRMED — AR com um Payment RECEIVED e outro CONFIRMED, sem dinheiro → erro "o crédito entra pelo webhook", nada criado', async () => {
+    banco.ar(AR)
+    recebido()
+    recebido({ external_id: 'pay_c', status: 'CONFIRMED' })
+    const { j } = await conferir()
+    expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'cobrança Asaas: o crédito entra pelo webhook quando o dinheiro cair' }])
+    expect(banco.tabelas.transaction).toEqual([])
+    expect(ar().status).toBe('RECEBIDO')
   })
 })
 
