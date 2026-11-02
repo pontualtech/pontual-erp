@@ -14,10 +14,12 @@ import {
  *
  * C10 fix 22/05: estorno de AP ja paga. Espelho do estorno de AR, travas contas → AP (§7), tudo relido na tx.
  * Fix 10 (F10-B, espelho da AR): com saída lançada (linhas do banco ligadas a AP:<id>, DEBIT AP:<id> vivo) o estorno
- * PERGUNTA — sem resposta, 409 ESTORNO_PERGUNTA: `dinheiro: 'devolvido'` (fix 12, F12-B) → a linha do banco AP:<id> ganha
- * :devolvido (a entrada da devolução vem pelo extrato); o DEBIT AP:<id> não convertido é compensado com CREDIT AP:<id>:estorno;
+ * PERGUNTA — sem resposta, 409 ESTORNO_PERGUNTA: `dinheiro: 'devolvido'` (fix 12/13, F12-B, F13-A) → a linha do banco AP:<id>
+ * e o DEBIT AP:<id> anterior ao último AJUSTE de conta com linha do banco ganham :devolvido (a entrada da devolução vem pelo
+ * extrato); o DEBIT AP:<id> posterior ao ajuste, ou em conta sem linha do banco, é compensado com CREDIT AP:<id>:estorno;
  * `mover_para: '<id da AP>'` (engano) → a saída passa para a AP certa (AP:<destino>), sem lançamento novo nem saldo. Sem
- * saída: legado (paga antes de 22/05/2026, DEBIT sem bank_ref) → CREDIT pelo paid_amount na conta da AP; senão só status.
+ * saída: legado (paga antes de 22/05/2026, DEBIT sem bank_ref) → CREDIT pelo paid_amount na conta da AP, só se ela não tem
+ * linha do banco (F14-A); senão só status.
  * PENDENTE sem valor pago → 400 'nada a estornar'.
  *
  * Antes, mexer em AP paga só era possível via DELETE (soft delete) que
@@ -148,8 +150,8 @@ export async function POST(req: NextRequest, { params }: Params) {
         } else if (dinheiro.total > 0) {
           if (!escolha) throw new PerguntaEstorno(await descreverDinheiro(tx, user.companyId, dinheiro))
           // ── 'devolvido' (fix 12, F12-B): a linha do banco (e o marcador antigo LIGADA:) ganha :devolvido, nada lançado — a
-          // entrada da devolução chega pelo extrato; o DEBIT AP:<id> não convertido, em qualquer conta, é compensado com
-          // CREDIT AP:<id>:estorno na conta dele, sem renomear (o banco nunca confirmou essa saída) ──
+          // entrada da devolução chega pelo extrato; o DEBIT AP:<id> não convertido é compensado com CREDIT AP:<id>:estorno na
+          // conta dele, sem renomear (o banco nunca confirmou essa saída) — salvo o anterior ao ajuste (F13-A, abaixo) ──
           // Fix 13 (F13-A): o DEBIT AP:<id> ANTERIOR ao último AJUSTE de conta com linha do banco já foi absorvido pelo ajuste
           // (saída confirmada) → como a linha, só o sufixo :devolvido, sem lançamento.
           const ligadaAntiga = (t: { source_text: string | null }) => (t.source_text ?? '').startsWith('LIGADA:')
@@ -197,7 +199,9 @@ export async function POST(req: NextRequest, { params }: Params) {
                 },
               })) > 0
             )
-          if (legado) compensar.set(ap.account_id!, pago)
+          // Fix 14 (F14-A): conta com linha do banco → o pagamento legado é anterior ao ajuste (absorvido) e a entrada da
+          // devolução chega pelo extrato: não compensa (só status/valores). Conta sem linha do banco → compensa como sempre.
+          if (legado && !(await contasComExtrato(tx, user.companyId, [ap.account_id!])).has(ap.account_id!)) compensar.set(ap.account_id!, pago)
           // Quitada sem valor, sem dinheiro e sem legado: nada a estornar.
           if (!legado && pago <= 0) throw new RecusaEstorno('nada a estornar', 400)
           exigirTravadas(travadas, [...compensar.keys()])

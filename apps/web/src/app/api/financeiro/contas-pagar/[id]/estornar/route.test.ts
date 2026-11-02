@@ -312,6 +312,19 @@ describe("F10-B (AP): 'devolvido' (refs próprias ganham :devolvido) ou mover_pa
     expect(banco.saldo(ACC2)).toBe(0)
   })
 
+  it("F14-A (espelho): AP legada ('Pgto:' de 10/05 sem bank_ref) no Itaú com AJUSTE e linha do banco → estorno não compensa; a entrada da devolução chega → saldo = banco", async () => {
+    ajuste()
+    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 1, origin: 'BANCO', bank_ref: 'TARIFA', source_text: 'TARIFA', transaction_date: dia('2026-10-31') })
+    banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 120000, total_amount: 120000, description: 'Aluguel', updated_at: new Date('2026-11-01T15:00:00Z'), created_at: new Date('2026-05-01T12:00:00Z') })
+    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 120000, bank_ref: null, description: 'Pgto: Aluguel', created_at: new Date('2026-05-10T15:00:00Z'), transaction_date: dia('2026-05-10') })
+    expect((await est('p1')).status).toBe(200)
+    expect(estornos()).toEqual([])
+    expect(banco.saldo(ACC)).toBe(100000)
+    expect(ap()).toEqual(expect.objectContaining({ status: 'PENDENTE', paid_amount: 0 }))
+    await linhaDoBanco(`ITAU:${DATA}|DEVOLUCAO FORNECEDOR|+120000|1`, 120000)
+    expect(banco.saldo(ACC)).toBe(220000)
+  })
+
   it('m5: mover_para da AP — a linha que levava a categoria da origem passa a levar a do destino', async () => {
     banco.categoria('Aluguel', 'financeiro_despesa')
     banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 5000, total_amount: 5000, category_id: 'cat:Energia' })

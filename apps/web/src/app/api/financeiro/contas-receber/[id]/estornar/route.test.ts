@@ -388,6 +388,18 @@ describe("F10-B: o estorno pergunta — 'devolvido' (refs próprias ganham :devo
     expect(banco.saldo(ACC)).toBe(85000) // banco: 1000,00 − a devolução de 150,00
   })
 
+  it("F14-A: AR legada (criada 01/05, 'Recebimento:' de 10/05 sem bank_ref) no Itaú com AJUSTE e linha do banco → estorno não compensa (o ajuste absorveu); a saída da devolução chega → saldo = banco", async () => {
+    extrato()
+    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 40000, total_amount: 40000, description: 'OS 1', updated_at: new Date('2026-11-01T15:00:00Z'), created_at: new Date('2026-05-01T12:00:00Z') })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 40000, bank_ref: null, description: 'Recebimento: OS 1', created_at: new Date('2026-05-10T15:00:00Z'), transaction_date: dia('2026-05-10') })
+    expect((await est()).status).toBe(200)
+    expect(estornos()).toEqual([])
+    expect(banco.saldo(ACC)).toBe(100000)
+    expect(ar()).toEqual(expect.objectContaining({ status: 'PENDENTE', received_amount: 0 }))
+    await linhaDoBanco(`ITAU:${DATA}|PIX ENVIADO|-40000|1`, -40000)
+    expect(banco.saldo(ACC)).toBe(60000) // banco: 1000,00 − a devolução de 400,00
+  })
+
   it("F13-A: o mesmo nocional anterior ao ajuste na Inter (AJUSTE, sem linha do banco) → compensa com DEBIT :estorno", async () => {
     ajuste(ACC2)
     banco.tabelas.account[1].current_balance = 15000

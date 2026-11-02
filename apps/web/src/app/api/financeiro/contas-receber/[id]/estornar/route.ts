@@ -16,15 +16,16 @@ import {
  * Fix 10 (F10-B, decisão do Karlão 02/11: estorno é raro e quase sempre devolução real). Com dinheiro na conta (linhas do
  * banco ligadas a qualquer ref dela, nocionais próprios vivos, créditos do adquirente/Asaas/CNAB) o estorno PERGUNTA — sem
  * resposta no corpo, 409 ESTORNO_PERGUNTA:
- *   `dinheiro: 'devolvido'` (fix 12, F12-B) → a linha do banco própria (confirmada pelo extrato) ganha o sufixo
- *       :devolvido, sem lançamento (a saída da devolução chega pelo extrato); o nocional próprio não convertido, em
- *       qualquer conta, é compensado com DEBIT AR:<id>:estorno na conta dele; o externo que não é pay_ em conta sem linha
- *       do banco (cnab: na Inter) também; pay_ e externo em conta com extrato não são tocados e voltam em `aviso`.
+ *   `dinheiro: 'devolvido'` (fix 12/13, F12-B, F13-A) → o dinheiro que o banco confirmou ganha o sufixo :devolvido, sem
+ *       lançamento (a saída da devolução chega pelo extrato): a linha do banco própria e o nocional próprio ANTERIOR ao
+ *       último AJUSTE de conta com linha do banco (o ajuste já o absorveu). O nocional próprio posterior ao ajuste, ou em
+ *       conta sem linha do banco (Inter/Caixa), é compensado com DEBIT AR:<id>:estorno na conta dele; o externo que não é
+ *       pay_ em conta sem linha do banco (cnab: na Inter) também; pay_ e externo em conta com extrato voltam em `aviso`.
  *   `mover_para: '<id da AR | nº da OS>'` (engano) → move o dinheiro vivo para a conta certa: linhas e nocionais AR:<id>
  *       → AR:<destino>, Payments dos créditos externos → receivable_id/service_order_id do destino. Nenhum lançamento novo,
  *       nenhum saldo; o destino soma o valor recebido (RECEBIDO se cheio). Antecipação e CNAB não são movíveis (422).
  * Sem dinheiro: legado (recebida antes de 22/05/2026, lançamento sem bank_ref) → DEBIT pelo received_amount na conta da
- * AR; senão só status/valores. PENDENTE sem valor recebido → 400 'nada a estornar'.
+ * AR, só se ela não tem linha do banco (F14-A); senão só status/valores. PENDENTE sem valor recebido → 400 'nada a estornar'.
  */
 type Params = { params: { id: string } }
 
@@ -192,8 +193,8 @@ export async function POST(req: NextRequest, { params }: Params) {
           // ── 'devolvido' (fix 12, F12-B): o que o banco confirmou espera o extrato; o resto compensa ──
           // · linha BANCO própria (e o marcador antigo LIGADA: — dinheiro já confirmado) → sufixo :devolvido, nada lançado
           //   (a saída da devolução chega pela linha do banco);
-          // · nocional próprio não convertido, em QUALQUER conta → DEBIT AR:<id>:estorno na conta dele, sem renomear (o banco
-          //   nunca o confirmou: Receber na conta errada, comprovante falso, devolução no Caixa);
+          // · nocional próprio não convertido → DEBIT AR:<id>:estorno na conta dele, sem renomear (o banco nunca o confirmou:
+          //   Receber na conta errada, comprovante falso, devolução no Caixa) — salvo o anterior ao ajuste (F13-A, abaixo);
           // · externo que não é pay_ em conta SEM extrato (cnab: na Inter, acquirer: fora do livro) → idem; pay_ e externo em
           //   conta COM extrato → só aviso (o webhook REFUNDED / o repasse da Rede trazem a devolução).
           // · fix 13 (F13-A): nocional próprio ANTERIOR ao último AJUSTE de conta com linha do banco → o ajuste já o absorveu
@@ -259,7 +260,9 @@ export async function POST(req: NextRequest, { params }: Params) {
                 },
               })) > 0
             )
-          if (legado) compensar.set(ar.account_id!, recebido)
+          // Fix 14 (F14-A): conta com linha do banco (Itaú/ASSAS) → o recebimento legado é anterior ao ajuste (absorvido) e a
+          // devolução chega pelo extrato: não compensa (só status/valores). Conta sem linha do banco → compensa como sempre.
+          if (legado && !(await contasComExtrato(tx, user.companyId, [ar.account_id!])).has(ar.account_id!)) compensar.set(ar.account_id!, recebido)
           // Quitada sem valor, sem dinheiro e sem legado: nada a estornar.
           if (!legado && recebido <= 0) throw new RecusaEstorno('nada a estornar', 400)
           exigirTravadas(travadas, [...compensar.keys()])
