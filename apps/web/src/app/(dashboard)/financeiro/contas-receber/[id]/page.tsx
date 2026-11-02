@@ -14,7 +14,7 @@ import {
 import { useAuth } from '@/lib/use-auth'
 import { cn } from '@/lib/utils'
 import { MoneyInput } from '@/app/(dashboard)/components/money-input'
-import { perguntaDinheiro, perguntaEstorno, resultadoBaixa, resultadoConferencia, resultadoEstorno, type LancamentoJaLancado } from '@/lib/financeiro/conferencia'
+import { perguntaDinheiro, perguntaEstorno, podeEstornarAR, resultadoBaixa, resultadoConferencia, resultadoEstorno, type LancamentoJaLancado } from '@/lib/financeiro/conferencia'
 import { DinheiroJaLancadoDialog } from '@/app/(dashboard)/financeiro/_components/dinheiro-ja-lancado-dialog'
 import { EstornoPerguntaDialog, type RespostaEstorno } from '@/app/(dashboard)/financeiro/_components/estorno-pergunta-dialog'
 
@@ -453,7 +453,7 @@ export default function ContaReceberDetalhePage() {
           )}
           {/* F-UX-01 fix 23/05 + Wave V (24/05): Estornar cobre PAGO também,
               não só RECEBIDO. PAGO = declarado balcão, mesma reversão. */}
-          {(conta.status === 'RECEBIDO' || conta.status === 'PAGO') && conta.account_id && !editing && (
+          {podeEstornarAR(conta) && !editing && (
             <button type="button" title="Estornar recebimento" onClick={() => setShowEstornar(true)} className="flex items-center gap-1.5 px-3 py-2.5 text-sm border border-amber-200 dark:border-amber-800 rounded-xl text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950 transition-colors">
               <Undo2 className="h-4 w-4" /> Estornar
             </button>

@@ -84,3 +84,8 @@ export function opcoesContaCerta(
     .map((a) => ({ id: a.id, rotulo: `${a.description} — ${brl(a.total_amount - (a.paid_amount ?? 0))} em aberto` }))
 }
 
+// Fix 12 (F12-A, #4): o botão Estornar da AR — também para a conferida (LIQUIDADO); o Desfazer saiu das telas.
+export function podeEstornarAR(c: { status: string | null; account_id: string | null }): boolean {
+  return ['RECEBIDO', 'LIQUIDADO', 'PAGO'].includes(c.status ?? '') && !!c.account_id
+}
+

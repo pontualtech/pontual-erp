@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { opcoesContaCerta, perguntaDinheiro, perguntaEstorno, resultadoBaixa, resultadoEstorno, resultadoConferencia, resultadoRetornoCnab } from './conferencia'
+import { opcoesContaCerta, perguntaDinheiro, podeEstornarAR, perguntaEstorno, resultadoBaixa, resultadoEstorno, resultadoConferencia, resultadoRetornoCnab } from './conferencia'
 
 describe('resultadoConferencia (F14)', () => {
   it('conferida sem vínculo: sucesso com a mensagem da tela', () => {
@@ -116,6 +116,14 @@ describe('F10-D: resposta do estorno e as contas certas da AP', () => {
       { id: 'p4', description: 'Boleto D', total_amount: 5000, paid_amount: 0, status: 'CANCELADO' },
     ]
     expect(opcoesContaCerta(lista, 'p1')).toEqual([{ id: 'p2', rotulo: 'Boleto B — R$ 100,00 em aberto' }])
+  })
+})
+
+describe('F12-A (#4): o Estornar aparece para a conta conferida', () => {
+  it('RECEBIDO, LIQUIDADO (conferida) e PAGO (legado) com conta → sim; PENDENTE, CANCELADO ou sem conta → não', () => {
+    for (const status of ['RECEBIDO', 'LIQUIDADO', 'PAGO']) expect(podeEstornarAR({ status, account_id: 'acc1' }), status).toBe(true)
+    for (const status of ['PENDENTE', 'CANCELADO', 'AGRUPADO']) expect(podeEstornarAR({ status, account_id: 'acc1' }), status).toBe(false)
+    expect(podeEstornarAR({ status: 'LIQUIDADO', account_id: null })).toBe(false)
   })
 })
 

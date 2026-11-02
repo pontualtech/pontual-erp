@@ -293,6 +293,15 @@ describe("F10-B: o estorno pergunta — 'devolvido' (refs próprias ganham :devo
     expect(banco.tx_('L')!.linked_ref).toBe('AR:r1')
   })
 
+  it("F12-A (#4): AR conferida (LIQUIDADO, reconciled) é estornável direto — sem Desfazer antes", async () => {
+    extrato()
+    banco.ar({ id: 'r1', status: 'LIQUIDADO', reconciled: true, account_id: ACC, received_amount: 15000, total_amount: 15000 })
+    ligada()
+    expect((await est()).status).toBe(409)
+    expect((await est('r1', { dinheiro: 'devolvido' })).status).toBe(200)
+    expect(ar()).toEqual(expect.objectContaining({ status: 'PENDENTE', received_amount: 0, reconciled: false }))
+  })
+
   it("'devolvido' com linha ligada em conta com extrato → nada lançado; a linha fica AR:r1:devolvido (mesma data, categoria e saldo); AR PENDENTE/0", async () => {
     ajuste()
     banco.ar({ id: 'r1', status: 'LIQUIDADO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
