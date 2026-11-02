@@ -356,6 +356,26 @@ describe("F10-B: o estorno pergunta — 'devolvido' (refs próprias ganham :devo
     expect(banco.saldo(ACC)).toBe(100000) // banco: +500 −500
   })
 
+  it("F12-C (#3): PIX QRS +300 com links [AR:A, AR:B] e A devolvido antes do extrato → o nocional compensado de A não é ligável: converte B, cria +100; a saída −100 chega → saldo = banco", async () => {
+    extrato()
+    banco.ar({ id: 'A', status: 'PENDENTE', account_id: ACC, total_amount: 10000, description: 'OS A' })
+    banco.ar({ id: 'B', status: 'PENDENTE', account_id: ACC, total_amount: 20000, description: 'OS B' })
+    await receberEm('A', ACC, 10000)
+    await receberEm('B', ACC, 20000)
+    expect(banco.saldo(ACC)).toBe(130000)
+    await est('A', { dinheiro: 'devolvido' })
+    expect(banco.saldo(ACC)).toBe(120000)
+    const r = await (await lancarLinhas(new NextRequest('http://x/api', json({
+      account_id: ACC, corte: CORTE, linhas: [{ chave: `ITAU:${DATA}|PIX QRS|+30000|1`, data: DATA, descricao: 'PIX QRS', valor_centavos: 30000, links: ['AR:A', 'AR:B'] }],
+    })))).json()
+    expect(r.data.erros ?? []).toEqual([])
+    expect(banco.tabelas.transaction.find((t) => t.bank_ref === 'AR:A')).toEqual(expect.objectContaining({ origin: null })) // o par compensado fica
+    expect(banco.tabelas.transaction.filter((t) => t.origin === 'BANCO' && t.linked_ref === 'AR:B')).toHaveLength(1)
+    expect(banco.saldo(ACC)).toBe(130000) // banco: 100000 + 300 (ainda sem a saída)
+    await linhaDoBanco(`ITAU:${DATA}|PIX ENVIADO|-10000|1`, -10000)
+    expect(banco.saldo(ACC)).toBe(120000) // banco: +300 −100
+  })
+
   it("'devolvido' no Caixa (sem extrato) → DEBIT AR:r1:estorno no Caixa (o nocional fica, compensado): o saldo do Caixa volta", async () => {
     banco.conta({ id: CAIXA, name: 'Caixa', current_balance: 15000 })
     banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: CAIXA, received_amount: 15000, total_amount: 15000 })
