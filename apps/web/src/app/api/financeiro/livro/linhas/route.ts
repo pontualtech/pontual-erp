@@ -6,6 +6,7 @@ import { success, error, handleError } from '@/lib/api-response'
 import { classificar, planejarLinha, escolherOrfao, limitesJanelaOrfao, creditoUsavelParaVinculo, refEstorno, compensado } from '@/lib/financeiro/livro'
 import { dataValida } from '@/lib/financeiro/livro-ajuste'
 import { garantirCategoriasERegras } from '@/lib/financeiro/livro-categorias'
+import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
 
 /**
  * Livro-razão — lançamento das linhas do extrato bancário.
@@ -195,8 +196,30 @@ export async function POST(req: NextRequest) {
     // texto/data do banco e o bank_ref antigo em linked_ref. Saldo intocado. `n` = posição na linha (0 = a própria chave).
     // Só converte o que ainda é nocional; false = outra requisição mexeu nele (nada gravado).
     type Convertivel = { id: string; bank_ref: string | null; description: string | null; category_id: string | null }
-    const converter = async (tx: Pick<typeof prisma, 'transaction'>, t: Convertivel, linha: Linha, n: number) => {
+    // Fix 2 (F2-C, #2/#6): nocional sem categoria → a categoria vem da ref antiga, antes da regra/fallback da linha:
+    // transferência fica fora do total; o dinheiro de uma AR é receita de serviços; o da AP, a categoria da AP.
+    let receitaPadrao: string | null | undefined
+    const categoriaDaConversao = async (tx: Pick<typeof prisma, 'accountPayable' | 'category'>, t: Convertivel, linha: Linha) => {
+      if (t.category_id) return t.category_id
+      const ref = t.bank_ref ?? ''
+      if (ref.startsWith('TRANSFER:')) {
+        const id = categorias.get('Transferência entre contas')
+        if (id) return id
+      }
+      if (/^(AR:|pay_|acquirer:|cnab:)/.test(ref) || ref.endsWith(':anticipation')) {
+        if (receitaPadrao === undefined) receitaPadrao = await categoriaReceitaPadraoId(tx, user.companyId)
+        if (receitaPadrao) return receitaPadrao
+      }
+      const ap = /^AP:([^:]+)$/.exec(ref)
+      if (ap) {
+        const conta = await tx.accountPayable.findFirst({ where: { id: ap[1], company_id: user.companyId }, select: { category_id: true } })
+        if (conta?.category_id) return conta.category_id
+      }
+      return categoriaDe(linha, linha.valor_centavos, false).id
+    }
+    const converter = async (tx: Pick<typeof prisma, 'transaction' | 'accountPayable' | 'category'>, t: Convertivel, linha: Linha, n: number) => {
       const descricao = t.description ?? ''
+      const categoria = await categoriaDaConversao(tx, t, linha)
       const r = await tx.transaction.updateMany({
         where: { id: t.id, company_id: user.companyId, account_id: body.account_id, origin: null, source_text: null },
         data: {
@@ -207,7 +230,7 @@ export async function POST(req: NextRequest) {
           transaction_date: new Date(linha.data + 'T00:00:00.000Z'),
           linked_ref: t.bank_ref,
           description: descricao.includes(' · banco: ') ? descricao : `${descricao} · banco: ${linha.descricao}`,
-          category_id: t.category_id ?? categoriaDe(linha, linha.valor_centavos, false).id,
+          category_id: categoria,
           reconciled: true,
         },
       })
@@ -215,7 +238,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Converte os lançamentos citados em `links` a partir da posição `desde`; se algum mudou no meio, desfaz a linha.
-    const converterLigaveis = async (tx: Pick<typeof prisma, 'transaction'>, ts: Convertivel[], linha: Linha, desde: number) => {
+    const converterLigaveis = async (tx: Pick<typeof prisma, 'transaction' | 'accountPayable' | 'category'>, ts: Convertivel[], linha: Linha, desde: number) => {
       for (const [i, t] of ts.entries()) {
         if (!(await converter(tx, t, linha, desde + i))) throw new Error('lançamento a ligar mudou durante o lançamento da linha — repita')
       }

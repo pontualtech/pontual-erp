@@ -36,7 +36,8 @@ describe('§1 LIGAR converte o nocional na linha do banco (resolve #1, #2, #12)'
     expect(banco.tx_('n1')).toEqual(expect.objectContaining({
       origin: 'BANCO', bank_ref: CHAVE, linked_ref: 'AR:a1', source_text: 'PIX RECEBIDO FULANO', counterparty: 'FULANO DE TAL',
       transaction_date: dia('2026-11-01'), description: 'Recebimento: OS 1 · banco: PIX RECEBIDO FULANO',
-      category_id: 'cat:Receita a identificar', reconciled: true, amount: 50000,
+      // F2-C: nocional AR:<id> sem categoria recebe a receita padrão (antes: fallback 'Receita a identificar').
+      category_id: 'cat:Venda de Servicos', reconciled: true, amount: 50000,
     }))
     expect(banco.tx.account.update).not.toHaveBeenCalled()
     expect(banco.saldo('acc1')).toBe(50000)
@@ -49,7 +50,7 @@ describe('§1 LIGAR converte o nocional na linha do banco (resolve #1, #2, #12)'
     const { j } = await post([linha({ links: ['acquirer:rede:1', 'acquirer:rede:2'] })])
     expect(j.data.resultados[0].acao).toBe('LIGAR')
     expect(banco.tx_('n1')).toEqual(expect.objectContaining({ bank_ref: CHAVE, linked_ref: 'acquirer:rede:1', origin: 'BANCO', category_id: 'cat:Venda de Servicos' }))
-    expect(banco.tx_('n2')).toEqual(expect.objectContaining({ bank_ref: `${CHAVE}#2`, linked_ref: 'acquirer:rede:2', origin: 'BANCO', category_id: 'cat:Receita a identificar' }))
+    expect(banco.tx_('n2')).toEqual(expect.objectContaining({ bank_ref: `${CHAVE}#2`, linked_ref: 'acquirer:rede:2', origin: 'BANCO', category_id: 'cat:Venda de Servicos' }))
     expect(banco.saldo('acc1')).toBe(50000)
   })
 
@@ -66,6 +67,34 @@ describe('§1 LIGAR converte o nocional na linha do banco (resolve #1, #2, #12)'
     const energia = banco.tabelas.category.find((c) => c.name === 'Energia')!.id
     expect(banco.tx_('n1')!.category_id).toBe(energia)
     expect(banco.tx.account.update).not.toHaveBeenCalled()
+  })
+
+  it('F2-C (#2): TRANSFER sem categoria convertida → "Transferência entre contas" (fora do total), não fallback', async () => {
+    banco.transacao({ id: 'tr', account_id: 'acc1', transaction_type: 'DEBIT', amount: 1000000, bank_ref: 'TRANSFER:cr1', description: 'Transferência para B', transaction_date: dia('2026-11-01') })
+    const chave = 'ITAU:2026-11-01|TED ENVIADA|-1000000|1'
+    const { j } = await post([{ chave, data: '2026-11-01', descricao: 'TED ENVIADA', valor_centavos: -1000000 }])
+    expect(j.data.resultados[0]).toEqual(expect.objectContaining({ acao: 'LIGAR', origem: 'orfao' }))
+    expect(banco.tx_('tr')!.category_id).toBe('cat:Transferência entre contas')
+  })
+
+  it('F2-C (#6): pay_/cnab:/antecipação sem categoria → receita padrão; AP:<id> → categoria da AP (sem ela, regra/"A classificar")', async () => {
+    banco.categoria('Aluguel', 'financeiro_despesa')
+    banco.ap({ id: 'p1', category_id: 'cat:Aluguel' })
+    for (const [id, ref] of [['a', 'pay_1'], ['b', 'cnab:9'], ['c', 'AR:x:anticipation']]) {
+      banco.transacao({ id, account_id: 'acc1', transaction_type: 'CREDIT', amount: 100, bank_ref: ref, transaction_date: dia('2026-11-01') })
+    }
+    banco.transacao({ id: 'd', account_id: 'acc1', transaction_type: 'DEBIT', amount: 4800, bank_ref: 'AP:p1', transaction_date: dia('2026-11-01') })
+    banco.transacao({ id: 'e', account_id: 'acc1', transaction_type: 'DEBIT', amount: 3300, bank_ref: 'AP:semcat', transaction_date: dia('2026-11-01') })
+    await post([
+      { chave: 'K1', data: '2026-11-01', descricao: 'ASAAS', valor_centavos: 100, links: ['pay_1'] },
+      { chave: 'K2', data: '2026-11-01', descricao: 'INTER', valor_centavos: 100, links: ['cnab:9'] },
+      { chave: 'K3', data: '2026-11-01', descricao: 'REDE', valor_centavos: 100, links: ['AR:x:anticipation'] },
+      { chave: 'K4', data: '2026-11-01', descricao: 'ELETROPAULO', valor_centavos: -4800 },
+      { chave: 'K5', data: '2026-11-01', descricao: 'BOLETO', valor_centavos: -3300 },
+    ])
+    expect(['a', 'b', 'c', 'd', 'e'].map((id) => banco.tx_(id)!.category_id)).toEqual([
+      'cat:Venda de Servicos', 'cat:Venda de Servicos', 'cat:Venda de Servicos', 'cat:Aluguel', 'cat:A classificar',
+    ])
   })
 
   it('descrição que já tem " · banco: " não duplica', async () => {
