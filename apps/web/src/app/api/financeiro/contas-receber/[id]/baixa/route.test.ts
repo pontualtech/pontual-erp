@@ -348,11 +348,22 @@ describe('F7-D (#8, #13): Receber pela tela pergunta quando a conta já tem dinh
     expect(banco.saldo(CAIXA)).toBe(10000)
   })
 
-  it('#13: estorno feito em produção (DEBIT AR:r1:estorno no Itaú) + crédito do adquirente vivo → pergunta', async () => {
+  it('#13 → F8-A (§0): estorno feito em produção (DEBIT AR:r1:estorno no Itaú) desconta o crédito do adquirente da MESMA conta → lança sem perguntar', async () => {
     banco.ar({ ...AR, total_amount: 10000, account_id: ACC })
     banco.pagamento({ receivable_id: 'r1', provider: 'rede', external_id: 'NSU1', status: 'RECEIVED' })
     banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 9700, bank_ref: 'acquirer:rede:NSU1' })
     banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 10000, bank_ref: 'AR:r1:estorno' })
+    const { status } = await receber({ received_amount: 10000 })
+    expect(status).toBe(200)
+    expect(banco.tabelas.transaction.filter((t) => t.bank_ref === 'AR:r1')).toEqual([expect.objectContaining({ transaction_type: 'CREDIT', amount: 10000, account_id: ACC })])
+  })
+
+  it('F8-A: o :estorno só desconta dinheiro da MESMA conta — crédito do adquirente em outra conta continua perguntando', async () => {
+    banco.conta({ id: CAIXA, current_balance: 0 })
+    banco.ar({ ...AR, total_amount: 10000, account_id: ACC })
+    banco.pagamento({ receivable_id: 'r1', provider: 'rede', external_id: 'NSU1', status: 'RECEIVED' })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 9700, bank_ref: 'acquirer:rede:NSU1' })
+    banco.transacao({ account_id: CAIXA, transaction_type: 'DEBIT', amount: 10000, bank_ref: 'AR:r1:estorno' })
     const { status, j } = await receber({ received_amount: 10000 })
     expect(status).toBe(409)
     expect(j.lancados).toEqual([expect.objectContaining({ origem: 'maquininha acquirer:rede:NSU1', valor_centavos: 9700 })])

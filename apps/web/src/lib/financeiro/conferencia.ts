@@ -52,3 +52,12 @@ export function perguntaDinheiro(
   if (status !== 409 || !corpo || corpo.code !== 'DINHEIRO_JA_LANCADO') return null
   return { mensagem: String(corpo.error ?? ''), lancados: Array.isArray(corpo.lancados) ? (corpo.lancados as LancamentoJaLancado[]) : [] }
 }
+
+// Fix 8 (F8-A): 409 ESTORNO_PERGUNTA do estorno — a tela pergunta se o dinheiro voltou ou continua no banco.
+export function perguntaEstorno(
+  status: number,
+  corpo: { code?: unknown; error?: unknown; lancados?: unknown } | null | undefined,
+): { mensagem: string; lancados: LancamentoJaLancado[] } | null {
+  if (status !== 409 || !corpo || corpo.code !== 'ESTORNO_PERGUNTA') return null
+  return { mensagem: String(corpo.error ?? ''), lancados: Array.isArray(corpo.lancados) ? (corpo.lancados as LancamentoJaLancado[]) : [] }
+}

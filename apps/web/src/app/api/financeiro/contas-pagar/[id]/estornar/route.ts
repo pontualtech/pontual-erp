@@ -3,21 +3,32 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
-import { CONFLITO_BANCO, conflitoDeBanco, ContaAlterada, contasDaAP, desligarLinhas, dinheiroDaAP, exigirTravadas, SELECT_LINHA_LIGADA, travarContas } from '@/lib/financeiro/livro-baixa-db'
+import {
+  CONFLITO_BANCO, conflitoDeBanco, ContaAlterada, contasDaAP, descreverDinheiro, dinheiroDaAP, exigirTravadas, posAjuste, travarContas,
+  type LancamentoDaConta,
+} from '@/lib/financeiro/livro-baixa-db'
 
 /**
  * POST /api/financeiro/contas-pagar/[id]/estornar
  *
- * C10 fix 22/05: estorno de AP ja paga. Onda 4 (§3, espelho do estorno de AR), travas contas → AP (§7), tudo relido na tx:
- *   (a) linhas do BANCO ligadas à AP (AP:<id>: baixa ou DEBIT convertido pelo livro) → DESLIGA, sem saldo;
- *   (b) DEBIT AP:<id> ainda nocional → CREDIT AP:<id>:estorno pelo líquido (próprios − estornos) na conta de cada um;
- *   (c) legado (paga antes de 22/05/2026, DEBIT sem bank_ref) → CREDIT pelo paid_amount na conta da AP;
- *   (d) nada disso → só status/valores. Já estornada (nada em a/b/c e sem valor pago) → 400 'nada a estornar'.
+ * C10 fix 22/05: estorno de AP ja paga. Espelho do estorno de AR, travas contas → AP (§7), tudo relido na tx.
+ * Fix 8 (F8-A, §0): com saída lançada (linhas do banco ligadas a AP:<id>, DEBIT AP:<id> vivo) o estorno PERGUNTA —
+ * sem `dinheiro`, 409 ESTORNO_PERGUNTA: 'permanece' (engano: o dinheiro continua no banco) → CREDIT AP:<id>:estorno na
+ * conta de cada saída, sem desligar linhas (nocional anterior ao ajuste não — F8-B); 'devolvido' (voltou do fornecedor)
+ * → só status. Sem saída: legado (paga antes de 22/05/2026, DEBIT sem bank_ref) → CREDIT pelo paid_amount na conta da
+ * AP; senão só status. PENDENTE sem valor pago → 400 'nada a estornar'. Desligar linhas só no Desfazer.
  *
  * Antes, mexer em AP paga só era possível via DELETE (soft delete) que
  * deixava a Transaction DEBIT órfã + saldo deflacionado sem rastro.
  */
 type Params = { params: { id: string } }
+
+// Fix 8 (F8-A, espelho da AR): a conta tem saída lançada e o operador não disse se o dinheiro voltou ou continua no banco.
+class PerguntaEstorno extends Error {
+  constructor(readonly lancados: LancamentoDaConta[]) {
+    super('O dinheiro deste pagamento voltou do fornecedor, ou continua no banco (lançado na conta errada/por engano)?')
+  }
+}
 
 // Recusa decidida na releitura com as travas: nada gravado.
 class RecusaEstorno extends Error {
@@ -50,6 +61,10 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     const body = await req.json().catch(() => ({}))
     const motivo = (body as any)?.motivo ? String((body as any).motivo).trim().slice(0, 500) : null
+    const escolha = (body as any)?.dinheiro as unknown
+    if (escolha !== undefined && escolha !== 'permanece' && escolha !== 'devolvido') {
+      return error("dinheiro deve ser 'permanece' ou 'devolvido'", 400)
+    }
 
     // Leitura de fora só para saber QUAIS contas travar; quem decide é a releitura dentro da tx.
     const lida = await prisma.accountPayable.findFirst({
@@ -74,59 +89,56 @@ export async function POST(req: NextRequest, { params }: Params) {
         if (!paga && ap.status !== 'PENDENTE') {
           throw new RecusaEstorno('Apenas APs com status PAGO (ou PENDENTE com pagamento parcial) podem ser estornadas', 400)
         }
-        // (a) linhas do banco que hoje representam a saída desta AP.
-        const ligadas = await tx.transaction.findMany({
-          where: { company_id: user.companyId, origin: 'BANCO', linked_ref: proprio },
-          select: SELECT_LINHA_LIGADA,
-        })
-        // (b) lançamentos próprios por bank_ref; nocional = ainda não convertido.
-        const daAP = await tx.transaction.findMany({
-          where: { company_id: user.companyId, bank_ref: { in: [proprio, estorno] } },
-          select: { amount: true, transaction_type: true, bank_ref: true, account_id: true, origin: true, source_text: true },
-        })
-        const compensar = new Map<string, number>()
-        for (const t of daAP) {
-          if (t.origin !== null || t.source_text !== null) continue
-          const sinal = t.bank_ref === proprio && t.transaction_type === 'DEBIT' ? 1
-            : t.bank_ref === estorno && t.transaction_type === 'CREDIT' ? -1 : 0
-          if (sinal !== 0) compensar.set(t.account_id, (compensar.get(t.account_id) ?? 0) + sinal * t.amount)
-        }
-        for (const [conta, valor] of compensar) if (valor <= 0) compensar.delete(conta)
+        const pago = ap.paid_amount ?? 0
+        if (!paga && pago <= 0) throw new RecusaEstorno('nada a estornar', 400)
+        // Fix 8 (F8-A, §0): a saída da AP já lançada (linhas do banco ligadas a AP:<id>, DEBIT AP:<id> vivo), líquida
+        // dos estornos anteriores.
+        const dinheiro = await dinheiroDaAP(tx, user.companyId, ap.id)
 
         // Onda 4 (fix 2, F2-A; fix 3, F3-C): a taxa que o adquirente/Asaas descontou do repasse (perform-match,
         // capture-fees) nasce PAGA sem DEBIT — a saída já está no crédito líquido; estornar e pagar de novo debitaria a
-        // taxa 2x. Só recusa quando a AP não tem saída própria: a taxa estimada paga pelo Receber (DEBIT AP:<id>) ou
-        // ligada a uma linha do banco estorna pelo (a)/(b) como qualquer AP.
-        if (taxaDoAdquirente(ap) && compensar.size === 0 && ligadas.length === 0) {
+        // taxa 2x. Só recusa quando a AP não tem saída própria lançada.
+        if (taxaDoAdquirente(ap) && dinheiro.total === 0) {
           throw new RecusaEstorno('taxa descontada no repasse do adquirente — não estornável', 409)
         }
 
-        // (c) legado: paga antes de 22/05 com conta e valor, sem nenhum lançamento próprio nem linha ligada.
-        // Fix 3 (F3-A, espelho da AR): (ii) nenhuma saída já lançada da AP; (iii) conta criada antes de 22/05; (iv) updated_at
-        // antigo OU a própria transação legada — DEBIT do ERP sem bank_ref, do valor pago, na conta da AP, antes de 22/05
-        // e com descrição 'Pgto: ' (o valor sozinho casava o pagamento de outra AP).
-        // Fix 4 (F4-A, #1): a transação legada é a DESTA AP — descrição exata 'Pgto: ' + descrição (o formato da baixa antiga).
-        const pago = ap.paid_amount ?? 0
-        const candidataLegado = paga && !!ap.account_id && pago > 0 && daAP.length === 0 && ligadas.length === 0
-        const legado = candidataLegado
-          && !!ap.created_at && ap.created_at.getTime() < LEGADO_ATE.getTime()
-          && (await dinheiroDaAP(tx, user.companyId, ap.id)).total === 0
-          && (
-            (!!ap.updated_at && ap.updated_at.getTime() < LEGADO_ATE.getTime())
-            || (await tx.transaction.count({
-              where: {
-                company_id: user.companyId, account_id: ap.account_id!, transaction_type: 'DEBIT', amount: pago,
-                bank_ref: null, origin: null, created_at: { lt: LEGADO_ATE }, description: `Pgto: ${ap.description}`,
-              },
-            })) > 0
-          )
-        if (legado) compensar.set(ap.account_id!, pago)
+        const compensar = new Map<string, number>()
+        if (dinheiro.total > 0) {
+          if (!escolha) throw new PerguntaEstorno(await descreverDinheiro(tx, user.companyId, dinheiro))
+          // 'permanece' → como em produção, CREDIT AP:<id>:estorno NA CONTA de cada saída, sem desligar linhas; nocional
+          // anterior ao ajuste não (F8-B). 'devolvido' → só status (a entrada da devolução vem pelo extrato).
+          if (escolha === 'permanece') {
+            for (const t of [...dinheiro.linhas, ...await posAjuste(tx, user.companyId, dinheiro.nocionais)]) {
+              const vivo = t.vivo ?? t.amount
+              if (vivo > 0) compensar.set(t.account_id, (compensar.get(t.account_id) ?? 0) + vivo)
+            }
+          }
+        } else {
+          // (c) legado: paga antes de 22/05 com conta e valor, sem nenhum lançamento próprio nem linha ligada. Fix 3/4
+          // (F3-A, F4-A): conta criada antes de 22/05; updated_at antigo OU a transação legada DESTA AP — DEBIT do ERP sem
+          // bank_ref, do valor pago, na conta da AP, antes de 22/05, com a descrição exata 'Pgto: ' + descrição.
+          const proprios = await tx.transaction.count({
+            where: { company_id: user.companyId, OR: [{ bank_ref: { in: [proprio, estorno] } }, { linked_ref: proprio }] },
+          })
+          const candidataLegado = paga && !!ap.account_id && pago > 0 && proprios === 0
+          const legado = candidataLegado
+            && !!ap.created_at && ap.created_at.getTime() < LEGADO_ATE.getTime()
+            && (
+              (!!ap.updated_at && ap.updated_at.getTime() < LEGADO_ATE.getTime())
+              || (await tx.transaction.count({
+                where: {
+                  company_id: user.companyId, account_id: ap.account_id!, transaction_type: 'DEBIT', amount: pago,
+                  bank_ref: null, origin: null, created_at: { lt: LEGADO_ATE }, description: `Pgto: ${ap.description}`,
+                },
+              })) > 0
+            )
+          if (legado) compensar.set(ap.account_id!, pago)
+          // Quitada sem valor, sem dinheiro e sem legado: nada a estornar.
+          if (!legado && pago <= 0) throw new RecusaEstorno('nada a estornar', 400)
+        }
 
-        if (ligadas.length === 0 && compensar.size === 0 && pago <= 0) throw new RecusaEstorno('nada a estornar', 400)
+        exigirTravadas(travadas, [...compensar.keys()])
 
-        exigirTravadas(travadas, [...ligadas.map((l) => l.account_id), ...compensar.keys()])
-
-        await desligarLinhas(tx, user.companyId, ligadas)
         for (const [contaId, valor] of compensar) {
           // CREDIT compensatório (reverte o DEBIT original): bank_ref "AP:{id}:estorno" distingue do DEBIT.
           await tx.transaction.create({
@@ -155,6 +167,9 @@ export async function POST(req: NextRequest, { params }: Params) {
       }, { maxWait: 10000, timeout: 20000 })
     } catch (e) {
       if (e instanceof RecusaEstorno) return error(e.message, e.status)
+      if (e instanceof PerguntaEstorno) {
+        return NextResponse.json({ code: 'ESTORNO_PERGUNTA', error: e.message, lancados: e.lancados }, { status: 409 })
+      }
       if (e instanceof ContaAlterada) return error(e.message, 409)
       if (conflitoDeBanco(e)) return error(CONFLITO_BANCO, 409)
       throw e

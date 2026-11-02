@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { perguntaDinheiro, resultadoBaixa, resultadoConferencia, resultadoRetornoCnab } from './conferencia'
+import { perguntaDinheiro, perguntaEstorno, resultadoBaixa, resultadoConferencia, resultadoRetornoCnab } from './conferencia'
 
 describe('resultadoConferencia (F14)', () => {
   it('conferida sem vínculo: sucesso com a mensagem da tela', () => {
@@ -71,6 +71,19 @@ describe('perguntaDinheiro (F7-D): a tela reconhece a pergunta do Receber', () =
     expect(perguntaDinheiro(409, { error: 'conflito' })).toBeNull()
     expect(perguntaDinheiro(200, { code: 'DINHEIRO_JA_LANCADO', error: 'x', lancados })).toBeNull()
     expect(perguntaDinheiro(409, null)).toBeNull()
+  })
+})
+
+describe('perguntaEstorno (F8-A): a tela reconhece a pergunta do estorno', () => {
+  const lancados = [{ origem: 'linha do extrato (recebimento anterior AR:r1)', valor_centavos: 15000, data: '2026-11-01', conta: 'Itaú' }]
+  it('409 ESTORNO_PERGUNTA → mensagem e lançamentos', () => {
+    expect(perguntaEstorno(409, { code: 'ESTORNO_PERGUNTA', error: 'O dinheiro…', lancados })).toEqual({ mensagem: 'O dinheiro…', lancados })
+  })
+  it('a pergunta do Receber, outro 409, outro status ou sem corpo → null', () => {
+    expect(perguntaEstorno(409, { code: 'DINHEIRO_JA_LANCADO', error: 'x', lancados })).toBeNull()
+    expect(perguntaEstorno(409, { error: 'conta alterada — repita' })).toBeNull()
+    expect(perguntaEstorno(200, { code: 'ESTORNO_PERGUNTA', error: 'x', lancados })).toBeNull()
+    expect(perguntaEstorno(409, null)).toBeNull()
   })
 })
 
