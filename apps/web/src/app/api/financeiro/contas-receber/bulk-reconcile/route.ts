@@ -167,6 +167,7 @@ export async function POST(req: NextRequest) {
                   where: { id: linha.id, company_id: user.companyId, linked_ref: null },
                   data: {
                     linked_ref: ref,
+                    desligada_de: null,
                     ...(recebeCategoria(await nomeCategoria(tx, user.companyId, linha.category_id)) ? { category_id: categoria } : {}),
                     description: `LIQUIDACAO: ${ar.description} · banco: ${linha.source_text ?? ''}`,
                     reconciled: true,
@@ -242,7 +243,8 @@ export async function POST(req: NextRequest) {
                 where: { id: linhaId, company_id: user.companyId, linked_ref: null },
                 data: {
                   linked_ref: `AR:${ar.id}`,
-                  ...(recebeCategoria(linha?.categoria ?? null) ? { category_id: categoria } : {}),
+                  desligada_de: null,
+                  ...(recebeCategoria(linha?.categoria ?? null) || linha?.desligada_de === `AR:${ar.id}` ? { category_id: categoria } : {}),
                   description: `LIQUIDACAO: ${ar.description} · banco: ${alvo?.source_text ?? ''}`,
                   reconciled: true,
                 },
@@ -257,8 +259,8 @@ export async function POST(req: NextRequest) {
               if (pedido && !pedidoJaLigado) {
                 if (!trocaveis) return { erro: 'conta a receber já tem lançamento; vínculo não feito' }
                 // (iii) SWAP (#7): a linha pedida é o mesmo dinheiro do nocional → apaga o nocional (e o saldo), liga a linha.
-                const candidatos = await candidatosLivro(tx, user.companyId, ar.account_id, 'CREDIT', hoje, pedido, JANELA_BAIXA)
-                const decisao = decidirBaixa({ tipo: 'CREDIT', amount, data: hoje, categoria: nomeAlvo }, pedido, candidatos, JANELA_BAIXA)
+                const candidatos = await candidatosLivro(tx, user.companyId, ar.account_id, 'CREDIT', hoje, pedido, JANELA_BAIXA, `AR:${ar.id}`)
+                const decisao = decidirBaixa({ tipo: 'CREDIT', amount, data: hoje, categoria: nomeAlvo, dono: `AR:${ar.id}` }, pedido, candidatos, JANELA_BAIXA)
                 if ('erro' in decisao) return { erro: decisao.erro }
                 if (!('usar' in decisao)) return { erro: 'conta a receber já tem lançamento; vínculo não feito' }
                 exigirTravadas(travadas, nocionais.map((t) => t.account_id))
@@ -300,8 +302,8 @@ export async function POST(req: NextRequest) {
             // Decide ANTES de escrever: explícito inválido não baixa nada.
             // Sem vínculo explícito, Conferir (ancorado em hoje) olha 30 dias para trás (E3); a linha pedida entra por id.
             const janela = pedido ? JANELA_BAIXA : JANELA_CONFERIR
-            const candidatos = await candidatosLivro(tx, user.companyId, ar.account_id, 'CREDIT', hoje, pedido, janela)
-            const decisao = decidirBaixa({ tipo: 'CREDIT', amount, data: hoje, categoria: nomeAlvo }, pedido, candidatos, janela)
+            const candidatos = await candidatosLivro(tx, user.companyId, ar.account_id, 'CREDIT', hoje, pedido, janela, `AR:${ar.id}`)
+            const decisao = decidirBaixa({ tipo: 'CREDIT', amount, data: hoje, categoria: nomeAlvo, dono: `AR:${ar.id}` }, pedido, candidatos, janela)
             if ('erro' in decisao) return { erro: decisao.erro }
 
             await liquidar()

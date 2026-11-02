@@ -30,6 +30,7 @@ export async function candidatosLivro(
   data: string,
   explicito: string | null,
   janela: JanelaBaixa,
+  dono: string | null = null, // Fix 7 (F7-C): AR:<id>/AP:<id> — traz também a linha livre desligada desta conta (qualquer data)
 ): Promise<CandidatoLivro[]> {
   const base = Date.parse(`${data}T00:00:00Z`)
   const naJanela = {
@@ -44,11 +45,11 @@ export async function candidatosLivro(
       account_id: accountId,
       transaction_type: tipo,
       origin: 'BANCO',
-      OR: explicito ? [naJanela, { id: explicito }] : [naJanela],
+      OR: [naJanela, ...(explicito ? [{ id: explicito }] : []), ...(dono ? [{ desligada_de: dono, linked_ref: null }] : [])],
     },
     select: {
       id: true, amount: true, transaction_type: true, transaction_date: true,
-      linked_ref: true, origin: true, category_id: true, categories: { select: { name: true } },
+      linked_ref: true, origin: true, category_id: true, categories: { select: { name: true } }, desligada_de: true,
     },
   })
   return rows.map((r) => ({
@@ -60,6 +61,7 @@ export async function candidatosLivro(
     category_id: r.category_id ?? null,
     linked_ref: r.linked_ref ?? null,
     origin: r.origin ?? null,
+    desligada_de: r.desligada_de ?? null,
   }))
 }
 
@@ -331,7 +333,8 @@ export async function desligarLinhas(tx: any, companyId: string, todas: LinhaLig
     ).category_id
     await tx.transaction.update({
       where: { id: l.id },
-      data: { linked_ref: null, category_id: porRegra ?? fallback[l.transaction_type] ?? null, description: l.source_text ?? l.description },
+      // Fix 7 (F7-C): a linha lembra a conta que pagava — o Receber/Pagar/Conferir seguinte dela a religa.
+      data: { linked_ref: null, desligada_de: l.linked_ref, category_id: porRegra ?? fallback[l.transaction_type] ?? null, description: l.source_text ?? l.description },
     })
   }
 }

@@ -494,3 +494,13 @@ describe('F7-B (#2, #10, #12, #15): sem a guarda por charge_status — decide o 
     expect(logError).not.toHaveBeenCalled()
   })
 })
+
+describe('F7-C: ligar a linha zera desligada_de', () => {
+  it('linha ASAAS:PAY livre desligada antes (desligada_de AR:r1) → o RECEIVED a liga ao pay_1 e zera desligada_de', async () => {
+    Object.assign(banco.tabelas.accountReceivable[0], { status: 'PENDENTE', received_amount: 0 })
+    banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'PENDING', amount: 100000, billing_type: 'PIX' })
+    banco.transacao({ id: 'L', account_id: ACC, transaction_type: 'CREDIT', amount: 97000, origin: 'BANCO', bank_ref: 'ASAAS:PAY:pay_1', source_text: 'Cobrança', desligada_de: 'AR:r1' })
+    expect(await evento('evt_dz', 'PAYMENT_RECEIVED')).toBe(200)
+    expect(banco.tx_('L')).toEqual(expect.objectContaining({ linked_ref: 'pay_1', desligada_de: null }))
+  })
+})

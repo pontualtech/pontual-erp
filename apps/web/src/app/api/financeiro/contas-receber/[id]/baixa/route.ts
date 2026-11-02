@@ -92,11 +92,11 @@ export async function POST(req: NextRequest, { params }: Params) {
 
       // Livro-razão (30/10): se a entrada já foi lançada pelo banco, liga a ela (decide antes de escrever).
       const dataBaixa = data.received_at ? new Date(data.received_at).toISOString().slice(0, 10) : hojeSP()
-      const candidatos = jaLancado ? [] : await candidatosLivro(tx, user.companyId, data.account_id, 'CREDIT', dataBaixa, null, JANELA_BAIXA)
+      const candidatos = jaLancado ? [] : await candidatosLivro(tx, user.companyId, data.account_id, 'CREDIT', dataBaixa, null, JANELA_BAIXA, `AR:${params.id}`)
       const categoria = fresh.category_id
         ?? await categoriaReceitaPadraoId(tx, user.companyId)
       const nomeAlvo = fresh.category_id ? await nomeCategoria(tx, user.companyId, fresh.category_id) : CATEGORIA_RECEITA_SERVICOS
-      const decisao = decidirBaixa({ tipo: 'CREDIT', amount: data.received_amount, data: dataBaixa, categoria: nomeAlvo }, null, candidatos, JANELA_BAIXA)
+      const decisao = decidirBaixa({ tipo: 'CREDIT', amount: data.received_amount, data: dataBaixa, categoria: nomeAlvo, dono: `AR:${params.id}` }, null, candidatos, JANELA_BAIXA)
 
       // Bug #41 (audit 31/05): mesmo race condition de AP — findFirst+update
       // não trava row. Guard atomic com updateMany where status != RECEBIDO.
@@ -144,7 +144,8 @@ export async function POST(req: NextRequest, { params }: Params) {
           where: { id: decisao.usar, company_id: user.companyId, linked_ref: null },
           data: {
             linked_ref: `AR:${params.id}`,
-            ...(recebeCategoria(linha?.categoria ?? null) ? { category_id: categoria } : {}),
+            desligada_de: null,
+            ...(recebeCategoria(linha?.categoria ?? null) || linha?.desligada_de === `AR:${params.id}` ? { category_id: categoria } : {}),
             description: `Recebimento: ${existing.description} · banco: ${alvo?.source_text ?? ''}`,
             reconciled: true,
           },

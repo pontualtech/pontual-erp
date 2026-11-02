@@ -430,3 +430,24 @@ describe('F4-A (#1, m12): legado (c) só com a transação DESTA AR e sem pagame
     expect(banco.saldo(ACC)).toBe(100000)
   })
 })
+
+describe('F7-C (#6): estorno desliga a linha e o Receber seguinte a RELIGA, mesmo fora da janela', () => {
+  it('Receber → livro converte → estorno → Receber 20 dias depois → religa (nenhum crédito novo, saldo = banco)', async () => {
+    const CORTE = '2026-10-29', DATA = '2026-11-02'
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 0, bank_ref: `AJUSTE:${ACC}:${CORTE}`, origin: 'AJUSTE', transaction_date: dia(CORTE) })
+    banco.ar({ id: 'ar1', status: 'PENDENTE', account_id: ACC, total_amount: 50000, description: 'OS 1' })
+    const receberEm = (data: string) => receber(new NextRequest('http://x/api', json({ received_amount: 50000, account_id: ACC, received_at: data })), { params: { id: 'ar1' } })
+    expect((await receberEm(DATA)).status).toBe(200)
+    await lancarLinhas(new NextRequest('http://x/api', json({
+      account_id: ACC, corte: CORTE, linhas: [{ chave: `ITAU:${DATA}|PIX RECEBIDO|+50000|1`, data: DATA, descricao: 'PIX RECEBIDO', valor_centavos: 50000, links: ['AR:ar1'] }],
+    })))
+    const linhaId = banco.tabelas.transaction.find((t) => t.linked_ref === 'AR:ar1')!.id
+    expect((await est('ar1')).status).toBe(200)
+    expect(banco.tx_(linhaId)).toEqual(expect.objectContaining({ linked_ref: null, desligada_de: 'AR:ar1' }))
+    const r = await (await receberEm('2026-11-22')).json()
+    expect(r.data.ligada).toBe(true)
+    expect(banco.tx_(linhaId)).toEqual(expect.objectContaining({ linked_ref: 'AR:ar1', desligada_de: null }))
+    expect(banco.tabelas.transaction.filter((t) => t.bank_ref === 'AR:ar1')).toEqual([])
+    expect(banco.saldo(ACC)).toBe(150000)
+  })
+})

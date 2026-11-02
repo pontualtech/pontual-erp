@@ -97,7 +97,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
       // Livro-razão: se a saída já foi lançada pelo banco, liga a ela (decide antes de escrever).
       const dataBaixa = data.paid_at ? new Date(data.paid_at).toISOString().slice(0, 10) : hojeSP()
-      const candidatos = jaLancado ? [] : await candidatosLivro(tx, user.companyId, data.account_id, 'DEBIT', dataBaixa, data.livro_transaction_id ?? null, JANELA_BAIXA)
+      const candidatos = jaLancado ? [] : await candidatosLivro(tx, user.companyId, data.account_id, 'DEBIT', dataBaixa, data.livro_transaction_id ?? null, JANELA_BAIXA, `AP:${params.id}`)
 
       // F6: vínculo explícito com linha a até R$ 1 do restante quita a AP por inteiro (paid = restante);
       // a diferença bancária fica registrada nas notes da AP.
@@ -127,7 +127,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       const categoriaAP = await nomeCategoria(tx, user.companyId, fresh.category_id)
       const decisao: DecisaoBaixa = jaLancado
         ? { criar: true } // não usado: com o dinheiro já lançado nada é criado nem ligado
-        : decidirBaixa({ tipo: 'DEBIT', amount: valorBaixa, data: dataBaixa, categoria: categoriaAP }, data.livro_transaction_id ?? null, candidatos, JANELA_BAIXA)
+        : decidirBaixa({ tipo: 'DEBIT', amount: valorBaixa, data: dataBaixa, categoria: categoriaAP, dono: `AP:${params.id}` }, data.livro_transaction_id ?? null, candidatos, JANELA_BAIXA)
       if ('erro' in decisao) throw new LivroInvalido(decisao.erro)
       // Onda 4 (§6, #14): AP sem categoria ligada a linha já categorizada (ex.: regra ELETROPAULO → Energia) recebe a categoria da linha.
       const linhaUsada = 'usar' in decisao ? candidatos.find((c) => c.id === decisao.usar) : undefined
@@ -181,12 +181,13 @@ export async function POST(req: NextRequest, { params }: Params) {
         })
         // Linha já categorizada (ex.: regra ELETROPAULO → Energia) mantém a sua categoria.
         const linha = candidatos.find((c) => c.id === decisao.usar)
-        const trocaCategoria = !!fresh.category_id && recebeCategoria(linha?.categoria ?? null)
+        const trocaCategoria = !!fresh.category_id && (recebeCategoria(linha?.categoria ?? null) || linha?.desligada_de === `AP:${params.id}`)
         // Guard atômico (como Bug #41/#67): só liga se a linha ainda estiver livre.
         const ligou = await tx.transaction.updateMany({
           where: { id: decisao.usar, company_id: user.companyId, linked_ref: null },
           data: {
             linked_ref: `AP:${params.id}`,
+            desligada_de: null,
             // sem categoria na AP → mantém a atual ("A classificar")
             ...(trocaCategoria ? { category_id: fresh.category_id } : {}),
             description: `Pgto: ${fresh.description} · banco: ${alvo?.source_text ?? ''}`,

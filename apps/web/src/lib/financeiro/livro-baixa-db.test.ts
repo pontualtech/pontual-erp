@@ -144,3 +144,12 @@ describe('contaAsaasDaEmpresa (F6-D, #4, #9, #12): pelo provedor, não pelo nome
     expect(await contaAsaasDaEmpresa(banco.tx, 'c1')).toBeNull()
   })
 })
+
+describe('desligarLinhas — F7-C: a linha lembra a conta que pagava', () => {
+  it('grava desligada_de = linked_ref ao desligar', async () => {
+    banco.transacao({ id: 'L', account_id: 'acc1', transaction_type: 'CREDIT', amount: 100, origin: 'BANCO', bank_ref: 'K', source_text: 'PIX', linked_ref: 'AR:a1', category_id: 'cat:Venda de Servicos' })
+    const linhas = await banco.tx.transaction.findMany({ where: { id: 'L' }, select: SELECT_LINHA_LIGADA })
+    await desligarLinhas(banco.tx, 'c1', linhas)
+    expect(banco.tx_('L')).toEqual(expect.objectContaining({ linked_ref: null, desligada_de: 'AR:a1' }))
+  })
+})

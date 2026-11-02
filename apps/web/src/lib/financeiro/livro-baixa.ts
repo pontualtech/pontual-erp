@@ -24,6 +24,7 @@ export interface CandidatoLivro {
   category_id: string | null
   linked_ref: string | null
   origin: string | null
+  desligada_de?: string | null // Fix 7 (F7-C): a ref que a linha pagava quando foi desligada
 }
 
 export type DecisaoBaixa = { usar: string } | { criar: true } | { erro: string }
@@ -56,7 +57,7 @@ export function refCnab(pixCode: string | null | undefined): string | null {
 
 // `alvo.categoria` = nome da categoria da conta a pagar/receber (desempate: mesma categoria antes das outras).
 export function decidirBaixa(
-  alvo: { tipo: 'CREDIT' | 'DEBIT'; amount: number; data: string; categoria?: string | null },
+  alvo: { tipo: 'CREDIT' | 'DEBIT'; amount: number; data: string; categoria?: string | null; dono?: string | null },
   explicito: string | null,
   candidatos: CandidatoLivro[],
   janela: JanelaBaixa = JANELA_BAIXA, // a mesma passada a candidatosLivro
@@ -84,7 +85,15 @@ export function decidirBaixa(
   let melhor: { id: string; rank: number; dist: number } | null = null
   for (const c of candidatos) {
     if (c.origin !== 'BANCO' || c.transaction_type !== alvo.tipo || c.amount !== alvo.amount) continue
-    if (c.linked_ref || (c.categoria !== null && CATEGORIAS_FORA_DO_TOTAL.includes(c.categoria))) continue
+    if (c.linked_ref) continue
+    // Fix 7 (F7-C, #6/#7): a linha que pagava ESTA conta e foi desligada (estorno/Desfazer) é religada — qualquer data,
+    // qualquer categoria (a regra pode tê-la reclassificado), prioridade máxima.
+    if (alvo.dono && c.desligada_de === alvo.dono) {
+      const dist = Math.abs(diasEntre(c.transaction_date, alvo.data))
+      if (!melhor || melhor.rank > -1 || dist < melhor.dist) melhor = { id: c.id, rank: -1, dist }
+      continue
+    }
+    if (c.categoria !== null && CATEGORIAS_FORA_DO_TOTAL.includes(c.categoria)) continue
     const delta = diasEntre(c.transaction_date, alvo.data) // negativo = antes da baixa
     if (delta < -janela.antes || delta > janela.depois) continue
     const rank = recebeCategoria(c.categoria) ? 0 : !alvo.categoria || c.categoria === alvo.categoria ? 1 : 2

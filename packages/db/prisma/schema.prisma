@@ -1008,6 +1008,9 @@ model Transaction {
   source_text      String?
   linked_ref       String?
   counterparty     String?
+  // Fix 7 (F7-C): a ref (AR:<id>/AP:<id>) que a linha do banco pagava quando foi desligada — o Receber/Pagar/Conferir
+  // seguinte da mesma conta a religa em vez de criar outro lançamento.
+  desligada_de     String?
   accounts         Account   @relation(fields: [account_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   categories       Category? @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 

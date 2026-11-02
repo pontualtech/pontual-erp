@@ -246,3 +246,24 @@ describe('F4-A (#1, espelho na AP): legado (c) só com o "Pgto: <descrição des
     expect(banco.saldo(ACC)).toBe(100000)
   })
 })
+
+describe('F7-C (#7): estorno de AP desliga a linha e o Pagar seguinte a RELIGA, mesmo fora da janela', () => {
+  it('Pagar → livro converte (órfão) → estorno → Pagar 20 dias depois → religa (nenhuma saída nova, saldo = banco)', async () => {
+    const CORTE = '2026-10-29', DATA = '2026-11-02'
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 0, bank_ref: `AJUSTE:${ACC}:${CORTE}`, origin: 'AJUSTE', transaction_date: dia(CORTE) })
+    banco.ap({ id: 'p1', status: 'PENDENTE', total_amount: 120000, description: 'Aluguel' })
+    const pagarEm = (data: string) => pagar(new NextRequest('http://x/api', json({ paid_amount: 120000, account_id: ACC, paid_at: data })), { params: { id: 'p1' } })
+    expect((await pagarEm(DATA)).status).toBe(200)
+    await lancarLinhas(new NextRequest('http://x/api', json({
+      account_id: ACC, corte: CORTE, linhas: [{ chave: `ITAU:${DATA}|TED|-120000|1`, data: DATA, descricao: 'TED ALUGUEL', valor_centavos: -120000 }],
+    })))
+    const linhaId = banco.tabelas.transaction.find((t) => t.linked_ref === 'AP:p1')!.id
+    expect((await est('p1')).status).toBe(200)
+    expect(banco.tx_(linhaId)).toEqual(expect.objectContaining({ linked_ref: null, desligada_de: 'AP:p1' }))
+    const r = await (await pagarEm('2026-11-22')).json()
+    expect(r.data.ligada).toBe(true)
+    expect(banco.tx_(linhaId)).toEqual(expect.objectContaining({ linked_ref: 'AP:p1', desligada_de: null }))
+    expect(banco.tabelas.transaction.filter((t) => t.bank_ref === 'AP:p1')).toEqual([])
+    expect(banco.saldo(ACC)).toBe(100000 - 120000)
+  })
+})

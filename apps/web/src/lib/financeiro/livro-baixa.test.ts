@@ -104,3 +104,18 @@ describe('decidirBaixa', () => {
     expect(decidirBaixa(alvo, 'L', [{ ...base, id: 'L', amount: 201, transaction_date: '2026-10-30' }])).toHaveProperty('erro')
   })
 })
+
+describe('decidirBaixa — F7-C (#6, #7): a linha desligada desta conta é religada', () => {
+  it('desligada_de = dono → usa, mesmo fora da janela e já categorizada pela regra (prioridade máxima)', () => {
+    const desligada = { ...base, id: 'D', amount: 30000, transaction_date: '2026-10-01', categoria: 'Rendimentos', desligada_de: 'AR:a1' }
+    const naJanela = { ...base, id: 'J', amount: 30000, transaction_date: '2026-11-05' }
+    expect(decidirBaixa({ tipo: 'CREDIT', amount: 30000, data: '2026-11-05', dono: 'AR:a1' }, null, [naJanela, desligada])).toEqual({ usar: 'D' })
+  })
+  it('desligada de OUTRA conta, ou já religada, não vale fora da janela; sem dono, regra de sempre', () => {
+    const outra = { ...base, id: 'O', amount: 30000, transaction_date: '2026-10-01', desligada_de: 'AR:a2' }
+    const ligada = { ...base, id: 'L', amount: 30000, transaction_date: '2026-10-01', desligada_de: 'AR:a1', linked_ref: 'AR:a9' }
+    expect(decidirBaixa({ tipo: 'CREDIT', amount: 30000, data: '2026-11-05', dono: 'AR:a1' }, null, [outra, ligada])).toEqual({ criar: true })
+    const d = { ...base, id: 'D', amount: 30000, transaction_date: '2026-10-01', desligada_de: 'AR:a1' }
+    expect(decidirBaixa({ tipo: 'CREDIT', amount: 30000, data: '2026-11-05' }, null, [d])).toEqual({ criar: true })
+  })
+})
