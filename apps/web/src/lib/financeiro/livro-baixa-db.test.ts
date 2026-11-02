@@ -55,12 +55,34 @@ describe('dinheiroDaAR — reversões do Asaas (F3-B; fix 4, F4-C, #2, #9)', () 
     expect(await total()).toBe(0)
   })
 
-  it('F4-C: o desconto no AR:<id> vai até o valor dele — o crédito novo AR:<id> (outro pagamento) continua contando', async () => {
+  it('F4-C/F6-C: a reversão sai só da linha do PRÓPRIO pagamento (ASAAS:PAY:pay_x ligada como AR:r1); o AR:r1 do Caixa continua contando', async () => {
     banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_x', status: 'REFUNDED' })
     banco.transacao({ account_id: ASAAS, transaction_type: 'CREDIT', amount: 9901, origin: 'BANCO', bank_ref: 'ASAAS:PAY:pay_x', linked_ref: 'AR:r1' })
     banco.transacao({ account_id: ASAAS, transaction_type: 'DEBIT', amount: 10000, bank_ref: 'pay_x-refund' })
     banco.transacao({ account_id: 'caixa', transaction_type: 'CREDIT', amount: 10000, bank_ref: 'AR:r1' })
-    expect(await total()).toBe(9901)
+    expect(await total()).toBe(10000)
+  })
+
+  it('F6-C #5: reembolso de um pagamento sem dinheiro no ERP (cartão só CONFIRMED) não come o AR:r1 do Caixa', async () => {
+    banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_c', status: 'REFUNDED' })
+    banco.transacao({ account_id: ASAAS, transaction_type: 'DEBIT', amount: 10000, bank_ref: 'pay_c-refund' })
+    banco.transacao({ account_id: 'caixa', transaction_type: 'CREDIT', amount: 10000, bank_ref: 'AR:r1' })
+    expect(await total()).toBe(10000)
+  })
+
+  it('F6-C: reembolso sem dinheiro do pagamento não come a linha PIX do Itaú ligada como AR:r1 (outra origem)', async () => {
+    banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_c', status: 'REFUNDED' })
+    banco.transacao({ account_id: ASAAS, transaction_type: 'DEBIT', amount: 10000, bank_ref: 'pay_c-refund' })
+    banco.transacao({ account_id: 'itau', transaction_type: 'CREDIT', amount: 10000, origin: 'BANCO', bank_ref: 'ITAU:k', linked_ref: 'AR:r1' })
+    expect(await total()).toBe(10000)
+  })
+
+  it('F6-C m9: dinheiro do pagamento numa linha ASAAS:PAY LIVRE (não ligada) → a reversão não come o AR:r1 do Caixa', async () => {
+    banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_x', status: 'REFUNDED' })
+    banco.transacao({ account_id: ASAAS, transaction_type: 'CREDIT', amount: 9901, origin: 'BANCO', bank_ref: 'ASAAS:PAY:pay_x' })
+    banco.transacao({ account_id: ASAAS, transaction_type: 'DEBIT', amount: 10000, bank_ref: 'pay_x-refund' })
+    banco.transacao({ account_id: 'caixa', transaction_type: 'CREDIT', amount: 10000, bank_ref: 'AR:r1' })
+    expect(await total()).toBe(10000)
   })
 
   it('F4-C: reversão maior que o AR:<id> não come o dinheiro de outro pagamento (pay_b)', async () => {

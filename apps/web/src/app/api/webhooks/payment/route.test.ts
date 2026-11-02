@@ -86,6 +86,7 @@ describe('F2-D (#4): webhook Asaas trava a conta antes da AR', () => {
 
   it('m11: reversão de chargeback (AWAITING_CHARGEBACK_REVERSAL): accounts antes da AR e do DEBIT', async () => {
     banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'DISPUTED', amount: 100000, billing_type: 'CREDIT_CARD' })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 97000, bank_ref: 'pay_1' })
     await evento('evt_o3', 'PAYMENT_AWAITING_CHARGEBACK_REVERSAL')
     expect(banco.tabelas.transaction.filter((t) => t.bank_ref === 'pay_1-chargeback')).toHaveLength(1)
     expect(banco.travas[0]).toEqual(expect.objectContaining({ tabela: 'accounts', id: ACC }))
@@ -276,12 +277,13 @@ describe('F5-A: o webhook Asaas credita/debita na conta da cobrança, não na co
     expect(banco.saldo(ITAU)).toBe(500000)
   })
 
-  it('REFUNDED sem crédito pay_1 nenhum → a conta do crédito Asaas (metadata)', async () => {
+  it('F6-C: REFUNDED sem dinheiro do pay_1 no ERP (nem crédito nem linha) → nenhum DEBIT, mesmo com metadata', async () => {
     Object.assign(banco.tabelas.accountReceivable[0], { status: 'LIQUIDADO', received_amount: 100000 })
     banco.conta({ id: ASAAS2, name: 'Cobranças', current_balance: 0 })
     banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'RECEIVED', amount: 100000, billing_type: 'PIX', metadata: { account_id: ASAAS2 } })
     expect(await evento('evt_m6', 'PAYMENT_REFUNDED')).toBe(200)
-    expect(banco.tabelas.transaction.filter((t) => t.bank_ref === 'pay_1-refund')).toEqual([expect.objectContaining({ account_id: ASAAS2 })])
+    expect(banco.tabelas.transaction.filter((t) => t.bank_ref === 'pay_1-refund')).toEqual([])
+    expect(banco.saldo(ASAAS2)).toBe(0)
   })
 
   it('#4 com a conta da cobrança: nocional AR:r1 no Itaú (conta da AR) é "outra conta" → cria pay_1 no Asaas e avisa; no Asaas → SWAP', async () => {
@@ -331,5 +333,43 @@ describe('F6-A (#1, #7): RECEIVED com a linha ASAAS:PAY:<pay> livre já lançada
     expect(banco.tx_('L')!.linked_ref).toBe('pay_1')
     expect(comRef('pay_1')).toHaveLength(1)
     expect(banco.saldo(ACC)).toBe(97000)
+  })
+})
+
+describe('F6-C (#3): reversão só debita dinheiro que existiu', () => {
+  beforeEach(() => { Object.assign(banco.tabelas.accountReceivable[0], { status: 'RECEBIDO', received_amount: 100000, total_amount: 100000 }) })
+  const debitos = () => banco.tabelas.transaction.filter((t) => t.transaction_type === 'DEBIT')
+
+  it('#3: cartão só CONFIRMED (nunca RECEIVED) → REFUNDED: nenhuma transação nem FiscalEntry, saldo intocado; AR volta a PENDENTE', async () => {
+    banco.inserir('accountChart', { id: 'ch1', company_id: 'c1', is_active: true, account_type: 'REVENUE', name: 'Receita Servicos - Cartao Credito', display_order: 1 })
+    banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'CONFIRMED', amount: 100000, billing_type: 'CREDIT_CARD' })
+    expect(await evento('evt_c3', 'PAYMENT_REFUNDED')).toBe(200)
+    expect(debitos()).toEqual([])
+    expect(banco.tabelas.fiscalEntry ?? []).toEqual([])
+    expect(banco.saldo(ACC)).toBe(97000)
+    expect(banco.tabelas.accountReceivable[0]).toEqual(expect.objectContaining({ received_amount: 0, status: 'PENDENTE' }))
+  })
+
+  it('#3: reversão de chargeback sem dinheiro do pagamento → nenhuma transação', async () => {
+    banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'DISPUTED', amount: 100000, billing_type: 'CREDIT_CARD' })
+    expect(await evento('evt_c4', 'PAYMENT_AWAITING_CHARGEBACK_REVERSAL')).toBe(200)
+    expect(debitos()).toEqual([])
+    expect(banco.saldo(ACC)).toBe(97000)
+  })
+
+  it('RECEIVED → REFUNDED: DEBIT na conta do crédito (e o FiscalEntry negativo)', async () => {
+    banco.inserir('accountChart', { id: 'ch1', company_id: 'c1', is_active: true, account_type: 'REVENUE', name: 'Receita Servicos - PIX', display_order: 1 })
+    banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'RECEIVED', amount: 100000, billing_type: 'PIX' })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 97000, bank_ref: 'pay_1' })
+    expect(await evento('evt_c5', 'PAYMENT_REFUNDED')).toBe(200)
+    expect(debitos()).toEqual([expect.objectContaining({ bank_ref: 'pay_1-refund', account_id: ACC, amount: 100000 })])
+    expect(banco.tabelas.fiscalEntry).toEqual([expect.objectContaining({ amount: BigInt(-100000) })])
+  })
+
+  it('a linha ASAAS:PAY:<pay> ainda livre também é dinheiro do pagamento → DEBIT na conta dela', async () => {
+    banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'RECEIVED', amount: 100000, billing_type: 'PIX' })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 97000, origin: 'BANCO', bank_ref: 'ASAAS:PAY:pay_1' })
+    expect(await evento('evt_c6', 'PAYMENT_REFUNDED')).toBe(200)
+    expect(debitos()).toEqual([expect.objectContaining({ bank_ref: 'pay_1-refund', account_id: ACC })])
   })
 })

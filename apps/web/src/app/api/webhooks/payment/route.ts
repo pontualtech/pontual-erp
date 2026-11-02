@@ -106,14 +106,19 @@ async function relerAR<T extends { id: string; company_id: string }>(tx: any, li
   return ((await tx.accountReceivable.findFirst({ where: { id: lida.id, company_id: lida.company_id } })) ?? lida) as T
 }
 
-// Fix 5 (F5-A): o débito do reembolso/chargeback sai da conta onde está o crédito do pagamento (nocional pay_ ou linha
-// do banco convertida, ondeRef); sem ele, da conta do crédito Asaas (contaDoCreditoAsaas — a da cobrança).
-async function contaDoDebitoAsaas(tx: any, companyId: string, payRef: string, metadata: unknown, contaDaAR: string | null): Promise<string | null> {
+// Fix 5 (F5-A) / fix 6 (F6-C, #3): o débito do reembolso/chargeback sai da conta onde está o dinheiro do pagamento no
+// ERP — o crédito nocional pay_, a linha do banco ligada a ele (linked_ref) ou a linha ASAAS:PAY:<pay> ainda livre.
+// Sem dinheiro (cartão só CONFIRMED, webhook perdido) → null: nada é debitado nem lançado no DRE (o Asaas não mexeu no saldo).
+async function contaDoDinheiroAsaas(tx: any, companyId: string, payRef: string): Promise<string | null> {
   const credito = await tx.transaction.findFirst({
-    where: { company_id: companyId, ...ondeRef(payRef), transaction_type: 'CREDIT' },
+    where: {
+      company_id: companyId,
+      transaction_type: 'CREDIT',
+      OR: [{ bank_ref: payRef }, { linked_ref: payRef }, { bank_ref: `ASAAS:PAY:${payRef}` }],
+    },
     select: { account_id: true },
   })
-  return credito?.account_id ?? contaDoCreditoAsaas(tx, companyId, metadata, contaDaAR)
+  return credito?.account_id ?? null
 }
 
 async function resolveRevenueChart(
@@ -727,8 +732,8 @@ export async function POST(req: NextRequest) {
 
         if (lidaAR) {
           // Onda 4 (fix 2, F2-D, #4): conta Asaas travada antes da AR (ordem do §7).
-          // Fix 5 (F5-A): debita onde o crédito do pagamento está.
-          const debitAccountId = await contaDoDebitoAsaas(tx, fresh.company_id, asaasPayment.id, fresh.metadata, lidaAR.account_id || null)
+          // Fix 5 (F5-A) / fix 6 (F6-C): debita onde o dinheiro do pagamento está; sem ele, nada a debitar.
+          const debitAccountId = await contaDoDinheiroAsaas(tx, fresh.company_id, asaasPayment.id)
           if (debitAccountId) await travarContas(tx, fresh.company_id, [debitAccountId])
           // Fix 3 (F3-E, #5): o valor a reverter sai da AR travada e relida.
           const receivable = await relerAR(tx, lidaAR)
@@ -788,7 +793,8 @@ export async function POST(req: NextRequest) {
           // Usa MESMA categoria do recebimento (billing-aware) pra estorno
           // bater na linha certa da DRE.
           try {
-            const refundChartAccount = await resolveRevenueChart(tx, fresh.company_id, fresh.billing_type || fresh.method)
+            // Fix 6 (F6-C): sem dinheiro do pagamento no ERP não houve receita no DRE — nada a estornar.
+            const refundChartAccount = debitAccountId ? await resolveRevenueChart(tx, fresh.company_id, fresh.billing_type || fresh.method) : null
             if (refundChartAccount) {
               await tx.fiscalEntry.create({
                 data: {
@@ -838,8 +844,8 @@ export async function POST(req: NextRequest) {
         if (receivable) {
           if (isReversal) {
             // Onda 4 (fix 2, F2-D, #4): conta Asaas travada antes da AR (ordem do §7).
-            // Fix 5 (F5-A): debita onde o crédito do pagamento está.
-            const debitAccountId = await contaDoDebitoAsaas(tx, fresh.company_id, asaasPayment.id, fresh.metadata, receivable.account_id || null)
+            // Fix 5 (F5-A) / fix 6 (F6-C): debita onde o dinheiro do pagamento está; sem ele, nada a debitar.
+            const debitAccountId = await contaDoDinheiroAsaas(tx, fresh.company_id, asaasPayment.id)
             if (debitAccountId) await travarContas(tx, fresh.company_id, [debitAccountId])
             // Fix 3 (F3-E, #5): o valor a reverter sai da AR travada e relida.
             const arTravada = await relerAR(tx, receivable)
@@ -889,7 +895,8 @@ export async function POST(req: NextRequest) {
             // FiscalEntry estorno por chargeback (mesma categoria do
             // recebimento via resolveRevenueChart billing-aware)
             try {
-              const cbChartAccount = await resolveRevenueChart(tx, fresh.company_id, fresh.billing_type || fresh.method)
+              // Fix 6 (F6-C): sem dinheiro do pagamento no ERP não houve receita no DRE — nada a estornar.
+              const cbChartAccount = debitAccountId ? await resolveRevenueChart(tx, fresh.company_id, fresh.billing_type || fresh.method) : null
               if (cbChartAccount) {
                 await tx.fiscalEntry.create({
                   data: {

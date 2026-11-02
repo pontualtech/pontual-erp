@@ -287,3 +287,18 @@ describe('F4-C (#2): reembolso do pagamento cujo dinheiro foi ligado como AR:<id
     expect(banco.saldo(CAIXA)).toBe(10000)
   })
 })
+
+describe('F6-C (#5): reembolso do cartão que nunca entrou não abre espaço para um 2º crédito', () => {
+  it('Receber no Caixa depois do REFUNDED de um cartão só CONFIRMED, com o dinheiro do Caixa já lançado → só a claim + aviso', async () => {
+    const CAIXA = '33333333-3333-4333-8333-333333333333'
+    banco.conta({ id: CAIXA, name: 'Caixa', current_balance: 10000 })
+    banco.ar({ ...AR, total_amount: 10000, account_id: CAIXA })
+    banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_c', status: 'REFUNDED' })
+    banco.transacao({ account_id: CAIXA, transaction_type: 'CREDIT', amount: 10000, bank_ref: 'AR:r1' })
+    banco.transacao({ account_id: 'asaas1', transaction_type: 'DEBIT', amount: 10000, bank_ref: 'pay_c-refund' })
+    const { j } = await receber({ received_amount: 10000, account_id: CAIXA })
+    expect(j.data.aviso).toBeTruthy()
+    expect(creditosAR()).toHaveLength(1)
+    expect(banco.saldo(CAIXA)).toBe(10000)
+  })
+})
