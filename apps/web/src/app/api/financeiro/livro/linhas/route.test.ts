@@ -3,8 +3,13 @@ import { NextRequest } from 'next/server'
 
 vi.mock('@pontual/db', async () => ({ prisma: (await import('@/test-utils/banco-falso')).banco.prisma }))
 vi.mock('@/lib/auth', () => ({ requirePermission: async () => ({ id: 'u1', companyId: 'c1' }) }))
+// F6-A: o webhook Asaas roda no mesmo banco-falso (a linha do livro antes do webhook).
+vi.mock('@/lib/payments/factory', () => ({ getPaymentProvider: () => ({ validateWebhook: () => true }) }))
+vi.mock('@/lib/payments/capture-fees', () => ({ captureFeesForPayment: vi.fn(async () => ({ ok: true, fees_count: 0 })) }))
+vi.mock('@/lib/observability', () => ({ logError: vi.fn(async () => undefined) }))
 
 import { POST } from './route'
+import { POST as webhookAsaas } from '@/app/api/webhooks/payment/route'
 import { banco } from '@/test-utils/banco-falso'
 
 const CORTE = '2026-10-29'
@@ -337,3 +342,56 @@ describe('F2-H (m1, m5, m11, m22): livro/linhas robusto para a rotina — erro p
   })
 })
 
+describe('F6-A (#1, #7): link pay_* sem nocional vira a linha do pagamento (a linha do extrato É o dinheiro do Asaas)', () => {
+  const PAY = { chave: 'ASAAS:PAY:pay_x', data: '2026-11-01', descricao: 'Cobrança recebida - fatura nr. 1', valor_centavos: 14801, links: ['pay_x'] }
+  beforeEach(() => {
+    banco.ar({ id: 'a1', status: 'PENDENTE', total_amount: 15000, received_amount: 0, account_id: 'acc1', description: 'OS 61500' })
+  })
+
+  it('Payment da empresa existe → CRIAR com vinculo pay_x: linha BANCO com linked_ref pay_x, categoria receita, descrição do LIGAR; saldo +', async () => {
+    banco.pagamento({ id: 'p1', receivable_id: 'a1', provider: 'asaas', external_id: 'pay_x', status: 'PENDING', amount: 15000 })
+    const { j } = await post([PAY])
+    expect(j.data.resultados[0]).toEqual(expect.objectContaining({ acao: 'CRIAR', valor_centavos: 14801, vinculo: 'pay_x', categoria: 'Venda de Servicos' }))
+    expect(banco.tabelas.transaction.filter((t) => t.bank_ref === 'ASAAS:PAY:pay_x')).toEqual([expect.objectContaining({
+      origin: 'BANCO', linked_ref: 'pay_x', category_id: 'cat:Venda de Servicos', amount: 14801,
+      description: 'LIQUIDACAO: OS 61500 · banco: Cobrança recebida - fatura nr. 1', source_text: 'Cobrança recebida - fatura nr. 1',
+    })])
+    expect(banco.saldo('acc1')).toBe(50000 + 14801)
+  })
+
+  it('categoria da AR, quando ela tem uma', async () => {
+    banco.categoria('Peças', 'financeiro_receita')
+    banco.tabelas.accountReceivable[0].category_id = 'cat:Peças'
+    banco.pagamento({ id: 'p1', receivable_id: 'a1', provider: 'asaas', external_id: 'pay_x', status: 'PENDING', amount: 15000 })
+    await post([PAY])
+    expect(banco.tabelas.transaction.find((t) => t.bank_ref === 'ASAAS:PAY:pay_x')!.category_id).toBe('cat:Peças')
+  })
+
+  it('simular dá o mesmo resultado (CRIAR + vinculo), sem gravar', async () => {
+    banco.pagamento({ id: 'p1', receivable_id: 'a1', provider: 'asaas', external_id: 'pay_x', status: 'PENDING', amount: 15000 })
+    const { j } = await post([PAY], { simular: true })
+    expect(j.data.resultados[0]).toEqual(expect.objectContaining({ acao: 'CRIAR', vinculo: 'pay_x' }))
+    expect(banco.tabelas.transaction.filter((t) => t.bank_ref === 'ASAAS:PAY:pay_x')).toEqual([])
+  })
+
+  it('sem Payment (ou Payment de outra empresa) → CRIAR como antes, sem vínculo', async () => {
+    banco.pagamento({ id: 'p1', company_id: 'c2', receivable_id: 'a1', provider: 'asaas', external_id: 'pay_x', status: 'PENDING', amount: 15000 })
+    const { j } = await post([PAY])
+    expect(j.data.resultados[0]).not.toHaveProperty('vinculo')
+    expect(banco.tabelas.transaction.find((t) => t.bank_ref === 'ASAAS:PAY:pay_x')).toEqual(expect.objectContaining({ linked_ref: null, category_id: 'cat:Receita a identificar' }))
+  })
+
+  it('livro ANTES do webhook: o RECEIVED depois acha a linha por ondeRef — nenhum crédito novo, AR LIQUIDADO, saldo = linha', async () => {
+    banco.pagamento({ id: 'p1', receivable_id: 'a1', provider: 'asaas', external_id: 'pay_x', status: 'PENDING', amount: 15000, billing_type: 'PIX' })
+    await post([PAY])
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    const res = await webhookAsaas(new NextRequest('http://x/api/webhooks/payment', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'evt_f6a', event: 'PAYMENT_RECEIVED', payment: { id: 'pay_x', value: 150, netValue: 148.01 } }),
+    }))
+    expect(res.status).toBe(200)
+    expect(banco.tabelas.transaction.filter((t) => t.bank_ref === 'pay_x' || t.linked_ref === 'pay_x')).toHaveLength(1)
+    expect(banco.saldo('acc1')).toBe(50000 + 14801)
+    expect(banco.tabelas.accountReceivable[0]).toEqual(expect.objectContaining({ status: 'LIQUIDADO', received_amount: 15000 }))
+  })
+})

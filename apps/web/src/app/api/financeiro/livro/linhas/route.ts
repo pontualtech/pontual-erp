@@ -47,6 +47,7 @@ interface Resultado {
   transaction_id?: string
   refs?: string[]
   origem?: 'orfao'
+  vinculo?: string // Fix 6 (F6-A): CRIAR já ligado ao pagamento (linked_ref = pay_<id>)
 }
 
 // Fix 2 (F2-H): o lançamento a ligar (ou o órfão) mudou entre a leitura e a gravação — a linha vira erro, o lote segue.
@@ -200,6 +201,29 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Fix 6 (F6-A, #1/#7): para o Asaas a LINHA do extrato é o dinheiro e carrega a identidade do pagamento. Linha de
+    // entrada a CRIAR (sem nenhum lançamento citado em `links` nesta conta) cujo link pay_<id> é um Payment da empresa →
+    // nasce já ligada a ele (linked_ref = pay_<id>, categoria da AR ou receita padrão, descrição do LIGAR): o webhook que
+    // chegar depois a acha por ondeRef e não credita 2x; Receber/Conferir a reconhecem como dinheiro da AR.
+    const vinculoPagamento = async (
+      db: Pick<typeof prisma, 'payment' | 'accountReceivable' | 'category'>,
+      linha: Linha,
+      plano: ReturnType<typeof planejarLinha>,
+    ): Promise<{ ref: string; categoria: { id: string | null; nome: string | null }; descricao: string } | null> => {
+      if (plano.acao !== 'CRIAR' || plano.refs_ligadas.length > 0 || linha.valor_centavos <= 0) return null
+      for (const ref of (linha.links ?? []).filter((l) => /^pay_\w+$/.test(l))) {
+        const pag = await db.payment.findFirst({ where: { company_id: user.companyId, external_id: ref }, select: { receivable_id: true } })
+        if (!pag) continue
+        const ar = pag.receivable_id
+          ? await db.accountReceivable.findFirst({ where: { id: pag.receivable_id, company_id: user.companyId }, select: { description: true, category_id: true } })
+          : null
+        const id = ar?.category_id ?? await categoriaReceitaPadraoId(db, user.companyId)
+        const nome = id ? nomePorId.get(id) ?? (await db.category.findFirst({ where: { id, company_id: user.companyId }, select: { name: true } }))?.name ?? null : null
+        return { ref, categoria: { id, nome }, descricao: ar ? `LIQUIDACAO: ${ar.description} · banco: ${linha.descricao}` : linha.descricao }
+      }
+      return null
+    }
+
     // Onda 4 (§1): o lançamento que o ERP criou por conta própria (AR:<id>, acquirer:…, pay_…, cnab:…, AP:<id>…)
     // VIRA a linha do banco — origin BANCO, bank_ref = chave (a 2ª, 3ª… de uma mesma linha: chave#2, chave#3),
     // texto/data do banco e o bank_ref antigo em linked_ref. Saldo intocado. `n` = posição na linha (0 = a própria chave).
@@ -299,12 +323,14 @@ export async function POST(req: NextRequest) {
         }
         if (plano.acao === 'CRIAR') {
           saldoSimulado += plano.valor_centavos
-          const cat = categoriaDe(linha, plano.valor_centavos, plano.identificar)
+          const vinculo = await vinculoPagamento(prisma, linha, plano)
+          const cat = vinculo?.categoria ?? categoriaDe(linha, plano.valor_centavos, plano.identificar)
           resultados.push({
             chave: linha.chave,
             acao: 'CRIAR',
             valor_centavos: plano.valor_centavos,
             categoria: cat.nome,
+            ...(vinculo ? { vinculo: vinculo.ref } : {}),
           })
         } else {
           resultados.push({ chave: linha.chave, acao: 'LIGAR', refs: plano.refs })
@@ -340,14 +366,15 @@ export async function POST(req: NextRequest) {
         }
 
         const valor = plano.valor_centavos
-        const cat = categoriaDe(linha, valor, plano.identificar)
+        const vinculo = await vinculoPagamento(tx, linha, plano)
+        const cat = vinculo?.categoria ?? categoriaDe(linha, valor, plano.identificar)
         const t = await tx.transaction.create({
           data: {
             company_id: user.companyId,
             account_id: body.account_id,
             transaction_type: valor > 0 ? 'CREDIT' : 'DEBIT',
             amount: Math.abs(valor),
-            description: linha.descricao,
+            description: vinculo?.descricao ?? linha.descricao,
             transaction_date: new Date(linha.data + 'T00:00:00.000Z'),
             bank_ref: linha.chave,
             origin: 'BANCO',
@@ -355,6 +382,7 @@ export async function POST(req: NextRequest) {
             counterparty: linha.contraparte ?? null,
             category_id: cat.id,
             reconciled: true,
+            ...(vinculo ? { linked_ref: vinculo.ref } : {}),
           },
         })
         await tx.account.update({
@@ -363,7 +391,7 @@ export async function POST(req: NextRequest) {
         })
         // A linha criada leva a chave; os lançamentos ligados viram chave#2, chave#3…
         if (plano.refs_ligadas.length > 0) await converterLigaveis(tx, ligaveis, linha, 1)
-        return { chave: linha.chave, acao: 'CRIAR', valor_centavos: valor, categoria: cat.nome, transaction_id: t.id }
+        return { chave: linha.chave, acao: 'CRIAR', valor_centavos: valor, categoria: cat.nome, transaction_id: t.id, ...(vinculo ? { vinculo: vinculo.ref } : {}) }
       }, { maxWait: 10000, timeout: 20000 })
       } catch (e) {
         // Fix 2 (F2-H, m5/m11/m22): conflito do banco (P2034/P2028) ou lançamento que mudou → erro desta linha (a tx dela

@@ -6,7 +6,9 @@ import { estadoArConfirmado, estadoArRecebido, valorCreditoAsaas, dataCreditoAsa
 import { isImprimitechHandoffStatus } from '@/lib/imprimitech-handoff'
 import { compensado, ondeRef } from '@/lib/financeiro/livro'
 import { logError } from '@/lib/observability'
-import { conflitoDeBanco, contaDoCreditoAsaas, travarContas } from '@/lib/financeiro/livro-baixa-db'
+import { conflitoDeBanco, contaDoCreditoAsaas, nomeCategoria, travarContas } from '@/lib/financeiro/livro-baixa-db'
+import { recebeCategoria } from '@/lib/financeiro/livro-baixa'
+import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
 
 // Valid status transitions — reject anything not in this map
 const VALID_TRANSITIONS: Record<string, string[]> = {
@@ -519,6 +521,28 @@ export async function POST(req: NextRequest) {
                   data: { current_balance: { decrement: c.amount }, updated_at: new Date() },
                 })
               }
+              // Fix 6 (F6-A, #1/#7): o livro postou a linha ASAAS:PAY:<pay> antes deste webhook (e ninguém a ligou) → ela É
+              // o dinheiro: liga (linked_ref = pay, categoria de receita), sem nocional nem saldo.
+              const linhaLivre = await tx.transaction.findFirst({
+                where: {
+                  company_id: fresh.company_id, account_id: creditAccountId, origin: 'BANCO', transaction_type: 'CREDIT',
+                  bank_ref: `ASAAS:PAY:${asaasPayment.id}`, linked_ref: null,
+                },
+                select: { id: true, category_id: true, source_text: true },
+              })
+              if (linhaLivre) {
+                const categoria = receivable.category_id ?? await categoriaReceitaPadraoId(tx, fresh.company_id)
+                const nomeAtual = linhaLivre.category_id ? await nomeCategoria(tx, fresh.company_id, linhaLivre.category_id) : null
+                await tx.transaction.updateMany({
+                  where: { id: linhaLivre.id, company_id: fresh.company_id, linked_ref: null },
+                  data: {
+                    linked_ref: asaasPayment.id,
+                    ...(recebeCategoria(nomeAtual) && categoria ? { category_id: categoria } : {}),
+                    description: `LIQUIDACAO: ${receivable.description} · banco: ${linhaLivre.source_text ?? ''}`,
+                    reconciled: true,
+                  },
+                })
+              } else {
               // 29/10: entra o LÍQUIDO (o Asaas já desconta a taxa, que vira AP PAGO em capture-fees) na data
               // em que o dinheiro foi creditado — assim o saldo do ERP bate com o saldo real da conta Asaas.
               const creditAmount = valorCreditoAsaas(asaasPayment, fresh.amount)
@@ -540,6 +564,7 @@ export async function POST(req: NextRequest) {
                   updated_at: new Date(),
                 },
               })
+              }
             }
           }
 

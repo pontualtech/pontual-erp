@@ -306,3 +306,30 @@ describe('F5-A: o webhook Asaas credita/debita na conta da cobrança, não na co
     expect(logError).not.toHaveBeenCalled()
   })
 })
+
+describe('F6-A (#1, #7): RECEIVED com a linha ASAAS:PAY:<pay> livre já lançada (livro antes do webhook, linha antiga sem linked_ref)', () => {
+  it('liga a linha (linked_ref pay_1, categoria receita), sem nocional nem saldo; AR LIQUIDADO', async () => {
+    Object.assign(banco.tabelas.accountReceivable[0], { status: 'PENDENTE', received_amount: 0 })
+    banco.categoriasPadrao()
+    banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'PENDING', amount: 100000, billing_type: 'PIX' })
+    banco.transacao({ id: 'L', account_id: ACC, transaction_type: 'CREDIT', amount: 97000, origin: 'BANCO', bank_ref: 'ASAAS:PAY:pay_1', source_text: 'Cobrança recebida', category_id: 'cat:Receita a identificar' })
+    expect(await evento('evt_l1', 'PAYMENT_RECEIVED')).toBe(200)
+    expect(banco.tx_('L')).toEqual(expect.objectContaining({ linked_ref: 'pay_1', category_id: 'cat:Venda de Servicos', reconciled: true }))
+    expect(comRef('pay_1')).toHaveLength(1)
+    expect(banco.saldo(ACC)).toBe(97000)
+    expect(banco.tabelas.accountReceivable[0].status).toBe('LIQUIDADO')
+  })
+
+  it('linha livre + nocional AR:r1 do Receber manual na mesma conta → SWAP do nocional e liga a linha (saldo = banco)', async () => {
+    Object.assign(banco.tabelas.accountReceivable[0], { status: 'RECEBIDO', received_amount: 100000 })
+    banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'PENDING', amount: 100000, billing_type: 'PIX' })
+    banco.transacao({ id: 'L', account_id: ACC, transaction_type: 'CREDIT', amount: 97000, origin: 'BANCO', bank_ref: 'ASAAS:PAY:pay_1', source_text: 'Cobrança recebida' })
+    banco.transacao({ id: 'noc', account_id: ACC, transaction_type: 'CREDIT', amount: 100000, bank_ref: 'AR:r1' })
+    banco.tabelas.account.find((a) => a.id === ACC)!.current_balance = 197000
+    expect(await evento('evt_l2', 'PAYMENT_RECEIVED')).toBe(200)
+    expect(banco.tx_('noc')).toBeUndefined()
+    expect(banco.tx_('L')!.linked_ref).toBe('pay_1')
+    expect(comRef('pay_1')).toHaveLength(1)
+    expect(banco.saldo(ACC)).toBe(97000)
+  })
+})
