@@ -79,3 +79,18 @@ describe('F2-D (#4): webhook Asaas trava a conta antes da AR', () => {
     ordemTravas('accountReceivable')
   })
 })
+
+describe('F3-E (#5): webhook Asaas decide pela AR relida com a trava', () => {
+  it('Receber parcial de 30 comitado enquanto o RECEIVED de 70 esperava a trava → received_amount 100 e LIQUIDADO', async () => {
+    banco.tabelas.accountReceivable[0] = { ...banco.tabelas.accountReceivable[0], status: 'PENDENTE', total_amount: 10000, received_amount: 0 }
+    banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'CONFIRMED', amount: 7000, billing_type: 'PIX' })
+    banco.aoTravar(({ tabela }) => {
+      if (tabela !== 'accounts') return
+      Object.assign(banco.tabelas.accountReceivable[0], { received_amount: 3000 })
+      banco.aoTravar(null)
+    })
+    expect(await evento('evt_p', 'PAYMENT_RECEIVED', { value: 70, netValue: 69 })).toBe(200)
+    expect(banco.tabelas.accountReceivable[0]).toEqual(expect.objectContaining({ received_amount: 10000, status: 'LIQUIDADO' }))
+    expect(banco.travas.map((t) => t.tabela)).toEqual(['accounts', 'accounts_receivable'])
+  })
+})

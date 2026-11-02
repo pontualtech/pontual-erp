@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { createHmac, timingSafeEqual } from 'crypto'
 import { ondeRef } from '@/lib/financeiro/livro'
 import { travarContas } from '@/lib/financeiro/livro-baixa-db'
+import { isReceivableSettled } from '@/lib/finance/receivable-status'
 
 /**
  * Valida assinatura HMAC-SHA256 do webhook
@@ -174,11 +175,15 @@ async function processInterWebhook(body: any) {
     await prisma.$transaction(async (tx) => {
       // Onda 4 (fix 2, F2-D, #4): ordem única de travas — a conta (accounts) antes da AR e da checagem "já lançado".
       if (receivable.account_id) await travarContas(tx, receivable.company_id, [receivable.account_id])
+      // Fix 3 (F3-E, #5): trava a AR e decide pela releitura — se um Receber concorrente já a quitou, o boleto só a
+      // confirma (pix_code/conferida), sem sobrescrever status e valor recebido.
+      await tx.$queryRaw`SELECT id FROM accounts_receivable WHERE id = ${receivable.id} AND company_id = ${receivable.company_id} FOR UPDATE`
+      const travada = await tx.accountReceivable.findFirst({ where: { id: receivable.id } })
+      const jaQuitada = !!travada && isReceivableSettled(travada)
       await tx.accountReceivable.update({
         where: { id: receivable.id },
         data: {
-          status: 'RECEBIDO',
-          received_amount: finalAmount,
+          ...(jaQuitada ? {} : { status: 'RECEBIDO', received_amount: finalAmount }),
           pix_code: JSON.stringify(boletoMeta),
           reconciled: true,
           updated_at: new Date(),

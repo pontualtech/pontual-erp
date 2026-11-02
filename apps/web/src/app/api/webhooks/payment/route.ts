@@ -97,6 +97,12 @@ const AUTO_BAIXA_STATUS = 'RECEIVED'
 // primeira REVENUE generica (compat antiga). Diferencia DRE por metodo
 // de pagamento — antes todos PIX/Boleto/Cartao caiam na mesma "Receita
 // de Servicos" e relatorio nao mostrava split.
+// Fix 3 (F3-E, #5): trava a AR (FOR UPDATE, depois da conta — ordem do §7) e a relê; quem decide é esta releitura.
+async function relerAR<T extends { id: string; company_id: string }>(tx: any, lida: T): Promise<T> {
+  await tx.$queryRaw`SELECT id FROM accounts_receivable WHERE id = ${lida.id} AND company_id = ${lida.company_id} FOR UPDATE`
+  return ((await tx.accountReceivable.findFirst({ where: { id: lida.id, company_id: lida.company_id } })) ?? lida) as T
+}
+
 // Conta em que o dinheiro da cobrança Asaas entra/sai: a da AR; sem ela, a 1ª conta ativa 'Asaas' da empresa.
 async function contaDaCobranca(tx: any, companyId: string, contaDaAR: string | null): Promise<string | null> {
   if (contaDaAR) return contaDaAR
@@ -420,11 +426,11 @@ export async function POST(req: NextRequest) {
       // PIX direto sem CONFIRMED) ou apenas atualiza charge_status se ja
       // baixou pelo CONFIRMED (cartao/boleto fluxo padrao).
       if (newStatus === AUTO_BAIXA_STATUS && fresh.receivable_id) {
-        const receivable = await tx.accountReceivable.findFirst({
+        const lidaAR = await tx.accountReceivable.findFirst({
           where: { id: fresh.receivable_id, company_id: fresh.company_id },
         })
 
-        if (receivable) {
+        if (lidaAR) {
           // 2026-05-11: idempotencia AR baixa — só soma received_amount se a AR ainda não estava quitada
           // (CONFIRMED já somou no cartão/boleto). Transaction + FiscalEntry SEMPRE rodam aqui (regime caixa).
           // 29/10 (Karlão "liquidar quando cair o dinheiro"): RECEIVED = dinheiro creditado na conta Asaas →
@@ -432,8 +438,10 @@ export async function POST(req: NextRequest) {
           // já LIQUIDADO (Conferi manual) somava received_amount de novo.
           // Onda 4 (fix 2, F2-D, #4): ordem única de travas — a conta Asaas (accounts) antes da AR e da checagem
           // "já lançado", como as rotas do §7 (sem cruzar com Receber/Conferir/livro da mesma conta).
-          const creditAccountId = await contaDaCobranca(tx, fresh.company_id, receivable.account_id || null)
+          const creditAccountId = await contaDaCobranca(tx, fresh.company_id, lidaAR.account_id || null)
           if (creditAccountId) await travarContas(tx, fresh.company_id, [creditAccountId])
+          // Fix 3 (F3-E, #5): decide pela AR travada e relida (um Receber que comitou enquanto esperava a trava conta).
+          const receivable = await relerAR(tx, lidaAR)
           const estado = estadoArRecebido(receivable, fresh.amount)
           // Wave AS-1 (2026-05-27): data esperada de crédito (fluxo de caixa) quando quita agora.
           const expectedCreditDate = estado.status === 'LIQUIDADO' && 'received_amount' in estado
@@ -649,14 +657,16 @@ export async function POST(req: NextRequest) {
       // saldo da conta inflado e extrato sem registro do debito. Gap impactava
       // chargebacks de cartao (que sao mais comuns que refunds manuais).
       if (newStatus === 'REFUNDED' && fresh.receivable_id) {
-        const receivable = await tx.accountReceivable.findFirst({
+        const lidaAR = await tx.accountReceivable.findFirst({
           where: { id: fresh.receivable_id, company_id: fresh.company_id },
         })
 
-        if (receivable) {
+        if (lidaAR) {
           // Onda 4 (fix 2, F2-D, #4): conta Asaas travada antes da AR (ordem do §7).
-          const debitAccountId = await contaDaCobranca(tx, fresh.company_id, receivable.account_id || null)
+          const debitAccountId = await contaDaCobranca(tx, fresh.company_id, lidaAR.account_id || null)
           if (debitAccountId) await travarContas(tx, fresh.company_id, [debitAccountId])
+          // Fix 3 (F3-E, #5): o valor a reverter sai da AR travada e relida.
+          const receivable = await relerAR(tx, lidaAR)
           // 1. AR: reverter received_amount + ajustar status
           const newReceived = Math.max(0, (receivable.received_amount || 0) - fresh.amount)
           await tx.accountReceivable.update({
@@ -765,13 +775,15 @@ export async function POST(req: NextRequest) {
             // Onda 4 (fix 2, F2-D, #4): conta Asaas travada antes da AR (ordem do §7).
             const debitAccountId = await contaDaCobranca(tx, fresh.company_id, receivable.account_id || null)
             if (debitAccountId) await travarContas(tx, fresh.company_id, [debitAccountId])
+            // Fix 3 (F3-E, #5): o valor a reverter sai da AR travada e relida.
+            const arTravada = await relerAR(tx, receivable)
             // Trata como refund: reverte AR + Transaction DEBIT + decremento + FE neg
-            const newReceived = Math.max(0, (receivable.received_amount || 0) - fresh.amount)
+            const newReceived = Math.max(0, (arTravada.received_amount || 0) - fresh.amount)
             await tx.accountReceivable.update({
               where: { id: fresh.receivable_id },
               data: {
                 received_amount: newReceived,
-                status: newReceived >= receivable.total_amount ? 'RECEBIDO' : 'PENDENTE',
+                status: newReceived >= arTravada.total_amount ? 'RECEBIDO' : 'PENDENTE',
                 charge_status: 'CHARGEBACK_LOST',
                 updated_at: new Date(),
               },

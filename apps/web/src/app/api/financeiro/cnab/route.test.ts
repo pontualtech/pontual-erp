@@ -60,3 +60,19 @@ describe('F2-D (#4): retorno CNAB trava a conta antes da AR', () => {
     ordemTravas('accountReceivable')
   })
 })
+
+describe('F3-E (#5): CNAB decide pela AR relida com a trava', () => {
+  it('Receber concorrente comitou enquanto o CNAB esperava a trava → nenhum 2º crédito e a AR não é sobrescrita', async () => {
+    banco.ar({ id: 'r1', status: 'PENDENTE', total_amount: 50000, payment_method: 'PIX' })
+    banco.aoTravar(({ tabela }) => {
+      if (tabela !== 'accounts') return
+      Object.assign(banco.tabelas.accountReceivable[0], { status: 'RECEBIDO', received_amount: 50000 })
+      banco.transacao({ account_id: 'inter', transaction_type: 'CREDIT', amount: 50000, bank_ref: 'AR:r1' })
+      banco.aoTravar(null)
+    })
+    await importar()
+    expect(cnab()).toEqual([])
+    expect(banco.tabelas.accountReceivable[0]).toEqual(expect.objectContaining({ status: 'RECEBIDO', payment_method: 'PIX' }))
+    expect(banco.travas.map((t) => t.tabela)).toEqual(['accounts', 'accounts_receivable'])
+  })
+})

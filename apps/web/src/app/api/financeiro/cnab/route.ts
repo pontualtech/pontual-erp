@@ -298,13 +298,21 @@ export async function POST(req: NextRequest) {
           console.log(`[CNAB] AR ${receivable.id} ja ${receivable.status}, pulando duplicata`)
           continue
         }
-        const valorRecebido = ret.valorPago || receivable.total_amount
         const dataCredito = ret.dataCredito || new Date()
 
         // Operação atômica: receivable + transaction + saldo
-        const lancou = await prisma.$transaction(async (tx) => {
+        const valorRecebido = await prisma.$transaction(async (tx): Promise<number | null> => {
           // Onda 4 (fix 2, F2-D, #4): ordem única de travas — a conta (accounts) antes da AR e da checagem "já lançado".
           if (interAccountId) await travarContas(tx, user.companyId, [interAccountId])
+          // Fix 3 (F3-E, #5): trava a AR e decide pela releitura — um Receber/Conferir concorrente que comitou enquanto
+          // o import esperava a trava já quitou a conta: nada de sobrescrever nem de 2º crédito.
+          await tx.$queryRaw`SELECT id FROM accounts_receivable WHERE id = ${receivable.id} AND company_id = ${user.companyId} FOR UPDATE`
+          const ar = await tx.accountReceivable.findFirst({ where: { id: receivable.id, company_id: user.companyId } })
+          if (!ar || isReceivableSettled(ar)) {
+            console.log(`[CNAB] AR ${receivable.id} quitada enquanto esperava a trava, pulando`)
+            return null
+          }
+          const valorRecebido = ret.valorPago || ar.total_amount
           if (ret.nossoNumero) {
             const dup = await tx.transaction.findFirst({
               // Onda 4 (fix 1): a ref pode já estar no linked_ref (o livro converteu o lançamento na linha do banco).
@@ -313,7 +321,7 @@ export async function POST(req: NextRequest) {
             })
             if (dup) {
               console.log(`[CNAB] Transaction cnab:${ret.nossoNumero} ja existe, pulando`)
-              return false
+              return null
             }
           }
           // 1. Atualizar conta a receber
@@ -326,7 +334,7 @@ export async function POST(req: NextRequest) {
               account_id: interAccountId || undefined,
               updated_at: new Date(),
               pix_code: JSON.stringify({
-                ...(receivable.pix_code ? JSON.parse(receivable.pix_code) : {}),
+                ...(ar.pix_code ? JSON.parse(ar.pix_code) : {}),
                 boletoStatus: 'PAID',
                 nossoNumero: ret.nossoNumero,
                 dataCredito: dataCredito.toISOString(),
@@ -343,7 +351,7 @@ export async function POST(req: NextRequest) {
                 account_id: interAccountId,
                 transaction_type: 'CREDIT',
                 amount: valorRecebido,
-                description: `Recebimento boleto: ${receivable.description}`,
+                description: `Recebimento boleto: ${ar.description}`,
                 bank_ref: ret.nossoNumero ? `cnab:${ret.nossoNumero}` : `AR:${receivable.id}`,
                 reconciled: true,
                 transaction_date: dataCredito,
@@ -359,9 +367,9 @@ export async function POST(req: NextRequest) {
               },
             })
           }
-          return true
+          return valorRecebido
         })
-        if (!lancou) continue
+        if (valorRecebido === null) continue
 
         // Audit log
         logAudit({

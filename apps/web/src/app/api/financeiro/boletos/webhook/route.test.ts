@@ -60,3 +60,18 @@ describe('F2-D (#4): webhook Inter trava a conta antes da AR', () => {
     ordemTravas('accountReceivable')
   })
 })
+
+describe('F3-E (#5): webhook Inter decide pela AR relida com a trava', () => {
+  it('Receber concorrente comitou enquanto esperava a trava → não sobrescreve o recebido nem cria 2º crédito', async () => {
+    banco.aoTravar(({ tabela }) => {
+      if (tabela !== 'accounts') return
+      Object.assign(banco.tabelas.accountReceivable[0], { status: 'RECEBIDO', received_amount: 50000 })
+      banco.transacao({ account_id: 'inter', transaction_type: 'CREDIT', amount: 50000, bank_ref: 'AR:r1' })
+      banco.aoTravar(null)
+    })
+    await evento({ ...pago('PAGO'), valorPago: 480 })
+    expect(banco.tabelas.accountReceivable[0]).toEqual(expect.objectContaining({ status: 'RECEBIDO', received_amount: 50000, reconciled: true }))
+    expect(doAR()).toHaveLength(1)
+    expect(banco.travas.map((t) => t.tabela)).toEqual(['accounts', 'accounts_receivable'])
+  })
+})
