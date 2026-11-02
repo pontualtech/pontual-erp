@@ -1,7 +1,7 @@
 // Acesso ao banco da baixa sobre o Livro-razão (a decisão pura fica em livro-baixa.ts).
 // Recebe o `tx` do Prisma para rodar dentro da mesma $transaction da baixa.
 import { refCnab, type CandidatoLivro, type JanelaBaixa } from './livro-baixa'
-import { classificar, compensado, refEstorno } from './livro'
+import { classificar, compensado, ondeRef, refEstorno } from './livro'
 import { refsCreditoAdquirente } from '@/lib/acquirer/match-rules'
 
 const DIA_MS = 86_400_000
@@ -154,7 +154,7 @@ export async function dinheiroDaAR(db: any, companyId: string, ar: { id: string;
   const refs = await refsDaAR(db, companyId, ar)
   const linhas = await db.transaction.findMany({
     where: { company_id: companyId, origin: 'BANCO', linked_ref: { in: refsLigadasAR(refs) } },
-    select: { id: true, amount: true, account_id: true },
+    select: { id: true, amount: true, account_id: true, linked_ref: true },
   })
   // origin null inclui o marcador antigo LIGADA: (dinheiro do banco até a migração).
   const lancados: Lancado[] = await db.transaction.findMany({
@@ -166,8 +166,32 @@ export async function dinheiroDaAR(db: any, companyId: string, ar: { id: string;
     select: { account_id: true, created_at: true },
   })
   // Nocional próprio já compensado por :estorno não é dinheiro da conta (o par se anula).
-  const nocionais = lancados.filter((t) => refEstorno(t.bank_ref) === null || !compensado(t, estornos))
-  return { refs, ...resumir(linhas, nocionais) }
+  const vivos = lancados.filter((t) => refEstorno(t.bank_ref) === null || !compensado(t, estornos))
+
+  // Fix 3 (F3-B, #9/#3): o dinheiro de uma ref externa é líquido da reversão que o webhook Asaas cria (DEBIT
+  // `${ref}-refund` / `${ref}-chargeback`, nocional ou já convertido na linha do banco, em qualquer conta). Ref
+  // revertida por inteiro deixa de ser dinheiro da AR; revertida em parte conta só o que sobrou.
+  const revertidas = refs.externos.flatMap((r) => [`${r}-refund`, `${r}-chargeback`])
+  const reversoes: { amount: number; bank_ref: string | null; linked_ref: string | null }[] = revertidas.length === 0 ? [] : await db.transaction.findMany({
+    where: { company_id: companyId, transaction_type: 'DEBIT', ...ondeRef(revertidas) },
+    select: { amount: true, bank_ref: true, linked_ref: true },
+  })
+  const mortas = new Set<string>()
+  let descontar = 0
+  for (const r of refs.externos) {
+    const rev = reversoes
+      .filter((d) => [d.bank_ref, d.linked_ref].some((x) => x === `${r}-refund` || x === `${r}-chargeback`))
+      .reduce((soma, d) => soma + d.amount, 0)
+    if (rev === 0) continue
+    const cred = [...linhas.filter((l: { linked_ref?: string | null }) => l.linked_ref === r), ...vivos.filter((t) => t.bank_ref === r)]
+      .reduce((soma, t) => soma + t.amount, 0)
+    if (rev >= cred) mortas.add(r)
+    else descontar += rev
+  }
+  const linhasVivas = linhas.filter((l: { linked_ref?: string | null }) => !mortas.has(l.linked_ref ?? ''))
+  const nocionais = vivos.filter((t) => !mortas.has(t.bank_ref ?? ''))
+  const resumo = resumir(linhasVivas.map(({ id, amount, account_id }: DinheiroLancado['linhas'][number]) => ({ id, amount, account_id })), nocionais)
+  return { refs, ...resumo, total: Math.max(0, resumo.total - descontar) }
 }
 
 export async function dinheiroDaAP(db: any, companyId: string, apId: string): Promise<DinheiroLancado> {

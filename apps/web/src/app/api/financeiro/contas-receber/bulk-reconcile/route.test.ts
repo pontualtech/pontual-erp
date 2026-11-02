@@ -555,3 +555,15 @@ describe('F2-J (m12): exceção inesperada por AR vai para error_logs', () => {
   })
 })
 
+describe('F3-B: Conferir usa o mesmo dinheiro líquido de estorno/chargeback', () => {
+  it('pay_x revertido por inteiro (CREDIT 14550 − DEBIT pay_x-refund 15000) não é "existing": o Conferir cria o crédito', async () => {
+    banco.ar(AR)
+    banco.pagamento({ receivable_id: 'a1', provider: 'asaas', external_id: 'pay_x', status: 'REFUNDED' })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 14550, bank_ref: 'pay_x' })
+    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 15000, bank_ref: 'pay_x-refund' })
+    const { j } = await conferir()
+    expect(j.data).toEqual(expect.objectContaining({ updated: 1, balance_delta: 15000, erros: [] }))
+    expect(creditosAR()).toHaveLength(1)
+  })
+})
+

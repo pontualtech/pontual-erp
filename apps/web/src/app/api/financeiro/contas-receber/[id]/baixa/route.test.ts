@@ -202,3 +202,42 @@ describe('F2-G (m21): opções da $transaction', () => {
     expect(banco.transacoes.map((t) => t.opcoes)).toEqual([{ maxWait: 10000, timeout: 20000 }])
   })
 })
+
+describe('F3-B (#9, #3): dinheiro externo é líquido de estorno/chargeback do Asaas', () => {
+  const ASAAS = 'asaas1'
+  beforeEach(() => { banco.conta({ id: ASAAS, name: 'Asaas', current_balance: 0 }) })
+
+  it('#9: CREDIT pay_x 485 + DEBIT pay_x-chargeback 500 → Receber do novo pagamento cria CREDIT AR:<id> na conta pedida', async () => {
+    banco.ar({ ...AR, total_amount: 50000 })
+    banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_x', status: 'DISPUTED' })
+    banco.transacao({ account_id: ASAAS, transaction_type: 'CREDIT', amount: 48500, bank_ref: 'pay_x' })
+    banco.transacao({ account_id: ASAAS, transaction_type: 'DEBIT', amount: 50000, bank_ref: 'pay_x-chargeback' })
+    const { j } = await receber({ received_amount: 50000 })
+    expect(j.data).not.toHaveProperty('aviso')
+    expect(creditosAR()).toEqual([expect.objectContaining({ account_id: ACC, amount: 50000 })])
+    expect(banco.saldo(ACC)).toBe(150000)
+  })
+
+  it('#3: REFUNDED (DEBIT pay_x-refund, já convertido pelo livro) e novo pagamento em Caixa → CREDIT AR:<id> em Caixa', async () => {
+    const CAIXA = '33333333-3333-4333-8333-333333333333'
+    banco.conta({ id: CAIXA, name: 'Caixa', current_balance: 0 })
+    banco.ar({ ...AR, total_amount: 50000 })
+    banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_x', status: 'REFUNDED' })
+    banco.transacao({ account_id: ASAAS, transaction_type: 'CREDIT', amount: 49900, origin: 'BANCO', bank_ref: 'ASAAS:PAY:pay_x', linked_ref: 'pay_x' })
+    banco.transacao({ account_id: ASAAS, transaction_type: 'DEBIT', amount: 50000, origin: 'BANCO', bank_ref: 'ASAAS:2026-11-01|REFUND|-50000|1', linked_ref: 'pay_x-refund' })
+    const { j } = await receber({ received_amount: 50000, account_id: CAIXA })
+    expect(j.data).not.toHaveProperty('aviso')
+    expect(creditosAR()).toEqual([expect.objectContaining({ account_id: CAIXA, amount: 50000 })])
+    expect(banco.saldo(CAIXA)).toBe(50000)
+  })
+
+  it('crédito externo sem reversão continua sendo dinheiro já lançado → só a claim, como no F2-A', async () => {
+    banco.ar({ ...AR, total_amount: 50000 })
+    banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_x', status: 'RECEIVED' })
+    banco.transacao({ account_id: ASAAS, transaction_type: 'CREDIT', amount: 48500, bank_ref: 'pay_x' })
+    const { j } = await receber({ received_amount: 50000 })
+    expect(j.data.aviso).toBeTruthy()
+    expect(creditosAR()).toEqual([])
+  })
+})
+
