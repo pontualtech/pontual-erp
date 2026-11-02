@@ -194,8 +194,8 @@ describe('F3-A (espelho na AP): legado (c) só em conta antiga e com o "Pgto: �
   const debitoLegado = (extra: Record<string, unknown> = {}) =>
     banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 120000, bank_ref: null, description: 'Pgto: Aluguel abril', created_at: MAIO, ...extra })
 
-  it('(iii) AP criada depois de 22/05 + DEBIT antigo do mesmo valor → (d)', async () => {
-    banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 120000, total_amount: 120000, updated_at: RECENTE, created_at: new Date('2026-06-01T12:00:00Z') })
+  it('(iii) AP criada depois de 22/05 + DEBIT antigo do mesmo valor e da MESMA descrição → (d)', async () => {
+    banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 120000, total_amount: 120000, description: 'Aluguel abril', updated_at: RECENTE, created_at: new Date('2026-06-01T12:00:00Z') })
     debitoLegado()
     expect((await est()).status).toBe(200)
     expect(doAP()).toEqual([])
@@ -205,7 +205,7 @@ describe('F3-A (espelho na AP): legado (c) só em conta antiga e com o "Pgto: �
   it('(iv) AP antiga, mas o DEBIT antigo não é "Pgto: …" (ou é CREDIT / tem bank_ref) → (d)', async () => {
     for (const extra of [{ description: 'TED qualquer' }, { transaction_type: 'CREDIT' }, { bank_ref: 'AP:outra' }]) {
       banco.reset(); banco.categoriasPadrao(); banco.conta({ id: ACC, current_balance: 100000 })
-      banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 120000, total_amount: 120000, updated_at: RECENTE, created_at: new Date('2026-05-01T12:00:00Z') })
+      banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 120000, total_amount: 120000, description: 'Aluguel abril', updated_at: RECENTE, created_at: new Date('2026-05-01T12:00:00Z') })
       debitoLegado(extra)
       expect((await est()).status).toBe(200)
       expect(doAP()).toEqual([])

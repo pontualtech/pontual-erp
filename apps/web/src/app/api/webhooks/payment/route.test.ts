@@ -424,3 +424,26 @@ describe('F6-F (m5, m6, m7, m18): aviso de duplicidade só depois do commit, uma
     expect(logError).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('ITAU PRINCIPAL') }), expect.anything(), 'warning')
   })
 })
+
+describe('F6-G (m12, m15): guardas do webhook que faltavam testar', () => {
+  it('m12: Receber PARCIAL (AR PENDENTE, nocional AR:r1 de 30000 na conta do crédito) + RECEIVED de 70000 → o parcial não é trocado', async () => {
+    Object.assign(banco.tabelas.accountReceivable[0], { status: 'PENDENTE', received_amount: 30000, total_amount: 100000 })
+    banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'PENDING', amount: 70000, billing_type: 'PIX' })
+    banco.transacao({ id: 'noc', account_id: ACC, transaction_type: 'CREDIT', amount: 30000, bank_ref: 'AR:r1' })
+    expect(await evento('evt_g1', 'PAYMENT_RECEIVED', { value: 700, netValue: 690 })).toBe(200)
+    expect(banco.tx_('noc')).toBeDefined()
+    expect(comRef('pay_1')).toEqual([expect.objectContaining({ amount: 69000 })])
+    expect(banco.tabelas.accountReceivable[0]).toEqual(expect.objectContaining({ received_amount: 100000, status: 'LIQUIDADO' }))
+  })
+
+  it('m15: REFUNDED trava a conta do crédito (Cobranças) antes da AR, e a trava é dela', async () => {
+    const ASAAS2 = '55555555-5555-4555-8555-555555555555'
+    banco.conta({ id: ASAAS2, name: 'Cobranças', current_balance: 97000 })
+    Object.assign(banco.tabelas.accountReceivable[0], { status: 'LIQUIDADO', received_amount: 100000 })
+    banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'RECEIVED', amount: 100000, billing_type: 'PIX' })
+    banco.transacao({ account_id: ASAAS2, transaction_type: 'CREDIT', amount: 97000, bank_ref: 'pay_1' })
+    expect(await evento('evt_g2', 'PAYMENT_REFUNDED')).toBe(200)
+    expect(banco.travas.map((t) => [t.tabela, t.id])).toEqual([['accounts', ASAAS2], ['accounts_receivable', 'r1']])
+    ordemTravas('accountReceivable')
+  })
+})

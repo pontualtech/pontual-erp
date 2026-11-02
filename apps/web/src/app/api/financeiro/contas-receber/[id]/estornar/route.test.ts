@@ -338,8 +338,8 @@ describe('F3-A (#1, #6, #8, #10, m10): legado (c) só sem dinheiro externo, só 
     semEstorno()
   })
 
-  it('(iii) AR criada depois de 22/05, sem dinheiro externo, + crédito antigo do mesmo valor → (d)', async () => {
-    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000, updated_at: RECENTE, created_at: new Date('2026-06-01T12:00:00Z') })
+  it('(iii) AR criada depois de 22/05, sem dinheiro externo, + crédito antigo do mesmo valor e da MESMA descrição → (d)', async () => {
+    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000, description: 'OS 61000', updated_at: RECENTE, created_at: new Date('2026-06-01T12:00:00Z') })
     creditoLegado()
     expect((await est()).status).toBe(200)
     semEstorno()
@@ -348,7 +348,7 @@ describe('F3-A (#1, #6, #8, #10, m10): legado (c) só sem dinheiro externo, só 
   it('(iv) conta antiga, mas a transação antiga não é um "Recebimento: …" (ou é de outro tipo / tem bank_ref) → (d)', async () => {
     for (const extra of [{ description: 'PIX qualquer' }, { transaction_type: 'DEBIT' }, { bank_ref: 'AR:outra' }]) {
       banco.reset(); banco.categoriasPadrao(); banco.conta({ id: ACC, current_balance: 100000 })
-      banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000, updated_at: RECENTE, created_at: new Date('2026-05-01T12:00:00Z') })
+      banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000, description: 'OS 61000', updated_at: RECENTE, created_at: new Date('2026-05-01T12:00:00Z') })
       creditoLegado(extra)
       expect((await est()).status).toBe(200)
       semEstorno()
