@@ -4,6 +4,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
+import { logError } from '@/lib/observability'
 import { decidirBaixa, JANELA_BAIXA, JANELA_CONFERIR, recebeCategoria, type CandidatoLivro } from '@/lib/financeiro/livro-baixa'
 import {
   candidatosLivro, ContaAlterada, contasDaAR, desligarLinhas, dinheiroDaAR, exigirTravadas, hojeSP, nomeCategoria,
@@ -285,6 +286,11 @@ export async function POST(req: NextRequest) {
         else if (e instanceof LivroJaLigado) resultado = { erro: 'lançamento do livro já ligado por outra baixa' }
         else {
           console.error('[bulk-reconcile] falha na AR', arId, e)
+          // Fix 2 (F2-J, m12): também em error_logs (/admin/errors), como o handleError faria com o 500 de antes.
+          void logError(e, {
+            url: '/api/financeiro/contas-receber/bulk-reconcile', method: 'POST',
+            company_id: user.companyId, user_id: user.id, params: { ar: arId, reconciled },
+          })
           resultado = { erro: reconciled ? 'erro ao conferir; tente de novo' : 'erro ao desfazer; tente de novo' }
         }
       }

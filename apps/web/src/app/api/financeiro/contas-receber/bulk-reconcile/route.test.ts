@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server'
 vi.mock('@pontual/db', async () => ({ prisma: (await import('@/test-utils/banco-falso')).banco.prisma }))
 vi.mock('@/lib/auth', () => ({ requirePermission: async () => ({ id: 'u1', companyId: 'c1' }) }))
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }))
+vi.mock('@/lib/observability', () => ({ logError: vi.fn(async () => undefined) }))
 vi.mock('@/lib/financeiro/livro-baixa-db', async (importOriginal) => {
   const o = await importOriginal<typeof import('@/lib/financeiro/livro-baixa-db')>()
   return { ...o, hojeSP: vi.fn(o.hojeSP) }
@@ -13,6 +14,7 @@ import { POST } from './route'
 import { hojeSP } from '@/lib/financeiro/livro-baixa-db'
 import { banco } from '@/test-utils/banco-falso'
 import { logAudit } from '@/lib/audit'
+import { logError } from '@/lib/observability'
 
 const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date())
 const DIA = 86_400_000
@@ -537,3 +539,19 @@ describe('F2-G (#13, m18): guardas do SWAP e do Desfazer', () => {
     expect(banco.saldo('acc2')).toBe(0)
   })
 })
+
+describe('F2-J (m12): exceção inesperada por AR vai para error_logs', () => {
+  it('logError recebe o erro e o contexto (rota, empresa, usuário, AR) — além do erros[] da resposta', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(logError).mockClear()
+    banco.ar(AR)
+    const falha = Object.assign(new Error('deadlock detected'), { code: 'P2034' })
+    banco.tx.transaction.create.mockImplementationOnce(async () => { throw falha })
+    const { j } = await conferir()
+    expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'erro ao conferir; tente de novo' }])
+    expect(vi.mocked(logError)).toHaveBeenCalledWith(falha, expect.objectContaining({
+      url: '/api/financeiro/contas-receber/bulk-reconcile', company_id: 'c1', user_id: 'u1', params: { ar: 'a1', reconciled: true },
+    }))
+  })
+})
+
