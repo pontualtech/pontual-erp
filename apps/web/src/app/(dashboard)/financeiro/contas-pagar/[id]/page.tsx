@@ -352,31 +352,6 @@ export default function ContaPagarDetalhePage() {
               <CheckCircle className="h-4 w-4" /> Conferi no extrato
             </button>
           )}
-          {/* Wave AC: Desfazer conciliação (toggle reconciled=false) — só admin, só se conciliada */}
-          {conta.reconciled === true && !editing && (
-            <button
-              type="button"
-              title="Desfazer conciliação — marca como 'Aguardando' novamente (não reverte pagamento)"
-              onClick={async () => {
-                if (!window.confirm('Desfazer conciliação?\n\nAP volta pra "Aguardando conferência bancária".\nNÃO reverte o pagamento — use Estornar pra reverter.')) return
-                try {
-                  const res = await fetch('/api/financeiro/contas-pagar/bulk-reconcile', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ids: [conta.id], reconciled: false }),
-                  })
-                  const data = await res.json()
-                  if (!res.ok) throw new Error(data.error || 'Erro')
-                  toast.success('Conciliação desfeita — AP volta a "Aguardando"')
-                  loadConta()
-                } catch (e) {
-                  toast.error(e instanceof Error ? e.message : 'Erro ao desfazer conciliação')
-                }
-              }}
-              className="flex items-center gap-1.5 px-3 py-2.5 text-sm border border-yellow-200 rounded-xl text-yellow-700 hover:bg-yellow-50 transition-colors"
-            >
-              <Undo2 className="h-4 w-4" /> Desfazer conciliação
-            </button>
-          )}
           {isAdmin && !editing && (
             <button type="button" title="Excluir" onClick={() => setShowDelete(true)} className="flex items-center px-3 py-2.5 text-sm border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 transition-colors">
               <Trash2 className="h-4 w-4" />

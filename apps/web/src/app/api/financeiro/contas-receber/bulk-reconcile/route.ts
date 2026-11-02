@@ -7,8 +7,7 @@ import { logAudit } from '@/lib/audit'
 import { logError } from '@/lib/observability'
 import { decidirBaixa, JANELA_BAIXA, JANELA_CONFERIR, recebeCategoria, type CandidatoLivro } from '@/lib/financeiro/livro-baixa'
 import {
-  candidatosLivro, ContaAlterada, contasDaAR, desligarLinhas, dinheiroDaAR, exigirTravadas, hojeSP, nomeCategoria,
-  posAjuste, SELECT_LINHA_LIGADA, travarContas,
+  candidatosLivro, ContaAlterada, contasDaAR, dinheiroDaAR, exigirTravadas, hojeSP, nomeCategoria, posAjuste, travarContas,
 } from '@/lib/financeiro/livro-baixa-db'
 import { compensado, ondeRef } from '@/lib/financeiro/livro'
 import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
@@ -54,7 +53,7 @@ const bodySchema = z.object({
  * 30/10 (livro-razão): se a linha do banco já está no livro (origin BANCO, categoria fallback),
  * a baixa LIGA a ela (linked_ref) em vez de criar outra transação — saldo não muda.
  * - reconciled=true → status vira LIQUIDADO + cria Transaction CREDIT + balance++
- * - reconciled=false → desfaz: status volta pra RECEBIDO + reverte Transaction + balance--
+ * - reconciled=false → só desmarca (fix 10, F10-A): status volta pra RECEBIDO; nenhum lançamento nem saldo muda
  *
  * Regra Karlão (2026-06-02): "saldo só muda quando ADM confere no banco".
  * RECEBIDO = alegação (cliente/funcionário disse). LIQUIDADO = ADM conferiu
@@ -347,39 +346,13 @@ export async function POST(req: NextRequest) {
             return { delta: amount }
           }
 
-          // LIQUIDADO → RECEBIDO (onda 4 §4), relido com a AR travada: as linhas do banco ligadas à AR são DESLIGADAS
-          // (sem apagar nem mexer no saldo) e TODOS os créditos nocionais AR:id ainda vivos são apagados com o saldo;
-          // o já compensado por um :estorno fica (o par se anula). Crédito com o marcador antigo LIGADA: é dinheiro do banco.
-          // Fix 8 (F8-B, #3): o nocional anterior ao ajuste de caixa da conta também fica (o ajuste já o absorveu).
-          const ligadas = await tx.transaction.findMany({
-            where: { company_id: user.companyId, origin: 'BANCO', linked_ref: `AR:${ar.id}` },
-            select: SELECT_LINHA_LIGADA,
-          })
-          const creditos = await tx.transaction.findMany({
-            where: { company_id: user.companyId, bank_ref: `AR:${ar.id}`, transaction_type: 'CREDIT', origin: null, source_text: null },
-            select: { id: true, amount: true, account_id: true, created_at: true },
-          })
-          const estornos = await tx.transaction.findMany({
-            where: { company_id: user.companyId, bank_ref: `AR:${ar.id}:estorno` },
-            select: { account_id: true, created_at: true },
-          })
-          const vivos = await posAjuste(tx, user.companyId, creditos.filter((c) => !compensado(c, estornos)))
-          exigirTravadas(travadas, [...ligadas.map((l) => l.account_id), ...vivos.map((c) => c.account_id)])
+          // Fix 10 (F10-A): Desfazer = só desmarcar — LIQUIDADO → RECEBIDO e reconciled=false. Nenhum dinheiro muda: não apaga
+          // nocional, não desliga linha, não mexe em saldo (o dinheiro continua da AR; o Conferir seguinte é idempotente).
           await tx.accountReceivable.update({
             where: { id: ar.id, company_id: user.companyId },
             data: { reconciled: false, status: 'RECEBIDO', updated_at: new Date() },
           })
-          await desligarLinhas(tx, user.companyId, ligadas)
-          let delta = 0
-          for (const c of vivos) {
-            await tx.transaction.delete({ where: { id: c.id } })
-            await tx.account.update({
-              where: { id: c.account_id },
-              data: { current_balance: { decrement: c.amount }, updated_at: new Date() },
-            })
-            delta -= c.amount
-          }
-          return { delta }
+          return {}
         }, { maxWait: 10000, timeout: 20000 })
       } catch (e) {
         // Onda 4 (§8, #16): qualquer falha de uma AR (trava que demorou, deadlock, banco) vai em erros e o lote segue —

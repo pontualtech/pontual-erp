@@ -498,40 +498,6 @@ export default function ContaReceberDetalhePage() {
               <CheckCircle className="h-4 w-4" /> Conferi no extrato
             </button>
           )}
-          {/* Wave V (24/05): Desfazer conciliação (toggle reconciled=false).
-              Karlão pediu: se conferiu errado no extrato, desmarcar sem estornar
-              o recebimento. Diferente de Estornar (que reverte AR pra PENDENTE). */}
-          {conta.reconciled === true && !editing && (
-            <button
-              type="button"
-              title="Desfazer conciliação — marca como 'Aguardando' novamente (não reverte recebimento)"
-              onClick={async () => {
-                if (!window.confirm('Desfazer conciliação?\n\nAR volta pra "Aguardando conferência bancária".\nNÃO reverte o recebimento — use Estornar pra reverter o pagamento.')) return
-                try {
-                  const res = await fetch('/api/financeiro/contas-receber/bulk-reconcile', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ids: [conta.id], reconciled: false }),
-                  })
-                  const data = await res.json()
-                  if (!res.ok) throw new Error(data.error || 'Erro')
-                  // Onda 4 (fix 2, F2-F): resposta 200 pode trazer a AR em erros (ex.: conta não conferida, conflito) →
-                  // toast de erro, não de sucesso, como nos botões de Conferir.
-                  const r = resultadoConferencia(data.data, 'Conciliação desfeita — AR volta a "Aguardando"')
-                  if (r.ok) toast.success(r.mensagem)
-                  else toast.error(r.mensagem)
-                } catch (e) {
-                  toast.error(e instanceof Error ? e.message : 'Erro ao desfazer conciliação')
-                } finally {
-                  // O estado da conta pode ter mudado no servidor: recarrega sempre.
-                  loadConta()
-                }
-              }}
-              className="flex items-center gap-1.5 px-3 py-2.5 text-sm border border-yellow-200 rounded-xl text-yellow-700 hover:bg-yellow-50 transition-colors"
-            >
-              <Undo2 className="h-4 w-4" /> Desfazer conciliação
-            </button>
-          )}
           {isAdmin && !editing && (
             <button type="button" title="Excluir" onClick={() => setShowDelete(true)} className="flex items-center px-3 py-2.5 text-sm border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 transition-colors">
               <Trash2 className="h-4 w-4" />

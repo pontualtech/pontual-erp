@@ -194,58 +194,32 @@ describe('§4 Desfazer conciliação (reconciled=false) — resolve #8 e m1', ()
     expect(creditosAR()).toHaveLength(1)
   })
 
-  it('m1: vários créditos nocionais (baixas parciais 400 + 600): apaga TODOS e debita 1000', async () => {
+  it('F10-A: Desfazer só desmarca — nocionais (parciais 400 + 600), linhas ligadas (própria e externa) e saldo intactos; LIQUIDADO → RECEBIDO', async () => {
     banco.ar({ ...AR, status: 'LIQUIDADO', reconciled: true, received_amount: 100000, total_amount: 100000 })
-    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 40000, bank_ref: 'AR:a1' })
-    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 60000, bank_ref: 'AR:a1' })
+    banco.pagamento({ receivable_id: 'a1', provider: 'rede', external_id: 'N1' })
+    banco.transacao({ id: 'n1', account_id: ACC, transaction_type: 'CREDIT', amount: 40000, bank_ref: 'AR:a1' })
+    banco.transacao({ id: 'n2', account_id: ACC, transaction_type: 'CREDIT', amount: 60000, bank_ref: 'AR:a1' })
+    linhaLivro({ linked_ref: 'AR:a1', category_id: 'cat:Venda de Servicos', description: 'LIQUIDACAO: OS 1 · banco: PIX CLIENTE' })
+    linhaLivro({ id: 't2', bank_ref: 'ITAU:k2', linked_ref: 'acquirer:rede:N1' })
+    const antes = JSON.stringify(banco.tabelas.transaction)
     const { j } = await desfazer()
-    expect(creditosAR()).toEqual([])
-    expect(banco.saldo(ACC)).toBe(0)
-    expect(j.data).toEqual(expect.objectContaining({ updated: 1, balance_delta: -100000, erros: [] }))
+    expect(j.data).toEqual(expect.objectContaining({ updated: 1, balance_delta: 0, erros: [] }))
+    expect(JSON.stringify(banco.tabelas.transaction)).toBe(antes)
+    expect(banco.saldo(ACC)).toBe(100000)
     expect(ar()).toEqual(expect.objectContaining({ status: 'RECEBIDO', reconciled: false }))
   })
 
-  it('crédito já compensado por :estorno não é apagado; o recebido de novo depois do estorno é', async () => {
+  it('F10-A (#5, #12): AR recebida em duas linhas (90 + 60) → Desfazer → Conferir de novo: idempotente, nada criado nem ligado', async () => {
     banco.ar({ ...AR, status: 'LIQUIDADO', reconciled: true })
-    banco.transacao({ id: 'velho', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1' })
-    banco.transacao({ id: 'est', account_id: ACC, transaction_type: 'DEBIT', amount: 15000, bank_ref: 'AR:a1:estorno' })
-    banco.transacao({ id: 'novo', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1' })
-    const { j } = await desfazer()
-    expect(banco.tx_('velho')).toBeDefined()
-    expect(banco.tx_('est')).toBeDefined()
-    expect(banco.tx_('novo')).toBeUndefined()
-    expect(j.data.balance_delta).toBe(-15000)
-  })
-
-  it('linha do banco ligada (baixa ou nocional convertido): DESLIGA (regra/fallback, texto do banco), sem apagar nem mexer no saldo', async () => {
-    banco.regra({ pattern: 'REND PAGO APLIC', direction: 'IN', category_id: 'cat:Rendimentos', priority: 10 })
-    banco.ar({ ...AR, status: 'LIQUIDADO', reconciled: true })
-    linhaLivro({ linked_ref: 'AR:a1', category_id: 'cat:Venda de Servicos', description: 'LIQUIDACAO: OS 1 · banco: PIX CLIENTE' })
-    linhaLivro({ id: 't2', bank_ref: 'ITAU:k2', amount: 1, linked_ref: 'AR:a1', source_text: 'REND PAGO APLIC AUT', category_id: 'cat:Venda de Servicos' })
-    const { j } = await desfazer()
-    expect(banco.tx_('t1')).toEqual(expect.objectContaining({ linked_ref: null, category_id: 'cat:Receita a identificar', description: 'PIX CLIENTE' }))
-    expect(banco.tx_('t2')).toEqual(expect.objectContaining({ linked_ref: null, category_id: 'cat:Rendimentos' }))
-    expect(banco.saldo(ACC)).toBe(100000)
-    expect(j.data).toEqual(expect.objectContaining({ updated: 1, balance_delta: 0 }))
-    expect(ar().status).toBe('RECEBIDO')
-  })
-
-  it('linha convertida do adquirente (linked_ref acquirer:…) NÃO é desligada pelo Desfazer (não veio do Conferir)', async () => {
-    banco.ar({ ...AR, status: 'LIQUIDADO', reconciled: true })
-    banco.pagamento({ receivable_id: 'a1', provider: 'rede', external_id: 'N1' })
-    linhaLivro({ linked_ref: 'acquirer:rede:N1' })
+    linhaLivro({ amount: 9000, linked_ref: 'AR:a1' })
+    linhaLivro({ id: 't2', bank_ref: 'ITAU:k2', amount: 6000, linked_ref: 'AR:a1' })
     await desfazer()
-    expect(banco.tx_('t1')!.linked_ref).toBe('acquirer:rede:N1')
-    expect(ar().status).toBe('RECEBIDO')
-  })
-
-  it('E2: crédito AR:id com marcador antigo LIGADA: (dinheiro do banco, antes da migração): não apaga nem debita', async () => {
-    banco.ar({ ...AR, status: 'LIQUIDADO', reconciled: true })
-    banco.transacao({ id: 'x1', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1', source_text: 'LIGADA:itau:k1' })
-    const { j } = await desfazer()
-    expect(banco.tx_('x1')).toBeDefined()
+    const { j } = await conferir()
+    expect(j.data).toEqual(expect.objectContaining({ updated: 1, ligadas: 0, balance_delta: 0, erros: [] }))
+    expect(creditosAR()).toEqual([])
+    expect([banco.tx_('t1')!.linked_ref, banco.tx_('t2')!.linked_ref]).toEqual(['AR:a1', 'AR:a1'])
     expect(banco.saldo(ACC)).toBe(100000)
-    expect(j.data).toEqual(expect.objectContaining({ updated: 1, balance_delta: 0, erros: [] }))
+    expect(ar()).toEqual(expect.objectContaining({ status: 'LIQUIDADO', reconciled: true }))
   })
 
   it('AR sem conta bancária: só volta o status', async () => {
@@ -411,16 +385,6 @@ describe('§7: trava contas → AR, relê e escreve pelo tx (E1, #9, #10)', () =
     })
     expect((await conferir()).j.data.ligadas).toBe(1)
     expect(creditosAR()).toEqual([])
-  })
-
-  it('Desfazer concorrente com Conferir: o crédito do Conferir aparece na releitura → apaga e debita', async () => {
-    banco.ar({ ...AR, status: 'LIQUIDADO', reconciled: true })
-    banco.aoTravar(({ tabela }) => {
-      if (tabela === 'accounts_receivable') banco.transacao({ id: 'x1', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1' })
-    })
-    const { j } = await desfazer()
-    expect(banco.tx_('x1')).toBeUndefined()
-    expect(j.data.balance_delta).toBe(-15000)
   })
 
   it('conta bancária da AR trocada enquanto esperava a trava → erros "conta alterada — repita", nada gravado', async () => {
@@ -673,17 +637,6 @@ describe('F2-G (#13, m18): guardas do SWAP e do Desfazer', () => {
     expect(banco.saldo('acc2')).toBe(0)
   })
 
-  it('m18: Desfazer com crédito vivo numa conta não travada → "conta alterada — repita", nada apagado', async () => {
-    banco.conta({ id: 'acc2', current_balance: 0 })
-    banco.ar({ ...AR, status: 'LIQUIDADO', reconciled: true })
-    banco.aoTravar(({ tabela }) => {
-      if (tabela === 'accounts_receivable') banco.transacao({ id: 'x2', account_id: 'acc2', transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1' })
-    })
-    const { j } = await desfazer()
-    expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'conta alterada — repita' }])
-    expect(banco.tx_('x2')).toBeDefined()
-    expect(banco.saldo('acc2')).toBe(0)
-  })
 })
 
 describe('F2-J (m12): exceção inesperada por AR vai para error_logs', () => {
@@ -743,16 +696,6 @@ describe('F7-A (#1): Conferir só troca nocional posterior ao ajuste de caixa', 
     expect(banco.saldo(ACC)).toBe(BANCO)
   })
 
-  it('Desfazer ainda apaga o nocional posterior ao ajuste (com o saldo)', async () => {
-    banco.ar({ ...AR, status: 'LIQUIDADO', reconciled: true })
-    ajuste()
-    banco.transacao({ id: 'noc', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1', created_at: new Date() })
-    banco.tabelas.account[0].current_balance = 115000
-    expect((await desfazer()).j.data).toEqual(expect.objectContaining({ updated: 1, balance_delta: -15000 }))
-    expect(banco.tx_('noc')).toBeUndefined()
-    expect(banco.saldo(ACC)).toBe(100000)
-  })
-
   it('(iii) nocional posterior ao ajuste → SWAP como antes', async () => {
     banco.ar(AR)
     ajuste()
@@ -804,19 +747,6 @@ describe('F8-E (m5/m6): F6-B com livro[ar] = linha ASAAS:PAY e dinheiro da AR em
     const { j } = await conferir(['a1'], { a1: 't1' })
     expect(j.data).toEqual(expect.objectContaining({ ligadas: 1, erros: [] }))
     expect(banco.tx_('noc')).toBeUndefined()
-  })
-})
-
-describe('F7-C (#6): Desfazer desliga a linha e o Conferir seguinte a RELIGA', () => {
-  it('linha ligada a AR:a1 de 40 dias atrás → Desfazer → Conferir → religa (sem crédito novo)', async () => {
-    banco.ar({ ...AR, status: 'LIQUIDADO', reconciled: true })
-    linhaLivro({ linked_ref: 'AR:a1', category_id: 'cat:Venda de Servicos', transaction_date: diaRel(-40) })
-    expect((await desfazer()).j.data.updated).toBe(1)
-    expect(banco.tx_('t1')).toEqual(expect.objectContaining({ linked_ref: null, desligada_de: 'AR:a1' }))
-    const { j } = await conferir()
-    expect(j.data).toEqual(expect.objectContaining({ ligadas: 1, balance_delta: 0, erros: [] }))
-    expect(banco.tx_('t1')).toEqual(expect.objectContaining({ linked_ref: 'AR:a1', desligada_de: null }))
-    expect(creditosAR()).toEqual([])
   })
 })
 
