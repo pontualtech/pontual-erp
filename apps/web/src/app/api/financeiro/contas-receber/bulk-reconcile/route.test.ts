@@ -577,6 +577,18 @@ describe('F3-F (#7): Conferir de AR com Payment Asaas RECEIVED sem crédito pay_
   })
 })
 
+describe('m13 (desvio aceito): Payment Asaas PENDING/OVERDUE sem crédito não bloqueia o Conferir', () => {
+  // Link do Asaas não usado — o cliente pagou por PIX direto; a linha do banco é o dinheiro e é ligada pelo valor.
+  it.each(['PENDING', 'OVERDUE'])('%s: liga a linha do banco livre de mesmo valor', async (status) => {
+    banco.ar(AR)
+    banco.pagamento({ receivable_id: 'a1', provider: 'asaas', external_id: 'pay_x', status })
+    linhaLivro()
+    const { j } = await conferir()
+    expect(j.data).toEqual(expect.objectContaining({ updated: 1, ligadas: 1, erros: [] }))
+    expect(banco.tx_('t1')!.linked_ref).toBe('AR:a1')
+  })
+})
+
 describe('F2-G (#13, m18): guardas do SWAP e do Desfazer', () => {
   it('#13: crédito AR:id com marcador LIGADA (dinheiro do banco) + vínculo explícito → "já tem lançamento", nada apagado', async () => {
     banco.ar(AR)

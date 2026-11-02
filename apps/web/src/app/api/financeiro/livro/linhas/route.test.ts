@@ -80,6 +80,8 @@ describe('§1 LIGAR converte o nocional na linha do banco (resolve #1, #2, #12)'
   it('F2-C (#6): pay_/cnab:/antecipação sem categoria → receita padrão; AP:<id> → categoria da AP (sem ela, regra/"A classificar")', async () => {
     banco.categoria('Aluguel', 'financeiro_despesa')
     banco.ap({ id: 'p1', category_id: 'cat:Aluguel' })
+    // m9: AP que EXISTE sem categoria (não AP inexistente) → regra/"A classificar", nunca category_id null.
+    banco.ap({ id: 'semcat', category_id: null })
     for (const [id, ref] of [['a', 'pay_1'], ['b', 'cnab:9'], ['c', 'AR:x:anticipation']]) {
       banco.transacao({ id, account_id: 'acc1', transaction_type: 'CREDIT', amount: 100, bank_ref: ref, transaction_date: dia('2026-11-01') })
     }

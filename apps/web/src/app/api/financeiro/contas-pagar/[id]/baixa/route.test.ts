@@ -298,3 +298,41 @@ describe('F2-G (m21): opções da $transaction', () => {
     expect(banco.transacoes.map((t) => t.opcoes)).toEqual([{ maxWait: 10000, timeout: 20000 }])
   })
 })
+
+describe('Fix 3 — testes menores do Pagar (m6, m7, m8)', () => {
+  const AVISO = 'dinheiro desta conta já está lançado (adquirente/CNAB/Asaas/banco) — nenhum lançamento novo criado'
+  it('m6: DEBIT AP:id comitado enquanto o Pagar esperava a trava → só a claim + aviso; nada debitado', async () => {
+    banco.ap(AP)
+    banco.aoTravar(({ tabela }) => {
+      if (tabela !== 'accounts') return
+      banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 5000, bank_ref: 'AP:p1', source_text: 'LIGADA:ITAU:k' })
+      banco.aoTravar(null)
+    })
+    const { status, j } = await pagar({ paid_amount: 5000, paid_at: '2026-10-29' })
+    expect(status).toBe(200)
+    expect(j.data).toEqual(expect.objectContaining({ ligada: false, aviso: AVISO }))
+    expect(debitosAP()).toHaveLength(1)
+    expect(banco.saldo(ACC)).toBe(100000)
+  })
+
+  it('m7: AP sem conta, saída já lançada noutra conta (inter) → a AP herda a conta do lançamento, não a do pedido', async () => {
+    banco.conta({ id: 'inter', current_balance: 50000 })
+    banco.ap({ ...AP, account_id: null })
+    banco.transacao({ account_id: 'inter', transaction_type: 'DEBIT', amount: 5000, origin: 'BANCO', bank_ref: 'INTER:k0', linked_ref: 'AP:p1' })
+    const { j } = await pagar({ paid_amount: 5000, paid_at: '2026-10-29' })
+    expect(j.data.aviso).toBe(AVISO)
+    expect(ap().account_id).toBe('inter')
+  })
+
+  it('m8 (desvio aceito): com a saída já lançada, Pagar ignora livro_transaction_id — não liga a linha pedida', async () => {
+    banco.ap(AP)
+    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 5000, bank_ref: 'AP:p1', source_text: 'LIGADA:ITAU:k' })
+    linha()
+    const { status, j } = await pagar({ paid_amount: 5000, paid_at: '2026-10-29', livro_transaction_id: 't1' })
+    expect(status).toBe(200)
+    expect(j.data).toEqual(expect.objectContaining({ status: 'PAGO', ligada: false, aviso: AVISO }))
+    expect(banco.tx_('t1')!.linked_ref).toBeNull()
+    expect(debitosAP()).toHaveLength(1)
+    expect(banco.saldo(ACC)).toBe(100000)
+  })
+})

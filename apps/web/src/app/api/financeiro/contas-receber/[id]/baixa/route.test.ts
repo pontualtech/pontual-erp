@@ -241,3 +241,31 @@ describe('F3-B (#9, #3): dinheiro externo é líquido de estorno/chargeback do A
   })
 })
 
+describe('Fix 3 — testes menores do Receber (m6, m8)', () => {
+  const AVISO = 'dinheiro desta conta já está lançado (adquirente/CNAB/Asaas/banco) — nenhum lançamento novo criado'
+  it('m6: crédito externo (CNAB) comitado enquanto o Receber esperava a trava → só a claim + aviso; nada criado, saldo intocado', async () => {
+    banco.ar({ ...AR, account_id: ACC, pix_code: JSON.stringify({ nossoNumero: '123' }) })
+    banco.aoTravar(({ tabela }) => {
+      if (tabela !== 'accounts') return
+      banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'cnab:123' })
+      banco.tabelas.account[0].current_balance += 15000
+      banco.aoTravar(null)
+    })
+    const { status, j } = await receber()
+    expect(status).toBe(200)
+    expect(j.data).toEqual(expect.objectContaining({ ligada: false, aviso: AVISO }))
+    expect(creditosAR()).toEqual([])
+    expect(banco.saldo(ACC)).toBe(115000) // o crédito do CNAB conta uma vez
+  })
+
+  it('m8 (desvio aceito): com o dinheiro já lançado, Receber não quita a AP da taxa do cartão nem debita', async () => {
+    banco.ar({ ...AR, account_id: ACC, card_fee_total: 450, service_order_id: 'os1', pix_code: JSON.stringify({ nossoNumero: '123' }) })
+    banco.ap({ id: 'taxa', service_order_id: 'os1', total_amount: 450, status: 'PENDENTE' })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'cnab:123' })
+    const { j } = await receber()
+    expect(j.data.aviso).toBe(AVISO)
+    expect(banco.tabelas.accountPayable.find((a) => a.id === 'taxa')).toEqual(expect.objectContaining({ status: 'PENDENTE', paid_amount: 0 }))
+    expect(banco.tabelas.transaction.filter((t) => t.bank_ref === 'AP:taxa')).toEqual([])
+    expect(banco.saldo(ACC)).toBe(100000)
+  })
+})

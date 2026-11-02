@@ -78,6 +78,14 @@ describe('F2-D (#4): webhook Asaas trava a conta antes da AR', () => {
     await evento('evt_o2', 'PAYMENT_REFUNDED')
     ordemTravas('accountReceivable')
   })
+
+  it('m11: reversão de chargeback (AWAITING_CHARGEBACK_REVERSAL): accounts antes da AR e do DEBIT', async () => {
+    banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'DISPUTED', amount: 100000, billing_type: 'CREDIT_CARD' })
+    await evento('evt_o3', 'PAYMENT_AWAITING_CHARGEBACK_REVERSAL')
+    expect(banco.tabelas.transaction.filter((t) => t.bank_ref === 'pay_1-chargeback')).toHaveLength(1)
+    expect(banco.travas[0]).toEqual(expect.objectContaining({ tabela: 'accounts', id: ACC }))
+    ordemTravas('accountReceivable')
+  })
 })
 
 describe('F3-E (#5): webhook Asaas decide pela AR relida com a trava', () => {
