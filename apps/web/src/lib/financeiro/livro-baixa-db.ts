@@ -134,10 +134,16 @@ async function limitesDeAjuste(db: any, companyId: string, contas: string[]): Pr
 const depoisDoAjuste = (limites: Map<string, number>, t: { account_id: string; created_at?: Date | null }) =>
   !limites.has(t.account_id) || (t.created_at ? new Date(t.created_at).getTime() : 0) > (limites.get(t.account_id) as number)
 
-// Fix 10 (F10-B): contas COM extrato no livro (têm AJUSTE:<conta>:). Na conta sem extrato (Caixa…) a devolução em
-// dinheiro nunca chega por linha do banco — o estorno 'devolvido' a compensa.
+// Fix 10 (F10-B) / fix 11: contas COM extrato no livro = têm ao menos uma linha do banco (origin 'BANCO'). Só o AJUSTE não
+// basta (a Inter tem AJUSTE e o livro não posta nela). Na conta sem extrato (Caixa, Inter…) a devolução nunca chega por
+// linha do banco — o estorno 'devolvido' a compensa. (O posAjuste do F7-A continua pelo AJUSTE.)
 export async function contasComExtrato(db: any, companyId: string, contas: string[]): Promise<Set<string>> {
-  return new Set((await limitesDeAjuste(db, companyId, contas)).keys())
+  const com = new Set<string>()
+  for (const conta of [...new Set(contas)]) {
+    const linha = await db.transaction.findFirst({ where: { company_id: companyId, account_id: conta, origin: 'BANCO' }, select: { id: true } })
+    if (linha) com.add(conta)
+  }
+  return com
 }
 
 // Fix 10 (F10-B): sufixo das refs próprias do dinheiro devolvido (AR:<id>[:anticipation]:devolvido, AP:<id>:devolvido).

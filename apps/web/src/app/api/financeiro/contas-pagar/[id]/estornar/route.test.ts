@@ -308,11 +308,28 @@ describe("F10-B (AP): 'devolvido' (refs próprias ganham :devolvido) ou mover_pa
     expect(banco.saldo(CAIXA)).toBe(0)
 
     ajuste()
+    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 1, origin: 'BANCO', bank_ref: 'TARIFA', source_text: 'TARIFA', transaction_date: dia('2026-10-31') }) // Itaú: tem extrato
     banco.ap({ id: 'p2', status: 'PAGO', account_id: ACC, paid_amount: 5000, total_amount: 5000 })
     banco.transacao({ id: 'D2', account_id: ACC, transaction_type: 'DEBIT', amount: 5000, bank_ref: 'AP:p2' })
     expect((await est('p2', { dinheiro: 'devolvido' })).status).toBe(200)
     expect(banco.tx_('D2')!.bank_ref).toBe('AP:p2:devolvido')
     expect(estornos('p2')).toEqual([])
+  })
+
+  it("Fix 11: conta com AJUSTE mas SEM linha do banco (a Inter) → 'devolvido' compensa (CREDIT AP:p1:estorno); com linha do banco → não", async () => {
+    ajuste(ACC2)
+    banco.tabelas.account[1].current_balance = -5000
+    banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC2, paid_amount: 5000, total_amount: 5000 })
+    banco.transacao({ id: 'D', account_id: ACC2, transaction_type: 'DEBIT', amount: 5000, bank_ref: 'AP:p1' })
+    expect((await est('p1', { dinheiro: 'devolvido' })).status).toBe(200)
+    expect(estornos()).toEqual([expect.objectContaining({ account_id: ACC2, amount: 5000, transaction_type: 'CREDIT' })])
+    expect(banco.saldo(ACC2)).toBe(0)
+
+    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 1, origin: 'BANCO', bank_ref: 'TARIFA', source_text: 'TARIFA', transaction_date: dia('2026-10-31') })
+    banco.ap({ id: 'p3', status: 'PAGO', account_id: ACC, paid_amount: 5000, total_amount: 5000 })
+    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 5000, bank_ref: 'AP:p3' })
+    expect((await est('p3', { dinheiro: 'devolvido' })).status).toBe(200)
+    expect(estornos('p3')).toEqual([])
   })
 
   it('mover_para: destino com saldo em aberto menor → 422; parcial → soma e fica PENDENTE; CANCELADO/inexistente/a própria → 422/404', async () => {
