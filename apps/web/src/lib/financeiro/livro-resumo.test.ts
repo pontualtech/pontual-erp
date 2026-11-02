@@ -58,20 +58,18 @@ describe('resumoRealizado', () => {
   it('F8: Estornos está em CATEGORIAS_FORA_DO_TOTAL', () => {
     expect(CATEGORIAS_FORA_DO_TOTAL).toContain('Estornos')
   })
-  it('F8: estornos e transferências sem categoria ficam fora do total', () => {
+  it('F8 / F4-G: transferências ficam fora do total; estornos deduzem do lado oposto (não vão para fora_do_total)', () => {
     const r = resumoRealizado([
       t('CREDIT', 15000, null, 'AR:a1'),
       t('DEBIT', 15000, null, 'AR:a1:estorno'),
+      t('DEBIT', 4000, null, 'AP:p1'),
       t('CREDIT', 4000, null, 'AP:p1:estorno'),
       t('DEBIT', 7000, null, 'TRANSFER:c1'),
       t('CREDIT', 7000, null, 'TRANSFER:d1'),
     ])
-    expect(r.total_entradas).toBe(15000)
+    expect(r.total_entradas).toBe(0)
     expect(r.total_saidas).toBe(0)
-    expect(r.fora_do_total).toEqual([
-      { categoria: 'Estornos', total: 19000 },
-      { categoria: 'Transferência entre contas', total: 14000 },
-    ])
+    expect(r.fora_do_total).toEqual([{ categoria: 'Transferência entre contas', total: 14000 }])
   })
   it('CREDIT AR:x sem categoria soma em Venda de Servicos', () => {
     const r = resumoRealizado([t('CREDIT', 500, null, 'AR:x'), t('CREDIT', 300, CATEGORIA_RECEITA_SERVICOS)])
@@ -85,5 +83,45 @@ describe('resumoRealizado', () => {
       { categoria: 'Energia', total: 300 },
     ])
     expect(r.total_saidas).toBe(700)
+  })
+})
+
+describe('F4-G (m2, m5, m19): estorno/reembolso deduz, não some', () => {
+  it('AR 500 + estorno 500 → total_entradas 0; o detalhamento de entradas mostra Estornos negativo', () => {
+    const r = resumoRealizado([t('CREDIT', 50000, null, 'AR:a1'), t('DEBIT', 50000, null, 'AR:a1:estorno')])
+    expect(r.total_entradas).toBe(0)
+    expect(r.entradas).toEqual([{ categoria: CATEGORIA_RECEITA_SERVICOS, total: 50000 }, { categoria: 'Estornos', total: -50000 }])
+    expect(r.total_saidas).toBe(0)
+    expect(r.fora_do_total).toEqual([])
+  })
+
+  it('pay_x 485 + reembolso 500 (nocional sem categoria, m19) → entradas −15', () => {
+    const r = resumoRealizado([t('CREDIT', 48500, null, 'pay_x'), t('DEBIT', 50000, null, 'pay_x-refund')])
+    expect(r.total_entradas).toBe(-1500)
+    expect(r.total_saidas).toBe(0)
+  })
+
+  it('o mesmo reembolso já convertido (categoria Estornos ou linked_ref pay_x-chargeback) dá o mesmo total (m5)', () => {
+    const conv = resumoRealizado([t('CREDIT', 48500, CATEGORIA_RECEITA_SERVICOS, 'ITAU:k'), t('DEBIT', 50000, 'Estornos', 'ITAU:k2')])
+    expect(conv.total_entradas).toBe(-1500)
+    const cb = resumoRealizado([
+      t('CREDIT', 48500, null, 'pay_x'),
+      { transaction_type: 'DEBIT', amount: 50000, bank_ref: 'ITAU:k3', linked_ref: 'pay_x-chargeback', categoria: null },
+    ])
+    expect(cb.total_entradas).toBe(-1500)
+  })
+
+  it('AP 100 + CREDIT AP:p:estorno 100 → total_saidas 0 (Estornos negativo nas saídas)', () => {
+    const r = resumoRealizado([t('DEBIT', 10000, 'Energia', 'AP:p'), t('CREDIT', 10000, null, 'AP:p:estorno')])
+    expect(r.total_saidas).toBe(0)
+    expect(r.saidas).toEqual([{ categoria: 'Energia', total: 10000 }, { categoria: 'Estornos', total: -10000 }])
+    expect(r.total_entradas).toBe(0)
+  })
+
+  it('categoriaEfetiva: DEBIT sem categoria com ref -refund/-chargeback (bank_ref ou linked_ref) → Estornos; CREDIT continua receita', () => {
+    expect(categoriaEfetiva({ transaction_type: 'DEBIT', bank_ref: 'pay_x-refund', categoria: null })).toBe('Estornos')
+    expect(categoriaEfetiva({ transaction_type: 'DEBIT', bank_ref: 'pay_x-chargeback', categoria: null })).toBe('Estornos')
+    expect(categoriaEfetiva({ transaction_type: 'DEBIT', bank_ref: 'ASAAS:k', linked_ref: 'pay_x-refund', categoria: null })).toBe('Estornos')
+    expect(categoriaEfetiva({ transaction_type: 'CREDIT', bank_ref: 'pay_x', categoria: null })).toBe(CATEGORIA_RECEITA_SERVICOS)
   })
 })

@@ -217,7 +217,9 @@ export async function POST(req: NextRequest) {
       }
       // Fix 3 (F3-G, m2/m15): estorno/reversão não é receita — o DEBIT do estorno da AR e do reembolso/chargeback do
       // Asaas vai para 'Estornos' (fora do total); a receita padrão é só do CREDIT que é recebimento.
-      if (t.transaction_type === 'DEBIT' && (/-(refund|chargeback)$/.test(ref) || /^AR:.+:estorno$/.test(ref))) {
+      // Fix 4 (F4-G): também o CREDIT do estorno de um pagamento (AP:*:estorno) — como no categoriaEfetiva do resumo.
+      if ((t.transaction_type === 'DEBIT' && (/-(refund|chargeback)$/.test(ref) || /^AR:.+:estorno$/.test(ref)))
+        || (t.transaction_type === 'CREDIT' && /^AP:.+:estorno$/.test(ref))) {
         const id = categorias.get('Estornos')
         if (id) return id
       }

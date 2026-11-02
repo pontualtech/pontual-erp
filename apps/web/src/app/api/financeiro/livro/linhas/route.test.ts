@@ -127,6 +127,13 @@ describe('§1 LIGAR converte o nocional na linha do banco (resolve #1, #2, #12)'
     expect(['d1', 'c1', 'c2'].map((id) => banco.tx_(id)!.category_id)).toEqual(['cat:A classificar', 'cat:Venda de Servicos', 'cat:Receita a identificar'])
   })
 
+  it('F4-G: CREDIT AP:*:estorno convertido → "Estornos" (fecha o desvio do F3-G)', async () => {
+    banco.transacao({ id: 'ce', account_id: 'acc1', transaction_type: 'CREDIT', amount: 100, bank_ref: 'AP:p1:estorno', transaction_date: dia('2026-11-01') })
+    await post([{ chave: 'K1', data: '2026-11-01', descricao: 'ESTORNO TED', valor_centavos: 100, links: ['AP:p1:estorno'] }])
+    const estornos = banco.tabelas.category.find((c) => c.name === 'Estornos')
+    expect(banco.tx_('ce')!.category_id).toBe(estornos!.id)
+  })
+
   it('descrição que já tem " · banco: " não duplica', async () => {
     banco.transacao({ id: 'n1', account_id: 'acc1', transaction_type: 'CREDIT', amount: 50000, bank_ref: 'AR:a1', description: 'LIQUIDACAO: OS 1 · banco: x', transaction_date: dia('2026-11-01') })
     await post([linha({ links: ['AR:a1'] })])
