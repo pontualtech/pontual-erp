@@ -24,4 +24,11 @@ describe('resultadoConferencia (F14)', () => {
     }, '2 conferidas')
     expect(r).toEqual({ ok: false, mensagem: '2 ok, 3 com erro: já conciliada; conta a receber sem conta bancária; vínculo não feito' })
   })
+  it('F2-F (#7): resposta do Desfazer com a AR em erros (não conferida / conflito) não vira sucesso', () => {
+    const msg = 'Conciliação desfeita — AR volta a "Aguardando"'
+    expect(resultadoConferencia({ updated: 0, ligadas: 0, erros: [{ ar: 'a', motivo: 'conta não conferida' }] }, msg)).toEqual({ ok: false, mensagem: 'conta não conferida' })
+    expect(resultadoConferencia({ updated: 0, ligadas: 0, erros: [{ ar: 'a', motivo: 'erro ao desfazer; tente de novo' }] }, msg)).toEqual({ ok: false, mensagem: 'erro ao desfazer; tente de novo' })
+    expect(resultadoConferencia({ updated: 1, ligadas: 0, erros: [] }, msg)).toEqual({ ok: true, mensagem: msg })
+  })
 })
+

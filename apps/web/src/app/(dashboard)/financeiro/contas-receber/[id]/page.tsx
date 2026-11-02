@@ -499,10 +499,16 @@ export default function ContaReceberDetalhePage() {
                   })
                   const data = await res.json()
                   if (!res.ok) throw new Error(data.error || 'Erro')
-                  toast.success('Conciliação desfeita — AR volta a "Aguardando"')
-                  loadConta()
+                  // Onda 4 (fix 2, F2-F): resposta 200 pode trazer a AR em erros (ex.: conta não conferida, conflito) →
+                  // toast de erro, não de sucesso, como nos botões de Conferir.
+                  const r = resultadoConferencia(data.data, 'Conciliação desfeita — AR volta a "Aguardando"')
+                  if (r.ok) toast.success(r.mensagem)
+                  else toast.error(r.mensagem)
                 } catch (e) {
                   toast.error(e instanceof Error ? e.message : 'Erro ao desfazer conciliação')
+                } finally {
+                  // O estado da conta pode ter mudado no servidor: recarrega sempre.
+                  loadConta()
                 }
               }}
               className="flex items-center gap-1.5 px-3 py-2.5 text-sm border border-yellow-200 rounded-xl text-yellow-700 hover:bg-yellow-50 transition-colors"
