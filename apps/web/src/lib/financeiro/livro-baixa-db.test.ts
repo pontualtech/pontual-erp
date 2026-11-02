@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('@pontual/db', async () => ({ prisma: (await import('@/test-utils/banco-falso')).banco.prisma }))
 
-import { desligarLinhas, SELECT_LINHA_LIGADA } from './livro-baixa-db'
+import { desligarLinhas, dinheiroDaAR, SELECT_LINHA_LIGADA } from './livro-baixa-db'
 import { banco } from '@/test-utils/banco-falso'
 
 beforeEach(() => {
@@ -21,5 +21,62 @@ describe('desligarLinhas (F2-B, #1)', () => {
     expect(refs.map((_, i) => banco.tx_(`L${i}`)!.linked_ref)).toEqual([null, null, 'pay_x', 'acquirer:rede:1', 'cnab:9', 'AR:r1:anticipation'])
     expect(banco.tx_('L0')).toEqual(expect.objectContaining({ category_id: 'cat:Receita a identificar', description: 'T0' }))
     expect(banco.tx_('L2')!.category_id).toBe('cat:Venda de Servicos')
+  })
+})
+
+describe('dinheiroDaAR — reversões do Asaas (F3-B; fix 4, F4-C, #2, #9)', () => {
+  const ASAAS = 'asaas1'
+  const AR = { id: 'r1', pix_code: null }
+  const total = async () => (await dinheiroDaAR(banco.tx, 'c1', AR)).total
+  beforeEach(() => { banco.ar({ id: 'r1', total_amount: 50000 }) })
+
+  it('#9 reembolso PARCIAL: CREDIT pay_x 48500 − pay_x-refund 20000 → 28500 (o pagamento continua vivo)', async () => {
+    banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_x', status: 'RECEIVED' })
+    banco.transacao({ account_id: ASAAS, transaction_type: 'CREDIT', amount: 48500, bank_ref: 'pay_x' })
+    banco.transacao({ account_id: ASAAS, transaction_type: 'DEBIT', amount: 20000, bank_ref: 'pay_x-refund' })
+    expect(await total()).toBe(28500)
+  })
+
+  it('#9 duas refs: pay_a revertido por inteiro e pay_b vivo → só pay_b conta (cada reversão anula só o seu pagamento)', async () => {
+    banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_a', status: 'REFUNDED' })
+    banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_b', status: 'RECEIVED' })
+    banco.transacao({ account_id: ASAAS, transaction_type: 'CREDIT', amount: 4850, bank_ref: 'pay_a' })
+    banco.transacao({ account_id: ASAAS, transaction_type: 'DEBIT', amount: 5000, bank_ref: 'pay_a-refund' })
+    banco.transacao({ id: 'b', account_id: ASAAS, transaction_type: 'CREDIT', amount: 9700, bank_ref: 'pay_b' })
+    const d = await dinheiroDaAR(banco.tx, 'c1', AR)
+    expect(d.total).toBe(9700)
+    expect(d.nocionais.map((t) => t.id)).toEqual(['b'])
+  })
+
+  it('#2: dinheiro do pagamento ligado como AR:<id> (sem linha/crédito pay_x) + pay_x-refund → a reversão desconta do AR:<id>', async () => {
+    banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_x', status: 'REFUNDED' })
+    banco.transacao({ account_id: ASAAS, transaction_type: 'CREDIT', amount: 9901, origin: 'BANCO', bank_ref: 'ASAAS:PAY:pay_x', linked_ref: 'AR:r1' })
+    banco.transacao({ account_id: ASAAS, transaction_type: 'DEBIT', amount: 10000, bank_ref: 'pay_x-refund' })
+    expect(await total()).toBe(0)
+  })
+
+  it('F4-C: o desconto no AR:<id> vai até o valor dele — o crédito novo AR:<id> (outro pagamento) continua contando', async () => {
+    banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_x', status: 'REFUNDED' })
+    banco.transacao({ account_id: ASAAS, transaction_type: 'CREDIT', amount: 9901, origin: 'BANCO', bank_ref: 'ASAAS:PAY:pay_x', linked_ref: 'AR:r1' })
+    banco.transacao({ account_id: ASAAS, transaction_type: 'DEBIT', amount: 10000, bank_ref: 'pay_x-refund' })
+    banco.transacao({ account_id: 'caixa', transaction_type: 'CREDIT', amount: 10000, bank_ref: 'AR:r1' })
+    expect(await total()).toBe(9901)
+  })
+
+  it('F4-C: reversão maior que o AR:<id> não come o dinheiro de outro pagamento (pay_b)', async () => {
+    banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_x', status: 'REFUNDED' })
+    banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_b', status: 'RECEIVED' })
+    banco.transacao({ account_id: ASAAS, transaction_type: 'CREDIT', amount: 5000, origin: 'BANCO', bank_ref: 'ASAAS:PAY:pay_x', linked_ref: 'AR:r1' })
+    banco.transacao({ account_id: ASAAS, transaction_type: 'DEBIT', amount: 10000, bank_ref: 'pay_x-refund' })
+    banco.transacao({ account_id: ASAAS, transaction_type: 'CREDIT', amount: 9700, bank_ref: 'pay_b' })
+    expect(await total()).toBe(9700)
+  })
+
+  it('F4-C: com crédito/linha viva da própria ref pay_x, a reversão desconta dela (não do AR:<id>)', async () => {
+    banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_x', status: 'REFUNDED' })
+    banco.transacao({ account_id: ASAAS, transaction_type: 'CREDIT', amount: 9901, bank_ref: 'pay_x' })
+    banco.transacao({ account_id: ASAAS, transaction_type: 'DEBIT', amount: 10000, bank_ref: 'pay_x-refund' })
+    banco.transacao({ account_id: 'caixa', transaction_type: 'CREDIT', amount: 10000, bank_ref: 'AR:r1' })
+    expect(await total()).toBe(10000)
   })
 })

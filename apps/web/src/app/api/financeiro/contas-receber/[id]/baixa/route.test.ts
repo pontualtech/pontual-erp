@@ -269,3 +269,21 @@ describe('Fix 3 — testes menores do Receber (m6, m8)', () => {
     expect(banco.saldo(ACC)).toBe(100000)
   })
 })
+
+describe('F4-C (#2): reembolso do pagamento cujo dinheiro foi ligado como AR:<id>', () => {
+  it('linha ASAAS:PAY ligada como AR:r1 + pay_x-refund (AR PENDENTE/0) → Receber em Caixa cria o CREDIT', async () => {
+    const ASAAS = 'asaas1'
+    const CAIXA = '33333333-3333-4333-8333-333333333333'
+    banco.conta({ id: ASAAS, name: 'Asaas', current_balance: 0 })
+    banco.conta({ id: CAIXA, name: 'Caixa', current_balance: 0 })
+    banco.ar({ ...AR, total_amount: 10000, account_id: ASAAS })
+    banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_x', status: 'REFUNDED' })
+    banco.transacao({ account_id: ASAAS, transaction_type: 'CREDIT', amount: 9901, origin: 'BANCO', bank_ref: 'ASAAS:PAY:pay_x', linked_ref: 'AR:r1' })
+    banco.transacao({ account_id: ASAAS, transaction_type: 'DEBIT', amount: 10000, bank_ref: 'pay_x-refund' })
+    const { status, j } = await receber({ received_amount: 10000, account_id: CAIXA })
+    expect(status).toBe(200)
+    expect(j.data).not.toHaveProperty('aviso')
+    expect(creditosAR().filter((t) => t.account_id === CAIXA)).toEqual([expect.objectContaining({ amount: 10000 })])
+    expect(banco.saldo(CAIXA)).toBe(10000)
+  })
+})

@@ -178,6 +178,11 @@ export async function dinheiroDaAR(db: any, companyId: string, ar: { id: string;
   })
   const mortas = new Set<string>()
   let descontar = 0
+  // Fix 4 (F4-C, #2): o dinheiro de um pagamento pode estar ligado pela ref PRÓPRIA (linha ASAAS:PAY ligada como
+  // AR:<id> por um vínculo explícito). Revertido sem crédito/linha viva da ref dele, a reversão sai do AR:<id>
+  // (até o valor que ele tem) — senão o reembolso não zera o dinheiro da AR e o novo pagamento só reivindica.
+  let proprioRestante = [...linhas.filter((l: { linked_ref?: string | null }) => l.linked_ref === refs.proprio), ...vivos.filter((t) => t.bank_ref === refs.proprio)]
+    .reduce((soma, t) => soma + t.amount, 0)
   for (const r of refs.externos) {
     const rev = reversoes
       .filter((d) => [d.bank_ref, d.linked_ref].some((x) => x === `${r}-refund` || x === `${r}-chargeback`))
@@ -185,6 +190,12 @@ export async function dinheiroDaAR(db: any, companyId: string, ar: { id: string;
     if (rev === 0) continue
     const cred = [...linhas.filter((l: { linked_ref?: string | null }) => l.linked_ref === r), ...vivos.filter((t) => t.bank_ref === r)]
       .reduce((soma, t) => soma + t.amount, 0)
+    if (cred === 0) {
+      const d = Math.min(rev, proprioRestante)
+      proprioRestante -= d
+      descontar += d
+      continue
+    }
     if (rev >= cred) mortas.add(r)
     else descontar += rev
   }
