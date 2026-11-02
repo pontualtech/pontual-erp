@@ -5,6 +5,7 @@ import { logAudit } from '@/lib/audit'
 import { gerarRemessaCNAB400, parsearRetornoCNAB400, type BoletoRemessa400, type CedenteConfig400 } from '@/lib/boleto/cnab/cnab400-inter'
 import { handleError } from '@/lib/api-response'
 import { isReceivableSettled } from '@/lib/finance/receivable-status'
+import { ondeRef } from '@/lib/financeiro/livro'
 
 /**
  * GET /api/financeiro/cnab — Gerar arquivo de remessa CNAB 400
@@ -298,7 +299,8 @@ export async function POST(req: NextRequest) {
         }
         if (ret.nossoNumero) {
           const dup = await prisma.transaction.findFirst({
-            where: { company_id: user.companyId, bank_ref: `cnab:${ret.nossoNumero}` },
+            // Onda 4 (fix 1): a ref pode já estar no linked_ref (o livro converteu o lançamento na linha do banco).
+            where: { company_id: user.companyId, ...ondeRef(`cnab:${ret.nossoNumero}`) },
             select: { id: true },
           })
           if (dup) {

@@ -137,6 +137,16 @@ export function compensado(
 }
 
 /**
+ * Onda 4 (fix 1): filtro "já lançado com esta ref?" para quem cria crédito/débito por conta própria (webhooks, CNAB,
+ * adquirente, OFX). Depois que o livro reconhece a linha do banco, o lançamento vira a linha BANCO e a ref vai para
+ * o linked_ref — olhar só o bank_ref lançaria o mesmo dinheiro de novo.
+ */
+export function ondeRef(refs: string | string[]): { OR: [{ bank_ref: { in: string[] } }, { linked_ref: { in: string[] } }] } {
+  const lista = Array.isArray(refs) ? refs : [refs]
+  return { OR: [{ bank_ref: { in: lista } }, { linked_ref: { in: lista } }] }
+}
+
+/**
  * Um crédito (citado em `links`) só serve para cobrir a linha se foi criado DEPOIS do ajuste de caixa
  * (o que existia antes já foi absorvido por ele) e não foi tomado por OUTRA linha (LIGADA:<outra chave>).
  */

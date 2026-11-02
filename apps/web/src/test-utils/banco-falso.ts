@@ -1,28 +1,28 @@
 // Banco em memória para os testes de rota do financeiro (onda 4, §10): um só conjunto de tabelas por teste,
-// consultado pelos mesmos filtros do Prisma (where/select/orderBy), com DOIS clientes distintos — `prisma`
+// consultado pelos mesmos filtros do Prisma (where/select/include/orderBy), com DOIS clientes distintos — `prisma`
 // (fora da transação) e `tx` (o que o $transaction entrega ao callback) — cada um com seus próprios spies.
 // O $transaction desfaz tudo se o callback lançar (rollback) e o $queryRaw registra as travas (FOR UPDATE)
-// na ordem em que foram pedidas. Uso: vi.mock('@pontual/db', async () => ({ prisma: (await import('@/test-utils/banco-falso')).banco.prisma }))
+// na ordem em que foram pedidas. Qualquer modelo existe (tabela vazia até ser usada).
+// Uso: vi.mock('@pontual/db', async () => ({ prisma: (await import('@/test-utils/banco-falso')).banco.prisma }))
 import { vi } from 'vitest'
 
 type Linha = Record<string, any>
-const MODELOS = ['account', 'accountReceivable', 'accountPayable', 'transaction', 'payment', 'category', 'classificationRule'] as const
-type Modelo = (typeof MODELOS)[number]
-type Tabelas = Record<Modelo, Linha[]>
+type Tabelas = Record<string, Linha[]>
 
 // Tabela SQL (do $queryRaw) → modelo.
-const TABELA_SQL: Record<string, Modelo> = {
+const TABELA_SQL: Record<string, string> = {
   accounts: 'account',
   accounts_receivable: 'accountReceivable',
   accounts_payable: 'accountPayable',
 }
 
-// Relações usadas nos `select` das rotas: campo → (modelo, chave estrangeira).
-const RELACOES: Record<string, { modelo: Modelo; fk: string }> = {
+// Relações usadas nos `select`/`include` das rotas: campo → (modelo, chave estrangeira).
+const RELACOES: Record<string, { modelo: string; fk: string }> = {
   categories: { modelo: 'category', fk: 'category_id' },
+  companies: { modelo: 'company', fk: 'company_id' },
 }
 
-const DEFAULTS: Record<Modelo, Linha> = {
+const DEFAULTS: Record<string, Linha> = {
   account: { is_active: true, current_balance: 0, initial_balance: 0 },
   accountReceivable: {
     status: 'PENDENTE', received_amount: 0, account_id: null, category_id: null, reconciled: false, anticipated_at: null,
@@ -32,10 +32,14 @@ const DEFAULTS: Record<Modelo, Linha> = {
   transaction: {
     description: null, bank_ref: null, reconciled: false, category_id: null, origin: null, source_text: null, linked_ref: null, counterparty: null,
   },
-  payment: { provider: 'asaas', status: 'PENDING', external_id: null },
+  payment: { provider: 'asaas', status: 'PENDING', external_id: null, receivable_id: null },
   category: { module: null },
   classificationRule: { direction: null, account_id: null, priority: 100, active: true },
 }
+
+const OPERADORES = new Set(['equals', 'in', 'notIn', 'not', 'gt', 'gte', 'lt', 'lte', 'startsWith', 'endsWith', 'contains', 'mode'])
+// Nomes que não são modelos (o Proxy não cria tabela para eles).
+const NAO_MODELO = new Set(['then', 'toJSON', 'constructor', 'asymmetricMatch', 'nodeType', 'tagName', '$$typeof', 'prototype'])
 
 export interface Operacao {
   seq: number
@@ -89,6 +93,11 @@ export function casa(linha: Linha, where: any): boolean {
     if (k === 'OR') { if (!(cond as any[]).some((w) => casa(linha, w))) return false; continue }
     if (k === 'AND') { if (!([] as any[]).concat(cond).every((w) => casa(linha, w))) return false; continue }
     if (k === 'NOT') { if (([] as any[]).concat(cond).some((w) => casa(linha, w))) return false; continue }
+    // Chave única composta (ex.: provider_event_id: { provider, event_id }) = E das colunas.
+    if (!(k in linha) && ehFiltro(cond) && Object.keys(cond as object).every((o) => !OPERADORES.has(o))) {
+      if (!casa(linha, cond)) return false
+      continue
+    }
     if (!casaCampo(linha[k], cond)) return false
   }
   return true
@@ -97,7 +106,7 @@ export function casa(linha: Linha, where: any): boolean {
 const copia = (l: Linha): Linha => Object.fromEntries(Object.entries(l).map(([k, v]) => [k, v instanceof Date ? new Date(v) : v]))
 
 export function criarBanco() {
-  let tabelas: Tabelas = Object.fromEntries(MODELOS.map((m) => [m, []])) as unknown as Tabelas
+  let tabelas: Tabelas = {}
   let seq = 0
   let relogio = Date.now()
   let profundidadeTx = 0
@@ -107,18 +116,25 @@ export function criarBanco() {
   let aoTravar: ((t: { tabela: string; id: string }) => void) | null = null
   let ids = 0
 
+  const tab = (m: string) => (tabelas[m] ??= [])
   const agora = () => { relogio = Math.max(Date.now(), relogio + 1); return new Date(relogio) }
 
-  const projetar = (modelo: Modelo, l: Linha, select: any): Linha => {
-    if (!select) return copia(l)
+  const projetar = (l: Linha, select: any, include?: any): Linha => {
+    const rel = (k: string, v: any) => {
+      const r = RELACOES[k]
+      const alvo = tab(r.modelo).find((x) => x.id === l[r.fk])
+      return alvo ? projetar(alvo, typeof v === 'object' ? v.select : undefined) : null
+    }
+    if (!select) {
+      const out = copia(l)
+      for (const [k, v] of Object.entries(include ?? {})) if (v && RELACOES[k]) out[k] = rel(k, v)
+      return out
+    }
     const out: Linha = {}
     for (const [k, v] of Object.entries(select)) {
       if (!v) continue
-      const rel = RELACOES[k]
-      if (rel && typeof v === 'object') {
-        const alvo = tabelas[rel.modelo].find((x) => x.id === l[rel.fk])
-        out[k] = alvo ? projetar(rel.modelo, alvo, (v as any).select) : null
-      } else out[k] = l[k] instanceof Date ? new Date(l[k]) : l[k]
+      if (RELACOES[k] && typeof v === 'object') out[k] = rel(k, v)
+      else out[k] = l[k] instanceof Date ? new Date(l[k]) : l[k]
     }
     return out
   }
@@ -147,41 +163,65 @@ export function criarBanco() {
     }
   }
 
-  const ops = (modelo: Modelo) => ({
-    findFirst: async ({ where, select, orderBy }: any = {}) => {
-      const l = ordenar(tabelas[modelo].filter((x) => casa(x, where)), orderBy)[0]
-      return l ? projetar(modelo, l, select) : null
-    },
-    findFirstOrThrow: async ({ where, select }: any = {}) => {
-      const l = tabelas[modelo].find((x) => casa(x, where))
-      if (!l) throw new Error(`banco-falso: ${modelo} não encontrado`)
-      return projetar(modelo, l, select)
-    },
-    findMany: async ({ where, select, orderBy }: any = {}) =>
-      ordenar(tabelas[modelo].filter((x) => casa(x, where)), orderBy).map((l) => projetar(modelo, l, select)),
-    count: async ({ where }: any = {}) => tabelas[modelo].filter((x) => casa(x, where)).length,
-    create: async ({ data, select }: any) => {
-      const l: Linha = { id: `${modelo}-${++ids}`, ...DEFAULTS[modelo], created_at: agora(), ...data }
-      tabelas[modelo].push(l)
-      return projetar(modelo, l, select)
-    },
-    update: async ({ where, data, select }: any) => {
-      const l = tabelas[modelo].find((x) => casa(x, where))
-      if (!l) throw Object.assign(new Error(`banco-falso: ${modelo} a atualizar não existe`), { code: 'P2025' })
-      aplicar(l, data)
-      return projetar(modelo, l, select)
-    },
-    updateMany: async ({ where, data }: any) => {
-      const alvo = tabelas[modelo].filter((x) => casa(x, where))
-      for (const l of alvo) aplicar(l, data)
-      return { count: alvo.length }
-    },
-    delete: async ({ where }: any) => {
-      const i = tabelas[modelo].findIndex((x) => casa(x, where))
-      if (i < 0) throw Object.assign(new Error(`banco-falso: ${modelo} a apagar não existe`), { code: 'P2025' })
-      return tabelas[modelo].splice(i, 1)[0]
-    },
-  })
+  const novaLinha = (modelo: string, data: Linha): Linha => ({ id: `${modelo}-${++ids}`, ...(DEFAULTS[modelo] ?? {}), created_at: agora(), ...data })
+
+  const ops = (modelo: string) => {
+    const primeira = ({ where, select, include, orderBy }: any = {}) => {
+      const l = ordenar(tab(modelo).filter((x) => casa(x, where)), orderBy)[0]
+      return l ? projetar(l, select, include) : null
+    }
+    const ouErro = (args: any) => {
+      const l = primeira(args)
+      if (!l) throw Object.assign(new Error(`banco-falso: ${modelo} não encontrado`), { code: 'P2025' })
+      return l
+    }
+    return {
+      findFirst: async (args: any) => primeira(args),
+      findUnique: async (args: any) => primeira(args),
+      findFirstOrThrow: async (args: any) => ouErro(args),
+      findUniqueOrThrow: async (args: any) => ouErro(args),
+      findMany: async ({ where, select, include, orderBy }: any = {}) =>
+        ordenar(tab(modelo).filter((x) => casa(x, where)), orderBy).map((l) => projetar(l, select, include)),
+      count: async ({ where }: any = {}) => tab(modelo).filter((x) => casa(x, where)).length,
+      create: async ({ data, select, include }: any) => {
+        const l = novaLinha(modelo, data)
+        tab(modelo).push(l)
+        return projetar(l, select, include)
+      },
+      createMany: async ({ data }: any) => {
+        for (const d of [].concat(data)) tab(modelo).push(novaLinha(modelo, d))
+        return { count: [].concat(data).length }
+      },
+      update: async ({ where, data, select, include }: any) => {
+        const l = tab(modelo).find((x) => casa(x, where))
+        if (!l) throw Object.assign(new Error(`banco-falso: ${modelo} a atualizar não existe`), { code: 'P2025' })
+        aplicar(l, data)
+        return projetar(l, select, include)
+      },
+      updateMany: async ({ where, data }: any) => {
+        const alvo = tab(modelo).filter((x) => casa(x, where))
+        for (const l of alvo) aplicar(l, data)
+        return { count: alvo.length }
+      },
+      upsert: async ({ where, create, update }: any) => {
+        const l = tab(modelo).find((x) => casa(x, where))
+        if (l) { aplicar(l, update); return copia(l) }
+        const n = novaLinha(modelo, create)
+        tab(modelo).push(n)
+        return copia(n)
+      },
+      delete: async ({ where }: any) => {
+        const i = tab(modelo).findIndex((x) => casa(x, where))
+        if (i < 0) throw Object.assign(new Error(`banco-falso: ${modelo} a apagar não existe`), { code: 'P2025' })
+        return tab(modelo).splice(i, 1)[0]
+      },
+      deleteMany: async ({ where }: any = {}) => {
+        const antes = tab(modelo).length
+        tabelas[modelo] = tab(modelo).filter((x) => !casa(x, where))
+        return { count: antes - tabelas[modelo].length }
+      },
+    }
+  }
 
   // SELECT … FROM <tabela> WHERE id = ${id} … FOR UPDATE → registra a trava; devolve a linha (se existir).
   const queryRaw = async (sql: TemplateStringsArray, ...valores: unknown[]) => {
@@ -193,36 +233,41 @@ export function criarBanco() {
       aoTravar?.({ tabela, id })
     }
     const modelo = TABELA_SQL[tabela]
-    const l = modelo ? tabelas[modelo].find((x) => x.id === id) : undefined
+    const l = modelo ? tab(modelo).find((x) => x.id === id) : undefined
     return l ? [{ id: l.id, current_balance: l.current_balance }] : []
   }
 
-  // Cliente com spies próprios; cada chamada vai para o log (com quem chamou e se havia transação aberta).
-  // Escrita do cliente `prisma` com transação aberta = outra conexão: já está comitada e sobrevive ao rollback da tx.
-  const ESCRITAS = new Set(['create', 'update', 'updateMany', 'delete'])
-  let foraDaTx: { modelo: Modelo; op: string; args: any }[] = []
+  // Cliente com spies próprios (criados no 1º uso de cada modelo); cada chamada vai para o log (com quem chamou e se
+  // havia transação aberta). Escrita do cliente `prisma` com transação aberta = outra conexão: já está comitada e
+  // sobrevive ao rollback da tx.
+  const ESCRITAS = new Set(['create', 'createMany', 'update', 'updateMany', 'upsert', 'delete', 'deleteMany'])
+  let foraDaTx: { modelo: string; op: string; args: any }[] = []
   const criarCliente = (cliente: 'prisma' | 'tx') => {
-    const c: Record<string, any> = {}
-    for (const modelo of MODELOS) {
-      const base = ops(modelo)
-      c[modelo] = Object.fromEntries(Object.entries(base).map(([op, fn]) => [op, vi.fn(async (args: any) => {
-        log.push({ seq: ++seq, cliente, dentroDaTx: profundidadeTx > 0, modelo, op, args })
-        if (cliente === 'prisma' && profundidadeTx > 0 && ESCRITAS.has(op)) foraDaTx.push({ modelo, op, args })
-        return (fn as any)(args)
-      })]))
+    const base: Record<string, any> = {
+      $queryRaw: vi.fn(async (sql: TemplateStringsArray, ...valores: unknown[]) => {
+        log.push({ seq: ++seq, cliente, dentroDaTx: profundidadeTx > 0, modelo: '$queryRaw', op: 'queryRaw', args: { sql: sql.join('?'), valores } })
+        return queryRaw(sql, ...valores)
+      }),
     }
-    c.$queryRaw = vi.fn(async (sql: TemplateStringsArray, ...valores: unknown[]) => {
-      log.push({ seq: ++seq, cliente, dentroDaTx: profundidadeTx > 0, modelo: '$queryRaw', op: 'queryRaw', args: { sql: sql.join('?'), valores } })
-      return queryRaw(sql, ...valores)
-    })
-    return c
+    return new Proxy(base, {
+      get(alvo, prop) {
+        if (typeof prop !== 'string' || prop in alvo || NAO_MODELO.has(prop) || prop.startsWith('$')) return alvo[prop as string]
+        const modelo = prop
+        alvo[modelo] = Object.fromEntries(Object.entries(ops(modelo)).map(([op, fn]) => [op, vi.fn(async (args: any) => {
+          log.push({ seq: ++seq, cliente, dentroDaTx: profundidadeTx > 0, modelo, op, args })
+          if (cliente === 'prisma' && profundidadeTx > 0 && ESCRITAS.has(op)) foraDaTx.push({ modelo, op, args })
+          return (fn as any)(args)
+        })]))
+        return alvo[modelo]
+      },
+    }) as Record<string, any>
   }
 
   const tx = criarCliente('tx')
   const prisma = criarCliente('prisma')
   prisma.$transaction = vi.fn(async (cb: any, opcoes?: unknown) => {
     if (Array.isArray(cb)) return Promise.all(cb)
-    const foto = Object.fromEntries(MODELOS.map((m) => [m, tabelas[m].map(copia)])) as unknown as Tabelas
+    const foto: Tabelas = Object.fromEntries(Object.entries(tabelas).map(([m, ls]) => [m, ls.map(copia)]))
     const registro = { opcoes, desfeita: false }
     transacoes.push(registro)
     const foraAntes = foraDaTx
@@ -242,9 +287,9 @@ export function criarBanco() {
     }
   })
 
-  const inserir = (modelo: Modelo, l: Linha) => {
-    const linha = { id: `${modelo}-${++ids}`, ...DEFAULTS[modelo], created_at: agora(), ...l }
-    tabelas[modelo].push(linha)
+  const inserir = (modelo: string, l: Linha) => {
+    const linha = novaLinha(modelo, l)
+    tab(modelo).push(linha)
     return linha
   }
 
@@ -254,12 +299,13 @@ export function criarBanco() {
     log,
     travas,
     transacoes,
-    get tabelas() { return tabelas },
+    get tabelas() { return new Proxy(tabelas, { get: (t, m) => (typeof m === 'string' ? (t[m] ??= []) : undefined) }) },
     /** Zera tabelas, log, travas e spies (os clientes continuam os mesmos objetos). */
     reset() {
-      tabelas = Object.fromEntries(MODELOS.map((m) => [m, []])) as unknown as Tabelas
+      tabelas = {}
       log.length = 0; travas.length = 0; transacoes.length = 0; aoTravar = null
-      for (const c of [prisma, tx]) for (const v of Object.values(c)) {
+      for (const c of [prisma, tx]) for (const k of Object.keys(c)) {
+        const v = c[k]
         if (typeof v === 'function' && 'mockClear' in v) (v as any).mockClear()
         else if (v && typeof v === 'object') for (const f of Object.values(v)) (f as any).mockClear?.()
       }
@@ -268,6 +314,7 @@ export function criarBanco() {
     aoTravar(fn: ((t: { tabela: string; id: string }) => void) | null) { aoTravar = fn },
     /** Chamadas do cliente `prisma` feitas com uma transação aberta (fora do FOR UPDATE e do rollback). */
     prismaDentroDaTx: () => log.filter((o) => o.cliente === 'prisma' && o.dentroDaTx),
+    inserir,
     conta: (l: Linha = {}) => inserir('account', { company_id: 'c1', name: 'Conta', ...l }),
     ar: (l: Linha = {}) => inserir('accountReceivable', { company_id: 'c1', total_amount: 0, due_date: new Date('2026-10-01T00:00:00Z'), ...l }),
     ap: (l: Linha = {}) => inserir('accountPayable', { company_id: 'c1', total_amount: 0, due_date: new Date('2026-10-01T00:00:00Z'), ...l }),
@@ -275,8 +322,8 @@ export function criarBanco() {
     pagamento: (l: Linha) => inserir('payment', { company_id: 'c1', customer_id: 'cli1', amount: 0, idempotency_key: `k${ids}`, ...l }),
     categoria: (name: string, module: string | null = null) => inserir('category', { id: `cat:${name}`, company_id: 'c1', name, module }),
     regra: (l: Linha) => inserir('classificationRule', { company_id: 'c1', ...l }),
-    saldo: (contaId: string) => tabelas.account.find((a) => a.id === contaId)?.current_balance as number,
-    tx_: (id: string) => tabelas.transaction.find((t) => t.id === id),
+    saldo: (contaId: string) => tab('account').find((a) => a.id === contaId)?.current_balance as number,
+    tx_: (id: string) => tab('transaction').find((t) => t.id === id),
     /** Categorias do livro + a receita padrão, com ids legíveis ('cat:<nome>'). */
     categoriasPadrao() {
       for (const [nome, modulo] of [

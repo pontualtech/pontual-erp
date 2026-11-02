@@ -4,6 +4,7 @@ import { getPaymentProvider } from '@/lib/payments/factory'
 import { captureFeesForPayment } from '@/lib/payments/capture-fees'
 import { estadoArConfirmado, estadoArRecebido, valorCreditoAsaas, dataCreditoAsaas } from '@/lib/payments/asaas-rules'
 import { isImprimitechHandoffStatus } from '@/lib/imprimitech-handoff'
+import { ondeRef } from '@/lib/financeiro/livro'
 
 // Valid status transitions — reject anything not in this map
 const VALID_TRANSITIONS: Record<string, string[]> = {
@@ -457,10 +458,11 @@ export async function POST(req: NextRequest) {
             // chargeback), o handler criava Transaction CREDIT de novo —
             // duplicava o crédito e inflava saldo. Agora checa se já existe
             // Transaction CREDIT com mesmo bank_ref antes de criar.
+            // Onda 4 (fix 1): a ref pode já estar no linked_ref (o livro converteu o lançamento na linha do banco).
             const existingCredit = await tx.transaction.findFirst({
               where: {
                 company_id: fresh.company_id,
-                bank_ref: asaasPayment.id,
+                ...ondeRef(asaasPayment.id),
                 transaction_type: 'CREDIT',
               },
               select: { id: true },
@@ -682,10 +684,11 @@ export async function POST(req: NextRequest) {
             // ambos suffixes.
             const refundBankRef = `${asaasPayment.id}-refund`
             const chargebackBankRef = `${asaasPayment.id}-chargeback`
+            // Onda 4 (fix 1): a ref pode já estar no linked_ref (o livro converteu o lançamento na linha do banco).
             const existingDebit = await tx.transaction.findFirst({
               where: {
                 company_id: fresh.company_id,
-                bank_ref: { in: [refundBankRef, chargebackBankRef] },
+                ...ondeRef([refundBankRef, chargebackBankRef]),
               },
               select: { id: true },
             })
@@ -795,8 +798,9 @@ export async function POST(req: NextRequest) {
             }
             if (debitAccountId) {
               const refundBankRef = `${asaasPayment.id}-chargeback`
+              // Onda 4 (fix 1): a ref pode já estar no linked_ref (o livro converteu o lançamento na linha do banco).
               const existingDebit = await tx.transaction.findFirst({
-                where: { company_id: fresh.company_id, bank_ref: refundBankRef },
+                where: { company_id: fresh.company_id, ...ondeRef(refundBankRef) },
                 select: { id: true },
               })
               if (!existingDebit) {

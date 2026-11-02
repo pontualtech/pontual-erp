@@ -1,6 +1,7 @@
 import { prisma } from '@pontual/db'
 import { novoEstadoReceivable, planoTaxas } from './match-rules'
 import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
+import { ondeRef } from '@/lib/financeiro/livro'
 
 /**
  * Logica compartilhada de criar Payment + AR + 2 APs ao vincular uma
@@ -232,7 +233,14 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
       // saldo bancario nao incrementava e DRE nao cruzava com extrato bancario.
       // bank_ref=acquirer:{external_id} + reconciled=true: dedup futuro com OFX bancario
       // (Rede credita liquido D+1 e essa Transaction representa o credito antecipado).
-      if (acquirerAccountId) {
+      // Onda 4 (fix 1): o crédito desta venda já existe — nocional (bank_ref) ou já convertido pelo livro na linha do
+      // banco (linked_ref)? Então não lança outro.
+      const refCredito = `acquirer:${txn.acquirer}:${txn.external_id}`
+      const creditoJaLancado = await tx.transaction.findFirst({
+        where: { company_id: companyId, ...ondeRef(refCredito) },
+        select: { id: true },
+      })
+      if (acquirerAccountId && !creditoJaLancado) {
         const netAmount = txn.net_amount > 0 ? txn.net_amount : (txn.gross_amount - txn.total_fee_amount)
         await tx.transaction.create({
           data: {
@@ -242,7 +250,7 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
             amount: netAmount,
             description: `Maquininha ${txn.acquirer} — OS-${osNum} — ${billingType === 'DEBIT_CARD' ? 'debito' : `credito ${txn.installments}x`}`,
             transaction_date: creditDate || txn.expected_credit_date || txn.transaction_date,
-            bank_ref: `acquirer:${txn.acquirer}:${txn.external_id}`,
+            bank_ref: refCredito,
             reconciled: true,
           },
         })

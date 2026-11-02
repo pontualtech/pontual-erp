@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { createHmac, timingSafeEqual } from 'crypto'
+import { ondeRef } from '@/lib/financeiro/livro'
 
 /**
  * Valida assinatura HMAC-SHA256 do webhook
@@ -186,8 +187,9 @@ async function processInterWebhook(body: any) {
       // Dedup adicional: skipa create se já existe Transaction com mesmo bank_ref
       // (idempotência reforçada além do WebhookEventLog).
       if (receivable.account_id) {
+        // Onda 4 (fix 1): a ref pode já estar no linked_ref (o livro converteu o lançamento na linha do banco).
         const existingTx = await tx.transaction.findFirst({
-          where: { bank_ref: bankRef, company_id: receivable.company_id },
+          where: { ...ondeRef(bankRef), company_id: receivable.company_id },
         })
         if (!existingTx) {
           await tx.transaction.create({

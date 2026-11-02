@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
+import { ondeRef } from '@/lib/financeiro/livro'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 
@@ -168,11 +169,12 @@ export async function POST(request: NextRequest) {
       where: {
         company_id: user.companyId,
         account_id: accountId,
-        bank_ref: { in: existingFitIds },
+        // Onda 4 (fix 1): o FITID pode já estar no linked_ref (o livro converteu a transação na linha do banco).
+        ...ondeRef(existingFitIds),
       },
-      select: { bank_ref: true },
+      select: { bank_ref: true, linked_ref: true },
     })
-    const existingSet = new Set(existingTransactions.map(t => t.bank_ref))
+    const existingSet = new Set(existingTransactions.flatMap(t => [t.bank_ref, t.linked_ref]))
 
     // Filter out duplicates and prepare records
     const newTransactions = ofxTransactions.filter(t => !existingSet.has(t.fitId))

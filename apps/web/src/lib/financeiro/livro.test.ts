@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { classificar, planejarLinha, escolherOrfao, limitesJanelaOrfao, creditoUsavelParaVinculo, refEstorno, compensado, type LinhaBanco } from './livro'
+import { classificar, planejarLinha, escolherOrfao, limitesJanelaOrfao, creditoUsavelParaVinculo, refEstorno, compensado, ondeRef, type LinhaBanco } from './livro'
 
 const CORTE = '2026-10-29'
 
@@ -224,3 +224,11 @@ describe('compensado (onda 4 §2)', () => {
     expect(compensado(t('2026-11-03T10:00:00Z'), [])).toBe(false)
   })
 })
+
+describe('ondeRef (onda 4, fix 1)', () => {
+  it('casa a ref no bank_ref (nocional) OU no linked_ref (já convertido pelo livro em linha BANCO)', () => {
+    expect(ondeRef('pay_1')).toEqual({ OR: [{ bank_ref: { in: ['pay_1'] } }, { linked_ref: { in: ['pay_1'] } }] })
+    expect(ondeRef(['a', 'b'])).toEqual({ OR: [{ bank_ref: { in: ['a', 'b'] } }, { linked_ref: { in: ['a', 'b'] } }] })
+  })
+})
+
