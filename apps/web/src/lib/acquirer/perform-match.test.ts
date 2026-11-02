@@ -152,3 +152,15 @@ describe('F6-E (#6, m2, m3): vínculo da maquininha com as guardas do webhook', 
     expect(banco.tabelas.accountPayable.filter((a) => (a.description as string).startsWith('MDR'))).toEqual([])
   })
 })
+
+describe('F7-A (#1): vínculo da maquininha só troca nocional posterior ao ajuste', () => {
+  it('nocional AR:a1 anterior ao ajuste da conta da adquirente → fica; o acquirer: é criado', async () => {
+    banco.ar({ id: 'a1', service_order_id: 'os1', status: 'RECEBIDO', total_amount: 100000, received_amount: 100000, account_id: 'itau' })
+    banco.transacao({ id: 'noc', account_id: 'itau', transaction_type: 'CREDIT', amount: 100000, bank_ref: 'AR:a1', created_at: new Date('2026-10-28T15:00:00Z') })
+    banco.transacao({ id: 'aj', account_id: 'itau', transaction_type: 'CREDIT', amount: 0, origin: 'AJUSTE', bank_ref: 'AJUSTE:itau:2026-10-29', created_at: new Date('2026-10-30T10:00:00Z') })
+    expect((await vincular()).ok).toBe(true)
+    expect(banco.tx_('noc')).toBeDefined()
+    expect(doNSU()).toEqual([expect.objectContaining({ amount: 97000 })])
+    expect(banco.saldo('itau')).toBe(97000)
+  })
+})

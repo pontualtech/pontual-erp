@@ -447,3 +447,28 @@ describe('F6-G (m12, m15): guardas do webhook que faltavam testar', () => {
     ordemTravas('accountReceivable')
   })
 })
+
+describe('F7-A (#1): SWAP só de nocional posterior ao ajuste de caixa da conta', () => {
+  const ajuste = () => banco.transacao({ id: 'aj', account_id: ACC, transaction_type: 'CREDIT', amount: 0, origin: 'AJUSTE', bank_ref: `AJUSTE:${ACC}:2026-10-29`, created_at: new Date('2026-10-30T10:00:00Z') })
+  beforeEach(() => {
+    banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'PENDING', amount: 100000, billing_type: 'PIX' })
+  })
+
+  it('#1: Receber em 28/10 (nocional AR:r1), ajuste em 30/10, RECEIVED depois → nada apagado, pay_1 criado, saldo = banco', async () => {
+    banco.transacao({ id: 'noc', account_id: ACC, transaction_type: 'CREDIT', amount: 100000, bank_ref: 'AR:r1', created_at: new Date('2026-10-28T15:00:00Z') })
+    ajuste()
+    expect(await evento('evt_a1', 'PAYMENT_RECEIVED')).toBe(200)
+    expect(banco.tx_('noc')).toBeDefined()
+    expect(comRef('pay_1')).toEqual([expect.objectContaining({ amount: 97000 })])
+    expect(banco.saldo(ACC)).toBe(97000 + 97000)
+  })
+
+  it('nocional criado DEPOIS do ajuste → SWAP como antes', async () => {
+    ajuste()
+    banco.transacao({ id: 'noc', account_id: ACC, transaction_type: 'CREDIT', amount: 100000, bank_ref: 'AR:r1', created_at: new Date('2026-11-01T15:00:00Z') })
+    banco.tabelas.account.find((a) => a.id === ACC)!.current_balance = 197000
+    expect(await evento('evt_a2', 'PAYMENT_RECEIVED')).toBe(200)
+    expect(banco.tx_('noc')).toBeUndefined()
+    expect(banco.saldo(ACC)).toBe(194000)
+  })
+})

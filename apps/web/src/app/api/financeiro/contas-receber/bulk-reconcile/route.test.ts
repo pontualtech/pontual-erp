@@ -714,3 +714,41 @@ describe('F3-B: Conferir usa o mesmo dinheiro líquido de estorno/chargeback', (
   })
 })
 
+describe('F7-A (#1): Conferir só troca nocional posterior ao ajuste de caixa', () => {
+  const ajuste = () => banco.transacao({ id: 'aj', account_id: ACC, transaction_type: 'CREDIT', amount: 0, origin: 'AJUSTE', bank_ref: `AJUSTE:${ACC}:2026-10-29`, created_at: new Date('2026-10-30T10:00:00Z') })
+
+  it('(iii) livro[ar] = linha do Itaú e o nocional AR:a1 é anterior ao ajuste → liga a linha, o nocional fica, saldo intocado', async () => {
+    banco.ar(AR)
+    banco.transacao({ id: 'noc', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1', created_at: new Date('2026-10-28T15:00:00Z') })
+    ajuste()
+    linhaLivro()
+    const { j } = await conferir(['a1'], { a1: 't1' })
+    expect(j.data).toEqual(expect.objectContaining({ ligadas: 1, balance_delta: 0, erros: [] }))
+    expect(banco.tx_('t1')!.linked_ref).toBe('AR:a1')
+    expect(banco.tx_('noc')).toBeDefined()
+    expect(banco.saldo(ACC)).toBe(100000)
+  })
+
+  it('(iii) nocional posterior ao ajuste → SWAP como antes', async () => {
+    banco.ar(AR)
+    ajuste()
+    banco.transacao({ id: 'noc', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1', created_at: new Date() })
+    banco.tabelas.account[0].current_balance = 115000
+    linhaLivro()
+    const { j } = await conferir(['a1'], { a1: 't1' })
+    expect(j.data).toEqual(expect.objectContaining({ ligadas: 1, balance_delta: -15000 }))
+    expect(banco.tx_('noc')).toBeUndefined()
+  })
+
+  it('F6-B (livro[ar] = linha ASAAS:PAY) com nocional AR:a1 anterior ao ajuste → liga pay_x, o nocional fica', async () => {
+    banco.ar(AR)
+    banco.pagamento({ receivable_id: 'a1', provider: 'asaas', external_id: 'pay_x', status: 'RECEIVED', amount: 15000 })
+    banco.transacao({ id: 'noc', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1', created_at: new Date('2026-10-28T15:00:00Z') })
+    ajuste()
+    linhaLivro({ bank_ref: 'ASAAS:PAY:pay_x', amount: 14400 })
+    const { j } = await conferir(['a1'], { a1: 't1' })
+    expect(j.data).toEqual(expect.objectContaining({ ligadas: 1, balance_delta: 0 }))
+    expect(banco.tx_('t1')!.linked_ref).toBe('pay_x')
+    expect(banco.tx_('noc')).toBeDefined()
+  })
+})

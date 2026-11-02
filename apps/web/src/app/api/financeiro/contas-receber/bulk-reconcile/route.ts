@@ -8,7 +8,7 @@ import { logError } from '@/lib/observability'
 import { decidirBaixa, JANELA_BAIXA, JANELA_CONFERIR, recebeCategoria, type CandidatoLivro } from '@/lib/financeiro/livro-baixa'
 import {
   candidatosLivro, ContaAlterada, contasDaAR, desligarLinhas, dinheiroDaAR, exigirTravadas, hojeSP, nomeCategoria,
-  SELECT_LINHA_LIGADA, travarContas,
+  posAjuste, SELECT_LINHA_LIGADA, travarContas,
 } from '@/lib/financeiro/livro-baixa-db'
 import { compensado, ondeRef } from '@/lib/financeiro/livro'
 import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
@@ -184,7 +184,8 @@ export async function POST(req: NextRequest) {
                     where: { company_id: user.companyId, bank_ref: `AR:${ar.id}:estorno` },
                     select: { account_id: true, created_at: true },
                   })
-                  for (const t of proprios.filter((c) => !compensado(c, estornos))) {
+                  // Fix 7 (F7-A): só o nocional posterior ao ajuste de caixa da conta.
+                  for (const t of await posAjuste(tx, user.companyId, proprios.filter((c) => !compensado(c, estornos)))) {
                     await tx.transaction.delete({ where: { id: t.id } })
                     await tx.account.update({
                       where: { id: t.account_id },
@@ -264,7 +265,8 @@ export async function POST(req: NextRequest) {
                 await liquidar()
                 await ligar(decisao.usar, candidatos)
                 let delta = 0
-                for (const t of nocionais) {
+                // Fix 7 (F7-A, #1): o nocional anterior ao ajuste de caixa da conta fica (o ajuste já o absorveu).
+                for (const t of await posAjuste(tx, user.companyId, nocionais)) {
                   await tx.transaction.delete({ where: { id: t.id } })
                   await tx.account.update({
                     where: { id: t.account_id },

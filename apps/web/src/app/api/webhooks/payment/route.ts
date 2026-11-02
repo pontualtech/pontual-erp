@@ -6,7 +6,7 @@ import { estadoArConfirmado, estadoArRecebido, valorCreditoAsaas, dataCreditoAsa
 import { isImprimitechHandoffStatus } from '@/lib/imprimitech-handoff'
 import { compensado, ondeRef } from '@/lib/financeiro/livro'
 import { avisarDuplicidade } from '@/lib/financeiro/aviso-duplicidade'
-import { conflitoDeBanco, contaDoCreditoAsaas, nomeCategoria, travarContas } from '@/lib/financeiro/livro-baixa-db'
+import { conflitoDeBanco, contaDoCreditoAsaas, nomeCategoria, posAjuste, travarContas } from '@/lib/financeiro/livro-baixa-db'
 import { recebeCategoria } from '@/lib/financeiro/livro-baixa'
 import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
 
@@ -510,7 +510,8 @@ export async function POST(req: NextRequest) {
                 where: { company_id: fresh.company_id, bank_ref: `${proprio}:estorno` },
                 select: { account_id: true, created_at: true },
               })
-              const vivos = creditos.filter((c: { account_id: string; created_at: Date | null }) => !compensado(c, estornos))
+              // Fix 7 (F7-A): só o nocional criado depois do ajuste de caixa da conta (o anterior o ajuste já absorveu).
+              const vivos = await posAjuste(tx, fresh.company_id, creditos.filter((c: { account_id: string; created_at: Date | null }) => !compensado(c, estornos)))
               if (!jaNoBanco) trocar = vivos.filter((c: { account_id: string }) => c.account_id === creditAccountId)
               // Fix 6 (F6-F, m7): dinheiro AR:<id> (nocional OU linha do banco ligada) noutra conta → aviso, depois do commit.
               const fora = [...vivos, ...linhasAR].find((t: { account_id: string }) => t.account_id !== creditAccountId)

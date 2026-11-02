@@ -2,7 +2,7 @@ import { prisma } from '@pontual/db'
 import { novoEstadoReceivable, planoTaxas } from './match-rules'
 import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
 import { compensado, ondeRef } from '@/lib/financeiro/livro'
-import { CONFLITO_BANCO, conflitoDeBanco, travarContas } from '@/lib/financeiro/livro-baixa-db'
+import { CONFLITO_BANCO, conflitoDeBanco, posAjuste, travarContas } from '@/lib/financeiro/livro-baixa-db'
 import { isReceivableSettled } from '@/lib/finance/receivable-status'
 import { avisarDuplicidade } from '@/lib/financeiro/aviso-duplicidade'
 
@@ -289,7 +289,8 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
           where: { company_id: companyId, bank_ref: `${proprio}:estorno` },
           select: { account_id: true, created_at: true },
         })
-        const vivos = creditos.filter((c) => !compensado(c, estornos))
+        // Fix 7 (F7-A): só o nocional posterior ao ajuste de caixa da conta (o anterior o ajuste já absorveu).
+        const vivos = await posAjuste(tx, companyId, creditos.filter((c) => !compensado(c, estornos)))
         if (!jaNoBanco) {
           for (const c of vivos.filter((v) => v.account_id === acquirerAccountId)) {
             await tx.transaction.delete({ where: { id: c.id } })

@@ -111,6 +111,21 @@ export function conflitoDeBanco(e: unknown): boolean {
   return typeof err.message === 'string' && /code\W{1,4}(40P01|40001)\b/i.test(err.message)
 }
 
+// Fix 7 (F7-A, #1): o ajuste de caixa do corte (AJUSTE:<conta>:<corte>) já absorveu todo lançamento da conta anterior
+// a ele — o mesmo critério do livro (creditoUsavelParaVinculo/buscarOrfao). Um SWAP só apaga nocional criado DEPOIS do
+// (último) ajuste da sua conta; conta sem ajuste → todos. Apagar o anterior descontaria o mesmo dinheiro 2x.
+export async function posAjuste<T extends { account_id: string; created_at: Date | null }>(db: any, companyId: string, lista: T[]): Promise<T[]> {
+  const limites = new Map<string, number>()
+  for (const conta of [...new Set(lista.map((t) => t.account_id))]) {
+    const ajustes: { created_at: Date | null }[] = await db.transaction.findMany({
+      where: { company_id: companyId, account_id: conta, bank_ref: { startsWith: `AJUSTE:${conta}:` } },
+      select: { created_at: true },
+    })
+    if (ajustes.length > 0) limites.set(conta, Math.max(...ajustes.map((a) => a.created_at?.getTime() ?? 0)))
+  }
+  return lista.filter((t) => !limites.has(t.account_id) || (t.created_at?.getTime() ?? 0) > (limites.get(t.account_id) as number))
+}
+
 // Toda conta que a rota vai escrever precisa estar entre as travadas; senão desfaz (ContaAlterada).
 export function exigirTravadas(travadas: Set<string>, ids: (string | null | undefined)[]): void {
   if (ids.some((id) => !!id && !travadas.has(id))) throw new ContaAlterada()
