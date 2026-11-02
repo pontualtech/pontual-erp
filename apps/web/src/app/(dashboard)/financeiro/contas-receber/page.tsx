@@ -614,7 +614,7 @@ export default function ContasReceberPage() {
           received_amount: amountInCents,
           received_at: baixaDate,
           account_id: baixaAccountId || undefined,
-          ...(dinheiro ? { dinheiro } : {}),
+          ...(dinheiro ? { dinheiro, lancados_vistos: (pergunta?.lancados ?? []).map((l) => l.id) } : {}),
         }),
       })
       const data = await res.json()

@@ -777,6 +777,36 @@ describe('F7-A (#1): Conferir só troca nocional posterior ao ajuste de caixa', 
   })
 })
 
+describe('F8-E (m5/m6): F6-B com livro[ar] = linha ASAAS:PAY e dinheiro da AR em OUTRA conta → erro, como produção', () => {
+  const ASSAS = '99999999-9999-4999-8999-999999999999'
+  const CAIXA = '33333333-3333-4333-8333-333333333333'
+
+  it('nocional AR:a1 vivo no Caixa (Receber manual) → erros "há dinheiro desta conta em Caixa; confira antes de ligar"; nada gravado', async () => {
+    banco.conta({ id: ASSAS, name: 'ASSAS', current_balance: 0 })
+    banco.conta({ id: CAIXA, name: 'Caixa', current_balance: 15000 })
+    banco.ar(AR)
+    banco.pagamento({ receivable_id: 'a1', provider: 'asaas', external_id: 'pay_x', status: 'RECEIVED', amount: 15000 })
+    banco.transacao({ id: 'noc', account_id: CAIXA, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1' })
+    linhaLivro({ account_id: ASSAS, bank_ref: 'ASAAS:PAY:pay_x', amount: 14550 })
+    const { j } = await conferir(['a1'], { a1: 't1' })
+    expect(j.data).toEqual(expect.objectContaining({ updated: 0, ligadas: 0, erros: [{ ar: 'a1', motivo: 'há dinheiro desta conta em Caixa; confira antes de ligar' }] }))
+    expect(banco.tx_('t1')!.linked_ref).toBeNull()
+    expect(banco.tx_('noc')).toBeDefined()
+    expect(ar().status).toBe('RECEBIDO')
+  })
+
+  it('o nocional na MESMA conta da linha continua sendo o SWAP (m10)', async () => {
+    banco.conta({ id: ASSAS, name: 'ASSAS', current_balance: 15000 })
+    banco.ar(AR)
+    banco.pagamento({ receivable_id: 'a1', provider: 'asaas', external_id: 'pay_x', status: 'RECEIVED', amount: 15000 })
+    banco.transacao({ id: 'noc', account_id: ASSAS, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1' })
+    linhaLivro({ account_id: ASSAS, bank_ref: 'ASAAS:PAY:pay_x', amount: 14550 })
+    const { j } = await conferir(['a1'], { a1: 't1' })
+    expect(j.data).toEqual(expect.objectContaining({ ligadas: 1, erros: [] }))
+    expect(banco.tx_('noc')).toBeUndefined()
+  })
+})
+
 describe('F7-C (#6): Desfazer desliga a linha e o Conferir seguinte a RELIGA', () => {
   it('linha ligada a AR:a1 de 40 dias atrás → Desfazer → Conferir → religa (sem crédito novo)', async () => {
     banco.ar({ ...AR, status: 'LIQUIDADO', reconciled: true })

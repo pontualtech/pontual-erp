@@ -116,8 +116,16 @@ export async function POST(req: NextRequest, { params }: Params) {
           select: { id: true, amount: true, account_id: true, source_text: true, categories: { select: { name: true } } },
         })).filter((l: { categories?: { name: string | null } | null }) => !foraDoTotal(l))
       const haDinheiro = dinheiro.total > previousReceived || desligadas.length > 0
-      if (haDinheiro && !data.dinheiro) {
-        throw new DinheiroJaLancado(await descreverDinheiro(tx, user.companyId, { ...dinheiro, linhas: [...dinheiro.linhas, ...desligadas] }))
+      const lancados = haDinheiro ? await descreverDinheiro(tx, user.companyId, { ...dinheiro, linhas: [...dinheiro.linhas, ...desligadas] }) : []
+      if (haDinheiro && !data.dinheiro) throw new DinheiroJaLancado(lancados)
+      // Fix 8 (F8-E, m4): a resposta vale para a lista que o operador viu — mudou (entrou ou saiu dinheiro) → pergunta de
+      // novo com a lista atual; sumiu tudo → 409 sem lançar nada.
+      if (data.dinheiro && data.lancados_vistos) {
+        const chave = (ids: string[]) => [...ids].sort().join('|')
+        if (chave(lancados.map((l) => l.id)) !== chave(data.lancados_vistos)) {
+          if (lancados.length > 0) throw new DinheiroJaLancado(lancados)
+          throw new ConflitoBaixa('o dinheiro lançado desta conta mudou — confira de novo')
+        }
       }
       const jaLancado = haDinheiro && data.dinheiro === 'mesmo'
       if (jaLancado) exigirTravadas(travadas, desligadas.map((l) => l.account_id))

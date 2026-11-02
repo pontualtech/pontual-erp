@@ -323,7 +323,7 @@ describe('F7-D (#8, #13): Receber pela tela pergunta quando a conta já tem dinh
     expect(j).toEqual(expect.objectContaining({
       code: 'DINHEIRO_JA_LANCADO',
       error: expect.stringMatching(/^Esta conta já tem dinheiro lançado: .*R\$ 500,00 em 20\/10\/2026.*É um novo pagamento\?$/),
-      lancados: [{ origem: 'boleto (CNAB) cnab:123', valor_centavos: 50000, data: '2026-10-20', conta: 'Banco Inter' }],
+      lancados: [{ id: expect.any(String), origem: 'boleto (CNAB) cnab:123', valor_centavos: 50000, data: '2026-10-20', conta: 'Banco Inter' }],
     }))
     expect(ar()).toEqual(expect.objectContaining({ status: 'PENDENTE', received_amount: 0 }))
     expect(banco.tx.account.update).not.toHaveBeenCalled()
@@ -437,6 +437,49 @@ describe('F8-C: linhas livres desligadas desta AR (Desfazer) também fazem o Rec
     expect(j.error).toBe('conta alterada — repita')
     expect(banco.tx_('d1')!.linked_ref).toBeNull()
     expect(ar().status).toBe('PENDENTE')
+  })
+})
+
+describe('F8-E (m4): a resposta do Receber vale para a lista que o operador viu (lancados_vistos)', () => {
+  const INTER = '55555555-5555-4555-8555-555555555555'
+  const prep = () => {
+    banco.conta({ id: INTER, name: 'Banco Inter', current_balance: 50000 })
+    banco.ar({ ...AR, total_amount: 50000, account_id: INTER, pix_code: JSON.stringify({ nossoNumero: '123' }) })
+    banco.transacao({ id: 'cn', account_id: INTER, transaction_type: 'CREDIT', amount: 50000, bank_ref: 'cnab:123', transaction_date: new Date('2026-10-20T00:00:00Z') })
+  }
+
+  it('o 409 traz o id de cada lançamento', async () => {
+    prep()
+    const { j } = await receber({ received_amount: 50000 })
+    expect(j.lancados).toEqual([expect.objectContaining({ id: 'cn', valor_centavos: 50000 })])
+  })
+
+  it("'mesmo' com a mesma lista → só marca recebida", async () => {
+    prep()
+    const { status, j } = await receber({ received_amount: 50000, dinheiro: 'mesmo', lancados_vistos: ['cn'] })
+    expect(status).toBe(200)
+    expect(j.data.status).toBe('RECEBIDO')
+    expect(creditosAR()).toEqual([])
+  })
+
+  it("'mesmo', mas o dinheiro mostrado sumiu (ex.: reembolso no meio) → 409 'mudou', nada gravado", async () => {
+    prep()
+    banco.tabelas.transaction = banco.tabelas.transaction.filter((t) => t.id !== 'cn')
+    const { status, j } = await receber({ received_amount: 50000, dinheiro: 'mesmo', lancados_vistos: ['cn'] })
+    expect(status).toBe(409)
+    expect(j.error).toBe('o dinheiro lançado desta conta mudou — confira de novo')
+    expect(ar().status).toBe('PENDENTE')
+    expect(creditosAR()).toEqual([])
+  })
+
+  it("'novo', mas entrou dinheiro que não estava na lista → pergunta de novo com a lista nova", async () => {
+    prep()
+    banco.transacao({ id: 'nv', account_id: INTER, transaction_type: 'CREDIT', amount: 50000, bank_ref: 'AR:r1', transaction_date: new Date('2026-10-29T00:00:00Z') })
+    const { status, j } = await receber({ received_amount: 50000, dinheiro: 'novo', lancados_vistos: ['cn'] })
+    expect(status).toBe(409)
+    expect(j.code).toBe('DINHEIRO_JA_LANCADO')
+    expect(j.lancados.map((l: { id: string }) => l.id).sort()).toEqual(['cn', 'nv'])
+    expect(creditosAR()).toHaveLength(1)
   })
 })
 

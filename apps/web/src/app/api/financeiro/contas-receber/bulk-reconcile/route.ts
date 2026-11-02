@@ -150,6 +150,15 @@ export async function POST(req: NextRequest) {
               where: { id: pedido, company_id: user.companyId, origin: 'BANCO', linked_ref: null, bank_ref: { in: refsPay.map((r) => `ASAAS:PAY:${r}`) } },
               select: SELECT_ASAAS_PAY,
             }) : null
+            // Fix 8 (F8-E, m5/m6): com a linha pedida, dinheiro desta AR em OUTRA conta (Receber manual no Caixa/Itaú) é
+            // possível duplicidade — como produção, não liga: devolve o erro para alguém conferir.
+            if (linhaPedida && dinheiro) {
+              const fora = [...new Set([...dinheiro.linhas, ...dinheiro.nocionais].map((t) => t.account_id))].filter((c) => c !== linhaPedida.account_id)
+              if (fora.length > 0) {
+                const nomes: { id: string; name: string | null }[] = await tx.account.findMany({ where: { company_id: user.companyId, id: { in: fora } }, select: { id: true, name: true } })
+                return { erro: `há dinheiro desta conta em ${fora.map((c) => nomes.find((n) => n.id === c)?.name ?? c).join(', ')}; confira antes de ligar` }
+              }
+            }
             const semDinheiro = !!dinheiro && dinheiro.linhas.length === 0 && dinheiro.nocionais.length === 0
             const confirmada = !!dinheiro && dinheiro.refs.pagamentos.some((p) => p.provider === 'asaas' && p.status === 'CONFIRMED')
             if (linhaPedida || (!pedido && semDinheiro && !confirmada)) {

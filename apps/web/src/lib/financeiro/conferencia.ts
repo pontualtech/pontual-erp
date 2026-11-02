@@ -44,7 +44,7 @@ export function resultadoRetornoCnab(d: {
 }
 
 // Fix 7 (F7-D): 409 DINHEIRO_JA_LANCADO do Receber — a tela pergunta "é um novo pagamento?" com os lançamentos.
-export interface LancamentoJaLancado { origem: string; valor_centavos: number; data: string; conta: string | null }
+export interface LancamentoJaLancado { id: string; origem: string; valor_centavos: number; data: string; conta: string | null }
 export function perguntaDinheiro(
   status: number,
   corpo: { code?: unknown; error?: unknown; lancados?: unknown } | null | undefined,

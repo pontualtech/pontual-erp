@@ -284,7 +284,7 @@ export async function dinheiroDaAP(db: any, companyId: string, apId: string): Pr
 }
 
 // Fix 7 (F7-D): o dinheiro já lançado de uma conta, para a pergunta "é um novo pagamento?" do Receber pela tela.
-export interface LancamentoDaConta { origem: string; valor_centavos: number; data: string; conta: string | null }
+export interface LancamentoDaConta { id: string; origem: string; valor_centavos: number; data: string; conta: string | null }
 const rotuloRef = (ref: string) =>
   ref.startsWith('acquirer:') ? 'maquininha'
     : ref.startsWith('pay_') ? 'Asaas'
@@ -309,6 +309,7 @@ export async function descreverDinheiro(db: any, companyId: string, dinheiro: Di
   return ts.map((t) => {
     const ref = (t.origin === 'BANCO' ? t.linked_ref : t.bank_ref) ?? ''
     return {
+      id: t.id, // Fix 8 (F8-E, m4): a tela devolve os ids vistos (lancados_vistos)
       // Fix 8 (F8-C): linha livre desligada desta conta (Desfazer).
       origem: t.origin === 'BANCO' && !t.linked_ref ? `linha do extrato desligada (${t.desligada_de ?? ''})`
         : t.origin === 'BANCO' ? `linha do extrato (${rotuloRef(ref)} ${ref})` : `${rotuloRef(ref)} ${ref}`,

@@ -529,6 +529,19 @@ describe('F7-E (#16, m2, m4, m8): FiscalEntry negativo pelo positivo do pagament
     expect(negativos()).toHaveLength(1)
   })
 
+  it('m7 (F8-E): reversão de chargeback com FE+ → FE− já no evento do chargeback, pelo valor do pagamento', async () => {
+    banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'DISPUTED', amount: 100000, billing_type: 'CREDIT_CARD' })
+    banco.inserir('fiscalEntry', { id: 'fe1', company_id: 'c1', payment_id: 'p1', amount: BigInt(100000) })
+    expect(await evento('evt_cb1', 'PAYMENT_AWAITING_CHARGEBACK_REVERSAL')).toBe(200)
+    expect(negativos()).toEqual([expect.objectContaining({ amount: BigInt(-100000), payment_id: 'p1' })])
+  })
+
+  it('m7 (F8-E): cartão só CONFIRMED (sem FE+) → reversão de chargeback → nenhum FE−', async () => {
+    banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'CONFIRMED', amount: 100000, billing_type: 'CREDIT_CARD' })
+    expect(await evento('evt_cb2', 'PAYMENT_AWAITING_CHARGEBACK_REVERSAL')).toBe(200)
+    expect(negativos()).toEqual([])
+  })
+
   it('CONFIRMED → REFUNDED (sem FE+) → nenhum FE−', async () => {
     banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'CONFIRMED', amount: 100000, billing_type: 'CREDIT_CARD' })
     expect(await evento('evt_fe4', 'PAYMENT_REFUNDED')).toBe(200)

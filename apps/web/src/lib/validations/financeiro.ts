@@ -23,4 +23,6 @@ export const baixaSchema = z.object({
   // Fix 7 (F7-D): resposta do operador quando a conta já tem dinheiro lançado — 'novo' (outro pagamento: lança) ou
   // 'mesmo' (é o dinheiro já lançado: só marca recebida). Sem ela, a rota pergunta (409 DINHEIRO_JA_LANCADO).
   dinheiro: z.enum(['novo', 'mesmo']).optional(),
+  // Fix 8 (F8-E, m4): ids dos lançamentos que a tela mostrou na pergunta — se a lista mudou, a rota pergunta de novo.
+  lancados_vistos: z.array(z.string()).max(500).optional(),
 })

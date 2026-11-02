@@ -265,7 +265,7 @@ export default function ContaReceberDetalhePage() {
     try {
       const res = await fetch(`/api/financeiro/contas-receber/${id}/baixa`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ received_amount: Math.round(parseFloat(baixaAmount) * 100), received_at: baixaDate, account_id: baixaAccountId, ...(dinheiro ? { dinheiro } : {}) }),
+        body: JSON.stringify({ received_amount: Math.round(parseFloat(baixaAmount) * 100), received_at: baixaDate, account_id: baixaAccountId, ...(dinheiro ? { dinheiro, lancados_vistos: (pergunta?.lancados ?? []).map((l) => l.id) } : {}) }),
       })
       const d = await res.json()
       const p = perguntaDinheiro(res.status, d)
