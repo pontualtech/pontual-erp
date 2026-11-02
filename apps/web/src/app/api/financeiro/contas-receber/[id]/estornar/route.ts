@@ -91,9 +91,15 @@ export async function POST(req: NextRequest, { params }: Params) {
         // banco); (iii) conta criada antes de 22/05; (iv) updated_at antigo OU a própria transação legada — CREDIT do ERP
         // sem bank_ref, do valor recebido, na conta da AR, antes de 22/05 e com descrição 'Recebimento: ' (o valor
         // sozinho casava o recebimento de outra AR).
+        // Fix 4 (F4-A, #1): a transação legada é a DESTA AR — descrição exata que a baixa antiga gravava
+        // ('Recebimento: ' + descrição; o prefixo casava o de outra OS do mesmo valor) — e a AR não foi paga por fora:
+        // cobrança Asaas CONFIRMED/RECEIVED ou venda do adquirente quitam sem lançamento próprio (o crédito vem/virá
+        // pelo webhook/match), então nunca há legado a compensar. Vale também para o ramo do updated_at antigo.
         const recebido = ar.received_amount ?? 0
         const candidataLegado = quitada && !!ar.account_id && recebido > 0 && doAR.length === 0 && ligadas.length === 0
-        const legado = candidataLegado
+        const pagaPorFora = refs.pagamentos.some((p) =>
+          (p.provider === 'asaas' && (p.status === 'CONFIRMED' || p.status === 'RECEIVED')) || p.provider === 'rede')
+        const legado = candidataLegado && !pagaPorFora
           && !!ar.created_at && ar.created_at.getTime() < LEGADO_ATE.getTime()
           && (await dinheiroDaAR(tx, user.companyId, ar)).total === 0
           && (
@@ -101,7 +107,7 @@ export async function POST(req: NextRequest, { params }: Params) {
             || (await tx.transaction.count({
               where: {
                 company_id: user.companyId, account_id: ar.account_id!, transaction_type: 'CREDIT', amount: recebido,
-                bank_ref: null, origin: null, created_at: { lt: LEGADO_ATE }, description: { startsWith: 'Recebimento: ' },
+                bank_ref: null, origin: null, created_at: { lt: LEGADO_ATE }, description: `Recebimento: ${ar.description}`,
               },
             })) > 0
           )

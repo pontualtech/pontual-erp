@@ -105,6 +105,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         // Fix 3 (F3-A, espelho da AR): (ii) nenhuma saída já lançada da AP; (iii) conta criada antes de 22/05; (iv) updated_at
         // antigo OU a própria transação legada — DEBIT do ERP sem bank_ref, do valor pago, na conta da AP, antes de 22/05
         // e com descrição 'Pgto: ' (o valor sozinho casava o pagamento de outra AP).
+        // Fix 4 (F4-A, #1): a transação legada é a DESTA AP — descrição exata 'Pgto: ' + descrição (o formato da baixa antiga).
         const pago = ap.paid_amount ?? 0
         const candidataLegado = paga && !!ap.account_id && pago > 0 && daAP.length === 0 && ligadas.length === 0
         const legado = candidataLegado
@@ -115,7 +116,7 @@ export async function POST(req: NextRequest, { params }: Params) {
             || (await tx.transaction.count({
               where: {
                 company_id: user.companyId, account_id: ap.account_id!, transaction_type: 'DEBIT', amount: pago,
-                bank_ref: null, origin: null, created_at: { lt: LEGADO_ATE }, description: { startsWith: 'Pgto: ' },
+                bank_ref: null, origin: null, created_at: { lt: LEGADO_ATE }, description: `Pgto: ${ap.description}`,
               },
             })) > 0
           )

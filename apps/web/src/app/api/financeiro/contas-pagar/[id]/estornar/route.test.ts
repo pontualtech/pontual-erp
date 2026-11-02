@@ -152,20 +152,23 @@ describe('F2-D (m9): conflito do banco no estorno de AP', () => {
 
 describe('F2-E (#5, m4): legado detectado pela própria transação', () => {
   it('AP paga em 10/05 (DEBIT sem bank_ref) e conferida/editada em 25/05 (updated_at novo): compensa o paid_amount', async () => {
-    banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 120000, total_amount: 120000, updated_at: new Date('2026-05-25T15:00:00Z'), created_at: new Date('2026-05-01T12:00:00Z') })
+    banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 120000, total_amount: 120000, description: 'Aluguel', updated_at: new Date('2026-05-25T15:00:00Z'), created_at: new Date('2026-05-01T12:00:00Z') })
     banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 120000, bank_ref: null, description: 'Pgto: Aluguel', created_at: new Date('2026-05-10T15:00:00Z') })
     expect((await est()).status).toBe(200)
     expect(doAP()).toEqual([expect.objectContaining({ bank_ref: 'AP:p1:estorno', transaction_type: 'CREDIT', amount: 120000, account_id: ACC })])
     expect(banco.saldo(ACC)).toBe(220000)
   })
 
-  it('sem transação legada (valor/tipo/data não batem) e updated_at recente: (d) só status', async () => {
-    banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 120000, total_amount: 120000, updated_at: new Date('2026-05-25T15:00:00Z') })
-    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 99000, bank_ref: null, created_at: new Date('2026-05-10T15:00:00Z') })
-    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 120000, bank_ref: null, created_at: new Date('2026-06-10T15:00:00Z') })
-    expect((await est()).status).toBe(200)
-    expect(doAP()).toEqual([])
-    expect(banco.saldo(ACC)).toBe(100000)
+  it('"Pgto: Aluguel" de outra conta, de linha do banco, de outro valor ou de depois de 22/05: (d) só status', async () => {
+    // Fix 4 (F4-A, #8): AP antiga e descrição no formato certo — só conta/origem/valor/data separam do positivo acima.
+    for (const extra of [{ account_id: ACC2 }, { origin: 'BANCO' }, { amount: 99000 }, { created_at: new Date('2026-06-10T15:00:00Z') }]) {
+      banco.reset(); banco.categoriasPadrao(); banco.conta({ id: ACC, current_balance: 100000 }); banco.conta({ id: ACC2, current_balance: 0 })
+      banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 120000, total_amount: 120000, description: 'Aluguel', updated_at: new Date('2026-05-25T15:00:00Z'), created_at: new Date('2026-05-01T12:00:00Z') })
+      banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 120000, bank_ref: null, description: 'Pgto: Aluguel', created_at: new Date('2026-05-10T15:00:00Z'), ...extra })
+      expect((await est()).status, JSON.stringify(extra)).toBe(200)
+      expect(doAP(), JSON.stringify(extra)).toEqual([])
+      expect(banco.saldo(ACC)).toBe(100000)
+    }
   })
 })
 
@@ -234,3 +237,12 @@ describe('F3-C (#2): 409 da taxa do adquirente só quando a AP não tem saída p
   })
 })
 
+describe('F4-A (#1, espelho na AP): legado (c) só com o "Pgto: <descrição desta AP>"', () => {
+  it('"Pgto: <outra AP>" de mesmo valor, na conta, antes de 22/05 → (d)', async () => {
+    banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 120000, total_amount: 120000, description: 'Aluguel junho', updated_at: new Date('2026-10-30T15:00:00Z'), created_at: new Date('2026-05-01T12:00:00Z') })
+    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 120000, bank_ref: null, description: 'Pgto: Aluguel abril', created_at: new Date('2026-05-10T15:00:00Z') })
+    expect((await est()).status).toBe(200)
+    expect(doAP()).toEqual([])
+    expect(banco.saldo(ACC)).toBe(100000)
+  })
+})

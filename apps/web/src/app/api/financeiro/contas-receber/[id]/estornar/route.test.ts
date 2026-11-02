@@ -255,19 +255,23 @@ describe('cenários dos achados (fluxo completo, saldo do ERP = banco)', () => {
 
 describe('F2-E (#5, m4): legado detectado pela própria transação (AR)', () => {
   it('AR recebida em 15/05 (CREDIT sem bank_ref) e editada em 01/11: compensa o received_amount', async () => {
-    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 40000, total_amount: 40000, updated_at: new Date('2026-11-01T15:00:00Z'), created_at: new Date('2026-05-01T12:00:00Z') })
+    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 40000, total_amount: 40000, description: 'OS 1', updated_at: new Date('2026-11-01T15:00:00Z'), created_at: new Date('2026-05-01T12:00:00Z') })
     banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 40000, bank_ref: null, description: 'Recebimento: OS 1', created_at: new Date('2026-05-15T15:00:00Z') })
     expect((await est()).status).toBe(200)
     expect(doAR()).toEqual([expect.objectContaining({ bank_ref: 'AR:r1:estorno', transaction_type: 'DEBIT', amount: 40000 })])
     expect(banco.saldo(ACC)).toBe(60000)
   })
 
-  it('crédito sem bank_ref de outra conta ou de linha do banco não conta como legado: (d)', async () => {
-    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 40000, total_amount: 40000, updated_at: new Date('2026-11-01T15:00:00Z') })
-    banco.transacao({ account_id: ACC2, transaction_type: 'CREDIT', amount: 40000, bank_ref: null, created_at: new Date('2026-05-15T15:00:00Z') })
-    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 40000, bank_ref: null, origin: 'BANCO', created_at: new Date('2026-05-15T15:00:00Z') })
-    expect((await est()).status).toBe(200)
-    expect(doAR()).toEqual([])
+  it('crédito "Recebimento: OS 1" de outra conta, de linha do banco, de outro valor ou de depois de 22/05 não conta como legado: (d)', async () => {
+    // Fix 4 (F4-A, #8): AR antiga e descrição no formato certo — só conta/origem/valor/data separam do positivo acima.
+    for (const extra of [{ account_id: ACC2 }, { origin: 'BANCO' }, { amount: 39000 }, { created_at: new Date('2026-06-10T15:00:00Z') }]) {
+      banco.reset(); banco.categoriasPadrao(); banco.conta({ id: ACC, current_balance: 100000 }); banco.conta({ id: ACC2, current_balance: 0 })
+      banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 40000, total_amount: 40000, description: 'OS 1', updated_at: new Date('2026-11-01T15:00:00Z'), created_at: new Date('2026-05-01T12:00:00Z') })
+      banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 40000, bank_ref: null, description: 'Recebimento: OS 1', created_at: new Date('2026-05-15T15:00:00Z'), ...extra })
+      expect((await est()).status, JSON.stringify(extra)).toBe(200)
+      expect(doAR(), JSON.stringify(extra)).toEqual([])
+      expect(banco.saldo(ACC)).toBe(100000)
+    }
   })
 })
 
@@ -351,11 +355,78 @@ describe('F3-A (#1, #6, #8, #10, m10): legado (c) só sem dinheiro externo, só 
     }
   })
 
-  it('conta antiga sem dinheiro externo e com a transação legada "Recebimento: …" → (c) compensa', async () => {
-    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000, updated_at: RECENTE, created_at: new Date('2026-05-01T12:00:00Z') })
-    creditoLegado()
+  it('conta antiga sem dinheiro externo e com a transação legada "Recebimento: <descrição dela>" → (c) compensa', async () => {
+    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000, description: 'OS 1', updated_at: RECENTE, created_at: new Date('2026-05-01T12:00:00Z') })
+    creditoLegado({ description: 'Recebimento: OS 1' })
     expect((await est()).status).toBe(200)
     expect(doAR().filter((t) => t.bank_ref === 'AR:r1:estorno')).toEqual([expect.objectContaining({ amount: 15000, account_id: ACC })])
     expect(banco.saldo(ACC)).toBe(85000)
+  })
+})
+
+describe('F4-A (#1, m12): legado (c) só com a transação DESTA AR e sem pagamento por fora', () => {
+  const MAIO = new Date('2026-05-10T15:00:00Z')
+  const RECENTE = new Date('2026-11-01T15:00:00Z')
+  const arAntiga = (extra: Record<string, unknown> = {}) => banco.ar({
+    id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 35000, total_amount: 35000, description: 'OS 60100',
+    updated_at: RECENTE, created_at: new Date('2026-05-15T12:00:00Z'), ...extra,
+  })
+  const legado = (description: string) =>
+    banco.transacao({ id: 'leg', account_id: ACC, transaction_type: 'CREDIT', amount: 35000, bank_ref: null, description, created_at: MAIO })
+  const soStatus = () => {
+    expect(doAR().filter((t) => t.bank_ref === 'AR:r1:estorno')).toEqual([])
+    expect(banco.saldo(ACC)).toBe(100000)
+    expect(ar()).toEqual(expect.objectContaining({ status: 'PENDENTE', received_amount: 0 }))
+  }
+
+  it('#1: AR de 15/05 quitada por cartão Asaas CONFIRMED (sem crédito ainda) + "Recebimento: OS-outra" de mesmo valor → (d)', async () => {
+    arAntiga()
+    banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_x', status: 'CONFIRMED' })
+    legado('Recebimento: OS 59999')
+    expect((await est()).status).toBe(200)
+    soStatus()
+  })
+
+  it('"Recebimento: OS-outra" de mesmo valor, sem pagamento nenhum (balcão / reconcile sem crédito) → (d)', async () => {
+    arAntiga()
+    legado('Recebimento: OS 59999')
+    expect((await est()).status).toBe(200)
+    soStatus()
+  })
+
+  it('a transação exata desta AR, mas com Payment Asaas CONFIRMED/RECEIVED ou venda do adquirente → (d) (o dinheiro vem/virá por fora)', async () => {
+    for (const p of [{ provider: 'asaas', status: 'CONFIRMED' }, { provider: 'asaas', status: 'RECEIVED' }, { provider: 'rede', status: 'CONFIRMED' }]) {
+      banco.reset(); banco.categoriasPadrao(); banco.conta({ id: ACC, current_balance: 100000 })
+      arAntiga()
+      banco.pagamento({ receivable_id: 'r1', external_id: 'x1', ...p })
+      legado('Recebimento: OS 60100')
+      expect((await est()).status, JSON.stringify(p)).toBe(200)
+      soStatus()
+    }
+  })
+
+  it('ramo updated_at antigo também exige ausência de pagamento por fora → (d)', async () => {
+    arAntiga({ updated_at: new Date('2026-05-16T12:00:00Z') })
+    banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_x', status: 'CONFIRMED' })
+    expect((await est()).status).toBe(200)
+    soStatus()
+  })
+
+  it('cobrança Asaas não paga (PENDING) não impede: transação exata "Recebimento: OS 60100" → (c)', async () => {
+    arAntiga()
+    banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_x', status: 'PENDING' })
+    legado('Recebimento: OS 60100')
+    expect((await est()).status).toBe(200)
+    expect(doAR().filter((t) => t.bank_ref === 'AR:r1:estorno')).toEqual([expect.objectContaining({ amount: 35000, account_id: ACC })])
+    expect(banco.saldo(ACC)).toBe(65000)
+  })
+
+  it('m12: AR antiga com crédito nocional externo vivo (cnab:) + transação exata → (d) pela (ii)', async () => {
+    arAntiga({ pix_code: JSON.stringify({ nossoNumero: '777' }) })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 35000, bank_ref: 'cnab:777', created_at: new Date('2026-05-16T12:00:00Z') })
+    legado('Recebimento: OS 60100')
+    expect((await est()).status).toBe(200)
+    expect(doAR().filter((t) => t.bank_ref === 'AR:r1:estorno')).toEqual([])
+    expect(banco.saldo(ACC)).toBe(100000)
   })
 })
