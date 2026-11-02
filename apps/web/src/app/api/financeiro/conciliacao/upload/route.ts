@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { ondeRef } from '@/lib/financeiro/livro'
+import { travarContas } from '@/lib/financeiro/livro-baixa-db'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 
@@ -206,6 +207,8 @@ export async function POST(request: NextRequest) {
       netBalanceDelta = newTransactions.reduce((acc, t) => acc + classify(t).signed, 0)
 
       await prisma.$transaction(async (tx) => {
+        // Fix 3 (F3-J, m1): ordem única de travas (§7) — a conta antes das linhas e do saldo.
+        await travarContas(tx, user.companyId, [accountId])
         await tx.transaction.createMany({
           data: newTransactions.map(t => ({
             company_id: user.companyId,

@@ -41,3 +41,14 @@ describe('OFX — "já importado" vale também para a transação convertida pel
     expect(banco.saldo('acc1')).toBe(50000)
   })
 })
+
+describe('F3-J (m1): upload do OFX trava a conta antes de escrever', () => {
+  it('accounts (FOR UPDATE) antes do createMany e do saldo', async () => {
+    await enviar(upload)
+    const trava = banco.travas.find((t) => t.tabela === 'accounts' && t.id === 'acc1')!
+    expect(trava).toBeDefined()
+    const escrita = banco.log.find((o) => ['transaction', 'account'].includes(o.modelo) && ['createMany', 'update'].includes(o.op))!
+    expect(trava.seq).toBeLessThan(escrita.seq)
+    expect(banco.saldo('acc1')).toBe(50000)
+  })
+})

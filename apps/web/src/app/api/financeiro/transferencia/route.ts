@@ -4,6 +4,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
+import { travarContas } from '@/lib/financeiro/livro-baixa-db'
 
 /**
  * Sprint UX-23 — Transferência entre Bancos
@@ -70,6 +71,9 @@ export async function POST(req: NextRequest) {
       `Transferência ${fromAccount.name} → ${toAccount.name}`
 
     const result_tx = await prisma.$transaction(async tx => {
+      // Fix 3 (F3-J, m1): ordem única de travas (§7) — as duas contas, por id, antes de qualquer escrita; antes
+      // atualizava origem → destino e cruzava com estorno/Conferir/livro que travam por id (deadlock → 500).
+      await travarContas(tx, user.companyId, [data.from_account_id, data.to_account_id])
       // 1. DEBIT origem
       const debit = await tx.transaction.create({
         data: {

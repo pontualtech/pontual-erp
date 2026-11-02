@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { isReceivableSettled } from '@/lib/finance/receivable-status'
+import { travarContas } from '@/lib/financeiro/livro-baixa-db'
 
 type Params = { params: { id: string } }
 
@@ -115,6 +116,8 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!account.is_active) return error('Conta bancaria desativada — escolha outra', 400)
 
     const updated = await prisma.$transaction(async (tx) => {
+      // Fix 3 (F3-J, m1): ordem única de travas (§7) — a conta antes das parcelas, do crédito e da AR.
+      await travarContas(tx, user.companyId, [requestedAccountId])
       // Mark all pending installments as received with fee deducted
       for (const inst of installmentDetails) {
         await tx.installment.update({
