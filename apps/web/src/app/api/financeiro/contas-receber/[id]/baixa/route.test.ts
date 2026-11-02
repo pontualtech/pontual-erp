@@ -194,3 +194,11 @@ describe('F2-D (m9): conflito do banco (P2034/P2028) vira 409, não 500', () => 
     expect(ar().status).toBe('PENDENTE')
   })
 })
+
+describe('F2-G (m21): opções da $transaction', () => {
+  it('maxWait 10s e timeout 20s', async () => {
+    banco.ar(AR)
+    await receber()
+    expect(banco.transacoes.map((t) => t.opcoes)).toEqual([{ maxWait: 10000, timeout: 20000 }])
+  })
+})

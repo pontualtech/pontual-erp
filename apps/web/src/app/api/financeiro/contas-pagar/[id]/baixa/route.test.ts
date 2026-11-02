@@ -291,3 +291,10 @@ describe('F2-A (#3): Pagar enxerga a saída já lançada da AP', () => {
   })
 })
 
+describe('F2-G (m21): opções da $transaction', () => {
+  it('maxWait 10s e timeout 20s', async () => {
+    banco.ap(AP)
+    await pagar({ paid_amount: 5000, paid_at: '2026-10-29' })
+    expect(banco.transacoes.map((t) => t.opcoes)).toEqual([{ maxWait: 10000, timeout: 20000 }])
+  })
+})

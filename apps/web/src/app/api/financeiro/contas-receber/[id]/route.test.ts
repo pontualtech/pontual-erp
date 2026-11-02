@@ -185,3 +185,10 @@ describe('fix 1.4 (#15): o dinheiro da AR inclui Payments (pay_/acquirer:) e CNA
   })
 })
 
+describe('F2-G (m21): opções da $transaction', () => {
+  it('maxWait 10s e timeout 20s', async () => {
+    banco.ar(AR)
+    await excluir()
+    expect(banco.transacoes.map((t) => t.opcoes)).toEqual([{ maxWait: 10000, timeout: 20000 }])
+  })
+})

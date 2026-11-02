@@ -106,3 +106,10 @@ describe('fix 1.4 (#15, espelho na AP)', () => {
   })
 })
 
+describe('F2-G (m21): opções da $transaction', () => {
+  it('maxWait 10s e timeout 20s', async () => {
+    banco.ap(AP)
+    await excluir()
+    expect(banco.transacoes.map((t) => t.opcoes)).toEqual([{ maxWait: 10000, timeout: 20000 }])
+  })
+})

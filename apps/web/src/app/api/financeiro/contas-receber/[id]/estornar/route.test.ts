@@ -270,3 +270,28 @@ describe('F2-E (#5, m4): legado detectado pela própria transação (AR)', () =>
     expect(doAR()).toEqual([])
   })
 })
+
+describe('F2-G (#11): marcador antigo LIGADA (dinheiro do banco antes da migração) não é compensado', () => {
+  it('crédito AR:id com source_text LIGADA:… e origin null: nada de DEBIT nem saldo', async () => {
+    banco.ar({ id: 'r1', status: 'LIQUIDADO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:r1', source_text: 'LIGADA:ITAU:k' })
+    expect((await est()).status).toBe(200)
+    expect(doAR().filter((t) => t.bank_ref === 'AR:r1:estorno')).toEqual([])
+    expect(banco.saldo(ACC)).toBe(100000)
+  })
+
+  it('LIGADA + crédito próprio sem banco: compensa só o sem banco', async () => {
+    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 12000, bank_ref: 'AR:r1', source_text: 'LIGADA:k1' })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 3000, bank_ref: 'AR:r1' })
+    await est()
+    expect(doAR().filter((t) => t.bank_ref === 'AR:r1:estorno')).toEqual([expect.objectContaining({ amount: 3000 })])
+    expect(banco.saldo(ACC)).toBe(97000)
+  })
+
+  it('m21: a tx do estorno usa maxWait 10s e timeout 20s', async () => {
+    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
+    await est()
+    expect(banco.transacoes.map((t) => t.opcoes)).toEqual([{ maxWait: 10000, timeout: 20000 }])
+  })
+})

@@ -168,3 +168,19 @@ describe('F2-E (#5, m4): legado detectado pela própria transação', () => {
     expect(banco.saldo(ACC)).toBe(100000)
   })
 })
+
+describe('F2-G (#12): DEBIT AP:id com marcador antigo LIGADA não é compensado', () => {
+  it('source_text LIGADA:… e origin null: nada de CREDIT nem saldo', async () => {
+    banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 5000, total_amount: 5000 })
+    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 5000, bank_ref: 'AP:p1', source_text: 'LIGADA:ITAU:k' })
+    expect((await est()).status).toBe(200)
+    expect(doAP().filter((t) => t.bank_ref === 'AP:p1:estorno')).toEqual([])
+    expect(banco.saldo(ACC)).toBe(100000)
+  })
+
+  it('m21: a tx do estorno usa maxWait 10s e timeout 20s', async () => {
+    banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 5000, total_amount: 5000 })
+    await est()
+    expect(banco.transacoes.map((t) => t.opcoes)).toEqual([{ maxWait: 10000, timeout: 20000 }])
+  })
+})

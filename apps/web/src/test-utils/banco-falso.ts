@@ -115,6 +115,8 @@ export function criarBanco() {
   const transacoes: { opcoes: unknown; desfeita: boolean }[] = []
   let aoTravar: ((t: { tabela: string; id: string }) => void) | null = null
   let ids = 0
+  // Fotos das transações abertas (o rollback volta a elas).
+  const fotos: Tabelas[] = []
 
   const tab = (m: string) => (tabelas[m] ??= [])
   const agora = () => { relogio = Math.max(Date.now(), relogio + 1); return new Date(relogio) }
@@ -230,7 +232,24 @@ export function criarBanco() {
     const id = String(valores[0])
     if (/FOR UPDATE/i.test(texto)) {
       travas.push({ seq: ++seq, tabela, id })
-      aoTravar?.({ tabela, id })
+      if (aoTravar) {
+        // O que o gancho grava é outra requisição que COMITOU enquanto esta esperava: vale também nas fotos das
+        // transações abertas (sobrevive ao rollback desta).
+        const antes: Tabelas = Object.fromEntries(Object.entries(tabelas).map(([m, ls]) => [m, ls.map(copia)]))
+        aoTravar({ tabela, id })
+        for (const foto of fotos) {
+          for (const [m, ls] of Object.entries(tabelas)) {
+            for (const l of ls) {
+              const a = (antes[m] ?? []).find((x) => x.id === l.id)
+              const f = (foto[m] ??= []).find((x) => x.id === l.id)
+              if (!a) { if (!f) foto[m].push(copia(l)); continue }
+              for (const k of new Set([...Object.keys(a), ...Object.keys(l)])) {
+                if (valor(a[k]) !== valor(l[k]) && f) f[k] = l[k] instanceof Date ? new Date(l[k]) : l[k]
+              }
+            }
+          }
+        }
+      }
     }
     const modelo = TABELA_SQL[tabela]
     const l = modelo ? tab(modelo).find((x) => x.id === id) : undefined
@@ -273,6 +292,7 @@ export function criarBanco() {
     const foraAntes = foraDaTx
     foraDaTx = []
     profundidadeTx++
+    fotos.push(foto)
     try {
       return await cb(tx)
     } catch (e) {
@@ -283,6 +303,7 @@ export function criarBanco() {
       throw e
     } finally {
       profundidadeTx--
+      fotos.pop()
       foraDaTx = foraAntes
     }
   })
@@ -300,14 +321,17 @@ export function criarBanco() {
     travas,
     transacoes,
     get tabelas() { return new Proxy(tabelas, { get: (t, m) => (typeof m === 'string' ? (t[m] ??= []) : undefined) }) },
-    /** Zera tabelas, log, travas e spies (os clientes continuam os mesmos objetos). */
+    /**
+     * Zera tabelas, log, travas e spies (os clientes continuam os mesmos objetos). mockReset (não mockClear): descarta
+     * mockImplementationOnce/mockReturnValueOnce pendentes e volta à implementação base do vi.fn (F2-G, m23).
+     */
     reset() {
       tabelas = {}
       log.length = 0; travas.length = 0; transacoes.length = 0; aoTravar = null
       for (const c of [prisma, tx]) for (const k of Object.keys(c)) {
         const v = c[k]
-        if (typeof v === 'function' && 'mockClear' in v) (v as any).mockClear()
-        else if (v && typeof v === 'object') for (const f of Object.values(v)) (f as any).mockClear?.()
+        if (typeof v === 'function' && 'mockReset' in v) (v as any).mockReset()
+        else if (v && typeof v === 'object') for (const f of Object.values(v)) (f as any).mockReset?.()
       }
     },
     /** Simula outra requisição que comitou enquanto esta esperava a trava (roda uma vez por trava pedida). */

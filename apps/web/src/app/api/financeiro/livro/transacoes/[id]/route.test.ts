@@ -321,6 +321,11 @@ describe('§7 (onda 4): trava as contas antes de gravar', () => {
     expect(retroativo()[0].where.account_id).toEqual({ in: ['acc1', 'acc2', 'acc9'] })
   })
 
+  it('m21: a tx do PATCH usa maxWait 10s e timeout 20s', async () => {
+    await patch({ category_id: 'cat1' })
+    expect(m.txOpcoes).toHaveBeenCalledWith({ maxWait: 10000, timeout: 20000 })
+  })
+
   it('sem regra: trava só a conta da linha', async () => {
     await patch({ category_id: 'cat1' })
     expect(m.queryRaw).toHaveBeenCalledTimes(1)

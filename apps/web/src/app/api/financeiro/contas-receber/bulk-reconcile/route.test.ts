@@ -498,3 +498,42 @@ describe('F2-I (m10, m13): Asaas RECEIVED sem crédito não é bloqueado', () =>
   })
 })
 
+describe('F2-G (#13, m18): guardas do SWAP e do Desfazer', () => {
+  it('#13: crédito AR:id com marcador LIGADA (dinheiro do banco) + vínculo explícito → "já tem lançamento", nada apagado', async () => {
+    banco.ar(AR)
+    banco.transacao({ id: 'lig', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1', source_text: 'LIGADA:ITAU:k1' })
+    linhaLivro()
+    const { j } = await conferir(['a1'], { a1: 't1' })
+    expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'conta a receber já tem lançamento; vínculo não feito' }])
+    expect(banco.tx_('lig')).toBeDefined()
+    expect(banco.tx_('t1')!.linked_ref).toBeNull()
+    expect(banco.saldo(ACC)).toBe(100000)
+  })
+
+  it('m18: SWAP com nocional numa conta não travada (apareceu enquanto esperava) → "conta alterada — repita", nada apagado', async () => {
+    banco.conta({ id: 'acc2', current_balance: 0 })
+    banco.ar({ ...AR, received_amount: 15000 })
+    banco.transacao({ id: 'noc', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1' })
+    linhaLivro()
+    banco.aoTravar(({ tabela }) => {
+      if (tabela === 'accounts_receivable') banco.transacao({ id: 'noc2', account_id: 'acc2', transaction_type: 'CREDIT', amount: 1, bank_ref: 'AR:a1' })
+    })
+    const { j } = await conferir(['a1'], { a1: 't1' })
+    expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'conta alterada — repita' }])
+    expect(banco.tx_('noc')).toBeDefined()
+    expect(banco.tx_('noc2')).toBeDefined()
+    expect(banco.saldo('acc2')).toBe(0)
+  })
+
+  it('m18: Desfazer com crédito vivo numa conta não travada → "conta alterada — repita", nada apagado', async () => {
+    banco.conta({ id: 'acc2', current_balance: 0 })
+    banco.ar({ ...AR, status: 'LIQUIDADO', reconciled: true })
+    banco.aoTravar(({ tabela }) => {
+      if (tabela === 'accounts_receivable') banco.transacao({ id: 'x2', account_id: 'acc2', transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1' })
+    })
+    const { j } = await desfazer()
+    expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'conta alterada — repita' }])
+    expect(banco.tx_('x2')).toBeDefined()
+    expect(banco.saldo('acc2')).toBe(0)
+  })
+})
