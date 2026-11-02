@@ -278,6 +278,11 @@ export async function POST(req: NextRequest) {
 
       if (simular) {
         const { plano, tipoIncompativel } = await planejar(prisma, linha)
+        // Fix 3 (F3-I, m5): linha já no livro (ou antes do corte) é IGNORAR antes de olhar os links — nunca volta como ERRO.
+        if (plano.acao === 'IGNORAR') {
+          resultados.push({ chave: linha.chave, acao: 'IGNORAR', motivo: plano.motivo })
+          continue
+        }
         if (tipoIncompativel) {
           resultados.push({ chave: linha.chave, acao: 'ERRO', erro: LINKS_INCOMPATIVEIS })
           continue
@@ -299,8 +304,6 @@ export async function POST(req: NextRequest) {
             valor_centavos: plano.valor_centavos,
             categoria: cat.nome,
           })
-        } else if (plano.acao === 'IGNORAR') {
-          resultados.push({ chave: linha.chave, acao: 'IGNORAR', motivo: plano.motivo })
         } else {
           resultados.push({ chave: linha.chave, acao: 'LIGAR', refs: plano.refs })
         }
@@ -314,8 +317,9 @@ export async function POST(req: NextRequest) {
         await tx.$queryRaw`SELECT current_balance FROM accounts WHERE id = ${body.account_id} AND company_id = ${user.companyId} FOR UPDATE`
         const { plano, ligaveis, tipoIncompativel } = await planejar(tx, linha)
 
-        if (tipoIncompativel) return { chave: linha.chave, acao: 'ERRO', erro: LINKS_INCOMPATIVEIS }
+        // Fix 3 (F3-I, m5): IGNORAR (já lançada / antes do corte) antes da checagem de tipo dos links.
         if (plano.acao === 'IGNORAR') return { chave: linha.chave, acao: 'IGNORAR', motivo: plano.motivo }
+        if (tipoIncompativel) return { chave: linha.chave, acao: 'ERRO', erro: LINKS_INCOMPATIVEIS }
 
         if (plano.acao === 'LIGAR') {
           await converterLigaveis(tx, ligaveis, linha, 0)

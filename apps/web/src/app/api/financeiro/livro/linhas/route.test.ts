@@ -265,6 +265,23 @@ describe('F2-H (m1, m5, m11, m22): livro/linhas robusto para a rotina — erro p
     expect(banco.saldo('acc1')).toBe(50000 - 990)
   })
 
+  it('F3-I (m5): linha já lançada + links incompatíveis → IGNORAR "já lançada" (real e simular), nunca ERRO', async () => {
+    banco.transacao({ id: 'd1', account_id: 'acc1', transaction_type: 'DEBIT', amount: 30000, bank_ref: 'AP:p1', transaction_date: dia('2026-11-01') })
+    banco.transacao({ id: 'k1', account_id: 'acc1', transaction_type: 'CREDIT', amount: 30000, origin: 'BANCO', bank_ref: 'K1', transaction_date: dia('2026-11-01') })
+    const L = { chave: 'K1', data: '2026-11-01', descricao: 'PIX', valor_centavos: 30000, links: ['AP:p1'] }
+    for (const extra of [{}, { simular: true }]) {
+      const { j } = await post([L], extra)
+      expect(j.data.resultados[0]).toEqual({ chave: 'K1', acao: 'IGNORAR', motivo: 'já lançada' })
+    }
+    expect(banco.tx_('d1')).toEqual(expect.objectContaining({ origin: null, bank_ref: 'AP:p1' }))
+  })
+
+  it('m12: links incompatíveis também viram ERRO no caminho simular (simulação = real)', async () => {
+    banco.transacao({ id: 'd1', account_id: 'acc1', transaction_type: 'DEBIT', amount: 30000, bank_ref: 'AP:p1', transaction_date: dia('2026-11-01') })
+    const { j } = await post([{ chave: 'K1', data: '2026-11-01', descricao: 'PIX', valor_centavos: 30000, links: ['AP:p1'] }], { simular: true })
+    expect(j.data.resultados[0]).toEqual({ chave: 'K1', acao: 'ERRO', erro: 'links com tipo incompatível com o sinal da linha' })
+  })
+
   it('m1: linha de saída com links ao DEBIT de mesmo valor → LIGAR (não cria |v|+soma)', async () => {
     banco.transacao({ id: 'd1', account_id: 'acc1', transaction_type: 'DEBIT', amount: 30000, bank_ref: 'AP:p1', transaction_date: dia('2026-11-01') })
     const { j } = await post([{ chave: 'K1', data: '2026-11-01', descricao: 'BOLETO', valor_centavos: -30000, links: ['AP:p1'] }])
