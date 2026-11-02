@@ -61,3 +61,26 @@ export function perguntaEstorno(
   if (status !== 409 || !corpo || corpo.code !== 'ESTORNO_PERGUNTA') return null
   return { mensagem: String(corpo.error ?? ''), lancados: Array.isArray(corpo.lancados) ? (corpo.lancados as LancamentoJaLancado[]) : [] }
 }
+
+// Fix 10 (F10-D): resposta 200 do estorno — mover_para (engano) ou devolvido; `aviso` = dinheiro externo não tocado.
+export function resultadoEstorno(
+  d: { ok?: unknown; movido_para?: unknown; aviso?: unknown } | null | undefined,
+  oQue: 'Recebimento' | 'Pagamento',
+): { mensagem: string; aviso: string | undefined } {
+  return {
+    mensagem: d?.movido_para ? `${oQue} movido para a conta certa.` : `${oQue} estornado. Status voltou pra PENDENTE.`,
+    aviso: typeof d?.aviso === 'string' ? d.aviso : undefined,
+  }
+}
+
+// Fix 10 (F10-D): contas a pagar em aberto do mesmo fornecedor para o "lançado na conta errada" (sem a própria).
+export function opcoesContaCerta(
+  lista: { id: string; description: string; total_amount: number; paid_amount: number | null; status: string }[],
+  atual: string,
+): { id: string; rotulo: string }[] {
+  const brl = (c: number) => `R$ ${(c / 100).toFixed(2).replace('.', ',')}`
+  return lista
+    .filter((a) => a.id !== atual && a.status === 'PENDENTE' && a.total_amount - (a.paid_amount ?? 0) > 0)
+    .map((a) => ({ id: a.id, rotulo: `${a.description} — ${brl(a.total_amount - (a.paid_amount ?? 0))} em aberto` }))
+}
+

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { perguntaDinheiro, perguntaEstorno, resultadoBaixa, resultadoConferencia, resultadoRetornoCnab } from './conferencia'
+import { opcoesContaCerta, perguntaDinheiro, perguntaEstorno, resultadoBaixa, resultadoEstorno, resultadoConferencia, resultadoRetornoCnab } from './conferencia'
 
 describe('resultadoConferencia (F14)', () => {
   it('conferida sem vínculo: sucesso com a mensagem da tela', () => {
@@ -100,3 +100,22 @@ describe('resultadoConferencia — F7-G (m6, m10): os avisos do Conferir chegam 
     expect(resultadoConferencia({ updated: 1, ligadas: 0, erros: [], avisos: [] }, 'Conferido')).toEqual({ ok: true, mensagem: 'Conferido' })
   })
 })
+
+describe('F10-D: resposta do estorno e as contas certas da AP', () => {
+  it('resultadoEstorno: movido → mensagem do engano; devolvido → estornado; o aviso do dinheiro externo vem junto', () => {
+    expect(resultadoEstorno({ ok: true, movido_para: 'b1' }, 'Recebimento')).toEqual({ mensagem: 'Recebimento movido para a conta certa.', aviso: undefined })
+    expect(resultadoEstorno({ ok: true, aviso: 'dinheiro externo não foi tocado — x' }, 'Pagamento'))
+      .toEqual({ mensagem: 'Pagamento estornado. Status voltou pra PENDENTE.', aviso: 'dinheiro externo não foi tocado — x' })
+    expect(resultadoEstorno(undefined, 'Recebimento').mensagem).toBe('Recebimento estornado. Status voltou pra PENDENTE.')
+  })
+  it('opcoesContaCerta: só as em aberto, sem a própria, com o saldo em aberto no rótulo', () => {
+    const lista = [
+      { id: 'p1', description: 'Boleto A', total_amount: 10000, paid_amount: 0, status: 'PENDENTE' },
+      { id: 'p2', description: 'Boleto B', total_amount: 12000, paid_amount: 2000, status: 'PENDENTE' },
+      { id: 'p3', description: 'Boleto C', total_amount: 5000, paid_amount: 5000, status: 'PAGO' },
+      { id: 'p4', description: 'Boleto D', total_amount: 5000, paid_amount: 0, status: 'CANCELADO' },
+    ]
+    expect(opcoesContaCerta(lista, 'p1')).toEqual([{ id: 'p2', rotulo: 'Boleto B — R$ 100,00 em aberto' }])
+  })
+})
+

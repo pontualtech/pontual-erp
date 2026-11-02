@@ -14,9 +14,9 @@ import {
 import { useAuth } from '@/lib/use-auth'
 import { cn } from '@/lib/utils'
 import { MoneyInput } from '@/app/(dashboard)/components/money-input'
-import { perguntaDinheiro, perguntaEstorno, resultadoBaixa, resultadoConferencia, type LancamentoJaLancado } from '@/lib/financeiro/conferencia'
+import { perguntaDinheiro, perguntaEstorno, resultadoBaixa, resultadoConferencia, resultadoEstorno, type LancamentoJaLancado } from '@/lib/financeiro/conferencia'
 import { DinheiroJaLancadoDialog } from '@/app/(dashboard)/financeiro/_components/dinheiro-ja-lancado-dialog'
-import { EstornoPerguntaDialog } from '@/app/(dashboard)/financeiro/_components/estorno-pergunta-dialog'
+import { EstornoPerguntaDialog, type RespostaEstorno } from '@/app/(dashboard)/financeiro/_components/estorno-pergunta-dialog'
 
 // ─── Types ───────────────────────────────────
 interface ContaReceber {
@@ -327,22 +327,24 @@ export default function ContaReceberDetalhePage() {
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Erro') }
     finally { setConferirSaving(false) }
   }
-  // Fix 8 (F8-A): com dinheiro lançado, a rota pergunta (409 ESTORNO_PERGUNTA) se ele voltou ou continua no banco.
+  // Fix 10 (F10-D): com dinheiro lançado, a rota pergunta (409 ESTORNO_PERGUNTA) se foi devolvido ou lançado na conta errada.
   const [perguntaEst, setPerguntaEst] = useState<{ mensagem: string; lancados: LancamentoJaLancado[] } | null>(null)
-  async function handleEstornar(dinheiro?: 'devolvido' | 'permanece') {
+  async function handleEstornar(resposta?: RespostaEstorno) {
     if (!estornarMotivo.trim()) { toast.error('Informe o motivo do estorno'); return }
     setEstornarSaving(true)
     try {
       const res = await fetch(`/api/financeiro/contas-receber/${id}/estornar`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ motivo: estornarMotivo.trim(), ...(dinheiro ? { dinheiro } : {}) }),
+        body: JSON.stringify({ motivo: estornarMotivo.trim(), ...(resposta ?? {}) }),
       })
       const d = await res.json()
       const p = perguntaEstorno(res.status, d)
       if (p) { setPerguntaEst(p); return }
       setPerguntaEst(null)
       if (!res.ok) throw new Error(d.error || 'Erro ao estornar')
-      toast.success('Recebimento estornado. Status voltou pra PENDENTE.')
+      const r = resultadoEstorno(d.data, 'Recebimento')
+      toast.success(r.mensagem)
+      if (r.aviso) toast.warning(r.aviso)
       setShowEstornar(false); setEstornarMotivo(''); loadConta()
     } catch (err) { toast.error(err instanceof Error ? err.message : 'Erro') }
     finally { setEstornarSaving(false) }
@@ -919,7 +921,7 @@ export default function ContaReceberDetalhePage() {
               <Undo2 className="h-5 w-5 text-amber-600" /> Estornar recebimento
             </h2>
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              Vai reverter <strong>{fmt(conta.received_amount || 0)}</strong> recebidos. AR volta para <strong>PENDENTE</strong>. Se o dinheiro ja estiver lancado, o sistema pergunta se ele voltou para o cliente ou continua no banco.
+              Vai reverter <strong>{fmt(conta.received_amount || 0)}</strong> recebidos. AR volta para <strong>PENDENTE</strong>. Se o dinheiro ja estiver lancado, o sistema pergunta se foi devolvido ao cliente ou lancado na OS errada.
             </p>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Motivo (obrigatorio)</label>
             <textarea value={estornarMotivo} onChange={e => setEstornarMotivo(e.target.value)} rows={3} maxLength={500}
@@ -940,7 +942,7 @@ export default function ContaReceberDetalhePage() {
 
       {perguntaEst && (
         <EstornoPerguntaDialog mensagem={perguntaEst.mensagem} lancados={perguntaEst.lancados} parte="cliente" enviando={estornarSaving}
-          onEscolher={(dinheiro) => handleEstornar(dinheiro)} onCancelar={() => setPerguntaEst(null)} />
+          onEscolher={(resposta) => handleEstornar(resposta)} onCancelar={() => setPerguntaEst(null)} />
       )}
 
       {/* Wave AB (24/05): Conferir conciliação sem banco — pede banco no modal */}

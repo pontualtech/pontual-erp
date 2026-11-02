@@ -1,23 +1,30 @@
 'use client'
 
+import { useState } from 'react'
 import type { LancamentoJaLancado } from '@/lib/financeiro/conferencia'
 
-// Fix 8 (F8-A, §0): estorno de uma conta com dinheiro lançado — o operador diz se o dinheiro voltou para o
-// cliente/fornecedor (só status; a devolução chega pelo extrato) ou continua no banco (engano: compensa).
-export function EstornoPerguntaDialog({ mensagem, lancados, parte, enviando, onEscolher, onCancelar }: {
+export type RespostaEstorno = { dinheiro: 'devolvido' } | { mover_para: string }
+
+// Fix 10 (F10-B/F10-D): estorno de uma conta com dinheiro lançado. Quase sempre o dinheiro foi DEVOLVIDO (a saída da
+// devolução chega pelo extrato; no Caixa o estorno compensa). Se foi engano, o dinheiro vai para a conta certa —
+// AR: o número da OS certa; AP: uma das contas a pagar em aberto do mesmo fornecedor.
+export function EstornoPerguntaDialog({ mensagem, lancados, parte, contasCertas, enviando, onEscolher, onCancelar }: {
   mensagem: string
   lancados: LancamentoJaLancado[]
   parte: 'cliente' | 'fornecedor'
+  contasCertas?: { id: string; rotulo: string }[]
   enviando: boolean
-  onEscolher: (dinheiro: 'devolvido' | 'permanece') => void
+  onEscolher: (resposta: RespostaEstorno) => void
   onCancelar: () => void
 }) {
+  const [destino, setDestino] = useState('')
   const brl = (c: number) => (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
   const data = (d: string) => d.split('-').reverse().join('/')
+  const ehAR = parte === 'cliente'
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={onCancelar}>
       <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-lg font-bold mb-2">Onde está o dinheiro?</h2>
+        <h2 className="text-lg font-bold mb-2">O que aconteceu com o dinheiro?</h2>
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">{mensagem}</p>
         <ul className="mb-4 space-y-1 text-sm">
           {lancados.map((l, i) => (
@@ -27,17 +34,34 @@ export function EstornoPerguntaDialog({ mensagem, lancados, parte, enviando, onE
             </li>
           ))}
         </ul>
-        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+        <button type="button" onClick={() => onEscolher({ dinheiro: 'devolvido' })} disabled={enviando}
+          className="w-full mb-3 px-4 py-2.5 text-sm bg-amber-600 text-white rounded-xl hover:bg-amber-700 disabled:opacity-50 font-medium">
+          {ehAR ? 'Dinheiro devolvido ao cliente' : 'Devolvido pelo fornecedor'}
+        </button>
+        <div className="rounded-xl border p-3 dark:border-gray-700">
+          <label className="block text-sm font-medium mb-1">
+            {ehAR ? 'Lançado na OS errada — OS certa:' : 'Lançado na conta errada — conta certa:'}
+          </label>
+          <div className="flex gap-2">
+            {ehAR ? (
+              <input value={destino} onChange={(e) => setDestino(e.target.value.replace(/\D/g, ''))} inputMode="numeric" placeholder="nº da OS"
+                className="flex-1 px-3 py-2 border rounded-xl text-sm bg-white dark:bg-gray-800 dark:border-gray-700" />
+            ) : (
+              <select value={destino} onChange={(e) => setDestino(e.target.value)}
+                className="flex-1 px-3 py-2 border rounded-xl text-sm bg-white dark:bg-gray-800 dark:border-gray-700">
+                <option value="">{(contasCertas ?? []).length === 0 ? 'nenhuma conta em aberto do fornecedor' : 'escolha a conta'}</option>
+                {(contasCertas ?? []).map((c) => <option key={c.id} value={c.id}>{c.rotulo}</option>)}
+              </select>
+            )}
+            <button type="button" onClick={() => onEscolher({ mover_para: destino })} disabled={enviando || !destino}
+              className="px-4 py-2 text-sm border border-amber-600 text-amber-700 rounded-xl hover:bg-amber-50 disabled:opacity-50">
+              Mover
+            </button>
+          </div>
+        </div>
+        <div className="flex justify-end mt-4">
           <button type="button" onClick={onCancelar} disabled={enviando}
             className="px-4 py-2.5 text-sm border rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800">Cancelar</button>
-          <button type="button" onClick={() => onEscolher('devolvido')} disabled={enviando}
-            className="px-4 py-2.5 text-sm border border-amber-600 text-amber-700 rounded-xl hover:bg-amber-50 disabled:opacity-50">
-            {parte === 'cliente' ? 'Voltou para o cliente' : 'Voltou do fornecedor'}
-          </button>
-          <button type="button" onClick={() => onEscolher('permanece')} disabled={enviando}
-            className="px-4 py-2.5 text-sm bg-amber-600 text-white rounded-xl hover:bg-amber-700 disabled:opacity-50 font-medium">
-            Continua no banco (foi engano)
-          </button>
         </div>
       </div>
     </div>

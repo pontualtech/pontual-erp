@@ -13,8 +13,8 @@ import { useAuth } from '@/lib/use-auth'
 import { cn } from '@/lib/utils'
 import { MoneyInput } from '@/app/(dashboard)/components/money-input'
 import { getPaymentVisual, prettyPaymentMethod, cleanDescription } from '@/lib/payment-display'
-import { perguntaEstorno, resultadoBaixa, type LancamentoJaLancado } from '@/lib/financeiro/conferencia'
-import { EstornoPerguntaDialog } from '@/app/(dashboard)/financeiro/_components/estorno-pergunta-dialog'
+import { opcoesContaCerta, perguntaEstorno, resultadoBaixa, resultadoEstorno, type LancamentoJaLancado } from '@/lib/financeiro/conferencia'
+import { EstornoPerguntaDialog, type RespostaEstorno } from '@/app/(dashboard)/financeiro/_components/estorno-pergunta-dialog'
 
 // ─── Types ───────────────────────────────────
 interface ContaPagar {
@@ -239,22 +239,32 @@ export default function ContaPagarDetalhePage() {
   const [showEstornar, setShowEstornar] = useState(false)
   const [estornarMotivo, setEstornarMotivo] = useState('')
   const [estornarSaving, setEstornarSaving] = useState(false)
-  // Fix 8 (F8-A): com dinheiro lançado, a rota pergunta (409 ESTORNO_PERGUNTA) se ele voltou ou continua no banco.
+  // Fix 10 (F10-D): com dinheiro lançado, a rota pergunta (409 ESTORNO_PERGUNTA) se foi devolvido ou lançado na conta errada.
   const [perguntaEst, setPerguntaEst] = useState<{ mensagem: string; lancados: LancamentoJaLancado[] } | null>(null)
-  async function handleEstornar(dinheiro?: 'devolvido' | 'permanece') {
+  const [contasCertas, setContasCertas] = useState<{ id: string; rotulo: string }[]>([])
+  async function handleEstornar(resposta?: RespostaEstorno) {
     if (!estornarMotivo.trim()) { toast.error('Informe o motivo do estorno'); return }
     setEstornarSaving(true)
     try {
       const res = await fetch(`/api/financeiro/contas-pagar/${id}/estornar`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ motivo: estornarMotivo.trim(), ...(dinheiro ? { dinheiro } : {}) }),
+        body: JSON.stringify({ motivo: estornarMotivo.trim(), ...(resposta ?? {}) }),
       })
       const d = await res.json()
       const p = perguntaEstorno(res.status, d)
-      if (p) { setPerguntaEst(p); return }
+      if (p) {
+        setPerguntaEst(p)
+        if (conta?.suppliers?.id) {
+          fetch(`/api/financeiro/contas-pagar?supplierId=${conta.suppliers.id}&status=PENDENTE&limit=100`)
+            .then((r) => r.json()).then((j) => setContasCertas(opcoesContaCerta(j.data ?? [], id))).catch(() => setContasCertas([]))
+        }
+        return
+      }
       setPerguntaEst(null)
       if (!res.ok) throw new Error(d.error || 'Erro ao estornar')
-      toast.success('Pagamento estornado. Status voltou pra PENDENTE.')
+      const r = resultadoEstorno(d.data, 'Pagamento')
+      toast.success(r.mensagem)
+      if (r.aviso) toast.warning(r.aviso)
       setShowEstornar(false); setEstornarMotivo(''); loadConta()
     } catch (err) { toast.error(err instanceof Error ? err.message : 'Erro') }
     finally { setEstornarSaving(false) }
@@ -641,7 +651,7 @@ export default function ContaPagarDetalhePage() {
               <Undo2 className="h-5 w-5 text-amber-600" /> Estornar pagamento
             </h2>
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              Vai reverter <strong>{fmt(conta.paid_amount || 0)}</strong> pagos. AP volta para <strong>PENDENTE</strong>. Se a saida ja estiver lancada, o sistema pergunta se o dinheiro voltou do fornecedor ou continua no banco.
+              Vai reverter <strong>{fmt(conta.paid_amount || 0)}</strong> pagos. AP volta para <strong>PENDENTE</strong>. Se a saida ja estiver lancada, o sistema pergunta se foi devolvida pelo fornecedor ou lancada na conta errada.
             </p>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Motivo (obrigatorio)</label>
             <textarea value={estornarMotivo} onChange={e => setEstornarMotivo(e.target.value)} rows={3} maxLength={500}
@@ -661,8 +671,8 @@ export default function ContaPagarDetalhePage() {
       )}
 
       {perguntaEst && (
-        <EstornoPerguntaDialog mensagem={perguntaEst.mensagem} lancados={perguntaEst.lancados} parte="fornecedor" enviando={estornarSaving}
-          onEscolher={(dinheiro) => handleEstornar(dinheiro)} onCancelar={() => setPerguntaEst(null)} />
+        <EstornoPerguntaDialog mensagem={perguntaEst.mensagem} lancados={perguntaEst.lancados} parte="fornecedor" contasCertas={contasCertas} enviando={estornarSaving}
+          onEscolher={(resposta) => handleEstornar(resposta)} onCancelar={() => setPerguntaEst(null)} />
       )}
 
       {/* Wave AC (24/05): Conferir conciliação AP sem banco — pede banco no modal */}
