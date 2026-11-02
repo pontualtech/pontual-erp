@@ -22,6 +22,8 @@ describe('CATEGORIAS_LIVRO e REGRAS_INICIAIS são coerentes', () => {
     const modulo = (n: string) => CATEGORIAS_LIVRO.find((c) => c.nome === n)?.modulo
     expect(modulo('Receita a identificar')).toBe('financeiro_receita')
     expect(modulo('Rendimentos')).toBe('financeiro_receita')
+    // F3-G: 'Estornos' (fora do total) é criada como as demais; despesa, para servir a uma saída do banco.
+    expect(modulo('Estornos')).toBe('financeiro_despesa')
   })
 
   it('contém as regras iniciais', () => {

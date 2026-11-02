@@ -97,6 +97,34 @@ describe('§1 LIGAR converte o nocional na linha do banco (resolve #1, #2, #12)'
     ])
   })
 
+  it('F3-G (m2, m15): DEBIT de estorno/reversão (AR:*:estorno, *-refund, *-chargeback) → "Estornos" (criada se faltar), não receita', async () => {
+    for (const [id, ref] of [['e1', 'AR:x:estorno'], ['e2', 'pay_1-refund'], ['e3', 'pay_2-chargeback']]) {
+      banco.transacao({ id, account_id: 'acc1', transaction_type: 'DEBIT', amount: 100, bank_ref: ref, transaction_date: dia('2026-11-01') })
+    }
+    const { j } = await post([
+      { chave: 'K1', data: '2026-11-01', descricao: 'ESTORNO', valor_centavos: -100, links: ['AR:x:estorno'] },
+      { chave: 'K2', data: '2026-11-01', descricao: 'ASAAS REEMBOLSO', valor_centavos: -100, links: ['pay_1-refund'] },
+      { chave: 'K3', data: '2026-11-01', descricao: 'ASAAS CHARGEBACK', valor_centavos: -100, links: ['pay_2-chargeback'] },
+    ])
+    expect(j.data.resultados.map((r: { acao: string }) => r.acao)).toEqual(['LIGAR', 'LIGAR', 'LIGAR'])
+    const estornos = banco.tabelas.category.find((c) => c.name === 'Estornos')
+    expect(estornos).toEqual(expect.objectContaining({ module: 'financeiro_despesa' }))
+    expect(['e1', 'e2', 'e3'].map((id) => banco.tx_(id)!.category_id)).toEqual([estornos!.id, estornos!.id, estornos!.id])
+  })
+
+  it('F3-G: receita padrão só para CREDIT — DEBIT acquirer:/pay_ sem sufixo de reversão segue regra/"A classificar"', async () => {
+    banco.transacao({ id: 'd1', account_id: 'acc1', transaction_type: 'DEBIT', amount: 100, bank_ref: 'acquirer:rede:1', transaction_date: dia('2026-11-01') })
+    banco.transacao({ id: 'c1', account_id: 'acc1', transaction_type: 'CREDIT', amount: 100, bank_ref: 'acquirer:rede:2', transaction_date: dia('2026-11-01') })
+    // CREDIT com sufixo de reversão (ex.: devolução de um reembolso) também não é receita padrão.
+    banco.transacao({ id: 'c2', account_id: 'acc1', transaction_type: 'CREDIT', amount: 100, bank_ref: 'pay_3-refund', transaction_date: dia('2026-11-01') })
+    await post([
+      { chave: 'K1', data: '2026-11-01', descricao: 'REDE', valor_centavos: -100, links: ['acquirer:rede:1'] },
+      { chave: 'K2', data: '2026-11-01', descricao: 'REDE', valor_centavos: 100, links: ['acquirer:rede:2'] },
+      { chave: 'K3', data: '2026-11-01', descricao: 'ASAAS', valor_centavos: 100, links: ['pay_3-refund'] },
+    ])
+    expect(['d1', 'c1', 'c2'].map((id) => banco.tx_(id)!.category_id)).toEqual(['cat:A classificar', 'cat:Venda de Servicos', 'cat:Receita a identificar'])
+  })
+
   it('descrição que já tem " · banco: " não duplica', async () => {
     banco.transacao({ id: 'n1', account_id: 'acc1', transaction_type: 'CREDIT', amount: 50000, bank_ref: 'AR:a1', description: 'LIQUIDACAO: OS 1 · banco: x', transaction_date: dia('2026-11-01') })
     await post([linha({ links: ['AR:a1'] })])

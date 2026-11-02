@@ -10,6 +10,8 @@ export const CATEGORIAS_LIVRO: { nome: string; modulo: ModuloCategoria }[] = [
   { nome: 'A classificar', modulo: 'financeiro_despesa' },
   { nome: 'Transferência entre contas', modulo: 'financeiro_despesa' },
   { nome: 'Transferência entre empresas', modulo: 'financeiro_despesa' },
+  // Fix 3 (F3-G): estorno/reembolso/chargeback convertido na linha do banco (fora do total; despesa = serve à saída).
+  { nome: 'Estornos', modulo: 'financeiro_despesa' },
   { nome: 'Receita a identificar', modulo: 'financeiro_receita' },
   { nome: 'Rendimentos', modulo: 'financeiro_receita' },
   { nome: 'Venda de Servicos', modulo: 'financeiro_receita' },

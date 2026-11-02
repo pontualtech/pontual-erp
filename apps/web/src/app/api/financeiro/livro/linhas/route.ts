@@ -204,7 +204,7 @@ export async function POST(req: NextRequest) {
     // VIRA a linha do banco — origin BANCO, bank_ref = chave (a 2ª, 3ª… de uma mesma linha: chave#2, chave#3),
     // texto/data do banco e o bank_ref antigo em linked_ref. Saldo intocado. `n` = posição na linha (0 = a própria chave).
     // Só converte o que ainda é nocional; false = outra requisição mexeu nele (nada gravado).
-    type Convertivel = { id: string; bank_ref: string | null; description: string | null; category_id: string | null }
+    type Convertivel = { id: string; bank_ref: string | null; description: string | null; category_id: string | null; transaction_type: string }
     // Fix 2 (F2-C, #2/#6): nocional sem categoria → a categoria vem da ref antiga, antes da regra/fallback da linha:
     // transferência fica fora do total; o dinheiro de uma AR é receita de serviços; o da AP, a categoria da AP.
     let receitaPadrao: string | null | undefined
@@ -215,7 +215,14 @@ export async function POST(req: NextRequest) {
         const id = categorias.get('Transferência entre contas')
         if (id) return id
       }
-      if (/^(AR:|pay_|acquirer:|cnab:)/.test(ref) || ref.endsWith(':anticipation')) {
+      // Fix 3 (F3-G, m2/m15): estorno/reversão não é receita — o DEBIT do estorno da AR e do reembolso/chargeback do
+      // Asaas vai para 'Estornos' (fora do total); a receita padrão é só do CREDIT que é recebimento.
+      if (t.transaction_type === 'DEBIT' && (/-(refund|chargeback)$/.test(ref) || /^AR:.+:estorno$/.test(ref))) {
+        const id = categorias.get('Estornos')
+        if (id) return id
+      }
+      const reversao = /(:estorno|-refund|-chargeback)$/.test(ref)
+      if (t.transaction_type === 'CREDIT' && !reversao && (/^(AR:|pay_|acquirer:|cnab:)/.test(ref) || ref.endsWith(':anticipation'))) {
         if (receitaPadrao === undefined) receitaPadrao = await categoriaReceitaPadraoId(tx, user.companyId)
         if (receitaPadrao) return receitaPadrao
       }
