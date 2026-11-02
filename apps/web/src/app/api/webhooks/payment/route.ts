@@ -6,7 +6,7 @@ import { estadoArConfirmado, estadoArRecebido, valorCreditoAsaas, dataCreditoAsa
 import { isImprimitechHandoffStatus } from '@/lib/imprimitech-handoff'
 import { compensado, ondeRef } from '@/lib/financeiro/livro'
 import { logError } from '@/lib/observability'
-import { conflitoDeBanco, contaAsaasDaEmpresa, travarContas } from '@/lib/financeiro/livro-baixa-db'
+import { conflitoDeBanco, contaDoCreditoAsaas, travarContas } from '@/lib/financeiro/livro-baixa-db'
 
 // Valid status transitions — reject anything not in this map
 const VALID_TRANSITIONS: Record<string, string[]> = {
@@ -104,10 +104,14 @@ async function relerAR<T extends { id: string; company_id: string }>(tx: any, li
   return ((await tx.accountReceivable.findFirst({ where: { id: lida.id, company_id: lida.company_id } })) ?? lida) as T
 }
 
-// Conta em que o dinheiro da cobrança Asaas entra/sai: a da AR; sem ela, a 1ª conta ativa 'Asaas' da empresa.
-async function contaDaCobranca(tx: any, companyId: string, contaDaAR: string | null): Promise<string | null> {
-  if (contaDaAR) return contaDaAR
-  return contaAsaasDaEmpresa(tx, companyId)
+// Fix 5 (F5-A): o débito do reembolso/chargeback sai da conta onde está o crédito do pagamento (nocional pay_ ou linha
+// do banco convertida, ondeRef); sem ele, da conta do crédito Asaas (contaDoCreditoAsaas — a da cobrança).
+async function contaDoDebitoAsaas(tx: any, companyId: string, payRef: string, metadata: unknown, contaDaAR: string | null): Promise<string | null> {
+  const credito = await tx.transaction.findFirst({
+    where: { company_id: companyId, ...ondeRef(payRef), transaction_type: 'CREDIT' },
+    select: { account_id: true },
+  })
+  return credito?.account_id ?? contaDoCreditoAsaas(tx, companyId, metadata, contaDaAR)
 }
 
 async function resolveRevenueChart(
@@ -428,7 +432,9 @@ export async function POST(req: NextRequest) {
           // já LIQUIDADO (Conferi manual) somava received_amount de novo.
           // Onda 4 (fix 2, F2-D, #4): ordem única de travas — a conta Asaas (accounts) antes da AR e da checagem
           // "já lançado", como as rotas do §7 (sem cruzar com Receber/Conferir/livro da mesma conta).
-          const creditAccountId = await contaDaCobranca(tx, fresh.company_id, lidaAR.account_id || null)
+          // Fix 5 (F5-A): a conta da cobrança — Payment.metadata.account_id, senão a conta Asaas da empresa; só sem
+          // nenhuma, a da AR (antes a da AR vinha primeiro: AR no Itaú cobrada pelo Asaas creditava no Itaú).
+          const creditAccountId = await contaDoCreditoAsaas(tx, fresh.company_id, fresh.metadata, lidaAR.account_id || null)
           if (creditAccountId) await travarContas(tx, fresh.company_id, [creditAccountId])
           // Fix 3 (F3-E, #5): decide pela AR travada e relida (um Receber que comitou enquanto esperava a trava conta).
           const receivable = await relerAR(tx, lidaAR)
@@ -696,7 +702,8 @@ export async function POST(req: NextRequest) {
 
         if (lidaAR) {
           // Onda 4 (fix 2, F2-D, #4): conta Asaas travada antes da AR (ordem do §7).
-          const debitAccountId = await contaDaCobranca(tx, fresh.company_id, lidaAR.account_id || null)
+          // Fix 5 (F5-A): debita onde o crédito do pagamento está.
+          const debitAccountId = await contaDoDebitoAsaas(tx, fresh.company_id, asaasPayment.id, fresh.metadata, lidaAR.account_id || null)
           if (debitAccountId) await travarContas(tx, fresh.company_id, [debitAccountId])
           // Fix 3 (F3-E, #5): o valor a reverter sai da AR travada e relida.
           const receivable = await relerAR(tx, lidaAR)
@@ -806,7 +813,8 @@ export async function POST(req: NextRequest) {
         if (receivable) {
           if (isReversal) {
             // Onda 4 (fix 2, F2-D, #4): conta Asaas travada antes da AR (ordem do §7).
-            const debitAccountId = await contaDaCobranca(tx, fresh.company_id, receivable.account_id || null)
+            // Fix 5 (F5-A): debita onde o crédito do pagamento está.
+            const debitAccountId = await contaDoDebitoAsaas(tx, fresh.company_id, asaasPayment.id, fresh.metadata, receivable.account_id || null)
             if (debitAccountId) await travarContas(tx, fresh.company_id, [debitAccountId])
             // Fix 3 (F3-E, #5): o valor a reverter sai da AR travada e relida.
             const arTravada = await relerAR(tx, receivable)
