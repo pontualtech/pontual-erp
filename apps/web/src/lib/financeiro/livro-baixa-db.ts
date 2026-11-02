@@ -205,6 +205,8 @@ export async function contasDaAP(db: any, companyId: string, ap: { id: string; a
 
 // Onda 4 (§3a): DESLIGA linhas do banco — sem vínculo, categoria de volta à da regra (ou ao fallback), texto do banco.
 // Nunca apaga nem mexe em saldo: a linha continua sendo o dinheiro que passou pelo banco.
+// Fix 2 (F2-B, #1): só a ligada pela ref PRÓPRIA (AR:<id> / AP:<id>). A de ref externa (pay_…, acquirer:…, cnab:…,
+// AR:<id>:anticipation) fica: zerar o linked_ref apagaria a única marca de que ela é o dinheiro daquele evento.
 export interface LinhaLigada {
   id: string
   account_id: string
@@ -212,10 +214,13 @@ export interface LinhaLigada {
   source_text: string | null
   description: string | null
   counterparty: string | null
+  linked_ref: string | null
 }
-export const SELECT_LINHA_LIGADA = { id: true, account_id: true, transaction_type: true, source_text: true, description: true, counterparty: true } as const
+export const SELECT_LINHA_LIGADA = { id: true, account_id: true, transaction_type: true, source_text: true, description: true, counterparty: true, linked_ref: true } as const
+export const refPropria = (ref: string | null) => !!ref && /^(AR|AP):[^:]+$/.test(ref)
 
-export async function desligarLinhas(tx: any, companyId: string, linhas: LinhaLigada[]): Promise<void> {
+export async function desligarLinhas(tx: any, companyId: string, todas: LinhaLigada[]): Promise<void> {
+  const linhas = todas.filter((l) => refPropria(l.linked_ref))
   if (linhas.length === 0) return
   const regras = await tx.classificationRule.findMany({
     where: { company_id: companyId, active: true },

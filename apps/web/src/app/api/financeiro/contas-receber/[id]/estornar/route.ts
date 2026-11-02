@@ -4,7 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import {
-  ContaAlterada, contasDaAR, desligarLinhas, exigirTravadas, refsDaAR, refsLigadasAR, SELECT_LINHA_LIGADA, travarContas,
+  ContaAlterada, contasDaAR, desligarLinhas, exigirTravadas, refsDaAR, SELECT_LINHA_LIGADA, travarContas,
 } from '@/lib/financeiro/livro-baixa-db'
 
 /**
@@ -12,8 +12,8 @@ import {
  *
  * C10 fix 22/05: estorno de AR ja recebida. Onda 4 (§3, modelo único do dinheiro do banco), com a ordem de
  * travas do §7 (contas → AR) e tudo relido dentro da tx:
- *   (a) linhas do BANCO ligadas à AR (baixa ou nocional convertido: AR:<id>, :anticipation, adquirente/Asaas, CNAB)
- *       → DESLIGA (categoria da regra/fallback, texto do banco) — nunca apaga nem mexe em saldo;
+ *   (a) linhas do BANCO ligadas à ref própria AR:<id> (baixa ou CREDIT AR:<id> convertido) → DESLIGA (categoria da
+ *       regra/fallback, texto do banco) — nunca apaga nem mexe em saldo; as de ref externa ficam ligadas (F2-B);
  *   (b) nocionais próprios ainda não convertidos (CREDIT AR:<id> e AR:<id>:anticipation) → DEBIT AR:<id>:estorno
  *       pelo líquido (próprios − estornos) NA CONTA de cada nocional; estornar antecipada = compensar a antecipação;
  *   (c) legado (recebida antes de 22/05/2026, lançamento sem bank_ref) → DEBIT pelo received_amount na conta da AR;
@@ -64,9 +64,11 @@ export async function POST(req: NextRequest, { params }: Params) {
         }
 
         const refs = await refsDaAR(tx, user.companyId, ar)
-        // (a) linhas do banco que hoje representam o dinheiro desta AR.
+        // (a) linhas do banco ligadas pela ref PRÓPRIA da AR (baixa ou CREDIT AR:<id> convertido). Fix 2 (F2-B, #1): a linha
+        // de ref externa (adquirente, Asaas, CNAB, antecipação) fica ligada — é o dinheiro daquele evento, e o dedupe dos
+        // produtores (ondeRef) precisa continuar a achá-la; Receber/Conferir a reconhecem pelas refs da AR.
         const ligadas = await tx.transaction.findMany({
-          where: { company_id: user.companyId, origin: 'BANCO', linked_ref: { in: refsLigadasAR(refs) } },
+          where: { company_id: user.companyId, origin: 'BANCO', linked_ref: refs.proprio },
           select: SELECT_LINHA_LIGADA,
         })
         // (b) lançamentos próprios por bank_ref; nocional = ainda não convertido (sem origin nem texto do banco).

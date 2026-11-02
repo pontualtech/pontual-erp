@@ -48,7 +48,7 @@ describe('§3 estorno de AR — (a) DESLIGA linhas do banco', () => {
     expect(banco.tx_('L')!.category_id).toBe('cat:Rendimentos')
   })
 
-  it('linhas convertidas do adquirente, do Asaas, do CNAB e da antecipação também são desligadas', async () => {
+  it('F2-B (#1): linhas convertidas de ref EXTERNA (adquirente, Asaas, CNAB, antecipação) ficam ligadas — continuam sendo o dinheiro daquele evento', async () => {
     banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 40000, total_amount: 40000, pix_code: JSON.stringify({ nossoNumero: '777' }), anticipated_at: new Date('2026-10-20T12:00:00Z') })
     banco.pagamento({ receivable_id: 'r1', provider: 'rede', external_id: 'NSU1' })
     banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_9' })
@@ -57,9 +57,23 @@ describe('§3 estorno de AR — (a) DESLIGA linhas do banco', () => {
     }
     const { status } = await est()
     expect(status).toBe(200)
-    for (const id of ['A', 'B', 'C', 'D']) expect(banco.tx_(id)).toEqual(expect.objectContaining({ linked_ref: null, description: `TXT ${id}` }))
+    for (const [id, ref] of [['A', 'acquirer:rede:NSU1'], ['B', 'pay_9'], ['C', 'cnab:777'], ['D', 'AR:r1:anticipation']]) {
+      expect(banco.tx_(id)!.linked_ref).toBe(ref)
+    }
+    // o dedupe dos produtores (ondeRef) continua achando o dinheiro do pay_9
+    expect(banco.tabelas.transaction.filter((t) => t.bank_ref === 'pay_9' || t.linked_ref === 'pay_9')).toHaveLength(1)
     expect(banco.saldo(ACC)).toBe(100000)
-    expect(ar().anticipated_at).toBeNull()
+    expect(ar()).toEqual(expect.objectContaining({ status: 'PENDENTE', received_amount: 0, anticipated_at: null }))
+  })
+
+  it('F2-B: linha ligada à ref própria AR:id é desligada; a de ref externa da mesma AR fica', async () => {
+    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 25000, total_amount: 25000 })
+    banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_x' })
+    banco.transacao({ id: 'P', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, origin: 'BANCO', bank_ref: 'KP', source_text: 'PIX', linked_ref: 'AR:r1' })
+    banco.transacao({ id: 'X', account_id: ACC, transaction_type: 'CREDIT', amount: 10000, origin: 'BANCO', bank_ref: 'KX', source_text: 'ASAAS', linked_ref: 'pay_x' })
+    expect((await est()).status).toBe(200)
+    expect(banco.tx_('P')!.linked_ref).toBeNull()
+    expect(banco.tx_('X')!.linked_ref).toBe('pay_x')
   })
 })
 
