@@ -98,13 +98,18 @@ export async function POST(req: NextRequest) {
 
     // Decide a linha usando o cliente informado (prisma na simulação; tx travada no real).
     const planejar = async (db: Pick<typeof prisma, 'transaction'>, linha: Linha) => {
-      // Já lançada: criada com esta chave OU usada para ligar a um órfão (LIGADA:<chave>).
+      // Já lançada: a linha (ou um lançamento convertido nela: chave, chave#2, …) já está no livro.
+      // LIGADA:<chave> = marcador antigo, até a migração (§9) converter essas transações.
       const jaLancada =
         (await db.transaction.findFirst({
           where: {
             company_id: user.companyId,
             account_id: body.account_id,
-            OR: [{ bank_ref: linha.chave }, { source_text: `LIGADA:${linha.chave}` }],
+            OR: [
+              { bank_ref: linha.chave },
+              { bank_ref: { startsWith: `${linha.chave}#` } },
+              { source_text: `LIGADA:${linha.chave}` },
+            ],
           },
           select: { id: true },
         })) !== null
@@ -113,14 +118,15 @@ export async function POST(req: NextRequest) {
         links.length > 0
           ? await db.transaction.findMany({
               where: { company_id: user.companyId, account_id: body.account_id, bank_ref: { in: links } },
-              select: { bank_ref: true, amount: true, source_text: true, created_at: true },
+              orderBy: [{ created_at: 'asc' }, { id: 'asc' }],
+              select: { id: true, bank_ref: true, amount: true, source_text: true, created_at: true, description: true, category_id: true },
             })
           : []
       // Ausente: já tomado por OUTRA linha (LIGADA:<outra chave>) ou criado até o ajuste (já absorvido por ele).
-      const creditosExistentes = creditos
-        .filter((c) => creditoUsavelParaVinculo(c, linha.chave, limiteOrfao))
-        .map((c) => ({ bank_ref: c.bank_ref as string, amount: c.amount }))
-      return planejarLinha(linha, body.corte, jaLancada, creditosExistentes)
+      // (O convertido por outra linha já não tem este bank_ref — nem aparece aqui.)
+      const ligaveis = creditos.filter((c) => creditoUsavelParaVinculo(c, linha.chave, limiteOrfao))
+      const creditosExistentes = ligaveis.map((c) => ({ bank_ref: c.bank_ref as string, amount: c.amount }))
+      return { plano: planejarLinha(linha, body.corte, jaLancada, creditosExistentes), ligaveis }
     }
 
     // Procura crédito/débito já existente ("órfão") que corresponda à linha, na mesma empresa e conta.
@@ -139,9 +145,9 @@ export async function POST(req: NextRequest) {
           created_at: { gt: limiteOrfao },
         },
         orderBy: [{ transaction_date: 'asc' }, { created_at: 'asc' }, { id: 'asc' }],
-        select: { id: true, amount: true, transaction_type: true, transaction_date: true, bank_ref: true },
+        select: { id: true, amount: true, transaction_type: true, transaction_date: true, bank_ref: true, description: true, category_id: true },
       })
-      return escolherOrfao(
+      const id = escolherOrfao(
         linha,
         candidatos
           .filter((c) => !usados.has(c.id) && !(c.bank_ref !== null && linksDoPedido.has(c.bank_ref)))
@@ -152,14 +158,8 @@ export async function POST(req: NextRequest) {
             transaction_date: c.transaction_date.toISOString().slice(0, 10),
           })),
       )
+      return candidatos.find((c) => c.id === id) ?? null
     }
-
-    // Marca as transações ligadas por esta linha (sem sobrescrever quem já foi ligada por outra).
-    const marcarLigadas = (tx: Pick<typeof prisma, 'transaction'>, refs: string[], chave: string) =>
-      tx.transaction.updateMany({
-        where: { company_id: user.companyId, account_id: body.account_id, bank_ref: { in: refs }, source_text: null },
-        data: { source_text: `LIGADA:${chave}` },
-      })
 
     const categoriaDe = (linha: Linha, valor: number, identificar: boolean) => {
       const { category_id: porRegra } = classificar(linha, regras, body.account_id)
@@ -167,6 +167,37 @@ export async function POST(req: NextRequest) {
       return {
         id: porRegra ?? categorias.get(nomeFallback) ?? null,
         nome: porRegra ? (nomePorId.get(porRegra) ?? null) : nomeFallback,
+      }
+    }
+
+    // Onda 4 (§1): o lançamento que o ERP criou por conta própria (AR:<id>, acquirer:…, pay_…, cnab:…, AP:<id>…)
+    // VIRA a linha do banco — origin BANCO, bank_ref = chave (a 2ª, 3ª… de uma mesma linha: chave#2, chave#3),
+    // texto/data do banco e o bank_ref antigo em linked_ref. Saldo intocado. `n` = posição na linha (0 = a própria chave).
+    // Só converte o que ainda é nocional; false = outra requisição mexeu nele (nada gravado).
+    type Convertivel = { id: string; bank_ref: string | null; description: string | null; category_id: string | null }
+    const converter = async (tx: Pick<typeof prisma, 'transaction'>, t: Convertivel, linha: Linha, n: number) => {
+      const descricao = t.description ?? ''
+      const r = await tx.transaction.updateMany({
+        where: { id: t.id, company_id: user.companyId, account_id: body.account_id, origin: null, source_text: null },
+        data: {
+          origin: 'BANCO',
+          bank_ref: n === 0 ? linha.chave : `${linha.chave}#${n + 1}`,
+          source_text: linha.descricao,
+          counterparty: linha.contraparte ?? null,
+          transaction_date: new Date(linha.data + 'T00:00:00.000Z'),
+          linked_ref: t.bank_ref,
+          description: descricao.includes(' · banco: ') ? descricao : `${descricao} · banco: ${linha.descricao}`,
+          category_id: t.category_id ?? categoriaDe(linha, linha.valor_centavos, false).id,
+          reconciled: true,
+        },
+      })
+      return r.count === 1
+    }
+
+    // Converte os lançamentos citados em `links` a partir da posição `desde`; se algum mudou no meio, desfaz a linha.
+    const converterLigaveis = async (tx: Pick<typeof prisma, 'transaction'>, ts: Convertivel[], linha: Linha, desde: number) => {
+      for (const [i, t] of ts.entries()) {
+        if (!(await converter(tx, t, linha, desde + i))) throw new Error('lançamento a ligar mudou durante o lançamento da linha — repita')
       }
     }
 
@@ -187,12 +218,12 @@ export async function POST(req: NextRequest) {
       }
 
       if (simular) {
-        const plano = await planejar(prisma, linha)
+        const { plano } = await planejar(prisma, linha)
         if (plano.acao === 'CRIAR' && plano.refs_ligadas.length === 0) {
-          const orfaoId = await buscarOrfao(prisma, linha, orfaosUsados)
-          if (orfaoId) {
-            orfaosUsados.add(orfaoId)
-            resultados.push({ chave: linha.chave, acao: 'LIGAR', refs: [orfaoId], origem: 'orfao' })
+          const orfao = await buscarOrfao(prisma, linha, orfaosUsados)
+          if (orfao) {
+            orfaosUsados.add(orfao.id)
+            resultados.push({ chave: linha.chave, acao: 'LIGAR', refs: [orfao.id], origem: 'orfao' })
             continue
           }
         }
@@ -216,29 +247,21 @@ export async function POST(req: NextRequest) {
       const res = await prisma.$transaction(async (tx): Promise<Resultado> => {
         // Primeira instrução: trava a conta. Chamadas concorrentes esperam aqui e já enxergam a linha gravada.
         await tx.$queryRaw`SELECT current_balance FROM accounts WHERE id = ${body.account_id} AND company_id = ${user.companyId} FOR UPDATE`
-        const plano = await planejar(tx, linha)
+        const { plano, ligaveis } = await planejar(tx, linha)
 
         if (plano.acao === 'IGNORAR') return { chave: linha.chave, acao: 'IGNORAR', motivo: plano.motivo }
 
         if (plano.acao === 'LIGAR') {
-          await tx.transaction.updateMany({
-            where: { company_id: user.companyId, account_id: body.account_id, bank_ref: { in: plano.refs } },
-            data: { reconciled: true },
-          })
-          await marcarLigadas(tx, plano.refs, linha.chave)
+          await converterLigaveis(tx, ligaveis, linha, 0)
           return { chave: linha.chave, acao: 'LIGAR', refs: plano.refs }
         }
 
         // Linha sem vínculo: tenta ligar a um órfão existente antes de criar (não conta o dinheiro 2x).
         if (plano.refs_ligadas.length === 0) {
-          const orfaoId = await buscarOrfao(tx, linha, orfaosUsados)
-          if (orfaoId) {
-            orfaosUsados.add(orfaoId)
-            const r = await tx.transaction.updateMany({
-              where: { id: orfaoId, company_id: user.companyId, account_id: body.account_id, source_text: null },
-              data: { source_text: `LIGADA:${linha.chave}`, reconciled: true },
-            })
-            if (r.count === 1) return { chave: linha.chave, acao: 'LIGAR', refs: [orfaoId], origem: 'orfao' }
+          const orfao = await buscarOrfao(tx, linha, orfaosUsados)
+          if (orfao) {
+            orfaosUsados.add(orfao.id)
+            if (await converter(tx, orfao, linha, 0)) return { chave: linha.chave, acao: 'LIGAR', refs: [orfao.id], origem: 'orfao' }
             // Alguém levou o órfão antes: segue para CRIAR.
           }
         }
@@ -265,13 +288,8 @@ export async function POST(req: NextRequest) {
           where: { id: body.account_id },
           data: { current_balance: { increment: valor }, updated_at: new Date() },
         })
-        if (plano.refs_ligadas.length > 0) {
-          await tx.transaction.updateMany({
-            where: { company_id: user.companyId, account_id: body.account_id, bank_ref: { in: plano.refs_ligadas } },
-            data: { reconciled: true },
-          })
-          await marcarLigadas(tx, plano.refs_ligadas, linha.chave)
-        }
+        // A linha criada leva a chave; os lançamentos ligados viram chave#2, chave#3…
+        if (plano.refs_ligadas.length > 0) await converterLigaveis(tx, ligaveis, linha, 1)
         return { chave: linha.chave, acao: 'CRIAR', valor_centavos: valor, categoria: cat.nome, transaction_id: t.id }
       })
       resultados.push(res)
