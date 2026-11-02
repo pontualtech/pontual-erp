@@ -17,3 +17,9 @@ export function resultadoConferencia(d: RespostaConferencia | undefined, sucesso
   if (ligadas === 0) return { ok: true, mensagem: sucesso }
   return { ok: true, mensagem: `${sucesso} · ${ligadas === 1 ? 'ligada ao banco' : `${ligadas} ligadas ao banco`}` }
 }
+
+// Fix 3 (F3-H, m4): resposta do Receber/Pagar — com `aviso` (dinheiro já lançado, nada criado nem ligado) a tela mostra
+// atenção com o texto do aviso, nunca o 'registrado!' de sucesso.
+export function resultadoBaixa(d: { aviso?: string | null } | undefined, sucesso: string): { aviso: boolean; mensagem: string } {
+  return d?.aviso ? { aviso: true, mensagem: d.aviso } : { aviso: false, mensagem: sucesso }
+}

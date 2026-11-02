@@ -13,6 +13,7 @@ import { useAuth } from '@/lib/use-auth'
 import { cn } from '@/lib/utils'
 import { MoneyInput } from '@/app/(dashboard)/components/money-input'
 import { getPaymentVisual, prettyPaymentMethod, cleanDescription } from '@/lib/payment-display'
+import { resultadoBaixa } from '@/lib/financeiro/conferencia'
 
 // ─── Types ───────────────────────────────────
 interface ContaPagar {
@@ -215,7 +216,9 @@ export default function ContaPagarDetalhePage() {
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Erro')
-      toast.success('Pagamento registrado!')
+      const r = resultadoBaixa(d.data, 'Pagamento registrado!')
+      if (r.aviso) toast.warning(r.mensagem)
+      else toast.success(r.mensagem)
       setShowBaixa(false); loadConta()
     } catch (err) { toast.error(err instanceof Error ? err.message : 'Erro') }
     finally { setBaixaSaving(false) }

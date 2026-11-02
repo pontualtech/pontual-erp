@@ -14,7 +14,7 @@ import {
 import { useAuth } from '@/lib/use-auth'
 import { cn } from '@/lib/utils'
 import { MoneyInput } from '@/app/(dashboard)/components/money-input'
-import { resultadoConferencia } from '@/lib/financeiro/conferencia'
+import { resultadoBaixa, resultadoConferencia } from '@/lib/financeiro/conferencia'
 
 // ─── Types ───────────────────────────────────
 interface ContaReceber {
@@ -265,7 +265,9 @@ export default function ContaReceberDetalhePage() {
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Erro')
-      toast.success('Recebimento registrado!')
+      const r = resultadoBaixa(d.data, 'Recebimento registrado!')
+      if (r.aviso) toast.warning(r.mensagem)
+      else toast.success(r.mensagem)
       setShowBaixa(false); loadConta()
     } catch (err) { toast.error(err instanceof Error ? err.message : 'Erro') }
     finally { setBaixaSaving(false) }

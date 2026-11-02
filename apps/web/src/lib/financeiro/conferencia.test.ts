@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { resultadoConferencia } from './conferencia'
+import { resultadoBaixa, resultadoConferencia } from './conferencia'
 
 describe('resultadoConferencia (F14)', () => {
   it('conferida sem vínculo: sucesso com a mensagem da tela', () => {
@@ -32,3 +32,14 @@ describe('resultadoConferencia (F14)', () => {
   })
 })
 
+describe('resultadoBaixa (F3-H, m4): Receber/Pagar com aviso não mostram sucesso', () => {
+  it('com aviso: atenção com o texto do aviso', () => {
+    expect(resultadoBaixa({ aviso: 'dinheiro desta conta já está lançado' }, 'Recebimento registrado!'))
+      .toEqual({ aviso: true, mensagem: 'dinheiro desta conta já está lançado' })
+  })
+  it('sem aviso (ou vazio / sem dados): sucesso com a mensagem da tela', () => {
+    expect(resultadoBaixa({ aviso: null }, 'Pagamento registrado!')).toEqual({ aviso: false, mensagem: 'Pagamento registrado!' })
+    expect(resultadoBaixa({ aviso: '' }, 'Pagamento registrado!').aviso).toBe(false)
+    expect(resultadoBaixa(undefined, 'Pagamento registrado!').aviso).toBe(false)
+  })
+})
