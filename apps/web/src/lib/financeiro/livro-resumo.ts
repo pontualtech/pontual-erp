@@ -3,17 +3,20 @@ import { CATEGORIA_RECEITA_SERVICOS, CATEGORIAS_FORA_DO_TOTAL } from './livro-ca
 
 export { CATEGORIAS_FORA_DO_TOTAL }
 
-type LinhaResumo = { transaction_type: string; amount: number; bank_ref: string | null; categoria: string | null }
+type LinhaResumo = { transaction_type: string; amount: number; bank_ref: string | null; linked_ref?: string | null; categoria: string | null }
 type TotalCategoria = { categoria: string; total: number }
 
-export function categoriaEfetiva(t: { transaction_type: string; bank_ref: string | null; categoria: string | null }): string {
+export function categoriaEfetiva(t: { transaction_type: string; bank_ref: string | null; linked_ref?: string | null; categoria: string | null }): string {
   if (t.categoria) return t.categoria
   const ref = t.bank_ref ?? ''
+  // Onda 4 (fix 1.3): na linha do banco convertida de um nocional, a ref antiga está no linked_ref.
+  const antiga = t.linked_ref ?? ''
   // Sem categoria: estorno (AR:x:estorno / AP:x:estorno) e transferência não são receita nem despesa.
-  if (ref.endsWith(':estorno')) return 'Estornos'
-  if (ref.startsWith('TRANSFER:')) return 'Transferência entre contas'
+  if (ref.endsWith(':estorno') || antiga.endsWith(':estorno')) return 'Estornos'
+  if (ref.startsWith('TRANSFER:') || antiga.startsWith('TRANSFER:')) return 'Transferência entre contas'
   if (t.transaction_type === 'CREDIT') {
     if (ref.startsWith('AR:') || ref.startsWith('acquirer:') || ref.startsWith('pay_')) return CATEGORIA_RECEITA_SERVICOS
+    if (['AR:', 'acquirer:', 'pay_', 'cnab:'].some((p) => antiga.startsWith(p))) return CATEGORIA_RECEITA_SERVICOS
     return 'Receita a identificar'
   }
   return 'A classificar'

@@ -10,6 +10,18 @@ const t = (transaction_type: string, amount: number, categoria: string | null, b
 })
 
 describe('categoriaEfetiva', () => {
+  it('onda 4 (fix 1.3): linha BANCO convertida sem categoria usa a ref antiga (linked_ref) — AR:/acquirer:/pay_/cnab: → receita de serviços', () => {
+    for (const ref of ['AR:x', 'acquirer:rede:1', 'pay_z', 'cnab:123']) {
+      expect(categoriaEfetiva({ transaction_type: 'CREDIT', bank_ref: 'ITAU:k', linked_ref: ref, categoria: null })).toBe(CATEGORIA_RECEITA_SERVICOS)
+    }
+    expect(categoriaEfetiva({ transaction_type: 'DEBIT', bank_ref: 'ITAU:k', linked_ref: 'AP:1', categoria: null })).toBe('A classificar')
+    expect(categoriaEfetiva({ transaction_type: 'CREDIT', bank_ref: 'ITAU:k', linked_ref: null, categoria: null })).toBe('Receita a identificar')
+    // ref antiga de transferência/estorno continua fora do total
+    expect(categoriaEfetiva({ transaction_type: 'DEBIT', bank_ref: 'ITAU:k', linked_ref: 'TRANSFER:t1', categoria: null })).toBe('Transferência entre contas')
+    expect(categoriaEfetiva({ transaction_type: 'CREDIT', bank_ref: 'ITAU:k', linked_ref: 'AP:1:estorno', categoria: null })).toBe('Estornos')
+    // categoria definida continua mandando
+    expect(categoriaEfetiva({ transaction_type: 'CREDIT', bank_ref: 'ITAU:k', linked_ref: 'AR:x', categoria: 'Rendimentos' })).toBe('Rendimentos')
+  })
   it('usa a categoria quando existe', () => {
     expect(categoriaEfetiva({ transaction_type: 'DEBIT', bank_ref: null, categoria: 'Energia' })).toBe('Energia')
   })

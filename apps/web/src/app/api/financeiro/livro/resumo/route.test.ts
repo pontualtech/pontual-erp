@@ -96,4 +96,12 @@ describe('GET livro/resumo (F15)', () => {
     expect(j.saidas).toEqual([{ categoria: 'Energia', total: 1000 }])
     expect(j.contas).toEqual([{ id: 'acc1', nome: 'Itaú' }])
   })
+
+  it('onda 4 (fix 1.3): crédito convertido pelo livro sem categoria entra como receita de serviços (pela ref antiga em linked_ref)', async () => {
+    m.accFindFirst.mockResolvedValue({ id: 'acc1' })
+    m.txFindMany.mockResolvedValue([{ transaction_type: 'CREDIT', amount: 50000, bank_ref: 'ITAU:k', linked_ref: 'AR:a1', categories: null }])
+    const j = (await (await get('?from=2026-10-01&to=2026-10-31&account_id=acc1')).json()).data
+    expect(m.txFindMany.mock.calls[0][0].select).toEqual(expect.objectContaining({ linked_ref: true }))
+    expect(j.entradas).toEqual([{ categoria: 'Venda de Servicos', total: 50000 }])
+  })
 })

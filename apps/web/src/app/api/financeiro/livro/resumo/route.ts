@@ -45,11 +45,13 @@ export async function GET(request: NextRequest) {
         account_id: { in: contas.map((c) => c.id) },
         transaction_date: { gte: new Date(from), lte: new Date(to) },
       },
-      select: { transaction_type: true, amount: true, bank_ref: true, categories: { select: { name: true } } },
+      select: { transaction_type: true, amount: true, bank_ref: true, linked_ref: true, categories: { select: { name: true } } },
     })
 
     const resumo = resumoRealizado(
-      txs.map((t) => ({ transaction_type: t.transaction_type, amount: t.amount, bank_ref: t.bank_ref, categoria: t.categories?.name ?? null })),
+      txs.map((t) => ({
+        transaction_type: t.transaction_type, amount: t.amount, bank_ref: t.bank_ref, linked_ref: t.linked_ref, categoria: t.categories?.name ?? null,
+      })),
     )
     return success({ periodo: { from, to }, contas: contas.map((c) => ({ id: c.id, nome: c.name })), ...resumo })
   } catch (err) {
