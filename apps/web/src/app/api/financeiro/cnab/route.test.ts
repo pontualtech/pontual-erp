@@ -1,13 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 
+const { retornos } = vi.hoisted(() => ({ retornos: { lista: [] as unknown[] } }))
 vi.mock('@pontual/db', async () => ({ prisma: (await import('@/test-utils/banco-falso')).banco.prisma }))
 vi.mock('@/lib/auth', () => ({ requirePermission: async () => ({ id: 'u1', companyId: 'c1' }) }))
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }))
 // O arquivo .ret em si não importa aqui: o parser devolve o retorno já decodificado.
 vi.mock('@/lib/boleto/cnab/cnab400-inter', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/boleto/cnab/cnab400-inter')>()),
-  parsearRetornoCNAB400: () => [{ seuNumero: 'r1', nossoNumero: '123', valorPago: 50000, dataCredito: new Date('2026-11-01T00:00:00Z'), status: 'PAGO' }],
+  parsearRetornoCNAB400: () => retornos.lista,
 }))
 
 import { POST } from './route'
@@ -18,7 +19,10 @@ const importar = () => POST(new NextRequest('http://x/api/financeiro/cnab', {
 }))
 const cnab = () => banco.tabelas.transaction.filter((t) => t.bank_ref === 'cnab:123' || t.linked_ref === 'cnab:123')
 
+const retorno = (seuNumero: string, nossoNumero: string) => ({ seuNumero, nossoNumero, valorPago: 50000, dataCredito: new Date('2026-11-01T00:00:00Z'), status: 'PAGO' })
+
 beforeEach(() => {
+  retornos.lista = [retorno('r1', '123')]
   vi.spyOn(console, 'log').mockImplementation(() => {})
   banco.reset()
   banco.conta({ id: 'inter', name: 'Inter', current_balance: 0 })
@@ -74,5 +78,27 @@ describe('F3-E (#5): CNAB decide pela AR relida com a trava', () => {
     expect(cnab()).toEqual([])
     expect(banco.tabelas.accountReceivable[0]).toEqual(expect.objectContaining({ status: 'RECEBIDO', payment_method: 'PIX' }))
     expect(banco.travas.map((t) => t.tabela)).toEqual(['accounts', 'accounts_receivable'])
+  })
+})
+
+describe('F3-D (#4, m3): retorno CNAB — opções da tx e conflito por AR', () => {
+  it('cada AR numa $transaction com maxWait 10s e timeout 20s', async () => {
+    banco.ar({ id: 'r1', status: 'PENDENTE', total_amount: 50000 })
+    await importar()
+    expect(banco.transacoes.map((t) => t.opcoes)).toEqual([{ maxWait: 10000, timeout: 20000 }])
+  })
+
+  it('P2034 numa AR → erro daquela linha no resultado e as demais ARs processadas (nunca 500 do arquivo)', async () => {
+    retornos.lista = [retorno('r1', '123'), retorno('r2', '456')]
+    banco.ar({ id: 'r1', status: 'PENDENTE', total_amount: 50000 })
+    banco.ar({ id: 'r2', status: 'PENDENTE', total_amount: 50000 })
+    banco.tx.transaction.create.mockImplementationOnce(async () => { throw Object.assign(new Error('deadlock detected'), { code: 'P2034' }) })
+    const res = await importar()
+    expect(res.status).toBe(200)
+    const j = await res.json()
+    expect(j.erros).toEqual([{ seuNumero: 'r1', nossoNumero: '123', erro: 'conflito com outra operação — repita' }])
+    expect(j.pagos).toBe(1)
+    expect(banco.tabelas.transaction.filter((t) => t.bank_ref === 'cnab:456')).toHaveLength(1)
+    expect(cnab()).toEqual([])
   })
 })

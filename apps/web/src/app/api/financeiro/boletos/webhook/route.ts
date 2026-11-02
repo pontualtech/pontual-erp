@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { createHmac, timingSafeEqual } from 'crypto'
 import { ondeRef } from '@/lib/financeiro/livro'
-import { travarContas } from '@/lib/financeiro/livro-baixa-db'
+import { conflitoDeBanco, travarContas } from '@/lib/financeiro/livro-baixa-db'
 import { isReceivableSettled } from '@/lib/finance/receivable-status'
 
 /**
@@ -114,10 +114,19 @@ async function processInterWebhook(body: any) {
         logId = log.id
       }
     } catch (err: any) {
-      // P2002 = UNIQUE violation (provider+event_id) → dedup, retorno 200 OK
+      // P2002 = UNIQUE violation (provider+event_id) → dedup, retorno 200 OK — salvo evento que FALHOU antes
+      // (fix 3, F3-D: conflito na tx): o reenvio do banco tem de ser processado, não engolido.
       if (err?.code === 'P2002') {
-        console.log(`[INTER WEBHOOK] dedup event_id=${eventId}`)
-        return NextResponse.json({ received: true, dedup: true })
+        const anterior = await prisma.webhookEventLog.findUnique({
+          where: { provider_event_id: { provider: 'INTER_CNAB', event_id: eventId } },
+          select: { id: true, status: true },
+        }).catch(() => null)
+        if (anterior?.status !== 'FAILED') {
+          console.log(`[INTER WEBHOOK] dedup event_id=${eventId}`)
+          return NextResponse.json({ received: true, dedup: true })
+        }
+        await prisma.webhookEventLog.update({ where: { id: anterior.id }, data: { status: 'PROCESSING' } })
+        logId = anterior.id
       }
       // Outros erros: continua processando (não bloqueia webhook)
       console.warn(`[INTER WEBHOOK] WebhookEventLog write failed: ${err?.message}`)
@@ -172,6 +181,7 @@ async function processInterWebhook(body: any) {
     const bankRef = `AR:${receivable.id}`
     const txDate = dataPagamento ? new Date(dataPagamento) : new Date()
 
+    try {
     await prisma.$transaction(async (tx) => {
       // Onda 4 (fix 2, F2-D, #4): ordem única de travas — a conta (accounts) antes da AR e da checagem "já lançado".
       if (receivable.account_id) await travarContas(tx, receivable.company_id, [receivable.account_id])
@@ -222,7 +232,14 @@ async function processInterWebhook(body: any) {
       } else {
         console.warn(`[INTER WEBHOOK] Receivable ${receivable.id} sem account_id — saldo não atualizado`)
       }
-    })
+    }, { maxWait: 10000, timeout: 20000 })
+    } catch (e) {
+      // Fix 3 (F3-D, #4): trava demorou/deadlock (nada gravado) → evento FAILED (o reenvio é reprocessado) e 503 para o
+      // banco repetir — antes virava 200 'processing_error' e o dedupe engolia o reenvio: o boleto nunca entrava.
+      if (!conflitoDeBanco(e)) throw e
+      if (logId) await prisma.webhookEventLog.update({ where: { id: logId }, data: { status: 'FAILED' } }).catch(() => undefined)
+      return NextResponse.json({ error: 'conflito; repita' }, { status: 503 })
+    }
 
     console.log(`[INTER WEBHOOK] Boleto ${nossoNumero} PAID for AR ${receivable.id} (R$ ${finalAmount/100})`)
   } else if (situacao === 'CANCELADA' || situacao === 'EXPIRADA') {

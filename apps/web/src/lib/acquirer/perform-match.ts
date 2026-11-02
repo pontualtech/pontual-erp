@@ -2,7 +2,7 @@ import { prisma } from '@pontual/db'
 import { novoEstadoReceivable, planoTaxas } from './match-rules'
 import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
 import { ondeRef } from '@/lib/financeiro/livro'
-import { travarContas } from '@/lib/financeiro/livro-baixa-db'
+import { CONFLITO_BANCO, conflitoDeBanco, travarContas } from '@/lib/financeiro/livro-baixa-db'
 
 /**
  * Logica compartilhada de criar Payment + AR + 2 APs ao vincular uma
@@ -301,7 +301,7 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
       })
 
       return { payment, receivable }
-    })
+    }, { maxWait: 10000, timeout: 20000 })
 
     return {
       ok: true,
@@ -311,6 +311,8 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
       amount: txn.gross_amount,
     }
   } catch (e) {
+    // Fix 3 (F3-D, #4): trava demorou/deadlock → mensagem de 'repita' em vez do erro cru do Prisma.
+    if (conflitoDeBanco(e)) return { ok: false, error: CONFLITO_BANCO }
     return { ok: false, error: e instanceof Error ? e.message : 'erro na transacao' }
   }
 }

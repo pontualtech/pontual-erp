@@ -6,7 +6,7 @@ import { gerarRemessaCNAB400, parsearRetornoCNAB400, type BoletoRemessa400, type
 import { handleError } from '@/lib/api-response'
 import { isReceivableSettled } from '@/lib/finance/receivable-status'
 import { ondeRef } from '@/lib/financeiro/livro'
-import { travarContas } from '@/lib/financeiro/livro-baixa-db'
+import { CONFLITO_BANCO, conflitoDeBanco, travarContas } from '@/lib/financeiro/livro-baixa-db'
 
 /**
  * GET /api/financeiro/cnab — Gerar arquivo de remessa CNAB 400
@@ -238,6 +238,8 @@ export async function POST(req: NextRequest) {
 
     let pagos = 0, rejeitados = 0, outros = 0, unmatched = 0
     let totalRecebido = 0
+    // Fix 3 (F3-D): retornos que não entraram por conflito com outra operação (reimportar o arquivo é idempotente).
+    const erros: Array<{ seuNumero: string; nossoNumero: string; erro: string }> = []
     const unmatchedDetails: Array<{ seuNumero: string; nossoNumero: string; valorPago: number; dataCredito: string | null; status: string; ocorrencia: string | null }> = []
 
     for (const ret of retornos) {
@@ -301,7 +303,9 @@ export async function POST(req: NextRequest) {
         const dataCredito = ret.dataCredito || new Date()
 
         // Operação atômica: receivable + transaction + saldo
-        const valorRecebido = await prisma.$transaction(async (tx): Promise<number | null> => {
+        let valorRecebido: number | null
+        try {
+        valorRecebido = await prisma.$transaction(async (tx): Promise<number | null> => {
           // Onda 4 (fix 2, F2-D, #4): ordem única de travas — a conta (accounts) antes da AR e da checagem "já lançado".
           if (interAccountId) await travarContas(tx, user.companyId, [interAccountId])
           // Fix 3 (F3-E, #5): trava a AR e decide pela releitura — um Receber/Conferir concorrente que comitou enquanto
@@ -368,7 +372,13 @@ export async function POST(req: NextRequest) {
             })
           }
           return valorRecebido
-        })
+        }, { maxWait: 10000, timeout: 20000 })
+        } catch (e) {
+          // Fix 3 (F3-D, m3): trava demorou/deadlock nesta AR (nada gravado dela) → erro desta linha, o import segue.
+          if (!conflitoDeBanco(e)) throw e
+          erros.push({ seuNumero: ret.seuNumero || '', nossoNumero: ret.nossoNumero || '', erro: CONFLITO_BANCO })
+          continue
+        }
         if (valorRecebido === null) continue
 
         // Audit log
@@ -425,6 +435,7 @@ export async function POST(req: NextRequest) {
       // entrada virou WebhookLog 'CNAB_UNMATCHED' pra rastreamento.
       unmatched,
       unmatched_details: unmatchedDetails,
+      erros,
       totalRecebido,
       contaBancaria: interAccountId || null,
       detalhes: retornos.map(r => ({

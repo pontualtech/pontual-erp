@@ -94,3 +94,17 @@ describe('F3-E (#5): webhook Asaas decide pela AR relida com a trava', () => {
     expect(banco.travas.map((t) => t.tabela)).toEqual(['accounts', 'accounts_receivable'])
   })
 })
+
+describe('F3-D (#4): webhook Asaas — opções da tx e conflito → 503', () => {
+  it('$transaction com maxWait 10s e timeout 20s; P2034 → 503 "conflito; repita"', async () => {
+    banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'CONFIRMED', amount: 100000, billing_type: 'PIX' })
+    banco.tx.transaction.create.mockImplementationOnce(async () => { throw Object.assign(new Error('deadlock detected'), { code: 'P2034' }) })
+    const res = await POST(new NextRequest('http://x/api/webhooks/payment', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'evt_c', event: 'PAYMENT_RECEIVED', payment: { id: 'pay_1', value: 1000, netValue: 970 } }),
+    }))
+    expect(res.status).toBe(503)
+    expect(await res.json()).toEqual({ error: 'conflito; repita' })
+    expect(banco.transacoes.map((t) => t.opcoes)).toEqual([{ maxWait: 10000, timeout: 20000 }])
+  })
+})

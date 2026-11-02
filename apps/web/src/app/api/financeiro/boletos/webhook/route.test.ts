@@ -75,3 +75,25 @@ describe('F3-E (#5): webhook Inter decide pela AR relida com a trava', () => {
     expect(banco.travas.map((t) => t.tabela)).toEqual(['accounts', 'accounts_receivable'])
   })
 })
+
+describe('F3-D (#4): webhook Inter — opções da tx e conflito devolvido ao banco', () => {
+  it('$transaction com maxWait 10s e timeout 20s', async () => {
+    await evento(pago('PAGO'))
+    expect(banco.transacoes.map((t) => t.opcoes)).toEqual([{ maxWait: 10000, timeout: 20000 }])
+  })
+
+  it('P2034 → evento marcado FAILED e 503 (o banco reenvia); o reenvio do MESMO evento é processado, não engolido pelo dedupe', async () => {
+    banco.tx.transaction.create.mockImplementationOnce(async () => { throw Object.assign(new Error('deadlock detected'), { code: 'P2034' }) })
+    const raw = JSON.stringify(pago('PAGO'))
+    const sig = createHmac('sha256', SEGREDO).update(raw).digest('hex')
+    const r1 = await POST(new NextRequest('http://x/api/financeiro/boletos/webhook', { method: 'POST', headers: { 'x-webhook-secret': sig }, body: raw }))
+    expect(r1.status).toBe(503)
+    expect(await r1.json()).toEqual({ error: 'conflito; repita' })
+    expect(banco.tabelas.webhookEventLog).toEqual([expect.objectContaining({ status: 'FAILED' })])
+    expect(doAR()).toEqual([])
+    const r2 = await POST(new NextRequest('http://x/api/financeiro/boletos/webhook', { method: 'POST', headers: { 'x-webhook-secret': sig }, body: raw }))
+    expect(r2.status).toBe(200)
+    expect(doAR()).toHaveLength(1)
+    expect(banco.saldo('inter')).toBe(50000)
+  })
+})

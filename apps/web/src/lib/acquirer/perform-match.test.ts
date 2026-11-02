@@ -55,3 +55,16 @@ describe('F2-D (#4): vínculo da maquininha trava a conta antes da AR', () => {
     ordemTravas('accountReceivable')
   })
 })
+
+describe('F3-D (#4): vínculo da maquininha — opções da tx e conflito', () => {
+  it('$transaction com maxWait 10s e timeout 20s; P2034 → { ok: false, error: "conflito com outra operação — repita" }', async () => {
+    await vincular()
+    expect(banco.transacoes.map((t) => t.opcoes)).toEqual([{ maxWait: 10000, timeout: 20000 }])
+    banco.reset(); banco.categoriasPadrao(); banco.conta({ id: 'itau' })
+    banco.inserir('setting', { company_id: 'c1', key: 'acquirer.rede.account_id', value: 'itau' })
+    banco.inserir('serviceOrder', { id: 'os1', company_id: 'c1', os_number: 63001, customer_id: 'cli1', deleted_at: null })
+    banco.inserir('acquirerTransaction', { id: 't1', company_id: 'c1', status: 'APPROVED', matched_payment_id: null, acquirer: 'rede', external_id: 'NSU1', gross_amount: 100, net_amount: 97, total_fee_amount: 3, mdr_fee_amount: 0, anticipation_fee_amount: 0, modality: 'credit', installments: 1, transaction_date: new Date() })
+    banco.tx.payment.create.mockImplementationOnce(async () => { throw Object.assign(new Error('deadlock detected'), { code: 'P2034' }) })
+    expect(await vincular()).toEqual({ ok: false, error: 'conflito com outra operação — repita' })
+  })
+})

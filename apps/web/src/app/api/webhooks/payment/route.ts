@@ -5,7 +5,7 @@ import { captureFeesForPayment } from '@/lib/payments/capture-fees'
 import { estadoArConfirmado, estadoArRecebido, valorCreditoAsaas, dataCreditoAsaas } from '@/lib/payments/asaas-rules'
 import { isImprimitechHandoffStatus } from '@/lib/imprimitech-handoff'
 import { ondeRef } from '@/lib/financeiro/livro'
-import { travarContas } from '@/lib/financeiro/livro-baixa-db'
+import { conflitoDeBanco, travarContas } from '@/lib/financeiro/livro-baixa-db'
 
 // Valid status transitions — reject anything not in this map
 const VALID_TRANSITIONS: Record<string, string[]> = {
@@ -1001,7 +1001,7 @@ export async function POST(req: NextRequest) {
       })
 
       return { action: 'processed', reason: `${fresh.status} → ${newStatus}` }
-    })
+    }, { maxWait: 10000, timeout: 20000 })
 
     // Update webhook log based on result
     if (webhookLogId) {
@@ -1255,6 +1255,9 @@ export async function POST(req: NextRequest) {
       } catch { /* non-critical */ }
     }
 
+    // Fix 3 (F3-D, #4): trava demorou/deadlock (P2028/P2034, nada gravado) → 503 'repita'; demais → 500. Os dois
+    // fazem o Asaas reenviar (até 3x) e o evento FAILED é reprocessado.
+    if (conflitoDeBanco(err)) return NextResponse.json({ error: 'conflito; repita' }, { status: 503 })
     // Return 500 so Asaas retries (up to 3x)
     return NextResponse.json({ error: 'Processing failed' }, { status: 500 })
   }

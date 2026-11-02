@@ -37,6 +37,11 @@ const DEFAULTS: Record<string, Linha> = {
   classificationRule: { direction: null, account_id: null, priority: 100, active: true },
 }
 
+// Chaves únicas que as rotas usam para dedupe (create duplicado → P2002, como no Postgres).
+const UNICAS: Record<string, string[][]> = {
+  webhookEventLog: [['provider', 'event_id']],
+}
+
 const OPERADORES = new Set(['equals', 'in', 'notIn', 'not', 'gt', 'gte', 'lt', 'lte', 'startsWith', 'endsWith', 'contains', 'mode'])
 // Nomes que não são modelos (o Proxy não cria tabela para eles).
 const NAO_MODELO = new Set(['then', 'toJSON', 'constructor', 'asymmetricMatch', 'nodeType', 'tagName', '$$typeof', 'prototype'])
@@ -186,6 +191,11 @@ export function criarBanco() {
         ordenar(tab(modelo).filter((x) => casa(x, where)), orderBy).map((l) => projetar(l, select, include)),
       count: async ({ where }: any = {}) => tab(modelo).filter((x) => casa(x, where)).length,
       create: async ({ data, select, include }: any) => {
+        for (const cols of UNICAS[modelo] ?? []) {
+          if (tab(modelo).some((x) => cols.every((c) => igual(x[c], data[c])))) {
+            throw Object.assign(new Error(`banco-falso: ${modelo} duplicado (${cols.join(', ')})`), { code: 'P2002' })
+          }
+        }
         const l = novaLinha(modelo, data)
         tab(modelo).push(l)
         return projetar(l, select, include)
