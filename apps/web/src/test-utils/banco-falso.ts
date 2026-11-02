@@ -198,12 +198,16 @@ export function criarBanco() {
   }
 
   // Cliente com spies próprios; cada chamada vai para o log (com quem chamou e se havia transação aberta).
+  // Escrita do cliente `prisma` com transação aberta = outra conexão: já está comitada e sobrevive ao rollback da tx.
+  const ESCRITAS = new Set(['create', 'update', 'updateMany', 'delete'])
+  let foraDaTx: { modelo: Modelo; op: string; args: any }[] = []
   const criarCliente = (cliente: 'prisma' | 'tx') => {
     const c: Record<string, any> = {}
     for (const modelo of MODELOS) {
       const base = ops(modelo)
       c[modelo] = Object.fromEntries(Object.entries(base).map(([op, fn]) => [op, vi.fn(async (args: any) => {
         log.push({ seq: ++seq, cliente, dentroDaTx: profundidadeTx > 0, modelo, op, args })
+        if (cliente === 'prisma' && profundidadeTx > 0 && ESCRITAS.has(op)) foraDaTx.push({ modelo, op, args })
         return (fn as any)(args)
       })]))
     }
@@ -221,15 +225,20 @@ export function criarBanco() {
     const foto = Object.fromEntries(MODELOS.map((m) => [m, tabelas[m].map(copia)])) as unknown as Tabelas
     const registro = { opcoes, desfeita: false }
     transacoes.push(registro)
+    const foraAntes = foraDaTx
+    foraDaTx = []
     profundidadeTx++
     try {
       return await cb(tx)
     } catch (e) {
       tabelas = foto
       registro.desfeita = true
+      // O que foi gravado pelo cliente de fora não é desfeito pelo rollback desta tx.
+      for (const w of foraDaTx) await (ops(w.modelo) as any)[w.op](w.args).catch(() => undefined)
       throw e
     } finally {
       profundidadeTx--
+      foraDaTx = foraAntes
     }
   })
 

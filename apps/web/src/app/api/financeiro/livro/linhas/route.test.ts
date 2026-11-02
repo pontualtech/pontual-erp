@@ -116,6 +116,18 @@ describe('§1 LIGAR converte o nocional na linha do banco (resolve #1, #2, #12)'
     expect(banco.prismaDentroDaTx()).toEqual([])
   })
 
+  it('§10: a decisão usa a releitura do tx — linha lançada por outra chamada enquanto esperava a trava da conta → IGNORAR (não cria 2x)', async () => {
+    banco.aoTravar(({ tabela }) => {
+      if (tabela !== 'accounts') return
+      banco.transacao({ account_id: 'acc1', transaction_type: 'CREDIT', amount: 50000, origin: 'BANCO', bank_ref: CHAVE, transaction_date: dia('2026-11-01') })
+      banco.aoTravar(null)
+    })
+    const { j } = await post([linha()])
+    expect(j.data.resultados).toEqual([{ chave: CHAVE, acao: 'IGNORAR', motivo: 'já lançada' }])
+    expect(banco.tabelas.transaction.filter((t) => t.bank_ref === CHAVE)).toHaveLength(1)
+    expect(banco.saldo('acc1')).toBe(50000)
+  })
+
   it('simular não converte nada', async () => {
     banco.transacao({ id: 'n1', account_id: 'acc1', transaction_type: 'CREDIT', amount: 50000, bank_ref: 'AR:a1', transaction_date: dia('2026-11-01') })
     const { j } = await post([linha({ links: ['AR:a1'] })], { simular: true })

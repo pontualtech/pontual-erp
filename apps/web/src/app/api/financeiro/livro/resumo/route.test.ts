@@ -16,6 +16,11 @@ import { GET } from './route'
 
 const get = (qs = '') => GET(new NextRequest(`http://x/api/financeiro/livro/resumo${qs}`))
 const TZ_ORIGINAL = process.env.TZ
+// Atribuir undefined grava a string "undefined"; sem TZ original, remove a variável.
+const restaurarTZ = (original: string | undefined) => {
+  if (original === undefined) delete process.env.TZ
+  else process.env.TZ = original
+}
 
 beforeEach(() => {
   Object.values(m).forEach((f) => f.mockReset())
@@ -25,9 +30,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   vi.useRealTimers()
-  // Atribuir undefined grava a string "undefined"; sem TZ original, remove a variável.
-  if (TZ_ORIGINAL === undefined) delete process.env.TZ
-  else process.env.TZ = TZ_ORIGINAL
+  restaurarTZ(TZ_ORIGINAL)
 })
 
 describe('GET livro/resumo (F15)', () => {
@@ -65,9 +68,17 @@ describe('GET livro/resumo (F15)', () => {
     })
   })
 
-  it('E11: process.env.TZ volta ao original depois do teste com TZ=UTC (sem virar a string "undefined")', () => {
+  // Onda 4 §10 (m15): o teste mexe no TZ ele mesmo e restaura com a mesma função do afterEach — vale isolado ou embaralhado.
+  it('E11: restaurar o TZ devolve o original sem virar a string "undefined" (com e sem TZ original)', () => {
+    process.env.TZ = 'UTC'
+    restaurarTZ(undefined)
+    expect('TZ' in process.env).toBe(false)
+    expect(process.env.TZ).toBeUndefined()
+    process.env.TZ = 'UTC'
+    restaurarTZ('America/Sao_Paulo')
+    expect(process.env.TZ).toBe('America/Sao_Paulo')
+    restaurarTZ(TZ_ORIGINAL)
     expect(process.env.TZ).toBe(TZ_ORIGINAL)
-    expect('TZ' in process.env).toBe(TZ_ORIGINAL !== undefined)
   })
 
   it('mês padrão de fevereiro em ano não bissexto termina no dia 28', async () => {
