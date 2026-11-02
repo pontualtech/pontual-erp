@@ -31,7 +31,6 @@ const DEFAULTS: Record<string, Linha> = {
   accountPayable: { status: 'PENDENTE', paid_amount: 0, account_id: null, category_id: null, reconciled: false, deleted_at: null, notes: null, description: 'AP', payment_method: null },
   transaction: {
     description: null, bank_ref: null, reconciled: false, category_id: null, origin: null, source_text: null, linked_ref: null, counterparty: null,
-    desligada_de: null,
   },
   payment: { provider: 'asaas', status: 'PENDING', external_id: null, receivable_id: null },
   category: { module: null },

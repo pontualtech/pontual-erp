@@ -272,7 +272,6 @@ export async function POST(req: NextRequest) {
           counterparty: linha.contraparte ?? null,
           transaction_date: new Date(linha.data + 'T00:00:00.000Z'),
           linked_ref: t.bank_ref,
-          desligada_de: null,
           description: descricao.includes(' · banco: ') ? descricao : `${descricao} · banco: ${linha.descricao}`,
           category_id: categoria,
           reconciled: true,

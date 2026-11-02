@@ -7,11 +7,11 @@ import { baixaSchema } from '@/lib/validations/financeiro'
 import { isReceivableSettled } from '@/lib/finance/receivable-status'
 import { decidirBaixa, JANELA_BAIXA, recebeCategoria } from '@/lib/financeiro/livro-baixa'
 import {
-  AVISO_JA_LANCADO, candidatosLivro, categoriaId, ConflitoBaixa, CONFLITO_BANCO, conflitoDeBanco, ContaAlterada, descreverDinheiro, dinheiroDaAR,
-  exigirTravadas, hojeSP, nomeCategoria, perguntaDinheiroJaLancado, travarContas, type LancamentoDaConta,
+  AVISO_JA_LANCADO, candidatosLivro, categoriaId, ConflitoBaixa, CONFLITO_BANCO, conflitoDeBanco, descreverDinheiro, dinheiroDaAR,
+  hojeSP, nomeCategoria, perguntaDinheiroJaLancado, travarContas, type LancamentoDaConta,
 } from '@/lib/financeiro/livro-baixa-db'
 import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
-import { CATEGORIA_RECEITA_SERVICOS, CATEGORIAS_FORA_DO_TOTAL } from '@/lib/financeiro/livro-categorias'
+import { CATEGORIA_RECEITA_SERVICOS } from '@/lib/financeiro/livro-categorias'
 
 // Lançamento já ligado por outra baixa concorrente → 409, nada escrito.
 class LivroJaLigado extends Error {}
@@ -23,12 +23,6 @@ class DinheiroJaLancado extends Error {
 }
 
 type Params = { params: { id: string } }
-
-// Fix 8 (F8-C): linhas livres do banco desligadas DESTA AR (Desfazer), em qualquer conta e de qualquer valor — menos as
-// em categoria fora do total (ajuste/transferência/estorno: m8).
-const ondeDesligadas = (companyId: string, dono: string) =>
-  ({ company_id: companyId, origin: 'BANCO', transaction_type: 'CREDIT', linked_ref: null, desligada_de: dono })
-const foraDoTotal = (l: { categories?: { name: string | null } | null }) => CATEGORIAS_FORA_DO_TOTAL.includes(l.categories?.name ?? '')
 
 export async function POST(req: NextRequest, { params }: Params) {
   try {
@@ -72,16 +66,12 @@ export async function POST(req: NextRequest, { params }: Params) {
     // criar received_amount > total.
     let ligada = false
     let receivable
-    const dono = `AR:${params.id}`
-    // Só para saber QUAIS contas travar (§7); quem decide é a releitura dentro da tx.
-    const contasDesligadas = (await prisma.transaction.findMany({ where: ondeDesligadas(user.companyId, dono), select: { account_id: true } }))
-      .map((l) => l.account_id)
     try {
     receivable = await prisma.$transaction(async (tx) => {
       // Onda 4 (§7): ordem única de travas — a conta bancária (accounts) primeiro, depois a AR; só então candidatos e
       // escritas. O livro/linhas também trava a conta antes de lançar a linha: um espera o outro e a baixa enxerga
       // a linha recém-lançada (#9), sem cruzar com o Desfazer/livro (#10).
-      const travadas = await travarContas(tx, user.companyId, [data.account_id, ...contasDesligadas])
+      await travarContas(tx, user.companyId, [data.account_id])
       await tx.$queryRaw`SELECT id FROM accounts_receivable WHERE id = ${params.id} AND company_id = ${user.companyId} FOR UPDATE`
       const fresh = await tx.accountReceivable.findFirst({
         where: { id: params.id, company_id: user.companyId, deleted_at: null },
@@ -109,14 +99,8 @@ export async function POST(req: NextRequest, { params }: Params) {
       const dinheiro = await dinheiroDaAR(tx, user.companyId, fresh)
       // Fix 7 (F7-D, #8/#13): em vez de supor, PERGUNTA — sem `dinheiro` no corpo, 409 com os lançamentos (nada gravado);
       // 'mesmo' → só status/valor (a claim do F2-A); 'novo' → baixa normal, ignorando o dinheiro antigo.
-      // Fix 8 (F8-C): linhas livres desligadas desta AR também perguntam; 'mesmo' religa todas, 'novo' não as toma.
-      const desligadas: { id: string; amount: number; account_id: string; source_text: string | null }[] =
-        (await tx.transaction.findMany({
-          where: ondeDesligadas(user.companyId, dono),
-          select: { id: true, amount: true, account_id: true, source_text: true, categories: { select: { name: true } } },
-        })).filter((l: { categories?: { name: string | null } | null }) => !foraDoTotal(l))
-      const haDinheiro = dinheiro.total > previousReceived || desligadas.length > 0
-      const lancados = haDinheiro ? await descreverDinheiro(tx, user.companyId, { ...dinheiro, linhas: [...dinheiro.linhas, ...desligadas] }) : []
+      const haDinheiro = dinheiro.total > previousReceived
+      const lancados = haDinheiro ? await descreverDinheiro(tx, user.companyId, dinheiro) : []
       if (haDinheiro && !data.dinheiro) throw new DinheiroJaLancado(lancados)
       // Fix 8 (F8-E, m4): a resposta vale para a lista que o operador viu — mudou (entrou ou saiu dinheiro) → pergunta de
       // novo com a lista atual; sumiu tudo → 409 sem lançar nada.
@@ -128,17 +112,14 @@ export async function POST(req: NextRequest, { params }: Params) {
         }
       }
       const jaLancado = haDinheiro && data.dinheiro === 'mesmo'
-      if (jaLancado) exigirTravadas(travadas, desligadas.map((l) => l.account_id))
 
       // Livro-razão (30/10): se a entrada já foi lançada pelo banco, liga a ela (decide antes de escrever).
       const dataBaixa = data.received_at ? new Date(data.received_at).toISOString().slice(0, 10) : hojeSP()
-      const novo = data.dinheiro === 'novo'
-      const candidatos = jaLancado ? [] : (await candidatosLivro(tx, user.companyId, data.account_id, 'CREDIT', dataBaixa, null, JANELA_BAIXA, dono))
-        .filter((c) => !novo || c.desligada_de !== dono)
+      const candidatos = jaLancado ? [] : await candidatosLivro(tx, user.companyId, data.account_id, 'CREDIT', dataBaixa, null, JANELA_BAIXA)
       const categoria = fresh.category_id
         ?? await categoriaReceitaPadraoId(tx, user.companyId)
       const nomeAlvo = fresh.category_id ? await nomeCategoria(tx, user.companyId, fresh.category_id) : CATEGORIA_RECEITA_SERVICOS
-      const decisao = decidirBaixa({ tipo: 'CREDIT', amount: data.received_amount, data: dataBaixa, categoria: nomeAlvo, dono }, null, candidatos, JANELA_BAIXA)
+      const decisao = decidirBaixa({ tipo: 'CREDIT', amount: data.received_amount, data: dataBaixa, categoria: nomeAlvo }, null, candidatos, JANELA_BAIXA)
 
       // Bug #41 (audit 31/05): mesmo race condition de AP — findFirst+update
       // não trava row. Guard atomic com updateMany where status != RECEBIDO.
@@ -156,7 +137,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           received_amount: newReceivedTotal,
           status: isReceivedInFull ? 'RECEBIDO' : 'PENDENTE',
           // F2-A: dinheiro já lançado — a AR sem conta fica com a conta desse lançamento.
-          ...(jaLancado && !fresh.account_id && (dinheiro.conta ?? desligadas[0]?.account_id) ? { account_id: dinheiro.conta ?? desligadas[0].account_id } : {}),
+          ...(jaLancado && !fresh.account_id && dinheiro.conta ? { account_id: dinheiro.conta } : {}),
           // Wave Z (2026-05-24): NÃO setar reconciled=true (admin confere extrato depois).
           updated_at: new Date(),
         },
@@ -170,17 +151,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       })
 
       if (jaLancado) {
-        // F8-C: 'mesmo' com linhas desligadas desta AR → religa todas (o dinheiro já está no saldo).
-        for (const l of desligadas) {
-          const religou = await tx.transaction.updateMany({
-            where: { id: l.id, company_id: user.companyId, linked_ref: null, desligada_de: dono },
-            data: { linked_ref: dono, desligada_de: null, category_id: categoria, description: `Recebimento: ${existing.description} · banco: ${l.source_text ?? ''}`, reconciled: true },
-          })
-          if (religou.count === 0) throw new LivroJaLigado()
-          ligada = true
-        }
-        const aviso = dinheiro.total > previousReceived ? AVISO_JA_LANCADO : undefined
-        return { updated, previousReceived, newReceivedTotal, isReceivedInFull, freshStatus: fresh.status, group_id: fresh.group_id, aviso }
+        return { updated, previousReceived, newReceivedTotal, isReceivedInFull, freshStatus: fresh.status, group_id: fresh.group_id, aviso: AVISO_JA_LANCADO }
       }
 
       if ('usar' in decisao) {
@@ -196,8 +167,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           where: { id: decisao.usar, company_id: user.companyId, linked_ref: null },
           data: {
             linked_ref: `AR:${params.id}`,
-            desligada_de: null,
-            ...(recebeCategoria(linha?.categoria ?? null) || linha?.desligada_de === `AR:${params.id}` ? { category_id: categoria } : {}),
+            ...(recebeCategoria(linha?.categoria ?? null) ? { category_id: categoria } : {}),
             description: `Recebimento: ${existing.description} · banco: ${alvo?.source_text ?? ''}`,
             reconciled: true,
           },
@@ -275,7 +245,6 @@ export async function POST(req: NextRequest, { params }: Params) {
         return NextResponse.json({ code: 'DINHEIRO_JA_LANCADO', error: e.message, lancados: e.lancados }, { status: 409 })
       }
       if (e instanceof ConflitoBaixa) return error(e.message, e.status)
-      if (e instanceof ContaAlterada) return error(e.message, 409)
       if (conflitoDeBanco(e)) return error(CONFLITO_BANCO, 409)
       throw e
     }

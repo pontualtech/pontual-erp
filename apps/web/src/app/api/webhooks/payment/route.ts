@@ -550,7 +550,6 @@ export async function POST(req: NextRequest) {
                   where: { id: linhaLivre.id, company_id: fresh.company_id, linked_ref: null },
                   data: {
                     linked_ref: asaasPayment.id,
-                    desligada_de: null,
                     ...(recebeCategoria(nomeAtual) && categoria ? { category_id: categoria } : {}),
                     description: `LIQUIDACAO: ${receivable.description} · banco: ${linhaLivre.source_text ?? ''}`,
                     reconciled: true,

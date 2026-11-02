@@ -750,16 +750,6 @@ describe('F8-E (m5/m6): F6-B com livro[ar] = linha ASAAS:PAY e dinheiro da AR em
   })
 })
 
-describe('F7-C: o F6-B zera desligada_de ao ligar a linha ASAAS:PAY', () => {
-  it('linha ASAAS:PAY livre com desligada_de → ligada ao pay_x e desligada_de null', async () => {
-    banco.ar(AR)
-    banco.pagamento({ receivable_id: 'a1', provider: 'asaas', external_id: 'pay_x', status: 'RECEIVED', amount: 15000 })
-    linhaLivro({ bank_ref: 'ASAAS:PAY:pay_x', amount: 14550, desligada_de: 'AR:a1' })
-    await conferir()
-    expect(banco.tx_('t1')).toEqual(expect.objectContaining({ linked_ref: 'pay_x', desligada_de: null }))
-  })
-})
-
 describe('F7-E (#5): Conferir não cria dinheiro para AR Asaas em trânsito', () => {
   it.each(['DISPUTED', 'REFUND_PENDING', 'AWAITING_RISK_ANALYSIS'])('Payment %s sem crédito → só status + aviso, nenhum CREDIT', async (status) => {
     banco.ar(AR)

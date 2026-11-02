@@ -125,20 +125,15 @@ describe('PATCH livro/transacoes/[id] — regra derivada + retroativo', () => {
     await patch({ category_id: 'cat1', nota: 'aluguel' })
     expect(linhaGravada()).toEqual([{
       where: ONDE_DESLIGADA,
-      data: { category_id: 'cat1', description: 'PIX ENVIADO ELVIS FERREIRA — aluguel', desligada_de: null },
+      data: { category_id: 'cat1', description: 'PIX ENVIADO ELVIS FERREIRA — aluguel' },
     }])
-  })
-
-  it('F8-C (#4): a decisão do operador zera desligada_de — a linha não volta sozinha para a conta de antes', async () => {
-    await patch({ category_id: 'cat1' })
-    expect(linhaGravada()).toEqual([{ where: ONDE_DESLIGADA, data: { category_id: 'cat1', desligada_de: null } }])
   })
 
   it('categoria escolhida é fallback: não cria/atualiza regra nem recategoriza', async () => {
     m.catFindFirst.mockResolvedValue({ id: 'fb1', name: 'A classificar' })
     regraExistente({ id: 'r1', category_id: 'antiga' })
     const j = (await (await patch({ category_id: 'fb1', criar_regra: { direction: 'OUT' } })).json()).data
-    expect(linhaGravada()).toEqual([{ where: ONDE_DESLIGADA, data: { category_id: 'fb1', desligada_de: null } }])
+    expect(linhaGravada()).toEqual([{ where: ONDE_DESLIGADA, data: { category_id: 'fb1' } }])
     expect(m.ruleCreate).not.toHaveBeenCalled()
     expect(m.ruleUpdate).not.toHaveBeenCalled()
     expect(retroativo()).toEqual([])
@@ -216,7 +211,7 @@ describe('PATCH livro/transacoes/[id] — regra derivada + retroativo', () => {
       expect(m.ruleCreate).not.toHaveBeenCalled()
       expect(m.ruleUpdate).not.toHaveBeenCalled()
       expect(retroativo()).toEqual([])
-      expect(linhaGravada()).toEqual([{ where: ONDE_LIGADA, data: { category_id: 'cat1', desligada_de: null } }])
+      expect(linhaGravada()).toEqual([{ where: ONDE_LIGADA, data: { category_id: 'cat1' } }])
     })
 
     it('linha ligada + simular: regra null com o motivo', async () => {
@@ -233,7 +228,7 @@ describe('PATCH livro/transacoes/[id] — regra derivada + retroativo', () => {
       await patch({ category_id: 'cat1', nota: 'conta de outubro' })
       expect(linhaGravada()).toEqual([{
         where: ONDE_LIGADA,
-        data: { category_id: 'cat1', description: 'Pgto: Luz · banco: PGTO ELETROPAULO — conta de outubro', desligada_de: null },
+        data: { category_id: 'cat1', description: 'Pgto: Luz · banco: PGTO ELETROPAULO — conta de outubro' },
       }])
     })
   })

@@ -1,7 +1,7 @@
 // Acesso ao banco da baixa sobre o Livro-razão (a decisão pura fica em livro-baixa.ts).
 // Recebe o `tx` do Prisma para rodar dentro da mesma $transaction da baixa.
 import { refCnab, type CandidatoLivro, type JanelaBaixa } from './livro-baixa'
-import { classificar, ondeRef } from './livro'
+import { ondeRef } from './livro'
 import { refsCreditoAdquirente } from '@/lib/acquirer/match-rules'
 
 const DIA_MS = 86_400_000
@@ -30,7 +30,6 @@ export async function candidatosLivro(
   data: string,
   explicito: string | null,
   janela: JanelaBaixa,
-  dono: string | null = null, // Fix 7 (F7-C): AR:<id>/AP:<id> — traz também a linha livre desligada desta conta (qualquer data)
 ): Promise<CandidatoLivro[]> {
   const base = Date.parse(`${data}T00:00:00Z`)
   const naJanela = {
@@ -45,11 +44,11 @@ export async function candidatosLivro(
       account_id: accountId,
       transaction_type: tipo,
       origin: 'BANCO',
-      OR: [naJanela, ...(explicito ? [{ id: explicito }] : []), ...(dono ? [{ desligada_de: dono, linked_ref: null }] : [])],
+      OR: explicito ? [naJanela, { id: explicito }] : [naJanela],
     },
     select: {
       id: true, amount: true, transaction_type: true, transaction_date: true,
-      linked_ref: true, origin: true, category_id: true, categories: { select: { name: true } }, desligada_de: true,
+      linked_ref: true, origin: true, category_id: true, categories: { select: { name: true } },
     },
   })
   return rows.map((r) => ({
@@ -61,7 +60,6 @@ export async function candidatosLivro(
     category_id: r.category_id ?? null,
     linked_ref: r.linked_ref ?? null,
     origin: r.origin ?? null,
-    desligada_de: r.desligada_de ?? null,
   }))
 }
 
@@ -321,10 +319,10 @@ const rotuloRef = (ref: string) =>
 export async function descreverDinheiro(db: any, companyId: string, dinheiro: DinheiroLancado): Promise<LancamentoDaConta[]> {
   const ids = [...dinheiro.linhas.map((l) => l.id), ...dinheiro.nocionais.map((n) => n.id)]
   if (ids.length === 0) return []
-  const ts: { id: string; amount: number; account_id: string; bank_ref: string | null; linked_ref: string | null; desligada_de: string | null; origin: string | null; transaction_date: Date }[] =
+  const ts: { id: string; amount: number; account_id: string; bank_ref: string | null; linked_ref: string | null; origin: string | null; transaction_date: Date }[] =
     await db.transaction.findMany({
       where: { company_id: companyId, id: { in: ids } },
-      select: { id: true, amount: true, account_id: true, bank_ref: true, linked_ref: true, desligada_de: true, origin: true, transaction_date: true },
+      select: { id: true, amount: true, account_id: true, bank_ref: true, linked_ref: true, origin: true, transaction_date: true },
     })
   const vivo = new Map([...dinheiro.linhas, ...dinheiro.nocionais].map((t) => [t.id, t.vivo ?? t.amount]))
   const contas: { id: string; name: string | null }[] = await db.account.findMany({
@@ -336,9 +334,7 @@ export async function descreverDinheiro(db: any, companyId: string, dinheiro: Di
     const ref = (t.origin === 'BANCO' ? t.linked_ref : t.bank_ref) ?? ''
     return {
       id: t.id, // Fix 8 (F8-E, m4): a tela devolve os ids vistos (lancados_vistos)
-      // Fix 8 (F8-C): linha livre desligada desta conta (Desfazer).
-      origem: t.origin === 'BANCO' && !t.linked_ref ? `linha do extrato desligada (${t.desligada_de ?? ''})`
-        : t.origin === 'BANCO' ? `linha do extrato (${rotuloRef(ref)} ${ref})` : `${rotuloRef(ref)} ${ref}`,
+      origem: t.origin === 'BANCO' ? `linha do extrato (${rotuloRef(ref)} ${ref})` : `${rotuloRef(ref)} ${ref}`,
       valor_centavos: vivo.get(t.id) ?? t.amount,
       data: new Date(t.transaction_date).toISOString().slice(0, 10),
       conta: nome.get(t.account_id) ?? null,
@@ -404,46 +400,4 @@ export async function contasDaAP(db: any, companyId: string, ap: { id: string; a
     select: { account_id: true },
   })
   return [ap.account_id, ...ts.map((t) => t.account_id)]
-}
-
-// Onda 4 (§3a): DESLIGA linhas do banco — sem vínculo, categoria de volta à da regra (ou ao fallback), texto do banco.
-// Nunca apaga nem mexe em saldo: a linha continua sendo o dinheiro que passou pelo banco.
-// Fix 2 (F2-B, #1): só a ligada pela ref PRÓPRIA (AR:<id> / AP:<id>). A de ref externa (pay_…, acquirer:…, cnab:…,
-// AR:<id>:anticipation) fica: zerar o linked_ref apagaria a única marca de que ela é o dinheiro daquele evento.
-export interface LinhaLigada {
-  id: string
-  account_id: string
-  transaction_type: string
-  source_text: string | null
-  description: string | null
-  counterparty: string | null
-  linked_ref: string | null
-}
-export const SELECT_LINHA_LIGADA = { id: true, account_id: true, transaction_type: true, source_text: true, description: true, counterparty: true, linked_ref: true } as const
-export const refPropria = (ref: string | null) => !!ref && /^(AR|AP):[^:]+$/.test(ref)
-
-export async function desligarLinhas(tx: any, companyId: string, todas: LinhaLigada[]): Promise<void> {
-  const linhas = todas.filter((l) => refPropria(l.linked_ref))
-  if (linhas.length === 0) return
-  const regras = await tx.classificationRule.findMany({
-    where: { company_id: companyId, active: true },
-    orderBy: [{ priority: 'asc' }, { created_at: 'asc' }],
-  })
-  const fallback: Record<string, string | null> = {
-    CREDIT: await categoriaId(tx, companyId, 'Receita a identificar'),
-    DEBIT: await categoriaId(tx, companyId, 'A classificar'),
-  }
-  for (const l of linhas) {
-    const descricao = l.source_text ?? l.description ?? ''
-    const porRegra = classificar(
-      { chave: l.id, data: '', descricao, contraparte: l.counterparty ?? undefined, valor_centavos: l.transaction_type === 'CREDIT' ? 1 : -1 },
-      regras,
-      l.account_id,
-    ).category_id
-    await tx.transaction.update({
-      where: { id: l.id },
-      // Fix 7 (F7-C): a linha lembra a conta que pagava — o Receber/Pagar/Conferir seguinte dela a religa.
-      data: { linked_ref: null, desligada_de: l.linked_ref, category_id: porRegra ?? fallback[l.transaction_type] ?? null, description: l.source_text ?? l.description },
-    })
-  }
 }
