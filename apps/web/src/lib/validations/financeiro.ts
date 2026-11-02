@@ -20,4 +20,7 @@ export const baixaSchema = z.object({
   received_amount: z.number().int().positive('Valor recebido deve ser positivo'),
   received_at: dateStringOptional,
   account_id: z.string().uuid('Conta bancaria/caixa obrigatoria'),
+  // Fix 7 (F7-D): resposta do operador quando a conta já tem dinheiro lançado — 'novo' (outro pagamento: lança) ou
+  // 'mesmo' (é o dinheiro já lançado: só marca recebida). Sem ela, a rota pergunta (409 DINHEIRO_JA_LANCADO).
+  dinheiro: z.enum(['novo', 'mesmo']).optional(),
 })

@@ -154,7 +154,7 @@ describe('F2-A (#3): Receber enxerga o dinheiro já lançado da AR', () => {
     banco.conta({ id: 'inter', current_balance: 50000 })
     banco.ar({ ...AR, total_amount: 50000, account_id: null, pix_code: JSON.stringify({ nossoNumero: '123' }) })
     banco.transacao({ account_id: 'inter', transaction_type: 'CREDIT', amount: 50000, bank_ref: 'cnab:123' })
-    const { status, j } = await receber({ received_amount: 50000 })
+    const { status, j } = await receber({ received_amount: 50000, dinheiro: 'mesmo' })
     expect(status).toBe(200)
     expect(j.data).toEqual(expect.objectContaining({ status: 'RECEBIDO', received_amount: 50000, ligada: false, aviso: AVISO }))
     expect(creditosAR()).toEqual([])
@@ -167,7 +167,7 @@ describe('F2-A (#3): Receber enxerga o dinheiro já lançado da AR', () => {
     banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_x' })
     banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 14600, origin: 'BANCO', bank_ref: 'ASAAS:PAY:pay_x', linked_ref: 'pay_x' })
     linha() // linha livre de mesmo valor: não é ligada
-    const { j } = await receber()
+    const { j } = await receber({ dinheiro: 'mesmo' })
     expect(j.data.aviso).toBe(AVISO)
     expect(banco.tx_('t1')!.linked_ref).toBeNull()
     expect(creditosAR()).toEqual([])
@@ -235,7 +235,7 @@ describe('F3-B (#9, #3): dinheiro externo é líquido de estorno/chargeback do A
     banco.ar({ ...AR, total_amount: 50000 })
     banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_x', status: 'RECEIVED' })
     banco.transacao({ account_id: ASAAS, transaction_type: 'CREDIT', amount: 48500, bank_ref: 'pay_x' })
-    const { j } = await receber({ received_amount: 50000 })
+    const { j } = await receber({ received_amount: 50000, dinheiro: 'mesmo' })
     expect(j.data.aviso).toBeTruthy()
     expect(creditosAR()).toEqual([])
   })
@@ -251,7 +251,7 @@ describe('Fix 3 — testes menores do Receber (m6, m8)', () => {
       banco.tabelas.account[0].current_balance += 15000
       banco.aoTravar(null)
     })
-    const { status, j } = await receber()
+    const { status, j } = await receber({ dinheiro: 'mesmo' })
     expect(status).toBe(200)
     expect(j.data).toEqual(expect.objectContaining({ ligada: false, aviso: AVISO }))
     expect(creditosAR()).toEqual([])
@@ -262,7 +262,7 @@ describe('Fix 3 — testes menores do Receber (m6, m8)', () => {
     banco.ar({ ...AR, account_id: ACC, card_fee_total: 450, service_order_id: 'os1', pix_code: JSON.stringify({ nossoNumero: '123' }) })
     banco.ap({ id: 'taxa', service_order_id: 'os1', total_amount: 450, status: 'PENDENTE' })
     banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'cnab:123' })
-    const { j } = await receber()
+    const { j } = await receber({ dinheiro: 'mesmo' })
     expect(j.data.aviso).toBe(AVISO)
     expect(banco.tabelas.accountPayable.find((a) => a.id === 'taxa')).toEqual(expect.objectContaining({ status: 'PENDENTE', paid_amount: 0 }))
     expect(banco.tabelas.transaction.filter((t) => t.bank_ref === 'AP:taxa')).toEqual([])
@@ -296,9 +296,65 @@ describe('F6-C (#5): reembolso do cartão que nunca entrou não abre espaço par
     banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_c', status: 'REFUNDED' })
     banco.transacao({ account_id: CAIXA, transaction_type: 'CREDIT', amount: 10000, bank_ref: 'AR:r1' })
     banco.transacao({ account_id: 'asaas1', transaction_type: 'DEBIT', amount: 10000, bank_ref: 'pay_c-refund' })
-    const { j } = await receber({ received_amount: 10000, account_id: CAIXA })
+    // F7-D: com o dinheiro do Caixa ainda contando, a tela pergunta; respondido "o mesmo", só a claim.
+    expect((await receber({ received_amount: 10000, account_id: CAIXA })).status).toBe(409)
+    const { j } = await receber({ received_amount: 10000, account_id: CAIXA, dinheiro: 'mesmo' })
     expect(j.data.aviso).toBeTruthy()
     expect(creditosAR()).toHaveLength(1)
     expect(banco.saldo(CAIXA)).toBe(10000)
+  })
+})
+
+describe('F7-D (#8, #13): Receber pela tela pergunta quando a conta já tem dinheiro lançado', () => {
+  const INTER = '55555555-5555-4555-8555-555555555555'
+  const CAIXA = '33333333-3333-4333-8333-333333333333'
+  const comCnab = () => {
+    banco.conta({ id: INTER, name: 'Banco Inter', current_balance: 50000 })
+    banco.ar({ ...AR, total_amount: 50000, account_id: INTER, pix_code: JSON.stringify({ nossoNumero: '123' }) })
+    banco.transacao({ account_id: INTER, transaction_type: 'CREDIT', amount: 50000, bank_ref: 'cnab:123', transaction_date: new Date('2026-10-20T00:00:00Z') })
+  }
+
+  it('sem `dinheiro` → 409 DINHEIRO_JA_LANCADO com os lançamentos; nada gravado', async () => {
+    comCnab()
+    const { status, j } = await receber({ received_amount: 50000 })
+    expect(status).toBe(409)
+    expect(j).toEqual(expect.objectContaining({
+      code: 'DINHEIRO_JA_LANCADO',
+      error: expect.stringMatching(/^Esta conta já tem dinheiro lançado: .*R\$ 500,00 em 20\/10\/2026.*É um novo pagamento\?$/),
+      lancados: [{ origem: 'boleto (CNAB) cnab:123', valor_centavos: 50000, data: '2026-10-20', conta: 'Banco Inter' }],
+    }))
+    expect(ar()).toEqual(expect.objectContaining({ status: 'PENDENTE', received_amount: 0 }))
+    expect(banco.tx.account.update).not.toHaveBeenCalled()
+  })
+
+  it("`dinheiro: 'novo'` → baixa normal: CREDIT AR:r1 na conta pedida, ignorando o dinheiro antigo", async () => {
+    comCnab()
+    const { status, j } = await receber({ received_amount: 50000, dinheiro: 'novo' })
+    expect(status).toBe(200)
+    expect(j.data).not.toHaveProperty('aviso')
+    expect(creditosAR()).toEqual([expect.objectContaining({ account_id: ACC, amount: 50000 })])
+    expect(banco.saldo(ACC)).toBe(150000)
+  })
+
+  it("#8: AR da maquininha estornada (crédito acquirer: vivo), Receber no Caixa com 'novo' → CREDIT no Caixa", async () => {
+    banco.conta({ id: CAIXA, name: 'Caixa', current_balance: 0 })
+    banco.ar({ ...AR, total_amount: 10000, account_id: ACC })
+    banco.pagamento({ receivable_id: 'r1', provider: 'rede', external_id: 'NSU1', status: 'RECEIVED' })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 9700, bank_ref: 'acquirer:rede:NSU1' })
+    expect((await receber({ received_amount: 10000, account_id: CAIXA })).status).toBe(409)
+    const { j } = await receber({ received_amount: 10000, account_id: CAIXA, dinheiro: 'novo' })
+    expect(j.data.ligada).toBe(false)
+    expect(creditosAR()).toEqual([expect.objectContaining({ account_id: CAIXA, amount: 10000 })])
+    expect(banco.saldo(CAIXA)).toBe(10000)
+  })
+
+  it('#13: estorno feito em produção (DEBIT AR:r1:estorno no Itaú) + crédito do adquirente vivo → pergunta', async () => {
+    banco.ar({ ...AR, total_amount: 10000, account_id: ACC })
+    banco.pagamento({ receivable_id: 'r1', provider: 'rede', external_id: 'NSU1', status: 'RECEIVED' })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 9700, bank_ref: 'acquirer:rede:NSU1' })
+    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 10000, bank_ref: 'AR:r1:estorno' })
+    const { status, j } = await receber({ received_amount: 10000 })
+    expect(status).toBe(409)
+    expect(j.lancados).toEqual([expect.objectContaining({ origem: 'maquininha acquirer:rede:NSU1', valor_centavos: 9700 })])
   })
 })

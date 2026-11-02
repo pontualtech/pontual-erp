@@ -37,3 +37,13 @@ export function resultadoRetornoCnab(d: {
     ? { aviso: false, mensagem: base, naoProcessadas }
     : { aviso: true, mensagem: `${base} — ${naoProcessadas.length} não processado(s): reimporte o arquivo`, naoProcessadas }
 }
+
+// Fix 7 (F7-D): 409 DINHEIRO_JA_LANCADO do Receber — a tela pergunta "é um novo pagamento?" com os lançamentos.
+export interface LancamentoJaLancado { origem: string; valor_centavos: number; data: string; conta: string | null }
+export function perguntaDinheiro(
+  status: number,
+  corpo: { code?: unknown; error?: unknown; lancados?: unknown } | null | undefined,
+): { mensagem: string; lancados: LancamentoJaLancado[] } | null {
+  if (status !== 409 || !corpo || corpo.code !== 'DINHEIRO_JA_LANCADO') return null
+  return { mensagem: String(corpo.error ?? ''), lancados: Array.isArray(corpo.lancados) ? (corpo.lancados as LancamentoJaLancado[]) : [] }
+}

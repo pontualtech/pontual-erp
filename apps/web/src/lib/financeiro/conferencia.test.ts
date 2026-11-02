@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { resultadoBaixa, resultadoConferencia, resultadoRetornoCnab } from './conferencia'
+import { perguntaDinheiro, resultadoBaixa, resultadoConferencia, resultadoRetornoCnab } from './conferencia'
 
 describe('resultadoConferencia (F14)', () => {
   it('conferida sem vínculo: sucesso com a mensagem da tela', () => {
@@ -59,5 +59,17 @@ describe('resultadoRetornoCnab (F4-E, m10): retorno com linhas não processadas 
   })
   it('sem nosso número usa o seu número', () => {
     expect(resultadoRetornoCnab({ pagos: 0, rejeitados: 0, erros: [{ seuNumero: 'r9', nossoNumero: '', erro: 'x' }] }).naoProcessadas).toEqual(['r9 — x'])
+  })
+})
+
+describe('perguntaDinheiro (F7-D): a tela reconhece a pergunta do Receber', () => {
+  const lancados = [{ origem: 'boleto (CNAB) cnab:1', valor_centavos: 500, data: '2026-10-20', conta: 'Inter' }]
+  it('409 DINHEIRO_JA_LANCADO → mensagem e lançamentos', () => {
+    expect(perguntaDinheiro(409, { code: 'DINHEIRO_JA_LANCADO', error: 'Esta conta…', lancados })).toEqual({ mensagem: 'Esta conta…', lancados })
+  })
+  it('outro 409 / outro status / sem corpo → null', () => {
+    expect(perguntaDinheiro(409, { error: 'conflito' })).toBeNull()
+    expect(perguntaDinheiro(200, { code: 'DINHEIRO_JA_LANCADO', error: 'x', lancados })).toBeNull()
+    expect(perguntaDinheiro(409, null)).toBeNull()
   })
 })

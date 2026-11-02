@@ -14,7 +14,8 @@ import {
 import { useAuth } from '@/lib/use-auth'
 import { cn } from '@/lib/utils'
 import { MoneyInput } from '@/app/(dashboard)/components/money-input'
-import { resultadoBaixa, resultadoConferencia } from '@/lib/financeiro/conferencia'
+import { perguntaDinheiro, resultadoBaixa, resultadoConferencia, type LancamentoJaLancado } from '@/lib/financeiro/conferencia'
+import { DinheiroJaLancadoDialog } from '@/app/(dashboard)/financeiro/_components/dinheiro-ja-lancado-dialog'
 
 // ─── Types ───────────────────────────────────
 interface ContaReceber {
@@ -255,15 +256,20 @@ export default function ContaReceberDetalhePage() {
   }
 
   // ─── Actions ───────────────────────────────
-  async function handleBaixa() {
+  // Fix 7 (F7-D): a conta já tem dinheiro lançado — pergunta se é outro pagamento antes de lançar.
+  const [pergunta, setPergunta] = useState<{ mensagem: string; lancados: LancamentoJaLancado[] } | null>(null)
+  async function handleBaixa(dinheiro?: 'novo' | 'mesmo') {
     if (!baixaAccountId) { toast.error('Selecione a conta bancaria/caixa'); return }
     setBaixaSaving(true)
     try {
       const res = await fetch(`/api/financeiro/contas-receber/${id}/baixa`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ received_amount: Math.round(parseFloat(baixaAmount) * 100), received_at: baixaDate, account_id: baixaAccountId }),
+        body: JSON.stringify({ received_amount: Math.round(parseFloat(baixaAmount) * 100), received_at: baixaDate, account_id: baixaAccountId, ...(dinheiro ? { dinheiro } : {}) }),
       })
       const d = await res.json()
+      const p = perguntaDinheiro(res.status, d)
+      if (p) { setPergunta(p); return }
+      setPergunta(null)
       if (!res.ok) throw new Error(d.error || 'Erro')
       const r = resultadoBaixa(d.data, 'Recebimento registrado!')
       if (r.aviso) toast.warning(r.mensagem)
@@ -922,7 +928,7 @@ export default function ContaReceberDetalhePage() {
             </div>
             <div className="flex gap-3 mt-6 justify-end">
               <button type="button" onClick={() => setShowBaixa(false)} className="px-4 py-2.5 text-sm border rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800">Cancelar</button>
-              <button type="button" onClick={handleBaixa} disabled={baixaSaving}
+              <button type="button" onClick={() => handleBaixa()} disabled={baixaSaving}
                 className="px-4 py-2.5 text-sm bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-2 font-medium">
                 {baixaSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Confirmar
               </button>
@@ -959,6 +965,11 @@ export default function ContaReceberDetalhePage() {
       )}
 
       {/* Wave AB (24/05): Conferir conciliação sem banco — pede banco no modal */}
+      {pergunta && (
+        <DinheiroJaLancadoDialog mensagem={pergunta.mensagem} lancados={pergunta.lancados} enviando={baixaSaving}
+          onEscolher={(dinheiro) => handleBaixa(dinheiro)} onCancelar={() => setPergunta(null)} />
+      )}
+
       {showConferirSemBanco && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowConferirSemBanco(false)}>
           <div className="w-full max-w-md rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-xl" onClick={e => e.stopPropagation()}>

@@ -15,7 +15,8 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/use-auth'
 import { exportToExcel, exportToCSV, exportToPDF, importFromFile } from '@/lib/export-data'
 import { cleanDescription } from '@/lib/payment-display'
-import { resultadoBaixa, resultadoConferencia } from '@/lib/financeiro/conferencia'
+import { perguntaDinheiro, resultadoBaixa, resultadoConferencia, type LancamentoJaLancado } from '@/lib/financeiro/conferencia'
+import { DinheiroJaLancadoDialog } from '@/app/(dashboard)/financeiro/_components/dinheiro-ja-lancado-dialog'
 import { DateInputBR } from '@/app/(dashboard)/components/date-input-br'
 import { MultiStatusPicker } from '@/app/(dashboard)/financeiro/_components/multi-status-picker'
 
@@ -595,7 +596,9 @@ export default function ContasReceberPage() {
     setBaixaAccountId('')
   }
 
-  async function handleBaixa() {
+  // Fix 7 (F7-D): a conta já tem dinheiro lançado — pergunta se é outro pagamento antes de lançar.
+  const [pergunta, setPergunta] = useState<{ mensagem: string; lancados: LancamentoJaLancado[] } | null>(null)
+  async function handleBaixa(dinheiro?: 'novo' | 'mesmo') {
     if (!baixaId) return
     if (!baixaAmount || Number(baixaAmount) <= 0) {
       toast.error('Valor deve ser maior que zero')
@@ -611,9 +614,13 @@ export default function ContasReceberPage() {
           received_amount: amountInCents,
           received_at: baixaDate,
           account_id: baixaAccountId || undefined,
+          ...(dinheiro ? { dinheiro } : {}),
         }),
       })
       const data = await res.json()
+      const p = perguntaDinheiro(res.status, data)
+      if (p) { setPergunta(p); return }
+      setPergunta(null)
       if (!res.ok) throw new Error(data.error || 'Erro ao registrar recebimento')
       // Fix 4 (F4-E, #7): com `aviso` (dinheiro já lançado) mostra atenção, como a tela de detalhe.
       const r = resultadoBaixa(data.data, 'Recebimento registrado com sucesso')
@@ -2042,6 +2049,11 @@ export default function ContasReceberPage() {
       )}
 
       {/* Baixa (Receipt) Modal */}
+      {pergunta && (
+        <DinheiroJaLancadoDialog mensagem={pergunta.mensagem} lancados={pergunta.lancados} enviando={baixaLoading}
+          onEscolher={(dinheiro) => handleBaixa(dinheiro)} onCancelar={() => setPergunta(null)} />
+      )}
+
       {baixaId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setBaixaId(null)}>
           <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
@@ -2131,7 +2143,7 @@ export default function ContasReceberPage() {
               </button>
               <button
                 type="button"
-                onClick={handleBaixa}
+                onClick={() => handleBaixa()}
                 disabled={baixaLoading}
                 className="px-4 py-2 text-sm bg-emerald-600 text-white rounded-md hover:bg-emerald-700 disabled:opacity-50"
               >

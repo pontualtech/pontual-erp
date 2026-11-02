@@ -244,6 +244,45 @@ export async function dinheiroDaAP(db: any, companyId: string, apId: string): Pr
   return resumir(linhas, lancados.filter((t) => !compensado(t, estornos)))
 }
 
+// Fix 7 (F7-D): o dinheiro já lançado de uma conta, para a pergunta "é um novo pagamento?" do Receber pela tela.
+export interface LancamentoDaConta { origem: string; valor_centavos: number; data: string; conta: string | null }
+const rotuloRef = (ref: string) =>
+  ref.startsWith('acquirer:') ? 'maquininha'
+    : ref.startsWith('pay_') ? 'Asaas'
+    : ref.startsWith('cnab:') ? 'boleto (CNAB)'
+    : ref.endsWith(':anticipation') ? 'antecipação'
+    : 'recebimento anterior'
+export async function descreverDinheiro(db: any, companyId: string, dinheiro: DinheiroLancado): Promise<LancamentoDaConta[]> {
+  const ids = [...dinheiro.linhas.map((l) => l.id), ...dinheiro.nocionais.map((n) => n.id)]
+  if (ids.length === 0) return []
+  const ts: { amount: number; account_id: string; bank_ref: string | null; linked_ref: string | null; origin: string | null; transaction_date: Date }[] =
+    await db.transaction.findMany({
+      where: { company_id: companyId, id: { in: ids } },
+      select: { amount: true, account_id: true, bank_ref: true, linked_ref: true, origin: true, transaction_date: true },
+    })
+  const contas: { id: string; name: string | null }[] = await db.account.findMany({
+    where: { company_id: companyId, id: { in: [...new Set(ts.map((t) => t.account_id))] } },
+    select: { id: true, name: true },
+  })
+  const nome = new Map(contas.map((c) => [c.id, c.name]))
+  return ts.map((t) => {
+    const ref = (t.origin === 'BANCO' ? t.linked_ref : t.bank_ref) ?? ''
+    return {
+      origem: t.origin === 'BANCO' ? `linha do extrato (${rotuloRef(ref)} ${ref})` : `${rotuloRef(ref)} ${ref}`,
+      valor_centavos: t.amount,
+      data: new Date(t.transaction_date).toISOString().slice(0, 10),
+      conta: nome.get(t.account_id) ?? null,
+    }
+  })
+}
+export function perguntaDinheiroJaLancado(lancados: LancamentoDaConta[]): string {
+  const itens = lancados.map((l) => {
+    const [a, m, d] = l.data.split('-')
+    return `${l.origem} R$ ${(l.valor_centavos / 100).toFixed(2).replace('.', ',')} em ${d}/${m}/${a}${l.conta ? ` (${l.conta})` : ''}`
+  })
+  return `Esta conta já tem dinheiro lançado: ${itens.join('; ')}. É um novo pagamento?`
+}
+
 // Aviso das baixas quando o dinheiro já está lançado (F2-A).
 export const AVISO_JA_LANCADO = 'dinheiro desta conta já está lançado (adquirente/CNAB/Asaas/banco) — nenhum lançamento novo criado'
 

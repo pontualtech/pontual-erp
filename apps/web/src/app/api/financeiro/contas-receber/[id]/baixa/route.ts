@@ -6,12 +6,21 @@ import { logAudit } from '@/lib/audit'
 import { baixaSchema } from '@/lib/validations/financeiro'
 import { isReceivableSettled } from '@/lib/finance/receivable-status'
 import { decidirBaixa, JANELA_BAIXA, recebeCategoria } from '@/lib/financeiro/livro-baixa'
-import { AVISO_JA_LANCADO, candidatosLivro, categoriaId, ConflitoBaixa, CONFLITO_BANCO, conflitoDeBanco, dinheiroDaAR, hojeSP, nomeCategoria, travarContas } from '@/lib/financeiro/livro-baixa-db'
+import {
+  AVISO_JA_LANCADO, candidatosLivro, categoriaId, ConflitoBaixa, CONFLITO_BANCO, conflitoDeBanco, descreverDinheiro, dinheiroDaAR, hojeSP,
+  nomeCategoria, perguntaDinheiroJaLancado, travarContas, type LancamentoDaConta,
+} from '@/lib/financeiro/livro-baixa-db'
 import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
 import { CATEGORIA_RECEITA_SERVICOS } from '@/lib/financeiro/livro-categorias'
 
 // Lançamento já ligado por outra baixa concorrente → 409, nada escrito.
 class LivroJaLigado extends Error {}
+// Fix 7 (F7-D): a conta já tem dinheiro lançado e o operador não disse se é outro pagamento → 409 com a pergunta.
+class DinheiroJaLancado extends Error {
+  constructor(readonly lancados: LancamentoDaConta[]) {
+    super(perguntaDinheiroJaLancado(lancados))
+  }
+}
 
 type Params = { params: { id: string } }
 
@@ -88,7 +97,11 @@ export async function POST(req: NextRequest, { params }: Params) {
       // só o status/valor; nenhum lançamento novo nem saldo (senão o mesmo dinheiro conta 2x). Parcelas já
       // registradas (total = recebido) não bloqueiam a próxima.
       const dinheiro = await dinheiroDaAR(tx, user.companyId, fresh)
-      const jaLancado = dinheiro.total > previousReceived
+      // Fix 7 (F7-D, #8/#13): em vez de supor, PERGUNTA — sem `dinheiro` no corpo, 409 com os lançamentos (nada gravado);
+      // 'mesmo' → só status/valor (a claim do F2-A); 'novo' → baixa normal, ignorando o dinheiro antigo.
+      const haDinheiro = dinheiro.total > previousReceived
+      if (haDinheiro && !data.dinheiro) throw new DinheiroJaLancado(await descreverDinheiro(tx, user.companyId, dinheiro))
+      const jaLancado = haDinheiro && data.dinheiro === 'mesmo'
 
       // Livro-razão (30/10): se a entrada já foi lançada pelo banco, liga a ela (decide antes de escrever).
       const dataBaixa = data.received_at ? new Date(data.received_at).toISOString().slice(0, 10) : hojeSP()
@@ -219,6 +232,9 @@ export async function POST(req: NextRequest, { params }: Params) {
     }, { maxWait: 10000, timeout: 20000 })
     } catch (e) {
       if (e instanceof LivroJaLigado) return error('lançamento do livro já ligado por outra baixa', 409)
+      if (e instanceof DinheiroJaLancado) {
+        return NextResponse.json({ code: 'DINHEIRO_JA_LANCADO', error: e.message, lancados: e.lancados }, { status: 409 })
+      }
       if (e instanceof ConflitoBaixa) return error(e.message, e.status)
       if (conflitoDeBanco(e)) return error(CONFLITO_BANCO, 409)
       throw e
