@@ -120,6 +120,10 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
       })
 
       if (receivable) {
+        // Fix 4 (F4-D, #6): trava a AR (depois da conta — ordem do §7) e decide pela releitura: um Receber/Conferir/webhook
+        // que comitou enquanto esperava conta no received_amount (senão o match grava por cima da foto velha).
+        await tx.$queryRaw`SELECT id FROM accounts_receivable WHERE id = ${receivable.id} AND company_id = ${companyId} FOR UPDATE`
+        receivable = (await tx.accountReceivable.findFirst({ where: { id: receivable.id, company_id: companyId } })) ?? receivable
         // Fix 2026-05-27 + auditoria 2026-06-27: guard contra double-credit. Se
         // o AR já está QUITADO (RECEBIDO/LIQUIDADO/PAGO ou reconciled — ver
         // isReceivableSettled), match da maquininha NÃO soma received_amount

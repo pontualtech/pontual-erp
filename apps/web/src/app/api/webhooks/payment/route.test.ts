@@ -4,9 +4,11 @@ import { NextRequest } from 'next/server'
 vi.mock('@pontual/db', async () => ({ prisma: (await import('@/test-utils/banco-falso')).banco.prisma }))
 vi.mock('@/lib/payments/factory', () => ({ getPaymentProvider: () => ({ validateWebhook: () => true }) }))
 vi.mock('@/lib/payments/capture-fees', () => ({ captureFeesForPayment: vi.fn(async () => ({ ok: true, fees_count: 0 })) }))
+vi.mock('@/lib/observability', () => ({ logError: vi.fn(async () => undefined) }))
 
 import { POST } from './route'
 import { banco } from '@/test-utils/banco-falso'
+import { logError } from '@/lib/observability'
 
 const ACC = 'asaas1'
 const evento = async (id: string, event: string, extra: Record<string, unknown> = {}) => {
@@ -114,5 +116,101 @@ describe('F3-D (#4): webhook Asaas — opções da tx e conflito → 503', () =>
     expect(res.status).toBe(503)
     expect(await res.json()).toEqual({ error: 'conflito; repita' })
     expect(banco.transacoes.map((t) => t.opcoes)).toEqual([{ maxWait: 10000, timeout: 20000 }])
+  })
+})
+
+describe('F4-D (#5, m4, m13): webhook Asaas decide pela AR travada e relida em todos os ramos', () => {
+  // Receber concorrente comitado enquanto o webhook esperava a trava da AR.
+  const comitarAoTravarAR = (campos: Record<string, unknown>) => banco.aoTravar(({ tabela }) => {
+    if (tabela !== 'accounts_receivable') return
+    Object.assign(banco.tabelas.accountReceivable[0], campos)
+    banco.aoTravar(null)
+  })
+
+  it('#5 CONFIRMED: Receber parcial de 3000 comitado durante a espera → received_amount 10000 (não 7000)', async () => {
+    Object.assign(banco.tabelas.accountReceivable[0], { status: 'PENDENTE', total_amount: 10000, received_amount: 0 })
+    banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'PENDING', amount: 7000, billing_type: 'CREDIT_CARD' })
+    comitarAoTravarAR({ received_amount: 3000 })
+    expect(await evento('evt_c5', 'PAYMENT_CONFIRMED', { value: 70 })).toBe(200)
+    expect(banco.tabelas.accountReceivable[0]).toEqual(expect.objectContaining({ received_amount: 10000, status: 'RECEBIDO' }))
+  })
+
+  it('m4 DELETED: recebimento parcial comitado durante a espera → mantém charge_id (não apaga o rastro)', async () => {
+    Object.assign(banco.tabelas.accountReceivable[0], { status: 'PENDENTE', total_amount: 10000, received_amount: 0, charge_id: 'pay_1', charge_url: 'u' })
+    banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'PENDING', amount: 10000, billing_type: 'PIX' })
+    comitarAoTravarAR({ received_amount: 3000 })
+    expect(await evento('evt_d', 'PAYMENT_DELETED')).toBe(200)
+    expect(banco.tabelas.accountReceivable[0]).toEqual(expect.objectContaining({ charge_id: 'pay_1', charge_status: 'DELETED' }))
+  })
+
+  it('m13 REFUNDED: o valor revertido sai da releitura (Receber de 50000 comitado durante a espera)', async () => {
+    Object.assign(banco.tabelas.accountReceivable[0], { status: 'PENDENTE', total_amount: 200000, received_amount: 100000 })
+    banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'RECEIVED', amount: 100000, billing_type: 'PIX' })
+    comitarAoTravarAR({ received_amount: 150000 })
+    expect(await evento('evt_r', 'PAYMENT_REFUNDED')).toBe(200)
+    expect(banco.tabelas.accountReceivable[0].received_amount).toBe(50000)
+  })
+
+  it('m13 reversão de chargeback: o valor revertido sai da releitura', async () => {
+    Object.assign(banco.tabelas.accountReceivable[0], { status: 'PENDENTE', total_amount: 200000, received_amount: 100000 })
+    banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'DISPUTED', amount: 100000, billing_type: 'CREDIT_CARD' })
+    comitarAoTravarAR({ received_amount: 150000 })
+    expect(await evento('evt_cb', 'PAYMENT_AWAITING_CHARGEBACK_REVERSAL')).toBe(200)
+    expect(banco.tabelas.accountReceivable[0].received_amount).toBe(50000)
+  })
+})
+
+describe('F4-D (#4): RECEIVED depois de um Receber manual — o dinheiro não conta 2x', () => {
+  const CAIXA = '33333333-3333-4333-8333-333333333333'
+  beforeEach(() => {
+    vi.mocked(logError).mockClear()
+    banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'PENDING', amount: 100000, billing_type: 'PIX' })
+  })
+
+  it('nocional AR:r1 vivo na conta do Asaas → SWAP: apaga o AR:r1 (e o saldo) e cria o pay_1 líquido; saldo final = banco', async () => {
+    banco.transacao({ id: 'noc', account_id: ACC, transaction_type: 'CREDIT', amount: 100000, bank_ref: 'AR:r1' })
+    banco.tabelas.account[0].current_balance = 197000 // 97000 + o Receber de 100000
+    expect(await evento('evt_s1', 'PAYMENT_RECEIVED')).toBe(200)
+    expect(banco.tx_('noc')).toBeUndefined()
+    expect(comRef('pay_1')).toEqual([expect.objectContaining({ bank_ref: 'pay_1', amount: 97000, account_id: ACC })])
+    expect(banco.saldo(ACC)).toBe(194000) // 97000 + 97000 (líquido) — o bruto do Receber saiu
+    expect(banco.tabelas.accountReceivable[0]).toEqual(expect.objectContaining({ status: 'LIQUIDADO', received_amount: 100000 }))
+  })
+
+  it('nocional AR:r1 já compensado por :estorno não é trocado (o par se anula): cria o pay_1 como hoje', async () => {
+    banco.transacao({ id: 'noc', account_id: ACC, transaction_type: 'CREDIT', amount: 100000, bank_ref: 'AR:r1', created_at: new Date(Date.now() - 120_000) })
+    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 100000, bank_ref: 'AR:r1:estorno', created_at: new Date(Date.now() - 60_000) })
+    expect(await evento('evt_s4', 'PAYMENT_RECEIVED')).toBe(200)
+    expect(banco.tx_('noc')).toBeDefined()
+    expect(comRef('pay_1')).toHaveLength(1)
+    expect(banco.saldo(ACC)).toBe(194000)
+  })
+
+  it('linha BANCO ligada a AR:r1 na conta do Asaas → não cria pay_1 (o dinheiro já está), só o status', async () => {
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 97000, origin: 'BANCO', bank_ref: 'ASAAS:PAY:pay_1', linked_ref: 'AR:r1' })
+    expect(await evento('evt_s2', 'PAYMENT_RECEIVED')).toBe(200)
+    expect(comRef('pay_1')).toEqual([])
+    expect(banco.saldo(ACC)).toBe(97000)
+    expect(banco.tabelas.accountReceivable[0].status).toBe('LIQUIDADO')
+  })
+
+  it('nocional AR:r1 em OUTRA conta (Caixa) → cria pay_1 como hoje e registra a possível duplicidade em error_logs', async () => {
+    banco.conta({ id: CAIXA, name: 'Caixa', current_balance: 100000 })
+    banco.transacao({ id: 'noc', account_id: CAIXA, transaction_type: 'CREDIT', amount: 100000, bank_ref: 'AR:r1' })
+    expect(await evento('evt_s3', 'PAYMENT_RECEIVED')).toBe(200)
+    expect(banco.tx_('noc')).toBeDefined()
+    expect(comRef('pay_1')).toEqual([expect.objectContaining({ amount: 97000, account_id: ACC })])
+    expect(banco.saldo(CAIXA)).toBe(100000)
+    expect(logError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining('possível duplicidade: AR recebida manualmente em Caixa e também pelo Asaas') }),
+      expect.objectContaining({ company_id: 'c1' }),
+      'warning',
+    )
+  })
+
+  it('controle: AR quitada sem lançamento próprio (Receber sem crédito) → cria pay_1, sem aviso', async () => {
+    expect(await evento('evt_s5', 'PAYMENT_RECEIVED')).toBe(200)
+    expect(comRef('pay_1')).toHaveLength(1)
+    expect(logError).not.toHaveBeenCalled()
   })
 })

@@ -68,3 +68,18 @@ describe('F3-D (#4): vínculo da maquininha — opções da tx e conflito', () =
     expect(await vincular()).toEqual({ ok: false, error: 'conflito com outra operação — repita' })
   })
 })
+
+describe('F4-D (#6): vínculo da maquininha trava a AR e decide pela releitura', () => {
+  it('Receber parcial de 3000 comitado durante a espera → received_amount 10000 e RECEBIDO (não 7000 PARCIAL)', async () => {
+    banco.ar({ id: 'a1', service_order_id: 'os1', status: 'PENDENTE', total_amount: 10000, received_amount: 0, account_id: 'itau' })
+    banco.tabelas.acquirerTransaction[0].gross_amount = 7000
+    banco.aoTravar(({ tabela }) => {
+      if (tabela !== 'accounts_receivable') return
+      Object.assign(banco.tabelas.accountReceivable[0], { received_amount: 3000 })
+      banco.aoTravar(null)
+    })
+    expect((await vincular()).ok).toBe(true)
+    expect(banco.tabelas.accountReceivable[0]).toEqual(expect.objectContaining({ received_amount: 10000, status: 'RECEBIDO' }))
+    expect(banco.travas.map((t) => t.tabela)).toEqual(['accounts', 'accounts_receivable'])
+  })
+})

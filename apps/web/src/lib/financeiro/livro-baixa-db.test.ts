@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('@pontual/db', async () => ({ prisma: (await import('@/test-utils/banco-falso')).banco.prisma }))
 
-import { desligarLinhas, dinheiroDaAR, SELECT_LINHA_LIGADA } from './livro-baixa-db'
+import { conflitoDeBanco, desligarLinhas, dinheiroDaAR, SELECT_LINHA_LIGADA } from './livro-baixa-db'
 import { banco } from '@/test-utils/banco-falso'
 
 beforeEach(() => {
@@ -78,5 +78,23 @@ describe('dinheiroDaAR — reversões do Asaas (F3-B; fix 4, F4-C, #2, #9)', () 
     banco.transacao({ account_id: ASAAS, transaction_type: 'DEBIT', amount: 10000, bank_ref: 'pay_x-refund' })
     banco.transacao({ account_id: 'caixa', transaction_type: 'CREDIT', amount: 10000, bank_ref: 'AR:r1' })
     expect(await total()).toBe(10000)
+  })
+})
+
+describe('conflitoDeBanco (F2-D; fix 4, F4-D, m3): os formatos em que o Prisma 5 entrega deadlock/serialização/timeout', () => {
+  it('P2034, P2028, P2010 com 40P01 (raw query) e erro sem code com PostgresError 40P01/40001 → conflito', () => {
+    expect(conflitoDeBanco(Object.assign(new Error('Transaction failed due to a write conflict or a deadlock'), { code: 'P2034' }))).toBe(true)
+    expect(conflitoDeBanco(Object.assign(new Error('Transaction API error: Unable to start a transaction in the given time.'), { code: 'P2028' }))).toBe(true)
+    expect(conflitoDeBanco(Object.assign(new Error('Raw query failed. Code: `40P01`. Message: `deadlock detected`'), { code: 'P2010', meta: { code: '40P01', message: 'deadlock detected' } }))).toBe(true)
+    expect(conflitoDeBanco(new Error('Error occurred during query execution: ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(PostgresError { code: "40P01", message: "deadlock detected", severity: "ERROR" }) })'))).toBe(true)
+    expect(conflitoDeBanco(new Error('ConnectorError(... PostgresError { code: "40001", message: "could not serialize access due to concurrent update" ...)'))).toBe(true)
+    expect(conflitoDeBanco(Object.assign(new Error('Raw query failed'), { code: 'P2010', meta: { code: '40001' } }))).toBe(true)
+  })
+
+  it('outros erros não são conflito (P2002, P2010 de sintaxe, erro comum, null)', () => {
+    expect(conflitoDeBanco(Object.assign(new Error('Unique constraint failed'), { code: 'P2002' }))).toBe(false)
+    expect(conflitoDeBanco(Object.assign(new Error('Raw query failed. Code: `42601`. Message: `syntax error`'), { code: 'P2010', meta: { code: '42601' } }))).toBe(false)
+    expect(conflitoDeBanco(new Error('boom'))).toBe(false)
+    expect(conflitoDeBanco(null)).toBe(false)
   })
 })

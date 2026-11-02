@@ -4,7 +4,8 @@ import { getPaymentProvider } from '@/lib/payments/factory'
 import { captureFeesForPayment } from '@/lib/payments/capture-fees'
 import { estadoArConfirmado, estadoArRecebido, valorCreditoAsaas, dataCreditoAsaas } from '@/lib/payments/asaas-rules'
 import { isImprimitechHandoffStatus } from '@/lib/imprimitech-handoff'
-import { ondeRef } from '@/lib/financeiro/livro'
+import { compensado, ondeRef } from '@/lib/financeiro/livro'
+import { logError } from '@/lib/observability'
 import { conflitoDeBanco, contaAsaasDaEmpresa, travarContas } from '@/lib/financeiro/livro-baixa-db'
 
 // Valid status transitions — reject anything not in this map
@@ -471,7 +472,47 @@ export async function POST(req: NextRequest) {
               },
               select: { id: true },
             })
-            if (!existingCredit) {
+            // Fix 4 (F4-D, #4): AR já quitada (relida) por um Receber manual antes deste webhook — o dinheiro pode já estar
+            // lançado pela ref própria. Linha do banco ligada a AR:<id> nesta conta → o dinheiro já está: não credita.
+            // Nocional AR:<id> vivo nesta conta → SWAP (apaga o nocional e o saldo; entra o pay_ líquido; saldo = banco).
+            // Nocional AR:<id> noutra conta → credita como sempre e registra a possível duplicidade em error_logs.
+            let trocar: { id: string; amount: number }[] = []
+            let jaNoBanco = false
+            if (!existingCredit && ['RECEBIDO', 'LIQUIDADO', 'PAGO'].includes(receivable.status || '')) {
+              const proprio = `AR:${receivable.id}`
+              jaNoBanco = (await tx.transaction.findFirst({
+                where: { company_id: fresh.company_id, account_id: creditAccountId, origin: 'BANCO', linked_ref: proprio },
+                select: { id: true },
+              })) !== null
+              if (!jaNoBanco) {
+                const creditos = await tx.transaction.findMany({
+                  where: { company_id: fresh.company_id, bank_ref: proprio, transaction_type: 'CREDIT', origin: null, source_text: null },
+                  select: { id: true, amount: true, account_id: true, created_at: true },
+                })
+                const estornos = await tx.transaction.findMany({
+                  where: { company_id: fresh.company_id, bank_ref: `${proprio}:estorno` },
+                  select: { account_id: true, created_at: true },
+                })
+                const vivos = creditos.filter((c: { account_id: string; created_at: Date | null }) => !compensado(c, estornos))
+                trocar = vivos.filter((c: { account_id: string }) => c.account_id === creditAccountId)
+                const fora = vivos.filter((c: { account_id: string }) => c.account_id !== creditAccountId)
+                if (fora.length > 0) {
+                  const conta = await tx.account.findFirst({ where: { id: fora[0].account_id }, select: { name: true } })
+                  void logError(new Error(`possível duplicidade: AR recebida manualmente em ${conta?.name ?? fora[0].account_id} e também pelo Asaas (${asaasPayment.id})`), {
+                    url: '/api/webhooks/payment', method: 'POST', company_id: fresh.company_id,
+                    params: { receivable_id: receivable.id, payment: asaasPayment.id },
+                  }, 'warning')
+                }
+              }
+            }
+            if (!existingCredit && !jaNoBanco) {
+              for (const c of trocar) {
+                await tx.transaction.delete({ where: { id: c.id } })
+                await tx.account.update({
+                  where: { id: creditAccountId },
+                  data: { current_balance: { decrement: c.amount }, updated_at: new Date() },
+                })
+              }
               // 29/10: entra o LÍQUIDO (o Asaas já desconta a taxa, que vira AP PAGO em capture-fees) na data
               // em que o dinheiro foi creditado — assim o saldo do ERP bate com o saldo real da conta Asaas.
               const creditAmount = valorCreditoAsaas(asaasPayment, fresh.amount)
@@ -581,9 +622,12 @@ export async function POST(req: NextRequest) {
       // (pulando CONFIRMED). Boleto pode passar (CONFIRMED quando compensa
       // + RECEIVED quando dinheiro vira disponivel). Cartao sempre passa.
       if (newStatus === 'CONFIRMED' && fresh.receivable_id) {
-        const receivable = await tx.accountReceivable.findFirst({
+        const lidaAR = await tx.accountReceivable.findFirst({
           where: { id: fresh.receivable_id, company_id: fresh.company_id },
         })
+        // Fix 4 (F4-D, #5): received_amount absoluto calculado sobre a AR travada e relida (um Receber parcial que
+        // comitou enquanto esperava não some).
+        const receivable = lidaAR ? await relerAR(tx, lidaAR) : null
         // 29/10 (Karlão): CONFIRMED = pagou, mas o dinheiro ainda não está na conta → RECEBIDO SEM conciliar
         // (antes marcava reconciled=true aqui). Concilia/liquida no RECEIVED. Regras em lib/payments/asaas-rules.
         const estado = receivable ? estadoArConfirmado(receivable, fresh.amount) : null
@@ -944,10 +988,11 @@ export async function POST(req: NextRequest) {
       // (recebimento parcial). Manter rastro pra auditoria fiscal — sem
       // charge_id seria impossivel ligar a OS ao Payment original.
       if ((newStatus === 'DELETED' || newStatus === 'CANCELLED') && fresh.receivable_id) {
-        const arNow = await tx.accountReceivable.findFirst({
-          where: { id: fresh.receivable_id },
-          select: { received_amount: true },
+        // Fix 4 (F4-D, m4): hasPartial pela AR travada e relida (recebimento parcial comitado durante a espera conta).
+        const lidaAR = await tx.accountReceivable.findFirst({
+          where: { id: fresh.receivable_id, company_id: fresh.company_id },
         })
+        const arNow = lidaAR ? await relerAR(tx, lidaAR) : null
         const hasPartial = (arNow?.received_amount || 0) > 0
         if (hasPartial) {
           // So marca o charge_status, mantem charge_id/charge_url

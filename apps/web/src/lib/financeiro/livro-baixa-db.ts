@@ -100,9 +100,15 @@ export async function travarContas(tx: any, companyId: string, ids: (string | nu
 // Fix 2 (F2-D, m9): deadlock/serialização (P2034) ou tx que estourou o tempo esperando trava (P2028) → 409 'repita'
 // em vez de 500 (nada foi gravado: a tx foi desfeita).
 export const CONFLITO_BANCO = 'conflito com outra operação — repita'
+// Fix 4 (F4-D, m3): no Prisma 5 com Postgres (READ COMMITTED) o deadlock real chega como P2010 'Raw query failed.
+// Code: `40P01`' (nas travas $queryRaw) ou como erro sem code com 'PostgresError { code: "40P01" }' (ORM); a falha de
+// serialização é 40001. Os dois contam pelo SQLSTATE (meta.code ou mensagem); P2010 de outro SQLSTATE não é conflito.
 export function conflitoDeBanco(e: unknown): boolean {
-  const code = (e as { code?: unknown } | null)?.code
-  return code === 'P2034' || code === 'P2028'
+  const err = e as { code?: unknown; meta?: { code?: unknown } | null; message?: unknown } | null
+  if (!err) return false
+  if (err.code === 'P2034' || err.code === 'P2028') return true
+  if (err.meta?.code === '40P01' || err.meta?.code === '40001') return true
+  return typeof err.message === 'string' && /code\W{1,4}(40P01|40001)\b/i.test(err.message)
 }
 
 // Toda conta que a rota vai escrever precisa estar entre as travadas; senão desfaz (ContaAlterada).
