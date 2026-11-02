@@ -360,11 +360,12 @@ describe('F6-C (#3): reversão só debita dinheiro que existiu', () => {
 
   it('RECEIVED → REFUNDED: DEBIT na conta do crédito (e o FiscalEntry negativo)', async () => {
     banco.inserir('accountChart', { id: 'ch1', company_id: 'c1', is_active: true, account_type: 'REVENUE', name: 'Receita Servicos - PIX', display_order: 1 })
+    banco.inserir('fiscalEntry', { id: 'fe1', company_id: 'c1', payment_id: 'p1', amount: BigInt(100000) })
     banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'RECEIVED', amount: 100000, billing_type: 'PIX' })
     banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 97000, bank_ref: 'pay_1' })
     expect(await evento('evt_c5', 'PAYMENT_REFUNDED')).toBe(200)
     expect(debitos()).toEqual([expect.objectContaining({ bank_ref: 'pay_1-refund', account_id: ACC, amount: 100000 })])
-    expect(banco.tabelas.fiscalEntry).toEqual([expect.objectContaining({ amount: BigInt(-100000) })])
+    expect(banco.tabelas.fiscalEntry.filter((f) => (f.amount as bigint) < 0)).toEqual([expect.objectContaining({ amount: BigInt(-100000) })])
   })
 
   it('a linha ASAAS:PAY:<pay> ainda livre também é dinheiro do pagamento → DEBIT na conta dela', async () => {
@@ -502,5 +503,35 @@ describe('F7-C: ligar a linha zera desligada_de', () => {
     banco.transacao({ id: 'L', account_id: ACC, transaction_type: 'CREDIT', amount: 97000, origin: 'BANCO', bank_ref: 'ASAAS:PAY:pay_1', source_text: 'Cobrança', desligada_de: 'AR:r1' })
     expect(await evento('evt_dz', 'PAYMENT_RECEIVED')).toBe(200)
     expect(banco.tx_('L')).toEqual(expect.objectContaining({ linked_ref: 'pay_1', desligada_de: null }))
+  })
+})
+
+describe('F7-E (#16, m2, m4, m8): FiscalEntry negativo pelo positivo do pagamento, uma vez só', () => {
+  const negativos = () => (banco.tabelas.fiscalEntry ?? []).filter((f) => (f.amount as bigint) < 0)
+  beforeEach(() => {
+    banco.inserir('accountChart', { id: 'ch1', company_id: 'c1', is_active: true, account_type: 'REVENUE', name: 'Receita Servicos - Cartao Credito', display_order: 1 })
+    Object.assign(banco.tabelas.accountReceivable[0], { status: 'LIQUIDADO', received_amount: 100000 })
+  })
+
+  it('RECEIVED sem crédito no ERP (FE+ existe) → REFUNDED → FE− criado, nenhum DEBIT', async () => {
+    banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'RECEIVED', amount: 100000, billing_type: 'CREDIT_CARD' })
+    banco.inserir('fiscalEntry', { id: 'fe1', company_id: 'c1', payment_id: 'p1', amount: BigInt(100000) })
+    expect(await evento('evt_fe1', 'PAYMENT_REFUNDED')).toBe(200)
+    expect(negativos()).toEqual([expect.objectContaining({ amount: BigInt(-100000), payment_id: 'p1' })])
+    expect(banco.tabelas.transaction.filter((t) => t.transaction_type === 'DEBIT')).toEqual([])
+  })
+
+  it('m4: REFUNDED depois da reversão de chargeback → um só FE−', async () => {
+    banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'DISPUTED', amount: 100000, billing_type: 'CREDIT_CARD' })
+    banco.inserir('fiscalEntry', { id: 'fe1', company_id: 'c1', payment_id: 'p1', amount: BigInt(100000) })
+    expect(await evento('evt_fe2', 'PAYMENT_AWAITING_CHARGEBACK_REVERSAL')).toBe(200)
+    expect(await evento('evt_fe3', 'PAYMENT_REFUNDED')).toBe(200)
+    expect(negativos()).toHaveLength(1)
+  })
+
+  it('CONFIRMED → REFUNDED (sem FE+) → nenhum FE−', async () => {
+    banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'CONFIRMED', amount: 100000, billing_type: 'CREDIT_CARD' })
+    expect(await evento('evt_fe4', 'PAYMENT_REFUNDED')).toBe(200)
+    expect(negativos()).toEqual([])
   })
 })

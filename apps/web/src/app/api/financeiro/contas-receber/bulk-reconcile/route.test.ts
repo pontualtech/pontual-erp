@@ -295,13 +295,13 @@ describe('§5 Conferir: o que já é dinheiro desta AR (existing) e as regras an
     expect(ar('A').status).toBe('RECEBIDO')
   })
 
-  it('#6 (ii): cobrança Asaas CONFIRMED sem crédito pay_ ainda → erro, nada criado; com vínculo explícito, liga', async () => {
+  it('#6 (ii) / F7-E: cobrança Asaas CONFIRMED sem crédito pay_ ainda → só status + aviso, nada criado; com vínculo explícito, liga', async () => {
     banco.ar(AR)
     banco.pagamento({ receivable_id: 'a1', provider: 'asaas', external_id: 'pay_x', status: 'CONFIRMED' })
     const { j } = await conferir()
-    expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'cobrança Asaas: o crédito entra pelo webhook quando o dinheiro cair' }])
+    expect(j.data).toEqual(expect.objectContaining({ erros: [], avisos: [{ ar: 'a1', motivo: 'pagamento Asaas ainda não creditado/em disputa: o dinheiro entra pela linha do extrato' }] }))
     expect(banco.tabelas.transaction).toEqual([])
-    expect(ar().status).toBe('RECEBIDO')
+    expect(ar().status).toBe('LIQUIDADO')
     linhaLivro()
     expect((await conferir(['a1'], { a1: 't1' })).j.data).toEqual(expect.objectContaining({ ligadas: 1, erros: [] }))
   })
@@ -624,14 +624,13 @@ describe('F4-B / F6-B: Asaas RECEIVED sem crédito — liga a linha do extrato; 
     expect(banco.saldo(ACC)).toBe(100000)
   })
 
-  it('m13: portão do CONFIRMED — AR com um Payment RECEIVED e outro CONFIRMED, sem dinheiro → erro "o crédito entra pelo webhook", nada criado', async () => {
+  it('m13: portão do CONFIRMED — AR com um Payment RECEIVED e outro CONFIRMED, sem dinheiro → só status + aviso, nada criado', async () => {
     banco.ar(AR)
     recebido()
     recebido({ external_id: 'pay_c', status: 'CONFIRMED' })
     const { j } = await conferir()
-    expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'cobrança Asaas: o crédito entra pelo webhook quando o dinheiro cair' }])
+    expect(j.data).toEqual(expect.objectContaining({ erros: [], avisos: [{ ar: 'a1', motivo: 'pagamento Asaas ainda não creditado/em disputa: o dinheiro entra pela linha do extrato' }] }))
     expect(banco.tabelas.transaction).toEqual([])
-    expect(ar().status).toBe('RECEBIDO')
   })
 })
 
@@ -773,5 +772,26 @@ describe('F7-C: o F6-B zera desligada_de ao ligar a linha ASAAS:PAY', () => {
     linhaLivro({ bank_ref: 'ASAAS:PAY:pay_x', amount: 14550, desligada_de: 'AR:a1' })
     await conferir()
     expect(banco.tx_('t1')).toEqual(expect.objectContaining({ linked_ref: 'pay_x', desligada_de: null }))
+  })
+})
+
+describe('F7-E (#5): Conferir não cria dinheiro para AR Asaas em trânsito', () => {
+  it.each(['DISPUTED', 'REFUND_PENDING', 'AWAITING_RISK_ANALYSIS'])('Payment %s sem crédito → só status + aviso, nenhum CREDIT', async (status) => {
+    banco.ar(AR)
+    banco.pagamento({ receivable_id: 'a1', provider: 'asaas', external_id: 'pay_c', status })
+    linhaLivro() // linha livre de mesmo valor: não é este dinheiro
+    const { j } = await conferir()
+    expect(j.data).toEqual(expect.objectContaining({ updated: 1, ligadas: 0, balance_delta: 0, avisos: [{ ar: 'a1', motivo: 'pagamento Asaas ainda não creditado/em disputa: o dinheiro entra pela linha do extrato' }] }))
+    expect(creditosAR()).toEqual([])
+    expect(banco.tx_('t1')!.linked_ref).toBeNull()
+    expect(ar().status).toBe('LIQUIDADO')
+  })
+
+  it.each(['PENDING', 'OVERDUE', 'DELETED', 'CANCELLED', 'REFUNDED', 'EXPIRED'])('Payment %s (sem dinheiro a caminho) não bloqueia: cria como antes', async (status) => {
+    banco.ar(AR)
+    banco.pagamento({ receivable_id: 'a1', provider: 'asaas', external_id: 'pay_c', status })
+    const { j } = await conferir()
+    expect(j.data.balance_delta).toBe(15000)
+    expect(creditosAR()).toHaveLength(1)
   })
 })

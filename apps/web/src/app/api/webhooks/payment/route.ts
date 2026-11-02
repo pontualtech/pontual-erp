@@ -106,6 +106,14 @@ async function relerAR<T extends { id: string; company_id: string }>(tx: any, li
   return ((await tx.accountReceivable.findFirst({ where: { id: lida.id, company_id: lida.company_id } })) ?? lida) as T
 }
 
+// Fix 7 (F7-E): há receita deste pagamento no DRE (FiscalEntry positivo) e ela ainda não foi estornada (negativo).
+async function precisaEstornarDRE(tx: any, companyId: string, paymentId: string): Promise<boolean> {
+  const positivo = await tx.fiscalEntry.findFirst({ where: { company_id: companyId, payment_id: paymentId, amount: { gt: 0 } }, select: { id: true } })
+  if (!positivo) return false
+  const negativo = await tx.fiscalEntry.findFirst({ where: { company_id: companyId, payment_id: paymentId, amount: { lt: 0 } }, select: { id: true } })
+  return !negativo
+}
+
 // Fix 5 (F5-A) / fix 6 (F6-C, #3): o débito do reembolso/chargeback sai da conta onde está o dinheiro do pagamento no
 // ERP — o crédito nocional pay_, a linha do banco ligada a ele (linked_ref) ou a linha ASAAS:PAY:<pay> ainda livre.
 // Sem dinheiro (cartão só CONFIRMED, webhook perdido) → null: nada é debitado nem lançado no DRE (o Asaas não mexeu no saldo).
@@ -794,8 +802,10 @@ export async function POST(req: NextRequest) {
           // Usa MESMA categoria do recebimento (billing-aware) pra estorno
           // bater na linha certa da DRE.
           try {
-            // Fix 6 (F6-C): sem dinheiro do pagamento no ERP não houve receita no DRE — nada a estornar.
-            const refundChartAccount = debitAccountId ? await resolveRevenueChart(tx, fresh.company_id, fresh.billing_type || fresh.method) : null
+            // Fix 7 (F7-E, #16/m2/m4): o FE− existe se houve o FE+ deste pagamento (o RECEIVED o cria mesmo sem crédito no
+            // ERP) e ainda não houve o FE− (o chargeback revertido já estornou) — independe do dinheiro no ERP.
+            const refundChartAccount = await precisaEstornarDRE(tx, fresh.company_id, fresh.id)
+              ? await resolveRevenueChart(tx, fresh.company_id, fresh.billing_type || fresh.method) : null
             if (refundChartAccount) {
               await tx.fiscalEntry.create({
                 data: {
@@ -896,8 +906,9 @@ export async function POST(req: NextRequest) {
             // FiscalEntry estorno por chargeback (mesma categoria do
             // recebimento via resolveRevenueChart billing-aware)
             try {
-              // Fix 6 (F6-C): sem dinheiro do pagamento no ERP não houve receita no DRE — nada a estornar.
-              const cbChartAccount = debitAccountId ? await resolveRevenueChart(tx, fresh.company_id, fresh.billing_type || fresh.method) : null
+              // Fix 7 (F7-E): FE− pelo FE+ deste pagamento, uma vez só (independe do dinheiro no ERP).
+              const cbChartAccount = await precisaEstornarDRE(tx, fresh.company_id, fresh.id)
+                ? await resolveRevenueChart(tx, fresh.company_id, fresh.billing_type || fresh.method) : null
               if (cbChartAccount) {
                 await tx.fiscalEntry.create({
                   data: {

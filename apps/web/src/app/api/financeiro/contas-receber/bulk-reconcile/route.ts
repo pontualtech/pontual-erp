@@ -16,6 +16,11 @@ import { CATEGORIA_RECEITA_SERVICOS } from '@/lib/financeiro/livro-categorias'
 
 // Lançamento do livro foi ligado por outra baixa concorrente → desfaz a $transaction desta AR.
 class LivroJaLigado extends Error {}
+// Fix 7 (F7-E, #5): status de Payment Asaas sem dinheiro a caminho (não pago ou já desfeito); qualquer outro (CONFIRMED,
+// DISPUTED, REFUND_PENDING, AWAITING_*, CHARGEBACK_*, RECEIVED sem crédito) é dinheiro que só entra pela linha do extrato.
+// EXPIRED e FAILED são como PENDING (a cobrança não foi paga; o cliente pode ter pago por fora).
+const ASAAS_SEM_DINHEIRO = ['PENDING', 'OVERDUE', 'DELETED', 'CANCELLED', 'REFUNDED', 'EXPIRED', 'FAILED']
+const AVISO_ASAAS_EM_TRANSITO = 'pagamento Asaas ainda não creditado/em disputa: o dinheiro entra pela linha do extrato'
 // Fix 6 (F6-B, #2): o Conferir nunca cria dinheiro Asaas — sem a linha do extrato, só confere e avisa.
 const AVISO_ASAAS_SEM_LINHA =
   'pagamento Asaas sem lançamento: o dinheiro entra pela linha do extrato Asaas (ou já está no ajuste de caixa, se anterior ao corte)'
@@ -292,9 +297,11 @@ export async function POST(req: NextRequest) {
               return { ligada: pedidoJaLigado, aviso }
             }
 
-            // (ii) #6: cartão/boleto Asaas confirmado — o crédito (líquido) entra pelo webhook quando o dinheiro cair.
-            if (!pedido && refs.pagamentos.some((p) => p.provider === 'asaas' && p.status === 'CONFIRMED')) {
-              return { erro: 'cobrança Asaas: o crédito entra pelo webhook quando o dinheiro cair' }
+            // (ii) #6 / fix 7 (F7-E, #5): pagamento Asaas a caminho (CONFIRMED, DISPUTED, REFUND_PENDING, AWAITING_*,
+            // CHARGEBACK_*…) sem crédito — o dinheiro entra pela linha do extrato: nunca cria dinheiro, só confere e avisa.
+            if (!pedido && refs.pagamentos.some((p) => p.provider === 'asaas' && !ASAAS_SEM_DINHEIRO.includes(p.status ?? ''))) {
+              await liquidar()
+              return { aviso: AVISO_ASAAS_EM_TRANSITO }
             }
 
             // Sem crédito: decide ligar/criar mesmo que já esteja reconciled (ex.: webhook Inter marcou sem lançar);
