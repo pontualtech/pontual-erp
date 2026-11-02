@@ -232,3 +232,12 @@ describe('ondeRef (onda 4, fix 1)', () => {
   })
 })
 
+describe('planejarLinha com linha de saída (F2-H, m1)', () => {
+  it('links somam o valor absoluto da saída → LIGAR; parcial → CRIAR a diferença com o sinal da linha, sem "identificar"', () => {
+    expect(planejarLinha(linha({ valor_centavos: -30000, links: ['AP:1'] }), CORTE, false, [{ bank_ref: 'AP:1', amount: 30000 }]))
+      .toEqual({ acao: 'LIGAR', refs: ['AP:1'] })
+    expect(planejarLinha(linha({ valor_centavos: -30000, links: ['AP:1'] }), CORTE, false, [{ bank_ref: 'AP:1', amount: 10000 }]))
+      .toEqual({ acao: 'CRIAR', valor_centavos: -20000, refs_ligadas: ['AP:1'], identificar: false })
+  })
+})
+

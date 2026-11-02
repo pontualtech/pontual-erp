@@ -62,13 +62,16 @@ export function planejarLinha(
     return { acao: 'CRIAR', valor_centavos: linha.valor_centavos, refs_ligadas: [], identificar: false }
   }
 
+  // Fix 2 (F2-H, m1): os lançamentos ligados valem com o sinal da linha (amount é sempre positivo) — saída de 300
+  // ligada a um DEBIT de 300 é LIGAR, não CRIAR −600. 'identificar' só para entrada a mais.
   const soma = existentes.reduce((s, c) => s + c.amount, 0)
-  if (soma === linha.valor_centavos) return { acao: 'LIGAR', refs }
+  const somaComSinal = linha.valor_centavos < 0 ? -soma : soma
+  if (somaComSinal === linha.valor_centavos) return { acao: 'LIGAR', refs }
   return {
     acao: 'CRIAR',
-    valor_centavos: linha.valor_centavos - soma,
+    valor_centavos: linha.valor_centavos - somaComSinal,
     refs_ligadas: refs,
-    identificar: soma < linha.valor_centavos,
+    identificar: linha.valor_centavos > 0 && soma < linha.valor_centavos,
   }
 }
 

@@ -7,6 +7,7 @@ import { classificar, planejarLinha, escolherOrfao, limitesJanelaOrfao, creditoU
 import { dataValida } from '@/lib/financeiro/livro-ajuste'
 import { garantirCategoriasERegras } from '@/lib/financeiro/livro-categorias'
 import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
+import { CONFLITO_BANCO, conflitoDeBanco } from '@/lib/financeiro/livro-baixa-db'
 
 /**
  * Livro-razão — lançamento das linhas do extrato bancário.
@@ -38,14 +39,19 @@ type Linha = z.infer<typeof bodySchema>['linhas'][number]
 
 interface Resultado {
   chave: string
-  acao: 'IGNORAR' | 'LIGAR' | 'CRIAR'
+  acao: 'IGNORAR' | 'LIGAR' | 'CRIAR' | 'ERRO'
   motivo?: string
+  erro?: string // acao ERRO (fix 2, F2-H): a linha não foi lançada; reenviar na próxima varredura
   valor_centavos?: number
   categoria?: string | null
   transaction_id?: string
   refs?: string[]
   origem?: 'orfao'
 }
+
+// Fix 2 (F2-H): o lançamento a ligar (ou o órfão) mudou entre a leitura e a gravação — a linha vira erro, o lote segue.
+class LinhaMudou extends Error {}
+const LINKS_INCOMPATIVEIS = 'links com tipo incompatível com o sinal da linha'
 
 export async function POST(req: NextRequest) {
   try {
@@ -137,14 +143,17 @@ export async function POST(req: NextRequest) {
           ? await db.transaction.findMany({
               where: { company_id: user.companyId, account_id: body.account_id, bank_ref: { in: links } },
               orderBy: [{ created_at: 'asc' }, { id: 'asc' }],
-              select: { id: true, bank_ref: true, amount: true, source_text: true, created_at: true, description: true, category_id: true },
+              select: { id: true, bank_ref: true, amount: true, source_text: true, created_at: true, description: true, category_id: true, transaction_type: true },
             })
           : []
       // Ausente: já tomado por OUTRA linha (LIGADA:<outra chave>) ou criado até o ajuste (já absorvido por ele).
       // (O convertido por outra linha já não tem este bank_ref — nem aparece aqui.) Já estornado também não serve (§2).
       const ligaveis = await semCompensados(db, creditos.filter((c) => creditoUsavelParaVinculo(c, linha.chave, limiteOrfao)))
       const creditosExistentes = ligaveis.map((c) => ({ bank_ref: c.bank_ref as string, amount: c.amount }))
-      return { plano: planejarLinha(linha, body.corte, jaLancada, creditosExistentes), ligaveis }
+      // Fix 2 (F2-H, m1): o citado em `links` tem de ser do tipo do sinal da linha (entrada → CREDIT, saída → DEBIT).
+      const tipo = linha.valor_centavos > 0 ? 'CREDIT' : 'DEBIT'
+      const tipoIncompativel = creditos.some((c) => c.transaction_type !== tipo)
+      return { plano: planejarLinha(linha, body.corte, jaLancada, creditosExistentes), ligaveis, tipoIncompativel }
     }
 
     // Procura crédito/débito já existente ("órfão") que corresponda à linha, na mesma empresa e conta.
@@ -240,7 +249,7 @@ export async function POST(req: NextRequest) {
     // Converte os lançamentos citados em `links` a partir da posição `desde`; se algum mudou no meio, desfaz a linha.
     const converterLigaveis = async (tx: Pick<typeof prisma, 'transaction' | 'accountPayable' | 'category'>, ts: Convertivel[], linha: Linha, desde: number) => {
       for (const [i, t] of ts.entries()) {
-        if (!(await converter(tx, t, linha, desde + i))) throw new Error('lançamento a ligar mudou durante o lançamento da linha — repita')
+        if (!(await converter(tx, t, linha, desde + i))) throw new LinhaMudou('lançamento a ligar mudou durante o lançamento da linha — repita')
       }
     }
 
@@ -261,7 +270,11 @@ export async function POST(req: NextRequest) {
       }
 
       if (simular) {
-        const { plano } = await planejar(prisma, linha)
+        const { plano, tipoIncompativel } = await planejar(prisma, linha)
+        if (tipoIncompativel) {
+          resultados.push({ chave: linha.chave, acao: 'ERRO', erro: LINKS_INCOMPATIVEIS })
+          continue
+        }
         if (plano.acao === 'CRIAR' && plano.refs_ligadas.length === 0) {
           const orfao = await buscarOrfao(prisma, linha, orfaosUsados)
           if (orfao) {
@@ -287,11 +300,14 @@ export async function POST(req: NextRequest) {
         continue
       }
 
-      const res = await prisma.$transaction(async (tx): Promise<Resultado> => {
+      let res: Resultado
+      try {
+      res = await prisma.$transaction(async (tx): Promise<Resultado> => {
         // Primeira instrução: trava a conta. Chamadas concorrentes esperam aqui e já enxergam a linha gravada.
         await tx.$queryRaw`SELECT current_balance FROM accounts WHERE id = ${body.account_id} AND company_id = ${user.companyId} FOR UPDATE`
-        const { plano, ligaveis } = await planejar(tx, linha)
+        const { plano, ligaveis, tipoIncompativel } = await planejar(tx, linha)
 
+        if (tipoIncompativel) return { chave: linha.chave, acao: 'ERRO', erro: LINKS_INCOMPATIVEIS }
         if (plano.acao === 'IGNORAR') return { chave: linha.chave, acao: 'IGNORAR', motivo: plano.motivo }
 
         if (plano.acao === 'LIGAR') {
@@ -305,7 +321,8 @@ export async function POST(req: NextRequest) {
           if (orfao) {
             orfaosUsados.add(orfao.id)
             if (await converter(tx, orfao, linha, 0)) return { chave: linha.chave, acao: 'LIGAR', refs: [orfao.id], origem: 'orfao' }
-            // Alguém levou o órfão antes: segue para CRIAR.
+            // Fix 2 (F2-H): alguém mexeu no órfão entre a leitura e a gravação — erro desta linha (reenvia), não cria por cima.
+            throw new LinhaMudou('órfão mudou durante o lançamento da linha — repita')
           }
         }
 
@@ -334,7 +351,14 @@ export async function POST(req: NextRequest) {
         // A linha criada leva a chave; os lançamentos ligados viram chave#2, chave#3…
         if (plano.refs_ligadas.length > 0) await converterLigaveis(tx, ligaveis, linha, 1)
         return { chave: linha.chave, acao: 'CRIAR', valor_centavos: valor, categoria: cat.nome, transaction_id: t.id }
-      })
+      }, { maxWait: 10000, timeout: 20000 })
+      } catch (e) {
+        // Fix 2 (F2-H, m5/m11/m22): conflito do banco (P2034/P2028) ou lançamento que mudou → erro desta linha (a tx dela
+        // foi desfeita); as demais seguem e a rotina recebe `resultados` — nunca 500 do lote.
+        if (e instanceof LinhaMudou) res = { chave: linha.chave, acao: 'ERRO', erro: e.message }
+        else if (conflitoDeBanco(e)) res = { chave: linha.chave, acao: 'ERRO', erro: CONFLITO_BANCO }
+        else throw e
+      }
       resultados.push(res)
     }
 

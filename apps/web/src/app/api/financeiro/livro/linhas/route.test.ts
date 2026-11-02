@@ -223,3 +223,63 @@ describe('§2 órfão nunca é o par do estorno (resolve #3)', () => {
     expect(j.data.resultados[0]).toEqual({ chave: 'K', acao: 'LIGAR', refs: ['mn'], origem: 'orfao' })
   })
 })
+
+describe('F2-H (m1, m5, m11, m22): livro/linhas robusto para a rotina — erro por linha, nunca 500 do lote', () => {
+  const L2 = { chave: 'K2', data: '2026-11-01', descricao: 'TARIFA', valor_centavos: -990 }
+
+  it('m1: links com tipo incompatível com o sinal da linha → a linha vira erro e o lote segue', async () => {
+    banco.transacao({ id: 'd1', account_id: 'acc1', transaction_type: 'DEBIT', amount: 30000, bank_ref: 'AP:p1', transaction_date: dia('2026-11-01') })
+    const { status, j } = await post([{ chave: 'K1', data: '2026-11-01', descricao: 'PIX', valor_centavos: 30000, links: ['AP:p1'] }, L2])
+    expect(status).toBe(200)
+    expect(j.data.resultados[0]).toEqual({ chave: 'K1', acao: 'ERRO', erro: 'links com tipo incompatível com o sinal da linha' })
+    expect(j.data.resultados[1]).toEqual(expect.objectContaining({ chave: 'K2', acao: 'CRIAR' }))
+    expect(banco.tx_('d1')).toEqual(expect.objectContaining({ origin: null, bank_ref: 'AP:p1' }))
+    expect(banco.saldo('acc1')).toBe(50000 - 990)
+  })
+
+  it('m1: linha de saída com links ao DEBIT de mesmo valor → LIGAR (não cria |v|+soma)', async () => {
+    banco.transacao({ id: 'd1', account_id: 'acc1', transaction_type: 'DEBIT', amount: 30000, bank_ref: 'AP:p1', transaction_date: dia('2026-11-01') })
+    const { j } = await post([{ chave: 'K1', data: '2026-11-01', descricao: 'BOLETO', valor_centavos: -30000, links: ['AP:p1'] }])
+    expect(j.data.resultados[0]).toEqual({ chave: 'K1', acao: 'LIGAR', refs: ['AP:p1'] })
+    expect(banco.tx_('d1')).toEqual(expect.objectContaining({ origin: 'BANCO', bank_ref: 'K1', linked_ref: 'AP:p1' }))
+    expect(banco.saldo('acc1')).toBe(50000)
+  })
+
+  it('m5/m11: conflito do banco (P2034/P2028) numa linha → erro dessa linha, as demais lançadas', async () => {
+    for (const code of ['P2034', 'P2028']) {
+      banco.tx.transaction.create.mockImplementationOnce(async () => { throw Object.assign(new Error('conflito'), { code }) })
+    }
+    const { status, j } = await post([linha(), { ...L2, chave: 'K3' }, L2])
+    expect(status).toBe(200)
+    expect(j.data.resultados.map((r: any) => [r.chave, r.acao, r.erro])).toEqual([
+      [CHAVE, 'ERRO', 'conflito com outra operação — repita'], ['K3', 'ERRO', 'conflito com outra operação — repita'], ['K2', 'CRIAR', undefined],
+    ])
+    expect(banco.saldo('acc1')).toBe(50000 - 990)
+  })
+
+  it('m22: lançamento a ligar mudou no meio (conversão count 0) → erro da linha, nada gravado dela, lote segue', async () => {
+    banco.transacao({ id: 'n1', account_id: 'acc1', transaction_type: 'CREDIT', amount: 50000, bank_ref: 'AR:a1', transaction_date: dia('2026-11-01') })
+    banco.tx.transaction.updateMany.mockImplementationOnce(async () => ({ count: 0 }))
+    const { status, j } = await post([linha({ links: ['AR:a1'] }), L2])
+    expect(status).toBe(200)
+    expect(j.data.resultados[0]).toEqual({ chave: CHAVE, acao: 'ERRO', erro: 'lançamento a ligar mudou durante o lançamento da linha — repita' })
+    expect(j.data.resultados[1].acao).toBe('CRIAR')
+    expect(banco.tx_('n1')).toEqual(expect.objectContaining({ origin: null, bank_ref: 'AR:a1' }))
+  })
+
+  it('m22: órfão levado no meio (conversão count 0) → erro da linha (não cria a linha por cima)', async () => {
+    banco.transacao({ id: 'o1', account_id: 'acc1', transaction_type: 'DEBIT', amount: 990, bank_ref: 'AP:x', transaction_date: dia('2026-11-01') })
+    banco.tx.transaction.updateMany.mockImplementationOnce(async () => ({ count: 0 }))
+    const { j } = await post([L2])
+    expect(j.data.resultados[0]).toEqual({ chave: 'K2', acao: 'ERRO', erro: 'órfão mudou durante o lançamento da linha — repita' })
+    expect(banco.tabelas.transaction.filter((t) => t.bank_ref === 'K2')).toEqual([])
+    expect(banco.saldo('acc1')).toBe(50000)
+  })
+
+  it('m5: cada linha numa $transaction com maxWait 10s e timeout 20s', async () => {
+    await post([linha(), L2])
+    const porLinha = banco.transacoes.slice(-2)
+    expect(porLinha.map((t) => t.opcoes)).toEqual([{ maxWait: 10000, timeout: 20000 }, { maxWait: 10000, timeout: 20000 }])
+  })
+})
+
