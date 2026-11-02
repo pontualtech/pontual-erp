@@ -795,3 +795,15 @@ describe('F7-E (#5): Conferir não cria dinheiro para AR Asaas em trânsito', ()
     expect(creditosAR()).toHaveLength(1)
   })
 })
+
+describe('F7-G (m12): o SWAP do F6-B não apaga o crédito com marcador LIGADA (dinheiro do banco)', () => {
+  it('livro[ar] = linha ASAAS:PAY + crédito AR:a1 com source_text LIGADA:… na mesma conta → liga pay_x e o LIGADA fica', async () => {
+    banco.ar(AR)
+    banco.pagamento({ receivable_id: 'a1', provider: 'asaas', external_id: 'pay_x', status: 'RECEIVED', amount: 15000 })
+    banco.transacao({ id: 'lig', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1', source_text: 'LIGADA:ITAU:k' })
+    linhaLivro({ bank_ref: 'ASAAS:PAY:pay_x', amount: 14400 })
+    const { j } = await conferir(['a1'], { a1: 't1' })
+    expect(j.data).toEqual(expect.objectContaining({ ligadas: 1, balance_delta: 0 }))
+    expect(banco.tx_('lig')).toBeDefined()
+  })
+})

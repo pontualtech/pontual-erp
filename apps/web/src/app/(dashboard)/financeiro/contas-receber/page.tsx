@@ -687,6 +687,7 @@ export default function ContasReceberPage() {
       const r = resultadoConferencia(data.data, `${data.data?.updated ?? 0} conta(s) ${markAsReconciled ? 'conferidas' : 'desconferidas'}`)
       if (r.ok) toast.success(r.mensagem)
       else toast.error(r.mensagem)
+      for (const a of r.avisos ?? []) toast.warning(a)
       setSelected(new Set())
       loadContas()
     } catch (err) {

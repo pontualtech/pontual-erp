@@ -4,18 +4,23 @@ export interface RespostaConferencia {
   updated?: number
   ligadas?: number
   erros?: { ar: string; motivo: string }[]
+  avisos?: { ar: string; motivo: string }[]
 }
 
-export function resultadoConferencia(d: RespostaConferencia | undefined, sucesso: string): { ok: boolean; mensagem: string } {
+// Fix 7 (F7-G, m6/m10): os `avisos` (conferida, mas com algo a resolver — linha livre de mesmo valor, pagamento Asaas
+// sem lançamento ou em trânsito) voltam em `avisos` (um por AR) para a tela mostrar como atenção.
+export function resultadoConferencia(d: RespostaConferencia | undefined, sucesso: string): { ok: boolean; mensagem: string; avisos?: string[] } {
+  const avisos = (d?.avisos ?? []).map((a) => a.motivo)
+  const comAvisos = <T extends object>(r: T) => (avisos.length > 0 ? { ...r, avisos } : r)
   const updated = d?.updated ?? 0
   const erros = d?.erros ?? []
   if (updated === 0 || erros.length > 0) {
     const motivos = Array.from(new Set(erros.map((e) => e.motivo))).join('; ') || 'nenhuma conta foi atualizada'
-    return { ok: false, mensagem: updated > 0 ? `${updated} ok, ${erros.length} com erro: ${motivos}` : motivos }
+    return comAvisos({ ok: false, mensagem: updated > 0 ? `${updated} ok, ${erros.length} com erro: ${motivos}` : motivos })
   }
   const ligadas = d?.ligadas ?? 0
-  if (ligadas === 0) return { ok: true, mensagem: sucesso }
-  return { ok: true, mensagem: `${sucesso} · ${ligadas === 1 ? 'ligada ao banco' : `${ligadas} ligadas ao banco`}` }
+  if (ligadas === 0) return comAvisos({ ok: true, mensagem: sucesso })
+  return comAvisos({ ok: true, mensagem: `${sucesso} · ${ligadas === 1 ? 'ligada ao banco' : `${ligadas} ligadas ao banco`}` })
 }
 
 // Fix 3 (F3-H, m4): resposta do Receber/Pagar — com `aviso` (dinheiro já lançado, nada criado nem ligado) a tela mostra

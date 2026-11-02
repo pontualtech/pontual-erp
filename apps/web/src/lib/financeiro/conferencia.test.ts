@@ -73,3 +73,17 @@ describe('perguntaDinheiro (F7-D): a tela reconhece a pergunta do Receber', () =
     expect(perguntaDinheiro(409, null)).toBeNull()
   })
 })
+
+describe('resultadoConferencia — F7-G (m6, m10): os avisos do Conferir chegam à tela', () => {
+  it('avisos viram uma atenção por AR, além do sucesso', () => {
+    expect(resultadoConferencia({ updated: 2, ligadas: 0, erros: [], avisos: [
+      { ar: 'a1', motivo: 'há linha do banco livre de mesmo valor — vincule pelo Extrato' },
+      { ar: 'a2', motivo: 'pagamento Asaas sem lançamento: …' },
+    ] }, '2 conferidas')).toEqual({ ok: true, mensagem: '2 conferidas', avisos: [
+      'há linha do banco livre de mesmo valor — vincule pelo Extrato', 'pagamento Asaas sem lançamento: …',
+    ] })
+  })
+  it('sem avisos, a forma de antes', () => {
+    expect(resultadoConferencia({ updated: 1, ligadas: 0, erros: [], avisos: [] }, 'Conferido')).toEqual({ ok: true, mensagem: 'Conferido' })
+  })
+})

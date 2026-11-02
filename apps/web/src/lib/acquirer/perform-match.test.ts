@@ -164,3 +164,25 @@ describe('F7-A (#1): vínculo da maquininha só troca nocional posterior ao ajus
     expect(banco.saldo('itau')).toBe(97000)
   })
 })
+
+describe('F7-G (m12, m13): guardas do perform-match que faltavam testar', () => {
+  it('m12: crédito AR:a1 com marcador LIGADA na conta da adquirente não é trocado', async () => {
+    banco.ar({ id: 'a1', service_order_id: 'os1', status: 'RECEBIDO', total_amount: 100000, received_amount: 100000, account_id: 'itau' })
+    banco.transacao({ id: 'lig', account_id: 'itau', transaction_type: 'CREDIT', amount: 100000, bank_ref: 'AR:a1', source_text: 'LIGADA:ITAU:k' })
+    expect((await vincular()).ok).toBe(true)
+    expect(banco.tx_('lig')).toBeDefined()
+  })
+
+  it('m13: AR CANCELADA enquanto esperava a trava → nada escrito, erro', async () => {
+    banco.ar({ id: 'a1', service_order_id: 'os1', status: 'PENDENTE', total_amount: 100000, received_amount: 0, account_id: 'itau' })
+    banco.aoTravar(({ tabela }) => {
+      if (tabela !== 'accounts_receivable') return
+      banco.tabelas.accountReceivable[0].status = 'CANCELADO'
+      banco.aoTravar(null)
+    })
+    const r = await vincular()
+    expect(r.ok).toBe(false)
+    expect(banco.tabelas.payment ?? []).toEqual([])
+    expect(doNSU()).toEqual([])
+  })
+})

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('@pontual/db', async () => ({ prisma: (await import('@/test-utils/banco-falso')).banco.prisma }))
 
-import { conflitoDeBanco, contaAsaasDaEmpresa, desligarLinhas, dinheiroDaAR, SELECT_LINHA_LIGADA } from './livro-baixa-db'
+import { conflitoDeBanco, contaAsaasDaEmpresa, contaDoCreditoAsaas, desligarLinhas, dinheiroDaAR, SELECT_LINHA_LIGADA } from './livro-baixa-db'
 import { banco } from '@/test-utils/banco-falso'
 
 beforeEach(() => {
@@ -151,5 +151,16 @@ describe('desligarLinhas — F7-C: a linha lembra a conta que pagava', () => {
     const linhas = await banco.tx.transaction.findMany({ where: { id: 'L' }, select: SELECT_LINHA_LIGADA })
     await desligarLinhas(banco.tx, 'c1', linhas)
     expect(banco.tx_('L')).toEqual(expect.objectContaining({ linked_ref: null, desligada_de: 'AR:a1' }))
+  })
+})
+
+describe('contaDoCreditoAsaas — F7-G (m11): metadata.account_id de outra empresa não vale', () => {
+  it('metadata da empresa vence; de outra empresa cai na conta Asaas da empresa', async () => {
+    banco.conta({ id: 'assas', name: 'ASSAS', provider_config: { provider: 'asaas' }, current_balance: 0 })
+    banco.conta({ id: 'cobr', name: 'Cobranças', current_balance: 0 })
+    banco.inserir('account', { id: 'alheia', company_id: 'c2', name: 'Asaas outra', is_active: true })
+    expect(await contaDoCreditoAsaas(banco.tx, 'c1', { account_id: 'cobr' }, 'itau')).toBe('cobr')
+    expect(await contaDoCreditoAsaas(banco.tx, 'c1', { account_id: 'alheia' }, 'itau')).toBe('assas')
+    expect(await contaDoCreditoAsaas(banco.tx, 'c1', null, 'itau')).toBe('assas')
   })
 })

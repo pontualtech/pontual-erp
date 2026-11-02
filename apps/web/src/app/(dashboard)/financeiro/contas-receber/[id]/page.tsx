@@ -321,6 +321,7 @@ export default function ContaReceberDetalhePage() {
       const r = resultadoConferencia(d.data, 'Banco vinculado + conferido no extrato')
       if (r.ok) toast.success(r.mensagem)
       else toast.error(r.mensagem)
+      for (const a of r.avisos ?? []) toast.warning(a)
       setShowConferirSemBanco(false); setConferirBancoId(''); loadConta()
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Erro') }
     finally { setConferirSaving(false) }
@@ -480,6 +481,7 @@ export default function ContaReceberDetalhePage() {
                   const r = resultadoConferencia(data.data, 'Conferido no extrato — AR marcada como conciliada')
                   if (r.ok) toast.success(r.mensagem)
                   else toast.error(r.mensagem)
+                  for (const a of r.avisos ?? []) toast.warning(a)
                   loadConta()
                 } catch (e) {
                   toast.error(e instanceof Error ? e.message : 'Erro ao marcar como conferido')
