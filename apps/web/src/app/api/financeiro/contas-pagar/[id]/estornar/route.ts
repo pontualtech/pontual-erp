@@ -4,7 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import {
-  CONFLITO_BANCO, conflitoDeBanco, ContaAlterada, contasComExtrato, contasDaAP, descreverDinheiro, DEVOLVIDO, dinheiroDaAP, exigirTravadas,
+  CONFLITO_BANCO, conflitoDeBanco, ContaAlterada, contasDaAP, descreverDinheiro, DEVOLVIDO, dinheiroDaAP, exigirTravadas,
   travarContas,
   type LancamentoDaConta,
 } from '@/lib/financeiro/livro-baixa-db'
@@ -14,8 +14,8 @@ import {
  *
  * C10 fix 22/05: estorno de AP ja paga. Espelho do estorno de AR, travas contas → AP (§7), tudo relido na tx.
  * Fix 10 (F10-B, espelho da AR): com saída lançada (linhas do banco ligadas a AP:<id>, DEBIT AP:<id> vivo) o estorno
- * PERGUNTA — sem resposta, 409 ESTORNO_PERGUNTA: `dinheiro: 'devolvido'` → AP:<id> (linhas e DEBIT) ganha :devolvido e deixa
- * de ser saída da conta; em conta sem extrato (sem AJUSTE, ex.: Caixa) CREDIT AP:<id>:estorno pela saída daquela conta;
+ * PERGUNTA — sem resposta, 409 ESTORNO_PERGUNTA: `dinheiro: 'devolvido'` (fix 12, F12-B) → a linha do banco AP:<id> ganha
+ * :devolvido (a entrada da devolução vem pelo extrato); o DEBIT AP:<id> não convertido é compensado com CREDIT AP:<id>:estorno;
  * `mover_para: '<id da AP>'` (engano) → a saída passa para a AP certa (AP:<destino>), sem lançamento novo nem saldo. Sem
  * saída: legado (paga antes de 22/05/2026, DEBIT sem bank_ref) → CREDIT pelo paid_amount na conta da AP; senão só status.
  * PENDENTE sem valor pago → 400 'nada a estornar'.
@@ -141,14 +141,18 @@ export async function POST(req: NextRequest, { params }: Params) {
           })
         } else if (dinheiro.total > 0) {
           if (!escolha) throw new PerguntaEstorno(await descreverDinheiro(tx, user.companyId, dinheiro))
-          // ── 'devolvido': AP:<id> ganha :devolvido; conta sem extrato compensa a saída dela ──
-          const saidas = [...dinheiro.linhas, ...dinheiro.nocionais]
-          const comExtrato = await contasComExtrato(tx, user.companyId, saidas.map((t) => t.account_id))
-          for (const t of saidas) {
-            if (!comExtrato.has(t.account_id)) compensar.set(t.account_id, (compensar.get(t.account_id) ?? 0) + (t.vivo ?? t.amount))
+          // ── 'devolvido' (fix 12, F12-B): a linha do banco (e o marcador antigo LIGADA:) ganha :devolvido, nada lançado — a
+          // entrada da devolução chega pelo extrato; o DEBIT AP:<id> não convertido, em qualquer conta, é compensado com
+          // CREDIT AP:<id>:estorno na conta dele, sem renomear (o banco nunca confirmou essa saída) ──
+          const ligadaAntiga = (t: { source_text: string | null }) => (t.source_text ?? '').startsWith('LIGADA:')
+          for (const t of dinheiro.nocionais.filter((n) => !ligadaAntiga(n))) {
+            compensar.set(t.account_id, (compensar.get(t.account_id) ?? 0) + (t.vivo ?? t.amount))
           }
           const sufixar: { id: string; account_id: string; origin: string | null }[] = await tx.transaction.findMany({
-            where: { company_id: user.companyId, OR: [{ origin: 'BANCO', linked_ref: proprio }, { origin: null, bank_ref: proprio }] },
+            where: {
+              company_id: user.companyId,
+              OR: [{ origin: 'BANCO', linked_ref: proprio }, { origin: null, bank_ref: proprio, source_text: { startsWith: 'LIGADA:' } }],
+            },
             select: { id: true, account_id: true, origin: true },
           })
           exigirTravadas(travadas, [...sufixar.map((t) => t.account_id), ...compensar.keys()])

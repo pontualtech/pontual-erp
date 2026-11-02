@@ -198,8 +198,9 @@ const resumir = (linhas: DinheiroLancado['linhas'], nocionais: Lancado[]): Dinhe
 
 // Fix 8 (F8-A): o :estorno (o de produção e o do 'devolvido' em conta sem extrato) anula, na sua conta, o dinheiro criado
 // até ele (o mais antigo primeiro), pelo valor — linha ligada, nocional próprio ou crédito externo; o que sobra (`vivo`) é
-// dinheiro da conta. Fix 10 (F10-B): o devolvido (…:devolvido) entra no desconto — é o par do :estorno do Caixa, e cada
-// :estorno o anula ANTES do resto da conta — mas nunca é dinheiro da conta.
+// dinheiro da conta. Fix 10/12 (F10-B, F12-B): cada :estorno anula o dinheiro PRÓPRIO da conta (AR:<id>, :anticipation e o
+// …:devolvido) ANTES do externo — é o par do estorno 'devolvido' do nocional; o …:devolvido entra no desconto mas nunca é
+// dinheiro da conta.
 type ComCriacao = { amount: number; account_id: string; created_at: Date | null }
 const parcialDe = (vivos: { amount: number; vivo: number }[]) => vivos.reduce((s, t) => s + t.amount - t.vivo, 0)
 const devolvida = (ref: string | null | undefined) => !!ref && ref.endsWith(DEVOLVIDO)
@@ -278,7 +279,7 @@ export async function dinheiroDaAR(db: any, companyId: string, ar: { id: string;
   const comp = descontarEstornos<ComCriacao & { _l?: true }>([
     ...linhas.filter((l: { linked_ref?: string | null }) => !mortas.has(l.linked_ref ?? '')).map((l: any) => ({ ...l, _l: true as const })),
     ...vivos.filter((t) => !mortas.has(t.bank_ref ?? '')),
-  ], estornos, (t: any) => devolvida(t._l ? t.linked_ref : t.bank_ref))
+  ], estornos, (t: any) => [refs.proprio, refs.antecipacao, ...devolvidas].includes((t._l ? t.linked_ref : t.bank_ref) ?? ''))
   const daConta = comp.vivos.filter((t: any) => !devolvida(t._l ? t.linked_ref : t.bank_ref))
   // a reversão parcial sai do `vivo` do lançamento da ref dela (o `total` já a desconta).
   const parcial = parcialDe(daConta)

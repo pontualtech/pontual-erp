@@ -16,11 +16,10 @@ import {
  * Fix 10 (F10-B, decisão do Karlão 02/11: estorno é raro e quase sempre devolução real). Com dinheiro na conta (linhas do
  * banco ligadas a qualquer ref dela, nocionais próprios vivos, créditos do adquirente/Asaas/CNAB) o estorno PERGUNTA — sem
  * resposta no corpo, 409 ESTORNO_PERGUNTA:
- *   `dinheiro: 'devolvido'` → as refs PRÓPRIAS (AR:<id> e AR:<id>:anticipation, em linhas ligadas e nocionais) ganham o
- *       sufixo :devolvido — deixam de ser dinheiro da conta, sem mexer em saldo, data ou categoria (a linha continua
- *       mostrando a origem). Em conta SEM extrato (sem AJUSTE:<conta>:, ex.: Caixa) a devolução nunca chega por linha do
- *       banco → DEBIT AR:<id>:estorno pelo dinheiro próprio daquela conta. Dinheiro externo (acquirer:, pay_, cnab:) não é
- *       tocado — a devolução passa pelo próprio canal — e volta em `aviso`.
+ *   `dinheiro: 'devolvido'` (fix 12, F12-B) → a linha do banco própria (confirmada pelo extrato) ganha o sufixo
+ *       :devolvido, sem lançamento (a saída da devolução chega pelo extrato); o nocional próprio não convertido, em
+ *       qualquer conta, é compensado com DEBIT AR:<id>:estorno na conta dele; o externo que não é pay_ em conta sem linha
+ *       do banco (cnab: na Inter) também; pay_ e externo em conta com extrato não são tocados e voltam em `aviso`.
  *   `mover_para: '<id da AR | nº da OS>'` (engano) → move o dinheiro vivo para a conta certa: linhas e nocionais AR:<id>
  *       → AR:<destino>, Payments dos créditos externos → receivable_id/service_order_id do destino. Nenhum lançamento novo,
  *       nenhum saldo; o destino soma o valor recebido (RECEBIDO se cheio). Antecipação e CNAB não são movíveis (422).
@@ -181,17 +180,27 @@ export async function POST(req: NextRequest, { params }: Params) {
           })
         } else if (dinheiro.total > 0) {
           if (!escolha) throw new PerguntaEstorno(await descreverDinheiro(tx, user.companyId, dinheiro))
-          // ── 'devolvido': refs próprias ganham :devolvido; conta sem extrato compensa; externo só avisa ──
-          const proprios = [...dinheiro.linhas.filter((l) => propria(l.linked_ref)), ...dinheiro.nocionais.filter((t) => propria(t.bank_ref))]
-          const comExtrato = await contasComExtrato(tx, user.companyId, proprios.map((t) => t.account_id))
-          for (const t of proprios) {
-            if (!comExtrato.has(t.account_id)) compensar.set(t.account_id, (compensar.get(t.account_id) ?? 0) + (t.vivo ?? t.amount))
+          // ── 'devolvido' (fix 12, F12-B): o que o banco confirmou espera o extrato; o resto compensa ──
+          // · linha BANCO própria (e o marcador antigo LIGADA: — dinheiro já confirmado) → sufixo :devolvido, nada lançado
+          //   (a saída da devolução chega pela linha do banco);
+          // · nocional próprio não convertido, em QUALQUER conta → DEBIT AR:<id>:estorno na conta dele, sem renomear (o banco
+          //   nunca o confirmou: Receber na conta errada, comprovante falso, devolução no Caixa);
+          // · externo que não é pay_ em conta SEM extrato (cnab: na Inter, acquirer: fora do livro) → idem; pay_ e externo em
+          //   conta COM extrato → só aviso (o webhook REFUNDED / o repasse da Rede trazem a devolução).
+          const ligadaAntiga = (t: { source_text: string | null }) => (t.source_text ?? '').startsWith('LIGADA:')
+          const externosNoc = dinheiro.nocionais.filter((t) => !propria(t.bank_ref))
+          const comExtrato = await contasComExtrato(tx, user.companyId, externosNoc.map((t) => t.account_id))
+          const compensa = (t: (typeof dinheiro.nocionais)[number]) => propria(t.bank_ref)
+            ? !ligadaAntiga(t)
+            : !(t.bank_ref ?? '').startsWith('pay_') && !comExtrato.has(t.account_id)
+          for (const t of dinheiro.nocionais.filter(compensa)) {
+            compensar.set(t.account_id, (compensar.get(t.account_id) ?? 0) + (t.vivo ?? t.amount))
           }
-          const externos: DinheiroLancado = {
-            linhas: dinheiro.linhas.filter((l) => !propria(l.linked_ref)), nocionais: dinheiro.nocionais.filter((t) => !propria(t.bank_ref)), total: 0, conta: null,
+          const avisar: DinheiroLancado = {
+            linhas: dinheiro.linhas.filter((l) => !propria(l.linked_ref)), nocionais: externosNoc.filter((t) => !compensa(t)), total: 0, conta: null,
           }
-          if (externos.linhas.length + externos.nocionais.length > 0) {
-            const lista = (await descreverDinheiro(tx, user.companyId, externos)).map((l) => `${l.origem} ${brl(l.valor_centavos)}`).join('; ')
+          if (avisar.linhas.length + avisar.nocionais.length > 0) {
+            const lista = (await descreverDinheiro(tx, user.companyId, avisar)).map((l) => `${l.origem} ${brl(l.valor_centavos)}`).join('; ')
             aviso = `dinheiro externo não foi tocado — a devolução passa pelo próprio canal (Asaas/maquininha/boleto): ${lista}`
           }
           const sufixar: { id: string; account_id: string; origin: string | null; bank_ref: string | null; linked_ref: string | null }[] =
@@ -200,7 +209,7 @@ export async function POST(req: NextRequest, { params }: Params) {
                 company_id: user.companyId,
                 OR: [
                   { origin: 'BANCO', linked_ref: { in: [refs.proprio, refs.antecipacao] } },
-                  { origin: null, bank_ref: { in: [refs.proprio, refs.antecipacao] } },
+                  { origin: null, bank_ref: { in: [refs.proprio, refs.antecipacao] }, source_text: { startsWith: 'LIGADA:' } },
                 ],
               },
               select: { id: true, account_id: true, origin: true, bank_ref: true, linked_ref: true },
