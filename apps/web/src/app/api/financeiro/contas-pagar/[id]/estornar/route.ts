@@ -3,21 +3,31 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
-import { categoriaAoDesligar } from '@/lib/financeiro/livro-baixa'
-import { categoriaId } from '@/lib/financeiro/livro-baixa-db'
+import { ContaAlterada, contasDaAP, desligarLinhas, exigirTravadas, SELECT_LINHA_LIGADA, travarContas } from '@/lib/financeiro/livro-baixa-db'
 
 /**
  * POST /api/financeiro/contas-pagar/[id]/estornar
  *
- * C10 fix 22/05: estorno de AP ja paga. Reverte:
- *   1. Marca AP como PENDENTE (paid_amount → 0)
- *   2. Cria Transaction CREDIT (reverte o DEBIT original) na conta do DEBIT
- *   3. Atualiza current_balance (+= o que o ERP debitou e ainda não foi estornado)
+ * C10 fix 22/05: estorno de AP ja paga. Onda 4 (§3, espelho do estorno de AR), travas contas → AP (§7), tudo relido na tx:
+ *   (a) linhas do BANCO ligadas à AP (AP:<id>: baixa ou DEBIT convertido pelo livro) → DESLIGA, sem saldo;
+ *   (b) DEBIT AP:<id> ainda nocional → CREDIT AP:<id>:estorno pelo líquido (próprios − estornos) na conta de cada um;
+ *   (c) legado (paga antes de 22/05/2026, DEBIT sem bank_ref) → CREDIT pelo paid_amount na conta da AP;
+ *   (d) nada disso → só status/valores. Já estornada (nada em a/b/c e sem valor pago) → 400 'nada a estornar'.
  *
  * Antes, mexer em AP paga só era possível via DELETE (soft delete) que
  * deixava a Transaction DEBIT órfã + saldo deflacionado sem rastro.
  */
 type Params = { params: { id: string } }
+
+// Recusa decidida na releitura com as travas: nada gravado.
+class RecusaEstorno extends Error {
+  constructor(message: string, readonly status: 400 | 404) {
+    super(message)
+  }
+}
+
+// Antes de 22/05/2026 (86c9e19b) a baixa criava o lançamento sem bank_ref: 22/05 00:00 em São Paulo.
+const LEGADO_ATE = new Date('2026-05-22T03:00:00.000Z')
 
 export async function POST(req: NextRequest, { params }: Params) {
   try {
@@ -28,111 +38,91 @@ export async function POST(req: NextRequest, { params }: Params) {
     const body = await req.json().catch(() => ({}))
     const motivo = (body as any)?.motivo ? String((body as any).motivo).trim().slice(0, 500) : null
 
-    const existing = await prisma.accountPayable.findFirst({
+    // Leitura de fora só para saber QUAIS contas travar; quem decide é a releitura dentro da tx.
+    const lida = await prisma.accountPayable.findFirst({
       where: { id: params.id, company_id: user.companyId, deleted_at: null },
+      select: { id: true, account_id: true },
     })
-    if (!existing) return error('Conta a pagar nao encontrada', 404)
-    // Onda 3 (E4): estorno parcial — AP PENDENTE com pagamento parcial (ou com lançamento do ERP/linha ligada)
-    // desfaz tudo o que o ERP criou/ligou para a conta e zera paid_amount.
-    const paga = existing.status === 'PAGO'
-    if (!paga && existing.status !== 'PENDENTE') return error('Apenas APs com status PAGO (ou PENDENTE com pagamento parcial) podem ser estornadas', 400)
-    if (!existing.paid_amount || existing.paid_amount <= 0) {
-      if (paga) return error('AP sem paid_amount valido', 400)
-      const lancamento = await prisma.transaction.findFirst({
-        where: {
-          company_id: user.companyId,
-          OR: [{ bank_ref: { in: [`AP:${params.id}`, `AP:${params.id}:estorno`] } }, { linked_ref: `AP:${params.id}` }],
-        },
-        select: { id: true },
-      })
-      if (!lancamento) return error('AP pendente sem pagamento nem lançamento — nada a estornar', 400)
-    }
+    if (!lida) return error('Conta a pagar nao encontrada', 404)
+    const contas = await contasDaAP(prisma, user.companyId, lida)
+    const proprio = `AP:${params.id}`
+    const estorno = `AP:${params.id}:estorno`
 
-    await prisma.$transaction(async (tx: any) => {
-      // Bug #67 (audit 31/05 LOOP r7): MESMA classe de #41 mas em /estornar!
-      // 3 estornar concorrentes → 3 Transactions CREDIT criadas, saldo +3x
-      // (testado: estornar 3x de R$ 0,50 → saldo subiu R$ 1,50 em vez de R$ 0,50).
-      // Fix: updateMany com guard status='PAGO' (só primeira tx vence atomic).
-      // Se claim=0, request perdeu race → throw antes de criar Transaction.
-      const claim = await tx.accountPayable.updateMany({
-        where: {
-          id: params.id,
-          company_id: user.companyId,
-          status: { in: ['PAGO', 'PENDENTE'] },
-          deleted_at: null,
-        },
-        data: {
-          status: 'PENDENTE',
-          paid_amount: 0,
-          reconciled: false,
-          updated_at: new Date(),
-        },
-      })
-      if (claim.count === 0) {
-        throw new Error('Estorno concorrente — outra requisição já estornou esta conta')
-      }
+    let antes: { status: string | null; paid_amount: number | null }
+    try {
+      antes = await prisma.$transaction(async (tx) => {
+        const travadas = await travarContas(tx, user.companyId, contas)
+        await tx.$queryRaw`SELECT id FROM accounts_payable WHERE id = ${params.id} AND company_id = ${user.companyId} FOR UPDATE`
+        const ap = await tx.accountPayable.findFirst({
+          where: { id: params.id, company_id: user.companyId, deleted_at: null },
+        })
+        if (!ap) throw new RecusaEstorno('Conta a pagar nao encontrada', 404)
+        const paga = ap.status === 'PAGO'
+        if (!paga && ap.status !== 'PENDENTE') {
+          throw new RecusaEstorno('Apenas APs com status PAGO (ou PENDENTE com pagamento parcial) podem ser estornadas', 400)
+        }
 
-      // 30/10 (livro-razão): baixa que só LIGOU a um lançamento do banco → desliga (volta a "A classificar" se a categoria veio da baixa),
-      // sem CREDIT compensatório e sem mexer no saldo (o lançamento do banco continua valendo).
-      const ligados = await tx.transaction.findMany({
-        where: { company_id: user.companyId, linked_ref: `AP:${params.id}` },
-        select: { id: true, source_text: true, description: true, category_id: true },
-      })
-      if (ligados.length > 0) {
-        const fallback = await categoriaId(tx, user.companyId, 'A classificar')
-        for (const l of ligados) {
-          await tx.transaction.update({
-            where: { id: l.id },
+        // (a) linhas do banco que hoje representam a saída desta AP.
+        const ligadas = await tx.transaction.findMany({
+          where: { company_id: user.companyId, origin: 'BANCO', linked_ref: proprio },
+          select: SELECT_LINHA_LIGADA,
+        })
+        // (b) lançamentos próprios por bank_ref; nocional = ainda não convertido.
+        const daAP = await tx.transaction.findMany({
+          where: { company_id: user.companyId, bank_ref: { in: [proprio, estorno] } },
+          select: { amount: true, transaction_type: true, bank_ref: true, account_id: true, origin: true, source_text: true },
+        })
+        const compensar = new Map<string, number>()
+        for (const t of daAP) {
+          if (t.origin !== null || t.source_text !== null) continue
+          const sinal = t.bank_ref === proprio && t.transaction_type === 'DEBIT' ? 1
+            : t.bank_ref === estorno && t.transaction_type === 'CREDIT' ? -1 : 0
+          if (sinal !== 0) compensar.set(t.account_id, (compensar.get(t.account_id) ?? 0) + sinal * t.amount)
+        }
+        for (const [conta, valor] of compensar) if (valor <= 0) compensar.delete(conta)
+
+        // (c) legado: paga antes de 22/05 com conta e valor, sem nenhum lançamento próprio nem linha ligada.
+        const pago = ap.paid_amount ?? 0
+        const legado = paga && !!ap.account_id && pago > 0 && daAP.length === 0 && ligadas.length === 0
+          && !!ap.updated_at && ap.updated_at.getTime() < LEGADO_ATE.getTime()
+        if (legado) compensar.set(ap.account_id!, pago)
+
+        if (ligadas.length === 0 && compensar.size === 0 && pago <= 0) throw new RecusaEstorno('nada a estornar', 400)
+
+        exigirTravadas(travadas, [...ligadas.map((l) => l.account_id), ...compensar.keys()])
+
+        await desligarLinhas(tx, user.companyId, ligadas)
+        for (const [contaId, valor] of compensar) {
+          // CREDIT compensatório (reverte o DEBIT original): bank_ref "AP:{id}:estorno" distingue do DEBIT.
+          await tx.transaction.create({
             data: {
-              linked_ref: null,
-              category_id: categoriaAoDesligar(l.category_id, existing.category_id, fallback),
-              description: l.source_text ?? l.description,
+              company_id: user.companyId,
+              account_id: contaId,
+              transaction_type: 'CREDIT',
+              amount: valor,
+              description: `Estorno: ${ap.description}${motivo ? ` (${motivo})` : ''}`,
+              transaction_date: new Date(),
+              bank_ref: estorno,
+              reconciled: true,
             },
           })
+          await tx.account.update({
+            where: { id: contaId },
+            data: { current_balance: { increment: valor }, updated_at: new Date() },
+          })
         }
-      }
 
-      // Onda 3 (E5, espelha o F2 do AR): o que compensar e EM QUAL conta vem SEMPRE das transações próprias da AP
-      // (DEBIT AP:id − CREDIT AP:id:estorno, por conta) — nunca de paid_amount/existing.account_id. Sem débito
-      // próprio (ex.: só havia linha do banco ligada, já desligada) → só volta o status. DEBIT AP:id que o livro
-      // LIGOU a uma linha do banco (source_text 'LIGADA:…') é o dinheiro que saiu de verdade — não é compensado.
-      const proprias = await tx.transaction.findMany({
-        where: { company_id: user.companyId, bank_ref: { in: [`AP:${params.id}`, `AP:${params.id}:estorno`] } },
-        select: { amount: true, transaction_type: true, bank_ref: true, account_id: true, source_text: true },
-      })
-      const remanescentePorConta = new Map<string, number>()
-      for (const t of proprias) {
-        if (t.transaction_type === 'DEBIT' && t.source_text?.startsWith('LIGADA:')) continue
-        const sinal = t.bank_ref === `AP:${params.id}` && t.transaction_type === 'DEBIT' ? 1
-          : t.bank_ref === `AP:${params.id}:estorno` && t.transaction_type === 'CREDIT' ? -1 : 0
-        if (sinal !== 0) remanescentePorConta.set(t.account_id, (remanescentePorConta.get(t.account_id) ?? 0) + sinal * t.amount)
-      }
-
-      for (const [contaId, remanescente] of remanescentePorConta) {
-        if (remanescente <= 0) continue
-        // CREDIT compensatório (reverte o DEBIT original): bank_ref "AP:{id}:estorno" distingue do DEBIT.
-        await tx.transaction.create({
-          data: {
-            company_id: user.companyId,
-            account_id: contaId,
-            transaction_type: 'CREDIT',
-            amount: remanescente,
-            description: `Estorno: ${existing.description}${motivo ? ` (${motivo})` : ''}`,
-            transaction_date: new Date(),
-            bank_ref: `AP:${params.id}:estorno`,
-            reconciled: true,
-          },
+        await tx.accountPayable.update({
+          where: { id: ap.id },
+          data: { status: 'PENDENTE', paid_amount: 0, reconciled: false, updated_at: new Date() },
         })
-
-        await tx.account.update({
-          where: { id: contaId },
-          data: {
-            current_balance: { increment: remanescente },
-            updated_at: new Date(),
-          },
-        })
-      }
-    })
+        return { status: ap.status, paid_amount: ap.paid_amount }
+      }, { maxWait: 10000, timeout: 20000 })
+    } catch (e) {
+      if (e instanceof RecusaEstorno) return error(e.message, e.status)
+      if (e instanceof ContaAlterada) return error(e.message, 409)
+      throw e
+    }
 
     logAudit({
       companyId: user.companyId,
@@ -140,7 +130,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       module: 'financeiro',
       action: 'payable.estorno',
       entityId: params.id,
-      oldValue: { status: existing.status, paid_amount: existing.paid_amount },
+      oldValue: antes,
       newValue: { status: 'PENDENTE', paid_amount: 0, motivo },
     })
 

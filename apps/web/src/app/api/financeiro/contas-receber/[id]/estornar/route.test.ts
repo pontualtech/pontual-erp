@@ -1,217 +1,240 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 
-const { m, db } = vi.hoisted(() => {
-  const m = {
-    arFindFirst: vi.fn(), arUpdateMany: vi.fn(),
-    txFindFirst: vi.fn(), txFindMany: vi.fn(), txCreate: vi.fn(), txUpdate: vi.fn(), txDelete: vi.fn(),
-    accUpdate: vi.fn(), catFindFirst: vi.fn(),
-  }
-  const db = {
-    accountReceivable: { findFirst: m.arFindFirst, updateMany: m.arUpdateMany },
-    transaction: { findFirst: m.txFindFirst, findMany: m.txFindMany, create: m.txCreate, update: m.txUpdate, delete: m.txDelete },
-    account: { update: m.accUpdate },
-    category: { findFirst: m.catFindFirst, findMany: async () => [{ id: 'cat:Venda de Servicos', name: 'Venda de Servicos' }] },
-    $transaction: async (cb: (tx: unknown) => unknown) => cb(db),
-  }
-  return { m, db }
-})
-vi.mock('@pontual/db', () => ({ prisma: db }))
+vi.mock('@pontual/db', async () => ({ prisma: (await import('@/test-utils/banco-falso')).banco.prisma }))
 vi.mock('@/lib/auth', () => ({ requirePermission: async () => ({ id: 'u1', companyId: 'c1' }) }))
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }))
 
-import { POST } from './route'
+import { POST as estornar } from './route'
+import { POST as receber } from '../baixa/route'
+import { POST as lancarLinhas } from '../../../livro/linhas/route'
+import { banco } from '@/test-utils/banco-falso'
 
-const req = () => new NextRequest('http://x/api', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
-const AR = { id: 'r1', status: 'LIQUIDADO', account_id: 'acc1', received_amount: 15000, description: 'OS 1', category_id: null }
-
-// findMany: linhas ligadas (where.linked_ref) × transações próprias da AR (where.bank_ref).
-const transacoes = (ligados: unknown[], proprias: unknown[] = []) =>
-  m.txFindMany.mockImplementation(async ({ where }: any) => (where.linked_ref ? ligados : proprias))
+const ACC = '11111111-1111-4111-8111-111111111111'
+const ACC2 = '22222222-2222-4222-8222-222222222222'
+const dia = (d: string) => new Date(`${d}T00:00:00.000Z`)
+const json = (body: unknown) => ({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+const est = async (id = 'r1') => {
+  const res = await estornar(new NextRequest('http://x/api', json({})), { params: { id } })
+  return { status: res.status, j: await res.json() }
+}
+const ar = (id = 'r1') => banco.tabelas.accountReceivable.find((a) => a.id === id)!
+const doAR = (id = 'r1') => banco.tabelas.transaction.filter((t) => t.bank_ref?.startsWith(`AR:${id}`))
 
 beforeEach(() => {
-  Object.values(m).forEach((f) => f.mockReset())
-  m.arFindFirst.mockResolvedValue(AR)
-  m.arUpdateMany.mockResolvedValue({ count: 1 })
-  m.catFindFirst.mockImplementation(async ({ where }: any) => ({ id: `cat:${where.name}` }))
-  m.txFindFirst.mockResolvedValue(null)
+  banco.reset()
+  banco.categoriasPadrao()
+  banco.conta({ id: ACC, current_balance: 100000 })
+  banco.conta({ id: ACC2, current_balance: 0 })
 })
 
-describe('estorno de AR — livro-razão', () => {
-  it('AR ligada: desliga o lançamento (volta a Receita a identificar), sem delete, sem DEBIT e sem mexer no saldo', async () => {
-    transacoes([{ id: 't1', amount: 15000, source_text: 'PIX RECEBIDO FULANO', description: 'LIQUIDACAO: OS 1 · banco: x', category_id: 'cat:Venda de Servicos' }])
-    const res = await POST(req(), { params: { id: 'r1' } })
-    expect(res.status).toBe(200)
-    expect(m.txFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { company_id: 'c1', linked_ref: 'AR:r1' } }))
-    expect(m.txUpdate).toHaveBeenCalledWith({
-      where: { id: 't1' },
-      data: { linked_ref: null, category_id: 'cat:Receita a identificar', description: 'PIX RECEBIDO FULANO' },
-    })
-    expect(m.txDelete).not.toHaveBeenCalled()
-    expect(m.txCreate).not.toHaveBeenCalled()
-    expect(m.accUpdate).not.toHaveBeenCalled()
-    expect(m.arUpdateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'PENDENTE', received_amount: 0 }) }))
+describe('§3 estorno de AR — (a) DESLIGA linhas do banco', () => {
+  it('linha ligada pela baixa (linked_ref AR:id): desliga — categoria da regra/fallback, texto do banco; sem DEBIT nem saldo', async () => {
+    banco.ar({ id: 'r1', status: 'LIQUIDADO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
+    banco.transacao({ id: 'L', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, origin: 'BANCO', bank_ref: 'K1', source_text: 'PIX RECEBIDO FULANO', linked_ref: 'AR:r1', category_id: 'cat:Venda de Servicos', description: 'LIQUIDACAO: OS 1 · banco: PIX RECEBIDO FULANO' })
+    const { status } = await est()
+    expect(status).toBe(200)
+    expect(banco.tx_('L')).toEqual(expect.objectContaining({ linked_ref: null, category_id: 'cat:Receita a identificar', description: 'PIX RECEBIDO FULANO', origin: 'BANCO' }))
+    expect(doAR()).toEqual([])
+    expect(banco.saldo(ACC)).toBe(100000)
+    expect(ar()).toEqual(expect.objectContaining({ status: 'PENDENTE', received_amount: 0, reconciled: false }))
   })
 
-  it('linha que já tinha outra categoria mantém a dela ao desligar', async () => {
-    transacoes([{ id: 't1', amount: 15000, source_text: 'PIX', description: 'x', category_id: 'cat:Rendimentos' }])
-    await POST(req(), { params: { id: 'r1' } })
-    expect(m.txUpdate).toHaveBeenCalledWith({ where: { id: 't1' }, data: { linked_ref: null, category_id: 'cat:Rendimentos', description: 'PIX' } })
+  it('ao desligar, a categoria vem da regra quando alguma casa (REND PAGO APLIC → Rendimentos)', async () => {
+    banco.regra({ pattern: 'REND PAGO APLIC', direction: 'IN', category_id: 'cat:Rendimentos', priority: 10 })
+    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
+    banco.transacao({ id: 'L', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, origin: 'BANCO', bank_ref: 'K1', source_text: 'REND PAGO APLIC AUT', linked_ref: 'AR:r1', category_id: 'cat:Venda de Servicos' })
+    await est()
+    expect(banco.tx_('L')!.category_id).toBe('cat:Rendimentos')
   })
 
-  it('baixa mista (3000 criada + 12000 ligada): desliga e compensa só o crédito próprio 3000', async () => {
-    transacoes(
-      [{ id: 't1', amount: 12000, source_text: 'PIX', description: 'x', category_id: 'cat:Venda de Servicos' }],
-      [{ amount: 3000, transaction_type: 'CREDIT', bank_ref: 'AR:r1', account_id: 'acc1' }],
-    )
-    await POST(req(), { params: { id: 'r1' } })
-    expect(m.txFindMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { company_id: 'c1', bank_ref: { in: ['AR:r1', 'AR:r1:estorno'] } },
-    }))
-    expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ transaction_type: 'DEBIT', amount: 3000, bank_ref: 'AR:r1:estorno' }) })
-    expect(m.accUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ current_balance: { decrement: 3000 } }) }))
-  })
-
-  it('vínculo explícito com diferença (recebido 15085, linha 15000): sem DEBIT falso', async () => {
-    m.arFindFirst.mockResolvedValue({ ...AR, received_amount: 15085 })
-    transacoes([{ id: 't1', amount: 15000, source_text: 'PIX', description: 'x', category_id: 'cat:Venda de Servicos' }])
-    await POST(req(), { params: { id: 'r1' } })
-    expect(m.txCreate).not.toHaveBeenCalled()
-    expect(m.accUpdate).not.toHaveBeenCalled()
-  })
-
-  it('AR sem lançamento ligado e com crédito próprio AR:id: DEBIT + saldo pelo crédito próprio', async () => {
-    transacoes([], [{ amount: 15000, transaction_type: 'CREDIT', bank_ref: 'AR:r1', account_id: 'acc1' }])
-    await POST(req(), { params: { id: 'r1' } })
-    expect(m.txFindMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { company_id: 'c1', bank_ref: { in: ['AR:r1', 'AR:r1:estorno'] } },
-    }))
-    expect(m.txUpdate).not.toHaveBeenCalled()
-    expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ account_id: 'acc1', transaction_type: 'DEBIT', amount: 15000, bank_ref: 'AR:r1:estorno' }) })
-    expect(m.accUpdate).toHaveBeenCalledWith({ where: { id: 'acc1' }, data: expect.objectContaining({ current_balance: { decrement: 15000 } }) })
-  })
-
-  it('F2: Receber ligou → Conferir → Desfazer desligou → Estornar (sem crédito próprio nem linha ligada): só volta o status, nada de DEBIT nem saldo', async () => {
-    transacoes([], [])
-    const res = await POST(req(), { params: { id: 'r1' } })
-    expect(res.status).toBe(200)
-    expect(m.arUpdateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'PENDENTE', received_amount: 0 }) }))
-    expect(m.txCreate).not.toHaveBeenCalled()
-    expect(m.accUpdate).not.toHaveBeenCalled()
-  })
-
-  it('F2: a conta do DEBIT vem do crédito próprio (não de existing.account_id)', async () => {
-    transacoes([], [{ amount: 15000, transaction_type: 'CREDIT', bank_ref: 'AR:r1', account_id: 'acc2' }])
-    await POST(req(), { params: { id: 'r1' } })
-    expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ account_id: 'acc2', amount: 15000 }) })
-    expect(m.accUpdate).toHaveBeenCalledWith({ where: { id: 'acc2' }, data: expect.objectContaining({ current_balance: { decrement: 15000 } }) })
-    expect(m.accUpdate).toHaveBeenCalledTimes(1)
-  })
-
-  it('F2: crédito próprio já estornado antes (CREDIT − DEBIT :estorno = 0): nada de DEBIT nem saldo', async () => {
-    transacoes([], [
-      { amount: 15000, transaction_type: 'CREDIT', bank_ref: 'AR:r1', account_id: 'acc1' },
-      { amount: 15000, transaction_type: 'DEBIT', bank_ref: 'AR:r1:estorno', account_id: 'acc1' },
-    ])
-    await POST(req(), { params: { id: 'r1' } })
-    expect(m.txCreate).not.toHaveBeenCalled()
-    expect(m.accUpdate).not.toHaveBeenCalled()
-  })
-
-  it('F2: AR sem account_id mas com crédito próprio numa conta: compensa naquela conta', async () => {
-    m.arFindFirst.mockResolvedValue({ ...AR, account_id: null })
-    transacoes([], [{ amount: 15000, transaction_type: 'CREDIT', bank_ref: 'AR:r1', account_id: 'acc3' }])
-    await POST(req(), { params: { id: 'r1' } })
-    expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ account_id: 'acc3', amount: 15000, bank_ref: 'AR:r1:estorno' }) })
-    expect(m.accUpdate).toHaveBeenCalledWith({ where: { id: 'acc3' }, data: expect.objectContaining({ current_balance: { decrement: 15000 } }) })
-  })
-
-  it('E2: crédito AR:id já LIGADO pelo livro (source_text LIGADA:…) é o dinheiro do banco: não é compensado', async () => {
-    transacoes([], [{ amount: 15000, transaction_type: 'CREDIT', bank_ref: 'AR:r1', account_id: 'acc1', source_text: 'LIGADA:itau:2026-10-29:15000' }])
-    const res = await POST(req(), { params: { id: 'r1' } })
-    expect(res.status).toBe(200)
-    expect(m.arUpdateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'PENDENTE', received_amount: 0 }) }))
-    expect(m.txCreate).not.toHaveBeenCalled()
-    expect(m.txDelete).not.toHaveBeenCalled()
-    expect(m.accUpdate).not.toHaveBeenCalled()
-  })
-
-  it('E2: crédito LIGADA + crédito próprio sem banco: compensa só o sem banco', async () => {
-    transacoes([], [
-      { amount: 12000, transaction_type: 'CREDIT', bank_ref: 'AR:r1', account_id: 'acc1', source_text: 'LIGADA:k1' },
-      { amount: 3000, transaction_type: 'CREDIT', bank_ref: 'AR:r1', account_id: 'acc1', source_text: null },
-    ])
-    await POST(req(), { params: { id: 'r1' } })
-    expect(m.txCreate).toHaveBeenCalledTimes(1)
-    expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ account_id: 'acc1', transaction_type: 'DEBIT', amount: 3000, bank_ref: 'AR:r1:estorno' }) })
-    expect(m.accUpdate).toHaveBeenCalledWith({ where: { id: 'acc1' }, data: expect.objectContaining({ current_balance: { decrement: 3000 } }) })
-  })
-
-  it('E9: AR antecipada: 409 "conta antecipada — desfaça a antecipação antes", nada gravado', async () => {
-    for (const status of ['RECEBIDO', 'LIQUIDADO', 'PENDENTE']) {
-      m.arFindFirst.mockResolvedValue({ ...AR, status, anticipated_at: new Date('2026-10-20T12:00:00Z') })
-      transacoes([], [{ amount: 14000, transaction_type: 'CREDIT', bank_ref: 'AR:r1:anticipation', account_id: 'acc1', source_text: null }])
-      const res = await POST(req(), { params: { id: 'r1' } })
-      expect(res.status).toBe(409)
-      expect((await res.json()).error).toBe('conta antecipada — desfaça a antecipação antes')
+  it('linhas convertidas do adquirente, do Asaas, do CNAB e da antecipação também são desligadas', async () => {
+    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 40000, total_amount: 40000, pix_code: JSON.stringify({ nossoNumero: '777' }), anticipated_at: new Date('2026-10-20T12:00:00Z') })
+    banco.pagamento({ receivable_id: 'r1', provider: 'rede', external_id: 'NSU1' })
+    banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_9' })
+    for (const [id, ref] of [['A', 'acquirer:rede:NSU1'], ['B', 'pay_9'], ['C', 'cnab:777'], ['D', 'AR:r1:anticipation']]) {
+      banco.transacao({ id, account_id: ACC, transaction_type: 'CREDIT', amount: 10000, origin: 'BANCO', bank_ref: `K${id}`, source_text: `TXT ${id}`, linked_ref: ref })
     }
-    expect(m.arUpdateMany).not.toHaveBeenCalled()
-    expect(m.txUpdate).not.toHaveBeenCalled()
-    expect(m.txCreate).not.toHaveBeenCalled()
-    expect(m.accUpdate).not.toHaveBeenCalled()
+    const { status } = await est()
+    expect(status).toBe(200)
+    for (const id of ['A', 'B', 'C', 'D']) expect(banco.tx_(id)).toEqual(expect.objectContaining({ linked_ref: null, description: `TXT ${id}` }))
+    expect(banco.saldo(ACC)).toBe(100000)
+    expect(ar().anticipated_at).toBeNull()
+  })
+})
+
+describe('§3 estorno de AR — (b) compensa os nocionais ainda não convertidos', () => {
+  it('CREDIT AR:id: DEBIT AR:id:estorno pelo líquido, na conta do crédito', async () => {
+    banco.ar({ id: 'r1', status: 'LIQUIDADO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
+    banco.transacao({ account_id: ACC2, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:r1' })
+    expect((await est()).status).toBe(200)
+    expect(doAR().find((t) => t.bank_ref === 'AR:r1:estorno')).toEqual(expect.objectContaining({ account_id: ACC2, transaction_type: 'DEBIT', amount: 15000 }))
+    expect(banco.saldo(ACC2)).toBe(-15000)
+    expect(banco.saldo(ACC)).toBe(100000)
   })
 
-  describe('E4: estorno parcial (AR PENDENTE)', () => {
-    const PARCIAL = { ...AR, status: 'PENDENTE', received_amount: 5000, total_amount: 15000 }
+  it('baixa mista (12000 ligada + 3000 criada): desliga e compensa só os 3000', async () => {
+    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
+    banco.transacao({ id: 'L', account_id: ACC, transaction_type: 'CREDIT', amount: 12000, origin: 'BANCO', bank_ref: 'K1', source_text: 'PIX', linked_ref: 'AR:r1' })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 3000, bank_ref: 'AR:r1' })
+    await est()
+    expect(banco.tx_('L')!.linked_ref).toBeNull()
+    expect(banco.saldo(ACC)).toBe(97000)
+  })
 
-    it('PENDENTE com recebimento parcial ligado: desliga a linha e zera received_amount', async () => {
-      m.arFindFirst.mockResolvedValue(PARCIAL)
-      transacoes([{ id: 't1', amount: 5000, source_text: 'PIX PARCIAL', description: 'Recebimento: OS 1 · banco: PIX PARCIAL', category_id: 'cat:Venda de Servicos' }])
-      const res = await POST(req(), { params: { id: 'r1' } })
-      expect(res.status).toBe(200)
-      expect(m.arUpdateMany).toHaveBeenCalledWith({
-        where: { id: 'r1', company_id: 'c1', status: { in: ['RECEBIDO', 'LIQUIDADO', 'PAGO', 'PENDENTE'] }, deleted_at: null },
-        data: expect.objectContaining({ status: 'PENDENTE', received_amount: 0, reconciled: false }),
-      })
-      expect(m.txUpdate).toHaveBeenCalledWith({ where: { id: 't1' }, data: { linked_ref: null, category_id: 'cat:Receita a identificar', description: 'PIX PARCIAL' } })
-      expect(m.txCreate).not.toHaveBeenCalled()
-      expect(m.accUpdate).not.toHaveBeenCalled()
-    })
+  it('crédito da antecipação (#11/E9): estornar antecipada = compensar a antecipação; anticipated_at volta a null', async () => {
+    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 14000, total_amount: 15000, anticipated_at: new Date('2026-10-20T12:00:00Z') })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 14000, bank_ref: 'AR:r1:anticipation' })
+    expect((await est()).status).toBe(200)
+    expect(banco.saldo(ACC)).toBe(86000)
+    expect(ar()).toEqual(expect.objectContaining({ status: 'PENDENTE', received_amount: 0, anticipated_at: null }))
+  })
 
-    it('PENDENTE com crédito próprio parcial (AR:id): compensa o crédito próprio', async () => {
-      m.arFindFirst.mockResolvedValue(PARCIAL)
-      transacoes([], [{ amount: 5000, transaction_type: 'CREDIT', bank_ref: 'AR:r1', account_id: 'acc1', source_text: null }])
-      const res = await POST(req(), { params: { id: 'r1' } })
-      expect(res.status).toBe(200)
-      expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ account_id: 'acc1', transaction_type: 'DEBIT', amount: 5000, bank_ref: 'AR:r1:estorno' }) })
-      expect(m.accUpdate).toHaveBeenCalledWith({ where: { id: 'acc1' }, data: expect.objectContaining({ current_balance: { decrement: 5000 } }) })
-    })
+  it('#17: quitada com received_amount nulo (agrupada conferida) e CREDIT AR:id: aceita e compensa (antes 400)', async () => {
+    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: null, total_amount: 30000, grouped_into_id: 'G' })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 30000, bank_ref: 'AR:r1' })
+    expect((await est()).status).toBe(200)
+    expect(banco.saldo(ACC)).toBe(70000)
+  })
 
-    it('PENDENTE sem valor recebido mas com lançamento próprio/linha ligada: aceita (o que o ERP criou é desfeito)', async () => {
-      m.arFindFirst.mockResolvedValue({ ...PARCIAL, received_amount: 0 })
-      m.txFindFirst.mockResolvedValue({ id: 't1' })
-      transacoes([{ id: 't1', amount: 5000, source_text: 'PIX', description: 'x', category_id: 'cat:Venda de Servicos' }])
-      const res = await POST(req(), { params: { id: 'r1' } })
-      expect(res.status).toBe(200)
-      expect(m.txFindFirst).toHaveBeenCalledWith(expect.objectContaining({
-        where: { company_id: 'c1', OR: [{ bank_ref: { in: ['AR:r1', 'AR:r1:anticipation', 'AR:r1:estorno'] } }, { linked_ref: 'AR:r1' }] },
-      }))
-      expect(m.txUpdate).toHaveBeenCalledTimes(1)
-    })
+  it('PENDENTE com recebimento parcial (crédito próprio 5000): compensa e zera', async () => {
+    banco.ar({ id: 'r1', status: 'PENDENTE', account_id: ACC, received_amount: 5000, total_amount: 15000 })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 5000, bank_ref: 'AR:r1' })
+    expect((await est()).status).toBe(200)
+    expect(banco.saldo(ACC)).toBe(95000)
+    expect(ar().received_amount).toBe(0)
+  })
 
-    it('PENDENTE sem valor recebido e sem lançamento: 400, nada gravado', async () => {
-      m.arFindFirst.mockResolvedValue({ ...PARCIAL, received_amount: 0 })
-      const res = await POST(req(), { params: { id: 'r1' } })
-      expect(res.status).toBe(400)
-      expect(m.arUpdateMany).not.toHaveBeenCalled()
-      expect(m.txCreate).not.toHaveBeenCalled()
-    })
+  it('m7: já estornada (CREDIT − DEBIT :estorno = 0, PENDENTE/0): 400 "nada a estornar", nada gravado', async () => {
+    banco.ar({ id: 'r1', status: 'PENDENTE', account_id: ACC, received_amount: 0, total_amount: 15000 })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:r1' })
+    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 15000, bank_ref: 'AR:r1:estorno' })
+    const { status, j } = await est()
+    expect(status).toBe(400)
+    expect(j.error).toBe('nada a estornar')
+    expect(doAR()).toHaveLength(2)
+  })
+})
 
-    it('CANCELADO continua recusado (400)', async () => {
-      m.arFindFirst.mockResolvedValue({ ...PARCIAL, status: 'CANCELADO' })
-      const res = await POST(req(), { params: { id: 'r1' } })
-      expect(res.status).toBe(400)
-      expect(m.arUpdateMany).not.toHaveBeenCalled()
+describe('§3 estorno de AR — (c) legado e (d) só status', () => {
+  it('#13: recebida antes de 22/05 (lançamento sem bank_ref): compensa received_amount na conta da AR como o código antigo', async () => {
+    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 300000, total_amount: 300000, updated_at: new Date('2026-05-05T15:00:00Z') })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 300000, bank_ref: null, description: 'Recebimento: Aluguel maio' })
+    expect((await est()).status).toBe(200)
+    expect(doAR()).toEqual([expect.objectContaining({ bank_ref: 'AR:r1:estorno', transaction_type: 'DEBIT', amount: 300000, account_id: ACC })])
+    expect(banco.saldo(ACC)).toBe(-200000)
+  })
+
+  it('quitada depois de 22/05 sem nenhum lançamento próprio (ex.: crédito do adquirente não convertido): só status', async () => {
+    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000, updated_at: new Date('2026-06-10T15:00:00Z') })
+    banco.pagamento({ receivable_id: 'r1', provider: 'rede', external_id: 'NSU1' })
+    banco.transacao({ id: 'acq', account_id: ACC, transaction_type: 'CREDIT', amount: 14500, bank_ref: 'acquirer:rede:NSU1' })
+    expect((await est()).status).toBe(200)
+    expect(doAR()).toEqual([])
+    expect(banco.tx_('acq')).toEqual(expect.objectContaining({ bank_ref: 'acquirer:rede:NSU1', origin: null }))
+    expect(banco.saldo(ACC)).toBe(100000)
+    expect(ar().status).toBe('PENDENTE')
+  })
+
+  it('quitada sem valor nem lançamento: 400 "nada a estornar"', async () => {
+    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 0, total_amount: 15000 })
+    expect((await est()).j.error).toBe('nada a estornar')
+    expect(ar().status).toBe('RECEBIDO')
+  })
+
+  it('CANCELADO continua recusado (400)', async () => {
+    banco.ar({ id: 'r1', status: 'CANCELADO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
+    expect((await est()).status).toBe(400)
+  })
+})
+
+describe('§3/§7/§10: travas, releitura e transação', () => {
+  it('trava a conta (accounts) ANTES da AR e decide pela releitura do tx (antecipação comitada enquanto esperava — #11)', async () => {
+    banco.ar({ id: 'r1', status: 'PENDENTE', account_id: ACC, received_amount: 1000, total_amount: 300000 })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 1000, bank_ref: 'AR:r1' })
+    // Antecipar comita enquanto o estorno espera a trava da AR.
+    banco.aoTravar(({ tabela }) => {
+      if (tabela !== 'accounts_receivable') return
+      banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 280000, bank_ref: 'AR:r1:anticipation' })
+      banco.tabelas.account.find((a) => a.id === ACC)!.current_balance += 280000
+      Object.assign(ar(), { status: 'RECEBIDO', received_amount: 280000, anticipated_at: new Date() })
+      banco.aoTravar(null)
     })
+    expect((await est()).status).toBe(200)
+    expect(banco.travas.map((t) => t.tabela)).toEqual(['accounts', 'accounts_receivable'])
+    // +280000 da antecipação (comitada no meio) − 281000 (tudo o que o ERP creditou: parcial 1000 + antecipação).
+    expect(banco.saldo(ACC)).toBe(100000 + 280000 - 281000)
+    expect(ar()).toEqual(expect.objectContaining({ status: 'PENDENTE', received_amount: 0, anticipated_at: null }))
+    expect(banco.prismaDentroDaTx()).toEqual([])
+    const escritas = banco.log.filter((o) => ['create', 'update', 'updateMany', 'delete'].includes(o.op))
+    expect(escritas.every((o) => o.cliente === 'tx' && o.seq > banco.travas[1].seq)).toBe(true)
+  })
+
+  it('lançamento novo numa conta que não foi travada (apareceu depois da leitura): 409 "conta alterada — repita", nada gravado', async () => {
+    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:r1' })
+    banco.aoTravar(({ tabela }) => {
+      if (tabela === 'accounts_receivable') banco.transacao({ account_id: ACC2, transaction_type: 'CREDIT', amount: 500, bank_ref: 'AR:r1' })
+    })
+    const { status, j } = await est()
+    expect(status).toBe(409)
+    expect(j.error).toBe('conta alterada — repita')
+    expect(banco.transacoes.at(-1)!.desfeita).toBe(true)
+    expect(ar().status).toBe('RECEBIDO')
+    expect(banco.saldo(ACC)).toBe(100000)
+  })
+
+  it('AR excluída enquanto esperava a trava: 404', async () => {
+    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
+    banco.aoTravar(({ tabela }) => { if (tabela === 'accounts_receivable') ar().deleted_at = new Date() })
+    expect((await est()).status).toBe(404)
+  })
+})
+
+describe('cenários dos achados (fluxo completo, saldo do ERP = banco)', () => {
+  const CORTE = '2026-10-29'
+  const DATA = '2026-11-02'
+  const prepararLivro = () => {
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 0, bank_ref: `AJUSTE:${ACC}:${CORTE}`, origin: 'AJUSTE', transaction_date: dia(CORTE) })
+    banco.ar({ id: 'ar1', status: 'PENDENTE', account_id: ACC, total_amount: 50000, description: 'OS 1' })
+    banco.ar({ id: 'ar2', status: 'PENDENTE', account_id: ACC, total_amount: 50000, description: 'OS 2' })
+  }
+  const receberAR = (id: string) => receber(new NextRequest('http://x/api', json({ received_amount: 50000, account_id: ACC, received_at: DATA })), { params: { id } })
+  const linha = (links?: string[]) => lancarLinhas(new NextRequest('http://x/api', json({
+    account_id: ACC, corte: CORTE,
+    linhas: [{ chave: `ITAU:${DATA}|PIX RECEBIDO|+50000|1`, data: DATA, descricao: 'PIX RECEBIDO', valor_centavos: 50000, ...(links ? { links } : {}) }],
+  })))
+
+  it('#1: Receber AR#1 → livro LIGA (links) → estornar AR#1 → Receber AR#2: um PIX de 500 conta uma vez', async () => {
+    prepararLivro()
+    expect((await receberAR('ar1')).status).toBe(200)
+    expect(banco.saldo(ACC)).toBe(150000)
+    expect((await (await linha(['AR:ar1'])).json()).data.resultados[0].acao).toBe('LIGAR')
+    expect((await est('ar1')).status).toBe(200)
+    expect(banco.saldo(ACC)).toBe(150000)
+    const r2 = await (await receberAR('ar2')).json()
+    expect(r2.data.ligada).toBe(true)
+    expect(banco.saldo(ACC)).toBe(150000) // banco: 100000 + 50000
+    expect(banco.tabelas.transaction.filter((t) => t.transaction_type === 'CREDIT' && t.amount === 50000)).toHaveLength(1)
+  })
+
+  it('#12: idem pelo órfão (sem links); e na MESMA AR: estornar e receber de novo também fecha', async () => {
+    prepararLivro()
+    await receberAR('ar1')
+    expect((await (await linha()).json()).data.resultados[0]).toEqual(expect.objectContaining({ acao: 'LIGAR', origem: 'orfao' }))
+    await est('ar1')
+    const r = await (await receberAR('ar1')).json()
+    expect(r.data.ligada).toBe(true)
+    expect(banco.saldo(ACC)).toBe(150000)
+  })
+
+  it('estorno ANTES do extrato e Receber de novo: o livro liga o crédito novo (não o estornado) — sem 2x', async () => {
+    prepararLivro()
+    await receberAR('ar1')
+    await est('ar1')
+    expect(banco.saldo(ACC)).toBe(100000)
+    await receberAR('ar1')
+    expect((await (await linha()).json()).data.resultados[0]).toEqual(expect.objectContaining({ acao: 'LIGAR', origem: 'orfao' }))
+    expect(banco.saldo(ACC)).toBe(150000)
   })
 })

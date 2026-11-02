@@ -48,6 +48,17 @@ export function categoriaAoDesligar(atual: string | null, daBaixa: string | null
   return atual === daBaixa ? fallback : atual
 }
 
+// Onda 4: crédito do retorno CNAB da AR (cnab:<nossoNumero>, gravado no pix_code em JSON pelo cnab/route); null se não houver.
+export function refCnab(pixCode: string | null | undefined): string | null {
+  if (!pixCode) return null
+  try {
+    const n = (JSON.parse(pixCode) as { nossoNumero?: unknown } | null)?.nossoNumero
+    return (typeof n === 'string' && n !== '') || typeof n === 'number' ? `cnab:${n}` : null
+  } catch {
+    return null // pix_code com o copia-e-cola do PIX, não JSON
+  }
+}
+
 // `alvo.categoria` = nome da categoria da conta a pagar/receber (desempate: mesma categoria antes das outras).
 export function decidirBaixa(
   alvo: { tipo: 'CREDIT' | 'DEBIT'; amount: number; data: string; categoria?: string | null },
