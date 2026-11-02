@@ -86,9 +86,19 @@ export async function POST(req: NextRequest, { params }: Params) {
         for (const [conta, valor] of compensar) if (valor <= 0) compensar.delete(conta)
 
         // (c) legado: quitada antes de 22/05 com conta e valor, sem nenhum lançamento próprio nem linha ligada.
+        // Fix 2 (F2-E, #5/m4): reconhecido pela própria transação (CREDIT sem bank_ref, ERP, do valor recebido, na conta da
+        // AR, criado antes de 22/05) — o updated_at da AR anda com qualquer edição posterior; vale também como antes.
         const recebido = ar.received_amount ?? 0
-        const legado = quitada && !!ar.account_id && recebido > 0 && doAR.length === 0 && ligadas.length === 0
-          && !!ar.updated_at && ar.updated_at.getTime() < LEGADO_ATE.getTime()
+        const candidataLegado = quitada && !!ar.account_id && recebido > 0 && doAR.length === 0 && ligadas.length === 0
+        const legado = candidataLegado && (
+          (!!ar.updated_at && ar.updated_at.getTime() < LEGADO_ATE.getTime())
+          || (await tx.transaction.count({
+            where: {
+              company_id: user.companyId, account_id: ar.account_id!, transaction_type: 'CREDIT', amount: recebido,
+              bank_ref: null, origin: null, created_at: { lt: LEGADO_ATE },
+            },
+          })) > 0
+        )
         if (legado) compensar.set(ar.account_id!, recebido)
 
         // Já estornada (ou nunca recebida): nada a desligar nem a compensar e nenhum valor a zerar.

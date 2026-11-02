@@ -95,9 +95,19 @@ export async function POST(req: NextRequest, { params }: Params) {
         for (const [conta, valor] of compensar) if (valor <= 0) compensar.delete(conta)
 
         // (c) legado: paga antes de 22/05 com conta e valor, sem nenhum lançamento próprio nem linha ligada.
+        // Fix 2 (F2-E, #5/m4): reconhecido pela própria transação (DEBIT sem bank_ref, ERP, do valor pago, na conta da AP,
+        // criado antes de 22/05) — o updated_at da AP anda com qualquer edição posterior; vale também como antes.
         const pago = ap.paid_amount ?? 0
-        const legado = paga && !!ap.account_id && pago > 0 && daAP.length === 0 && ligadas.length === 0
-          && !!ap.updated_at && ap.updated_at.getTime() < LEGADO_ATE.getTime()
+        const candidataLegado = paga && !!ap.account_id && pago > 0 && daAP.length === 0 && ligadas.length === 0
+        const legado = candidataLegado && (
+          (!!ap.updated_at && ap.updated_at.getTime() < LEGADO_ATE.getTime())
+          || (await tx.transaction.count({
+            where: {
+              company_id: user.companyId, account_id: ap.account_id!, transaction_type: 'DEBIT', amount: pago,
+              bank_ref: null, origin: null, created_at: { lt: LEGADO_ATE },
+            },
+          })) > 0
+        )
         if (legado) compensar.set(ap.account_id!, pago)
 
         if (ligadas.length === 0 && compensar.size === 0 && pago <= 0) throw new RecusaEstorno('nada a estornar', 400)

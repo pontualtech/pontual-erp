@@ -252,3 +252,21 @@ describe('cenários dos achados (fluxo completo, saldo do ERP = banco)', () => {
     expect(banco.saldo(ACC)).toBe(150000)
   })
 })
+
+describe('F2-E (#5, m4): legado detectado pela própria transação (AR)', () => {
+  it('AR recebida em 15/05 (CREDIT sem bank_ref) e editada em 01/11: compensa o received_amount', async () => {
+    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 40000, total_amount: 40000, updated_at: new Date('2026-11-01T15:00:00Z') })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 40000, bank_ref: null, description: 'Recebimento: OS 1', created_at: new Date('2026-05-15T15:00:00Z') })
+    expect((await est()).status).toBe(200)
+    expect(doAR()).toEqual([expect.objectContaining({ bank_ref: 'AR:r1:estorno', transaction_type: 'DEBIT', amount: 40000 })])
+    expect(banco.saldo(ACC)).toBe(60000)
+  })
+
+  it('crédito sem bank_ref de outra conta ou de linha do banco não conta como legado: (d)', async () => {
+    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 40000, total_amount: 40000, updated_at: new Date('2026-11-01T15:00:00Z') })
+    banco.transacao({ account_id: ACC2, transaction_type: 'CREDIT', amount: 40000, bank_ref: null, created_at: new Date('2026-05-15T15:00:00Z') })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 40000, bank_ref: null, origin: 'BANCO', created_at: new Date('2026-05-15T15:00:00Z') })
+    expect((await est()).status).toBe(200)
+    expect(doAR()).toEqual([])
+  })
+})
