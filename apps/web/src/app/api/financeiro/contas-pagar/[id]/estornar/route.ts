@@ -3,7 +3,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
-import { CONFLITO_BANCO, conflitoDeBanco, ContaAlterada, contasDaAP, desligarLinhas, exigirTravadas, SELECT_LINHA_LIGADA, travarContas } from '@/lib/financeiro/livro-baixa-db'
+import { CONFLITO_BANCO, conflitoDeBanco, ContaAlterada, contasDaAP, desligarLinhas, dinheiroDaAP, exigirTravadas, SELECT_LINHA_LIGADA, travarContas } from '@/lib/financeiro/livro-baixa-db'
 
 /**
  * POST /api/financeiro/contas-pagar/[id]/estornar
@@ -95,19 +95,23 @@ export async function POST(req: NextRequest, { params }: Params) {
         for (const [conta, valor] of compensar) if (valor <= 0) compensar.delete(conta)
 
         // (c) legado: paga antes de 22/05 com conta e valor, sem nenhum lançamento próprio nem linha ligada.
-        // Fix 2 (F2-E, #5/m4): reconhecido pela própria transação (DEBIT sem bank_ref, ERP, do valor pago, na conta da AP,
-        // criado antes de 22/05) — o updated_at da AP anda com qualquer edição posterior; vale também como antes.
+        // Fix 3 (F3-A, espelho da AR): (ii) nenhuma saída já lançada da AP; (iii) conta criada antes de 22/05; (iv) updated_at
+        // antigo OU a própria transação legada — DEBIT do ERP sem bank_ref, do valor pago, na conta da AP, antes de 22/05
+        // e com descrição 'Pgto: ' (o valor sozinho casava o pagamento de outra AP).
         const pago = ap.paid_amount ?? 0
         const candidataLegado = paga && !!ap.account_id && pago > 0 && daAP.length === 0 && ligadas.length === 0
-        const legado = candidataLegado && (
-          (!!ap.updated_at && ap.updated_at.getTime() < LEGADO_ATE.getTime())
-          || (await tx.transaction.count({
-            where: {
-              company_id: user.companyId, account_id: ap.account_id!, transaction_type: 'DEBIT', amount: pago,
-              bank_ref: null, origin: null, created_at: { lt: LEGADO_ATE },
-            },
-          })) > 0
-        )
+        const legado = candidataLegado
+          && !!ap.created_at && ap.created_at.getTime() < LEGADO_ATE.getTime()
+          && (await dinheiroDaAP(tx, user.companyId, ap.id)).total === 0
+          && (
+            (!!ap.updated_at && ap.updated_at.getTime() < LEGADO_ATE.getTime())
+            || (await tx.transaction.count({
+              where: {
+                company_id: user.companyId, account_id: ap.account_id!, transaction_type: 'DEBIT', amount: pago,
+                bank_ref: null, origin: null, created_at: { lt: LEGADO_ATE }, description: { startsWith: 'Pgto: ' },
+              },
+            })) > 0
+          )
         if (legado) compensar.set(ap.account_id!, pago)
 
         if (ligadas.length === 0 && compensar.size === 0 && pago <= 0) throw new RecusaEstorno('nada a estornar', 400)

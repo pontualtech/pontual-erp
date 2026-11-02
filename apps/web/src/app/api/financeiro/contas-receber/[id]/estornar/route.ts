@@ -4,7 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import {
-  CONFLITO_BANCO, conflitoDeBanco, ContaAlterada, contasDaAR, desligarLinhas, exigirTravadas, refsDaAR, SELECT_LINHA_LIGADA, travarContas,
+  CONFLITO_BANCO, conflitoDeBanco, ContaAlterada, contasDaAR, desligarLinhas, dinheiroDaAR, exigirTravadas, refsDaAR, SELECT_LINHA_LIGADA, travarContas,
 } from '@/lib/financeiro/livro-baixa-db'
 
 /**
@@ -86,19 +86,25 @@ export async function POST(req: NextRequest, { params }: Params) {
         for (const [conta, valor] of compensar) if (valor <= 0) compensar.delete(conta)
 
         // (c) legado: quitada antes de 22/05 com conta e valor, sem nenhum lançamento próprio nem linha ligada.
-        // Fix 2 (F2-E, #5/m4): reconhecido pela própria transação (CREDIT sem bank_ref, ERP, do valor recebido, na conta da
-        // AR, criado antes de 22/05) — o updated_at da AR anda com qualquer edição posterior; vale também como antes.
+        // Fix 3 (F3-A, #1/#6/#8/#10): exige TODAS — (i) candidata; (ii) nenhum dinheiro externo (crédito do adquirente/
+        // Asaas/CNAB vivo ou linha do banco ligada a qualquer ref da AR: esse É o dinheiro, compensá-lo seria debitar o
+        // banco); (iii) conta criada antes de 22/05; (iv) updated_at antigo OU a própria transação legada — CREDIT do ERP
+        // sem bank_ref, do valor recebido, na conta da AR, antes de 22/05 e com descrição 'Recebimento: ' (o valor
+        // sozinho casava o recebimento de outra AR).
         const recebido = ar.received_amount ?? 0
         const candidataLegado = quitada && !!ar.account_id && recebido > 0 && doAR.length === 0 && ligadas.length === 0
-        const legado = candidataLegado && (
-          (!!ar.updated_at && ar.updated_at.getTime() < LEGADO_ATE.getTime())
-          || (await tx.transaction.count({
-            where: {
-              company_id: user.companyId, account_id: ar.account_id!, transaction_type: 'CREDIT', amount: recebido,
-              bank_ref: null, origin: null, created_at: { lt: LEGADO_ATE },
-            },
-          })) > 0
-        )
+        const legado = candidataLegado
+          && !!ar.created_at && ar.created_at.getTime() < LEGADO_ATE.getTime()
+          && (await dinheiroDaAR(tx, user.companyId, ar)).total === 0
+          && (
+            (!!ar.updated_at && ar.updated_at.getTime() < LEGADO_ATE.getTime())
+            || (await tx.transaction.count({
+              where: {
+                company_id: user.companyId, account_id: ar.account_id!, transaction_type: 'CREDIT', amount: recebido,
+                bank_ref: null, origin: null, created_at: { lt: LEGADO_ATE }, description: { startsWith: 'Recebimento: ' },
+              },
+            })) > 0
+          )
         if (legado) compensar.set(ar.account_id!, recebido)
 
         // Já estornada (ou nunca recebida): nada a desligar nem a compensar e nenhum valor a zerar.
