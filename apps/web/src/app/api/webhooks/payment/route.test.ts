@@ -375,7 +375,7 @@ describe('F6-C (#3): reversão só debita dinheiro que existiu', () => {
   })
 })
 
-describe('F6-F (m5, m6, m7, m18): aviso de duplicidade só depois do commit, uma vez, e só com dinheiro AR:<id>', () => {
+describe('F6-F (m5, m6, m7): aviso de duplicidade só depois do commit, uma vez, e só com dinheiro AR:<id>', () => {
   const ITAU = '44444444-4444-4444-8444-444444444444'
   const CAIXA = '33333333-3333-4333-8333-333333333333'
   beforeEach(() => {
@@ -396,21 +396,6 @@ describe('F6-F (m5, m6, m7, m18): aviso de duplicidade só depois do commit, uma
     expect(await evento('evt_f2', 'PAYMENT_RECEIVED')).toBe(200)
     expect(comRef('pay_1')).toHaveLength(1)
     expect(logError).not.toHaveBeenCalled()
-  })
-
-  it('m18: AR quitada pelo CONFIRMED deste pagamento (charge_status CONFIRMED) com um Receber parcial noutra conta → sem aviso', async () => {
-    Object.assign(banco.tabelas.accountReceivable[0], { charge_status: 'CONFIRMED' })
-    expect(await evento('evt_f3', 'PAYMENT_RECEIVED')).toBe(200)
-    expect(comRef('pay_1')).toHaveLength(1)
-    expect(logError).not.toHaveBeenCalled()
-  })
-
-  it('m18: idem com o Receber parcial NA conta do crédito → não é trocado (não é o mesmo dinheiro)', async () => {
-    Object.assign(banco.tabelas.accountReceivable[0], { charge_status: 'CONFIRMED' })
-    Object.assign(banco.tx_('noc')!, { account_id: ACC, amount: 30000 })
-    expect(await evento('evt_f4', 'PAYMENT_RECEIVED')).toBe(200)
-    expect(banco.tx_('noc')).toBeDefined()
-    expect(comRef('pay_1')).toHaveLength(1)
   })
 
   it('m7 / #11: linha do banco ligada a AR:r1 em OUTRA conta (Itaú) → o pay_1 entra na conta da cobrança e o aviso é gravado', async () => {
@@ -470,5 +455,42 @@ describe('F7-A (#1): SWAP só de nocional posterior ao ajuste de caixa da conta'
     expect(await evento('evt_a2', 'PAYMENT_RECEIVED')).toBe(200)
     expect(banco.tx_('noc')).toBeUndefined()
     expect(banco.saldo(ACC)).toBe(194000)
+  })
+})
+
+describe('F7-B (#2, #10, #12, #15): sem a guarda por charge_status — decide o dinheiro AR:<id> posterior ao ajuste', () => {
+  const CAIXA = '33333333-3333-4333-8333-333333333333'
+  beforeEach(() => {
+    vi.mocked(logError).mockClear()
+    banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'PENDING', amount: 100000, billing_type: 'BOLETO' })
+  })
+
+  it('boleto: Receber manual ANTES do CONFIRMED (nocional AR:r1 na conta do crédito) → CONFIRMED → RECEIVED faz o SWAP', async () => {
+    banco.transacao({ id: 'noc', account_id: ACC, transaction_type: 'CREDIT', amount: 100000, bank_ref: 'AR:r1' })
+    banco.tabelas.account.find((a) => a.id === ACC)!.current_balance = 197000
+    expect(await evento('evt_b1', 'PAYMENT_CONFIRMED')).toBe(200)
+    expect(banco.tabelas.accountReceivable[0].charge_status).toBe('CONFIRMED')
+    expect(await evento('evt_b2', 'PAYMENT_RECEIVED')).toBe(200)
+    expect(banco.tx_('noc')).toBeUndefined()
+    expect(comRef('pay_1')).toEqual([expect.objectContaining({ amount: 97000 })])
+    expect(banco.saldo(ACC)).toBe(194000)
+  })
+
+  it('boleto: Receber manual ANTES do CONFIRMED no Caixa → CONFIRMED → RECEIVED cria o pay_1 e grava o aviso', async () => {
+    banco.conta({ id: CAIXA, name: 'Caixa', current_balance: 100000 })
+    banco.transacao({ id: 'noc', account_id: CAIXA, transaction_type: 'CREDIT', amount: 100000, bank_ref: 'AR:r1' })
+    expect(await evento('evt_b3', 'PAYMENT_CONFIRMED')).toBe(200)
+    expect(await evento('evt_b4', 'PAYMENT_RECEIVED')).toBe(200)
+    expect(comRef('pay_1')).toHaveLength(1)
+    expect(logError).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('Caixa') }), expect.anything(), 'warning')
+  })
+
+  it('AR quitada só pelo CONFIRMED (sem dinheiro AR:r1) → RECEIVED cria o pay_1, nenhum aviso', async () => {
+    Object.assign(banco.tabelas.accountReceivable[0], { status: 'PENDENTE', received_amount: 0 })
+    expect(await evento('evt_b5', 'PAYMENT_CONFIRMED')).toBe(200)
+    expect(banco.tabelas.accountReceivable[0]).toEqual(expect.objectContaining({ status: 'RECEBIDO', charge_status: 'CONFIRMED' }))
+    expect(await evento('evt_b6', 'PAYMENT_RECEIVED')).toBe(200)
+    expect(comRef('pay_1')).toHaveLength(1)
+    expect(logError).not.toHaveBeenCalled()
   })
 })

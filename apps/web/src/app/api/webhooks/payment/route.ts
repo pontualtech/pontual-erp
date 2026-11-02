@@ -493,9 +493,10 @@ export async function POST(req: NextRequest) {
             // Nocional AR:<id> noutra conta → credita como sempre e registra a possível duplicidade em error_logs.
             let trocar: { id: string; amount: number }[] = []
             let jaNoBanco = false
-            // Fix 6 (F6-F, m18): AR quitada pelo CONFIRMED deste mesmo pagamento (charge_status CONFIRMED) não é Receber
-            // manual — um recebimento parcial AR:<id> anterior não é o mesmo dinheiro: nem SWAP nem aviso.
-            if (!existingCredit && ['RECEBIDO', 'LIQUIDADO', 'PAGO'].includes(receivable.status || '') && receivable.charge_status !== 'CONFIRMED') {
+            // Fix 7 (F7-B): sem guarda por charge_status (o CONFIRMED grava CONFIRMED também em AR já quitada por Receber
+            // manual). Quem decide é o dinheiro AR:<id> posterior ao ajuste (F7-A): a AR quitada só pelo CONFIRMED deste
+            // pagamento não tem esse dinheiro — nem SWAP nem aviso.
+            if (!existingCredit && ['RECEBIDO', 'LIQUIDADO', 'PAGO'].includes(receivable.status || '')) {
               const proprio = `AR:${receivable.id}`
               const linhasAR = await tx.transaction.findMany({
                 where: { company_id: fresh.company_id, origin: 'BANCO', linked_ref: proprio, transaction_type: 'CREDIT' },
