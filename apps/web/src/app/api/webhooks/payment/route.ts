@@ -5,7 +5,7 @@ import { captureFeesForPayment } from '@/lib/payments/capture-fees'
 import { estadoArConfirmado, estadoArRecebido, valorCreditoAsaas, dataCreditoAsaas } from '@/lib/payments/asaas-rules'
 import { isImprimitechHandoffStatus } from '@/lib/imprimitech-handoff'
 import { compensado, ondeRef } from '@/lib/financeiro/livro'
-import { logError } from '@/lib/observability'
+import { avisarDuplicidade } from '@/lib/financeiro/aviso-duplicidade'
 import { conflitoDeBanco, contaDoCreditoAsaas, nomeCategoria, travarContas } from '@/lib/financeiro/livro-baixa-db'
 import { recebeCategoria } from '@/lib/financeiro/livro-baixa'
 import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
@@ -332,6 +332,8 @@ export async function POST(req: NextRequest) {
   // e processado payment 2x. Agora P2002 aborta a tx inteira via ROLLBACK
   // — nada processa duplicado.
   let eventLogId: string | null = existingEventLogId
+  // Fix 6 (F6-F, m5/m6): o aviso de duplicidade decidido na tx só é gravado depois do commit (nunca num rollback).
+  let duplicidade: { conta: string; receivable_id: string; company_id: string } | null = null
 
   // 5-7. Process INSIDE transaction for atomicity + idempotency
   try {
@@ -491,32 +493,28 @@ export async function POST(req: NextRequest) {
             // Nocional AR:<id> noutra conta → credita como sempre e registra a possível duplicidade em error_logs.
             let trocar: { id: string; amount: number }[] = []
             let jaNoBanco = false
-            if (!existingCredit && ['RECEBIDO', 'LIQUIDADO', 'PAGO'].includes(receivable.status || '')) {
+            // Fix 6 (F6-F, m18): AR quitada pelo CONFIRMED deste mesmo pagamento (charge_status CONFIRMED) não é Receber
+            // manual — um recebimento parcial AR:<id> anterior não é o mesmo dinheiro: nem SWAP nem aviso.
+            if (!existingCredit && ['RECEBIDO', 'LIQUIDADO', 'PAGO'].includes(receivable.status || '') && receivable.charge_status !== 'CONFIRMED') {
               const proprio = `AR:${receivable.id}`
-              jaNoBanco = (await tx.transaction.findFirst({
-                where: { company_id: fresh.company_id, account_id: creditAccountId, origin: 'BANCO', linked_ref: proprio },
-                select: { id: true },
-              })) !== null
-              if (!jaNoBanco) {
-                const creditos = await tx.transaction.findMany({
-                  where: { company_id: fresh.company_id, bank_ref: proprio, transaction_type: 'CREDIT', origin: null, source_text: null },
-                  select: { id: true, amount: true, account_id: true, created_at: true },
-                })
-                const estornos = await tx.transaction.findMany({
-                  where: { company_id: fresh.company_id, bank_ref: `${proprio}:estorno` },
-                  select: { account_id: true, created_at: true },
-                })
-                const vivos = creditos.filter((c: { account_id: string; created_at: Date | null }) => !compensado(c, estornos))
-                trocar = vivos.filter((c: { account_id: string }) => c.account_id === creditAccountId)
-                const fora = vivos.filter((c: { account_id: string }) => c.account_id !== creditAccountId)
-                if (fora.length > 0) {
-                  const conta = await tx.account.findFirst({ where: { id: fora[0].account_id }, select: { name: true } })
-                  void logError(new Error(`possível duplicidade: AR recebida manualmente em ${conta?.name ?? fora[0].account_id} e também pelo Asaas (${asaasPayment.id})`), {
-                    url: '/api/webhooks/payment', method: 'POST', company_id: fresh.company_id,
-                    params: { receivable_id: receivable.id, payment: asaasPayment.id },
-                  }, 'warning')
-                }
-              }
+              const linhasAR = await tx.transaction.findMany({
+                where: { company_id: fresh.company_id, origin: 'BANCO', linked_ref: proprio, transaction_type: 'CREDIT' },
+                select: { account_id: true },
+              })
+              jaNoBanco = linhasAR.some((l: { account_id: string }) => l.account_id === creditAccountId)
+              const creditos = await tx.transaction.findMany({
+                where: { company_id: fresh.company_id, bank_ref: proprio, transaction_type: 'CREDIT', origin: null, source_text: null },
+                select: { id: true, amount: true, account_id: true, created_at: true },
+              })
+              const estornos = await tx.transaction.findMany({
+                where: { company_id: fresh.company_id, bank_ref: `${proprio}:estorno` },
+                select: { account_id: true, created_at: true },
+              })
+              const vivos = creditos.filter((c: { account_id: string; created_at: Date | null }) => !compensado(c, estornos))
+              if (!jaNoBanco) trocar = vivos.filter((c: { account_id: string }) => c.account_id === creditAccountId)
+              // Fix 6 (F6-F, m7): dinheiro AR:<id> (nocional OU linha do banco ligada) noutra conta → aviso, depois do commit.
+              const fora = [...vivos, ...linhasAR].find((t: { account_id: string }) => t.account_id !== creditAccountId)
+              if (fora && !jaNoBanco) duplicidade = { conta: fora.account_id, receivable_id: receivable.id, company_id: fresh.company_id }
             }
             if (!existingCredit && !jaNoBanco) {
               for (const c of trocar) {
@@ -1076,6 +1074,15 @@ export async function POST(req: NextRequest) {
 
       return { action: 'processed', reason: `${fresh.status} → ${newStatus}` }
     }, { maxWait: 10000, timeout: 20000 })
+
+    // (atribuída dentro do callback da tx — o TS não acompanha; aqui a tx já comitou)
+    const dup = duplicidade as { conta: string; receivable_id: string; company_id: string } | null
+    if (dup) {
+      const conta = await prisma.account.findFirst({ where: { id: dup.conta }, select: { name: true } }).catch(() => null)
+      await avisarDuplicidade(dup.company_id, `(${externalId})`,
+        `possível duplicidade: AR recebida manualmente em ${conta?.name ?? dup.conta} e também pelo Asaas`,
+        { url: '/api/webhooks/payment', params: { receivable_id: dup.receivable_id, payment: externalId } })
+    }
 
     // Update webhook log based on result
     if (webhookLogId) {

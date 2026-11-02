@@ -374,3 +374,53 @@ describe('F6-C (#3): reversão só debita dinheiro que existiu', () => {
     expect(debitos()).toEqual([expect.objectContaining({ bank_ref: 'pay_1-refund', account_id: ACC })])
   })
 })
+
+describe('F6-F (m5, m6, m7, m18): aviso de duplicidade só depois do commit, uma vez, e só com dinheiro AR:<id>', () => {
+  const ITAU = '44444444-4444-4444-8444-444444444444'
+  const CAIXA = '33333333-3333-4333-8333-333333333333'
+  beforeEach(() => {
+    vi.mocked(logError).mockClear()
+    banco.conta({ id: CAIXA, name: 'Caixa', current_balance: 100000 })
+    banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'PENDING', amount: 100000, billing_type: 'PIX' })
+    banco.transacao({ id: 'noc', account_id: CAIXA, transaction_type: 'CREDIT', amount: 100000, bank_ref: 'AR:r1' })
+  })
+
+  it('m5/m6: tx desfeita depois da decisão (P2034 ao criar o pay_1) → 503 e NENHUM aviso gravado', async () => {
+    banco.tx.transaction.create.mockImplementationOnce(async () => { throw Object.assign(new Error('deadlock detected'), { code: 'P2034' }) })
+    expect(await evento('evt_f1', 'PAYMENT_RECEIVED')).toBe(503)
+    expect(logError).not.toHaveBeenCalled()
+  })
+
+  it('m5/m6: um aviso por evento — já há aviso com (pay_1) nas últimas 24 h → não grava outro', async () => {
+    banco.inserir('errorLog', { id: 'e1', company_id: 'c1', level: 'warning', message: 'possível duplicidade: AR recebida manualmente em Caixa e também pelo Asaas (pay_1)', ts: new Date() })
+    expect(await evento('evt_f2', 'PAYMENT_RECEIVED')).toBe(200)
+    expect(comRef('pay_1')).toHaveLength(1)
+    expect(logError).not.toHaveBeenCalled()
+  })
+
+  it('m18: AR quitada pelo CONFIRMED deste pagamento (charge_status CONFIRMED) com um Receber parcial noutra conta → sem aviso', async () => {
+    Object.assign(banco.tabelas.accountReceivable[0], { charge_status: 'CONFIRMED' })
+    expect(await evento('evt_f3', 'PAYMENT_RECEIVED')).toBe(200)
+    expect(comRef('pay_1')).toHaveLength(1)
+    expect(logError).not.toHaveBeenCalled()
+  })
+
+  it('m18: idem com o Receber parcial NA conta do crédito → não é trocado (não é o mesmo dinheiro)', async () => {
+    Object.assign(banco.tabelas.accountReceivable[0], { charge_status: 'CONFIRMED' })
+    Object.assign(banco.tx_('noc')!, { account_id: ACC, amount: 30000 })
+    expect(await evento('evt_f4', 'PAYMENT_RECEIVED')).toBe(200)
+    expect(banco.tx_('noc')).toBeDefined()
+    expect(comRef('pay_1')).toHaveLength(1)
+  })
+
+  it('m7 / #11: linha do banco ligada a AR:r1 em OUTRA conta (Itaú) → o pay_1 entra na conta da cobrança e o aviso é gravado', async () => {
+    banco.tabelas.transaction.splice(banco.tabelas.transaction.findIndex((t) => t.id === 'noc'), 1)
+    banco.conta({ id: ITAU, name: 'ITAU PRINCIPAL', current_balance: 500000 })
+    Object.assign(banco.tabelas.accountReceivable[0], { account_id: ITAU })
+    banco.tabelas.payment[0].metadata = { account_id: ACC }
+    banco.transacao({ account_id: ITAU, transaction_type: 'CREDIT', amount: 100000, origin: 'BANCO', bank_ref: 'ITAU:k', linked_ref: 'AR:r1' })
+    expect(await evento('evt_f5', 'PAYMENT_RECEIVED')).toBe(200)
+    expect(comRef('pay_1')).toEqual([expect.objectContaining({ account_id: ACC })])
+    expect(logError).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('ITAU PRINCIPAL') }), expect.anything(), 'warning')
+  })
+})
