@@ -245,20 +245,18 @@ export async function contasDaAR(db: any, companyId: string, ar: { id: string; a
   return [ar.account_id, ...ts.map((t) => t.account_id)]
 }
 
-// Conta Asaas da empresa: a 1ª conta ativa com 'asaas' no nome ou no banco — a que o webhook Asaas usa sem conta na AR.
+// Conta Asaas da empresa. Fix 6 (F6-D, #4/#9/#12): 1º a conta ativa do provedor (provider_config.provider = 'asaas',
+// o critério do extrato Asaas — é nela que o livro posta as linhas ASAAS:PAY); 2º nome/banco com 'asaas' ou 'assas'
+// (a conta de produção chama 'ASSAS', como no account-resolver).
 export async function contaAsaasDaEmpresa(db: any, companyId: string): Promise<string | null> {
-  const conta = await db.account.findFirst({
-    where: {
-      company_id: companyId,
-      is_active: true,
-      OR: [
-        { name: { contains: 'asaas', mode: 'insensitive' } },
-        { bank_name: { contains: 'asaas', mode: 'insensitive' } },
-      ],
-    },
-    select: { id: true },
+  const contas: { id: string; name: string | null; bank_name: string | null; provider_config: unknown }[] = await db.account.findMany({
+    where: { company_id: companyId, is_active: true },
+    select: { id: true, name: true, bank_name: true, provider_config: true },
+    orderBy: { created_at: 'asc' },
   })
-  return conta?.id ?? null
+  const doProvedor = contas.find((c) => String((c.provider_config as { provider?: unknown } | null)?.provider ?? '').toLowerCase() === 'asaas')
+  if (doProvedor) return doProvedor.id
+  return contas.find((c) => /asaas|assas/i.test(`${c.name ?? ''} ${c.bank_name ?? ''}`))?.id ?? null
 }
 
 // Fix 4 (F4-B, #3/#10): conta em que entra o crédito de um pagamento Asaas — a do Payment (metadata.account_id, se for

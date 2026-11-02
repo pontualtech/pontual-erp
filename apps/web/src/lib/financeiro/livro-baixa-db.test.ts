@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('@pontual/db', async () => ({ prisma: (await import('@/test-utils/banco-falso')).banco.prisma }))
 
-import { conflitoDeBanco, desligarLinhas, dinheiroDaAR, SELECT_LINHA_LIGADA } from './livro-baixa-db'
+import { conflitoDeBanco, contaAsaasDaEmpresa, desligarLinhas, dinheiroDaAR, SELECT_LINHA_LIGADA } from './livro-baixa-db'
 import { banco } from '@/test-utils/banco-falso'
 
 beforeEach(() => {
@@ -118,5 +118,29 @@ describe('conflitoDeBanco (F2-D; fix 4, F4-D, m3): os formatos em que o Prisma 5
     expect(conflitoDeBanco(Object.assign(new Error('Raw query failed. Code: `42601`. Message: `syntax error`'), { code: 'P2010', meta: { code: '42601' } }))).toBe(false)
     expect(conflitoDeBanco(new Error('boom'))).toBe(false)
     expect(conflitoDeBanco(null)).toBe(false)
+  })
+})
+
+describe('contaAsaasDaEmpresa (F6-D, #4, #9, #12): pelo provedor, não pelo nome', () => {
+  it("1º a conta ativa com provider_config.provider = 'asaas' — a 'ASSAS' de produção, mesmo com outra chamada 'Asaas'", async () => {
+    banco.conta({ id: 'velha', name: 'Asaas antiga', current_balance: 0 })
+    banco.conta({ id: 'assas', name: 'ASSAS', provider_config: { provider: 'ASAAS', api_key: 'x' }, current_balance: 0 })
+    expect(await contaAsaasDaEmpresa(banco.tx, 'c1')).toBe('assas')
+  })
+
+  it("2º pelo nome/banco contendo 'asaas' OU 'assas'", async () => {
+    banco.conta({ id: 'itau', name: 'ITAU PRINCIPAL', current_balance: 0 })
+    banco.conta({ id: 'assas', name: 'ASSAS', current_balance: 0 })
+    expect(await contaAsaasDaEmpresa(banco.tx, 'c1')).toBe('assas')
+    banco.reset()
+    banco.conta({ id: 'b', name: 'Cobranças', bank_name: 'Asaas Gestão', current_balance: 0 })
+    expect(await contaAsaasDaEmpresa(banco.tx, 'c1')).toBe('b')
+  })
+
+  it('inativa ou de outra empresa não vale; sem nenhuma → null', async () => {
+    banco.conta({ id: 'off', name: 'ASSAS', provider_config: { provider: 'asaas' }, is_active: false, current_balance: 0 })
+    banco.inserir('account', { id: 'alheia', company_id: 'c2', name: 'ASSAS', is_active: true, provider_config: { provider: 'asaas' } })
+    banco.conta({ id: 'itau', name: 'ITAU PRINCIPAL', current_balance: 0 })
+    expect(await contaAsaasDaEmpresa(banco.tx, 'c1')).toBeNull()
   })
 })

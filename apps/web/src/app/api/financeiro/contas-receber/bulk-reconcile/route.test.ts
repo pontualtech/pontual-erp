@@ -573,7 +573,7 @@ describe('F4-B / F6-B: Asaas RECEIVED sem crédito — liga a linha do extrato; 
   })
 
   it('m9: AR sem conta e linha ASAAS:PAY livre → liga com pay_x', async () => {
-    banco.conta({ id: ASAAS, name: 'Asaas', current_balance: 0 })
+    banco.conta({ id: ASAAS, name: 'ASSAS', provider_config: { provider: 'asaas' }, current_balance: 0 })
     banco.ar({ ...AR, account_id: null })
     recebido()
     linhaLivro({ account_id: ASAAS, bank_ref: 'ASAAS:PAY:pay_x', amount: 14550 })

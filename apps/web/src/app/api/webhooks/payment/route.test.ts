@@ -24,7 +24,8 @@ beforeEach(() => {
   vi.spyOn(console, 'log').mockImplementation(() => {})
   vi.spyOn(console, 'warn').mockImplementation(() => {})
   banco.reset()
-  banco.conta({ id: ACC, name: 'Asaas', current_balance: 97000 })
+  // F6-D: a conta de produção chama 'ASSAS' e é a do provedor Asaas (provider_config).
+  banco.conta({ id: ACC, name: 'ASSAS', provider_config: { provider: 'asaas' }, current_balance: 97000 })
   banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, total_amount: 100000, received_amount: 100000, description: 'OS 1' })
 })
 
@@ -251,7 +252,7 @@ describe('F5-A: o webhook Asaas credita/debita na conta da cobrança, não na co
   })
 
   it('nenhuma conta Asaas na empresa → a conta da AR', async () => {
-    banco.tabelas.account.find((a) => a.id === ACC)!.name = 'Conta Movimento'
+    Object.assign(banco.tabelas.account.find((a) => a.id === ACC)!, { name: 'Conta Movimento', provider_config: null })
     banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'PENDING', amount: 100000, billing_type: 'PIX' })
     expect(await evento('evt_m3', 'PAYMENT_RECEIVED')).toBe(200)
     expect(comRef('pay_1')).toEqual([expect.objectContaining({ account_id: ITAU })])
