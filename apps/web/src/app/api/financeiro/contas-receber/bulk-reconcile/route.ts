@@ -13,9 +13,27 @@ import {
 import { compensado } from '@/lib/financeiro/livro'
 import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
 import { CATEGORIA_RECEITA_SERVICOS } from '@/lib/financeiro/livro-categorias'
+import { valorCreditoAsaas } from '@/lib/payments/asaas-rules'
 
 // Lançamento do livro foi ligado por outra baixa concorrente → desfaz a $transaction desta AR.
 class LivroJaLigado extends Error {}
+
+// Fix 3 (F3-F, #7): taxa do meio de pagamento (PAYMENT_FEE → TRANSACTION) que o Asaas descontou do pagamento, pelo AP
+// PAGO do capture-fees — é o que separa o bruto do líquido da linha ASAAS:PAY (a mensageria é lançamento à parte).
+// Sem esse AP → 0 (entra o bruto, como valorCreditoAsaas sem líquido coerente).
+async function taxaAsaas(tx: any, companyId: string, ref: string): Promise<number> {
+  const ap = await tx.accountPayable.findFirst({
+    where: { company_id: companyId, deleted_at: null, notes: { contains: `"external_id":"${ref}"` } },
+    select: { notes: true },
+  })
+  try {
+    const n = JSON.parse(ap?.notes ?? '{}') as { source?: string; fees_breakdown?: { type?: string; amount?: unknown }[] }
+    if (n.source !== 'capture-fees') return 0
+    return (n.fees_breakdown ?? []).filter((f) => f.type === 'TRANSACTION').reduce((t, f) => t + (Number(f.amount) || 0), 0)
+  } catch {
+    return 0
+  }
+}
 
 // Resultado de cada AR: erro (vai em erros), pular (sem valor; não conta), ligada / delta de saldo, aviso (vai em avisos).
 type ResultadoAR = { erro?: string; pular?: boolean; ligada?: boolean; delta?: number; aviso?: string }
@@ -207,9 +225,65 @@ export async function POST(req: NextRequest) {
             }
 
             // (ii) #6: cartão/boleto Asaas confirmado — o crédito (líquido) entra pelo webhook quando o dinheiro cair.
-            // Fix 2 (F2-I, m10/m13): RECEIVED sem crédito não espera nada (o webhook já veio) → segue para ligar/criar.
             if (!pedido && refs.pagamentos.some((p) => p.provider === 'asaas' && p.status === 'CONFIRMED')) {
               return { erro: 'cobrança Asaas: o crédito entra pelo webhook quando o dinheiro cair' }
+            }
+
+            // Fix 3 (F3-F, #7): Payment Asaas RECEIVED sem crédito pay_* → faz o que o webhook faria, pela identidade do
+            // pagamento (nunca o bruto contra o livro — a linha do Asaas é líquida): (1) a linha ASAAS:PAY:<pay> livre É o
+            // dinheiro dele → liga com linked_ref = pay, sem saldo; (2) sem ela → crédito nocional bank_ref = pay pelo
+            // líquido + saldo. O webhook RECEIVED que chegar depois acha um ou outro por ondeRef(pay) e não credita 2x.
+            const recebidos = pedido ? [] : await tx.payment.findMany({
+              where: { company_id: user.companyId, receivable_id: ar.id, provider: 'asaas', status: 'RECEIVED', external_id: { not: null } },
+              select: { external_id: true, amount: true, billing_type: true, method: true, paid_at: true },
+            })
+            if (recebidos.length > 0) {
+              await liquidar()
+              let delta = 0
+              let ligou = false
+              for (const p of recebidos) {
+                const ref = p.external_id as string
+                const linha = await tx.transaction.findFirst({
+                  where: { company_id: user.companyId, origin: 'BANCO', bank_ref: `ASAAS:PAY:${ref}`, linked_ref: null },
+                  select: { id: true, account_id: true, category_id: true, source_text: true },
+                })
+                if (linha) {
+                  exigirTravadas(travadas, [linha.account_id])
+                  const ligada = await tx.transaction.updateMany({
+                    where: { id: linha.id, company_id: user.companyId, linked_ref: null },
+                    data: {
+                      linked_ref: ref,
+                      ...(recebeCategoria(await nomeCategoria(tx, user.companyId, linha.category_id)) ? { category_id: categoria } : {}),
+                      description: `LIQUIDACAO: ${ar.description} · banco: ${linha.source_text ?? ''}`,
+                      reconciled: true,
+                    },
+                  })
+                  if (ligada.count === 0) throw new LivroJaLigado()
+                  ligou = true
+                  continue
+                }
+                const valor = valorCreditoAsaas({ netValue: (p.amount - (await taxaAsaas(tx, user.companyId, ref))) / 100 }, p.amount)
+                const billing = (p.billing_type || p.method || 'PIX').toUpperCase()
+                await tx.transaction.create({
+                  data: {
+                    company_id: user.companyId,
+                    account_id: ar.account_id,
+                    transaction_type: 'CREDIT',
+                    amount: valor,
+                    description: `Recebimento Asaas (${billing}${valor < p.amount ? ', líquido' : ''}): ${ar.description}`,
+                    bank_ref: ref,
+                    transaction_date: p.paid_at ?? new Date(),
+                    category_id: categoria,
+                    reconciled: true,
+                  },
+                })
+                await tx.account.update({
+                  where: { id: ar.account_id },
+                  data: { current_balance: { increment: valor }, updated_at: new Date() },
+                })
+                delta += valor
+              }
+              return { ligada: ligou, delta }
             }
 
             // Sem crédito: decide ligar/criar mesmo que já esteja reconciled (ex.: webhook Inter marcou sem lançar);

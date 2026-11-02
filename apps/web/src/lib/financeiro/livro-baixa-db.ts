@@ -216,10 +216,12 @@ export const AVISO_JA_LANCADO = 'dinheiro desta conta já está lançado (adquir
 // Contas onde a AR tem dinheiro (a dela + as dos lançamentos próprios e das linhas ligadas) — o que travar.
 export async function contasDaAR(db: any, companyId: string, ar: { id: string; account_id: string | null; pix_code?: string | null }): Promise<(string | null)[]> {
   const r = await refsDaAR(db, companyId, ar)
+  // Fix 3 (F3-F): + a linha ASAAS:PAY:<pay> ainda livre (o Conferir a liga ao pagamento; fica na conta do Asaas).
+  const asaasPay = r.pagamentos.filter((p) => p.provider === 'asaas' && p.external_id).map((p) => `ASAAS:PAY:${p.external_id}`)
   const ts: { account_id: string }[] = await db.transaction.findMany({
     where: {
       company_id: companyId,
-      OR: [{ bank_ref: { in: [r.proprio, r.antecipacao, r.estorno, ...r.externos] } }, { linked_ref: { in: refsLigadasAR(r) } }],
+      OR: [{ bank_ref: { in: [r.proprio, r.antecipacao, r.estorno, ...r.externos, ...asaasPay] } }, { linked_ref: { in: refsLigadasAR(r) } }],
     },
     select: { account_id: true },
   })
