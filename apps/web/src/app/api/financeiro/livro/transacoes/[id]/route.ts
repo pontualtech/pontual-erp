@@ -7,6 +7,7 @@ import { logAudit } from '@/lib/audit'
 import { CATEGORIAS_FALLBACK } from '@/lib/financeiro/livro-baixa'
 import { padraoDaLinha } from '@/lib/financeiro/livro-padrao'
 import { classificar } from '@/lib/financeiro/livro'
+import { travarContas } from '@/lib/financeiro/livro-baixa-db'
 
 // A linha foi ligada/desligada (ou deixou de ser do banco) entre a leitura e a gravação → 409, nada gravado.
 class LancamentoMudou extends Error {}
@@ -139,7 +140,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     let regraAtualizada = false
     let categoriaAnteriorRegra: string | null = null
     let recategorizadas = 0
+    // Onda 4 (§7): contas a travar antes de gravar — a da linha e as das linhas que o retroativo vai recategorizar.
+    const contasRetro = pattern
+      ? (await prisma.transaction.findMany({ where: await filtroRetroativo(prisma), select: { account_id: true } })).map((t) => t.account_id)
+      : []
     await prisma.$transaction(async (tx) => {
+      // Ordem única de travas (§7): accounts (em ordem de id) antes de qualquer gravação em transactions.
+      const travadas = await travarContas(tx, user.companyId, [transacao.account_id, ...contasRetro])
       // Onda 3 (E6): `ligada` (regra/nota) foi decidido na leitura acima — só grava se a linha continua do banco
       // e ligada/desligada como foi lida; senão desfaz a tx (nenhuma regra nem retroativo).
       const gravou = await tx.transaction.updateMany({
@@ -183,8 +190,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           })
           regraCriada = true
         }
+        // Só nas contas travadas (linha nova numa conta que não foi travada fica para a próxima classificação).
         const r = await tx.transaction.updateMany({
-          where: await filtroRetroativo(tx),
+          where: { ...(await filtroRetroativo(tx)), account_id: { in: [...travadas] } },
           data: { category_id: body.category_id },
         })
         recategorizadas = r.count

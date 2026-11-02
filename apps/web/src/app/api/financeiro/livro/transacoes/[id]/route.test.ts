@@ -1,16 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 
+// §10 (onda 4): `prisma` (fora) e `tx` (dentro do $transaction) são clientes DISTINTOS, cada um só com o que a rota
+// pode chamar nele — uma leitura/gravação pelo cliente errado quebra o teste (TypeError) em vez de passar calada.
 const { m, db } = vi.hoisted(() => { const m = {
-  txFindFirst: vi.fn(), txUpdate: vi.fn(), txUpdateMany: vi.fn(), txCount: vi.fn(),
-  catFindFirst: vi.fn(), catFindMany: vi.fn(),
-  ruleFindFirst: vi.fn(), ruleFindMany: vi.fn(), ruleCreate: vi.fn(), ruleUpdate: vi.fn(),
+  txFindFirst: vi.fn(), txUpdate: vi.fn(), txUpdateMany: vi.fn(), txCount: vi.fn(), pTxFindMany: vi.fn(),
+  catFindFirst: vi.fn(), catFindMany: vi.fn(), txCatFindMany: vi.fn(),
+  ruleFindFirst: vi.fn(), txRuleFindFirst: vi.fn(), ruleFindMany: vi.fn(), ruleCreate: vi.fn(), ruleUpdate: vi.fn(),
+  queryRaw: vi.fn(), txOpcoes: vi.fn(),
+}
+const tx = {
+  transaction: { update: m.txUpdate, updateMany: m.txUpdateMany },
+  category: { findMany: m.txCatFindMany },
+  classificationRule: { findFirst: m.txRuleFindFirst, findMany: m.ruleFindMany, create: m.ruleCreate, update: m.ruleUpdate },
+  $queryRaw: m.queryRaw,
 }
 const db = {
-  transaction: { findFirst: m.txFindFirst, update: m.txUpdate, updateMany: m.txUpdateMany, count: m.txCount },
+  transaction: { findFirst: m.txFindFirst, count: m.txCount, findMany: m.pTxFindMany },
   category: { findFirst: m.catFindFirst, findMany: m.catFindMany },
-  classificationRule: { findFirst: m.ruleFindFirst, findMany: m.ruleFindMany, create: m.ruleCreate, update: m.ruleUpdate },
-  $transaction: async (cb: (tx: unknown) => unknown) => cb(db),
+  classificationRule: { findFirst: m.ruleFindFirst },
+  $transaction: async (cb: (t: unknown) => unknown, opcoes?: unknown) => { m.txOpcoes(opcoes); return cb(tx) },
 }
 return { m, db } })
 vi.mock('@pontual/db', () => ({ prisma: db }))
@@ -33,12 +42,18 @@ const retroativo = () => m.txUpdateMany.mock.calls.map((c) => c[0]).filter((a) =
 const ONDE_DESLIGADA = { id: 't1', company_id: 'c1', origin: 'BANCO', linked_ref: null }
 const ONDE_LIGADA = { id: 't1', company_id: 'c1', origin: 'BANCO', linked_ref: { not: null } }
 
+// A regra ativa existente é lida pelo cliente de fora na simulação e pelo tx na gravação.
+const regraExistente = (r: unknown) => { m.ruleFindFirst.mockResolvedValue(r); m.txRuleFindFirst.mockResolvedValue(r) }
+
 beforeEach(() => {
   Object.values(m).forEach((f) => f.mockReset())
-  m.txFindFirst.mockResolvedValue({ id: 't1', category_id: 'fb', source_text: 'PIX ENVIADO ELVIS FERREIRA', description: 'x', origin: 'BANCO', linked_ref: null })
+  m.txFindFirst.mockResolvedValue({ id: 't1', category_id: 'fb', source_text: 'PIX ENVIADO ELVIS FERREIRA', description: 'x', origin: 'BANCO', linked_ref: null, account_id: 'acc1' })
   m.catFindFirst.mockResolvedValue({ id: 'cat1', name: 'Telefone e Internet' })
   m.catFindMany.mockResolvedValue([{ id: 'fb1' }, { id: 'fb2' }])
-  m.ruleFindFirst.mockResolvedValue(null)
+  m.txCatFindMany.mockResolvedValue([{ id: 'fb1' }, { id: 'fb2' }])
+  m.pTxFindMany.mockResolvedValue([])
+  m.queryRaw.mockResolvedValue([])
+  regraExistente(null)
   m.ruleFindMany.mockResolvedValue([])
   m.txUpdateMany.mockResolvedValue({ count: 3 })
   m.txCount.mockResolvedValue(3)
@@ -55,6 +70,7 @@ describe('PATCH livro/transacoes/[id] — regra derivada + retroativo', () => {
         category_id: { in: ['fb1', 'fb2'] },
         source_text: { contains: 'ELVIS FERREIRA', mode: 'insensitive' },
         transaction_type: 'DEBIT',
+        account_id: { in: ['acc1'] },
       },
       data: { category_id: 'cat1' },
     })
@@ -71,7 +87,7 @@ describe('PATCH livro/transacoes/[id] — regra derivada + retroativo', () => {
   })
 
   it('regra já existente: não cria, mas ainda recategoriza', async () => {
-    m.ruleFindFirst.mockResolvedValue({ id: 'r1', category_id: 'cat1' })
+    regraExistente({ id: 'r1', category_id: 'cat1' })
     const j = (await (await patch({ category_id: 'cat1', criar_regra: { direction: 'OUT' } })).json()).data
     expect(m.ruleCreate).not.toHaveBeenCalled()
     expect(retroativo()).toHaveLength(1)
@@ -115,7 +131,7 @@ describe('PATCH livro/transacoes/[id] — regra derivada + retroativo', () => {
 
   it('categoria escolhida é fallback: não cria/atualiza regra nem recategoriza', async () => {
     m.catFindFirst.mockResolvedValue({ id: 'fb1', name: 'A classificar' })
-    m.ruleFindFirst.mockResolvedValue({ id: 'r1', category_id: 'antiga' })
+    regraExistente({ id: 'r1', category_id: 'antiga' })
     const j = (await (await patch({ category_id: 'fb1', criar_regra: { direction: 'OUT' } })).json()).data
     expect(linhaGravada()).toEqual([{ where: ONDE_DESLIGADA, data: { category_id: 'fb1' } }])
     expect(m.ruleCreate).not.toHaveBeenCalled()
@@ -138,7 +154,7 @@ describe('PATCH livro/transacoes/[id] — regra derivada + retroativo', () => {
   })
 
   it('(a) regra existente com outra categoria: atualiza a regra, não cria', async () => {
-    m.ruleFindFirst.mockResolvedValue({ id: 'r1', category_id: 'antiga' })
+    regraExistente({ id: 'r1', category_id: 'antiga' })
     const j = (await (await patch({ category_id: 'cat1', criar_regra: { direction: 'OUT' } })).json()).data
     expect(m.ruleUpdate).toHaveBeenCalledWith({ where: { id: 'r1' }, data: { category_id: 'cat1' } })
     expect(m.ruleCreate).not.toHaveBeenCalled()
@@ -147,7 +163,7 @@ describe('PATCH livro/transacoes/[id] — regra derivada + retroativo', () => {
   })
 
   it('(b) regra existente com a mesma categoria: nada de create/update', async () => {
-    m.ruleFindFirst.mockResolvedValue({ id: 'r1', category_id: 'cat1' })
+    regraExistente({ id: 'r1', category_id: 'cat1' })
     const j = (await (await patch({ category_id: 'cat1', criar_regra: { direction: 'OUT' } })).json()).data
     expect(m.ruleUpdate).not.toHaveBeenCalled()
     expect(m.ruleCreate).not.toHaveBeenCalled()
@@ -156,7 +172,7 @@ describe('PATCH livro/transacoes/[id] — regra derivada + retroativo', () => {
   })
 
   it('(c) simular com regra de outra categoria: informa regra_atualizada e não grava', async () => {
-    m.ruleFindFirst.mockResolvedValue({ id: 'r1', category_id: 'antiga' })
+    regraExistente({ id: 'r1', category_id: 'antiga' })
     const j = (await (await patch({ category_id: 'cat1', simular: true, criar_regra: { direction: 'OUT' } })).json()).data
     expect(j.regra_atualizada).toBe(true)
     expect(j.regra_criada).toBe(false)
@@ -265,10 +281,10 @@ describe('PATCH livro/transacoes/[id] — regra derivada + retroativo', () => {
 
     it('busca a regra existente sem diferenciar maiúsculas e baixa a prioridade dela ao trocar a categoria', async () => {
       m.txFindFirst.mockResolvedValue(linhaClaro)
-      m.ruleFindFirst.mockResolvedValue({ id: 'r1', category_id: 'antiga', priority: 100 })
+      regraExistente({ id: 'r1', category_id: 'antiga', priority: 100 })
       m.ruleFindMany.mockResolvedValue([CLARO, { id: 'r1', pattern: 'da claro celular 6', direction: 'OUT', account_id: null, category_id: 'antiga', priority: 100 }])
       const j = (await (await patch({ category_id: 'cat1', criar_regra: { direction: 'OUT' } })).json()).data
-      expect(m.ruleFindFirst).toHaveBeenCalledWith(expect.objectContaining({
+      expect(m.txRuleFindFirst).toHaveBeenCalledWith(expect.objectContaining({
         where: { company_id: 'c1', active: true, pattern: { equals: 'DA CLARO CELULAR 6', mode: 'insensitive' }, direction: 'OUT' },
       }))
       expect(m.ruleUpdate).toHaveBeenCalledWith({ where: { id: 'r1' }, data: { category_id: 'cat1', priority: 99 } })
@@ -278,7 +294,7 @@ describe('PATCH livro/transacoes/[id] — regra derivada + retroativo', () => {
 
     it('regra existente com a mesma categoria que perde para outra: só baixa a prioridade', async () => {
       m.txFindFirst.mockResolvedValue(linhaClaro)
-      m.ruleFindFirst.mockResolvedValue({ id: 'r1', category_id: 'cat1', priority: 100 })
+      regraExistente({ id: 'r1', category_id: 'cat1', priority: 100 })
       m.ruleFindMany.mockResolvedValue([{ ...CLARO, priority: 50 }])
       await patch({ category_id: 'cat1', criar_regra: { direction: 'OUT' } })
       expect(m.ruleUpdate).toHaveBeenCalledWith({ where: { id: 'r1' }, data: { priority: 49 } })
@@ -286,10 +302,29 @@ describe('PATCH livro/transacoes/[id] — regra derivada + retroativo', () => {
 
     it('regra existente que já vence: não mexe na prioridade', async () => {
       m.txFindFirst.mockResolvedValue(linhaClaro)
-      m.ruleFindFirst.mockResolvedValue({ id: 'r1', category_id: 'cat1', priority: 10 })
+      regraExistente({ id: 'r1', category_id: 'cat1', priority: 10 })
       m.ruleFindMany.mockResolvedValue([CLARO])
       await patch({ category_id: 'cat1', criar_regra: { direction: 'OUT' } })
       expect(m.ruleUpdate).not.toHaveBeenCalled()
     })
+  })
+})
+
+describe('§7 (onda 4): trava as contas antes de gravar', () => {
+  it('trava a conta da linha e as das linhas do retroativo (em ordem de id) antes de qualquer gravação; o retroativo fica nelas', async () => {
+    m.pTxFindMany.mockResolvedValue([{ account_id: 'acc9' }, { account_id: 'acc1' }, { account_id: 'acc2' }])
+    await patch({ category_id: 'cat1', criar_regra: { direction: 'OUT' } })
+    const travas = m.queryRaw.mock.calls.map(([sql, ...v]) => [(sql as string[]).join('?'), ...v])
+    expect(travas).toEqual(['acc1', 'acc2', 'acc9'].map((id) => ['SELECT id FROM accounts WHERE id = ? AND company_id = ? FOR UPDATE', id, 'c1']))
+    const ultimaTrava = Math.max(...m.queryRaw.mock.invocationCallOrder)
+    expect(Math.min(...m.txUpdateMany.mock.invocationCallOrder, ...m.ruleCreate.mock.invocationCallOrder)).toBeGreaterThan(ultimaTrava)
+    expect(retroativo()[0].where.account_id).toEqual({ in: ['acc1', 'acc2', 'acc9'] })
+  })
+
+  it('sem regra: trava só a conta da linha', async () => {
+    await patch({ category_id: 'cat1' })
+    expect(m.queryRaw).toHaveBeenCalledTimes(1)
+    expect(m.queryRaw.mock.calls[0].slice(1)).toEqual(['acc1', 'c1'])
+    expect(m.pTxFindMany).not.toHaveBeenCalled()
   })
 })

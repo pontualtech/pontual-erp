@@ -1,142 +1,91 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 
-const { m, db } = vi.hoisted(() => {
-  const m = { apFindFirst: vi.fn(), apUpdateMany: vi.fn(), txFindFirst: vi.fn(), txFindMany: vi.fn(), queryRaw: vi.fn() }
-  const db = {
-    accountPayable: { findFirst: m.apFindFirst, updateMany: m.apUpdateMany },
-    transaction: { findFirst: m.txFindFirst, findMany: m.txFindMany },
-    $queryRaw: m.queryRaw,
-    $transaction: async (cb: (tx: unknown) => unknown) => cb(db),
-  }
-  return { m, db }
-})
-vi.mock('@pontual/db', () => ({ prisma: db }))
+vi.mock('@pontual/db', async () => ({ prisma: (await import('@/test-utils/banco-falso')).banco.prisma }))
 vi.mock('@/lib/auth', () => ({ requirePermission: async () => ({ id: 'u1', companyId: 'c1' }) }))
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }))
 
 import { DELETE } from './route'
+import { banco } from '@/test-utils/banco-falso'
 
-const req = () => new NextRequest('http://x/api', { method: 'DELETE' })
-const AP = { id: 'p1', status: 'PENDENTE', paid_amount: 2000, total_amount: 5000 }
+const excluir = async () => {
+  const res = await DELETE(new NextRequest('http://x/api', { method: 'DELETE' }), { params: { id: 'p1' } })
+  return { status: res.status, j: await res.json() }
+}
+const AP = { id: 'p1', status: 'PENDENTE', paid_amount: 2000, total_amount: 5000, account_id: 'acc1' }
+const ap = () => banco.tabelas.accountPayable.find((a) => a.id === 'p1')!
+const PROPRIOS = 'há lançamentos financeiros desta conta; estorne antes de excluir'
+const LIGADA = 'Há lançamento do banco ligado; estorne antes de excluir.'
+const t = (bank_ref: string, transaction_type: string, amount: number) => banco.transacao({ account_id: 'acc1', bank_ref, transaction_type, amount })
 
 beforeEach(() => {
-  Object.values(m).forEach((f) => f.mockReset())
-  m.apFindFirst.mockResolvedValue(AP)
-  m.apUpdateMany.mockResolvedValue({ count: 1 })
-  m.txFindFirst.mockResolvedValue(null)
-  m.txFindMany.mockResolvedValue([])
-  m.queryRaw.mockResolvedValue([{ id: 'p1' }])
+  banco.reset()
+  banco.conta({ id: 'acc1' })
+  banco.conta({ id: 'acc2' })
 })
 
-describe('DELETE conta a pagar — livro-razão (F9)', () => {
-  const PROPRIOS = 'há lançamentos financeiros desta conta; estorne antes de excluir'
-  const LIGADA = 'Há lançamento do banco ligado; estorne antes de excluir.'
-
-  it('AP pendente com lançamento do banco ligado (sem próprio): 409 com o texto da linha ligada, nada apagado', async () => {
-    m.txFindFirst.mockResolvedValue({ id: 't1' })
-    const res = await DELETE(req(), { params: { id: 'p1' } })
-    expect(res.status).toBe(409)
-    expect((await res.json()).error).toBe(LIGADA)
-    expect(m.txFindFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { company_id: 'c1', linked_ref: 'AP:p1' } }))
-    expect(m.apUpdateMany).not.toHaveBeenCalled()
+describe('DELETE conta a pagar — livro-razão', () => {
+  it('sem lançamento nenhum: exclui (soft delete)', async () => {
+    banco.ap(AP)
+    expect((await excluir()).status).toBe(200)
+    expect(ap().deleted_at).toBeInstanceOf(Date)
   })
 
-  it('AP pendente sem lançamento nenhum: exclui (soft delete) como hoje', async () => {
-    const res = await DELETE(req(), { params: { id: 'p1' } })
-    expect(res.status).toBe(200)
-    expect(m.apUpdateMany).toHaveBeenCalledWith({ where: { id: 'p1', company_id: 'c1' }, data: { deleted_at: expect.any(Date) } })
+  it('linha do banco ligada (AP:id — baixa ou DEBIT convertido): 409 com o texto da linha ligada', async () => {
+    banco.ap(AP)
+    banco.transacao({ account_id: 'acc1', origin: 'BANCO', bank_ref: 'K', transaction_type: 'DEBIT', amount: 2000, linked_ref: 'AP:p1' })
+    expect((await excluir()).j.error).toBe(LIGADA)
+    expect(ap().deleted_at).toBeNull()
   })
 
-  it('E4: lançamento próprio que não se anula (AP:id parcial): 409, nada apagado; busca dentro da tx travada', async () => {
-    m.txFindMany.mockResolvedValue([{ bank_ref: 'AP:p1', transaction_type: 'DEBIT', amount: 2000 }])
-    const res = await DELETE(req(), { params: { id: 'p1' } })
-    expect(res.status).toBe(409)
-    expect((await res.json()).error).toBe(PROPRIOS)
-    expect(m.txFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { company_id: 'c1', bank_ref: { in: ['AP:p1', 'AP:p1:estorno'] } } }))
-    const [sql, ...valores] = m.queryRaw.mock.calls[0]
-    expect((sql as string[]).join('?')).toBe('SELECT id FROM accounts_payable WHERE id = ? AND company_id = ? FOR UPDATE')
-    expect(valores).toEqual(['p1', 'c1'])
-    expect(m.txFindMany.mock.invocationCallOrder[0]).toBeGreaterThan(m.queryRaw.mock.invocationCallOrder[0])
-    expect(m.apUpdateMany).not.toHaveBeenCalled()
+  it('E4: próprio que não se anula: 409; m14: já estornada (DEBIT − CREDIT :estorno = 0) sem linha ligada: exclui', async () => {
+    banco.ap(AP)
+    t('AP:p1', 'DEBIT', 2000)
+    expect((await excluir()).j.error).toBe(PROPRIOS)
+    t('AP:p1:estorno', 'CREDIT', 2000)
+    expect((await excluir()).status).toBe(200)
   })
 
-  it('round 1: conta já estornada (DEBIT AP:id − CREDIT :estorno = 0) e sem linha ligada: exclui (200)', async () => {
-    m.txFindMany.mockResolvedValue([{ bank_ref: 'AP:p1', transaction_type: 'DEBIT', amount: 5000 }, { bank_ref: 'AP:p1:estorno', transaction_type: 'CREDIT', amount: 5000 }])
-    const res = await DELETE(req(), { params: { id: 'p1' } })
-    expect(res.status).toBe(200)
-    expect(m.apUpdateMany).toHaveBeenCalledWith({ where: { id: 'p1', company_id: 'c1' }, data: { deleted_at: expect.any(Date) } })
-  })
-
-  it('round 1: já estornada mas com linha do banco ligada: 409 com o texto da linha ligada', async () => {
-    m.txFindMany.mockResolvedValue([{ bank_ref: 'AP:p1', transaction_type: 'DEBIT', amount: 5000 }, { bank_ref: 'AP:p1:estorno', transaction_type: 'CREDIT', amount: 5000 }])
-    m.txFindFirst.mockResolvedValue({ id: 't1' })
-    const res = await DELETE(req(), { params: { id: 'p1' } })
-    expect(res.status).toBe(409)
-    expect((await res.json()).error).toBe(LIGADA)
-    expect(m.apUpdateMany).not.toHaveBeenCalled()
-  })
-
-  it('round 1: próprio que não se anula E linha ligada: 409 com o texto dos lançamentos próprios', async () => {
-    m.txFindMany.mockResolvedValue([{ bank_ref: 'AP:p1', transaction_type: 'DEBIT', amount: 5000 }, { bank_ref: 'AP:p1:estorno', transaction_type: 'CREDIT', amount: 3000 }])
-    m.txFindFirst.mockResolvedValue({ id: 't1' })
-    const res = await DELETE(req(), { params: { id: 'p1' } })
-    expect(res.status).toBe(409)
-    expect((await res.json()).error).toBe(PROPRIOS)
-  })
-
-  it('round 1: combinação inesperada (CREDIT AP:id) não conta como anulada: 409', async () => {
-    m.txFindMany.mockResolvedValue([{ bank_ref: 'AP:p1', transaction_type: 'DEBIT', amount: 5000 }, { bank_ref: 'AP:p1', transaction_type: 'CREDIT', amount: 5000 }])
-    const res = await DELETE(req(), { params: { id: 'p1' } })
-    expect(res.status).toBe(409)
-    expect((await res.json()).error).toBe(PROPRIOS)
-    expect(m.apUpdateMany).not.toHaveBeenCalled()
-  })
-
-  it('E4: o soft delete roda na mesma tx, depois da trava e das buscas', async () => {
-    const res = await DELETE(req(), { params: { id: 'p1' } })
-    expect(res.status).toBe(200)
-    const trava = m.queryRaw.mock.invocationCallOrder[0]
-    expect(m.txFindMany.mock.invocationCallOrder[0]).toBeGreaterThan(trava)
-    expect(m.txFindFirst.mock.invocationCallOrder[0]).toBeGreaterThan(trava)
-    expect(m.apUpdateMany.mock.invocationCallOrder[0]).toBeGreaterThan(m.txFindFirst.mock.invocationCallOrder[0])
-  })
-
-  describe('G2: a guarda de paga usa a releitura com a linha travada', () => {
-    // Antes da trava (SELECT … FOR UPDATE) a leitura devolve `antes`; depois, `depois` (outra requisição comitou).
-    const releitura = (antes: unknown, depois: unknown) =>
-      m.apFindFirst.mockImplementation(async () => (m.queryRaw.mock.calls.length > 0 ? depois : antes))
-
-    it('AP ficou paga enquanto esperava a trava: 409 da guarda, nada apagado', async () => {
-      releitura(AP, { ...AP, status: 'PAGO', paid_amount: 5000 })
-      const res = await DELETE(req(), { params: { id: 'p1' } })
-      expect(res.status).toBe(409)
-      expect((await res.json()).error).toBe('Esta conta está paga. Estorne o pagamento antes de excluir (botão Estornar) para reverter o lançamento bancário.')
-      expect(m.apUpdateMany).not.toHaveBeenCalled()
-    })
-
-    it('AP que estava paga foi estornada antes da trava: a releitura libera a exclusão', async () => {
-      releitura({ ...AP, status: 'PAGO', paid_amount: 5000 }, AP)
-      const res = await DELETE(req(), { params: { id: 'p1' } })
-      expect(res.status).toBe(200)
-      expect(m.apUpdateMany).toHaveBeenCalledTimes(1)
-    })
-
-    it('relê a conta depois da trava, com deleted_at null; excluída em paralelo → 404', async () => {
-      releitura(AP, null)
-      const res = await DELETE(req(), { params: { id: 'p1' } })
-      expect(res.status).toBe(404)
-      expect((await res.json()).error).toBe('Conta a pagar nao encontrada')
-      expect(m.apFindFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'p1', company_id: 'c1', deleted_at: null } }))
-      expect(m.apFindFirst.mock.invocationCallOrder.slice(-1)[0]).toBeGreaterThan(m.queryRaw.mock.invocationCallOrder[0])
-      expect(m.apUpdateMany).not.toHaveBeenCalled()
-    })
+  it('combinação inesperada (CREDIT AP:id) não conta como anulada: 409', async () => {
+    banco.ap(AP)
+    t('AP:p1', 'DEBIT', 2000)
+    t('AP:p1', 'CREDIT', 2000)
+    expect((await excluir()).j.error).toBe(PROPRIOS)
   })
 
   it('AP paga continua bloqueada pelo guard antigo (409)', async () => {
-    m.apFindFirst.mockResolvedValue({ ...AP, status: 'PAGO', paid_amount: 5000 })
-    const res = await DELETE(req(), { params: { id: 'p1' } })
-    expect(res.status).toBe(409)
-    expect(m.apUpdateMany).not.toHaveBeenCalled()
+    banco.ap({ ...AP, status: 'PAGO', paid_amount: 5000 })
+    expect((await excluir()).status).toBe(409)
+  })
+})
+
+describe('§7/G2: trava conta → AP e decide pela releitura', () => {
+  it('trava accounts (conta da AP) antes da AP; soft delete pelo tx depois das travas', async () => {
+    banco.ap(AP)
+    await excluir()
+    expect(banco.travas.map((x) => [x.tabela, x.id])).toEqual([['accounts', 'acc1'], ['accounts_payable', 'p1']])
+    const escrita = banco.log.find((o) => o.modelo === 'accountPayable' && o.op === 'updateMany')!
+    expect(escrita.cliente).toBe('tx')
+    expect(escrita.seq).toBeGreaterThan(banco.travas[1].seq)
+    expect(banco.prismaDentroDaTx()).toEqual([])
+  })
+
+  it('AP ficou paga enquanto esperava: 409; estornada antes da trava: libera', async () => {
+    banco.ap(AP)
+    banco.aoTravar(({ tabela }) => { if (tabela === 'accounts_payable') Object.assign(ap(), { status: 'PAGO', paid_amount: 5000 }) })
+    expect((await excluir()).status).toBe(409)
+    banco.aoTravar(({ tabela }) => { if (tabela === 'accounts_payable') Object.assign(ap(), { status: 'PENDENTE', paid_amount: 0 }) })
+    expect((await excluir()).status).toBe(200)
+  })
+
+  it('excluída em paralelo → 404; conta bancária trocada enquanto esperava → 409 "conta alterada — repita"', async () => {
+    banco.ap(AP)
+    banco.aoTravar(({ tabela }) => { if (tabela === 'accounts_payable') ap().deleted_at = new Date() })
+    expect((await excluir()).status).toBe(404)
+    ap().deleted_at = null
+    banco.aoTravar(({ tabela }) => { if (tabela === 'accounts_payable') ap().account_id = 'acc2' })
+    const r = await excluir()
+    expect(r.status).toBe(409)
+    expect(r.j.error).toBe('conta alterada — repita')
   })
 })

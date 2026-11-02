@@ -6,7 +6,8 @@ import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { decidirBaixa, JANELA_BAIXA, JANELA_CONFERIR, recebeCategoria, type CandidatoLivro } from '@/lib/financeiro/livro-baixa'
 import {
-  candidatosLivro, desligarLinhas, hojeSP, nomeCategoria, refsDaAR, refsLigadasAR, SELECT_LINHA_LIGADA,
+  candidatosLivro, ContaAlterada, contasDaAR, desligarLinhas, exigirTravadas, hojeSP, nomeCategoria, refsDaAR, refsLigadasAR,
+  SELECT_LINHA_LIGADA, travarContas,
 } from '@/lib/financeiro/livro-baixa-db'
 import { compensado, refEstorno } from '@/lib/financeiro/livro'
 import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
@@ -82,9 +83,16 @@ export async function POST(req: NextRequest) {
 
       let resultado: ResultadoAR
       try {
+        // Onda 4 (§7): a leitura de fora só diz QUAIS contas travar (a da AR + as dos lançamentos dela).
+        const lida = await prisma.accountReceivable.findFirst({
+          where: { id: arId, company_id: user.companyId, deleted_at: null },
+          select: { id: true, account_id: true, pix_code: true },
+        })
+        const contas = lida ? await contasDaAR(prisma, user.companyId, lida) : []
         resultado = await prisma.$transaction(async (tx): Promise<ResultadoAR> => {
-          // E1: trava a linha da AR — Receber, Desfazer, webhook e outro Conferir atualizam esta mesma linha,
-          // então esperam aqui; a releitura abaixo já enxerga o que eles comitaram.
+          // Ordem única de travas (§7): contas (accounts) → AR → transações. Receber, Desfazer, livro/linhas e outro
+          // Conferir travam na mesma ordem, então esperam aqui (sem deadlock, #10) e a releitura enxerga o que comitaram (E1, #9).
+          const travadas = await travarContas(tx, user.companyId, contas)
           await tx.$queryRaw`SELECT id FROM accounts_receivable WHERE id = ${arId} AND company_id = ${user.companyId} FOR UPDATE`
           const ar = await tx.accountReceivable.findFirst({
             where: { id: arId, company_id: user.companyId, deleted_at: null },
@@ -94,6 +102,7 @@ export async function POST(req: NextRequest) {
             },
           })
           if (!ar) return { erro: 'conta a receber não encontrada' }
+          exigirTravadas(travadas, [ar.account_id])
           // Onda 4 (§4): Desfazer só desfaz conta conferida — AR estornada/PENDENTE (#8) não perde crédito nem saldo.
           if (!reconciled && ar.reconciled !== true && ar.status !== 'LIQUIDADO') return { erro: 'conta não conferida' }
           // Conferir exige conta recebida (PAGO = status legado de recebida): PENDENTE não vira LIQUIDADO nem ganha crédito.
@@ -175,6 +184,7 @@ export async function POST(req: NextRequest) {
                 const decisao = decidirBaixa({ tipo: 'CREDIT', amount, data: hoje, categoria: nomeAlvo }, pedido, candidatos, JANELA_BAIXA)
                 if ('erro' in decisao) return { erro: decisao.erro }
                 if (!('usar' in decisao)) return { erro: 'conta a receber já tem lançamento; vínculo não feito' }
+                exigirTravadas(travadas, nocionais.map((t) => t.account_id))
                 await liquidar()
                 await ligar(decisao.usar, candidatos)
                 let delta = 0
@@ -257,6 +267,7 @@ export async function POST(req: NextRequest) {
             select: { account_id: true, created_at: true },
           })
           const vivos = creditos.filter((c) => !compensado(c, estornos))
+          exigirTravadas(travadas, [...ligadas.map((l) => l.account_id), ...vivos.map((c) => c.account_id)])
           await tx.accountReceivable.update({
             where: { id: ar.id, company_id: user.companyId },
             data: { reconciled: false, status: 'RECEBIDO', updated_at: new Date() },
@@ -274,8 +285,9 @@ export async function POST(req: NextRequest) {
           return { delta }
         })
       } catch (e) {
-        if (!(e instanceof LivroJaLigado)) throw e
-        resultado = { erro: 'lançamento do livro já ligado por outra baixa' }
+        if (e instanceof ContaAlterada) resultado = { erro: e.message }
+        else if (e instanceof LivroJaLigado) resultado = { erro: 'lançamento do livro já ligado por outra baixa' }
+        else throw e
       }
       if (resultado.erro) {
         erros.push({ ar: arId, motivo: resultado.erro })

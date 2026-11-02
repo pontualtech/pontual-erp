@@ -5,7 +5,7 @@ import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { z } from 'zod'
 import { decidirBaixa, JANELA_BAIXA, recebeCategoria, TOLERANCIA_EXPLICITO } from '@/lib/financeiro/livro-baixa'
-import { candidatosLivro, ConflitoBaixa, hojeSP, nomeCategoria } from '@/lib/financeiro/livro-baixa-db'
+import { candidatosLivro, ConflitoBaixa, hojeSP, nomeCategoria, travarContas } from '@/lib/financeiro/livro-baixa-db'
 
 // Escolha explícita de lançamento do livro inválida → 422 sem escrever nada.
 class LivroInvalido extends Error {}
@@ -75,6 +75,10 @@ export async function POST(req: NextRequest, { params }: Params) {
     let payable
     try {
     payable = await prisma.$transaction(async (tx) => {
+      // Onda 4 (§7): ordem única de travas — a conta bancária (accounts) primeiro, depois a AP; só então candidatos
+      // e escritas (o livro/linhas trava a mesma conta antes de lançar a linha do banco).
+      await travarContas(tx, user.companyId, [data.account_id])
+      await tx.$queryRaw`SELECT id FROM accounts_payable WHERE id = ${params.id} AND company_id = ${user.companyId} FOR UPDATE`
       const fresh = await tx.accountPayable.findFirst({
         where: { id: params.id, company_id: user.companyId, deleted_at: null },
       })
@@ -105,6 +109,11 @@ export async function POST(req: NextRequest, { params }: Params) {
       // Cap em total_amount — qualquer excedente vira erro 400 com mensagem clara.
       if (newPaidTotal > fresh.total_amount) {
         throw new ValorExcedeRestante(`Valor da baixa (R$ ${(data.paid_amount/100).toFixed(2)}) excede o saldo restante (R$ ${((fresh.total_amount - previousPaid)/100).toFixed(2)})`)
+      }
+      // Onda 3 (G1) com a trava: outra baixa comitou enquanto esta esperava (duplo clique) — o valor relido já não é
+      // o que o usuário viu; não soma uma segunda baixa por cima.
+      if (previousPaid !== (existing.paid_amount || 0)) {
+        throw new ConflitoBaixa('Baixa concorrente detectada — esta conta já foi paga por outra requisição')
       }
       const isPaidInFull = newPaidTotal >= fresh.total_amount
 

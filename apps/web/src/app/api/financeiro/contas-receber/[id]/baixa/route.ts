@@ -6,7 +6,7 @@ import { logAudit } from '@/lib/audit'
 import { baixaSchema } from '@/lib/validations/financeiro'
 import { isReceivableSettled } from '@/lib/finance/receivable-status'
 import { decidirBaixa, JANELA_BAIXA, recebeCategoria } from '@/lib/financeiro/livro-baixa'
-import { candidatosLivro, categoriaId, ConflitoBaixa, hojeSP, nomeCategoria } from '@/lib/financeiro/livro-baixa-db'
+import { candidatosLivro, categoriaId, ConflitoBaixa, hojeSP, nomeCategoria, travarContas } from '@/lib/financeiro/livro-baixa-db'
 import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
 import { CATEGORIA_RECEITA_SERVICOS } from '@/lib/financeiro/livro-categorias'
 
@@ -59,6 +59,11 @@ export async function POST(req: NextRequest, { params }: Params) {
     let receivable
     try {
     receivable = await prisma.$transaction(async (tx) => {
+      // Onda 4 (§7): ordem única de travas — a conta bancária (accounts) primeiro, depois a AR; só então candidatos e
+      // escritas. O livro/linhas também trava a conta antes de lançar a linha: um espera o outro e a baixa enxerga
+      // a linha recém-lançada (#9), sem cruzar com o Desfazer/livro (#10).
+      await travarContas(tx, user.companyId, [data.account_id])
+      await tx.$queryRaw`SELECT id FROM accounts_receivable WHERE id = ${params.id} AND company_id = ${user.companyId} FOR UPDATE`
       const fresh = await tx.accountReceivable.findFirst({
         where: { id: params.id, company_id: user.companyId, deleted_at: null },
       })
@@ -70,6 +75,11 @@ export async function POST(req: NextRequest, { params }: Params) {
       // Bug #53 (audit 31/05): baixa com valor > total causava 500. Cap explícito.
       if (newReceivedTotal > fresh.total_amount) {
         throw new ConflitoBaixa(`Valor do recebimento (R$ ${(data.received_amount/100).toFixed(2)}) excede o saldo restante (R$ ${((fresh.total_amount - previousReceived)/100).toFixed(2)})`, 422)
+      }
+      // Onda 3 (G1) com a trava: outra baixa comitou enquanto esta esperava (duplo clique) — o valor relido já não é
+      // o que o usuário viu; não soma uma segunda baixa por cima.
+      if (previousReceived !== (existing.received_amount || 0)) {
+        throw new ConflitoBaixa('Baixa concorrente detectada — esta conta já foi recebida por outra requisição')
       }
       const isReceivedInFull = newReceivedTotal >= fresh.total_amount
 

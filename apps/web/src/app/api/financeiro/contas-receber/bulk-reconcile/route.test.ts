@@ -365,3 +365,79 @@ describe('§5 Conferir: o que já é dinheiro desta AR (existing) e as regras an
     expect(banco.tx_('t1')!.linked_ref).toBe('AR:a1')
   })
 })
+
+describe('§7: trava contas → AR, relê e escreve pelo tx (E1, #9, #10)', () => {
+  const ACC2 = 'acc2'
+  it('Conferir: trava a conta da AR e as contas dos lançamentos dela (em ordem), depois a AR; nada pelo cliente de fora', async () => {
+    banco.conta({ id: ACC2 })
+    banco.ar(AR)
+    banco.transacao({ account_id: ACC2, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1' })
+    await conferir()
+    expect(banco.travas.map((t) => [t.tabela, t.id])).toEqual([['accounts', ACC], ['accounts', ACC2], ['accounts_receivable', 'a1']])
+    const depois = banco.travas[2].seq
+    expect(banco.log.filter((o) => o.dentroDaTx && o.modelo !== '$queryRaw').every((o) => o.seq > depois)).toBe(true)
+    expect(banco.prismaDentroDaTx()).toEqual([])
+  })
+
+  it('Desfazer: mesma ordem (accounts antes da AR)', async () => {
+    banco.ar({ ...AR, status: 'LIQUIDADO', reconciled: true })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1' })
+    await desfazer()
+    expect(banco.travas.map((t) => t.tabela)).toEqual(['accounts', 'accounts_receivable'])
+  })
+
+  it('E1: Receber comitado enquanto esperava a trava → o crédito aparece na releitura: só LIQUIDADO, nada criado nem ligado', async () => {
+    banco.ar(AR)
+    linhaLivro()
+    banco.aoTravar(({ tabela }) => {
+      if (tabela === 'accounts_receivable') banco.transacao({ id: 'x1', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1' })
+    })
+    const { j } = await conferir()
+    expect(j.data).toEqual(expect.objectContaining({ updated: 1, ligadas: 0, balance_delta: 0, erros: [] }))
+    expect(banco.tx_('t1')!.linked_ref).toBeNull()
+    expect(creditosAR()).toHaveLength(1)
+  })
+
+  it('#9: linha do livro comitada enquanto esperava a trava da conta → Conferir a vê e liga (não cria 2x)', async () => {
+    banco.ar(AR)
+    banco.aoTravar(({ tabela }) => {
+      if (tabela !== 'accounts') return
+      linhaLivro()
+      banco.aoTravar(null)
+    })
+    expect((await conferir()).j.data.ligadas).toBe(1)
+    expect(creditosAR()).toEqual([])
+  })
+
+  it('Desfazer concorrente com Conferir: o crédito do Conferir aparece na releitura → apaga e debita', async () => {
+    banco.ar({ ...AR, status: 'LIQUIDADO', reconciled: true })
+    banco.aoTravar(({ tabela }) => {
+      if (tabela === 'accounts_receivable') banco.transacao({ id: 'x1', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1' })
+    })
+    const { j } = await desfazer()
+    expect(banco.tx_('x1')).toBeUndefined()
+    expect(j.data.balance_delta).toBe(-15000)
+  })
+
+  it('conta bancária da AR trocada enquanto esperava a trava → erros "conta alterada — repita", nada gravado', async () => {
+    banco.conta({ id: 'acc7' })
+    banco.ar(AR)
+    banco.aoTravar(({ tabela }) => { if (tabela === 'accounts_receivable') ar().account_id = 'acc7' })
+    const { j } = await conferir()
+    expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'conta alterada — repita' }])
+    expect(ar().status).toBe('RECEBIDO')
+    expect(banco.tabelas.transaction).toEqual([])
+  })
+
+  it('AR excluída enquanto esperava a trava: vai em erros, nada gravado', async () => {
+    banco.ar(AR)
+    banco.aoTravar(({ tabela }) => { if (tabela === 'accounts_receivable') ar().deleted_at = new Date() })
+    for (const reconciled of [true, false]) {
+      Object.assign(ar(), { deleted_at: null, status: reconciled ? 'RECEBIDO' : 'LIQUIDADO', reconciled: !reconciled })
+      const { j } = await post({ ids: ['a1'], reconciled })
+      expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'conta a receber não encontrada' }])
+    }
+    expect(banco.tabelas.transaction).toEqual([])
+  })
+})
+

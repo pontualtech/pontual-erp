@@ -211,3 +211,40 @@ describe('§6 AP sem categoria (resolve #14)', () => {
     expect((await pagar({ paid_amount: 5000, livro_transaction_id: 't1' })).status).toBe(422)
   })
 })
+
+describe('§7: trava conta → AP e decide pela releitura', () => {
+  it('trava accounts ANTES da AP; candidatos e escritas pelo tx, depois das travas', async () => {
+    banco.ap(AP)
+    linha()
+    await pagar({ paid_amount: 5000, paid_at: '2026-10-29' })
+    expect(banco.travas.map((t) => [t.tabela, t.id])).toEqual([['accounts', ACC], ['accounts_payable', 'p1']])
+    const candidatos = banco.log.find((o) => o.modelo === 'transaction' && o.op === 'findMany')!
+    expect(candidatos.cliente).toBe('tx')
+    expect(candidatos.seq).toBeGreaterThan(banco.travas[1].seq)
+    expect(banco.prismaDentroDaTx()).toEqual([])
+  })
+
+  it('G1: duplo clique — a 1ª baixa parcial comitou enquanto esta esperava: 409, nada criado nem debitado', async () => {
+    banco.ap({ ...AP, total_amount: 10000 })
+    banco.aoTravar(({ tabela }) => {
+      if (tabela !== 'accounts_payable') return
+      Object.assign(ap(), { paid_amount: 2000 })
+      banco.aoTravar(null)
+    })
+    const { status, j } = await pagar({ paid_amount: 2000, paid_at: '2026-10-29' })
+    expect(status).toBe(409)
+    expect(j.error).toMatch(/Baixa concorrente detectada/)
+    expect(debitosAP()).toEqual([])
+    expect(banco.saldo(ACC)).toBe(100000)
+  })
+
+  it('E7: conta paga / cancelada / excluída enquanto esperava a trava: 409, nada gravado', async () => {
+    banco.ap(AP)
+    for (const muda of [{ status: 'PAGO', paid_amount: 5000 }, { status: 'CANCELADO' }, { deleted_at: new Date() }]) {
+      Object.assign(ap(), { status: 'PENDENTE', paid_amount: 0, deleted_at: null })
+      banco.aoTravar(({ tabela }) => { if (tabela === 'accounts_payable') Object.assign(ap(), muda) })
+      expect((await pagar({ paid_amount: 5000, paid_at: '2026-10-29' })).status).toBe(409)
+    }
+    expect(debitosAP()).toEqual([])
+  })
+})

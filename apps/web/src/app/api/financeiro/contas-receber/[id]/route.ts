@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { z } from 'zod'
+import { ContaAlterada, travarContas } from '@/lib/financeiro/livro-baixa-db'
 import { isReceivableSettled } from '@/lib/finance/receivable-status'
 
 type Params = { params: { id: string } }
@@ -193,13 +194,22 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     // Onda 3 (E4 + round 1): com a linha travada (fecha a corrida com a baixa), recusa se os lançamentos próprios
     // (AR:id, :anticipation, :estorno) não se anulam (CREDIT AR:id/:anticipation − DEBIT :estorno ≠ 0) ou se há linha do banco ligada — ficariam órfãos.
     // Conta já estornada (líquido 0, sem linha ligada) pode ser excluída. O soft delete roda na mesma tx.
+    // Onda 4 (§7): ordem única de travas — a conta bancária da conta (accounts) antes da própria conta. A leitura de fora
+    // só diz QUAL conta travar; se ela mudou enquanto esperava a trava, desfaz (409 'conta alterada — repita').
+    const lida = await prisma.accountReceivable.findFirst({
+      where: { id: params.id, company_id: user.companyId, deleted_at: null },
+      select: { account_id: true },
+    })
+    if (!lida) return error('Conta a receber nao encontrada', 404)
     const bloqueio = await prisma.$transaction(async (tx): Promise<{ status: 404 | 409; erro: string } | null> => {
+      await travarContas(tx, user.companyId, [lida.account_id])
       await tx.$queryRaw`SELECT id FROM accounts_receivable WHERE id = ${params.id} AND company_id = ${user.companyId} FOR UPDATE`
       // Onda 3 (G2): relida com a linha travada — é esta leitura que decide (não a de antes da trava).
       const existing = await tx.accountReceivable.findFirst({
         where: { id: params.id, company_id: user.companyId, deleted_at: null },
       })
       if (!existing) return { status: 404, erro: 'Conta a receber nao encontrada' }
+      if (existing.account_id !== lida.account_id) return { status: 409, erro: new ContaAlterada().message }
 
       // Bug #8 (audit 31/05 Karlão): bloquear delete de AR recebido (PAGO/RECEBIDO
       // são canônicos pra AR — projeto migrou 26/05 mas defensivo mantém ambos).
@@ -218,8 +228,9 @@ export async function DELETE(req: NextRequest, { params }: Params) {
           : t.transaction_type === 'DEBIT' && t.bank_ref === `AR:${params.id}:estorno` ? -1 : 0
       const liquido = proprias.reduce((soma, t) => soma + sinal(t) * t.amount, 0)
       if (proprias.some((t) => sinal(t) === 0) || liquido !== 0) return { status: 409, erro: 'há lançamentos financeiros desta conta; estorne antes de excluir' }
+      // Onda 4: o crédito da antecipação convertido pelo livro também é dinheiro do banco ligado a esta conta.
       const ligada = await tx.transaction.findFirst({
-        where: { company_id: user.companyId, linked_ref: `AR:${params.id}` },
+        where: { company_id: user.companyId, linked_ref: { in: [`AR:${params.id}`, `AR:${params.id}:anticipation`] } },
         select: { id: true },
       })
       if (ligada) return { status: 409, erro: 'Há lançamento do banco ligado; estorne antes de excluir.' }

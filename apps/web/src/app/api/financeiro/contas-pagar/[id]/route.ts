@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { z } from 'zod'
+import { ContaAlterada, travarContas } from '@/lib/financeiro/livro-baixa-db'
 
 type Params = { params: { id: string } }
 
@@ -154,13 +155,22 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     // Onda 3 (E4 + round 1): com a linha travada (fecha a corrida com a baixa), recusa se os lançamentos próprios
     // (AP:id, :estorno) não se anulam (DEBIT AP:id − CREDIT :estorno ≠ 0) ou se há linha do banco ligada — ficariam órfãos.
     // Conta já estornada (líquido 0, sem linha ligada) pode ser excluída. O soft delete roda na mesma tx.
+    // Onda 4 (§7): ordem única de travas — a conta bancária da conta (accounts) antes da própria conta. A leitura de fora
+    // só diz QUAL conta travar; se ela mudou enquanto esperava a trava, desfaz (409 'conta alterada — repita').
+    const lida = await prisma.accountPayable.findFirst({
+      where: { id: params.id, company_id: user.companyId, deleted_at: null },
+      select: { account_id: true },
+    })
+    if (!lida) return error('Conta a pagar nao encontrada', 404)
     const bloqueio = await prisma.$transaction(async (tx): Promise<{ status: 404 | 409; erro: string } | null> => {
+      await travarContas(tx, user.companyId, [lida.account_id])
       await tx.$queryRaw`SELECT id FROM accounts_payable WHERE id = ${params.id} AND company_id = ${user.companyId} FOR UPDATE`
       // Onda 3 (G2): relida com a linha travada — é esta leitura que decide (não a de antes da trava).
       const existing = await tx.accountPayable.findFirst({
         where: { id: params.id, company_id: user.companyId, deleted_at: null },
       })
       if (!existing) return { status: 404, erro: 'Conta a pagar nao encontrada' }
+      if (existing.account_id !== lida.account_id) return { status: 409, erro: new ContaAlterada().message }
 
       // Bug #8 (audit 31/05 Karlão): bloquear delete de AP pago pra evitar
       // saldo bancário órfão. Pagamento criou lançamento bancário que NÃO é
