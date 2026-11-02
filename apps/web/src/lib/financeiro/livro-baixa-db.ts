@@ -48,7 +48,7 @@ export async function candidatosLivro(
     },
     select: {
       id: true, amount: true, transaction_type: true, transaction_date: true,
-      linked_ref: true, origin: true, categories: { select: { name: true } },
+      linked_ref: true, origin: true, category_id: true, categories: { select: { name: true } },
     },
   })
   return rows.map((r) => ({
@@ -57,6 +57,7 @@ export async function candidatosLivro(
     transaction_type: r.transaction_type,
     transaction_date: new Date(r.transaction_date).toISOString().slice(0, 10),
     categoria: r.categories?.name ?? null,
+    category_id: r.category_id ?? null,
     linked_ref: r.linked_ref ?? null,
     origin: r.origin ?? null,
   }))

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { decidirBaixa, JANELA_BAIXA, JANELA_CONFERIR, recebeCategoria } from './livro-baixa'
 
-const base = { transaction_type: 'CREDIT' as const, origin: 'BANCO', linked_ref: null, categoria: 'Receita a identificar' }
+const base = { transaction_type: 'CREDIT' as const, origin: 'BANCO', linked_ref: null, categoria: 'Receita a identificar', category_id: null }
 
 describe('decidirBaixa', () => {
   it('usa o lançamento do livro de mesmo valor dentro da janela', () => {
@@ -20,11 +20,11 @@ describe('decidirBaixa', () => {
     expect(decidirBaixa({ tipo: 'DEBIT', amount: 5000, data: '2026-10-30', categoria: 'Energia' }, null,
       [{ ...base, transaction_type: 'DEBIT', id: 'L2', amount: 5000, transaction_date: '2026-10-30', categoria: 'Anúncios' }])).toEqual({ criar: true })
   })
-  it('F5: alvo sem categoria só usa linha em fallback/sem categoria; linha categorizada → cria', () => {
-    expect(decidirBaixa({ tipo: 'DEBIT', amount: 5000, data: '2026-10-30', categoria: null }, null,
-      [{ ...base, transaction_type: 'DEBIT', id: 'L2', amount: 5000, transaction_date: '2026-10-30', categoria: 'Energia' }])).toEqual({ criar: true })
-    expect(decidirBaixa({ tipo: 'DEBIT', amount: 5000, data: '2026-10-30' }, null,
-      [{ ...base, transaction_type: 'DEBIT', id: 'L3', amount: 5000, transaction_date: '2026-10-30', categoria: null }])).toEqual({ usar: 'L3' })
+  it('onda 4 §6 (#14): alvo sem categoria aceita linha já categorizada (rank 1), depois do fallback/sem categoria', () => {
+    const energia = { ...base, transaction_type: 'DEBIT' as const, id: 'L2', amount: 5000, transaction_date: '2026-10-30', categoria: 'Energia' }
+    expect(decidirBaixa({ tipo: 'DEBIT', amount: 5000, data: '2026-10-30', categoria: null }, null, [energia])).toEqual({ usar: 'L2' })
+    const fallback = { ...energia, id: 'L3', transaction_date: '2026-10-25', categoria: null }
+    expect(decidirBaixa({ tipo: 'DEBIT', amount: 5000, data: '2026-10-30' }, null, [energia, fallback])).toEqual({ usar: 'L3' })
   })
   it('automático nunca usa ajuste de caixa nem transferências', () => {
     for (const categoria of ['Ajuste de caixa', 'Transferência entre contas', 'Transferência entre empresas']) {
@@ -46,11 +46,15 @@ describe('decidirBaixa', () => {
     expect(decidirBaixa({ tipo: 'DEBIT', amount: 5000, data: '2026-10-30', categoria: 'Energia' }, 'L2',
       [{ ...base, transaction_type: 'DEBIT', id: 'L2', amount: 5000, transaction_date: '2026-10-30', categoria: 'Energia' }])).toEqual({ usar: 'L2' })
   })
-  it('explícito em linha de categoria alheia (Anúncios para AP Energia, ou alvo sem categoria) dá erro', () => {
+  it('explícito em linha de categoria alheia (Anúncios para AP Energia) dá erro', () => {
     expect(decidirBaixa({ tipo: 'DEBIT', amount: 5000, data: '2026-10-30', categoria: 'Energia' }, 'L2',
       [{ ...base, transaction_type: 'DEBIT', id: 'L2', amount: 5000, transaction_date: '2026-10-30', categoria: 'Anúncios' }])).toEqual({ erro: 'Lançamento do livro já está categorizado' })
-    expect(decidirBaixa({ tipo: 'DEBIT', amount: 5000, data: '2026-10-30', categoria: null }, 'L2',
-      [{ ...base, transaction_type: 'DEBIT', id: 'L2', amount: 5000, transaction_date: '2026-10-30', categoria: 'Energia' }])).toEqual({ erro: 'Lançamento do livro já está categorizado' })
+  })
+  it('onda 4 §6: explícito com alvo sem categoria aceita linha categorizada — exceto ajuste/transferência', () => {
+    const linha = { ...base, transaction_type: 'DEBIT' as const, id: 'L2', amount: 5000, transaction_date: '2026-10-30', categoria: 'Energia' }
+    expect(decidirBaixa({ tipo: 'DEBIT', amount: 5000, data: '2026-10-30', categoria: null }, 'L2', [linha])).toEqual({ usar: 'L2' })
+    expect(decidirBaixa({ tipo: 'DEBIT', amount: 5000, data: '2026-10-30', categoria: null }, 'L2', [{ ...linha, categoria: 'Transferência entre contas' }]))
+      .toEqual({ erro: 'Lançamento do livro já está categorizado' })
   })
   it('recebeCategoria: só linha sem categoria ou em fallback recebe a categoria da baixa', () => {
     expect(recebeCategoria('A classificar')).toBe(true)

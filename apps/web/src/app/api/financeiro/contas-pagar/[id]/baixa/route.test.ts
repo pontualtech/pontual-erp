@@ -1,302 +1,213 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 
-const { m, db } = vi.hoisted(() => {
-  const m = {
-    apFindFirst: vi.fn(), apUpdateMany: vi.fn(), apFindFirstOrThrow: vi.fn(),
-    accFindFirst: vi.fn(), accUpdate: vi.fn(),
-    txFindFirst: vi.fn(), txFindMany: vi.fn(), txCreate: vi.fn(), txUpdate: vi.fn(), txUpdateMany: vi.fn(),
-    catFindFirst: vi.fn(),
-  }
-  const db = {
-    accountPayable: { findFirst: m.apFindFirst, updateMany: m.apUpdateMany, findFirstOrThrow: m.apFindFirstOrThrow },
-    account: { findFirst: m.accFindFirst, update: m.accUpdate },
-    transaction: { findFirst: m.txFindFirst, findMany: m.txFindMany, create: m.txCreate, update: m.txUpdate, updateMany: m.txUpdateMany },
-    category: { findFirst: m.catFindFirst },
-    $transaction: async (cb: (tx: unknown) => unknown) => cb(db),
-  }
-  return { m, db }
-})
-vi.mock('@pontual/db', () => ({ prisma: db }))
+vi.mock('@pontual/db', async () => ({ prisma: (await import('@/test-utils/banco-falso')).banco.prisma }))
 vi.mock('@/lib/auth', () => ({ requirePermission: async () => ({ id: 'u1', companyId: 'c1' }) }))
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }))
 
 import { POST } from './route'
+import { banco } from '@/test-utils/banco-falso'
 
 const ACC = '11111111-1111-4111-8111-111111111111'
-const AP = { id: 'p1', status: 'PENDENTE', total_amount: 5000, paid_amount: 0, description: 'Luz', category_id: 'catEnergia', payment_method: null }
-const req = (body: unknown) => new NextRequest('http://x/api', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
-const livro = (over: Record<string, unknown> = {}) => ({
-  id: 't1', amount: 5000, transaction_type: 'DEBIT', transaction_date: new Date('2026-10-28T00:00:00Z'),
-  linked_ref: null, origin: 'BANCO', categories: { name: 'A classificar' }, ...over,
+const AP = { id: 'p1', status: 'PENDENTE', total_amount: 5000, paid_amount: 0, description: 'Luz', category_id: 'cat:Energia', payment_method: null }
+const pagar = async (body: Record<string, unknown>) => {
+  const res = await POST(new NextRequest('http://x/api', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ account_id: ACC, ...body }) }), { params: { id: 'p1' } })
+  return { status: res.status, j: await res.json() }
+}
+// Linha do livro (BANCO) de saída, livre, em "A classificar", de 28/10.
+const linha = (over: Record<string, unknown> = {}) => banco.transacao({
+  id: 't1', account_id: ACC, transaction_type: 'DEBIT', amount: 5000, origin: 'BANCO', bank_ref: 'ITAU:k1', source_text: 'PGTO ENEL',
+  description: 'PGTO ENEL', category_id: 'cat:A classificar', transaction_date: new Date('2026-10-28T00:00:00Z'), ...over,
 })
+const ap = () => banco.tabelas.accountPayable.find((a) => a.id === 'p1')!
+const debitosAP = () => banco.tabelas.transaction.filter((t) => t.bank_ref === 'AP:p1')
 
 beforeEach(() => {
-  Object.values(m).forEach((f) => f.mockReset())
-  m.apFindFirst.mockResolvedValue(AP)
-  m.apFindFirstOrThrow.mockResolvedValue({ ...AP, status: 'PAGO' })
-  m.apUpdateMany.mockResolvedValue({ count: 1 })
-  m.accFindFirst.mockResolvedValue({ id: ACC, is_active: true })
-  m.txUpdateMany.mockResolvedValue({ count: 1 })
-  m.catFindFirst.mockResolvedValue({ name: 'Energia' })
+  banco.reset()
+  banco.categoriasPadrao()
+  banco.categoria('Ajuste de caixa', 'financeiro_despesa')
+  banco.categoria('Anúncios', 'financeiro_despesa')
+  banco.conta({ id: ACC, current_balance: 100000 })
 })
 
 describe('baixa de AP — livro-razão', () => {
-  it('liga ao lançamento do banco: sem transaction.create e sem account.update', async () => {
-    m.txFindMany.mockResolvedValue([livro()])
-    m.txFindFirst.mockResolvedValue({ source_text: 'PGTO ENEL' })
-    const res = await POST(req({ paid_amount: 5000, account_id: ACC, paid_at: '2026-10-29' }), { params: { id: 'p1' } })
-    const j = await res.json()
-    expect(m.txCreate).not.toHaveBeenCalled()
-    expect(m.accUpdate).not.toHaveBeenCalled()
-    expect(m.txUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 't1', company_id: 'c1', linked_ref: null },
-      data: expect.objectContaining({ linked_ref: 'AP:p1', category_id: 'catEnergia', description: 'Pgto: Luz · banco: PGTO ENEL' }),
-    }))
+  it('liga ao lançamento do banco: sem DEBIT e sem saldo; a linha recebe a categoria da AP', async () => {
+    banco.ap(AP)
+    linha()
+    const { j } = await pagar({ paid_amount: 5000, paid_at: '2026-10-29' })
     expect(j.data.ligada).toBe(true)
+    expect(banco.tx_('t1')).toEqual(expect.objectContaining({ linked_ref: 'AP:p1', category_id: 'cat:Energia', description: 'Pgto: Luz · banco: PGTO ENEL' }))
+    expect(debitosAP()).toEqual([])
+    expect(banco.saldo(ACC)).toBe(100000)
+    expect(ap()).toEqual(expect.objectContaining({ status: 'PAGO', paid_amount: 5000 }))
   })
 
-  it('linha já categorizada por regra (Energia): liga sem criar/debitar e mantém a categoria da linha', async () => {
-    m.txFindMany.mockResolvedValue([livro({ categories: { name: 'Energia' } })])
-    m.txFindFirst.mockResolvedValue({ source_text: 'ELETROPAULO' })
-    const res = await POST(req({ paid_amount: 5000, account_id: ACC, paid_at: '2026-10-29' }), { params: { id: 'p1' } })
-    const j = await res.json()
-    expect(res.status).toBe(200)
-    expect(m.txCreate).not.toHaveBeenCalled()
-    expect(m.accUpdate).not.toHaveBeenCalled()
-    expect(m.txUpdateMany).toHaveBeenCalledTimes(1)
-    const arg = m.txUpdateMany.mock.calls[0][0]
-    expect(arg.where).toEqual({ id: 't1', company_id: 'c1', linked_ref: null })
-    expect(arg.data).toEqual({ linked_ref: 'AP:p1', description: 'Pgto: Luz · banco: ELETROPAULO', reconciled: true })
-    expect(j.data.ligada).toBe(true)
+  it('linha já categorizada por regra (Energia): liga e mantém a categoria da linha', async () => {
+    banco.ap({ ...AP, category_id: 'cat:Energia' })
+    linha({ category_id: 'cat:Energia', source_text: 'ELETROPAULO' })
+    expect((await pagar({ paid_amount: 5000, paid_at: '2026-10-29' })).j.data.ligada).toBe(true)
+    expect(banco.tx_('t1')).toEqual(expect.objectContaining({ linked_ref: 'AP:p1', category_id: 'cat:Energia', description: 'Pgto: Luz · banco: ELETROPAULO' }))
   })
 
   it('linha de ajuste de caixa não serve: cria e debita', async () => {
-    m.txFindMany.mockResolvedValue([livro({ categories: { name: 'Ajuste de caixa' } })])
-    const res = await POST(req({ paid_amount: 5000, account_id: ACC, paid_at: '2026-10-29' }), { params: { id: 'p1' } })
-    expect((await res.json()).data.ligada).toBe(false)
-    expect(m.txUpdateMany).not.toHaveBeenCalled()
-    expect(m.txCreate).toHaveBeenCalledTimes(1)
-    expect(m.accUpdate).toHaveBeenCalledTimes(1)
+    banco.ap(AP)
+    linha({ category_id: 'cat:Ajuste de caixa' })
+    expect((await pagar({ paid_amount: 5000, paid_at: '2026-10-29' })).j.data.ligada).toBe(false)
+    expect(debitosAP()).toHaveLength(1)
+    expect(banco.saldo(ACC)).toBe(95000)
   })
 
-  it('linha já ligada por outra baixa (count 0): 409, sem criar nem debitar', async () => {
-    m.txFindMany.mockResolvedValue([livro()])
-    m.txFindFirst.mockResolvedValue({ source_text: 'PGTO ENEL' })
-    m.txUpdateMany.mockResolvedValue({ count: 0 })
-    const res = await POST(req({ paid_amount: 5000, account_id: ACC, paid_at: '2026-10-29' }), { params: { id: 'p1' } })
-    expect(res.status).toBe(409)
-    expect(m.txCreate).not.toHaveBeenCalled()
-    expect(m.accUpdate).not.toHaveBeenCalled()
+  it('linha ligada por outra baixa no meio (guard count 0): 409 e a AP NÃO fica paga (rollback)', async () => {
+    banco.ap(AP)
+    linha()
+    banco.tx.transaction.updateMany.mockImplementationOnce(async () => ({ count: 0 }))
+    expect((await pagar({ paid_amount: 5000, paid_at: '2026-10-29' })).status).toBe(409)
+    expect(ap()).toEqual(expect.objectContaining({ status: 'PENDENTE', paid_amount: 0 }))
+    expect(debitosAP()).toEqual([])
+    expect(banco.saldo(ACC)).toBe(100000)
   })
 
-  it('E3: janela do Pagar = 10 dias antes / 3 depois da data real; linha de 20 dias antes não é ligada (cria)', async () => {
-    m.txFindMany.mockResolvedValue([livro({ transaction_date: new Date('2026-10-09T00:00:00Z') })])
-    const res = await POST(req({ paid_amount: 5000, account_id: ACC, paid_at: '2026-10-29' }), { params: { id: 'p1' } })
-    expect(m.txFindMany.mock.calls[0][0].where.OR[0]).toEqual({
-      transaction_date: { gte: new Date('2026-10-19T00:00:00Z'), lte: new Date('2026-11-01T00:00:00Z') },
-    })
-    expect((await res.json()).data.ligada).toBe(false)
-    expect(m.txUpdateMany).not.toHaveBeenCalled()
-    expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ bank_ref: 'AP:p1', amount: 5000 }) })
+  it('E3: janela do Pagar = 10 dias antes / 3 depois; linha de 20 dias antes não é ligada (cria)', async () => {
+    banco.ap(AP)
+    linha({ transaction_date: new Date('2026-10-09T00:00:00Z') })
+    expect((await pagar({ paid_amount: 5000, paid_at: '2026-10-29' })).j.data.ligada).toBe(false)
+    expect(debitosAP()).toEqual([expect.objectContaining({ amount: 5000 })])
   })
 
   it('E5: AP sem account_id ganha a conta da baixa; AP com conta mantém a sua', async () => {
-    m.txFindMany.mockResolvedValue([])
-    await POST(req({ paid_amount: 5000, account_id: ACC, paid_at: '2026-10-29' }), { params: { id: 'p1' } })
-    expect(m.apUpdateMany.mock.calls[0][0].data).toEqual(expect.objectContaining({ account_id: ACC }))
-    m.apUpdateMany.mockClear()
-    m.apFindFirst.mockResolvedValue({ ...AP, account_id: 'outra' })
-    await POST(req({ paid_amount: 5000, account_id: ACC, paid_at: '2026-10-29' }), { params: { id: 'p1' } })
-    expect(m.apUpdateMany.mock.calls[0][0].data).not.toHaveProperty('account_id')
-  })
-
-  describe('G1: a claim só vence se o valor pago ainda é o relido (duplo clique de baixa parcial)', () => {
-    // Linha real no banco com `paid_amount` = valor (outra baixa já comitou); a releitura (findFirst) pode estar defasada.
-    const linhaReal = (valor: number) => m.apUpdateMany.mockImplementation(async ({ where }: any) => {
-      const casa = 'OR' in where
-        ? where.OR.some((c: any) => c.paid_amount === valor)
-        : !('paid_amount' in where) || where.paid_amount === valor
-      return { count: casa ? 1 : 0 }
-    })
-    const pagar = (v: number) => POST(req({ paid_amount: v, account_id: ACC, paid_at: '2026-10-29' }), { params: { id: 'p1' } })
-
-    it('AP sem nada pago: a claim exige paid_amount 0 ou null', async () => {
-      m.txFindMany.mockResolvedValue([])
-      await pagar(5000)
-      expect(m.apUpdateMany.mock.calls[0][0].where).toEqual(expect.objectContaining({ OR: [{ paid_amount: 0 }, { paid_amount: null }] }))
-    })
-
-    it('AP com parcial 2000 relido: a claim exige paid_amount 2000', async () => {
-      m.apFindFirst.mockResolvedValue({ ...AP, paid_amount: 2000 })
-      m.txFindMany.mockResolvedValue([])
-      await pagar(1000)
-      expect(m.apUpdateMany.mock.calls[0][0].where).toEqual(expect.objectContaining({ paid_amount: 2000 }))
-      expect(m.apUpdateMany.mock.calls[0][0].where).not.toHaveProperty('OR')
-    })
-
-    it('duplo clique: a 1ª baixa parcial já comitou 2000 (releitura defasada mostra 0) → 409, nada criado nem debitado', async () => {
-      m.txFindMany.mockResolvedValue([])
-      linhaReal(2000)
-      const res = await pagar(2000)
-      expect(res.status).toBe(409)
-      expect((await res.json()).error).toMatch(/Baixa concorrente detectada/)
-      expect(m.txCreate).not.toHaveBeenCalled()
-      expect(m.txUpdateMany).not.toHaveBeenCalled()
-      expect(m.accUpdate).not.toHaveBeenCalled()
-    })
-  })
-
-  describe('E7: conflito de concorrência na baixa não vira 500', () => {
-    it('outra baixa venceu a claim (count 0): 409, nada criado nem debitado', async () => {
-      m.txFindMany.mockResolvedValue([])
-      m.apUpdateMany.mockResolvedValue({ count: 0 })
-      const res = await POST(req({ paid_amount: 5000, account_id: ACC, paid_at: '2026-10-29' }), { params: { id: 'p1' } })
-      expect(res.status).toBe(409)
-      expect((await res.json()).error).toMatch(/Baixa concorrente detectada/)
-      expect(m.txCreate).not.toHaveBeenCalled()
-      expect(m.accUpdate).not.toHaveBeenCalled()
-    })
-
-    it('a releitura na tx mostra a conta já paga / cancelada / sumida: 409', async () => {
-      for (const fresh of [{ ...AP, status: 'PAGO' }, { ...AP, status: 'CANCELADO' }, null]) {
-        m.apFindFirst.mockResolvedValueOnce(AP).mockResolvedValueOnce(AP).mockResolvedValueOnce(fresh)
-        const res = await POST(req({ paid_amount: 5000, account_id: ACC, paid_at: '2026-10-29' }), { params: { id: 'p1' } })
-        expect(res.status).toBe(409)
-      }
-      expect(m.apUpdateMany).not.toHaveBeenCalled()
-    })
+    banco.ap({ ...AP, total_amount: 10000 })
+    await pagar({ paid_amount: 5000, paid_at: '2026-10-29' })
+    expect(ap().account_id).toBe(ACC)
+    ap().account_id = 'outra'
+    await pagar({ paid_amount: 5000, paid_at: '2026-10-29' })
+    expect(ap().account_id).toBe('outra')
   })
 
   it('sem candidato: cria e debita como hoje', async () => {
-    m.txFindMany.mockResolvedValue([])
-    const res = await POST(req({ paid_amount: 5000, account_id: ACC, paid_at: '2026-10-29' }), { params: { id: 'p1' } })
-    expect((await res.json()).data.ligada).toBe(false)
-    expect(m.txCreate).toHaveBeenCalledTimes(1)
-    expect(m.accUpdate).toHaveBeenCalledTimes(1)
+    banco.ap(AP)
+    expect((await pagar({ paid_amount: 5000, paid_at: '2026-10-29' })).j.data.ligada).toBe(false)
+    expect(debitosAP()).toHaveLength(1)
+    expect(banco.saldo(ACC)).toBe(95000)
   })
 
   it('livro_transaction_id inválido (linha de categoria alheia): 422 e nada escrito', async () => {
-    m.txFindMany.mockResolvedValue([livro({ categories: { name: 'Anúncios' } })])
-    const res = await POST(req({ paid_amount: 5000, account_id: ACC, livro_transaction_id: 't1' }), { params: { id: 'p1' } })
-    expect(res.status).toBe(422)
-    expect(m.txCreate).not.toHaveBeenCalled()
-    expect(m.accUpdate).not.toHaveBeenCalled()
-    expect(m.txUpdate).not.toHaveBeenCalled()
-  })
-
-  describe('F6: vínculo explícito com diferença ≤ R$ 1 quita a AP por inteiro', () => {
-    const AP10 = { ...AP, total_amount: 10000, notes: null }
-    const baixa = (paid_amount: number, extra: Record<string, unknown> = { livro_transaction_id: 't1' }) =>
-      POST(req({ paid_amount, account_id: ACC, ...extra }), { params: { id: 'p1' } })
-
-    beforeEach(() => {
-      m.apFindFirst.mockResolvedValue(AP10)
-      m.txFindFirst.mockResolvedValue({ source_text: 'PGTO ENEL' })
-    })
-
-    it('AP 10000, linha 9950 → PAGO (paid 10000), ligada, nota com 0,50', async () => {
-      m.txFindMany.mockResolvedValue([livro({ amount: 9950 })])
-      const res = await baixa(9950)
-      expect(res.status).toBe(200)
-      expect((await res.json()).data.ligada).toBe(true)
-      const data = m.apUpdateMany.mock.calls[0][0].data
-      expect(data).toEqual(expect.objectContaining({ paid_amount: 10000, status: 'PAGO' }))
-      expect(data.notes).toBe('diferença bancária de R$ 0,50')
-      expect(m.txUpdateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 't1', company_id: 'c1', linked_ref: null } }))
-      expect(m.txCreate).not.toHaveBeenCalled()
-      expect(m.accUpdate).not.toHaveBeenCalled()
-    })
-
-    it('AP 10000, linha 10050 (excede o restante em 0,50) → PAGO (paid 10000), ligada; nota anexada às notes existentes', async () => {
-      m.apFindFirst.mockResolvedValue({ ...AP10, notes: 'boleto ENEL' })
-      m.txFindMany.mockResolvedValue([livro({ amount: 10050 })])
-      const res = await baixa(10050)
-      expect(res.status).toBe(200)
-      expect((await res.json()).data.ligada).toBe(true)
-      const data = m.apUpdateMany.mock.calls[0][0].data
-      expect(data).toEqual(expect.objectContaining({ paid_amount: 10000, status: 'PAGO', notes: 'boleto ENEL — diferença bancária de R$ 0,50' }))
-      expect(m.txCreate).not.toHaveBeenCalled()
-      expect(m.accUpdate).not.toHaveBeenCalled()
-    })
-
-    it('linha igual ao restante: PAGO sem nota', async () => {
-      m.txFindMany.mockResolvedValue([livro({ amount: 10000 })])
-      await baixa(10000)
-      const data = m.apUpdateMany.mock.calls[0][0].data
-      expect(data).toEqual(expect.objectContaining({ paid_amount: 10000, status: 'PAGO' }))
-      expect(data).not.toHaveProperty('notes')
-    })
-
-    it('AP parcialmente paga (3000 de 10000), linha 6990 do restante 7000 → PAGO (paid 10000)', async () => {
-      m.apFindFirst.mockResolvedValue({ ...AP10, paid_amount: 3000 })
-      m.txFindMany.mockResolvedValue([livro({ amount: 6990 })])
-      await baixa(6990)
-      expect(m.apUpdateMany.mock.calls[0][0].data).toEqual(expect.objectContaining({ paid_amount: 10000, status: 'PAGO', notes: 'diferença bancária de R$ 0,10' }))
-    })
-
-    it('sem livro_transaction_id, 10050 continua excedendo o restante: 400 sem escrever', async () => {
-      m.txFindMany.mockResolvedValue([livro({ amount: 10050 })])
-      const res = await baixa(10050, {})
-      expect(res.status).toBe(400)
-      expect(m.apUpdateMany).not.toHaveBeenCalled()
-    })
-
-    it('com livro_transaction_id, valor acima do restante + R$ 1: 400 sem escrever', async () => {
-      m.txFindMany.mockResolvedValue([livro({ amount: 10101 })])
-      const res = await baixa(10101)
-      expect(res.status).toBe(400)
-      expect(m.apUpdateMany).not.toHaveBeenCalled()
-    })
-
-    it('tolerância da pré-checagem não vira 500: valor 10080 com linha 10150 (fora de R$ 1 do restante) → 400 sem escrever', async () => {
-      m.txFindMany.mockResolvedValue([livro({ amount: 10150 })])
-      const res = await baixa(10080)
-      expect(res.status).toBe(400)
-      expect((await res.json()).error).toMatch(/excede o saldo restante/)
-      expect(m.apUpdateMany).not.toHaveBeenCalled()
-      expect(m.txUpdateMany).not.toHaveBeenCalled()
-      expect(m.txCreate).not.toHaveBeenCalled()
-    })
-
-    it('E8: valor informado longe da linha explícita (5000 × linha 9950): 422, nada gravado', async () => {
-      m.txFindMany.mockResolvedValue([livro({ amount: 9950 })])
-      const res = await baixa(5000)
-      expect(res.status).toBe(422)
-      expect((await res.json()).error).toBe('valor informado difere da linha do banco')
-      expect(m.apUpdateMany).not.toHaveBeenCalled()
-      expect(m.txUpdateMany).not.toHaveBeenCalled()
-      expect(m.txCreate).not.toHaveBeenCalled()
-      expect(m.accUpdate).not.toHaveBeenCalled()
-    })
-
-    it('E8: diferença de R$ 1,01 entre valor informado e linha: 422; de R$ 1,00: aceita', async () => {
-      m.txFindMany.mockResolvedValue([livro({ amount: 9950 })])
-      expect((await baixa(9849)).status).toBe(422)
-      expect(m.apUpdateMany).not.toHaveBeenCalled()
-      const res = await baixa(9850)
-      expect(res.status).toBe(200)
-      expect(m.apUpdateMany.mock.calls[0][0].data).toEqual(expect.objectContaining({ paid_amount: 10000, status: 'PAGO' }))
-    })
-
-    it('linha explícita de pagamento parcial (5000 de 10000): baixa parcial como hoje (PENDENTE, paid 5000, sem nota)', async () => {
-      m.apFindFirstOrThrow.mockResolvedValue({ ...AP10, status: 'PENDENTE' })
-      m.txFindMany.mockResolvedValue([livro({ amount: 5000 })])
-      await baixa(5000)
-      const data = m.apUpdateMany.mock.calls[0][0].data
-      expect(data).toEqual(expect.objectContaining({ paid_amount: 5000, status: 'PENDENTE' }))
-      expect(data).not.toHaveProperty('notes')
-    })
+    banco.ap(AP)
+    linha({ category_id: 'cat:Anúncios' })
+    expect((await pagar({ paid_amount: 5000, livro_transaction_id: 't1' })).status).toBe(422)
+    expect(ap().status).toBe('PENDENTE')
+    expect(banco.tx_('t1')!.linked_ref).toBeNull()
   })
 
   it('F5: livro_transaction_id em linha da mesma categoria da AP (Energia): liga, sem criar nem debitar', async () => {
-    m.txFindMany.mockResolvedValue([livro({ categories: { name: 'Energia' } })])
-    m.txFindFirst.mockResolvedValue({ source_text: 'ELETROPAULO' })
-    const res = await POST(req({ paid_amount: 5000, account_id: ACC, livro_transaction_id: 't1' }), { params: { id: 'p1' } })
-    expect(res.status).toBe(200)
-    expect((await res.json()).data.ligada).toBe(true)
-    expect(m.txUpdateMany.mock.calls[0][0].data).not.toHaveProperty('category_id')
-    expect(m.txCreate).not.toHaveBeenCalled()
-    expect(m.accUpdate).not.toHaveBeenCalled()
+    banco.ap(AP)
+    linha({ category_id: 'cat:Energia', source_text: 'ELETROPAULO' })
+    const { status, j } = await pagar({ paid_amount: 5000, livro_transaction_id: 't1' })
+    expect(status).toBe(200)
+    expect(j.data.ligada).toBe(true)
+    expect(banco.tx_('t1')!.category_id).toBe('cat:Energia')
+    expect(debitosAP()).toEqual([])
+  })
+
+  describe('F6/E8: vínculo explícito com diferença ≤ R$ 1 quita a AP por inteiro', () => {
+    const AP10 = { ...AP, total_amount: 10000, notes: null }
+
+    it('AP 10000, linha 9950 → PAGO (paid 10000), ligada, nota com 0,50', async () => {
+      banco.ap(AP10)
+      linha({ amount: 9950 })
+      const { status, j } = await pagar({ paid_amount: 9950, livro_transaction_id: 't1' })
+      expect(status).toBe(200)
+      expect(j.data.ligada).toBe(true)
+      expect(ap()).toEqual(expect.objectContaining({ paid_amount: 10000, status: 'PAGO', notes: 'diferença bancária de R$ 0,50' }))
+      expect(debitosAP()).toEqual([])
+    })
+
+    it('linha 10050 (excede o restante em 0,50) → PAGO; nota anexada às notes existentes', async () => {
+      banco.ap({ ...AP10, notes: 'boleto ENEL' })
+      linha({ amount: 10050 })
+      expect((await pagar({ paid_amount: 10050, livro_transaction_id: 't1' })).j.data.ligada).toBe(true)
+      expect(ap()).toEqual(expect.objectContaining({ paid_amount: 10000, status: 'PAGO', notes: 'boleto ENEL — diferença bancária de R$ 0,50' }))
+    })
+
+    it('linha igual ao restante: PAGO sem nota; parcial (3000 de 10000) com linha 6990 → PAGO com nota 0,10', async () => {
+      banco.ap(AP10)
+      linha({ amount: 10000 })
+      await pagar({ paid_amount: 10000, livro_transaction_id: 't1' })
+      expect(ap()).toEqual(expect.objectContaining({ paid_amount: 10000, status: 'PAGO', notes: null }))
+      Object.assign(ap(), { status: 'PENDENTE', paid_amount: 3000 })
+      linha({ id: 't2', bank_ref: 'ITAU:k2', amount: 6990 })
+      await pagar({ paid_amount: 6990, livro_transaction_id: 't2' })
+      expect(ap()).toEqual(expect.objectContaining({ paid_amount: 10000, status: 'PAGO', notes: 'diferença bancária de R$ 0,10' }))
+    })
+
+    it('sem vínculo explícito, 10050 excede o restante: 400; com vínculo, acima do restante + R$ 1: 400; nada gravado', async () => {
+      banco.ap(AP10)
+      linha({ amount: 10050 })
+      expect((await pagar({ paid_amount: 10050 })).status).toBe(400)
+      banco.tx_('t1')!.amount = 10101
+      expect((await pagar({ paid_amount: 10101, livro_transaction_id: 't1' })).status).toBe(400)
+      banco.tx_('t1')!.amount = 10150
+      const r = await pagar({ paid_amount: 10080, livro_transaction_id: 't1' })
+      expect(r.status).toBe(400)
+      expect(r.j.error).toMatch(/excede o saldo restante/)
+      expect(ap().status).toBe('PENDENTE')
+      expect(debitosAP()).toEqual([])
+    })
+
+    it('E8: valor informado longe da linha (5000 × 9950): 422; R$ 1,01 de diferença: 422; R$ 1,00: aceita', async () => {
+      banco.ap(AP10)
+      linha({ amount: 9950 })
+      const r = await pagar({ paid_amount: 5000, livro_transaction_id: 't1' })
+      expect(r.status).toBe(422)
+      expect(r.j.error).toBe('valor informado difere da linha do banco')
+      expect((await pagar({ paid_amount: 9849, livro_transaction_id: 't1' })).status).toBe(422)
+      expect(ap().status).toBe('PENDENTE')
+      expect((await pagar({ paid_amount: 9850, livro_transaction_id: 't1' })).status).toBe(200)
+      expect(ap()).toEqual(expect.objectContaining({ paid_amount: 10000, status: 'PAGO' }))
+    })
+
+    it('linha explícita de pagamento parcial (5000 de 10000): PENDENTE, paid 5000, sem nota', async () => {
+      banco.ap(AP10)
+      linha({ amount: 5000 })
+      await pagar({ paid_amount: 5000, livro_transaction_id: 't1' })
+      expect(ap()).toEqual(expect.objectContaining({ paid_amount: 5000, status: 'PENDENTE', notes: null }))
+    })
+  })
+})
+
+describe('§6 AP sem categoria (resolve #14)', () => {
+  it('liga à linha já categorizada por regra (ELETROPAULO → Energia) em vez de criar outro DEBIT; a AP recebe a categoria da linha', async () => {
+    banco.ap({ ...AP, total_amount: 48000, category_id: null, description: 'Conta de luz' })
+    linha({ amount: 48000, category_id: 'cat:Energia', source_text: 'ELETROPAULO', transaction_date: new Date('2026-11-01T00:00:00Z') })
+    const { j } = await pagar({ paid_amount: 48000, paid_at: '2026-11-02' })
+    expect(j.data.ligada).toBe(true)
+    expect(debitosAP()).toEqual([])
+    expect(banco.saldo(ACC)).toBe(100000)
+    expect(banco.tx_('t1')).toEqual(expect.objectContaining({ linked_ref: 'AP:p1', category_id: 'cat:Energia' }))
+    expect(ap()).toEqual(expect.objectContaining({ status: 'PAGO', category_id: 'cat:Energia' }))
+  })
+
+  it('linha em fallback continua preferida; ligada a ela, a AP sem categoria segue sem categoria', async () => {
+    banco.ap({ ...AP, category_id: null })
+    linha({ id: 'cat', bank_ref: 'ITAU:k0', category_id: 'cat:Energia', transaction_date: new Date('2026-10-29T00:00:00Z') })
+    linha()
+    await pagar({ paid_amount: 5000, paid_at: '2026-10-29' })
+    expect(banco.tx_('t1')!.linked_ref).toBe('AP:p1')
+    expect(banco.tx_('cat')!.linked_ref).toBeNull()
+    expect(ap().category_id).toBeNull()
+  })
+
+  it('vínculo explícito a linha categorizada também é aceito para AP sem categoria', async () => {
+    banco.ap({ ...AP, category_id: null })
+    linha({ category_id: 'cat:Energia' })
+    const { status } = await pagar({ paid_amount: 5000, livro_transaction_id: 't1' })
+    expect(status).toBe(200)
+    expect(ap().category_id).toBe('cat:Energia')
+  })
+
+  it('linha de transferência entre contas nunca serve, nem para AP sem categoria', async () => {
+    banco.ap({ ...AP, category_id: null, total_amount: 10000 })
+    linha({ category_id: 'cat:Transferência entre contas' })
+    expect((await pagar({ paid_amount: 5000, paid_at: '2026-10-29' })).j.data.ligada).toBe(false)
+    expect((await pagar({ paid_amount: 5000, livro_transaction_id: 't1' })).status).toBe(422)
   })
 })

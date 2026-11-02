@@ -21,6 +21,7 @@ export interface CandidatoLivro {
   transaction_type: 'CREDIT' | 'DEBIT'
   transaction_date: string // AAAA-MM-DD
   categoria: string | null
+  category_id: string | null
   linked_ref: string | null
   origin: string | null
 }
@@ -67,7 +68,10 @@ export function decidirBaixa(
     if (c.transaction_type !== alvo.tipo) return { erro: 'Lançamento do livro é de outro tipo' }
     if (c.linked_ref) return { erro: 'Lançamento do livro já está ligado a outra baixa' }
     // Aceita linha em fallback ou já na MESMA categoria da conta (ex.: regra ELETROPAULO → Energia para AP Energia).
-    const mesmaCategoria = !!alvo.categoria && c.categoria === alvo.categoria
+    // Onda 4 (§6): conta sem categoria aceita a categoria da linha (menos ajuste/transferência) — a conta a recebe.
+    const mesmaCategoria = alvo.categoria
+      ? c.categoria === alvo.categoria
+      : c.categoria !== null && !CATEGORIAS_FORA_DO_TOTAL.includes(c.categoria)
     if (!emFallback(c.categoria) && !mesmaCategoria) return { erro: 'Lançamento do livro já está categorizado' }
     if (Math.abs(c.amount - alvo.amount) > TOLERANCIA_EXPLICITO) return { erro: 'Valor do lançamento difere mais de R$ 1,00 da baixa' }
     return { usar: c.id }
@@ -75,14 +79,15 @@ export function decidirBaixa(
 
   // Automático: linha do banco livre, de mesmo tipo e valor, na janela — exceto ajuste/transferências.
   // Só aceita fallback (ou sem categoria) > mesma categoria do alvo; categoria alheia NUNCA (seria o lançamento
-  // de outro favorecido). Depois, a data mais próxima.
+  // de outro favorecido). Onda 4 (§6, #14): alvo SEM categoria aceita qualquer categoria como rank 1 (a conta recebe
+  // a da linha — ex.: regra ELETROPAULO → Energia para AP sem categoria). Depois, a data mais próxima.
   let melhor: { id: string; rank: number; dist: number } | null = null
   for (const c of candidatos) {
     if (c.origin !== 'BANCO' || c.transaction_type !== alvo.tipo || c.amount !== alvo.amount) continue
     if (c.linked_ref || (c.categoria !== null && CATEGORIAS_FORA_DO_TOTAL.includes(c.categoria))) continue
     const delta = diasEntre(c.transaction_date, alvo.data) // negativo = antes da baixa
     if (delta < -janela.antes || delta > janela.depois) continue
-    const rank = recebeCategoria(c.categoria) ? 0 : alvo.categoria && c.categoria === alvo.categoria ? 1 : 2
+    const rank = recebeCategoria(c.categoria) ? 0 : !alvo.categoria || c.categoria === alvo.categoria ? 1 : 2
     if (rank === 2) continue
     const dist = Math.abs(delta)
     if (!melhor || rank < melhor.rank || (rank === melhor.rank && dist < melhor.dist)) melhor = { id: c.id, rank, dist }

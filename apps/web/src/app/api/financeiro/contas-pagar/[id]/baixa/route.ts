@@ -111,6 +111,9 @@ export async function POST(req: NextRequest, { params }: Params) {
       const categoriaAP = await nomeCategoria(tx, user.companyId, fresh.category_id)
       const decisao = decidirBaixa({ tipo: 'DEBIT', amount: valorBaixa, data: dataBaixa, categoria: categoriaAP }, data.livro_transaction_id ?? null, candidatos, JANELA_BAIXA)
       if ('erro' in decisao) throw new LivroInvalido(decisao.erro)
+      // Onda 4 (§6, #14): AP sem categoria ligada a linha já categorizada (ex.: regra ELETROPAULO → Energia) recebe a categoria da linha.
+      const linhaUsada = 'usar' in decisao ? candidatos.find((c) => c.id === decisao.usar) : undefined
+      const categoriaDaLinha = !fresh.category_id && linhaUsada && !recebeCategoria(linhaUsada.categoria) ? linhaUsada.category_id : null
       const notaDiferenca = diferencaBancaria > 0
         ? `diferença bancária de R$ ${(diferencaBancaria / 100).toFixed(2).replace('.', ',')}`
         : null
@@ -134,6 +137,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           payment_method: fresh.payment_method,
           // E5: AP sem conta ganha a da baixa (o estorno compensa pela conta do próprio DEBIT, não por esta).
           ...(fresh.account_id ? {} : { account_id: data.account_id }),
+          ...(categoriaDaLinha ? { category_id: categoriaDaLinha } : {}),
           ...(notaDiferenca ? { notes: fresh.notes ? `${fresh.notes} — ${notaDiferenca}` : notaDiferenca } : {}),
           updated_at: new Date(),
         },
