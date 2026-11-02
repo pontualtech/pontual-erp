@@ -136,3 +136,16 @@ describe('F2-A: AP da taxa do adquirente não é estornável', () => {
   })
 })
 
+describe('F2-D (m9): conflito do banco no estorno de AP', () => {
+  it('P2034/P2028 → 409 "conflito com outra operação — repita"', async () => {
+    banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 5000, total_amount: 5000 })
+    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 5000, bank_ref: 'AP:p1' })
+    for (const code of ['P2034', 'P2028']) {
+      banco.tx.transaction.create.mockImplementationOnce(async () => { throw Object.assign(new Error('conflito'), { code }) })
+      const { status, j } = await est()
+      expect(status).toBe(409)
+      expect(j.error).toBe('conflito com outra operação — repita')
+    }
+    expect(ap().status).toBe('PAGO')
+  })
+})

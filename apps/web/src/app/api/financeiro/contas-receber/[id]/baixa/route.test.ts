@@ -184,3 +184,13 @@ describe('F2-A (#3): Receber enxerga o dinheiro já lançado da AR', () => {
   })
 })
 
+describe('F2-D (m9): conflito do banco (P2034/P2028) vira 409, não 500', () => {
+  it('deadlock na tx do Receber → 409 "conflito com outra operação — repita", nada gravado', async () => {
+    banco.ar(AR)
+    banco.tx.transaction.create.mockImplementationOnce(async () => { throw Object.assign(new Error('deadlock detected'), { code: 'P2034' }) })
+    const { status, j } = await receber()
+    expect(status).toBe(409)
+    expect(j.error).toBe('conflito com outra operação — repita')
+    expect(ar().status).toBe('PENDENTE')
+  })
+})

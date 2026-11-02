@@ -3,7 +3,7 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
-import { ContaAlterada, contasDaAP, desligarLinhas, exigirTravadas, SELECT_LINHA_LIGADA, travarContas } from '@/lib/financeiro/livro-baixa-db'
+import { CONFLITO_BANCO, conflitoDeBanco, ContaAlterada, contasDaAP, desligarLinhas, exigirTravadas, SELECT_LINHA_LIGADA, travarContas } from '@/lib/financeiro/livro-baixa-db'
 
 /**
  * POST /api/financeiro/contas-pagar/[id]/estornar
@@ -134,6 +134,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     } catch (e) {
       if (e instanceof RecusaEstorno) return error(e.message, e.status)
       if (e instanceof ContaAlterada) return error(e.message, 409)
+      if (conflitoDeBanco(e)) return error(CONFLITO_BANCO, 409)
       throw e
     }
 

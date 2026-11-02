@@ -5,6 +5,7 @@ import { captureFeesForPayment } from '@/lib/payments/capture-fees'
 import { estadoArConfirmado, estadoArRecebido, valorCreditoAsaas, dataCreditoAsaas } from '@/lib/payments/asaas-rules'
 import { isImprimitechHandoffStatus } from '@/lib/imprimitech-handoff'
 import { ondeRef } from '@/lib/financeiro/livro'
+import { travarContas } from '@/lib/financeiro/livro-baixa-db'
 
 // Valid status transitions — reject anything not in this map
 const VALID_TRANSITIONS: Record<string, string[]> = {
@@ -96,6 +97,23 @@ const AUTO_BAIXA_STATUS = 'RECEIVED'
 // primeira REVENUE generica (compat antiga). Diferencia DRE por metodo
 // de pagamento — antes todos PIX/Boleto/Cartao caiam na mesma "Receita
 // de Servicos" e relatorio nao mostrava split.
+// Conta em que o dinheiro da cobrança Asaas entra/sai: a da AR; sem ela, a 1ª conta ativa 'Asaas' da empresa.
+async function contaDaCobranca(tx: any, companyId: string, contaDaAR: string | null): Promise<string | null> {
+  if (contaDaAR) return contaDaAR
+  const inferred = await tx.account.findFirst({
+    where: {
+      company_id: companyId,
+      is_active: true,
+      OR: [
+        { name: { contains: 'asaas', mode: 'insensitive' } },
+        { bank_name: { contains: 'asaas', mode: 'insensitive' } },
+      ],
+    },
+    select: { id: true },
+  })
+  return inferred?.id ?? null
+}
+
 async function resolveRevenueChart(
   tx: any,
   companyId: string,
@@ -412,6 +430,10 @@ export async function POST(req: NextRequest) {
           // 29/10 (Karlão "liquidar quando cair o dinheiro"): RECEIVED = dinheiro creditado na conta Asaas →
           // AR LIQUIDADO + conciliado (regras em lib/payments/asaas-rules). Antes ficava RECEBIDO, e uma AR
           // já LIQUIDADO (Conferi manual) somava received_amount de novo.
+          // Onda 4 (fix 2, F2-D, #4): ordem única de travas — a conta Asaas (accounts) antes da AR e da checagem
+          // "já lançado", como as rotas do §7 (sem cruzar com Receber/Conferir/livro da mesma conta).
+          const creditAccountId = await contaDaCobranca(tx, fresh.company_id, receivable.account_id || null)
+          if (creditAccountId) await travarContas(tx, fresh.company_id, [creditAccountId])
           const estado = estadoArRecebido(receivable, fresh.amount)
           // Wave AS-1 (2026-05-27): data esperada de crédito (fluxo de caixa) quando quita agora.
           const expectedCreditDate = estado.status === 'LIQUIDADO' && 'received_amount' in estado
@@ -437,21 +459,6 @@ export async function POST(req: NextRequest) {
           // resolver via convenção "Asaas/PIX/Boleto" buscando primeira
           // Account ativa cujo bank_name match o billing_type.
           const billingType = (fresh.billing_type || fresh.method || '').toUpperCase()
-          let creditAccountId: string | null = receivable.account_id || null
-          if (!creditAccountId) {
-            const inferred = await tx.account.findFirst({
-              where: {
-                company_id: fresh.company_id,
-                is_active: true,
-                OR: [
-                  { name: { contains: 'asaas', mode: 'insensitive' } },
-                  { bank_name: { contains: 'asaas', mode: 'insensitive' } },
-                ],
-              },
-              select: { id: true },
-            })
-            creditAccountId = inferred?.id ?? null
-          }
           if (creditAccountId) {
             // 2026-05-11 (V4 bug 4): idempotência por bank_ref. Antes, se Asaas
             // mandasse RECEIVED depois de DISPUTED → RECEIVED (comerciante ganha
@@ -647,6 +654,9 @@ export async function POST(req: NextRequest) {
         })
 
         if (receivable) {
+          // Onda 4 (fix 2, F2-D, #4): conta Asaas travada antes da AR (ordem do §7).
+          const debitAccountId = await contaDaCobranca(tx, fresh.company_id, receivable.account_id || null)
+          if (debitAccountId) await travarContas(tx, fresh.company_id, [debitAccountId])
           // 1. AR: reverter received_amount + ajustar status
           const newReceived = Math.max(0, (receivable.received_amount || 0) - fresh.amount)
           await tx.accountReceivable.update({
@@ -663,21 +673,6 @@ export async function POST(req: NextRequest) {
           // do RECEIVED handler mas invertida). Idempotente: se ja existe
           // Transaction com bank_ref deste refund, nao cria de novo.
           const billingType = (fresh.billing_type || fresh.method || '').toUpperCase()
-          let debitAccountId: string | null = receivable.account_id || null
-          if (!debitAccountId) {
-            const inferred = await tx.account.findFirst({
-              where: {
-                company_id: fresh.company_id,
-                is_active: true,
-                OR: [
-                  { name: { contains: 'asaas', mode: 'insensitive' } },
-                  { bank_name: { contains: 'asaas', mode: 'insensitive' } },
-                ],
-              },
-              select: { id: true },
-            })
-            debitAccountId = inferred?.id ?? null
-          }
           if (debitAccountId) {
             // 2026-05-11 (chargeback): se AWAITING_CHARGEBACK_REVERSAL ja debitou
             // (bank_ref `<id>-chargeback`), REFUNDED nao deve duplicar. Checa
@@ -767,6 +762,9 @@ export async function POST(req: NextRequest) {
 
         if (receivable) {
           if (isReversal) {
+            // Onda 4 (fix 2, F2-D, #4): conta Asaas travada antes da AR (ordem do §7).
+            const debitAccountId = await contaDaCobranca(tx, fresh.company_id, receivable.account_id || null)
+            if (debitAccountId) await travarContas(tx, fresh.company_id, [debitAccountId])
             // Trata como refund: reverte AR + Transaction DEBIT + decremento + FE neg
             const newReceived = Math.max(0, (receivable.received_amount || 0) - fresh.amount)
             await tx.accountReceivable.update({
@@ -781,21 +779,6 @@ export async function POST(req: NextRequest) {
 
             // Transaction DEBIT (mesma logica do REFUNDED handler)
             const billingType = (fresh.billing_type || fresh.method || '').toUpperCase()
-            let debitAccountId: string | null = receivable.account_id || null
-            if (!debitAccountId) {
-              const inferred = await tx.account.findFirst({
-                where: {
-                  company_id: fresh.company_id,
-                  is_active: true,
-                  OR: [
-                    { name: { contains: 'asaas', mode: 'insensitive' } },
-                    { bank_name: { contains: 'asaas', mode: 'insensitive' } },
-                  ],
-                },
-                select: { id: true },
-              })
-              debitAccountId = inferred?.id ?? null
-            }
             if (debitAccountId) {
               const refundBankRef = `${asaasPayment.id}-chargeback`
               // Onda 4 (fix 1): a ref pode já estar no linked_ref (o livro converteu o lançamento na linha do banco).

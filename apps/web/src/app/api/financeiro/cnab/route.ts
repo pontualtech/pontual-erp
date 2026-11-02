@@ -6,6 +6,7 @@ import { gerarRemessaCNAB400, parsearRetornoCNAB400, type BoletoRemessa400, type
 import { handleError } from '@/lib/api-response'
 import { isReceivableSettled } from '@/lib/finance/receivable-status'
 import { ondeRef } from '@/lib/financeiro/livro'
+import { travarContas } from '@/lib/financeiro/livro-baixa-db'
 
 /**
  * GET /api/financeiro/cnab — Gerar arquivo de remessa CNAB 400
@@ -297,23 +298,24 @@ export async function POST(req: NextRequest) {
           console.log(`[CNAB] AR ${receivable.id} ja ${receivable.status}, pulando duplicata`)
           continue
         }
-        if (ret.nossoNumero) {
-          const dup = await prisma.transaction.findFirst({
-            // Onda 4 (fix 1): a ref pode já estar no linked_ref (o livro converteu o lançamento na linha do banco).
-            where: { company_id: user.companyId, ...ondeRef(`cnab:${ret.nossoNumero}`) },
-            select: { id: true },
-          })
-          if (dup) {
-            console.log(`[CNAB] Transaction cnab:${ret.nossoNumero} ja existe, pulando`)
-            continue
-          }
-        }
-
         const valorRecebido = ret.valorPago || receivable.total_amount
         const dataCredito = ret.dataCredito || new Date()
 
         // Operação atômica: receivable + transaction + saldo
-        await prisma.$transaction(async (tx) => {
+        const lancou = await prisma.$transaction(async (tx) => {
+          // Onda 4 (fix 2, F2-D, #4): ordem única de travas — a conta (accounts) antes da AR e da checagem "já lançado".
+          if (interAccountId) await travarContas(tx, user.companyId, [interAccountId])
+          if (ret.nossoNumero) {
+            const dup = await tx.transaction.findFirst({
+              // Onda 4 (fix 1): a ref pode já estar no linked_ref (o livro converteu o lançamento na linha do banco).
+              where: { company_id: user.companyId, ...ondeRef(`cnab:${ret.nossoNumero}`) },
+              select: { id: true },
+            })
+            if (dup) {
+              console.log(`[CNAB] Transaction cnab:${ret.nossoNumero} ja existe, pulando`)
+              return false
+            }
+          }
           // 1. Atualizar conta a receber
           await tx.accountReceivable.update({
             where: { id: receivable.id },
@@ -357,7 +359,9 @@ export async function POST(req: NextRequest) {
               },
             })
           }
+          return true
         })
+        if (!lancou) continue
 
         // Audit log
         logAudit({

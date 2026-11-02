@@ -2,6 +2,7 @@ import { prisma } from '@pontual/db'
 import { novoEstadoReceivable, planoTaxas } from './match-rules'
 import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
 import { ondeRef } from '@/lib/financeiro/livro'
+import { travarContas } from '@/lib/financeiro/livro-baixa-db'
 
 /**
  * Logica compartilhada de criar Payment + AR + 2 APs ao vincular uma
@@ -79,6 +80,9 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
 
   try {
     const linked = await prisma.$transaction(async (tx) => {
+      // Onda 4 (fix 2, F2-D, #4): ordem única de travas — a conta de liquidação (accounts) antes da AR e da checagem
+      // "já lançado", como as rotas do §7.
+      await travarContas(tx, companyId, [acquirerAccountId])
       // A13 fix 22/05: chave determinística baseada em txn.id (nao Date.now)
       // pra impedir 2 cliques rapidos no botao Match Manual gerarem 2 Payments.
       // O `matched_payment_id` ja e @unique no schema, entao o segundo

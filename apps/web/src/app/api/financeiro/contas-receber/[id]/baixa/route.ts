@@ -6,7 +6,7 @@ import { logAudit } from '@/lib/audit'
 import { baixaSchema } from '@/lib/validations/financeiro'
 import { isReceivableSettled } from '@/lib/finance/receivable-status'
 import { decidirBaixa, JANELA_BAIXA, recebeCategoria } from '@/lib/financeiro/livro-baixa'
-import { AVISO_JA_LANCADO, candidatosLivro, categoriaId, ConflitoBaixa, dinheiroDaAR, hojeSP, nomeCategoria, travarContas } from '@/lib/financeiro/livro-baixa-db'
+import { AVISO_JA_LANCADO, candidatosLivro, categoriaId, ConflitoBaixa, CONFLITO_BANCO, conflitoDeBanco, dinheiroDaAR, hojeSP, nomeCategoria, travarContas } from '@/lib/financeiro/livro-baixa-db'
 import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
 import { CATEGORIA_RECEITA_SERVICOS } from '@/lib/financeiro/livro-categorias'
 
@@ -219,6 +219,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     } catch (e) {
       if (e instanceof LivroJaLigado) return error('lançamento do livro já ligado por outra baixa', 409)
       if (e instanceof ConflitoBaixa) return error(e.message, e.status)
+      if (conflitoDeBanco(e)) return error(CONFLITO_BANCO, 409)
       throw e
     }
 

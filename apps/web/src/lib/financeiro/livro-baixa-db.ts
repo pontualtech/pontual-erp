@@ -97,6 +97,14 @@ export async function travarContas(tx: any, companyId: string, ids: (string | nu
   return new Set(unicas)
 }
 
+// Fix 2 (F2-D, m9): deadlock/serialização (P2034) ou tx que estourou o tempo esperando trava (P2028) → 409 'repita'
+// em vez de 500 (nada foi gravado: a tx foi desfeita).
+export const CONFLITO_BANCO = 'conflito com outra operação — repita'
+export function conflitoDeBanco(e: unknown): boolean {
+  const code = (e as { code?: unknown } | null)?.code
+  return code === 'P2034' || code === 'P2028'
+}
+
 // Toda conta que a rota vai escrever precisa estar entre as travadas; senão desfaz (ContaAlterada).
 export function exigirTravadas(travadas: Set<string>, ids: (string | null | undefined)[]): void {
   if (ids.some((id) => !!id && !travadas.has(id))) throw new ContaAlterada()

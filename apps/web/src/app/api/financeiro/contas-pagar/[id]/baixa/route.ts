@@ -5,7 +5,7 @@ import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { z } from 'zod'
 import { decidirBaixa, JANELA_BAIXA, recebeCategoria, TOLERANCIA_EXPLICITO, type DecisaoBaixa } from '@/lib/financeiro/livro-baixa'
-import { AVISO_JA_LANCADO, candidatosLivro, ConflitoBaixa, dinheiroDaAP, hojeSP, nomeCategoria, travarContas } from '@/lib/financeiro/livro-baixa-db'
+import { AVISO_JA_LANCADO, candidatosLivro, ConflitoBaixa, CONFLITO_BANCO, conflitoDeBanco, dinheiroDaAP, hojeSP, nomeCategoria, travarContas } from '@/lib/financeiro/livro-baixa-db'
 
 // Escolha explícita de lançamento do livro inválida → 422 sem escrever nada.
 class LivroInvalido extends Error {}
@@ -226,6 +226,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       if (e instanceof LivroJaLigado) return error('lançamento do livro já ligado por outra baixa', 409)
       if (e instanceof ValorExcedeRestante) return error(e.message, 400)
       if (e instanceof ConflitoBaixa) return error(e.message, e.status)
+      if (conflitoDeBanco(e)) return error(CONFLITO_BANCO, 409)
       throw e
     }
 

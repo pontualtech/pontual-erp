@@ -38,3 +38,20 @@ describe('vínculo da maquininha — "já lançado" vale também para o crédito
     expect(banco.saldo('itau')).toBe(97000)
   })
 })
+
+// F2-D (#4): a conta (accounts) é travada antes de a AR ser atualizada e antes da checagem "já lançado".
+const ordemTravas = (modeloAR: string) => {
+  const trava = banco.travas.find((t) => t.tabela === 'accounts')!
+  expect(trava).toBeDefined()
+  const primeiro = (f: (o: (typeof banco.log)[number]) => boolean) => banco.log.find(f)?.seq ?? Infinity
+  expect(trava.seq).toBeLessThan(primeiro((o) => o.modelo === modeloAR && ['update', 'updateMany', 'create'].includes(o.op)))
+  expect(trava.seq).toBeLessThan(primeiro((o) => o.modelo === 'transaction' && ['findFirst', 'create'].includes(o.op)))
+}
+
+describe('F2-D (#4): vínculo da maquininha trava a conta antes da AR', () => {
+  it('accounts (Itaú) antes de criar/atualizar a AR e do ondeRef', async () => {
+    await vincular()
+    expect(banco.travas[0]).toEqual(expect.objectContaining({ tabela: 'accounts', id: 'itau' }))
+    ordemTravas('accountReceivable')
+  })
+})

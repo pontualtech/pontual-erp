@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { createHmac, timingSafeEqual } from 'crypto'
 import { ondeRef } from '@/lib/financeiro/livro'
+import { travarContas } from '@/lib/financeiro/livro-baixa-db'
 
 /**
  * Valida assinatura HMAC-SHA256 do webhook
@@ -171,6 +172,8 @@ async function processInterWebhook(body: any) {
     const txDate = dataPagamento ? new Date(dataPagamento) : new Date()
 
     await prisma.$transaction(async (tx) => {
+      // Onda 4 (fix 2, F2-D, #4): ordem única de travas — a conta (accounts) antes da AR e da checagem "já lançado".
+      if (receivable.account_id) await travarContas(tx, receivable.company_id, [receivable.account_id])
       await tx.accountReceivable.update({
         where: { id: receivable.id },
         data: {

@@ -58,3 +58,24 @@ describe('webhook Asaas — "já lançado" vale também para o lançamento conve
     expect(banco.saldo(ACC)).toBe(97000)
   })
 })
+
+// F2-D (#4): a conta (accounts) é travada antes de a AR ser atualizada e antes da checagem "já lançado".
+const ordemTravas = (modeloAR: string) => {
+  const trava = banco.travas.find((t) => t.tabela === 'accounts')!
+  expect(trava).toBeDefined()
+  const primeiro = (f: (o: (typeof banco.log)[number]) => boolean) => banco.log.find(f)?.seq ?? Infinity
+  expect(trava.seq).toBeLessThan(primeiro((o) => o.modelo === modeloAR && ['update', 'updateMany', 'create'].includes(o.op)))
+  expect(trava.seq).toBeLessThan(primeiro((o) => o.modelo === 'transaction' && ['findFirst', 'create'].includes(o.op)))
+}
+
+describe('F2-D (#4): webhook Asaas trava a conta antes da AR', () => {
+  it('RECEIVED e REFUNDED: accounts antes de accountReceivable.update e do ondeRef', async () => {
+    banco.pagamento({ id: 'p1', external_id: 'pay_1', receivable_id: 'r1', status: 'CONFIRMED', amount: 100000, billing_type: 'PIX' })
+    await evento('evt_o1', 'PAYMENT_RECEIVED')
+    expect(banco.travas[0]).toEqual(expect.objectContaining({ tabela: 'accounts', id: ACC }))
+    ordemTravas('accountReceivable')
+    banco.log.length = 0; banco.travas.length = 0
+    await evento('evt_o2', 'PAYMENT_REFUNDED')
+    ordemTravas('accountReceivable')
+  })
+})

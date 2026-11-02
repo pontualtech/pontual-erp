@@ -4,7 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { z } from 'zod'
-import { ContaAlterada, travarContas } from '@/lib/financeiro/livro-baixa-db'
+import { CONFLITO_BANCO, conflitoDeBanco, ContaAlterada, travarContas } from '@/lib/financeiro/livro-baixa-db'
 
 type Params = { params: { id: string } }
 
@@ -216,6 +216,8 @@ export async function DELETE(req: NextRequest, { params }: Params) {
 
     return success({ deleted: true })
   } catch (err) {
+    // Fix 2 (F2-D, m9): deadlock/timeout esperando a trava → 409 'repita' (a tx foi desfeita).
+    if (conflitoDeBanco(err)) return error(CONFLITO_BANCO, 409)
     return handleError(err)
   }
 }

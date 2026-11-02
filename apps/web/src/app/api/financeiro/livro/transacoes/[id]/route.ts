@@ -7,7 +7,7 @@ import { logAudit } from '@/lib/audit'
 import { CATEGORIAS_FALLBACK } from '@/lib/financeiro/livro-baixa'
 import { padraoDaLinha } from '@/lib/financeiro/livro-padrao'
 import { classificar } from '@/lib/financeiro/livro'
-import { travarContas } from '@/lib/financeiro/livro-baixa-db'
+import { CONFLITO_BANCO, conflitoDeBanco, travarContas } from '@/lib/financeiro/livro-baixa-db'
 
 // A linha foi ligada/desligada (ou deixou de ser do banco) entre a leitura e a gravação → 409, nada gravado.
 class LancamentoMudou extends Error {}
@@ -223,6 +223,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     })
   } catch (e) {
     if (e instanceof LancamentoMudou) return error('lançamento mudou (ligado/desligado) — recarregue', 409)
+    // Fix 2 (F2-D, m9): deadlock/timeout esperando a trava → 409 'repita' (a tx foi desfeita).
+    if (conflitoDeBanco(e)) return error(CONFLITO_BANCO, 409)
     if (e instanceof z.ZodError) {
       return error(e.errors[0]?.message || 'Dados inválidos', 422)
     }
