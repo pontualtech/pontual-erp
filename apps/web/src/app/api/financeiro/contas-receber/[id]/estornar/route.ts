@@ -48,15 +48,17 @@ class RecusaEstorno extends Error {
 // Antes de 22/05/2026 (86c9e19b) a baixa criava o lançamento sem bank_ref: 22/05 00:00 em São Paulo.
 const LEGADO_ATE = new Date('2026-05-22T03:00:00.000Z')
 
-// Fix 10 (F10-B): o destino do mover_para — o id da AR ou o número da OS (a única AR em aberto dela).
+// Fix 10 (F10-B): o destino do mover_para — o id da AR ou o número da OS (a única AR em aberto dela). Fix 12 (F12-D): a
+// original de um agrupamento (AGRUPADO / grouped_into_id) não é aberta — a cobrada é a agrupadora; nº de OS só com até
+// 9 dígitos (o os_number é INT4: acima disso o Prisma daria 500).
 async function resolverDestino(db: any, companyId: string, alvo: string): Promise<string | null> {
   const porId = await db.accountReceivable.findFirst({ where: { id: alvo, company_id: companyId, deleted_at: null }, select: { id: true } })
   if (porId) return porId.id
-  if (!/^\d+$/.test(alvo)) return null
+  if (!/^\d{1,9}$/.test(alvo)) throw new RecusaEstorno('mover_para deve ser o id da conta a receber ou o número da OS', 422)
   const os = await db.serviceOrder.findFirst({ where: { company_id: companyId, os_number: Number(alvo) }, select: { id: true } })
   if (!os) return null
   const abertas: { id: string }[] = await db.accountReceivable.findMany({
-    where: { company_id: companyId, service_order_id: os.id, deleted_at: null, status: { notIn: ['CANCELADO', ...QUITADAS] } },
+    where: { company_id: companyId, service_order_id: os.id, deleted_at: null, grouped_into_id: null, status: { notIn: ['CANCELADO', 'AGRUPADO', ...QUITADAS] } },
     select: { id: true },
   })
   if (abertas.length !== 1) {
@@ -135,6 +137,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           const dest = await tx.accountReceivable.findFirst({ where: { id: destinoId, company_id: user.companyId, deleted_at: null } })
           if (!dest) throw new RecusaEstorno('Conta a receber de destino nao encontrada', 404)
           if (dest.status === 'CANCELADO') throw new RecusaEstorno('a conta de destino está cancelada', 422)
+          if (dest.status === 'AGRUPADO' || dest.grouped_into_id) throw new RecusaEstorno('conta agrupada — escolha a agrupadora', 422)
           const refsDoDinheiro = [...dinheiro.linhas.map((l) => l.linked_ref ?? null), ...dinheiro.nocionais.map((t) => t.bank_ref)]
           if (refsDoDinheiro.some((r) => r === refs.antecipacao || (r ?? '').startsWith('cnab:'))) {
             throw new RecusaEstorno('antecipação ou boleto CNAB não pode ser movido para outra conta — estorne como devolvido', 422)
@@ -154,14 +157,20 @@ export async function POST(req: NextRequest, { params }: Params) {
           exigirTravadas(travadas, [...linhas, ...nocionais].map((t) => t.account_id))
 
           const refDestino = `AR:${dest.id}`
-          const textos: { id: string; source_text: string | null }[] = linhas.length === 0 ? [] : await tx.transaction.findMany({
+          const textos: { id: string; source_text: string | null; category_id: string | null }[] = linhas.length === 0 ? [] : await tx.transaction.findMany({
             where: { company_id: user.companyId, id: { in: linhas.map((l) => l.id) } },
-            select: { id: true, source_text: true },
+            select: { id: true, source_text: true, category_id: true },
           })
           for (const l of linhas) {
+            const texto = textos.find((t) => t.id === l.id)
             await tx.transaction.update({
               where: { id: l.id },
-              data: { linked_ref: refDestino, description: `Recebimento: ${dest.description} · banco: ${textos.find((t) => t.id === l.id)?.source_text ?? ''}` },
+              data: {
+                linked_ref: refDestino,
+                description: `Recebimento: ${dest.description} · banco: ${texto?.source_text ?? ''}`,
+                // m4: a linha que levava a categoria da origem passa a levar a do destino.
+                ...(dest.category_id && texto?.category_id === ar.category_id ? { category_id: dest.category_id } : {}),
+              },
             })
           }
           for (const t of nocionais) {

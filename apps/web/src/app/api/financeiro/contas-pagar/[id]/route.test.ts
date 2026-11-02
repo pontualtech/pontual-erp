@@ -134,6 +134,16 @@ describe('F8-A/F8-B (espelho na AP): o DELETE conta a saída VIVA da conta', () 
   })
 })
 
+describe("m13: AP estornada como 'devolvido' pode ser excluída", () => {
+  it('linha AP:p1:devolvido e DEBIT AP:p1 compensado por CREDIT :estorno: exclui', async () => {
+    banco.ap({ ...AP, paid_amount: 0 })
+    banco.transacao({ account_id: 'acc1', origin: 'BANCO', bank_ref: 'K', transaction_type: 'DEBIT', amount: 2000, linked_ref: 'AP:p1:devolvido' })
+    t('AP:p1', 'DEBIT', 3000)
+    t('AP:p1:estorno', 'CREDIT', 3000)
+    expect((await excluir()).status).toBe(200)
+  })
+})
+
 describe('F2-G (m21): opções da $transaction', () => {
   it('maxWait 10s e timeout 20s', async () => {
     banco.ap(AP)

@@ -121,14 +121,20 @@ export async function POST(req: NextRequest, { params }: Params) {
           if (movido > dest.total_amount - (dest.paid_amount ?? 0)) throw new RecusaEstorno('valor maior que o saldo em aberto da conta de destino', 422)
           exigirTravadas(travadas, [...dinheiro.linhas, ...dinheiro.nocionais].map((t) => t.account_id))
           const refDestino = `AP:${dest.id}`
-          const textos: { id: string; source_text: string | null }[] = dinheiro.linhas.length === 0 ? [] : await tx.transaction.findMany({
+          const textos: { id: string; source_text: string | null; category_id: string | null }[] = dinheiro.linhas.length === 0 ? [] : await tx.transaction.findMany({
             where: { company_id: user.companyId, id: { in: dinheiro.linhas.map((l) => l.id) } },
-            select: { id: true, source_text: true },
+            select: { id: true, source_text: true, category_id: true },
           })
           for (const l of dinheiro.linhas) {
+            const texto = textos.find((t) => t.id === l.id)
             await tx.transaction.update({
               where: { id: l.id },
-              data: { linked_ref: refDestino, description: `Pgto: ${dest.description} · banco: ${textos.find((t) => t.id === l.id)?.source_text ?? ''}` },
+              data: {
+                linked_ref: refDestino,
+                description: `Pgto: ${dest.description} · banco: ${texto?.source_text ?? ''}`,
+                // m4: a linha que levava a categoria da origem passa a levar a do destino.
+                ...(dest.category_id && texto?.category_id === ap.category_id ? { category_id: dest.category_id } : {}),
+              },
             })
           }
           for (const t of dinheiro.nocionais) {

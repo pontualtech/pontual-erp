@@ -44,7 +44,7 @@ export function EstornoPerguntaDialog({ mensagem, lancados, parte, contasCertas,
           </label>
           <div className="flex gap-2">
             {ehAR ? (
-              <input value={destino} onChange={(e) => setDestino(e.target.value.replace(/\D/g, ''))} inputMode="numeric" placeholder="nº da OS"
+              <input value={destino} onChange={(e) => setDestino(e.target.value.replace(/\D/g, '').slice(0, 9))} inputMode="numeric" maxLength={9} placeholder="nº da OS"
                 className="flex-1 px-3 py-2 border rounded-xl text-sm bg-white dark:bg-gray-800 dark:border-gray-700" />
             ) : (
               <select value={destino} onChange={(e) => setDestino(e.target.value)}

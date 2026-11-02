@@ -198,18 +198,18 @@ const resumir = (linhas: DinheiroLancado['linhas'], nocionais: Lancado[]): Dinhe
 
 // Fix 8 (F8-A): o :estorno (o de produção e o do 'devolvido' em conta sem extrato) anula, na sua conta, o dinheiro criado
 // até ele (o mais antigo primeiro), pelo valor — linha ligada, nocional próprio ou crédito externo; o que sobra (`vivo`) é
-// dinheiro da conta. Fix 10/12 (F10-B, F12-B): cada :estorno anula o dinheiro PRÓPRIO da conta (AR:<id>, :anticipation e o
-// …:devolvido) ANTES do externo — é o par do estorno 'devolvido' do nocional; o …:devolvido entra no desconto mas nunca é
-// dinheiro da conta.
+// dinheiro da conta. Fix 10/12 (F10-B, F12-B): cada :estorno anula primeiro o dinheiro PRÓPRIO vivo da conta (AR:<id>,
+// :anticipation — é o par do estorno 'devolvido' do nocional), depois o …:devolvido (o estorno antigo da linha que depois foi
+// devolvida) e por último o externo; o …:devolvido entra no desconto mas nunca é dinheiro da conta.
 type ComCriacao = { amount: number; account_id: string; created_at: Date | null }
 const parcialDe = (vivos: { amount: number; vivo: number }[]) => vivos.reduce((s, t) => s + t.amount - t.vivo, 0)
 const devolvida = (ref: string | null | undefined) => !!ref && ref.endsWith(DEVOLVIDO)
-function descontarEstornos<T extends ComCriacao>(itens: T[], estornos: ComCriacao[], antes: (t: T) => boolean = () => false): { vivos: (T & { vivo: number })[] } {
+function descontarEstornos<T extends ComCriacao>(itens: T[], estornos: ComCriacao[], ordem: (t: T) => number = () => 0): { vivos: (T & { vivo: number })[] } {
   const ms = (d: Date | null) => (d ? new Date(d).getTime() : 0)
   const copias = itens.map((t) => ({ ...t, vivo: t.amount }))
   for (const e of [...estornos].sort((a, b) => ms(a.created_at) - ms(b.created_at))) {
     abater(copias.filter((x) => x.account_id === e.account_id && ms(x.created_at) <= ms(e.created_at))
-      .sort((a, b) => Number(antes(b)) - Number(antes(a)) || ms(a.created_at) - ms(b.created_at)), e.amount)
+      .sort((a, b) => ordem(a) - ordem(b) || ms(a.created_at) - ms(b.created_at)), e.amount)
   }
   return { vivos: copias.filter((t) => t.vivo > 0) }
 }
@@ -279,7 +279,10 @@ export async function dinheiroDaAR(db: any, companyId: string, ar: { id: string;
   const comp = descontarEstornos<ComCriacao & { _l?: true }>([
     ...linhas.filter((l: { linked_ref?: string | null }) => !mortas.has(l.linked_ref ?? '')).map((l: any) => ({ ...l, _l: true as const })),
     ...vivos.filter((t) => !mortas.has(t.bank_ref ?? '')),
-  ], estornos, (t: any) => [refs.proprio, refs.antecipacao, ...devolvidas].includes((t._l ? t.linked_ref : t.bank_ref) ?? ''))
+  ], estornos, (t: any) => {
+    const ref = (t._l ? t.linked_ref : t.bank_ref) ?? ''
+    return ref === refs.proprio || ref === refs.antecipacao ? 0 : devolvida(ref) ? 1 : 2
+  })
   const daConta = comp.vivos.filter((t: any) => !devolvida(t._l ? t.linked_ref : t.bank_ref))
   // a reversão parcial sai do `vivo` do lançamento da ref dela (o `total` já a desconta).
   const parcial = parcialDe(daConta)
@@ -305,7 +308,7 @@ export async function dinheiroDaAP(db: any, companyId: string, apId: string): Pr
     select: { amount: true, account_id: true, created_at: true },
   })
   const comp = descontarEstornos<ComCriacao & { _l?: true }>([...linhas.map((l: any) => ({ ...l, _l: true as const })), ...lancados], estornos,
-    (t: any) => devolvida(t._l ? t.linked_ref : t.bank_ref))
+    (t: any) => (devolvida(t._l ? t.linked_ref : t.bank_ref) ? 1 : 0))
   const daConta = comp.vivos.filter((t: any) => !devolvida(t._l ? t.linked_ref : t.bank_ref))
   const r = resumir(
     (daConta.filter((t) => t._l) as unknown as DinheiroLancado['linhas']).map(({ id, amount, account_id, vivo }) => ({ id, amount, account_id, vivo })),

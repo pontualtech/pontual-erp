@@ -604,11 +604,59 @@ describe('F10-B: mover_para — o dinheiro foi lançado na OS errada (move linha
     banco.ar({ id: 'x1', company_id: 'c2', status: 'PENDENTE', total_amount: 15000 })
     banco.ar({ id: 'c1x', status: 'CANCELADO', total_amount: 15000 })
     banco.transacao({ id: 'N', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1' })
-    expect((await est('a1', { mover_para: 'nao-existe' })).status).toBe(404)
-    expect((await est('a1', { mover_para: 'x1' })).status).toBe(404)
+    expect((await est('a1', { mover_para: 'nao-existe' })).status).toBe(422) // nem id de AR, nem nº de OS
+    expect((await est('a1', { mover_para: 'x1' })).status).toBe(422) // AR de outra empresa: não é id daqui
+    expect((await est('a1', { mover_para: '99999' })).status).toBe(404) // nº de OS que não existe
     expect((await est('a1', { mover_para: 'c1x' })).status).toBe(422)
     expect((await est('a1', { mover_para: 'a1' })).status).toBe(422)
     expect(banco.tx_('N')!.bank_ref).toBe('AR:a1')
+  })
+
+  it('F12-D (#2, m6, m11): destino AGRUPADO ou com grouped_into_id → 422; pelo nº da OS a original agrupada não conta como aberta', async () => {
+    banco.inserir('serviceOrder', { id: 'so2', company_id: 'c1', os_number: 62100 })
+    banco.ar({ id: 'a0', status: 'RECEBIDO', account_id: ACC, received_amount: 30000, total_amount: 30000 })
+    banco.ar({ id: 'A1', status: 'AGRUPADO', account_id: ACC, received_amount: 0, total_amount: 30000, service_order_id: 'so2', grouped_into_id: 'G' })
+    banco.ar({ id: 'A2', status: 'PENDENTE', account_id: ACC, received_amount: 0, total_amount: 30000, grouped_into_id: 'G' })
+    banco.ar({ id: 'G', status: 'PENDENTE', account_id: ACC, received_amount: 0, total_amount: 60000 })
+    banco.transacao({ id: 'N', account_id: ACC, transaction_type: 'CREDIT', amount: 30000, bank_ref: 'AR:a0' })
+    for (const alvo of ['A1', 'A2']) {
+      const r = await est('a0', { mover_para: alvo })
+      expect([r.status, r.j.error], alvo).toEqual([422, 'conta agrupada — escolha a agrupadora'])
+    }
+    const pelaOS = await est('a0', { mover_para: '62100' })
+    expect([pelaOS.status, pelaOS.j.error]).toEqual([422, 'OS 62100 sem conta a receber em aberto'])
+    expect(banco.tx_('N')!.bank_ref).toBe('AR:a0')
+    expect((await est('a0', { mover_para: 'G' })).status).toBe(200) // a agrupadora é o destino certo
+  })
+
+  it('F12-D (m12): nº de OS com mais de 9 dígitos → 422, sem 500', async () => {
+    banco.ar({ id: 'a1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1' })
+    const r = await est('a1', { mover_para: '12345678901' })
+    expect(r.status).toBe(422)
+  })
+
+  it('m13: origem sem dinheiro → 422; OS com várias contas em aberto → 422 (informe a conta)', async () => {
+    banco.inserir('serviceOrder', { id: 'so3', company_id: 'c1', os_number: 700 })
+    banco.ar({ id: 'a1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000, updated_at: new Date('2026-07-01T00:00:00Z') })
+    banco.ar({ id: 'b1', status: 'PENDENTE', account_id: ACC, total_amount: 15000, service_order_id: 'so3' })
+    banco.ar({ id: 'b2', status: 'PENDENTE', account_id: ACC, total_amount: 15000, service_order_id: 'so3' })
+    const semDinheiro = await est('a1', { mover_para: 'b1' })
+    expect([semDinheiro.status, semDinheiro.j.error]).toEqual([422, 'não há dinheiro lançado nesta conta para mover'])
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1' })
+    const varias = await est('a1', { mover_para: '700' })
+    expect([varias.status, varias.j.error]).toEqual([422, 'OS 700 tem 2 contas a receber em aberto — informe a conta'])
+  })
+
+  it('m4: a linha movida ganha a categoria da conta de destino quando tinha a da origem; a de outra categoria fica', async () => {
+    banco.categoria('Peças', 'financeiro_receita')
+    banco.ar({ id: 'a1', status: 'RECEBIDO', account_id: ACC, received_amount: 15001, total_amount: 15001, category_id: 'cat:Venda de Servicos' })
+    banco.ar({ id: 'b1', status: 'PENDENTE', account_id: ACC, total_amount: 15001, category_id: 'cat:Peças', description: 'OS 2' })
+    banco.transacao({ id: 'L', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, origin: 'BANCO', bank_ref: 'K', source_text: 'PIX', linked_ref: 'AR:a1', category_id: 'cat:Venda de Servicos' })
+    banco.transacao({ id: 'M', account_id: ACC, transaction_type: 'CREDIT', amount: 1, origin: 'BANCO', bank_ref: 'K2', source_text: 'REND', linked_ref: 'AR:a1', category_id: 'cat:Rendimentos' })
+    expect((await est('a1', { mover_para: 'b1' })).status).toBe(200)
+    expect(banco.tx_('L')).toEqual(expect.objectContaining({ linked_ref: 'AR:b1', category_id: 'cat:Peças' }))
+    expect(banco.tx_('M')).toEqual(expect.objectContaining({ linked_ref: 'AR:b1', category_id: 'cat:Rendimentos' }))
   })
 
   it('antecipação ou boleto CNAB na origem → 422 (não dá para mover; estorne como devolvido)', async () => {
