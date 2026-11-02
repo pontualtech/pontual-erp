@@ -1,11 +1,11 @@
 import { z } from 'zod'
 
-// Aceita data ISO completa ou YYYY-MM-DD
+// Aceita data ISO completa ou YYYY-MM-DD; texto que não é data → erro de validação (422), não 500 lá na frente.
 const dateStringOptional = z.string().optional().transform((v) => {
   if (!v) return v
   if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return `${v}T00:00:00.000Z`
   return v
-})
+}).refine((v) => !v || !Number.isNaN(Date.parse(v)), 'Data inválida')
 
 /**
  * Schema para baixa de conta a receber.

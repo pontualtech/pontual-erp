@@ -19,8 +19,20 @@ class LivroJaLigado extends Error {}
 // Resultado de cada AR: erro (vai em erros), pular (sem valor; não conta), ligada / delta de saldo, aviso (vai em avisos).
 type ResultadoAR = { erro?: string; pular?: boolean; ligada?: boolean; delta?: number; aviso?: string }
 
-// Vínculo explícito AR → lançamento do livro (rotina): { [arId]: transactionId }.
-const livroSchema = z.record(z.string()).optional()
+// Onda 4 (§8): corpo validado — id que não é texto não chega mais ao banco (era 500). Vínculo explícito AR → lançamento
+// do livro (rotina): { [arId]: transactionId }.
+const IDS_OBRIGATORIO = 'ids é obrigatório (array não vazio)'
+const RECONCILED_OBRIGATORIO = 'reconciled é obrigatório (boolean true/false)'
+const bodySchema = z.object({
+  ids: z
+    .array(z.string({ invalid_type_error: 'ids deve ser uma lista de ids (texto)' }).min(1, 'ids deve ser uma lista de ids (texto)'), {
+      required_error: IDS_OBRIGATORIO, invalid_type_error: IDS_OBRIGATORIO,
+    })
+    .min(1, IDS_OBRIGATORIO)
+    .max(200, 'Máximo 200 itens por operação'),
+  reconciled: z.boolean({ required_error: RECONCILED_OBRIGATORIO, invalid_type_error: RECONCILED_OBRIGATORIO }),
+  livro: z.record(z.string()).optional(),
+})
 
 /**
  * Wave S (audit 2026-05-24): POST /api/financeiro/contas-receber/bulk-reconcile
@@ -46,19 +58,13 @@ export async function POST(req: NextRequest) {
     if (result instanceof NextResponse) return result
     const user = result
 
-    const body = await req.json().catch(() => ({}))
-    const { ids, reconciled } = body as { ids?: string[]; reconciled?: boolean }
-    const livro = livroSchema.parse((body as { livro?: unknown }).livro)
-
-    if (!Array.isArray(ids) || ids.length === 0) {
-      return error('ids é obrigatório (array não vazio)', 400)
+    const lido = bodySchema.safeParse(await req.json().catch(() => ({})))
+    if (!lido.success) {
+      const primeiro = lido.error.errors[0]
+      // `livro` inválido segue o contrato das rotas da rotina (422 'Dados inválidos'); ids/reconciled, 400 com o motivo.
+      return primeiro?.path[0] === 'livro' ? handleError(lido.error) : error(primeiro?.message ?? 'Dados inválidos', 400)
     }
-    if (typeof reconciled !== 'boolean') {
-      return error('reconciled é obrigatório (boolean true/false)', 400)
-    }
-    if (ids.length > 200) {
-      return error('Máximo 200 itens por operação', 400)
-    }
+    const { ids, reconciled, livro } = lido.data
 
     // Daqui só saem os ids: tudo o que decide (status, valor, conta, lançamento existente) é relido
     // DENTRO da $transaction de cada AR, depois de travar a linha (E1).
@@ -283,11 +289,16 @@ export async function POST(req: NextRequest) {
             delta -= c.amount
           }
           return { delta }
-        })
+        }, { maxWait: 10000, timeout: 20000 })
       } catch (e) {
+        // Onda 4 (§8, #16): qualquer falha de uma AR (trava que demorou, deadlock, banco) vai em erros e o lote segue —
+        // a resposta {updated, ligadas, erros} sempre volta; a tx desta AR já foi desfeita.
         if (e instanceof ContaAlterada) resultado = { erro: e.message }
         else if (e instanceof LivroJaLigado) resultado = { erro: 'lançamento do livro já ligado por outra baixa' }
-        else throw e
+        else {
+          console.error('[bulk-reconcile] falha na AR', arId, e)
+          resultado = { erro: reconciled ? 'erro ao conferir; tente de novo' : 'erro ao desfazer; tente de novo' }
+        }
       }
       if (resultado.erro) {
         erros.push({ ar: arId, motivo: resultado.erro })

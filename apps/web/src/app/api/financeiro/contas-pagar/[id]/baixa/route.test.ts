@@ -248,3 +248,22 @@ describe('§7: trava conta → AP e decide pela releitura', () => {
     expect(debitosAP()).toEqual([])
   })
 })
+
+describe('§8: mensagens e datas', () => {
+  it('conta excluída durante a baixa → 409 "conta não encontrada durante a baixa"; paga por outra → mensagem para o operador', async () => {
+    banco.ap(AP)
+    banco.aoTravar(({ tabela }) => { if (tabela === 'accounts_payable') ap().deleted_at = new Date() })
+    expect((await pagar({ paid_amount: 5000, paid_at: '2026-10-29' })).j.error).toBe('conta não encontrada durante a baixa')
+    ap().deleted_at = null
+    banco.aoTravar(({ tabela }) => { if (tabela === 'accounts_payable') Object.assign(ap(), { status: 'PAGO', paid_amount: 5000 }) })
+    expect((await pagar({ paid_amount: 5000, paid_at: '2026-10-29' })).j.error).toBe('esta conta acabou de ser paga por outra pessoa — recarregue')
+  })
+
+  it('m9: paid_at que não é data → 422 (antes: 500), nada gravado', async () => {
+    banco.ap(AP)
+    expect((await pagar({ paid_amount: 5000, paid_at: '31/10/2026' })).status).toBe(422)
+    expect(ap().status).toBe('PENDENTE')
+    expect(debitosAP()).toEqual([])
+  })
+})
+

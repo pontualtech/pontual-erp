@@ -199,7 +199,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
         data: { deleted_at: new Date() },
       })
       return null
-    })
+    }, { maxWait: 10000, timeout: 20000 })
     if (bloqueio) return error(bloqueio.erro, bloqueio.status)
 
     logAudit({

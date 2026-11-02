@@ -12,6 +12,7 @@ vi.mock('@/lib/financeiro/livro-baixa-db', async (importOriginal) => {
 import { POST } from './route'
 import { hojeSP } from '@/lib/financeiro/livro-baixa-db'
 import { banco } from '@/test-utils/banco-falso'
+import { logAudit } from '@/lib/audit'
 
 const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date())
 const DIA = 86_400_000
@@ -438,6 +439,43 @@ describe('§7: trava contas → AR, relê e escreve pelo tx (E1, #9, #10)', () =
       expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'conta a receber não encontrada' }])
     }
     expect(banco.tabelas.transaction).toEqual([])
+  })
+})
+
+describe('§8: erros por AR nunca derrubam o lote (resolve #16, m9)', () => {
+  it('#16: exceção inesperada numa AR (ex.: deadlock P2034) vai em erros, é desfeita, e o lote segue — 200 com o contrato', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    banco.ar({ ...AR, id: 'x' })
+    banco.ar(AR)
+    banco.tx.transaction.create.mockImplementationOnce(async () => { throw Object.assign(new Error('deadlock detected'), { code: 'P2034' }) })
+    const { status, j } = await conferir(['x', 'a1'])
+    expect(status).toBe(200)
+    expect(j.data).toEqual(expect.objectContaining({ updated: 1, erros: [{ ar: 'x', motivo: 'erro ao conferir; tente de novo' }] }))
+    expect(ar('x').status).toBe('RECEBIDO')
+    expect(creditosAR('x')).toEqual([])
+    expect(creditosAR('a1')).toHaveLength(1)
+    expect(vi.mocked(logAudit)).toHaveBeenCalled()
+  })
+
+  it('cada AR roda numa $transaction com maxWait 10s e timeout 20s', async () => {
+    banco.ar(AR)
+    await conferir()
+    expect(banco.transacoes.map((t) => t.opcoes)).toEqual([{ maxWait: 10000, timeout: 20000 }])
+  })
+
+  it('m9: corpo validado — ids com não-texto, vazio, > 200, reconciled ausente → 400 (antes: 500)', async () => {
+    const casos: [unknown, string][] = [
+      [{ ids: [123], reconciled: true }, 'ids deve ser uma lista de ids (texto)'],
+      [{ ids: [], reconciled: true }, 'ids é obrigatório (array não vazio)'],
+      [{ reconciled: true }, 'ids é obrigatório (array não vazio)'],
+      [{ ids: Array.from({ length: 201 }, (_, i) => `a${i}`), reconciled: true }, 'Máximo 200 itens por operação'],
+      [{ ids: ['a1'] }, 'reconciled é obrigatório (boolean true/false)'],
+    ]
+    for (const [corpo, msg] of casos) {
+      const { status, j } = await post(corpo)
+      expect(status).toBe(400)
+      expect(j.error).toBe(msg)
+    }
   })
 })
 

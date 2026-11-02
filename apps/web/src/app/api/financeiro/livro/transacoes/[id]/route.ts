@@ -197,7 +197,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         })
         recategorizadas = r.count
       }
-    })
+    }, { maxWait: 10000, timeout: 20000 })
 
     logAudit({
       companyId: user.companyId,

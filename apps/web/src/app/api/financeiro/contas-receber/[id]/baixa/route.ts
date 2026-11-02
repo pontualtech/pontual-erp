@@ -67,8 +67,8 @@ export async function POST(req: NextRequest, { params }: Params) {
       const fresh = await tx.accountReceivable.findFirst({
         where: { id: params.id, company_id: user.companyId, deleted_at: null },
       })
-      if (!fresh) throw new ConflitoBaixa('AR sumiu durante a baixa')
-      if (isReceivableSettled(fresh)) throw new ConflitoBaixa('Conta ja foi recebida (outra baixa em paralelo)')
+      if (!fresh) throw new ConflitoBaixa('conta não encontrada durante a baixa')
+      if (isReceivableSettled(fresh)) throw new ConflitoBaixa('esta conta acabou de ser recebida por outra pessoa — recarregue')
       if (fresh.status === 'CANCELADO') throw new ConflitoBaixa('Conta cancelada durante a baixa')
       const previousReceived = fresh.received_amount || 0
       const newReceivedTotal = previousReceived + data.received_amount
@@ -202,7 +202,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       }
 
       return { updated, previousReceived, newReceivedTotal, isReceivedInFull, freshStatus: fresh.status, group_id: fresh.group_id }
-    })
+    }, { maxWait: 10000, timeout: 20000 })
     } catch (e) {
       if (e instanceof LivroJaLigado) return error('lançamento do livro já ligado por outra baixa', 409)
       if (e instanceof ConflitoBaixa) return error(e.message, e.status)

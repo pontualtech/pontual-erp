@@ -131,4 +131,19 @@ describe('§7: trava conta → AR e decide pela releitura (G1, E7, #9)', () => {
     expect(r.j.error).toMatch(/excede o saldo restante/)
     expect(creditosAR()).toEqual([])
   })
+
+  it('§8: conta excluída durante a baixa → 409 com mensagem sem jargão', async () => {
+    banco.ar(AR)
+    banco.aoTravar(({ tabela }) => { if (tabela === 'accounts_receivable') ar().deleted_at = new Date() })
+    const { status, j } = await receber()
+    expect(status).toBe(409)
+    expect(j.error).toBe('conta não encontrada durante a baixa')
+  })
+
+  it('§8: received_at que não é data → 422 (antes: 500)', async () => {
+    banco.ar(AR)
+    const { status } = await receber({ received_at: '31/10/2026' })
+    expect(status).toBe(422)
+    expect(creditosAR()).toEqual([])
+  })
 })

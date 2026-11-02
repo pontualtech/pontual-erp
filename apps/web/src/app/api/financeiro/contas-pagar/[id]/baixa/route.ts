@@ -21,7 +21,8 @@ type Params = { params: { id: string } }
 // diminuia — empresa "pagava" R$ 10k de boletos mas saldo continuava cheio.
 const baixaSchema = z.object({
   paid_amount: z.number().int().positive('Valor pago deve ser positivo'),
-  paid_at: z.string().optional(),
+  // Onda 4 (§8): data inválida vira 422 (antes: RangeError dentro da tx → 500).
+  paid_at: z.string().optional().refine((v) => !v || !Number.isNaN(Date.parse(v)), 'Data de pagamento inválida'),
   account_id: z.string().uuid('Conta bancaria/caixa obrigatoria'),
   // 30/10 (livro-razão): lançamento do banco já existente a ligar em vez de criar outra saída.
   livro_transaction_id: z.string().optional(),
@@ -82,8 +83,8 @@ export async function POST(req: NextRequest, { params }: Params) {
       const fresh = await tx.accountPayable.findFirst({
         where: { id: params.id, company_id: user.companyId, deleted_at: null },
       })
-      if (!fresh) throw new ConflitoBaixa('AP sumiu durante a baixa')
-      if (fresh.status === 'PAGO') throw new ConflitoBaixa('Conta ja paga (outra baixa em paralelo)')
+      if (!fresh) throw new ConflitoBaixa('conta não encontrada durante a baixa')
+      if (fresh.status === 'PAGO') throw new ConflitoBaixa('esta conta acabou de ser paga por outra pessoa — recarregue')
       if (fresh.status === 'CANCELADO') throw new ConflitoBaixa('Conta cancelada durante a baixa')
       const previousPaid = fresh.paid_amount || 0
       const restante = fresh.total_amount - previousPaid
@@ -210,7 +211,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       })
 
       return { updated, previousPaid, newPaidTotal }
-    })
+    }, { maxWait: 10000, timeout: 20000 })
     } catch (e) {
       if (e instanceof LivroInvalido) return error(e.message, 422)
       if (e instanceof LivroJaLigado) return error('lançamento do livro já ligado por outra baixa', 409)
