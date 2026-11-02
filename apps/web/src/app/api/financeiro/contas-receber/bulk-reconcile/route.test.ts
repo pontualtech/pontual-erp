@@ -250,3 +250,118 @@ describe('§4 Desfazer conciliação (reconciled=false) — resolve #8 e m1', ()
     expect(ar()).toEqual(expect.objectContaining({ status: 'RECEBIDO', reconciled: false }))
   })
 })
+
+describe('§5 Conferir: o que já é dinheiro desta AR (existing) e as regras antes de criar/ligar', () => {
+  it('#4: crédito da antecipação (AR:id:anticipation) já no saldo → só LIQUIDADO, sem 2º crédito', async () => {
+    banco.ar({ ...AR, received_amount: 96000, total_amount: 100000 })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 96000, bank_ref: 'AR:a1:anticipation' })
+    const { j } = await conferir()
+    expect(j.data).toEqual(expect.objectContaining({ updated: 1, balance_delta: 0, erros: [] }))
+    expect(creditosAR()).toEqual([])
+    expect(ar().status).toBe('LIQUIDADO')
+  })
+
+  it('#4: crédito do retorno CNAB (cnab:<nossoNumero> do pix_code) já no saldo → só LIQUIDADO', async () => {
+    banco.ar({ ...AR, pix_code: JSON.stringify({ boletoStatus: 'PAID', nossoNumero: '123' }) })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'cnab:123' })
+    expect((await conferir()).j.data.balance_delta).toBe(0)
+    expect(creditosAR()).toEqual([])
+  })
+
+  it('linha BANCO convertida de um nocional da AR (linked_ref do adquirente) conta como existing', async () => {
+    banco.ar(AR)
+    banco.pagamento({ receivable_id: 'a1', provider: 'rede', external_id: 'N1' })
+    linhaLivro({ linked_ref: 'acquirer:rede:N1', amount: 14500 })
+    linhaLivro({ id: 't2', bank_ref: 'ITAU:k2' }) // livre, mesmo valor da AR: não é usada
+    const { j } = await conferir()
+    expect(j.data).toEqual(expect.objectContaining({ updated: 1, balance_delta: 0, ligadas: 0 }))
+    expect(banco.tx_('t2')!.linked_ref).toBeNull()
+    expect(creditosAR()).toEqual([])
+  })
+
+  it('#5 (i): original agrupada (received 0) → erro "conta agrupada — confira a agrupadora"; a agrupadora segue normal', async () => {
+    banco.ar({ ...AR, id: 'G', received_amount: 50000, total_amount: 50000, group_id: 'g1' })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 50000, bank_ref: 'AR:G' })
+    banco.ar({ ...AR, id: 'A', received_amount: 0, total_amount: 30000, grouped_into_id: 'G', group_id: 'g1' })
+    banco.ar({ ...AR, id: 'B', received_amount: null, total_amount: 20000, grouped_into_id: 'G', group_id: 'g1' })
+    const { j } = await conferir(['G', 'A', 'B'])
+    expect(j.data.erros).toEqual([{ ar: 'A', motivo: 'conta agrupada — confira a agrupadora' }, { ar: 'B', motivo: 'conta agrupada — confira a agrupadora' }])
+    expect(j.data.updated).toBe(1)
+    expect(banco.saldo(ACC)).toBe(100000)
+    expect(ar('A').status).toBe('RECEBIDO')
+  })
+
+  it('#6 (ii): cobrança Asaas CONFIRMED sem crédito pay_ ainda → erro, nada criado; com vínculo explícito, liga', async () => {
+    banco.ar(AR)
+    banco.pagamento({ receivable_id: 'a1', provider: 'asaas', external_id: 'pay_x', status: 'CONFIRMED' })
+    const { j } = await conferir()
+    expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'cobrança Asaas: o crédito entra pelo webhook quando o dinheiro cair' }])
+    expect(banco.tabelas.transaction).toEqual([])
+    expect(ar().status).toBe('RECEBIDO')
+    linhaLivro()
+    expect((await conferir(['a1'], { a1: 't1' })).j.data).toEqual(expect.objectContaining({ ligadas: 1, erros: [] }))
+  })
+
+  it('#6: com o crédito pay_ já lançado pelo webhook → só LIQUIDADO', async () => {
+    banco.ar(AR)
+    banco.pagamento({ receivable_id: 'a1', provider: 'asaas', external_id: 'pay_x', status: 'RECEIVED' })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 14600, bank_ref: 'pay_x' })
+    expect((await conferir()).j.data).toEqual(expect.objectContaining({ updated: 1, balance_delta: 0, erros: [] }))
+  })
+
+  it('#7 (iii) SWAP: nocional AR:id + vínculo explícito a linha BANCO livre → apaga o nocional, liga a linha; saldo = banco', async () => {
+    banco.tabelas.account[0].current_balance = 180000 // banco 100000 + 80000; o ERP contou 2x (nocional + linha CRIADA)
+    banco.ar({ ...AR, received_amount: 80000, total_amount: 80000 })
+    banco.transacao({ id: 'noc', account_id: ACC, transaction_type: 'CREDIT', amount: 80000, bank_ref: 'AR:a1', transaction_date: diaRel(-4) })
+    linhaLivro({ amount: 80000 })
+    const { j } = await conferir(['a1'], { a1: 't1' })
+    expect(j.data).toEqual(expect.objectContaining({ updated: 1, ligadas: 1, balance_delta: -80000, erros: [] }))
+    expect(banco.tx_('noc')).toBeUndefined()
+    expect(banco.tx_('t1')!.linked_ref).toBe('AR:a1')
+    expect(banco.saldo(ACC)).toBe(100000)
+    expect(ar().status).toBe('LIQUIDADO')
+  })
+
+  it('SWAP recusado: explícito inválido (valor difere) → erro do vínculo, nocional e saldo intocados', async () => {
+    banco.ar({ ...AR, received_amount: 80000, total_amount: 80000 })
+    banco.transacao({ id: 'noc', account_id: ACC, transaction_type: 'CREDIT', amount: 80000, bank_ref: 'AR:a1' })
+    linhaLivro({ amount: 50000 })
+    const { j } = await conferir(['a1'], { a1: 't1' })
+    expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'Valor do lançamento difere mais de R$ 1,00 da baixa' }])
+    expect(banco.tx_('noc')).toBeDefined()
+    expect(banco.saldo(ACC)).toBe(100000)
+  })
+
+  it('vínculo explícito e a AR já tem dinheiro real (linha BANCO ligada): "já tem lançamento"', async () => {
+    banco.ar(AR)
+    linhaLivro({ id: 'ja', bank_ref: 'ITAU:k0', linked_ref: 'AR:a1' })
+    linhaLivro()
+    expect((await conferir(['a1'], { a1: 't1' })).j.data.erros).toEqual([{ ar: 'a1', motivo: 'conta a receber já tem lançamento; vínculo não feito' }])
+    expect(banco.tx_('t1')!.linked_ref).toBeNull()
+  })
+
+  it('#7 (iv): nocional sem vínculo explícito → só LIQUIDADO + aviso de linha do banco livre de mesmo valor', async () => {
+    banco.ar(AR)
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1' })
+    linhaLivro()
+    const { j } = await conferir()
+    expect(j.data).toEqual(expect.objectContaining({ updated: 1, balance_delta: 0, erros: [] }))
+    expect(j.data.avisos).toEqual([{ ar: 'a1', motivo: 'há linha do banco livre de mesmo valor — vincule pelo Extrato' }])
+    expect(banco.tx_('t1')!.linked_ref).toBeNull()
+  })
+
+  it('nocional sem linha livre: só LIQUIDADO, sem aviso', async () => {
+    banco.ar(AR)
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1' })
+    expect((await conferir()).j.data.avisos).toEqual([])
+  })
+
+  it('crédito AR:id já compensado por :estorno não é "existing": a linha do banco livre é ligada', async () => {
+    banco.ar(AR)
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1' })
+    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 15000, bank_ref: 'AR:a1:estorno' })
+    linhaLivro()
+    expect((await conferir()).j.data.ligadas).toBe(1)
+    expect(banco.tx_('t1')!.linked_ref).toBe('AR:a1')
+  })
+})

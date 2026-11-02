@@ -4,18 +4,19 @@ import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
-import { refsCreditoAdquirente } from '@/lib/acquirer/match-rules'
-import { decidirBaixa, JANELA_BAIXA, JANELA_CONFERIR, recebeCategoria } from '@/lib/financeiro/livro-baixa'
-import { candidatosLivro, desligarLinhas, hojeSP, nomeCategoria, SELECT_LINHA_LIGADA } from '@/lib/financeiro/livro-baixa-db'
-import { compensado } from '@/lib/financeiro/livro'
+import { decidirBaixa, JANELA_BAIXA, JANELA_CONFERIR, recebeCategoria, type CandidatoLivro } from '@/lib/financeiro/livro-baixa'
+import {
+  candidatosLivro, desligarLinhas, hojeSP, nomeCategoria, refsDaAR, refsLigadasAR, SELECT_LINHA_LIGADA,
+} from '@/lib/financeiro/livro-baixa-db'
+import { compensado, refEstorno } from '@/lib/financeiro/livro'
 import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
 import { CATEGORIA_RECEITA_SERVICOS } from '@/lib/financeiro/livro-categorias'
 
 // Lançamento do livro foi ligado por outra baixa concorrente → desfaz a $transaction desta AR.
 class LivroJaLigado extends Error {}
 
-// Resultado de cada AR: erro (vai em erros), pular (sem valor; não conta), ligada / delta de saldo.
-type ResultadoAR = { erro?: string; pular?: boolean; ligada?: boolean; delta?: number }
+// Resultado de cada AR: erro (vai em erros), pular (sem valor; não conta), ligada / delta de saldo, aviso (vai em avisos).
+type ResultadoAR = { erro?: string; pular?: boolean; ligada?: boolean; delta?: number; aviso?: string }
 
 // Vínculo explícito AR → lançamento do livro (rotina): { [arId]: transactionId }.
 const livroSchema = z.record(z.string()).optional()
@@ -68,6 +69,8 @@ export async function POST(req: NextRequest) {
     let updated = 0
     let ligadas = 0
     const erros: { ar: string; motivo: string }[] = []
+    // Onda 4 (§5 iv): conferida, mas com sinal de duplicidade a resolver pelo Extrato.
+    const avisos: { ar: string; motivo: string }[] = []
     let balanceDelta = 0  // pra retornar ao frontend confirmando o impacto
 
     // Loop por AR — cada uma com seu próprio account_id e amount.
@@ -85,13 +88,18 @@ export async function POST(req: NextRequest) {
           await tx.$queryRaw`SELECT id FROM accounts_receivable WHERE id = ${arId} AND company_id = ${user.companyId} FOR UPDATE`
           const ar = await tx.accountReceivable.findFirst({
             where: { id: arId, company_id: user.companyId, deleted_at: null },
-            select: { id: true, account_id: true, received_amount: true, total_amount: true, status: true, description: true, category_id: true, reconciled: true },
+            select: {
+              id: true, account_id: true, received_amount: true, total_amount: true, status: true, description: true,
+              category_id: true, reconciled: true, grouped_into_id: true, pix_code: true,
+            },
           })
           if (!ar) return { erro: 'conta a receber não encontrada' }
           // Onda 4 (§4): Desfazer só desfaz conta conferida — AR estornada/PENDENTE (#8) não perde crédito nem saldo.
           if (!reconciled && ar.reconciled !== true && ar.status !== 'LIQUIDADO') return { erro: 'conta não conferida' }
           // Conferir exige conta recebida (PAGO = status legado de recebida): PENDENTE não vira LIQUIDADO nem ganha crédito.
           if (reconciled && ar.status !== 'RECEBIDO' && ar.status !== 'LIQUIDADO' && ar.status !== 'PAGO') return { erro: 'conta não recebida' }
+          // Onda 4 (§5 i, #5): original de um agrupamento recebida pela agrupadora (sem valor próprio) — o dinheiro é da agrupadora.
+          if (reconciled && ar.grouped_into_id && !ar.received_amount) return { erro: 'conta agrupada — confira a agrupadora' }
 
           const amount = ar.received_amount || ar.total_amount
           if (!amount) return pedido ? { erro: 'conta a receber sem valor; vínculo não feito' } : { pular: true }
@@ -112,61 +120,40 @@ export async function POST(req: NextRequest) {
           }
 
           if (reconciled) {
-            // RECEBIDO → LIQUIDADO: cria Transaction + incrementa saldo.
-            // Idempotência: se já tem Transaction com bank_ref=AR:id, pula save.
-            // 29/10: idem se a maquininha já creditou o LÍQUIDO desta AR (acquirer:<provider>:<NSU>) —
-            // senão o "Conferi" somava o BRUTO por cima e o dinheiro contava 2x.
-            const pagamentos = await tx.payment.findMany({
-              where: { company_id: user.companyId, receivable_id: ar.id },
-              select: { provider: true, external_id: true },
+            // Onda 4 (§5): o que já é dinheiro desta AR (existing) — nocionais vivos AR:id e :anticipation (o já
+            // compensado por :estorno não conta), créditos do adquirente/Asaas (Payment) e do CNAB (pix_code), e as
+            // linhas do BANCO ligadas/convertidas a qualquer desses. Sem nada disso → decide ligar/criar.
+            const refs = await refsDaAR(tx, user.companyId, ar)
+            const linhasDaAR = await tx.transaction.findMany({
+              where: { company_id: user.companyId, origin: 'BANCO', linked_ref: { in: refsLigadasAR(refs) } },
+              select: { id: true },
             })
-            const existing = await tx.transaction.findFirst({
-              where: { company_id: user.companyId, OR: [{ bank_ref: { in: [`AR:${ar.id}`, ...refsCreditoAdquirente(pagamentos)] } }, { linked_ref: `AR:${ar.id}` }] },
+            const lancados = await tx.transaction.findMany({
+              where: { company_id: user.companyId, origin: null, bank_ref: { in: [refs.proprio, refs.antecipacao, ...refs.externos] } },
+              select: { id: true, amount: true, account_id: true, bank_ref: true, source_text: true, created_at: true },
             })
-            if (existing && pedido && existing.id !== pedido) {
-              // Vínculo explícito pedido, mas a AR já tem outro lançamento: não troca nem baixa em silêncio.
-              return { erro: 'conta a receber já tem lançamento; vínculo não feito' }
-            }
-            if (existing) {
-              // Já tem crédito (ex: webhook Asaas, Receber, backfill manual): só vira conferida — nada criado nem ligado.
-              await tx.accountReceivable.update({
-                where: { id: ar.id, company_id: user.companyId },
-                data: { reconciled: true, status: 'LIQUIDADO', updated_at: new Date() },
-              })
-              // Idempotente: o vínculo pedido já estava feito para a mesma linha.
-              return { ligada: !!pedido }
-            }
+            const estornos = await tx.transaction.findMany({
+              where: { company_id: user.companyId, bank_ref: refs.estorno },
+              select: { account_id: true, created_at: true },
+            })
+            const nocionais = lancados.filter((t) => refEstorno(t.bank_ref) === null || !compensado(t, estornos))
 
-            // Sem crédito: decide ligar/criar mesmo que já esteja reconciled (ex.: webhook Inter marcou sem lançar);
-            // a trava garante que ninguém mais lança para esta AR enquanto isso.
+            // Uma data só por AR: busca e decisão no mesmo dia mesmo se a meia-noite virar no meio.
+            const hoje = hojeSP()
             const categoria = ar.category_id
               ?? await categoriaReceitaPadraoId(tx, user.companyId)
             const nomeAlvo = ar.category_id ? await nomeCategoria(tx, user.companyId, ar.category_id) : CATEGORIA_RECEITA_SERVICOS
-
-            // Decide ANTES de escrever: explícito inválido não baixa nada.
-            // Sem vínculo explícito, Conferir (ancorado em hoje) olha 30 dias para trás (E3); a linha pedida entra por id.
-            const janela = pedido ? JANELA_BAIXA : JANELA_CONFERIR
-            // Uma data só por AR: busca e decisão no mesmo dia mesmo se a meia-noite virar no meio.
-            const hoje = hojeSP()
-            const candidatos = await candidatosLivro(tx, user.companyId, ar.account_id, 'CREDIT', hoje, pedido, janela)
-            const decisao = decidirBaixa({ tipo: 'CREDIT', amount, data: hoje, categoria: nomeAlvo }, pedido, candidatos, janela)
-            if ('erro' in decisao) return { erro: decisao.erro }
-
-            await tx.accountReceivable.update({
+            const liquidar = () => tx.accountReceivable.update({
               where: { id: ar.id, company_id: user.companyId },
               data: { reconciled: true, status: 'LIQUIDADO', updated_at: new Date() },
             })
-            if ('usar' in decisao) {
-              // Liga ao lançamento do livro: o dinheiro já está no saldo — NÃO cria transação nem mexe na conta.
-              const alvo = await tx.transaction.findFirst({
-                where: { id: decisao.usar, company_id: user.companyId },
-                select: { source_text: true },
-              })
-              // Linha já categorizada (ex.: Venda de Servicos) mantém a sua categoria.
-              const linha = candidatos.find((c) => c.id === decisao.usar)
-              // Guard atômico (como Bug #41/#67): só liga se a linha ainda estiver livre.
+            // Liga a linha do livro à AR — o dinheiro já está no saldo: NÃO cria transação nem mexe na conta.
+            // Linha já categorizada (ex.: Venda de Servicos) mantém a sua categoria. Guard atômico: só se ainda livre.
+            const ligar = async (linhaId: string, candidatos: CandidatoLivro[]) => {
+              const alvo = await tx.transaction.findFirst({ where: { id: linhaId, company_id: user.companyId }, select: { source_text: true } })
+              const linha = candidatos.find((c) => c.id === linhaId)
               const ligou = await tx.transaction.updateMany({
-                where: { id: decisao.usar, company_id: user.companyId, linked_ref: null },
+                where: { id: linhaId, company_id: user.companyId, linked_ref: null },
                 data: {
                   linked_ref: `AR:${ar.id}`,
                   ...(recebeCategoria(linha?.categoria ?? null) ? { category_id: categoria } : {}),
@@ -175,6 +162,63 @@ export async function POST(req: NextRequest) {
                 },
               })
               if (ligou.count === 0) throw new LivroJaLigado()
+            }
+
+            if (linhasDaAR.length > 0 || nocionais.length > 0) {
+              const pedidoJaLigado = !!pedido && linhasDaAR.some((l) => l.id === pedido)
+              // Só o crédito do Receber/Conferir (AR:id, sem texto do banco) pode ser trocado pela linha do banco.
+              const trocaveis = linhasDaAR.length === 0 && nocionais.every((t) => t.bank_ref === refs.proprio && t.source_text === null)
+              if (pedido && !pedidoJaLigado) {
+                if (!trocaveis) return { erro: 'conta a receber já tem lançamento; vínculo não feito' }
+                // (iii) SWAP (#7): a linha pedida é o mesmo dinheiro do nocional → apaga o nocional (e o saldo), liga a linha.
+                const candidatos = await candidatosLivro(tx, user.companyId, ar.account_id, 'CREDIT', hoje, pedido, JANELA_BAIXA)
+                const decisao = decidirBaixa({ tipo: 'CREDIT', amount, data: hoje, categoria: nomeAlvo }, pedido, candidatos, JANELA_BAIXA)
+                if ('erro' in decisao) return { erro: decisao.erro }
+                if (!('usar' in decisao)) return { erro: 'conta a receber já tem lançamento; vínculo não feito' }
+                await liquidar()
+                await ligar(decisao.usar, candidatos)
+                let delta = 0
+                for (const t of nocionais) {
+                  await tx.transaction.delete({ where: { id: t.id } })
+                  await tx.account.update({
+                    where: { id: t.account_id },
+                    data: { current_balance: { decrement: t.amount }, updated_at: new Date() },
+                  })
+                  delta -= t.amount
+                }
+                return { ligada: true, delta }
+              }
+              // Já tem o dinheiro (webhook, Receber, antecipação, CNAB, linha ligada): só vira conferida.
+              await liquidar()
+              // (iv) nocional e há linha do banco livre do mesmo valor: possível duplicidade — avisa (o vínculo é pelo Extrato).
+              let aviso: string | undefined
+              if (!pedido && linhasDaAR.length === 0) {
+                const candidatos = await candidatosLivro(tx, user.companyId, ar.account_id, 'CREDIT', hoje, null, JANELA_CONFERIR)
+                if ('usar' in decidirBaixa({ tipo: 'CREDIT', amount, data: hoje, categoria: nomeAlvo }, null, candidatos, JANELA_CONFERIR)) {
+                  aviso = 'há linha do banco livre de mesmo valor — vincule pelo Extrato'
+                }
+              }
+              // Idempotente: o vínculo pedido já estava feito para a mesma linha.
+              return { ligada: pedidoJaLigado, aviso }
+            }
+
+            // (ii) #6: cartão/boleto Asaas confirmado — o crédito (líquido) entra pelo webhook quando o dinheiro cair.
+            if (!pedido && refs.pagamentos.some((p) => p.provider === 'asaas' && (p.status === 'CONFIRMED' || p.status === 'RECEIVED'))) {
+              return { erro: 'cobrança Asaas: o crédito entra pelo webhook quando o dinheiro cair' }
+            }
+
+            // Sem crédito: decide ligar/criar mesmo que já esteja reconciled (ex.: webhook Inter marcou sem lançar);
+            // a trava garante que ninguém mais lança para esta AR enquanto isso.
+            // Decide ANTES de escrever: explícito inválido não baixa nada.
+            // Sem vínculo explícito, Conferir (ancorado em hoje) olha 30 dias para trás (E3); a linha pedida entra por id.
+            const janela = pedido ? JANELA_BAIXA : JANELA_CONFERIR
+            const candidatos = await candidatosLivro(tx, user.companyId, ar.account_id, 'CREDIT', hoje, pedido, janela)
+            const decisao = decidirBaixa({ tipo: 'CREDIT', amount, data: hoje, categoria: nomeAlvo }, pedido, candidatos, janela)
+            if ('erro' in decisao) return { erro: decisao.erro }
+
+            await liquidar()
+            if ('usar' in decisao) {
+              await ligar(decisao.usar, candidatos)
               return { ligada: true }
             }
             await tx.transaction.create({
@@ -239,6 +283,7 @@ export async function POST(req: NextRequest) {
       }
       if (resultado.pular) continue
       if (resultado.ligada) ligadas++
+      if (resultado.aviso) avisos.push({ ar: arId, motivo: resultado.aviso })
       balanceDelta += resultado.delta ?? 0
       updated++
     }
@@ -259,6 +304,7 @@ export async function POST(req: NextRequest) {
       balance_delta: balanceDelta,
       ligadas,
       erros,
+      avisos,
     })
   } catch (err) {
     return handleError(err)
