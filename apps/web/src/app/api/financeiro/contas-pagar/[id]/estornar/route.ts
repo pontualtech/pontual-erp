@@ -4,7 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import {
-  CONFLITO_BANCO, conflitoDeBanco, ContaAlterada, contasDaAP, descreverDinheiro, dinheiroDaAP, exigirTravadas, posAjuste, travarContas,
+  alocarCompensacao, CONFLITO_BANCO, conflitoDeBanco, ContaAlterada, contasDaAP, descreverDinheiro, dinheiroDaAP, exigirTravadas, travarContas,
   type LancamentoDaConta,
 } from '@/lib/financeiro/livro-baixa-db'
 
@@ -14,8 +14,8 @@ import {
  * C10 fix 22/05: estorno de AP ja paga. Espelho do estorno de AR, travas contas → AP (§7), tudo relido na tx.
  * Fix 8 (F8-A, §0): com saída lançada (linhas do banco ligadas a AP:<id>, DEBIT AP:<id> vivo) o estorno PERGUNTA —
  * sem `dinheiro`, 409 ESTORNO_PERGUNTA: 'permanece' (engano: o dinheiro continua no banco) → CREDIT AP:<id>:estorno na
- * conta de cada saída, sem desligar linhas (nocional anterior ao ajuste não — F8-B); 'devolvido' (voltou do fornecedor)
- * → só status. Sem saída: legado (paga antes de 22/05/2026, DEBIT sem bank_ref) → CREDIT pelo paid_amount na conta da
+ * conta de cada saída, sem desligar linhas, de exatamente o pago (F9-A); 'devolvido' (voltou do fornecedor) → só status,
+ * salvo a saída em conta sem extrato (Caixa), que é compensada (F9-B). Sem saída: legado (paga antes de 22/05/2026, DEBIT sem bank_ref) → CREDIT pelo paid_amount na conta da
  * AP; senão só status. PENDENTE sem valor pago → 400 'nada a estornar'. Desligar linhas só no Desfazer.
  *
  * Antes, mexer em AP paga só era possível via DELETE (soft delete) que
@@ -105,14 +105,14 @@ export async function POST(req: NextRequest, { params }: Params) {
         const compensar = new Map<string, number>()
         if (dinheiro.total > 0) {
           if (!escolha) throw new PerguntaEstorno(await descreverDinheiro(tx, user.companyId, dinheiro))
-          // 'permanece' → como em produção, CREDIT AP:<id>:estorno NA CONTA de cada saída, sem desligar linhas; nocional
-          // anterior ao ajuste não (F8-B). 'devolvido' → só status (a entrada da devolução vem pelo extrato).
-          if (escolha === 'permanece') {
-            for (const t of [...dinheiro.linhas, ...await posAjuste(tx, user.companyId, dinheiro.nocionais)]) {
-              const vivo = t.vivo ?? t.amount
-              if (vivo > 0) compensar.set(t.account_id, (compensar.get(t.account_id) ?? 0) + vivo)
-            }
-          }
+          // Fix 9 (F9-A): 'permanece' → CREDIT AP:<id>:estorno de EXATAMENTE o pago (sem valor registrado: a saída viva),
+          // posterior ao ajuste primeiro, depois o anterior, na conta de cada saída; sobra na conta da AP (como produção),
+          // sem desligar linhas. F9-B: 'devolvido' só compensa a saída de conta sem extrato (sem AJUSTE), sem sobra.
+          const { porConta, sobra } = await alocarCompensacao(
+            tx, user.companyId, [dinheiro.linhas, dinheiro.nocionais], pago > 0 ? pago : dinheiro.total, escolha === 'devolvido',
+          )
+          for (const [conta, valor] of porConta) compensar.set(conta, valor)
+          if (escolha === 'permanece' && sobra > 0 && ap.account_id) compensar.set(ap.account_id, (compensar.get(ap.account_id) ?? 0) + sobra)
         } else {
           // (c) legado: paga antes de 22/05 com conta e valor, sem nenhum lançamento próprio nem linha ligada. Fix 3/4
           // (F3-A, F4-A): conta criada antes de 22/05; updated_at antigo OU a transação legada DESTA AP — DEBIT do ERP sem

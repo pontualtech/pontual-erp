@@ -4,7 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import {
-  CONFLITO_BANCO, conflitoDeBanco, ContaAlterada, contasDaAR, descreverDinheiro, dinheiroDaAR, exigirTravadas, posAjuste, refsDaAR, travarContas,
+  alocarCompensacao, CONFLITO_BANCO, conflitoDeBanco, ContaAlterada, contasDaAR, descreverDinheiro, dinheiroDaAR, exigirTravadas, refsDaAR, travarContas,
   type LancamentoDaConta,
 } from '@/lib/financeiro/livro-baixa-db'
 
@@ -14,10 +14,11 @@ import {
  * C10 fix 22/05: estorno de AR ja recebida. Ordem de travas do §7 (contas → AR) e tudo relido dentro da tx.
  * Fix 8 (F8-A, §0): com dinheiro na conta (linhas do banco ligadas a qualquer ref dela, nocionais próprios vivos,
  * créditos do adquirente/Asaas/CNAB) o estorno PERGUNTA — sem `dinheiro` no corpo, 409 ESTORNO_PERGUNTA:
- *   'permanece' (engano/conta errada: o dinheiro continua no banco) → como em produção, DEBIT AR:<id>:estorno pelo
- *       dinheiro vivo NA CONTA de cada dinheiro, sem desligar linhas (a linha continua mostrando a origem; o par se
- *       anula); nocional anterior ao ajuste de caixa não é compensado (F8-B);
- *   'devolvido' (voltou para o cliente) → só status/valores; a saída da devolução chega pela linha do extrato.
+ *   'permanece' (engano/conta errada: o dinheiro continua no banco) → como em produção, DEBIT AR:<id>:estorno de
+ *       exatamente o recebido (F9-A), alocado no dinheiro vivo (posterior ao ajuste primeiro) NA CONTA de cada dinheiro,
+ *       sem desligar linhas (a linha continua mostrando a origem; o par se anula); sobra na conta da AR;
+ *   'devolvido' (voltou para o cliente) → só status/valores; a saída da devolução chega pela linha do extrato — salvo o
+ *       dinheiro em conta sem extrato (Caixa, sem AJUSTE), que é compensado (F9-B).
  * Sem dinheiro: legado (recebida antes de 22/05/2026, lançamento sem bank_ref) → DEBIT pelo received_amount na conta
  * da AR; senão só status/valores. PENDENTE sem valor recebido → 400 'nada a estornar'. Desligar linhas só no Desfazer.
  */
@@ -85,12 +86,17 @@ export async function POST(req: NextRequest, { params }: Params) {
         const compensar = new Map<string, number>()
         if (dinheiro.total > 0) {
           if (!escolha) throw new PerguntaEstorno(await descreverDinheiro(tx, user.companyId, dinheiro))
-          if (escolha === 'permanece') {
-            for (const t of [...dinheiro.linhas, ...await posAjuste(tx, user.companyId, dinheiro.nocionais)]) {
-              const vivo = t.vivo ?? t.amount
-              if (vivo > 0) compensar.set(t.account_id, (compensar.get(t.account_id) ?? 0) + vivo)
-            }
-          }
+          // Fix 9 (F9-A): 'permanece' compensa EXATAMENTE o recebido (sem valor registrado: o dinheiro vivo), posterior ao
+          // ajuste primeiro, depois o anterior — linhas, nocionais próprios, externos —, cada :estorno na conta do item; a
+          // sobra sem item vai para a conta da AR (como produção). F9-B: 'devolvido' só compensa o dinheiro de conta sem
+          // extrato (sem AJUSTE: a devolução nunca chega por extrato), sem sobra.
+          const proprios = dinheiro.nocionais.filter((t) => t.bank_ref === refs.proprio || t.bank_ref === refs.antecipacao)
+          const externos = dinheiro.nocionais.filter((t) => t.bank_ref !== refs.proprio && t.bank_ref !== refs.antecipacao)
+          const { porConta, sobra } = await alocarCompensacao(
+            tx, user.companyId, [dinheiro.linhas, proprios, externos], recebido > 0 ? recebido : dinheiro.total, escolha === 'devolvido',
+          )
+          for (const [conta, valor] of porConta) compensar.set(conta, valor)
+          if (escolha === 'permanece' && sobra > 0 && ar.account_id) compensar.set(ar.account_id, (compensar.get(ar.account_id) ?? 0) + sobra)
         } else {
           // (c) legado: quitada antes de 22/05 com conta e valor, sem nenhum lançamento próprio nem linha ligada.
           // Fix 3/4 (F3-A, F4-A): (ii) sem dinheiro externo (garantido aqui: dinheiro.total = 0); (iii) conta criada antes de

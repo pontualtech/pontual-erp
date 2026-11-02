@@ -117,15 +117,47 @@ export function conflitoDeBanco(e: unknown): boolean {
 // a ele — o mesmo critério do livro (creditoUsavelParaVinculo/buscarOrfao). Um SWAP só apaga nocional criado DEPOIS do
 // (último) ajuste da sua conta; conta sem ajuste → todos. Apagar o anterior descontaria o mesmo dinheiro 2x.
 export async function posAjuste<T extends { account_id: string; created_at: Date | null }>(db: any, companyId: string, lista: T[]): Promise<T[]> {
+  const limites = await limitesDeAjuste(db, companyId, lista.map((t) => t.account_id))
+  return lista.filter((t) => depoisDoAjuste(limites, t))
+}
+
+// Último AJUSTE:<conta>: de cada conta (ms). Conta sem ajuste = conta SEM extrato no livro (Caixa…): fica fora do mapa.
+async function limitesDeAjuste(db: any, companyId: string, contas: string[]): Promise<Map<string, number>> {
   const limites = new Map<string, number>()
-  for (const conta of [...new Set(lista.map((t) => t.account_id))]) {
+  for (const conta of [...new Set(contas)]) {
     const ajustes: { created_at: Date | null }[] = await db.transaction.findMany({
       where: { company_id: companyId, account_id: conta, bank_ref: { startsWith: `AJUSTE:${conta}:` } },
       select: { created_at: true },
     })
     if (ajustes.length > 0) limites.set(conta, Math.max(...ajustes.map((a) => a.created_at?.getTime() ?? 0)))
   }
-  return lista.filter((t) => !limites.has(t.account_id) || (t.created_at?.getTime() ?? 0) > (limites.get(t.account_id) as number))
+  return limites
+}
+const depoisDoAjuste = (limites: Map<string, number>, t: { account_id: string; created_at?: Date | null }) =>
+  !limites.has(t.account_id) || (t.created_at ? new Date(t.created_at).getTime() : 0) > (limites.get(t.account_id) as number)
+
+// Fix 9 (F9-A, F9-B): a compensação do estorno. Aloca `valor` sobre o dinheiro vivo — primeiro o posterior ao ajuste de
+// caixa da conta, depois o anterior; em cada fase, na ordem dos `grupos` (linhas ligadas, nocionais próprios, externos).
+// `soSemExtrato` ('devolvido'): só o dinheiro de conta sem AJUSTE (a devolução nunca chega por extrato). Devolve o valor
+// por conta (cada :estorno na conta do item compensado) e a `sobra` sem item.
+export interface DinheiroDaConta { account_id: string; created_at?: Date | null; amount: number; vivo?: number }
+export async function alocarCompensacao(
+  db: any, companyId: string, grupos: DinheiroDaConta[][], valor: number, soSemExtrato = false,
+): Promise<{ porConta: Map<string, number>; sobra: number }> {
+  const limites = await limitesDeAjuste(db, companyId, grupos.flat().map((t) => t.account_id))
+  const porConta = new Map<string, number>()
+  let resta = Math.max(0, valor)
+  for (const posterior of [true, false]) {
+    for (const t of grupos.flat()) {
+      if (resta <= 0) break
+      if (depoisDoAjuste(limites, t) !== posterior || (soSemExtrato && limites.has(t.account_id))) continue
+      const parte = Math.min(resta, t.vivo ?? t.amount)
+      if (parte <= 0) continue
+      porConta.set(t.account_id, (porConta.get(t.account_id) ?? 0) + parte)
+      resta -= parte
+    }
+  }
+  return { porConta, sobra: resta }
 }
 
 // Toda conta que a rota vai escrever precisa estar entre as travadas; senão desfaz (ContaAlterada).
@@ -166,7 +198,7 @@ export const refsLigadasAR = (r: RefsAR) => [r.proprio, r.antecipacao, ...r.exte
 // antes de lançar. `total` = soma; `conta` = conta do primeiro lançamento achado (para a conta que não tem uma).
 // `vivo` (fix 8, F8-A) = o que sobra do lançamento depois dos :estorno e das reversões — o que o estorno 'permanece' compensa.
 export interface Lancado { id: string; amount: number; account_id: string; bank_ref: string | null; source_text: string | null; created_at: Date | null; vivo?: number }
-export interface DinheiroLancado { linhas: { id: string; amount: number; account_id: string; vivo?: number }[]; nocionais: Lancado[]; total: number; conta: string | null }
+export interface DinheiroLancado { linhas: { id: string; amount: number; account_id: string; vivo?: number; created_at?: Date | null }[]; nocionais: Lancado[]; total: number; conta: string | null }
 const SELECT_LANCADO = { id: true, amount: true, account_id: true, bank_ref: true, source_text: true, created_at: true } as const
 const resumir = (linhas: DinheiroLancado['linhas'], nocionais: Lancado[]): DinheiroLancado => ({
   linhas, nocionais,
@@ -257,7 +289,7 @@ export async function dinheiroDaAR(db: any, companyId: string, ar: { id: string;
   for (const [casa, rev] of abatimentos) abater(comp.vivos.filter(casa), rev)
   const linhasVivas = comp.vivos.filter((t) => t._l) as unknown as DinheiroLancado['linhas']
   const nocionais = (comp.vivos.filter((t) => !t._l) as unknown as (Lancado & { _l?: true })[]).map(({ _l, ...t }) => t)
-  const resumo = resumir(linhasVivas.map(({ id, amount, account_id, vivo }) => ({ id, amount, account_id, vivo })), nocionais)
+  const resumo = resumir(linhasVivas.map(({ id, amount, account_id, vivo, created_at }) => ({ id, amount, account_id, vivo, created_at })), nocionais)
   return { refs, ...resumo, total: Math.max(0, resumo.total - descontar - comp.parcial) }
 }
 
@@ -277,7 +309,7 @@ export async function dinheiroDaAP(db: any, companyId: string, apId: string): Pr
   })
   const comp = descontarEstornos<ComCriacao & { _l?: true }>([...linhas.map((l: any) => ({ ...l, _l: true as const })), ...lancados], estornos)
   const r = resumir(
-    (comp.vivos.filter((t) => t._l) as unknown as DinheiroLancado['linhas']).map(({ id, amount, account_id, vivo }) => ({ id, amount, account_id, vivo })),
+    (comp.vivos.filter((t) => t._l) as unknown as DinheiroLancado['linhas']).map(({ id, amount, account_id, vivo, created_at }) => ({ id, amount, account_id, vivo, created_at })),
     (comp.vivos.filter((t) => !t._l) as unknown as (Lancado & { _l?: true })[]).map(({ _l, ...t }) => t),
   )
   return { ...r, total: Math.max(0, r.total - comp.parcial) }

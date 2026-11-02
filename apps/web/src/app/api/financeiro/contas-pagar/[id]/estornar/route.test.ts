@@ -283,7 +283,8 @@ describe('F8-A (§0, espelho na AP): o estorno PERGUNTA se o dinheiro voltou do 
     expect(ap().status).toBe('PAGO')
   })
 
-  it("'devolvido' → só status (a entrada da devolução vem pelo extrato)", async () => {
+  it("'devolvido' em conta com extrato (AJUSTE) → só status (a entrada da devolução vem pelo extrato)", async () => {
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 0, origin: 'AJUSTE', bank_ref: `AJUSTE:${ACC}:2026-10-29`, created_at: new Date('2026-10-30T10:00:00Z') })
     banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 5000, total_amount: 5000 })
     banco.transacao({ id: 'L', account_id: ACC, transaction_type: 'DEBIT', amount: 5000, origin: 'BANCO', bank_ref: 'K', source_text: 'PGTO', linked_ref: 'AP:p1' })
     expect((await est('p1', { dinheiro: 'devolvido' })).status).toBe(200)
@@ -292,3 +293,54 @@ describe('F8-A (§0, espelho na AP): o estorno PERGUNTA se o dinheiro voltou do 
     expect(ap().status).toBe('PENDENTE')
   })
 })
+
+describe('F9-A/F9-B (espelho na AP)', () => {
+  const CORTE = '2026-10-29'
+  const CAIXA = '33333333-3333-4333-8333-333333333333'
+  const ajuste = (conta: string) => banco.transacao({ account_id: conta, transaction_type: 'CREDIT', amount: 0, origin: 'AJUSTE', bank_ref: `AJUSTE:${conta}:${CORTE}`, created_at: new Date('2026-10-30T10:00:00Z'), transaction_date: dia(CORTE) })
+
+  it("F9-A: só DEBIT anterior ao ajuste (Pagar 28/10, ajuste 30/10) → 'permanece' compensa X → Pagar de outra AP X → saldo = banco", async () => {
+    banco.tabelas.account[0].current_balance = -20000 // banco: 100000 − o boleto de 1200 (já no ajuste)
+    banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 120000, total_amount: 120000, description: 'Boleto A' })
+    banco.ap({ id: 'p2', status: 'PENDENTE', total_amount: 120000, description: 'Boleto B' })
+    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 120000, bank_ref: 'AP:p1', created_at: new Date('2026-10-28T15:00:00Z') })
+    ajuste(ACC)
+    expect((await est('p1', { dinheiro: 'permanece' })).status).toBe(200)
+    expect(doAP('p1').filter((t) => t.bank_ref === 'AP:p1:estorno')).toEqual([expect.objectContaining({ account_id: ACC, amount: 120000, transaction_type: 'CREDIT' })])
+    expect((await pagar(new NextRequest('http://x/api', json({ paid_amount: 120000, account_id: ACC, paid_at: '2026-11-03' })), { params: { id: 'p2' } })).status).toBe(200)
+    expect(banco.saldo(ACC)).toBe(-20000)
+  })
+
+  it("F9-A: linha posterior + DEBIT anterior ao ajuste na mesma AP → compensa o pago UMA vez, na conta da linha", async () => {
+    banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 120000, total_amount: 120000 })
+    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 120000, bank_ref: 'AP:p1', created_at: new Date('2026-10-28T15:00:00Z') })
+    ajuste(ACC)
+    ajuste(ACC2)
+    banco.transacao({ account_id: ACC2, transaction_type: 'DEBIT', amount: 120000, origin: 'BANCO', bank_ref: 'K', source_text: 'BOLETO', linked_ref: 'AP:p1' })
+    expect((await est('p1', { dinheiro: 'permanece' })).status).toBe(200)
+    expect(doAP('p1').filter((t) => t.bank_ref === 'AP:p1:estorno')).toEqual([expect.objectContaining({ account_id: ACC2, amount: 120000 })])
+  })
+
+  it("F9-A: pago maior que a saída lançada → 'permanece' compensa o pago: a saída na conta dela e a sobra na conta da AP", async () => {
+    banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 5000, total_amount: 5000 })
+    banco.transacao({ account_id: ACC2, transaction_type: 'DEBIT', amount: 3000, bank_ref: 'AP:p1' })
+    expect((await est('p1', { dinheiro: 'permanece' })).status).toBe(200)
+    expect(doAP('p1').filter((t) => t.bank_ref === 'AP:p1:estorno').map((t) => [t.account_id, t.amount]).sort()).toEqual([[ACC, 2000], [ACC2, 3000]].sort())
+  })
+
+  it("F9-B: AP paga pelo Caixa → 'devolvido' → CREDIT :estorno no Caixa; paga no Itaú (com extrato) → nada", async () => {
+    banco.conta({ id: CAIXA, name: 'Caixa', current_balance: -5000 })
+    banco.ap({ id: 'p1', status: 'PAGO', account_id: CAIXA, paid_amount: 5000, total_amount: 5000 })
+    banco.transacao({ account_id: CAIXA, transaction_type: 'DEBIT', amount: 5000, bank_ref: 'AP:p1' })
+    expect((await est('p1', { dinheiro: 'devolvido' })).status).toBe(200)
+    expect(doAP('p1').filter((t) => t.bank_ref === 'AP:p1:estorno')).toEqual([expect.objectContaining({ account_id: CAIXA, amount: 5000, transaction_type: 'CREDIT' })])
+    expect(banco.saldo(CAIXA)).toBe(0)
+
+    ajuste(ACC)
+    banco.ap({ id: 'p2', status: 'PAGO', account_id: ACC, paid_amount: 5000, total_amount: 5000 })
+    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 5000, bank_ref: 'AP:p2' })
+    expect((await est('p2', { dinheiro: 'devolvido' })).status).toBe(200)
+    expect(doAP('p2').filter((t) => t.bank_ref === 'AP:p2:estorno')).toEqual([])
+  })
+})
+
