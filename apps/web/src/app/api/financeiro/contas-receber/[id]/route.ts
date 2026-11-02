@@ -4,7 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { z } from 'zod'
-import { ContaAlterada, travarContas } from '@/lib/financeiro/livro-baixa-db'
+import { ContaAlterada, refsDaAR, refsLigadasAR, travarContas } from '@/lib/financeiro/livro-baixa-db'
 import { isReceivableSettled } from '@/lib/finance/receivable-status'
 
 type Params = { params: { id: string } }
@@ -218,19 +218,32 @@ export async function DELETE(req: NextRequest, { params }: Params) {
         return { status: 409, erro: 'Esta conta está recebida. Estorne o recebimento antes de excluir (botão Estornar) para reverter o lançamento bancário.' }
       }
 
+      // Onda 4 (fix 1.4, #15): o dinheiro desta conta inclui também os créditos dos Payments (pay_…, acquirer:…) e do
+      // CNAB (cnab:<nossoNumero>); compensam o :estorno e a devolução do próprio Asaas (<pay>-refund / -chargeback).
+      const refs = await refsDaAR(tx, user.companyId, existing)
+      const devolucoesAsaas = refs.pagamentos
+        .filter((p) => p.provider === 'asaas' && p.external_id)
+        .flatMap((p) => [`${p.external_id}-refund`, `${p.external_id}-chargeback`])
+      const creditos = new Set([refs.proprio, refs.antecipacao, ...refs.externos])
+      const compensacoes = new Set([refs.estorno, ...devolucoesAsaas])
       const proprias = await tx.transaction.findMany({
-        where: { company_id: user.companyId, bank_ref: { in: [`AR:${params.id}`, `AR:${params.id}:anticipation`, `AR:${params.id}:estorno`] } },
+        where: { company_id: user.companyId, bank_ref: { in: [...creditos, ...compensacoes] } },
         select: { amount: true, transaction_type: true, bank_ref: true },
       })
       // Combinação inesperada (sinal 0) não dá para afirmar que se anula → bloqueia.
       const sinal = (t: { transaction_type: string; bank_ref: string | null }) =>
-        t.transaction_type === 'CREDIT' && (t.bank_ref === `AR:${params.id}` || t.bank_ref === `AR:${params.id}:anticipation`) ? 1
-          : t.transaction_type === 'DEBIT' && t.bank_ref === `AR:${params.id}:estorno` ? -1 : 0
-      const liquido = proprias.reduce((soma, t) => soma + sinal(t) * t.amount, 0)
+        t.transaction_type === 'CREDIT' && creditos.has(t.bank_ref ?? '') ? 1
+          : t.transaction_type === 'DEBIT' && compensacoes.has(t.bank_ref ?? '') ? -1 : 0
+      let liquido = proprias.reduce((soma, t) => soma + sinal(t) * t.amount, 0)
+      // #15: a compensação existe e não há CREDIT AR:<id> — o estorno (antigo) compensou um crédito real de outra origem
+      // (adquirente, Asaas, CNAB, baixa sem bank_ref): a conta está estornada.
+      const temCreditoProprio = proprias.some((t) => t.transaction_type === 'CREDIT' && t.bank_ref === refs.proprio)
+      if (liquido !== 0 && proprias.some((t) => sinal(t) === -1) && !temCreditoProprio) liquido = 0
       if (proprias.some((t) => sinal(t) === 0) || liquido !== 0) return { status: 409, erro: 'há lançamentos financeiros desta conta; estorne antes de excluir' }
-      // Onda 4: o crédito da antecipação convertido pelo livro também é dinheiro do banco ligado a esta conta.
+      // Linha do banco que representa o dinheiro desta conta (baixa ou nocional convertido pelo livro, inclusive
+      // antecipação, adquirente, Asaas e CNAB): o estorno a desliga antes.
       const ligada = await tx.transaction.findFirst({
-        where: { company_id: user.companyId, linked_ref: { in: [`AR:${params.id}`, `AR:${params.id}:anticipation`] } },
+        where: { company_id: user.companyId, linked_ref: { in: refsLigadasAR(refs) } },
         select: { id: true },
       })
       if (ligada) return { status: 409, erro: 'Há lançamento do banco ligado; estorne antes de excluir.' }

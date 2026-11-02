@@ -187,7 +187,11 @@ export async function DELETE(req: NextRequest, { params }: Params) {
       const sinal = (t: { transaction_type: string; bank_ref: string | null }) =>
         t.transaction_type === 'DEBIT' && t.bank_ref === `AP:${params.id}` ? 1
           : t.transaction_type === 'CREDIT' && t.bank_ref === `AP:${params.id}:estorno` ? -1 : 0
-      const liquido = proprias.reduce((soma, t) => soma + sinal(t) * t.amount, 0)
+      let liquido = proprias.reduce((soma, t) => soma + sinal(t) * t.amount, 0)
+      // Onda 4 (fix 1.4, #15): há CREDIT AP:<id>:estorno e nenhum DEBIT AP:<id> — o estorno (antigo) compensou uma saída
+      // de outra origem (baixa sem bank_ref): a conta está estornada.
+      const temDebitoProprio = proprias.some((t) => t.transaction_type === 'DEBIT' && t.bank_ref === `AP:${params.id}`)
+      if (liquido !== 0 && proprias.some((t) => sinal(t) === -1) && !temDebitoProprio) liquido = 0
       if (proprias.some((t) => sinal(t) === 0) || liquido !== 0) return { status: 409, erro: 'há lançamentos financeiros desta conta; estorne antes de excluir' }
       const ligada = await tx.transaction.findFirst({
         where: { company_id: user.companyId, linked_ref: `AP:${params.id}` },

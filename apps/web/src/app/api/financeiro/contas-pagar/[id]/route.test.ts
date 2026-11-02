@@ -89,3 +89,20 @@ describe('§7/G2: trava conta → AP e decide pela releitura', () => {
     expect(r.j.error).toBe('conta alterada — repita')
   })
 })
+
+describe('fix 1.4 (#15, espelho na AP)', () => {
+  it('estornada antes do branch (só CREDIT AP:id:estorno, sem DEBIT AP:id): exclui (200)', async () => {
+    banco.ap({ ...AP, paid_amount: 0 })
+    t('AP:p1:estorno', 'CREDIT', 2000)
+    expect((await excluir()).status).toBe(200)
+    expect(ap().deleted_at).toBeInstanceOf(Date)
+  })
+
+  it('com DEBIT AP:id ainda vivo o estorno parcial não basta: 409', async () => {
+    banco.ap({ ...AP, paid_amount: 0 })
+    t('AP:p1', 'DEBIT', 2000)
+    t('AP:p1:estorno', 'CREDIT', 1000)
+    expect((await excluir()).j.error).toBe(PROPRIOS)
+  })
+})
+

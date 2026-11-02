@@ -125,3 +125,63 @@ describe('§7/G2: trava conta → AR e decide pela releitura', () => {
     expect(ar().deleted_at).toBeNull()
   })
 })
+
+describe('fix 1.4 (#15): o dinheiro da AR inclui Payments (pay_/acquirer:) e CNAB; estornada antes do branch pode ser excluída', () => {
+  const linha = (linked_ref: string) => banco.transacao({ account_id: 'acc1', origin: 'BANCO', bank_ref: 'K', transaction_type: 'CREDIT', amount: 14500, linked_ref })
+
+  it('#15: estornada antes do branch (só DEBIT AR:id:estorno, sem CREDIT AR:id): exclui (200)', async () => {
+    banco.ar({ ...AR, received_amount: 0 })
+    t('AR:r1:estorno', 'DEBIT', 15000)
+    expect((await excluir()).status).toBe(200)
+    expect(ar().deleted_at).toBeInstanceOf(Date)
+  })
+
+  it('#15: recebida pela maquininha e estornada antes do branch (CREDIT acquirer − DEBIT :estorno do bruto): exclui', async () => {
+    banco.ar({ ...AR, received_amount: 0 })
+    banco.pagamento({ receivable_id: 'r1', provider: 'rede', external_id: 'N1' })
+    t('acquirer:rede:N1', 'CREDIT', 14500)
+    t('AR:r1:estorno', 'DEBIT', 15000)
+    expect((await excluir()).status).toBe(200)
+  })
+
+  it('crédito do adquirente / do CNAB ainda não compensado é dinheiro da conta: 409 (antes excluía e deixava o crédito órfão)', async () => {
+    banco.ar({ ...AR, received_amount: 0, pix_code: JSON.stringify({ nossoNumero: '123' }) })
+    banco.pagamento({ receivable_id: 'r1', provider: 'rede', external_id: 'N1' })
+    t('acquirer:rede:N1', 'CREDIT', 14500)
+    expect((await excluir()).j.error).toBe(PROPRIOS)
+    banco.reset(); banco.conta({ id: 'acc1' })
+    banco.ar({ ...AR, received_amount: 0, pix_code: JSON.stringify({ nossoNumero: '123' }) })
+    t('cnab:123', 'CREDIT', 15000)
+    expect((await excluir()).j.error).toBe(PROPRIOS)
+  })
+
+  it('linha BANCO convertida do adquirente / Asaas / CNAB conta como ligada: 409 com o texto da linha ligada', async () => {
+    for (const [ref, preparar] of [
+      ['acquirer:rede:N1', () => banco.pagamento({ receivable_id: 'r1', provider: 'rede', external_id: 'N1' })],
+      ['pay_1', () => banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_1' })],
+      ['cnab:123', () => undefined],
+    ] as const) {
+      banco.reset(); banco.conta({ id: 'acc1' })
+      banco.ar({ ...AR, received_amount: 0, pix_code: JSON.stringify({ nossoNumero: '123' }) })
+      preparar()
+      linha(ref)
+      expect((await excluir()).j.error).toBe(LIGADA)
+    }
+  })
+
+  it('cobrança Asaas devolvida (CREDIT pay_ líquido − DEBIT pay_-refund bruto): o estorno do próprio Asaas compensa → exclui', async () => {
+    banco.ar({ ...AR, received_amount: 0 })
+    banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_1' })
+    t('pay_1', 'CREDIT', 9700)
+    t('pay_1-refund', 'DEBIT', 10000)
+    expect((await excluir()).status).toBe(200)
+  })
+
+  it('com CREDIT AR:id ainda vivo o estorno parcial não basta: 409', async () => {
+    banco.ar({ ...AR, received_amount: 0 })
+    t('AR:r1', 'CREDIT', 5000)
+    t('AR:r1:estorno', 'DEBIT', 3000)
+    expect((await excluir()).j.error).toBe(PROPRIOS)
+  })
+})
+
