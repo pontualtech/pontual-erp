@@ -5,8 +5,9 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { refsCreditoAdquirente } from '@/lib/acquirer/match-rules'
-import { categoriaAoDesligar, decidirBaixa, JANELA_BAIXA, JANELA_CONFERIR, recebeCategoria } from '@/lib/financeiro/livro-baixa'
-import { candidatosLivro, categoriaId, hojeSP, nomeCategoria } from '@/lib/financeiro/livro-baixa-db'
+import { decidirBaixa, JANELA_BAIXA, JANELA_CONFERIR, recebeCategoria } from '@/lib/financeiro/livro-baixa'
+import { candidatosLivro, desligarLinhas, hojeSP, nomeCategoria, SELECT_LINHA_LIGADA } from '@/lib/financeiro/livro-baixa-db'
+import { compensado } from '@/lib/financeiro/livro'
 import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
 import { CATEGORIA_RECEITA_SERVICOS } from '@/lib/financeiro/livro-categorias'
 
@@ -84,9 +85,11 @@ export async function POST(req: NextRequest) {
           await tx.$queryRaw`SELECT id FROM accounts_receivable WHERE id = ${arId} AND company_id = ${user.companyId} FOR UPDATE`
           const ar = await tx.accountReceivable.findFirst({
             where: { id: arId, company_id: user.companyId, deleted_at: null },
-            select: { id: true, account_id: true, received_amount: true, total_amount: true, status: true, description: true, category_id: true },
+            select: { id: true, account_id: true, received_amount: true, total_amount: true, status: true, description: true, category_id: true, reconciled: true },
           })
           if (!ar) return { erro: 'conta a receber não encontrada' }
+          // Onda 4 (§4): Desfazer só desfaz conta conferida — AR estornada/PENDENTE (#8) não perde crédito nem saldo.
+          if (!reconciled && ar.reconciled !== true && ar.status !== 'LIQUIDADO') return { erro: 'conta não conferida' }
           // Conferir exige conta recebida (PAGO = status legado de recebida): PENDENTE não vira LIQUIDADO nem ganha crédito.
           if (reconciled && ar.status !== 'RECEBIDO' && ar.status !== 'LIQUIDADO' && ar.status !== 'PAGO') return { erro: 'conta não recebida' }
 
@@ -194,35 +197,37 @@ export async function POST(req: NextRequest) {
             return { delta: amount }
           }
 
-          // LIQUIDADO → RECEBIDO: reverte Transaction + decrementa saldo. Relido com a AR travada (E1).
-          const t = await tx.transaction.findFirst({
-            where: { company_id: user.companyId, OR: [{ bank_ref: `AR:${ar.id}` }, { linked_ref: `AR:${ar.id}` }] },
+          // LIQUIDADO → RECEBIDO (onda 4 §4), relido com a AR travada: as linhas do banco ligadas à AR são DESLIGADAS
+          // (sem apagar nem mexer no saldo) e TODOS os créditos nocionais AR:id ainda vivos são apagados com o saldo;
+          // o já compensado por um :estorno fica (o par se anula). Crédito com o marcador antigo LIGADA: é dinheiro do banco.
+          const ligadas = await tx.transaction.findMany({
+            where: { company_id: user.companyId, origin: 'BANCO', linked_ref: `AR:${ar.id}` },
+            select: SELECT_LINHA_LIGADA,
           })
+          const creditos = await tx.transaction.findMany({
+            where: { company_id: user.companyId, bank_ref: `AR:${ar.id}`, transaction_type: 'CREDIT', origin: null, source_text: null },
+            select: { id: true, amount: true, account_id: true, created_at: true },
+          })
+          const estornos = await tx.transaction.findMany({
+            where: { company_id: user.companyId, bank_ref: `AR:${ar.id}:estorno` },
+            select: { account_id: true, created_at: true },
+          })
+          const vivos = creditos.filter((c) => !compensado(c, estornos))
           await tx.accountReceivable.update({
             where: { id: ar.id, company_id: user.companyId },
             data: { reconciled: false, status: 'RECEBIDO', updated_at: new Date() },
           })
-          if (t && t.linked_ref === `AR:${ar.id}`) {
-            // Lançamento do livro ligado: só desliga (volta ao fallback se a categoria veio da baixa), sem apagar nem mexer no saldo.
-            const fallback = await categoriaId(tx, user.companyId, 'Receita a identificar')
-            const daBaixa = ar.category_id ?? await categoriaReceitaPadraoId(tx, user.companyId)
-            await tx.transaction.update({
-              where: { id: t.id },
-              data: { linked_ref: null, category_id: categoriaAoDesligar(t.category_id, daBaixa, fallback), description: t.source_text ?? t.description },
-            })
-            return {}
-          }
-          // Onda 3 (E2): crédito AR:id LIGADO pelo livro a uma linha do banco (source_text 'LIGADA:…') é o dinheiro
-          // que entrou de verdade — não apaga nem mexe no saldo; só volta o status.
-          if (t && !t.source_text?.startsWith('LIGADA:')) {
-            await tx.transaction.delete({ where: { id: t.id } })
+          await desligarLinhas(tx, user.companyId, ligadas)
+          let delta = 0
+          for (const c of vivos) {
+            await tx.transaction.delete({ where: { id: c.id } })
             await tx.account.update({
-              where: { id: t.account_id },
-              data: { current_balance: { decrement: t.amount }, updated_at: new Date() },
+              where: { id: c.account_id },
+              data: { current_balance: { decrement: c.amount }, updated_at: new Date() },
             })
-            return { delta: -t.amount }
+            delta -= c.amount
           }
-          return {}
+          return { delta }
         })
       } catch (e) {
         if (!(e instanceof LivroJaLigado)) throw e

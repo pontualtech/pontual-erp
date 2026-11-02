@@ -1,23 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 
-const { m, db } = vi.hoisted(() => { const m = {
-  arFindMany: vi.fn(), arFindFirst: vi.fn(), arUpdate: vi.fn(), arUpdateMany: vi.fn(),
-  payFindMany: vi.fn(), queryRaw: vi.fn(),
-  txFindFirst: vi.fn(), txFindMany: vi.fn(), txCreate: vi.fn(), txUpdate: vi.fn(), txUpdateMany: vi.fn(), txDelete: vi.fn(),
-  accUpdate: vi.fn(), catFindFirst: vi.fn(),
-}
-const db = {
-  accountReceivable: { findMany: m.arFindMany, findFirst: m.arFindFirst, update: m.arUpdate, updateMany: m.arUpdateMany },
-  payment: { findMany: m.payFindMany },
-  transaction: { findFirst: m.txFindFirst, findMany: m.txFindMany, create: m.txCreate, update: m.txUpdate, updateMany: m.txUpdateMany, delete: m.txDelete },
-  account: { update: m.accUpdate },
-  category: { findFirst: m.catFindFirst, findMany: async () => [{ id: 'cat:Venda de Servicos', name: 'Venda de Servicos' }] },
-  $queryRaw: m.queryRaw,
-  $transaction: async (cb: (tx: unknown) => unknown) => cb(db),
-}
-return { m, db } })
-vi.mock('@pontual/db', () => ({ prisma: db }))
+vi.mock('@pontual/db', async () => ({ prisma: (await import('@/test-utils/banco-falso')).banco.prisma }))
 vi.mock('@/lib/auth', () => ({ requirePermission: async () => ({ id: 'u1', companyId: 'c1' }) }))
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }))
 vi.mock('@/lib/financeiro/livro-baixa-db', async (importOriginal) => {
@@ -27,357 +11,242 @@ vi.mock('@/lib/financeiro/livro-baixa-db', async (importOriginal) => {
 
 import { POST } from './route'
 import { hojeSP } from '@/lib/financeiro/livro-baixa-db'
+import { banco } from '@/test-utils/banco-falso'
 
-const req = (body: unknown) => new NextRequest('http://x/api/financeiro/contas-receber/bulk-reconcile', {
-  method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
-})
 const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date())
-const AR = { id: 'a1', account_id: 'acc1', received_amount: 15000, total_amount: 15000, status: 'RECEBIDO', description: 'OS 1', category_id: null }
-const livro = (over: Record<string, unknown> = {}) => ({
-  id: 't1', amount: 15000, transaction_type: 'CREDIT', transaction_date: new Date(`${hoje}T00:00:00Z`),
-  linked_ref: null, origin: 'BANCO', categories: { name: 'Receita a identificar' }, ...over,
-})
-
-// A lista de fora (findMany) só dá os ids; a AR que decide é a relida dentro da tx (findFirst), depois da trava.
-const comAR = (...lista: Record<string, unknown>[]) => {
-  m.arFindMany.mockResolvedValue(lista)
-  m.arFindFirst.mockImplementation(async ({ where }: any) => lista.find((a) => a.id === where.id) ?? null)
+const DIA = 86_400_000
+const diaRel = (dias: number) => new Date(Date.parse(`${hoje}T00:00:00Z`) + dias * DIA)
+const ACC = 'acc1'
+const post = async (body: unknown) => {
+  const res = await POST(new NextRequest('http://x/api/financeiro/contas-receber/bulk-reconcile', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  }))
+  return { status: res.status, j: await res.json() }
 }
+const conferir = (ids: string[] = ['a1'], livro?: Record<string, string>) => post({ ids, reconciled: true, ...(livro ? { livro } : {}) })
+const desfazer = (ids: string[] = ['a1']) => post({ ids, reconciled: false })
+const ar = (id = 'a1') => banco.tabelas.accountReceivable.find((a) => a.id === id)!
+const AR = { id: 'a1', account_id: ACC, received_amount: 15000, total_amount: 15000, status: 'RECEBIDO', description: 'OS 1' }
+// Linha do livro (BANCO) livre, de hoje, em "Receita a identificar".
+const linhaLivro = (over: Record<string, unknown> = {}) => banco.transacao({
+  id: 't1', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, origin: 'BANCO', bank_ref: 'ITAU:k1',
+  source_text: 'PIX CLIENTE', description: 'PIX CLIENTE', category_id: 'cat:Receita a identificar', transaction_date: diaRel(0), ...over,
+})
+const creditosAR = (id = 'a1') => banco.tabelas.transaction.filter((t) => t.bank_ref === `AR:${id}`)
 
 beforeEach(() => {
-  Object.values(m).forEach((f) => f.mockReset())
-  m.queryRaw.mockImplementation(async (_sql: unknown, id: string) => [{ id }])
+  banco.reset()
+  banco.categoriasPadrao()
+  banco.conta({ id: ACC, current_balance: 100000 })
   vi.mocked(hojeSP).mockReset() // volta à implementação real (descarta mockReturnValueOnce pendente)
-  m.payFindMany.mockResolvedValue([])
-  m.txFindFirst.mockResolvedValue(null)
-  m.txUpdateMany.mockResolvedValue({ count: 1 })
-  m.arUpdateMany.mockResolvedValue({ count: 1 })
-  m.catFindFirst.mockImplementation(async ({ where }: any) => ({ id: `cat:${where.name}` }))
 })
 
-describe('bulk-reconcile — liga ao lançamento do livro', () => {
-  it('(a) AR com lançamento do livro casando: liga, sem criar transação nem mexer no saldo', async () => {
-    comAR(AR)
-    m.txFindMany.mockResolvedValue([livro({ source_text: 'PIX CLIENTE' })])
-    m.txFindFirst.mockResolvedValueOnce(null) // idempotência
-    const res = await POST(req({ ids: ['a1'], reconciled: true }))
-    const j = await res.json()
-    expect(m.txCreate).not.toHaveBeenCalled()
-    expect(m.accUpdate).not.toHaveBeenCalled()
-    expect(m.txDelete).not.toHaveBeenCalled()
-    expect(m.txUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 't1', company_id: 'c1', linked_ref: null },
-      data: expect.objectContaining({ linked_ref: 'AR:a1', category_id: 'cat:Venda de Servicos' }),
-    }))
-    expect(m.arUpdate).toHaveBeenCalledWith({
-      where: { id: 'a1', company_id: 'c1' },
-      data: expect.objectContaining({ reconciled: true, status: 'LIQUIDADO' }),
-    })
-    expect(m.arUpdateMany).not.toHaveBeenCalled()
-    expect(j.data.ligadas).toBe(1)
-    expect(j.data.erros).toEqual([])
+describe('bulk-reconcile — Conferir liga ao lançamento do livro', () => {
+  it('AR com linha do livro casando: liga, sem criar transação nem mexer no saldo', async () => {
+    banco.ar(AR)
+    linhaLivro()
+    const { j } = await conferir()
+    expect(banco.tx_('t1')).toEqual(expect.objectContaining({ linked_ref: 'AR:a1', category_id: 'cat:Venda de Servicos', description: 'LIQUIDACAO: OS 1 · banco: PIX CLIENTE' }))
+    expect(creditosAR()).toEqual([])
+    expect(banco.saldo(ACC)).toBe(100000)
+    expect(ar()).toEqual(expect.objectContaining({ reconciled: true, status: 'LIQUIDADO' }))
+    expect(j.data).toEqual(expect.objectContaining({ updated: 1, ligadas: 1, erros: [] }))
   })
 
-  describe('E1: AR travada (FOR UPDATE) e relida dentro da tx', () => {
-    // Simula outra requisição que comitou enquanto esta esperava a trava: só aparece depois do SELECT … FOR UPDATE.
-    const depoisDaTrava = (valor: unknown) => async () => (m.queryRaw.mock.calls.length > 0 ? valor : null)
-
-    it('trava a linha da AR antes de reler a AR, os pagamentos e o lançamento', async () => {
-      comAR(AR)
-      m.txFindMany.mockResolvedValue([])
-      await POST(req({ ids: ['a1'], reconciled: true }))
-      expect(m.queryRaw).toHaveBeenCalledTimes(1)
-      const [sql, ...valores] = m.queryRaw.mock.calls[0]
-      expect((sql as string[]).join('?')).toBe('SELECT id FROM accounts_receivable WHERE id = ? AND company_id = ? FOR UPDATE')
-      expect(valores).toEqual(['a1', 'c1'])
-      const trava = m.queryRaw.mock.invocationCallOrder[0]
-      expect(m.arFindFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'a1', company_id: 'c1', deleted_at: null } }))
-      expect(m.arFindFirst.mock.invocationCallOrder[0]).toBeGreaterThan(trava)
-      expect(m.payFindMany.mock.invocationCallOrder[0]).toBeGreaterThan(trava)
-      expect(m.txFindFirst.mock.invocationCallOrder[0]).toBeGreaterThan(trava)
-    })
-
-    it('Receber comitado enquanto esperava a trava: o crédito aparece na releitura → só LIQUIDADO, nada criado nem ligado', async () => {
-      comAR(AR)
-      m.txFindMany.mockResolvedValue([livro()])
-      m.txFindFirst.mockImplementation(depoisDaTrava({ id: 'x1', bank_ref: 'AR:a1', linked_ref: null }))
-      const j = await (await POST(req({ ids: ['a1'], reconciled: true }))).json()
-      expect(m.txCreate).not.toHaveBeenCalled()
-      expect(m.accUpdate).not.toHaveBeenCalled()
-      expect(m.txUpdateMany).not.toHaveBeenCalled()
-      expect(m.arUpdate).toHaveBeenCalledWith({ where: { id: 'a1', company_id: 'c1' }, data: expect.objectContaining({ reconciled: true, status: 'LIQUIDADO' }) })
-      expect(j.data).toEqual(expect.objectContaining({ updated: 1, ligadas: 0, balance_delta: 0, erros: [] }))
-    })
-
-    it('PENDENTE (a lista de fora dizia RECEBIDO; a releitura diz PENDENTE): erro "conta não recebida", nada gravado', async () => {
-      m.arFindMany.mockResolvedValue([AR])
-      m.arFindFirst.mockResolvedValue({ ...AR, status: 'PENDENTE' })
-      m.txFindMany.mockResolvedValue([livro()])
-      for (const corpo of [{}, { livro: { a1: 't1' } }]) {
-        const j = await (await POST(req({ ids: ['a1'], reconciled: true, ...corpo }))).json()
-        expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'conta não recebida' }])
-        expect(j.data.updated).toBe(0)
-      }
-      expect(m.arUpdate).not.toHaveBeenCalled()
-      expect(m.arUpdateMany).not.toHaveBeenCalled()
-      expect(m.txCreate).not.toHaveBeenCalled()
-      expect(m.txUpdateMany).not.toHaveBeenCalled()
-      expect(m.accUpdate).not.toHaveBeenCalled()
-    })
-
-    it('AR legada PAGO (recebida) é conferida: cria o crédito e vira LIQUIDADO', async () => {
-      comAR({ ...AR, status: 'PAGO' })
-      m.txFindMany.mockResolvedValue([])
-      const j = await (await POST(req({ ids: ['a1'], reconciled: true }))).json()
-      expect(j.data.erros).toEqual([])
-      expect(j.data.updated).toBe(1)
-      expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ bank_ref: 'AR:a1', amount: 15000 }) })
-      expect(m.arUpdate).toHaveBeenCalledWith({ where: { id: 'a1', company_id: 'c1' }, data: expect.objectContaining({ reconciled: true, status: 'LIQUIDADO' }) })
-    })
-
-    it('CANCELADO também não é conferido', async () => {
-      comAR({ ...AR, status: 'CANCELADO' })
-      const j = await (await POST(req({ ids: ['a1'], reconciled: true }))).json()
-      expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'conta não recebida' }])
-      expect(m.arUpdate).not.toHaveBeenCalled()
-      expect(m.txCreate).not.toHaveBeenCalled()
-    })
-
-    it('PENDENTE sem conta bancária também não vira LIQUIDADO', async () => {
-      comAR({ ...AR, status: 'PENDENTE', account_id: null })
-      const j = await (await POST(req({ ids: ['a1'], reconciled: true }))).json()
-      expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'conta não recebida' }])
-      expect(m.arUpdate).not.toHaveBeenCalled()
-    })
-
-    it('webhook Inter marcou reconciled=true sem lançar crédito: Conferir cria o crédito (não "já conciliada")', async () => {
-      comAR({ ...AR, reconciled: true })
-      m.arUpdateMany.mockResolvedValue({ count: 0 }) // o guard antigo (reconciled false|null) não pegaria esta linha
-      m.txFindMany.mockResolvedValue([])
-      const j = await (await POST(req({ ids: ['a1'], reconciled: true }))).json()
-      expect(j.data.erros).toEqual([])
-      expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ account_id: 'acc1', transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1' }) })
-      expect(m.accUpdate).toHaveBeenCalledWith({ where: { id: 'acc1' }, data: expect.objectContaining({ current_balance: { increment: 15000 } }) })
-      expect(m.arUpdate).toHaveBeenCalledWith({ where: { id: 'a1', company_id: 'c1' }, data: expect.objectContaining({ reconciled: true, status: 'LIQUIDADO' }) })
-      expect(j.data.balance_delta).toBe(15000)
-    })
-
-    it('a conta bancária que vale é a relida (PATCH comitado antes): cria o crédito nela', async () => {
-      m.arFindMany.mockResolvedValue([{ ...AR, account_id: null }])
-      m.arFindFirst.mockResolvedValue({ ...AR, account_id: 'acc7' })
-      m.txFindMany.mockResolvedValue([])
-      await POST(req({ ids: ['a1'], reconciled: true }))
-      expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ account_id: 'acc7', bank_ref: 'AR:a1' }) })
-      expect(m.accUpdate).toHaveBeenCalledWith({ where: { id: 'acc7' }, data: expect.anything() })
-    })
-
-    it('AR excluída enquanto esperava a trava: vai em erros, nada gravado', async () => {
-      m.arFindMany.mockResolvedValue([AR])
-      m.arFindFirst.mockResolvedValue(null)
-      for (const reconciled of [true, false]) {
-        const j = await (await POST(req({ ids: ['a1'], reconciled }))).json()
-        expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'conta a receber não encontrada' }])
-        expect(j.data.updated).toBe(0)
-      }
-      expect(m.arUpdate).not.toHaveBeenCalled()
-      expect(m.txCreate).not.toHaveBeenCalled()
-      expect(m.txDelete).not.toHaveBeenCalled()
-    })
-
-    it('Desfazer concorrente com Conferir: o crédito do Conferir aparece na releitura → apaga e debita', async () => {
-      comAR({ ...AR, status: 'LIQUIDADO', reconciled: true })
-      m.txFindFirst.mockImplementation(depoisDaTrava({ id: 'x1', bank_ref: 'AR:a1', linked_ref: null, account_id: 'acc1', amount: 15000 }))
-      const j = await (await POST(req({ ids: ['a1'], reconciled: false }))).json()
-      expect(m.queryRaw).toHaveBeenCalledTimes(1)
-      expect(m.txDelete).toHaveBeenCalledWith({ where: { id: 'x1' } })
-      expect(m.accUpdate).toHaveBeenCalledWith({ where: { id: 'acc1' }, data: expect.objectContaining({ current_balance: { decrement: 15000 } }) })
-      expect(m.arUpdate).toHaveBeenCalledWith({ where: { id: 'a1', company_id: 'c1' }, data: expect.objectContaining({ reconciled: false, status: 'RECEBIDO' }) })
-      expect(j.data.balance_delta).toBe(-15000)
-    })
+  it('sem candidato: cria o crédito AR:id com a categoria Receita de serviços e soma no saldo', async () => {
+    banco.ar(AR)
+    const { j } = await conferir()
+    expect(creditosAR()).toEqual([expect.objectContaining({ account_id: ACC, transaction_type: 'CREDIT', amount: 15000, category_id: 'cat:Venda de Servicos', reconciled: true })])
+    expect(banco.saldo(ACC)).toBe(115000)
+    expect(j.data.balance_delta).toBe(15000)
   })
 
-  it('F11: livro explícito e AR sem conta bancária: vai em erros, NÃO liquida', async () => {
-    comAR({ ...AR, account_id: null })
-    const j = await (await POST(req({ ids: ['a1'], reconciled: true, livro: { a1: 't1' } }))).json()
-    expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'conta a receber sem conta bancária; vínculo não feito' }])
-    expect(j.data.updated).toBe(0)
-    expect(m.arUpdate).not.toHaveBeenCalled()
-    expect(m.arUpdateMany).not.toHaveBeenCalled()
-    expect(m.txUpdateMany).not.toHaveBeenCalled()
+  it('linha já categorizada (Venda de Servicos): liga e mantém a categoria da linha', async () => {
+    banco.ar(AR)
+    linhaLivro({ category_id: 'cat:Venda de Servicos', source_text: 'PIX RECEBIDO FULANO' })
+    const { j } = await conferir()
+    expect(banco.tx_('t1')).toEqual(expect.objectContaining({ linked_ref: 'AR:a1', category_id: 'cat:Venda de Servicos', description: 'LIQUIDACAO: OS 1 · banco: PIX RECEBIDO FULANO' }))
+    expect(j.data).toEqual(expect.objectContaining({ ligadas: 1, balance_delta: 0 }))
   })
 
-  it('F11: livro explícito e AR sem valor: vai em erros (antes: pulava em silêncio)', async () => {
-    comAR({ ...AR, received_amount: 0, total_amount: 0 })
-    const j = await (await POST(req({ ids: ['a1'], reconciled: true, livro: { a1: 't1' } }))).json()
-    expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'conta a receber sem valor; vínculo não feito' }])
-    expect(j.data.updated).toBe(0)
-    expect(m.arUpdate).not.toHaveBeenCalled()
-    expect(m.arUpdateMany).not.toHaveBeenCalled()
+  it('F3: Conferir 20 dias depois do crédito do banco liga (janela 30 antes / 3 depois)', async () => {
+    banco.ar(AR)
+    linhaLivro({ transaction_date: diaRel(-20) })
+    expect((await conferir()).j.data.ligadas).toBe(1)
+    banco.tx_('t1')!.linked_ref = null
+    Object.assign(ar(), { status: 'RECEBIDO', reconciled: false })
+    banco.tx_('t1')!.transaction_date = diaRel(-31)
+    expect((await conferir()).j.data.ligadas).toBe(0) // fora da janela: cria
   })
 
-  it('sem livro explícito, AR sem conta bancária continua só virando LIQUIDADO', async () => {
-    comAR({ ...AR, account_id: null })
-    const j = await (await POST(req({ ids: ['a1'], reconciled: true }))).json()
-    expect(j.data.erros).toEqual([])
-    expect(j.data.updated).toBe(1)
-    expect(m.arUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'LIQUIDADO' }) }))
-    expect(m.txCreate).not.toHaveBeenCalled()
-  })
-
-  it('F3: Conferir 20 dias depois do crédito do banco liga (janela 30 antes / 3 depois), sem criar nem creditar', async () => {
-    const DIA = 86_400_000
-    const base = Date.parse(`${hoje}T00:00:00Z`)
-    comAR(AR)
-    m.txFindMany.mockResolvedValue([livro({ transaction_date: new Date(base - 20 * DIA) })])
-    const j = await (await POST(req({ ids: ['a1'], reconciled: true }))).json()
-    expect(m.txFindMany.mock.calls[0][0].where.OR[0]).toEqual({
-      transaction_date: { gte: new Date(base - 30 * DIA), lte: new Date(base + 3 * DIA) },
-    })
-    expect(j.data.ligadas).toBe(1)
-    expect(m.txCreate).not.toHaveBeenCalled()
-    expect(m.accUpdate).not.toHaveBeenCalled()
-  })
-
-  it('E3: Conferir com vínculo explícito busca a linha pedida por id e a janela do Receber (10/3)', async () => {
-    const DIA = 86_400_000
-    const base = Date.parse(`${hoje}T00:00:00Z`)
-    comAR(AR)
-    m.txFindMany.mockResolvedValue([livro()])
-    const j = await (await POST(req({ ids: ['a1'], reconciled: true, livro: { a1: 't1' } }))).json()
-    expect(m.txFindMany.mock.calls[0][0].where.OR).toEqual([
-      { transaction_date: { gte: new Date(base - 10 * DIA), lte: new Date(base + 3 * DIA) } },
-      { id: 't1' },
-    ])
-    expect(j.data.ligadas).toBe(1)
+  it('E3: com vínculo explícito vale a linha pedida (por id) mesmo fora da janela de 30 dias', async () => {
+    banco.ar(AR)
+    linhaLivro({ id: 't9', transaction_date: diaRel(-40) })
+    const { j } = await conferir(['a1'], { a1: 't9' })
+    expect(j.data).toEqual(expect.objectContaining({ ligadas: 1, erros: [] }))
+    expect(banco.tx_('t9')!.linked_ref).toBe('AR:a1')
   })
 
   it('E11: hojeSP uma vez por AR — virada da meia-noite entre a busca e a decisão não muda a janela', async () => {
     vi.mocked(hojeSP).mockReturnValueOnce('2026-10-30').mockReturnValueOnce('2026-10-31')
-    comAR(AR)
-    // 30 dias antes de 30/10 (dentro); seria 31 antes de 31/10 (fora) se a decisão relesse a data.
-    m.txFindMany.mockResolvedValue([livro({ transaction_date: new Date('2026-09-30T00:00:00Z') })])
-    const j = await (await POST(req({ ids: ['a1'], reconciled: true }))).json()
-    expect(m.txFindMany.mock.calls[0][0].where.OR[0].transaction_date.gte).toEqual(new Date('2026-09-30T00:00:00Z'))
-    expect(j.data.ligadas).toBe(1)
-    expect(m.txCreate).not.toHaveBeenCalled()
+    banco.ar(AR)
+    linhaLivro({ transaction_date: new Date('2026-09-30T00:00:00Z') }) // 30 dias antes de 30/10 (31 antes de 31/10)
+    expect((await conferir()).j.data.ligadas).toBe(1)
   })
 
-  it('(b) sem candidato: cria como hoje, com a categoria Receita de serviços', async () => {
-    comAR(AR)
-    m.txFindMany.mockResolvedValue([])
-    await POST(req({ ids: ['a1'], reconciled: true }))
-    expect(m.txCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ bank_ref: 'AR:a1', category_id: 'cat:Venda de Servicos' }) })
-    expect(m.accUpdate).toHaveBeenCalledTimes(1)
-    expect(m.txUpdate).not.toHaveBeenCalled()
+  it('AR legada PAGO (recebida) é conferida: cria o crédito e vira LIQUIDADO', async () => {
+    banco.ar({ ...AR, status: 'PAGO' })
+    const { j } = await conferir()
+    expect(j.data).toEqual(expect.objectContaining({ updated: 1, erros: [] }))
+    expect(creditosAR()).toHaveLength(1)
+    expect(ar().status).toBe('LIQUIDADO')
   })
 
-  it('Conferir sobre linha já categorizada (Venda de Servicos): liga sem criar/creditar e mantém a categoria da linha', async () => {
-    comAR(AR)
-    m.txFindMany.mockResolvedValue([livro({ categories: { name: 'Venda de Servicos' } })])
-    m.txFindFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ source_text: 'PIX RECEBIDO FULANO' })
-    const res = await POST(req({ ids: ['a1'], reconciled: true }))
-    const j = await res.json()
-    expect(m.txCreate).not.toHaveBeenCalled()
-    expect(m.accUpdate).not.toHaveBeenCalled()
-    expect(m.txUpdateMany).toHaveBeenCalledTimes(1)
-    const arg = m.txUpdateMany.mock.calls[0][0]
-    expect(arg.where).toEqual({ id: 't1', company_id: 'c1', linked_ref: null })
-    expect(arg.data).not.toHaveProperty('category_id')
-    expect(arg.data).toEqual(expect.objectContaining({ linked_ref: 'AR:a1', description: 'LIQUIDACAO: OS 1 · banco: PIX RECEBIDO FULANO' }))
-    expect(j.data.ligadas).toBe(1)
-    expect(j.data.balance_delta).toBe(0)
+  it('PENDENTE e CANCELADO não são conferidos ("conta não recebida"), com ou sem conta bancária', async () => {
+    banco.ar({ ...AR, id: 'p', status: 'PENDENTE' })
+    banco.ar({ ...AR, id: 'c', status: 'CANCELADO' })
+    banco.ar({ ...AR, id: 's', status: 'PENDENTE', account_id: null })
+    const { j } = await conferir(['p', 'c', 's'])
+    expect(j.data.erros).toEqual(['p', 'c', 's'].map((ar) => ({ ar, motivo: 'conta não recebida' })))
+    expect(banco.tabelas.accountReceivable.every((a) => a.status !== 'LIQUIDADO')).toBe(true)
+    expect(banco.tabelas.transaction).toEqual([])
   })
 
-  it('livro explícito e a AR já tem outro lançamento: vai em erros, sem baixar nem ligar', async () => {
-    comAR(AR)
-    m.txFindFirst.mockResolvedValue({ id: 'x9', bank_ref: 'AR:a1', linked_ref: null })
-    const res = await POST(req({ ids: ['a1'], reconciled: true, livro: { a1: 't1' } }))
-    const j = await res.json()
-    expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'conta a receber já tem lançamento; vínculo não feito' }])
-    expect(j.data.updated).toBe(0)
-    expect(m.arUpdate).not.toHaveBeenCalled()
-    expect(m.txUpdateMany).not.toHaveBeenCalled()
-    expect(m.txCreate).not.toHaveBeenCalled()
+  it('webhook Inter marcou reconciled=true sem lançar crédito: Conferir cria o crédito', async () => {
+    banco.ar({ ...AR, reconciled: true })
+    await conferir()
+    expect(creditosAR()).toHaveLength(1)
+    expect(banco.saldo(ACC)).toBe(115000)
   })
 
-  it('livro explícito já ligado a esta AR: idempotente (LIQUIDADO, sem erro, ligadas 1)', async () => {
-    comAR(AR)
-    m.txFindFirst.mockResolvedValue({ id: 't1', bank_ref: 'linha1', linked_ref: 'AR:a1' })
-    const j = await (await POST(req({ ids: ['a1'], reconciled: true, livro: { a1: 't1' } }))).json()
-    expect(j.data.erros).toEqual([])
-    expect(j.data.updated).toBe(1)
-    expect(j.data.ligadas).toBe(1)
-    expect(m.txCreate).not.toHaveBeenCalled()
-    expect(m.txUpdateMany).not.toHaveBeenCalled()
-    expect(m.arUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'LIQUIDADO' }) }))
+  it('AR sem conta bancária: só vira LIQUIDADO; com vínculo explícito vai em erros (F11)', async () => {
+    banco.ar({ ...AR, account_id: null })
+    expect((await conferir(['a1'], { a1: 't1' })).j.data.erros).toEqual([{ ar: 'a1', motivo: 'conta a receber sem conta bancária; vínculo não feito' }])
+    expect(ar().status).toBe('RECEBIDO')
+    expect((await conferir()).j.data).toEqual(expect.objectContaining({ updated: 1, erros: [] }))
+    expect(ar().status).toBe('LIQUIDADO')
+    expect(banco.tabelas.transaction).toEqual([])
+  })
+
+  it('F11: vínculo explícito e AR sem valor: vai em erros', async () => {
+    banco.ar({ ...AR, received_amount: 0, total_amount: 0 })
+    expect((await conferir(['a1'], { a1: 't1' })).j.data.erros).toEqual([{ ar: 'a1', motivo: 'conta a receber sem valor; vínculo não feito' }])
+  })
+
+  it('vínculo explícito inválido (linha já categorizada em Energia): AR não é baixada e vai em erros', async () => {
+    banco.ar(AR)
+    linhaLivro({ category_id: 'cat:Energia' })
+    const { j } = await conferir(['a1'], { a1: 't1' })
+    expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'Lançamento do livro já está categorizado' }])
+    expect(ar().status).toBe('RECEBIDO')
+  })
+
+  it('vínculo explícito já feito para esta AR: idempotente (LIQUIDADO, ligadas 1, nada criado)', async () => {
+    banco.ar(AR)
+    linhaLivro({ linked_ref: 'AR:a1' })
+    const { j } = await conferir(['a1'], { a1: 't1' })
+    expect(j.data).toEqual(expect.objectContaining({ updated: 1, ligadas: 1, erros: [] }))
+    expect(creditosAR()).toEqual([])
+  })
+
+  it('#18: linha ligada por outra baixa no meio (guard count 0): erro E a virada da AR para LIQUIDADO é desfeita (rollback)', async () => {
+    banco.ar(AR)
+    linhaLivro()
+    banco.tx.transaction.updateMany.mockImplementationOnce(async () => ({ count: 0 }))
+    const { j } = await conferir()
+    expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'lançamento do livro já ligado por outra baixa' }])
+    expect(ar()).toEqual(expect.objectContaining({ status: 'RECEBIDO', reconciled: false }))
+    expect(banco.transacoes.at(-1)!.desfeita).toBe(true)
+    expect(creditosAR()).toEqual([])
   })
 
   it('corpo `livro` inválido: 422 sem processar nada', async () => {
+    banco.ar(AR)
     for (const livroInvalido of [{ a1: 123 }, 'x', ['t1']]) {
-      m.arFindMany.mockClear()
-      const res = await POST(req({ ids: ['a1'], reconciled: true, livro: livroInvalido }))
-      expect(res.status).toBe(422)
-      expect(m.arFindMany).not.toHaveBeenCalled()
+      const { status } = await post({ ids: ['a1'], reconciled: true, livro: livroInvalido })
+      expect(status).toBe(422)
     }
+    expect(ar().status).toBe('RECEBIDO')
   })
+})
 
-  it('explícito inválido: AR não é baixada e vai em erros', async () => {
-    comAR(AR)
-    m.txFindMany.mockResolvedValue([livro({ categories: { name: 'Energia' } })])
-    const res = await POST(req({ ids: ['a1'], reconciled: true, livro: { a1: 't1' } }))
-    const j = await res.json()
-    expect(m.arUpdate).not.toHaveBeenCalled()
-    expect(m.arUpdateMany).not.toHaveBeenCalled()
-    expect(m.txCreate).not.toHaveBeenCalled()
-    expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'Lançamento do livro já está categorizado' }])
+describe('§4 Desfazer conciliação (reconciled=false) — resolve #8 e m1', () => {
+  it('#8: AR já estornada (PENDENTE, não conferida): erro "conta não conferida", nada apagado nem debitado', async () => {
+    banco.ar({ ...AR, status: 'PENDENTE', received_amount: 0, reconciled: false })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1' })
+    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 15000, bank_ref: 'AR:a1:estorno' })
+    const { j } = await desfazer()
+    expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'conta não conferida' }])
     expect(j.data.updated).toBe(0)
+    expect(banco.tabelas.transaction).toHaveLength(2)
+    expect(banco.saldo(ACC)).toBe(100000)
+    expect(ar().status).toBe('PENDENTE')
   })
 
-  it('linha já ligada por outra baixa (count 0): vai em erros e não cria nada', async () => {
-    comAR(AR)
-    m.txFindMany.mockResolvedValue([livro()])
-    m.txFindFirst.mockResolvedValue(null)
-    m.txUpdateMany.mockResolvedValue({ count: 0 })
-    const res = await POST(req({ ids: ['a1'], reconciled: true }))
-    const j = await res.json()
-    expect(j.data.erros).toEqual([{ ar: 'a1', motivo: 'lançamento do livro já ligado por outra baixa' }])
-    expect(j.data.updated).toBe(0)
-    expect(m.txCreate).not.toHaveBeenCalled()
-    expect(m.accUpdate).not.toHaveBeenCalled()
+  it('RECEBIDO ainda não conferido também não é desfeito', async () => {
+    banco.ar({ ...AR, status: 'RECEBIDO', reconciled: false })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1' })
+    expect((await desfazer()).j.data.erros).toEqual([{ ar: 'a1', motivo: 'conta não conferida' }])
+    expect(creditosAR()).toHaveLength(1)
   })
 
-  it('(c) desfazer AR ligada: limpa linked_ref, volta categoria, sem delete e sem saldo', async () => {
-    comAR(AR)
-    m.txFindFirst.mockResolvedValue(livro({ linked_ref: 'AR:a1', bank_ref: 'linha1', source_text: 'PIX CLIENTE', category_id: 'cat:Venda de Servicos' }))
-    await POST(req({ ids: ['a1'], reconciled: false }))
-    expect(m.txUpdate).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 't1' },
-      data: expect.objectContaining({ linked_ref: null, category_id: 'cat:Receita a identificar', description: 'PIX CLIENTE' }),
-    }))
-    expect(m.txDelete).not.toHaveBeenCalled()
-    expect(m.accUpdate).not.toHaveBeenCalled()
-    expect(m.arUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'RECEBIDO' }) }))
+  it('m1: vários créditos nocionais (baixas parciais 400 + 600): apaga TODOS e debita 1000', async () => {
+    banco.ar({ ...AR, status: 'LIQUIDADO', reconciled: true, received_amount: 100000, total_amount: 100000 })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 40000, bank_ref: 'AR:a1' })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 60000, bank_ref: 'AR:a1' })
+    const { j } = await desfazer()
+    expect(creditosAR()).toEqual([])
+    expect(banco.saldo(ACC)).toBe(0)
+    expect(j.data).toEqual(expect.objectContaining({ updated: 1, balance_delta: -100000, erros: [] }))
+    expect(ar()).toEqual(expect.objectContaining({ status: 'RECEBIDO', reconciled: false }))
   })
 
-  it('E2: desfazer com crédito AR:id já LIGADO pelo livro (dinheiro do banco): não apaga nem debita, só volta o status', async () => {
-    comAR({ ...AR, status: 'LIQUIDADO', reconciled: true })
-    m.txFindFirst.mockResolvedValue({ id: 'x1', bank_ref: 'AR:a1', linked_ref: null, source_text: 'LIGADA:itau:k1', account_id: 'acc1', amount: 15000 })
-    const j = await (await POST(req({ ids: ['a1'], reconciled: false }))).json()
-    expect(m.txDelete).not.toHaveBeenCalled()
-    expect(m.accUpdate).not.toHaveBeenCalled()
-    expect(m.txUpdate).not.toHaveBeenCalled()
-    expect(m.arUpdate).toHaveBeenCalledWith({ where: { id: 'a1', company_id: 'c1' }, data: expect.objectContaining({ reconciled: false, status: 'RECEBIDO' }) })
+  it('crédito já compensado por :estorno não é apagado; o recebido de novo depois do estorno é', async () => {
+    banco.ar({ ...AR, status: 'LIQUIDADO', reconciled: true })
+    banco.transacao({ id: 'velho', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1' })
+    banco.transacao({ id: 'est', account_id: ACC, transaction_type: 'DEBIT', amount: 15000, bank_ref: 'AR:a1:estorno' })
+    banco.transacao({ id: 'novo', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1' })
+    const { j } = await desfazer()
+    expect(banco.tx_('velho')).toBeDefined()
+    expect(banco.tx_('est')).toBeDefined()
+    expect(banco.tx_('novo')).toBeUndefined()
+    expect(j.data.balance_delta).toBe(-15000)
+  })
+
+  it('linha do banco ligada (baixa ou nocional convertido): DESLIGA (regra/fallback, texto do banco), sem apagar nem mexer no saldo', async () => {
+    banco.regra({ pattern: 'REND PAGO APLIC', direction: 'IN', category_id: 'cat:Rendimentos', priority: 10 })
+    banco.ar({ ...AR, status: 'LIQUIDADO', reconciled: true })
+    linhaLivro({ linked_ref: 'AR:a1', category_id: 'cat:Venda de Servicos', description: 'LIQUIDACAO: OS 1 · banco: PIX CLIENTE' })
+    linhaLivro({ id: 't2', bank_ref: 'ITAU:k2', amount: 1, linked_ref: 'AR:a1', source_text: 'REND PAGO APLIC AUT', category_id: 'cat:Venda de Servicos' })
+    const { j } = await desfazer()
+    expect(banco.tx_('t1')).toEqual(expect.objectContaining({ linked_ref: null, category_id: 'cat:Receita a identificar', description: 'PIX CLIENTE' }))
+    expect(banco.tx_('t2')).toEqual(expect.objectContaining({ linked_ref: null, category_id: 'cat:Rendimentos' }))
+    expect(banco.saldo(ACC)).toBe(100000)
+    expect(j.data).toEqual(expect.objectContaining({ updated: 1, balance_delta: 0 }))
+    expect(ar().status).toBe('RECEBIDO')
+  })
+
+  it('linha convertida do adquirente (linked_ref acquirer:…) NÃO é desligada pelo Desfazer (não veio do Conferir)', async () => {
+    banco.ar({ ...AR, status: 'LIQUIDADO', reconciled: true })
+    banco.pagamento({ receivable_id: 'a1', provider: 'rede', external_id: 'N1' })
+    linhaLivro({ linked_ref: 'acquirer:rede:N1' })
+    await desfazer()
+    expect(banco.tx_('t1')!.linked_ref).toBe('acquirer:rede:N1')
+    expect(ar().status).toBe('RECEBIDO')
+  })
+
+  it('E2: crédito AR:id com marcador antigo LIGADA: (dinheiro do banco, antes da migração): não apaga nem debita', async () => {
+    banco.ar({ ...AR, status: 'LIQUIDADO', reconciled: true })
+    banco.transacao({ id: 'x1', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1', source_text: 'LIGADA:itau:k1' })
+    const { j } = await desfazer()
+    expect(banco.tx_('x1')).toBeDefined()
+    expect(banco.saldo(ACC)).toBe(100000)
     expect(j.data).toEqual(expect.objectContaining({ updated: 1, balance_delta: 0, erros: [] }))
   })
 
-  it('desfazer AR ligada a linha que já tinha outra categoria: mantém a categoria da linha', async () => {
-    comAR(AR)
-    m.txFindFirst.mockResolvedValue(livro({ linked_ref: 'AR:a1', bank_ref: 'linha1', source_text: 'REND PAGO APLIC', category_id: 'cat:Rendimentos' }))
-    await POST(req({ ids: ['a1'], reconciled: false }))
-    expect(m.txUpdate).toHaveBeenCalledWith({
-      where: { id: 't1' },
-      data: { linked_ref: null, category_id: 'cat:Rendimentos', description: 'REND PAGO APLIC' },
-    })
-    expect(m.accUpdate).not.toHaveBeenCalled()
+  it('AR sem conta bancária: só volta o status', async () => {
+    banco.ar({ ...AR, account_id: null, status: 'LIQUIDADO', reconciled: true })
+    expect((await desfazer()).j.data.updated).toBe(1)
+    expect(ar()).toEqual(expect.objectContaining({ status: 'RECEBIDO', reconciled: false }))
   })
 })

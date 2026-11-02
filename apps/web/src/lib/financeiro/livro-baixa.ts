@@ -42,12 +42,6 @@ export function recebeCategoria(categoria: string | null): boolean {
   return categoria === null || emFallback(categoria)
 }
 
-// Ao desligar (estorno/desfazer): a linha volta ao fallback só se estiver na categoria que a baixa põe
-// (estava em fallback ao ligar); categoria diferente já era da linha antes do vínculo e fica. Ids.
-export function categoriaAoDesligar(atual: string | null, daBaixa: string | null, fallback: string | null): string | null {
-  return atual === daBaixa ? fallback : atual
-}
-
 // Onda 4: crédito do retorno CNAB da AR (cnab:<nossoNumero>, gravado no pix_code em JSON pelo cnab/route); null se não houver.
 export function refCnab(pixCode: string | null | undefined): string | null {
   if (!pixCode) return null
