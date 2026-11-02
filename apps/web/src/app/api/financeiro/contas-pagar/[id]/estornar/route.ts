@@ -26,14 +26,17 @@ class RecusaEstorno extends Error {
   }
 }
 
-// AP de taxa criada pelo vínculo da maquininha (perform-match): 'Desconto automatico' ou notes { source: 'acquirer_match' }.
+// AP de taxa descontada no repasse: notes { source: 'acquirer_match' | 'capture-fees' } (perform-match, capture-fees),
+// ou 'Desconto automatico' sem notes.source. Quem decide o 409 é a ausência de saída própria (ver o uso).
 function taxaDoAdquirente(ap: { payment_method: string | null; notes: string | null }): boolean {
-  if (ap.payment_method === 'Desconto automatico') return true
+  let source: unknown
   try {
-    return (JSON.parse(ap.notes ?? '') as { source?: unknown } | null)?.source === 'acquirer_match'
+    source = (JSON.parse(ap.notes ?? '') as { source?: unknown } | null)?.source
   } catch {
-    return false // notes em texto livre
+    source = undefined // notes em texto livre
   }
+  if (source === 'acquirer_match' || source === 'capture-fees') return true
+  return source === undefined && ap.payment_method === 'Desconto automatico'
 }
 
 // Antes de 22/05/2026 (86c9e19b) a baixa criava o lançamento sem bank_ref: 22/05 00:00 em São Paulo.
@@ -71,10 +74,6 @@ export async function POST(req: NextRequest, { params }: Params) {
         if (!paga && ap.status !== 'PENDENTE') {
           throw new RecusaEstorno('Apenas APs com status PAGO (ou PENDENTE com pagamento parcial) podem ser estornadas', 400)
         }
-        // Onda 4 (fix 2, F2-A): a taxa MDR/RA que o adquirente descontou do repasse (perform-match) nasce PAGA sem DEBIT —
-        // a saída já está no crédito líquido; estornar e pagar de novo debitaria a taxa 2x.
-        if (taxaDoAdquirente(ap)) throw new RecusaEstorno('taxa descontada no repasse do adquirente — não estornável', 409)
-
         // (a) linhas do banco que hoje representam a saída desta AP.
         const ligadas = await tx.transaction.findMany({
           where: { company_id: user.companyId, origin: 'BANCO', linked_ref: proprio },
@@ -93,6 +92,14 @@ export async function POST(req: NextRequest, { params }: Params) {
           if (sinal !== 0) compensar.set(t.account_id, (compensar.get(t.account_id) ?? 0) + sinal * t.amount)
         }
         for (const [conta, valor] of compensar) if (valor <= 0) compensar.delete(conta)
+
+        // Onda 4 (fix 2, F2-A; fix 3, F3-C): a taxa que o adquirente/Asaas descontou do repasse (perform-match,
+        // capture-fees) nasce PAGA sem DEBIT — a saída já está no crédito líquido; estornar e pagar de novo debitaria a
+        // taxa 2x. Só recusa quando a AP não tem saída própria: a taxa estimada paga pelo Receber (DEBIT AP:<id>) ou
+        // ligada a uma linha do banco estorna pelo (a)/(b) como qualquer AP.
+        if (taxaDoAdquirente(ap) && compensar.size === 0 && ligadas.length === 0) {
+          throw new RecusaEstorno('taxa descontada no repasse do adquirente — não estornável', 409)
+        }
 
         // (c) legado: paga antes de 22/05 com conta e valor, sem nenhum lançamento próprio nem linha ligada.
         // Fix 3 (F3-A, espelho da AR): (ii) nenhuma saída já lançada da AP; (iii) conta criada antes de 22/05; (iv) updated_at

@@ -210,3 +210,27 @@ describe('F3-A (espelho na AP): legado (c) só em conta antiga e com o "Pgto: �
     }
   })
 })
+
+describe('F3-C (#2): 409 da taxa do adquirente só quando a AP não tem saída própria', () => {
+  it("taxa ESTIMADA 'Desconto automatico' paga pelo Receber (DEBIT AP:p1 vivo) → estorna pelo (b): 200 e CREDIT AP:p1:estorno", async () => {
+    banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 1500, total_amount: 1500, payment_method: 'Desconto automatico' })
+    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 1500, bank_ref: 'AP:p1' })
+    expect((await est()).status).toBe(200)
+    expect(doAP().filter((t) => t.bank_ref === 'AP:p1:estorno')).toEqual([expect.objectContaining({ transaction_type: 'CREDIT', amount: 1500 })])
+    expect(banco.saldo(ACC)).toBe(101500)
+  })
+
+  it('taxa do perform-match / capture-fees PAGA sem DEBIT (descontada no repasse) → 409', async () => {
+    banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 300, total_amount: 300, payment_method: 'Desconto automatico', notes: JSON.stringify({ source: 'acquirer_match' }) })
+    banco.ap({ id: 'p2', status: 'PAGO', account_id: ACC, paid_amount: 300, total_amount: 300, notes: JSON.stringify({ source: 'capture-fees' }) })
+    for (const id of ['p1', 'p2']) expect((await est(id)).status).toBe(409)
+  })
+
+  it('a taxa com linha do banco ligada (AP:p1) também é estornável (desliga pelo (a))', async () => {
+    banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 1500, total_amount: 1500, payment_method: 'Desconto automatico' })
+    banco.transacao({ id: 'L', account_id: ACC, transaction_type: 'DEBIT', amount: 1500, origin: 'BANCO', bank_ref: 'K', source_text: 'TARIFA', linked_ref: 'AP:p1' })
+    expect((await est()).status).toBe(200)
+    expect(banco.tx_('L')!.linked_ref).toBeNull()
+  })
+})
+
