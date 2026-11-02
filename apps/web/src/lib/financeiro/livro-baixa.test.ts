@@ -119,3 +119,20 @@ describe('decidirBaixa — F7-C (#6, #7): a linha desligada desta conta é relig
     expect(decidirBaixa({ tipo: 'CREDIT', amount: 30000, data: '2026-11-05' }, null, [d])).toEqual({ criar: true })
   })
 })
+
+describe('decidirBaixa — F8-C (m8, m3)', () => {
+  it('m8: a religação nunca toma linha em categoria fora do total (Estornos, transferência, ajuste)', () => {
+    for (const categoria of ['Estornos', 'Transferência entre contas', 'Ajuste de caixa']) {
+      const d = { ...base, id: 'D', amount: 30000, transaction_date: '2026-10-01', categoria, desligada_de: 'AR:a1' }
+      expect(decidirBaixa({ tipo: 'CREDIT', amount: 30000, data: '2026-11-05', dono: 'AR:a1' }, null, [d]), categoria).toEqual({ criar: true })
+    }
+  })
+  it('m3: linha desligada de OUTRA conta só é tomada quando não há candidata limpa de mesmo valor', () => {
+    const suja = { ...base, id: 'S', amount: 30000, transaction_date: '2026-11-05', desligada_de: 'AR:a2' }
+    const limpa = { ...base, id: 'L', amount: 30000, transaction_date: '2026-11-01' }
+    const alvo = { tipo: 'CREDIT' as const, amount: 30000, data: '2026-11-05', dono: 'AR:a1' }
+    expect(decidirBaixa(alvo, null, [suja, limpa])).toEqual({ usar: 'L' })
+    expect(decidirBaixa({ ...alvo, dono: null }, null, [suja, limpa])).toEqual({ usar: 'L' })
+    expect(decidirBaixa(alvo, null, [suja])).toEqual({ usar: 'S' })
+  })
+})

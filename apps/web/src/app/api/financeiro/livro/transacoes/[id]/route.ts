@@ -154,6 +154,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         data: {
           category_id: body.category_id,
           ...(body.nota ? { description: `${ligada ? transacao.description ?? textoLinha : textoLinha} — ${body.nota}` } : {}),
+          // Fix 8 (F8-C, #4): a decisão do operador prevalece — a linha não volta sozinha para a conta que pagava.
+          desligada_de: null,
         },
       })
       if (gravou.count === 0) throw new LancamentoMudou()

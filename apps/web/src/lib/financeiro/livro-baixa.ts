@@ -82,24 +82,28 @@ export function decidirBaixa(
   // Só aceita fallback (ou sem categoria) > mesma categoria do alvo; categoria alheia NUNCA (seria o lançamento
   // de outro favorecido). Onda 4 (§6, #14): alvo SEM categoria aceita qualquer categoria como rank 1 (a conta recebe
   // a da linha — ex.: regra ELETROPAULO → Energia para AP sem categoria). Depois, a data mais próxima.
-  let melhor: { id: string; rank: number; dist: number } | null = null
+  // Fix 8 (F8-C, m3): linha desligada de OUTRA conta (suja = 1) só quando não há candidata limpa de mesmo valor.
+  let melhor: { id: string; suja: number; rank: number; dist: number } | null = null
+  const antes = (a: { suja: number; rank: number; dist: number }, b: typeof a) =>
+    a.suja !== b.suja ? a.suja < b.suja : a.rank !== b.rank ? a.rank < b.rank : a.dist < b.dist
   for (const c of candidatos) {
     if (c.origin !== 'BANCO' || c.transaction_type !== alvo.tipo || c.amount !== alvo.amount) continue
     if (c.linked_ref) continue
-    // Fix 7 (F7-C, #6/#7): a linha que pagava ESTA conta e foi desligada (estorno/Desfazer) é religada — qualquer data,
+    // Fix 8 (F8-C, m8): ajuste/transferência/estorno nunca, nem para religar.
+    if (c.categoria !== null && CATEGORIAS_FORA_DO_TOTAL.includes(c.categoria)) continue
+    // Fix 7 (F7-C, #6/#7): a linha que pagava ESTA conta e foi desligada (Desfazer) é religada — qualquer data,
     // qualquer categoria (a regra pode tê-la reclassificado), prioridade máxima.
     if (alvo.dono && c.desligada_de === alvo.dono) {
-      const dist = Math.abs(diasEntre(c.transaction_date, alvo.data))
-      if (!melhor || melhor.rank > -1 || dist < melhor.dist) melhor = { id: c.id, rank: -1, dist }
+      const cand = { id: c.id, suja: -1, rank: -1, dist: Math.abs(diasEntre(c.transaction_date, alvo.data)) }
+      if (!melhor || antes(cand, melhor)) melhor = cand
       continue
     }
-    if (c.categoria !== null && CATEGORIAS_FORA_DO_TOTAL.includes(c.categoria)) continue
     const delta = diasEntre(c.transaction_date, alvo.data) // negativo = antes da baixa
     if (delta < -janela.antes || delta > janela.depois) continue
     const rank = recebeCategoria(c.categoria) ? 0 : !alvo.categoria || c.categoria === alvo.categoria ? 1 : 2
     if (rank === 2) continue
-    const dist = Math.abs(delta)
-    if (!melhor || rank < melhor.rank || (rank === melhor.rank && dist < melhor.dist)) melhor = { id: c.id, rank, dist }
+    const cand = { id: c.id, suja: c.desligada_de ? 1 : 0, rank, dist: Math.abs(delta) }
+    if (!melhor || antes(cand, melhor)) melhor = cand
   }
   return melhor ? { usar: melhor.id } : { criar: true }
 }

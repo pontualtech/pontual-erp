@@ -295,10 +295,10 @@ const rotuloRef = (ref: string) =>
 export async function descreverDinheiro(db: any, companyId: string, dinheiro: DinheiroLancado): Promise<LancamentoDaConta[]> {
   const ids = [...dinheiro.linhas.map((l) => l.id), ...dinheiro.nocionais.map((n) => n.id)]
   if (ids.length === 0) return []
-  const ts: { id: string; amount: number; account_id: string; bank_ref: string | null; linked_ref: string | null; origin: string | null; transaction_date: Date }[] =
+  const ts: { id: string; amount: number; account_id: string; bank_ref: string | null; linked_ref: string | null; desligada_de: string | null; origin: string | null; transaction_date: Date }[] =
     await db.transaction.findMany({
       where: { company_id: companyId, id: { in: ids } },
-      select: { id: true, amount: true, account_id: true, bank_ref: true, linked_ref: true, origin: true, transaction_date: true },
+      select: { id: true, amount: true, account_id: true, bank_ref: true, linked_ref: true, desligada_de: true, origin: true, transaction_date: true },
     })
   const vivo = new Map([...dinheiro.linhas, ...dinheiro.nocionais].map((t) => [t.id, t.vivo ?? t.amount]))
   const contas: { id: string; name: string | null }[] = await db.account.findMany({
@@ -309,7 +309,9 @@ export async function descreverDinheiro(db: any, companyId: string, dinheiro: Di
   return ts.map((t) => {
     const ref = (t.origin === 'BANCO' ? t.linked_ref : t.bank_ref) ?? ''
     return {
-      origem: t.origin === 'BANCO' ? `linha do extrato (${rotuloRef(ref)} ${ref})` : `${rotuloRef(ref)} ${ref}`,
+      // Fix 8 (F8-C): linha livre desligada desta conta (Desfazer).
+      origem: t.origin === 'BANCO' && !t.linked_ref ? `linha do extrato desligada (${t.desligada_de ?? ''})`
+        : t.origin === 'BANCO' ? `linha do extrato (${rotuloRef(ref)} ${ref})` : `${rotuloRef(ref)} ${ref}`,
       valor_centavos: vivo.get(t.id) ?? t.amount,
       data: new Date(t.transaction_date).toISOString().slice(0, 10),
       conta: nome.get(t.account_id) ?? null,

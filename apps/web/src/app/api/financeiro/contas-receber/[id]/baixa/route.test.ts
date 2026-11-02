@@ -86,9 +86,11 @@ describe('§7: trava conta → AR e decide pela releitura (G1, E7, #9)', () => {
     await receber()
     expect(banco.travas.map((t) => [t.tabela, t.id])).toEqual([['accounts', ACC], ['accounts_receivable', 'r1']])
     const depois = banco.travas[1].seq
-    const leituraCandidatos = banco.log.find((o) => o.modelo === 'transaction' && o.op === 'findMany')!
-    expect(leituraCandidatos.cliente).toBe('tx')
-    expect(leituraCandidatos.seq).toBeGreaterThan(depois)
+    const leituras = banco.log.filter((o) => o.modelo === 'transaction' && o.op === 'findMany')
+    // Fora da tx, só a leitura de QUAIS contas travar (F8-C: as das linhas desligadas desta AR); o resto pelo tx, depois.
+    expect(leituras.filter((o) => o.cliente !== 'tx')).toHaveLength(1)
+    expect(leituras.filter((o) => o.cliente === 'tx').length).toBeGreaterThan(0)
+    expect(leituras.filter((o) => o.cliente === 'tx').every((o) => o.seq > depois)).toBe(true)
     expect(banco.prismaDentroDaTx()).toEqual([])
   })
 
@@ -369,3 +371,72 @@ describe('F7-D (#8, #13): Receber pela tela pergunta quando a conta já tem dinh
     expect(j.lancados).toEqual([expect.objectContaining({ origem: 'maquininha acquirer:rede:NSU1', valor_centavos: 9700 })])
   })
 })
+
+describe('F8-C: linhas livres desligadas desta AR (Desfazer) também fazem o Receber perguntar', () => {
+  const CAIXA = '33333333-3333-4333-8333-333333333333'
+  const desligada = (id: string, over: Record<string, unknown> = {}) => banco.transacao({
+    id, account_id: ACC, transaction_type: 'CREDIT', amount: 15000, origin: 'BANCO', bank_ref: `ITAU:${id}`, source_text: `PIX ${id}`,
+    category_id: 'cat:Receita a identificar', transaction_date: new Date('2026-09-01T00:00:00Z'), linked_ref: null, desligada_de: 'AR:r1', ...over,
+  })
+
+  it('linha desligada desta AR, de OUTRO valor → 409 DINHEIRO_JA_LANCADO com a linha; nada gravado', async () => {
+    banco.ar(AR)
+    desligada('d1', { amount: 10000 })
+    const { status, j } = await receber()
+    expect(status).toBe(409)
+    expect(j.code).toBe('DINHEIRO_JA_LANCADO')
+    expect(j.lancados).toEqual([expect.objectContaining({ valor_centavos: 10000, data: '2026-09-01', origem: 'linha do extrato desligada (AR:r1)' })])
+    expect(ar().status).toBe('PENDENTE')
+    expect(creditosAR()).toEqual([])
+  })
+
+  it("'mesmo' → religa TODAS as linhas desligadas desta AR (em qualquer conta) e marca recebida; nenhum crédito novo nem saldo", async () => {
+    banco.conta({ id: CAIXA, name: 'Caixa', current_balance: 7500 })
+    banco.ar(AR)
+    desligada('d1', { amount: 7500 })
+    desligada('d2', { amount: 7500, account_id: CAIXA })
+    const { status, j } = await receber({ dinheiro: 'mesmo' })
+    expect(status).toBe(200)
+    expect(j.data).toEqual(expect.objectContaining({ status: 'RECEBIDO', ligada: true }))
+    for (const id of ['d1', 'd2']) expect(banco.tx_(id)).toEqual(expect.objectContaining({ linked_ref: 'AR:r1', desligada_de: null }))
+    expect(creditosAR()).toEqual([])
+    expect(banco.saldo(ACC)).toBe(100000)
+    expect(banco.saldo(CAIXA)).toBe(7500)
+    expect(banco.travas.filter((t) => t.tabela === 'accounts').map((t) => t.id).sort()).toEqual([ACC, CAIXA].sort())
+  })
+
+  it("'novo' → baixa normal, sem tomar a linha desligada desta AR (mesmo valor, na janela)", async () => {
+    banco.ar(AR)
+    desligada('d1', { transaction_date: new Date('2026-10-28T00:00:00Z') })
+    const { status, j } = await receber({ dinheiro: 'novo' })
+    expect(status).toBe(200)
+    expect(j.data.ligada).toBe(false)
+    expect(creditosAR()).toEqual([expect.objectContaining({ amount: 15000, account_id: ACC })])
+    expect(banco.tx_('d1')).toEqual(expect.objectContaining({ linked_ref: null, desligada_de: 'AR:r1' }))
+    expect(banco.saldo(ACC)).toBe(115000)
+  })
+
+  it('m8: linha desligada em categoria fora do total (Estornos/transferência) não conta nem é religada', async () => {
+    banco.ar(AR)
+    desligada('d1', { category_id: 'cat:Transferência entre contas', transaction_date: new Date('2026-10-28T00:00:00Z') })
+    const { status } = await receber()
+    expect(status).toBe(200)
+    expect(banco.tx_('d1')!.linked_ref).toBeNull()
+    expect(creditosAR()).toHaveLength(1)
+  })
+
+  it("'mesmo' com linha desligada que apareceu numa conta não travada → 409 'conta alterada — repita', nada gravado", async () => {
+    banco.conta({ id: CAIXA, name: 'Caixa', current_balance: 0 })
+    banco.ar(AR)
+    desligada('d1')
+    banco.aoTravar(({ tabela }) => {
+      if (tabela === 'accounts_receivable') { desligada('d2', { amount: 100, account_id: CAIXA }); banco.aoTravar(null) }
+    })
+    const { status, j } = await receber({ dinheiro: 'mesmo' })
+    expect(status).toBe(409)
+    expect(j.error).toBe('conta alterada — repita')
+    expect(banco.tx_('d1')!.linked_ref).toBeNull()
+    expect(ar().status).toBe('PENDENTE')
+  })
+})
+
