@@ -28,78 +28,6 @@ beforeEach(() => {
   banco.conta({ id: ACC2, current_balance: 0 })
 })
 
-describe("§3 estorno de AR — 'permanece' não desliga linha nenhuma (F8-A)", () => {
-  it('linhas da ref própria e de refs EXTERNAS (adquirente, Asaas, CNAB, antecipação) seguem ligadas; DEBIT AR:id:estorno pelo total na conta delas', async () => {
-    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 50000, total_amount: 50000, pix_code: JSON.stringify({ nossoNumero: '777' }), anticipated_at: new Date('2026-10-20T12:00:00Z') })
-    banco.pagamento({ receivable_id: 'r1', provider: 'rede', external_id: 'NSU1' })
-    banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_9' })
-    const LIGADAS = [['P', 'AR:r1'], ['A', 'acquirer:rede:NSU1'], ['B', 'pay_9'], ['C', 'cnab:777'], ['D', 'AR:r1:anticipation']]
-    for (const [id, ref] of LIGADAS) {
-      banco.transacao({ id, account_id: ACC, transaction_type: 'CREDIT', amount: 10000, origin: 'BANCO', bank_ref: `K${id}`, source_text: `TXT ${id}`, linked_ref: ref })
-    }
-    expect((await est('r1', { dinheiro: 'permanece' })).status).toBe(200)
-    for (const [id, ref] of LIGADAS) expect(banco.tx_(id)!.linked_ref).toBe(ref)
-    // o dedupe dos produtores (ondeRef) continua achando o dinheiro do pay_9
-    expect(banco.tabelas.transaction.filter((t) => t.bank_ref === 'pay_9' || t.linked_ref === 'pay_9')).toHaveLength(1)
-    expect(doAR().filter((t) => t.bank_ref === 'AR:r1:estorno')).toEqual([expect.objectContaining({ account_id: ACC, transaction_type: 'DEBIT', amount: 50000 })])
-    expect(banco.saldo(ACC)).toBe(50000)
-    expect(ar()).toEqual(expect.objectContaining({ status: 'PENDENTE', received_amount: 0, anticipated_at: null }))
-  })
-})
-
-describe('§3 estorno de AR — (b) compensa os nocionais ainda não convertidos', () => {
-  it('CREDIT AR:id: DEBIT AR:id:estorno pelo líquido, na conta do crédito', async () => {
-    banco.ar({ id: 'r1', status: 'LIQUIDADO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
-    banco.transacao({ account_id: ACC2, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:r1' })
-    expect((await est('r1', { dinheiro: 'permanece' })).status).toBe(200)
-    expect(doAR().find((t) => t.bank_ref === 'AR:r1:estorno')).toEqual(expect.objectContaining({ account_id: ACC2, transaction_type: 'DEBIT', amount: 15000 }))
-    expect(banco.saldo(ACC2)).toBe(-15000)
-    expect(banco.saldo(ACC)).toBe(100000)
-  })
-
-  it("baixa mista (12000 ligada + 3000 criada): 'permanece' compensa os 15000; a linha segue ligada", async () => {
-    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
-    banco.transacao({ id: 'L', account_id: ACC, transaction_type: 'CREDIT', amount: 12000, origin: 'BANCO', bank_ref: 'K1', source_text: 'PIX', linked_ref: 'AR:r1' })
-    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 3000, bank_ref: 'AR:r1' })
-    await est('r1', { dinheiro: 'permanece' })
-    expect(banco.tx_('L')!.linked_ref).toBe('AR:r1')
-    expect(banco.saldo(ACC)).toBe(85000)
-  })
-
-  it('crédito da antecipação (#11/E9): estornar antecipada = compensar a antecipação; anticipated_at volta a null', async () => {
-    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 14000, total_amount: 15000, anticipated_at: new Date('2026-10-20T12:00:00Z') })
-    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 14000, bank_ref: 'AR:r1:anticipation' })
-    expect((await est('r1', { dinheiro: 'permanece' })).status).toBe(200)
-    expect(banco.saldo(ACC)).toBe(86000)
-    expect(ar()).toEqual(expect.objectContaining({ status: 'PENDENTE', received_amount: 0, anticipated_at: null }))
-  })
-
-  it('#17: quitada com received_amount nulo (agrupada conferida) e CREDIT AR:id: aceita e compensa (antes 400)', async () => {
-    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: null, total_amount: 30000, grouped_into_id: 'G' })
-    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 30000, bank_ref: 'AR:r1' })
-    expect((await est('r1', { dinheiro: 'permanece' })).status).toBe(200)
-    expect(banco.saldo(ACC)).toBe(70000)
-  })
-
-  it('PENDENTE com recebimento parcial (crédito próprio 5000): compensa e zera', async () => {
-    banco.ar({ id: 'r1', status: 'PENDENTE', account_id: ACC, received_amount: 5000, total_amount: 15000 })
-    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 5000, bank_ref: 'AR:r1' })
-    expect((await est('r1', { dinheiro: 'permanece' })).status).toBe(200)
-    expect(banco.saldo(ACC)).toBe(95000)
-    expect(ar().received_amount).toBe(0)
-  })
-
-  it('m7: já estornada (CREDIT − DEBIT :estorno = 0, PENDENTE/0): 400 "nada a estornar", nada gravado', async () => {
-    banco.ar({ id: 'r1', status: 'PENDENTE', account_id: ACC, received_amount: 0, total_amount: 15000 })
-    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:r1' })
-    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 15000, bank_ref: 'AR:r1:estorno' })
-    const { status, j } = await est()
-    expect(status).toBe(400)
-    expect(j.error).toBe('nada a estornar')
-    expect(doAR()).toHaveLength(2)
-  })
-})
-
 describe('§3 estorno de AR — (c) legado e (d) só status', () => {
   it('#13: recebida antes de 22/05 (lançamento sem bank_ref): compensa received_amount na conta da AR como o código antigo', async () => {
     banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 300000, total_amount: 300000, updated_at: new Date('2026-05-05T15:00:00Z'), created_at: new Date('2026-05-01T12:00:00Z') })
@@ -146,10 +74,10 @@ describe('§3/§7/§10: travas, releitura e transação', () => {
       Object.assign(ar(), { status: 'RECEBIDO', received_amount: 280000, anticipated_at: new Date() })
       banco.aoTravar(null)
     })
-    expect((await est('r1', { dinheiro: 'permanece' })).status).toBe(200)
+    expect((await est('r1', { dinheiro: 'devolvido' })).status).toBe(200)
     expect(banco.travas.map((t) => t.tabela)).toEqual(['accounts', 'accounts_receivable'])
-    // F9-A: compensa exatamente o recebido relido (280000), alocado nos créditos próprios (parcial 1000 + 279000 da antecipação).
-    expect(banco.saldo(ACC)).toBe(100000 + 280000 - 280000)
+    // F10-B: conta sem extrato → compensa todo o dinheiro próprio relido (parcial 1000 + antecipação comitada no meio).
+    expect(banco.saldo(ACC)).toBe(100000 + 280000 - 281000)
     expect(ar()).toEqual(expect.objectContaining({ status: 'PENDENTE', received_amount: 0, anticipated_at: null }))
     expect(banco.prismaDentroDaTx()).toEqual([])
     const escritas = banco.log.filter((o) => ['create', 'update', 'updateMany', 'delete'].includes(o.op))
@@ -157,12 +85,14 @@ describe('§3/§7/§10: travas, releitura e transação', () => {
   })
 
   it('linha ligada nova numa conta que não foi travada (apareceu depois da leitura): 409 "conta alterada — repita", nada gravado', async () => {
+    // contas com extrato: o 'devolvido' não compensa nada — só o sufixo escreve na linha nova
+    for (const c of [ACC, ACC2]) banco.transacao({ account_id: c, transaction_type: 'CREDIT', amount: 0, origin: 'AJUSTE', bank_ref: `AJUSTE:${c}:2026-10-29`, created_at: new Date('2026-10-30T10:00:00Z') })
     banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
     banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:r1' })
     banco.aoTravar(({ tabela }) => {
       if (tabela === 'accounts_receivable') banco.transacao({ account_id: ACC2, transaction_type: 'CREDIT', amount: 500, origin: 'BANCO', bank_ref: 'K9', source_text: 'PIX', linked_ref: 'AR:r1' })
     })
-    const { status, j } = await est('r1', { dinheiro: 'permanece' })
+    const { status, j } = await est('r1', { dinheiro: 'devolvido' })
     expect(status).toBe(409)
     expect(j.error).toBe('conta alterada — repita')
     expect(banco.transacoes.at(-1)!.desfeita).toBe(true)
@@ -174,53 +104,6 @@ describe('§3/§7/§10: travas, releitura e transação', () => {
     banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
     banco.aoTravar(({ tabela }) => { if (tabela === 'accounts_receivable') ar().deleted_at = new Date() })
     expect((await est()).status).toBe(404)
-  })
-})
-
-describe('cenários dos achados (fluxo completo, saldo do ERP = banco)', () => {
-  const CORTE = '2026-10-29'
-  const DATA = '2026-11-02'
-  const prepararLivro = () => {
-    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 0, bank_ref: `AJUSTE:${ACC}:${CORTE}`, origin: 'AJUSTE', transaction_date: dia(CORTE) })
-    banco.ar({ id: 'ar1', status: 'PENDENTE', account_id: ACC, total_amount: 50000, description: 'OS 1' })
-    banco.ar({ id: 'ar2', status: 'PENDENTE', account_id: ACC, total_amount: 50000, description: 'OS 2' })
-  }
-  const receberAR = (id: string) => receber(new NextRequest('http://x/api', json({ received_amount: 50000, account_id: ACC, received_at: DATA })), { params: { id } })
-  const linha = (links?: string[]) => lancarLinhas(new NextRequest('http://x/api', json({
-    account_id: ACC, corte: CORTE,
-    linhas: [{ chave: `ITAU:${DATA}|PIX RECEBIDO|+50000|1`, data: DATA, descricao: 'PIX RECEBIDO', valor_centavos: 50000, ...(links ? { links } : {}) }],
-  })))
-
-  it("#1: Receber AR#1 → livro LIGA (links) → estornar AR#1 'permanece' → Receber AR#2: um PIX de 500 conta uma vez", async () => {
-    prepararLivro()
-    expect((await receberAR('ar1')).status).toBe(200)
-    expect(banco.saldo(ACC)).toBe(150000)
-    expect((await (await linha(['AR:ar1'])).json()).data.resultados[0].acao).toBe('LIGAR')
-    expect((await est('ar1', { dinheiro: 'permanece' })).status).toBe(200)
-    expect(banco.saldo(ACC)).toBe(100000)
-    const r2 = await (await receberAR('ar2')).json()
-    expect(r2.data.ligada).toBe(false) // a linha segue ligada à AR#1 (compensada pelo :estorno)
-    expect(banco.saldo(ACC)).toBe(150000) // banco: 100000 + 50000
-  })
-
-  it("#12: idem pelo órfão (sem links); e na MESMA AR: estornar 'permanece' e receber de novo também fecha", async () => {
-    prepararLivro()
-    await receberAR('ar1')
-    expect((await (await linha()).json()).data.resultados[0]).toEqual(expect.objectContaining({ acao: 'LIGAR', origem: 'orfao' }))
-    await est('ar1', { dinheiro: 'permanece' })
-    const r = await (await receberAR('ar1')).json()
-    expect(r.data.ligada).toBe(false)
-    expect(banco.saldo(ACC)).toBe(150000)
-  })
-
-  it('estorno ANTES do extrato e Receber de novo: o livro liga o crédito novo (não o estornado) — sem 2x', async () => {
-    prepararLivro()
-    await receberAR('ar1')
-    await est('ar1', { dinheiro: 'permanece' })
-    expect(banco.saldo(ACC)).toBe(100000)
-    await receberAR('ar1')
-    expect((await (await linha()).json()).data.resultados[0]).toEqual(expect.objectContaining({ acao: 'LIGAR', origem: 'orfao' }))
-    expect(banco.saldo(ACC)).toBe(150000)
   })
 })
 
@@ -243,33 +126,6 @@ describe('F2-E (#5, m4): legado detectado pela própria transação (AR)', () =>
       expect(doAR(), JSON.stringify(extra)).toEqual([])
       expect(banco.saldo(ACC)).toBe(100000)
     }
-  })
-})
-
-describe("F2-G (#11) → F8-A/F8-B: o marcador antigo LIGADA é dinheiro; 'permanece' o compensa como produção, salvo se anterior ao ajuste", () => {
-  it("crédito AR:id com source_text LIGADA:… (origin null), conta sem ajuste: pergunta; 'permanece' → DEBIT na conta", async () => {
-    banco.ar({ id: 'r1', status: 'LIQUIDADO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
-    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:r1', source_text: 'LIGADA:ITAU:k' })
-    expect((await est()).status).toBe(409)
-    expect((await est('r1', { dinheiro: 'permanece' })).status).toBe(200)
-    expect(doAR().filter((t) => t.bank_ref === 'AR:r1:estorno')).toEqual([expect.objectContaining({ amount: 15000, account_id: ACC })])
-    expect(banco.saldo(ACC)).toBe(85000)
-  })
-
-  it("F9-A (corrige o F8-B no estorno): LIGADA anterior ao ajuste + crédito próprio posterior → 'permanece' compensa o recebido inteiro, o posterior primeiro", async () => {
-    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 0, bank_ref: `AJUSTE:${ACC}:2026-10-29`, origin: 'AJUSTE', created_at: new Date('2026-10-30T12:00:00Z') })
-    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
-    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 12000, bank_ref: 'AR:r1', source_text: 'LIGADA:k1', created_at: new Date('2026-10-01T12:00:00Z') })
-    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 3000, bank_ref: 'AR:r1', created_at: new Date('2026-11-01T12:00:00Z') })
-    await est('r1', { dinheiro: 'permanece' })
-    expect(doAR().filter((t) => t.bank_ref === 'AR:r1:estorno')).toEqual([expect.objectContaining({ amount: 15000 })])
-    expect(banco.saldo(ACC)).toBe(85000)
-  })
-
-  it('m21: a tx do estorno usa maxWait 10s e timeout 20s', async () => {
-    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
-    await est()
-    expect(banco.transacoes.map((t) => t.opcoes)).toEqual([{ maxWait: 10000, timeout: 20000 }])
   })
 })
 
@@ -408,122 +264,176 @@ describe('F4-A (#1, m12): legado (c) só com a transação DESTA AR e sem pagame
   })
 })
 
-describe('F8-A (§0, #1, #2, #7): o estorno PERGUNTA se o dinheiro voltou para o cliente ou continua no banco', () => {
-  const PERGUNTA = 'O dinheiro deste recebimento voltou para o cliente, ou continua no banco (lançado na conta errada/por engano)?'
+describe("F10-B: o estorno pergunta — 'devolvido' (refs próprias ganham :devolvido) ou mover_para (engano)", () => {
+  const PERGUNTA = 'O dinheiro foi devolvido ao cliente, ou foi lançado na OS errada?'
   const CORTE = '2026-10-29', DATA = '2026-11-02'
-  const prepararLivro = () => {
-    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 0, bank_ref: `AJUSTE:${ACC}:${CORTE}`, origin: 'AJUSTE', transaction_date: dia(CORTE) })
-    banco.ar({ id: 'ar1', status: 'PENDENTE', account_id: ACC, total_amount: 50000, description: 'OS 1' })
-    banco.ar({ id: 'ar2', status: 'PENDENTE', account_id: ACC, total_amount: 50000, description: 'OS 2' })
-  }
-  const receberEm = (id: string, data: string, valor = 50000) =>
-    receber(new NextRequest('http://x/api', json({ received_amount: valor, account_id: ACC, received_at: data })), { params: { id } })
-  const linha = (links: string[], chave = `ITAU:${DATA}|PIX RECEBIDO|+50000|1`, valor = 50000) => lancarLinhas(new NextRequest('http://x/api', json({
-    account_id: ACC, corte: CORTE, linhas: [{ chave, data: DATA, descricao: 'PIX RECEBIDO', valor_centavos: valor, links }],
+  const CAIXA = '33333333-3333-4333-8333-333333333333'
+  const ajuste = (conta = ACC) => banco.transacao({ account_id: conta, transaction_type: 'CREDIT', amount: 0, origin: 'AJUSTE', bank_ref: `AJUSTE:${conta}:${CORTE}`, created_at: new Date('2026-10-30T10:00:00Z'), transaction_date: dia(CORTE) })
+  const estornos = (id = 'r1') => banco.tabelas.transaction.filter((t) => t.bank_ref === `AR:${id}:estorno`)
+  const receberEm = (id: string, conta: string, valor = 50000, data = DATA) =>
+    receber(new NextRequest('http://x/api', json({ received_amount: valor, account_id: conta, received_at: data })), { params: { id } })
+  const linhaDoBanco = (chave: string, valor: number, links?: string[]) => lancarLinhas(new NextRequest('http://x/api', json({
+    account_id: ACC, corte: CORTE, linhas: [{ chave, data: DATA, descricao: valor > 0 ? 'PIX RECEBIDO' : 'PIX ENVIADO', valor_centavos: valor, ...(links ? { links } : {}) }],
   })))
+  const ligada = (over: Record<string, unknown> = {}) => banco.transacao({
+    id: 'L', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, origin: 'BANCO', bank_ref: 'K1', source_text: 'PIX FULANO',
+    linked_ref: 'AR:r1', category_id: 'cat:Venda de Servicos', description: 'LIQUIDACAO: OS 1 · banco: PIX FULANO', transaction_date: dia('2026-11-01'), ...over,
+  })
 
-  it('com dinheiro e sem `dinheiro` → 409 ESTORNO_PERGUNTA com os lançamentos; nada gravado', async () => {
+  it('com dinheiro e sem resposta → 409 ESTORNO_PERGUNTA com os lançamentos; nada gravado', async () => {
+    ajuste()
     banco.ar({ id: 'r1', status: 'LIQUIDADO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
-    banco.transacao({ id: 'L', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, origin: 'BANCO', bank_ref: 'K1', source_text: 'PIX', linked_ref: 'AR:r1', transaction_date: dia('2026-11-01') })
+    ligada()
     const { status, j } = await est()
     expect(status).toBe(409)
     expect(j).toEqual(expect.objectContaining({ code: 'ESTORNO_PERGUNTA', error: PERGUNTA, lancados: [expect.objectContaining({ valor_centavos: 15000, data: '2026-11-01' })] }))
     expect(ar().status).toBe('LIQUIDADO')
     expect(banco.tx_('L')!.linked_ref).toBe('AR:r1')
-    expect(doAR()).toEqual([])
   })
 
-  it("'devolvido' em conta com extrato (AJUSTE) → só status: nenhuma compensação nem desligamento (a saída da devolução vem pelo extrato)", async () => {
-    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 0, origin: 'AJUSTE', bank_ref: `AJUSTE:${ACC}:2026-10-29`, created_at: new Date('2026-10-30T10:00:00Z') })
+  it("'devolvido' com linha ligada em conta com extrato → nada lançado; a linha fica AR:r1:devolvido (mesma data, categoria e saldo); AR PENDENTE/0", async () => {
+    ajuste()
     banco.ar({ id: 'r1', status: 'LIQUIDADO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
-    banco.transacao({ id: 'L', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, origin: 'BANCO', bank_ref: 'K1', source_text: 'PIX', linked_ref: 'AR:r1' })
+    ligada()
     expect((await est('r1', { dinheiro: 'devolvido' })).status).toBe(200)
-    expect(banco.tx_('L')!.linked_ref).toBe('AR:r1')
-    expect(doAR()).toEqual([])
+    expect(banco.tx_('L')).toEqual(expect.objectContaining({ linked_ref: 'AR:r1:devolvido', category_id: 'cat:Venda de Servicos', amount: 15000, bank_ref: 'K1' }))
+    expect(estornos()).toEqual([])
     expect(banco.saldo(ACC)).toBe(100000)
-    expect(ar()).toEqual(expect.objectContaining({ status: 'PENDENTE', received_amount: 0 }))
+    expect(ar()).toEqual(expect.objectContaining({ status: 'PENDENTE', received_amount: 0, reconciled: false }))
   })
 
-  it("#1: AR convertida → estorno 'permanece' (DEBIT na conta da linha, linha segue ligada) → Receber de OUTRA AR fora da janela → saldo = banco", async () => {
-    prepararLivro()
-    await receberEm('ar1', DATA)
-    expect((await (await linha(['AR:ar1'])).json()).data.resultados[0].acao).toBe('LIGAR')
-    expect(banco.saldo(ACC)).toBe(150000)
-    expect((await est('ar1', { dinheiro: 'permanece' })).status).toBe(200)
-    expect(banco.tabelas.transaction.filter((t) => t.linked_ref === 'AR:ar1')).toHaveLength(1)
-    expect(doAR('ar1').filter((t) => t.bank_ref === 'AR:ar1:estorno')).toEqual([expect.objectContaining({ account_id: ACC, amount: 50000, transaction_type: 'DEBIT' })])
-    expect(banco.saldo(ACC)).toBe(100000)
-    const r = await (await receberEm('ar2', '2026-11-22')).json()
-    expect(r.data.ligada).toBe(false)
-    expect(banco.saldo(ACC)).toBe(150000) // banco: 100000 + o PIX de 500
-  })
-
-  it("depois do 'permanece', o Receber da MESMA AR lança sem perguntar (o :estorno desconta a linha ligada)", async () => {
-    prepararLivro()
-    await receberEm('ar1', DATA)
-    await linha(['AR:ar1'])
-    await est('ar1', { dinheiro: 'permanece' })
-    const res = await receberEm('ar1', '2026-11-22')
+  it("#4/#9: depois do 'devolvido', o Receber da MESMA AR no Caixa lança o CREDIT no Caixa, sem pergunta", async () => {
+    banco.conta({ id: CAIXA, name: 'Caixa', current_balance: 0 })
+    ajuste()
+    banco.ar({ id: 'r1', status: 'LIQUIDADO', account_id: ACC, received_amount: 15000, total_amount: 15000, description: 'OS 1' })
+    ligada()
+    await est('r1', { dinheiro: 'devolvido' })
+    const res = await receber(new NextRequest('http://x/api', json({ received_amount: 15000, account_id: CAIXA, received_at: DATA })), { params: { id: 'r1' } })
     expect(res.status).toBe(200)
+    expect(banco.tabelas.transaction.filter((t) => t.bank_ref === 'AR:r1')).toEqual([expect.objectContaining({ account_id: CAIXA, amount: 15000, transaction_type: 'CREDIT' })])
+    expect(banco.saldo(CAIXA)).toBe(15000)
+  })
+
+  it("#12: Receber → livro liga → 'devolvido' → a saída da devolução chega pelo extrato → o cliente paga de novo → o PIX novo liga: saldo = banco", async () => {
+    ajuste()
+    banco.ar({ id: 'ar1', status: 'PENDENTE', account_id: ACC, total_amount: 50000, description: 'OS 1' })
+    await receberEm('ar1', ACC)
+    expect((await (await linhaDoBanco(`ITAU:${DATA}|PIX RECEBIDO|+50000|1`, 50000)).json()).data.resultados[0]).toEqual(expect.objectContaining({ acao: 'LIGAR', origem: 'orfao' }))
+    expect((await est('ar1', { dinheiro: 'devolvido' })).status).toBe(200)
+    expect(banco.saldo(ACC)).toBe(150000)
+    await linhaDoBanco(`ITAU:${DATA}|PIX ENVIADO|-50000|1`, -50000)
+    expect(banco.saldo(ACC)).toBe(100000) // banco: +500 −500
+    const r = await receberEm('ar1', ACC, 50000, '2026-11-05')
+    expect(r.status).toBe(200)
+    expect(banco.saldo(ACC)).toBe(150000)
+    expect(banco.tabelas.transaction.filter((t) => t.bank_ref === 'AR:ar1')).toHaveLength(1)
+  })
+
+  it("'devolvido' antes do extrato: o nocional vira AR:ar1:devolvido e o livro ainda o casa com a linha que chega (dinheiro real) → saldo = banco", async () => {
+    ajuste()
+    banco.ar({ id: 'ar1', status: 'PENDENTE', account_id: ACC, total_amount: 50000, description: 'OS 1' })
+    await receberEm('ar1', ACC)
+    await est('ar1', { dinheiro: 'devolvido' })
+    expect(banco.tabelas.transaction.filter((t) => t.bank_ref === 'AR:ar1:devolvido')).toHaveLength(1)
+    expect(estornos('ar1')).toEqual([])
+    const r = await (await linhaDoBanco(`ITAU:${DATA}|PIX RECEBIDO|+50000|1`, 50000)).json()
+    expect(r.data.resultados[0]).toEqual(expect.objectContaining({ acao: 'LIGAR', origem: 'orfao' }))
+    expect(banco.tabelas.transaction.find((t) => t.origin === 'BANCO' && t.transaction_type === 'CREDIT')).toEqual(expect.objectContaining({ linked_ref: 'AR:ar1:devolvido', category_id: 'cat:Venda de Servicos' }))
     expect(banco.saldo(ACC)).toBe(150000)
   })
 
-  it("#2: match errado da maquininha → estorno 'permanece' debita o recebido (9700 do adquirente + 300 na conta da AR) → Receber da OS certa → saldo = banco", async () => {
-    banco.ar({ id: 'a1', status: 'RECEBIDO', account_id: ACC, received_amount: 10000, total_amount: 10000 })
-    banco.ar({ id: 'b', status: 'PENDENTE', account_id: ACC, total_amount: 10000 })
-    banco.pagamento({ receivable_id: 'a1', provider: 'rede', external_id: 'NSU1', status: 'RECEIVED' })
-    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 9700, bank_ref: 'acquirer:rede:NSU1' })
-    banco.tabelas.account[0].current_balance = 109700
-    expect((await est('a1')).status).toBe(409)
-    expect((await est('a1', { dinheiro: 'permanece' })).status).toBe(200)
-    expect(doAR('a1').filter((t) => t.bank_ref === 'AR:a1:estorno')).toEqual([expect.objectContaining({ account_id: ACC, amount: 10000 })])
-    await receber(new NextRequest('http://x/api', json({ received_amount: 10000, account_id: ACC, received_at: DATA })), { params: { id: 'b' } })
-    expect(banco.saldo(ACC)).toBe(109700) // banco: 100000 + 9700 (o líquido da venda)
+  it("'devolvido' no Caixa (sem extrato) → nocional AR:r1:devolvido + DEBIT AR:r1:estorno no Caixa: o saldo do Caixa volta", async () => {
+    banco.conta({ id: CAIXA, name: 'Caixa', current_balance: 15000 })
+    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: CAIXA, received_amount: 15000, total_amount: 15000 })
+    banco.transacao({ id: 'N', account_id: CAIXA, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:r1' })
+    expect((await est('r1', { dinheiro: 'devolvido' })).status).toBe(200)
+    expect(banco.tx_('N')!.bank_ref).toBe('AR:r1:devolvido')
+    expect(estornos()).toEqual([expect.objectContaining({ account_id: CAIXA, amount: 15000, transaction_type: 'DEBIT' })])
+    expect(banco.saldo(CAIXA)).toBe(0)
   })
 
-  it("#7: duas linhas (100 + 100) ligadas → estorno 'permanece' → Receber pelo total → saldo = banco", async () => {
-    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 20000, total_amount: 20000 })
-    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 10000, origin: 'BANCO', bank_ref: 'K1', source_text: 'PIX 1', linked_ref: 'AR:r1' })
-    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 10000, origin: 'BANCO', bank_ref: 'K2', source_text: 'PIX 2', linked_ref: 'AR:r1' })
-    banco.tabelas.account[0].current_balance = 120000
-    expect((await est('r1', { dinheiro: 'permanece' })).status).toBe(200)
-    expect(doAR().filter((t) => t.bank_ref === 'AR:r1:estorno')).toEqual([expect.objectContaining({ amount: 20000 })])
-    await receber(new NextRequest('http://x/api', json({ received_amount: 20000, account_id: ACC, received_at: DATA })), { params: { id: 'r1' } })
-    expect(banco.saldo(ACC)).toBe(120000) // banco: 100000 + 200
+  it("'devolvido' com dinheiro no Caixa e no Itaú (com extrato) → compensa só o do Caixa; os dois ganham o sufixo", async () => {
+    banco.conta({ id: CAIXA, name: 'Caixa', current_balance: 5000 })
+    ajuste()
+    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
+    banco.transacao({ id: 'C', account_id: CAIXA, transaction_type: 'CREDIT', amount: 5000, bank_ref: 'AR:r1' })
+    banco.transacao({ id: 'I', account_id: ACC, transaction_type: 'CREDIT', amount: 10000, bank_ref: 'AR:r1' })
+    expect((await est('r1', { dinheiro: 'devolvido' })).status).toBe(200)
+    expect([banco.tx_('C')!.bank_ref, banco.tx_('I')!.bank_ref]).toEqual(['AR:r1:devolvido', 'AR:r1:devolvido'])
+    expect(estornos()).toEqual([expect.objectContaining({ account_id: CAIXA, amount: 5000 })])
+    expect(banco.saldo(ACC)).toBe(100000)
   })
 
-  it("estorno de produção que anulou parte do nocional: a pergunta mostra o vivo; 'permanece' compensa exatamente o recebido (F9-A)", async () => {
-    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 10000, total_amount: 10000 })
-    banco.pagamento({ receivable_id: 'r1', provider: 'rede', external_id: 'NSU1', status: 'RECEIVED' })
-    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 9700, bank_ref: 'acquirer:rede:NSU1' })
-    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 10000, bank_ref: 'AR:r1' })
-    // estorno antigo (produção) pelo received_amount: anula os 9700 do adquirente e 300 do nocional
-    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 10000, bank_ref: 'AR:r1:estorno' })
-    const { j } = await est()
-    expect(j.lancados.map((l: { valor_centavos: number }) => l.valor_centavos)).toEqual([9700])
-    expect((await est('r1', { dinheiro: 'permanece' })).status).toBe(200)
-    expect(doAR().filter((t) => t.bank_ref === 'AR:r1:estorno').map((t) => t.amount)).toEqual([10000, 10000])
-    expect(banco.saldo(ACC)).toBe(100000 - 10000)
+  it("'devolvido' no Caixa com crédito externo no MESMO Caixa: o :estorno anula só o devolvido — o externo continua dinheiro da conta (o Receber pergunta por ele)", async () => {
+    banco.conta({ id: CAIXA, name: 'Caixa', current_balance: 20000 })
+    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: CAIXA, received_amount: 20000, total_amount: 20000 })
+    banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_c', status: 'RECEIVED' })
+    banco.transacao({ id: 'X', account_id: CAIXA, transaction_type: 'CREDIT', amount: 5000, bank_ref: 'pay_c' })
+    banco.transacao({ id: 'N', account_id: CAIXA, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:r1' })
+    expect((await est('r1', { dinheiro: 'devolvido' })).status).toBe(200)
+    expect(estornos()).toEqual([expect.objectContaining({ account_id: CAIXA, amount: 15000 })])
+    const res = await receber(new NextRequest('http://x/api', json({ received_amount: 20000, account_id: CAIXA, received_at: DATA })), { params: { id: 'r1' } })
+    expect(res.status).toBe(409)
+    expect((await res.json()).lancados).toEqual([expect.objectContaining({ valor_centavos: 5000 })])
   })
 
-  it('o :estorno só anula dinheiro criado ATÉ ele: o crédito lançado depois de um estorno de produção conta inteiro', async () => {
-    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 10000, total_amount: 10000 })
-    banco.pagamento({ receivable_id: 'r1', provider: 'rede', external_id: 'NSU1', status: 'RECEIVED' })
-    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 9700, bank_ref: 'acquirer:rede:NSU1' })
-    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 10000, bank_ref: 'AR:r1:estorno' })
-    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 10000, bank_ref: 'AR:r1' })
-    const { status, j } = await est()
-    expect(status).toBe(409)
-    expect(j.lancados.map((l: { valor_centavos: number }) => l.valor_centavos)).toEqual([10000])
-  })
-
-  it("'permanece' com reembolso parcial do Asaas: aloca o vivo (crédito − reembolso) na conta do pay_ e a sobra do recebido na conta da AR", async () => {
-    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 10000, total_amount: 10000 })
+  it("'devolvido' com dinheiro externo (Asaas pay_) → o externo não é tocado (a devolução passa pelo Asaas); a resposta traz o aviso", async () => {
+    ajuste()
+    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
     banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_x', status: 'RECEIVED' })
-    banco.transacao({ account_id: ACC2, transaction_type: 'CREDIT', amount: 10000, bank_ref: 'pay_x' })
-    banco.transacao({ account_id: ACC2, transaction_type: 'DEBIT', amount: 3000, bank_ref: 'pay_x-refund' })
-    expect((await est('r1', { dinheiro: 'permanece' })).status).toBe(200)
-    expect(doAR().filter((t) => t.bank_ref === 'AR:r1:estorno').map((t) => [t.account_id, t.amount]).sort()).toEqual([[ACC, 3000], [ACC2, 7000]].sort())
+    banco.transacao({ id: 'X', account_id: ACC, transaction_type: 'CREDIT', amount: 14550, bank_ref: 'pay_x' })
+    const { status, j } = await est('r1', { dinheiro: 'devolvido' })
+    expect(status).toBe(200)
+    expect(j.data.aviso).toMatch(/^dinheiro externo não foi tocado.*pay_x/)
+    expect(banco.tx_('X')).toEqual(expect.objectContaining({ bank_ref: 'pay_x', amount: 14550 }))
+    expect(estornos()).toEqual([])
+    expect(ar().status).toBe('PENDENTE')
+  })
+
+  it("#13: venda da maquininha cancelada antes do repasse (nocional acquirer:) → 'devolvido' só avisa; nada lançado", async () => {
+    ajuste()
+    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 10000, total_amount: 10000 })
+    banco.pagamento({ receivable_id: 'r1', provider: 'rede', external_id: '555', status: 'RECEIVED' })
+    banco.transacao({ id: 'A', account_id: ACC, transaction_type: 'CREDIT', amount: 9700, bank_ref: 'acquirer:rede:555' })
+    const { j } = await est('r1', { dinheiro: 'devolvido' })
+    expect(j.data.aviso).toMatch(/acquirer:rede:555/)
+    expect(banco.tx_('A')!.bank_ref).toBe('acquirer:rede:555')
+    expect(estornos()).toEqual([])
+  })
+
+  it("'devolvido' de antecipada no Caixa → AR:r1:anticipation:devolvido + DEBIT; anticipated_at volta a null", async () => {
+    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 14000, total_amount: 15000, anticipated_at: new Date('2026-10-20T12:00:00Z') })
+    banco.transacao({ id: 'T', account_id: ACC, transaction_type: 'CREDIT', amount: 14000, bank_ref: 'AR:r1:anticipation' })
+    expect((await est('r1', { dinheiro: 'devolvido' })).status).toBe(200)
+    expect(banco.tx_('T')!.bank_ref).toBe('AR:r1:anticipation:devolvido')
+    expect(banco.saldo(ACC)).toBe(86000)
+    expect(ar()).toEqual(expect.objectContaining({ status: 'PENDENTE', received_amount: 0, anticipated_at: null }))
+  })
+
+  it("marcador antigo LIGADA (origin null, bank_ref AR:r1) também ganha o sufixo e deixa de ser dinheiro da conta", async () => {
+    ajuste()
+    banco.ar({ id: 'r1', status: 'LIQUIDADO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
+    banco.transacao({ id: 'G', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:r1', source_text: 'LIGADA:ITAU:k' })
+    await est('r1', { dinheiro: 'devolvido' })
+    expect(banco.tx_('G')!.bank_ref).toBe('AR:r1:devolvido')
+    expect(estornos()).toEqual([])
+  })
+
+  it("estorno repetido → 400 'nada a estornar'", async () => {
+    ajuste()
+    banco.ar({ id: 'r1', status: 'LIQUIDADO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
+    ligada()
+    await est('r1', { dinheiro: 'devolvido' })
+    const { status, j } = await est('r1', { dinheiro: 'devolvido' })
+    expect(status).toBe(400)
+    expect(j.error).toBe('nada a estornar')
+  })
+
+  it("resposta inválida (inclusive o antigo 'permanece', ou as duas escolhas juntas) → 400", async () => {
+    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
+    for (const corpo of [{ dinheiro: 'permanece' }, { dinheiro: 'talvez' }, { dinheiro: 'devolvido', mover_para: 'r2' }, { mover_para: '' }]) {
+      expect((await est('r1', corpo)).status, JSON.stringify(corpo)).toBe(400)
+    }
   })
 
   it('sem dinheiro na conta → só status, sem pergunta', async () => {
@@ -531,85 +441,110 @@ describe('F8-A (§0, #1, #2, #7): o estorno PERGUNTA se o dinheiro voltou para o
     expect((await est()).status).toBe(200)
     expect(ar().status).toBe('PENDENTE')
   })
-
-  it('`dinheiro` inválido → 400', async () => {
-    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
-    expect((await est('r1', { dinheiro: 'talvez' })).status).toBe(400)
-  })
 })
 
-describe('F9-A: \'permanece\' compensa exatamente o received_amount — posterior ao ajuste primeiro, depois o anterior', () => {
-  const CORTE = '2026-10-29'
-  const ajuste = (conta: string) => banco.transacao({ account_id: conta, transaction_type: 'CREDIT', amount: 0, origin: 'AJUSTE', bank_ref: `AJUSTE:${conta}:${CORTE}`, created_at: new Date('2026-10-30T10:00:00Z'), transaction_date: dia(CORTE) })
-  const receberEm = (id: string, conta: string) =>
-    receber(new NextRequest('http://x/api', json({ received_amount: 50000, account_id: conta, received_at: '2026-11-03' })), { params: { id } })
+describe('F10-B: mover_para — o dinheiro foi lançado na OS errada (move linhas, nocionais e Payments; nada novo)', () => {
+  const CORTE = '2026-10-29', DATA = '2026-11-02'
+  const ajuste = () => banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 0, origin: 'AJUSTE', bank_ref: `AJUSTE:${ACC}:${CORTE}`, created_at: new Date('2026-10-30T10:00:00Z'), transaction_date: dia(CORTE) })
+  const contar = () => banco.tabelas.transaction.length
 
-  it('só nocional ANTERIOR ao ajuste (Receber 28/10, ajuste 30/10) → compensa X → Receber de outra AR X → saldo = banco', async () => {
-    banco.tabelas.account[0].current_balance = 150000 // banco: 100000 + o PIX de 500 (já no ajuste)
-    // a AR aponta para OUTRA conta (ACC2): a compensação vai na conta do nocional, não na da AR
-    banco.ar({ id: 'ar1', status: 'RECEBIDO', account_id: ACC2, received_amount: 50000, total_amount: 50000, description: 'OS 1' })
-    banco.ar({ id: 'ar2', status: 'PENDENTE', account_id: ACC, total_amount: 50000, description: 'OS 2' })
-    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 50000, bank_ref: 'AR:ar1', created_at: new Date('2026-10-28T15:00:00Z') })
-    ajuste(ACC)
-    expect((await est('ar1', { dinheiro: 'permanece' })).status).toBe(200)
-    expect(doAR('ar1').filter((t) => t.bank_ref === 'AR:ar1:estorno')).toEqual([expect.objectContaining({ account_id: ACC, amount: 50000 })])
-    expect((await receberEm('ar2', ACC)).status).toBe(200)
-    expect(banco.saldo(ACC)).toBe(150000)
-  })
-
-  it('linha L posterior + nocional N anterior ao ajuste, na mesma AR de X → compensa X UMA vez, na conta de L → Receber de outra AR → saldo = banco', async () => {
-    banco.tabelas.account[1].current_balance = 50000 // ACC2 (banco): a linha L de 500
-    banco.ar({ id: 'ar1', status: 'LIQUIDADO', account_id: ACC, received_amount: 50000, total_amount: 50000, description: 'OS 1' })
-    banco.ar({ id: 'ar2', status: 'PENDENTE', account_id: ACC2, total_amount: 50000, description: 'OS 2' })
-    banco.transacao({ id: 'N', account_id: ACC, transaction_type: 'CREDIT', amount: 50000, bank_ref: 'AR:ar1', created_at: new Date('2026-10-28T15:00:00Z') })
-    ajuste(ACC)
-    ajuste(ACC2)
-    banco.transacao({ id: 'L', account_id: ACC2, transaction_type: 'CREDIT', amount: 50000, origin: 'BANCO', bank_ref: 'K1', source_text: 'PIX', linked_ref: 'AR:ar1' })
-    expect((await est('ar1', { dinheiro: 'permanece' })).status).toBe(200)
-    expect(doAR('ar1').filter((t) => t.bank_ref === 'AR:ar1:estorno')).toEqual([expect.objectContaining({ account_id: ACC2, amount: 50000 })])
+  it('#11: linha ligada à OS errada → mover_para a AR certa: a linha passa para AR:<certa> (descrição dela), nenhum lançamento novo, saldos intactos; destino RECEBIDO, origem PENDENTE/0', async () => {
+    ajuste()
+    banco.ar({ id: 'a1', status: 'RECEBIDO', account_id: ACC, received_amount: 50000, total_amount: 50000, description: 'OS 1' })
+    banco.ar({ id: 'b1', status: 'PENDENTE', account_id: ACC, received_amount: 0, total_amount: 50000, description: 'OS 2' })
+    banco.transacao({ id: 'L', account_id: ACC, transaction_type: 'CREDIT', amount: 50000, origin: 'BANCO', bank_ref: 'K1', source_text: 'PIX B', linked_ref: 'AR:a1', description: 'Recebimento: OS 1 · banco: PIX B' })
+    const n = contar()
+    expect((await est('a1')).status).toBe(409)
+    const { status, j } = await est('a1', { mover_para: 'b1' })
+    expect(status).toBe(200)
+    expect(j.data).toEqual(expect.objectContaining({ movido_para: 'b1' }))
+    expect(banco.tx_('L')).toEqual(expect.objectContaining({ linked_ref: 'AR:b1', description: 'Recebimento: OS 2 · banco: PIX B', amount: 50000 }))
+    expect(contar()).toBe(n)
     expect(banco.saldo(ACC)).toBe(100000)
-    expect((await receberEm('ar2', ACC2)).status).toBe(200)
-    expect(banco.saldo(ACC2)).toBe(50000)
-    expect(banco.saldo(ACC)).toBe(100000)
+    expect(ar('a1')).toEqual(expect.objectContaining({ status: 'PENDENTE', received_amount: 0 }))
+    expect(ar('b1')).toEqual(expect.objectContaining({ status: 'RECEBIDO', received_amount: 50000 }))
+    // a OS certa já tem o dinheiro: o Receber dela pergunta em vez de lançar 2x
+    const r = await receber(new NextRequest('http://x/api', json({ received_amount: 50000, account_id: ACC, received_at: DATA })), { params: { id: 'b1' } })
+    expect(r.status).toBe(400) // já recebida
   })
 
-  it('recebido maior que o dinheiro (taxa do adquirente): o que sobra sem lançamento vai para a conta da AR, como produção', async () => {
-    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 10000, total_amount: 10000 })
-    banco.pagamento({ receivable_id: 'r1', provider: 'rede', external_id: 'NSU1', status: 'RECEIVED' })
-    banco.transacao({ account_id: ACC2, transaction_type: 'CREDIT', amount: 9700, bank_ref: 'acquirer:rede:NSU1' })
-    expect((await est('r1', { dinheiro: 'permanece' })).status).toBe(200)
-    expect(doAR().filter((t) => t.bank_ref === 'AR:r1:estorno').map((t) => [t.account_id, t.amount]).sort()).toEqual([[ACC, 300], [ACC2, 9700]].sort())
-  })
-})
-
-describe('F9-B: \'devolvido\' compensa só em conta SEM extrato (sem AJUSTE:<conta>:)', () => {
-  const CAIXA = '33333333-3333-4333-8333-333333333333'
-  it('AR recebida no Caixa → \'devolvido\' → DEBIT :estorno no Caixa (o saldo do Caixa volta)', async () => {
-    banco.conta({ id: CAIXA, name: 'Caixa', current_balance: 15000 })
-    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: CAIXA, received_amount: 15000, total_amount: 15000 })
-    banco.transacao({ account_id: CAIXA, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:r1' })
-    expect((await est('r1', { dinheiro: 'devolvido' })).status).toBe(200)
-    expect(doAR().filter((t) => t.bank_ref === 'AR:r1:estorno')).toEqual([expect.objectContaining({ account_id: CAIXA, amount: 15000, transaction_type: 'DEBIT' })])
-    expect(banco.saldo(CAIXA)).toBe(0)
+  it('mover_para pelo número da OS: resolve a conta a receber aberta dela', async () => {
+    banco.inserir('serviceOrder', { id: 'so2', company_id: 'c1', os_number: 61234 })
+    banco.ar({ id: 'a1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000, description: 'OS 1' })
+    banco.ar({ id: 'b1', status: 'CANCELADO', account_id: ACC, total_amount: 15000, service_order_id: 'so2', description: 'OS 61234 (antiga)' })
+    banco.ar({ id: 'b2', status: 'PENDENTE', account_id: ACC, received_amount: 0, total_amount: 15000, service_order_id: 'so2', description: 'OS 61234' })
+    banco.transacao({ id: 'N', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1' })
+    const { status, j } = await est('a1', { mover_para: '61234' })
+    expect(status).toBe(200)
+    expect(j.data.movido_para).toBe('b2')
+    expect(banco.tx_('N')!.bank_ref).toBe('AR:b2')
+    expect(ar('b2')).toEqual(expect.objectContaining({ status: 'RECEBIDO', received_amount: 15000 }))
   })
 
-  it('AR recebida no Itaú (conta com extrato: AJUSTE) → \'devolvido\' → nada lançado', async () => {
-    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 0, origin: 'AJUSTE', bank_ref: `AJUSTE:${ACC}:2026-10-29`, created_at: new Date('2026-10-30T10:00:00Z') })
-    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
-    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:r1' })
-    expect((await est('r1', { dinheiro: 'devolvido' })).status).toBe(200)
-    expect(doAR().filter((t) => t.bank_ref === 'AR:r1:estorno')).toEqual([])
-    expect(banco.saldo(ACC)).toBe(100000)
+  it('#2: match errado da maquininha → mover_para: o Payment (receivable_id e service_order_id) vai para a OS certa; o crédito do adquirente fica como está', async () => {
+    banco.ar({ id: 'a1', status: 'RECEBIDO', account_id: ACC, received_amount: 10000, total_amount: 10000, service_order_id: 'so1' })
+    banco.ar({ id: 'b1', status: 'PENDENTE', account_id: ACC, received_amount: 0, total_amount: 10000, service_order_id: 'so2', description: 'OS 2' })
+    banco.pagamento({ id: 'pg1', receivable_id: 'a1', service_order_id: 'so1', provider: 'rede', external_id: 'NSU1', status: 'RECEIVED' })
+    banco.pagamento({ id: 'pg9', receivable_id: 'a1', provider: 'asaas', external_id: 'pay_aberta', status: 'PENDING' })
+    banco.transacao({ id: 'A', account_id: ACC, transaction_type: 'CREDIT', amount: 9700, bank_ref: 'acquirer:rede:NSU1' })
+    const n = contar()
+    expect((await est('a1', { mover_para: 'b1' })).status).toBe(200)
+    const pg = (id: string) => banco.tabelas.payment.find((x) => x.id === id)!
+    expect(pg('pg1')).toEqual(expect.objectContaining({ receivable_id: 'b1', service_order_id: 'so2' }))
+    expect(pg('pg9').receivable_id).toBe('a1') // cobrança não paga não é dinheiro: fica
+    expect(banco.tx_('A')!.bank_ref).toBe('acquirer:rede:NSU1')
+    expect(contar()).toBe(n)
+    expect(ar('b1')).toEqual(expect.objectContaining({ status: 'RECEBIDO', received_amount: 10000 }))
   })
 
-  it('dinheiro no Caixa e no Itaú (com extrato) → \'devolvido\' compensa só o do Caixa, sem sobra para a conta da AR', async () => {
-    banco.conta({ id: CAIXA, name: 'Caixa', current_balance: 5000 })
-    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 0, origin: 'AJUSTE', bank_ref: `AJUSTE:${ACC}:2026-10-29`, created_at: new Date('2026-10-30T10:00:00Z') })
-    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
-    banco.transacao({ account_id: CAIXA, transaction_type: 'CREDIT', amount: 5000, bank_ref: 'AR:r1' })
-    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 10000, bank_ref: 'AR:r1' })
-    expect((await est('r1', { dinheiro: 'devolvido' })).status).toBe(200)
-    expect(doAR().filter((t) => t.bank_ref === 'AR:r1:estorno')).toEqual([expect.objectContaining({ account_id: CAIXA, amount: 5000 })])
+  it('destino com saldo em aberto menor que o valor → 422, nada gravado', async () => {
+    banco.ar({ id: 'a1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
+    banco.ar({ id: 'b1', status: 'PENDENTE', account_id: ACC, received_amount: 10000, total_amount: 20000 })
+    banco.transacao({ id: 'N', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1' })
+    const { status, j } = await est('a1', { mover_para: 'b1' })
+    expect(status).toBe(422)
+    expect(j.error).toBe('valor maior que o saldo em aberto da conta de destino')
+    expect(banco.tx_('N')!.bank_ref).toBe('AR:a1')
+    expect(ar('a1').status).toBe('RECEBIDO')
+  })
+
+  it('destino parcial: soma o valor e fica PENDENTE (o status parcial do Receber)', async () => {
+    banco.ar({ id: 'a1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
+    banco.ar({ id: 'b1', status: 'PENDENTE', account_id: ACC, received_amount: 5000, total_amount: 30000 })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1' })
+    expect((await est('a1', { mover_para: 'b1' })).status).toBe(200)
+    expect(ar('b1')).toEqual(expect.objectContaining({ status: 'PENDENTE', received_amount: 20000 }))
+  })
+
+  it('destino inexistente, de outra empresa, CANCELADO ou a própria conta → 404/422, nada gravado', async () => {
+    banco.ar({ id: 'a1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
+    banco.ar({ id: 'x1', company_id: 'c2', status: 'PENDENTE', total_amount: 15000 })
+    banco.ar({ id: 'c1x', status: 'CANCELADO', total_amount: 15000 })
+    banco.transacao({ id: 'N', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1' })
+    expect((await est('a1', { mover_para: 'nao-existe' })).status).toBe(404)
+    expect((await est('a1', { mover_para: 'x1' })).status).toBe(404)
+    expect((await est('a1', { mover_para: 'c1x' })).status).toBe(422)
+    expect((await est('a1', { mover_para: 'a1' })).status).toBe(422)
+    expect(banco.tx_('N')!.bank_ref).toBe('AR:a1')
+  })
+
+  it('antecipação ou boleto CNAB na origem → 422 (não dá para mover; estorne como devolvido)', async () => {
+    banco.ar({ id: 'a1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000, pix_code: JSON.stringify({ nossoNumero: '77' }) })
+    banco.ar({ id: 'b1', status: 'PENDENTE', account_id: ACC, received_amount: 0, total_amount: 15000 })
+    banco.transacao({ id: 'C', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'cnab:77' })
+    expect((await est('a1', { mover_para: 'b1' })).status).toBe(422)
+    expect(banco.tx_('C')!.bank_ref).toBe('cnab:77')
+  })
+
+  it('travas: contas → as duas ARs (FOR UPDATE, em ordem de id) → escritas, tudo pelo tx', async () => {
+    banco.ar({ id: 'z9', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
+    banco.ar({ id: 'b1', status: 'PENDENTE', account_id: ACC, received_amount: 0, total_amount: 15000 })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:z9' })
+    expect((await est('z9', { mover_para: 'b1' })).status).toBe(200)
+    expect(banco.travas.map((t) => [t.tabela, t.id])).toEqual([['accounts', ACC], ['accounts_receivable', 'b1'], ['accounts_receivable', 'z9']])
+    const escritas = banco.log.filter((o) => ['create', 'update', 'updateMany', 'delete'].includes(o.op))
+    expect(escritas.every((o) => o.cliente === 'tx' && o.seq > banco.travas[2].seq)).toBe(true)
+    expect(banco.prismaDentroDaTx()).toEqual([])
   })
 })
 

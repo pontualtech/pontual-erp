@@ -104,6 +104,19 @@ describe('§1 LIGAR converte o nocional na linha do banco (resolve #1, #2, #12)'
     ])
   })
 
+  it('F10-B: o nocional devolvido continua casável — CREDIT AR:x:devolvido → receita padrão; DEBIT AP:p1:devolvido → categoria da AP', async () => {
+    banco.categoria('Aluguel', 'financeiro_despesa')
+    banco.ap({ id: 'p1', category_id: 'cat:Aluguel' })
+    banco.transacao({ id: 'r', account_id: 'acc1', transaction_type: 'CREDIT', amount: 700, bank_ref: 'AR:x:devolvido', transaction_date: dia('2026-11-01') })
+    banco.transacao({ id: 'd', account_id: 'acc1', transaction_type: 'DEBIT', amount: 4800, bank_ref: 'AP:p1:devolvido', transaction_date: dia('2026-11-01') })
+    await post([
+      { chave: 'K1', data: '2026-11-01', descricao: 'PIX RECEBIDO', valor_centavos: 700 },
+      { chave: 'K2', data: '2026-11-01', descricao: 'BOLETO', valor_centavos: -4800 },
+    ])
+    expect(banco.tx_('r')).toEqual(expect.objectContaining({ origin: 'BANCO', linked_ref: 'AR:x:devolvido', category_id: 'cat:Venda de Servicos' }))
+    expect(banco.tx_('d')).toEqual(expect.objectContaining({ origin: 'BANCO', linked_ref: 'AP:p1:devolvido', category_id: 'cat:Aluguel' }))
+  })
+
   it('F3-G (m2, m15): DEBIT de estorno/reversão (AR:*:estorno, *-refund, *-chargeback) → "Estornos" (criada se faltar), não receita', async () => {
     for (const [id, ref] of [['e1', 'AR:x:estorno'], ['e2', 'pay_1-refund'], ['e3', 'pay_2-chargeback']]) {
       banco.transacao({ id, account_id: 'acc1', transaction_type: 'DEBIT', amount: 100, bank_ref: ref, transaction_date: dia('2026-11-01') })

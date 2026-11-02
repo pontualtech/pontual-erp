@@ -4,7 +4,8 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import {
-  alocarCompensacao, CONFLITO_BANCO, conflitoDeBanco, ContaAlterada, contasDaAP, descreverDinheiro, dinheiroDaAP, exigirTravadas, travarContas,
+  CONFLITO_BANCO, conflitoDeBanco, ContaAlterada, contasComExtrato, contasDaAP, descreverDinheiro, DEVOLVIDO, dinheiroDaAP, exigirTravadas,
+  travarContas,
   type LancamentoDaConta,
 } from '@/lib/financeiro/livro-baixa-db'
 
@@ -12,27 +13,28 @@ import {
  * POST /api/financeiro/contas-pagar/[id]/estornar
  *
  * C10 fix 22/05: estorno de AP ja paga. Espelho do estorno de AR, travas contas → AP (§7), tudo relido na tx.
- * Fix 8 (F8-A, §0): com saída lançada (linhas do banco ligadas a AP:<id>, DEBIT AP:<id> vivo) o estorno PERGUNTA —
- * sem `dinheiro`, 409 ESTORNO_PERGUNTA: 'permanece' (engano: o dinheiro continua no banco) → CREDIT AP:<id>:estorno na
- * conta de cada saída, sem desligar linhas, de exatamente o pago (F9-A); 'devolvido' (voltou do fornecedor) → só status,
- * salvo a saída em conta sem extrato (Caixa), que é compensada (F9-B). Sem saída: legado (paga antes de 22/05/2026, DEBIT sem bank_ref) → CREDIT pelo paid_amount na conta da
- * AP; senão só status. PENDENTE sem valor pago → 400 'nada a estornar'. Desligar linhas só no Desfazer.
+ * Fix 10 (F10-B, espelho da AR): com saída lançada (linhas do banco ligadas a AP:<id>, DEBIT AP:<id> vivo) o estorno
+ * PERGUNTA — sem resposta, 409 ESTORNO_PERGUNTA: `dinheiro: 'devolvido'` → AP:<id> (linhas e DEBIT) ganha :devolvido e deixa
+ * de ser saída da conta; em conta sem extrato (sem AJUSTE, ex.: Caixa) CREDIT AP:<id>:estorno pela saída daquela conta;
+ * `mover_para: '<id da AP>'` (engano) → a saída passa para a AP certa (AP:<destino>), sem lançamento novo nem saldo. Sem
+ * saída: legado (paga antes de 22/05/2026, DEBIT sem bank_ref) → CREDIT pelo paid_amount na conta da AP; senão só status.
+ * PENDENTE sem valor pago → 400 'nada a estornar'.
  *
  * Antes, mexer em AP paga só era possível via DELETE (soft delete) que
  * deixava a Transaction DEBIT órfã + saldo deflacionado sem rastro.
  */
 type Params = { params: { id: string } }
 
-// Fix 8 (F8-A, espelho da AR): a conta tem saída lançada e o operador não disse se o dinheiro voltou ou continua no banco.
+// A conta tem saída lançada e o operador não disse o que aconteceu com ela.
 class PerguntaEstorno extends Error {
   constructor(readonly lancados: LancamentoDaConta[]) {
-    super('O dinheiro deste pagamento voltou do fornecedor, ou continua no banco (lançado na conta errada/por engano)?')
+    super('O dinheiro foi devolvido pelo fornecedor, ou lançado na conta errada?')
   }
 }
 
 // Recusa decidida na releitura com as travas: nada gravado.
 class RecusaEstorno extends Error {
-  constructor(message: string, readonly status: 400 | 404 | 409) {
+  constructor(message: string, readonly status: 400 | 404 | 409 | 422) {
     super(message)
   }
 }
@@ -62,9 +64,10 @@ export async function POST(req: NextRequest, { params }: Params) {
     const body = await req.json().catch(() => ({}))
     const motivo = (body as any)?.motivo ? String((body as any).motivo).trim().slice(0, 500) : null
     const escolha = (body as any)?.dinheiro as unknown
-    if (escolha !== undefined && escolha !== 'permanece' && escolha !== 'devolvido') {
-      return error("dinheiro deve ser 'permanece' ou 'devolvido'", 400)
-    }
+    const moverPara = (body as any)?.mover_para as unknown
+    if (escolha !== undefined && escolha !== 'devolvido') return error("dinheiro deve ser 'devolvido' (engano: use mover_para)", 400)
+    if (moverPara !== undefined && (typeof moverPara !== 'string' || !moverPara.trim())) return error('mover_para deve ser o id da conta a pagar', 400)
+    if (escolha !== undefined && moverPara !== undefined) return error("escolha 'devolvido' ou mover_para, não os dois", 400)
 
     // Leitura de fora só para saber QUAIS contas travar; quem decide é a releitura dentro da tx.
     const lida = await prisma.accountPayable.findFirst({
@@ -75,12 +78,17 @@ export async function POST(req: NextRequest, { params }: Params) {
     const contas = await contasDaAP(prisma, user.companyId, lida)
     const proprio = `AP:${params.id}`
     const estorno = `AP:${params.id}:estorno`
+    const destinoId = typeof moverPara === 'string' ? moverPara.trim() : null
+    if (destinoId === params.id) return error('a conta de destino é a própria conta', 422)
 
     let antes: { status: string | null; paid_amount: number | null }
     try {
       antes = await prisma.$transaction(async (tx) => {
         const travadas = await travarContas(tx, user.companyId, contas)
-        await tx.$queryRaw`SELECT id FROM accounts_payable WHERE id = ${params.id} AND company_id = ${user.companyId} FOR UPDATE`
+        // §7: as APs (origem e destino) em ordem de id.
+        for (const id of [params.id, ...(destinoId ? [destinoId] : [])].sort()) {
+          await tx.$queryRaw`SELECT id FROM accounts_payable WHERE id = ${id} AND company_id = ${user.companyId} FOR UPDATE`
+        }
         const ap = await tx.accountPayable.findFirst({
           where: { id: params.id, company_id: user.companyId, deleted_at: null },
         })
@@ -103,16 +111,53 @@ export async function POST(req: NextRequest, { params }: Params) {
         }
 
         const compensar = new Map<string, number>()
-        if (dinheiro.total > 0) {
+        if (destinoId && dinheiro.total === 0) throw new RecusaEstorno('não há saída lançada nesta conta para mover', 422)
+        if (dinheiro.total > 0 && destinoId) {
+          // ── mover_para (engano): a saída vai para a AP certa; nada novo, nenhum saldo ──
+          const dest = await tx.accountPayable.findFirst({ where: { id: destinoId, company_id: user.companyId, deleted_at: null } })
+          if (!dest) throw new RecusaEstorno('Conta a pagar de destino nao encontrada', 404)
+          if (dest.status === 'CANCELADO') throw new RecusaEstorno('a conta de destino está cancelada', 422)
+          const movido = pago > 0 ? pago : dinheiro.total
+          if (movido > dest.total_amount - (dest.paid_amount ?? 0)) throw new RecusaEstorno('valor maior que o saldo em aberto da conta de destino', 422)
+          exigirTravadas(travadas, [...dinheiro.linhas, ...dinheiro.nocionais].map((t) => t.account_id))
+          const refDestino = `AP:${dest.id}`
+          const textos: { id: string; source_text: string | null }[] = dinheiro.linhas.length === 0 ? [] : await tx.transaction.findMany({
+            where: { company_id: user.companyId, id: { in: dinheiro.linhas.map((l) => l.id) } },
+            select: { id: true, source_text: true },
+          })
+          for (const l of dinheiro.linhas) {
+            await tx.transaction.update({
+              where: { id: l.id },
+              data: { linked_ref: refDestino, description: `Pgto: ${dest.description} · banco: ${textos.find((t) => t.id === l.id)?.source_text ?? ''}` },
+            })
+          }
+          for (const t of dinheiro.nocionais) {
+            await tx.transaction.update({ where: { id: t.id }, data: { bank_ref: refDestino, description: `Pgto: ${dest.description}` } })
+          }
+          const pagoDestino = (dest.paid_amount ?? 0) + movido
+          await tx.accountPayable.update({
+            where: { id: dest.id },
+            data: { paid_amount: pagoDestino, status: pagoDestino >= dest.total_amount ? 'PAGO' : 'PENDENTE', updated_at: new Date() },
+          })
+        } else if (dinheiro.total > 0) {
           if (!escolha) throw new PerguntaEstorno(await descreverDinheiro(tx, user.companyId, dinheiro))
-          // Fix 9 (F9-A): 'permanece' → CREDIT AP:<id>:estorno de EXATAMENTE o pago (sem valor registrado: a saída viva),
-          // posterior ao ajuste primeiro, depois o anterior, na conta de cada saída; sobra na conta da AP (como produção),
-          // sem desligar linhas. F9-B: 'devolvido' só compensa a saída de conta sem extrato (sem AJUSTE), sem sobra.
-          const { porConta, sobra } = await alocarCompensacao(
-            tx, user.companyId, [dinheiro.linhas, dinheiro.nocionais], pago > 0 ? pago : dinheiro.total, escolha === 'devolvido',
-          )
-          for (const [conta, valor] of porConta) compensar.set(conta, valor)
-          if (escolha === 'permanece' && sobra > 0 && ap.account_id) compensar.set(ap.account_id, (compensar.get(ap.account_id) ?? 0) + sobra)
+          // ── 'devolvido': AP:<id> ganha :devolvido; conta sem extrato compensa a saída dela ──
+          const saidas = [...dinheiro.linhas, ...dinheiro.nocionais]
+          const comExtrato = await contasComExtrato(tx, user.companyId, saidas.map((t) => t.account_id))
+          for (const t of saidas) {
+            if (!comExtrato.has(t.account_id)) compensar.set(t.account_id, (compensar.get(t.account_id) ?? 0) + (t.vivo ?? t.amount))
+          }
+          const sufixar: { id: string; account_id: string; origin: string | null }[] = await tx.transaction.findMany({
+            where: { company_id: user.companyId, OR: [{ origin: 'BANCO', linked_ref: proprio }, { origin: null, bank_ref: proprio }] },
+            select: { id: true, account_id: true, origin: true },
+          })
+          exigirTravadas(travadas, [...sufixar.map((t) => t.account_id), ...compensar.keys()])
+          for (const t of sufixar) {
+            await tx.transaction.update({
+              where: { id: t.id },
+              data: t.origin === 'BANCO' ? { linked_ref: `${proprio}${DEVOLVIDO}` } : { bank_ref: `${proprio}${DEVOLVIDO}` },
+            })
+          }
         } else {
           // (c) legado: paga antes de 22/05 com conta e valor, sem nenhum lançamento próprio nem linha ligada. Fix 3/4
           // (F3-A, F4-A): conta criada antes de 22/05; updated_at antigo OU a transação legada DESTA AP — DEBIT do ERP sem
@@ -135,9 +180,8 @@ export async function POST(req: NextRequest, { params }: Params) {
           if (legado) compensar.set(ap.account_id!, pago)
           // Quitada sem valor, sem dinheiro e sem legado: nada a estornar.
           if (!legado && pago <= 0) throw new RecusaEstorno('nada a estornar', 400)
+          exigirTravadas(travadas, [...compensar.keys()])
         }
-
-        exigirTravadas(travadas, [...compensar.keys()])
 
         for (const [contaId, valor] of compensar) {
           // CREDIT compensatório (reverte o DEBIT original): bank_ref "AP:{id}:estorno" distingue do DEBIT.
@@ -182,10 +226,10 @@ export async function POST(req: NextRequest, { params }: Params) {
       action: 'payable.estorno',
       entityId: params.id,
       oldValue: antes,
-      newValue: { status: 'PENDENTE', paid_amount: 0, motivo },
+      newValue: { status: 'PENDENTE', paid_amount: 0, motivo, ...(destinoId ? { movido_para: destinoId } : { dinheiro: escolha ?? null }) },
     })
 
-    return success({ ok: true, payable_id: params.id })
+    return success({ ok: true, payable_id: params.id, ...(destinoId ? { movido_para: destinoId } : {}) })
   } catch (err) {
     return handleError(err)
   }

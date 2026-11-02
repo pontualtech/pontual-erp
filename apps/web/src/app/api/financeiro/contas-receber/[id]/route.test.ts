@@ -221,6 +221,15 @@ describe('F8-A/F8-B: o DELETE conta o dinheiro VIVO da conta', () => {
   })
 })
 
+describe("F10-B: estornada como 'devolvido' pode ser excluída", () => {
+  it('linha AR:r1:devolvido e nocional AR:r1:devolvido não são dinheiro da conta: exclui', async () => {
+    banco.ar({ ...AR, received_amount: 0 })
+    banco.transacao({ account_id: 'acc1', origin: 'BANCO', bank_ref: 'K', transaction_type: 'CREDIT', amount: 5000, linked_ref: 'AR:r1:devolvido' })
+    t('AR:r1:devolvido', 'CREDIT', 3000)
+    expect((await excluir()).status).toBe(200)
+  })
+})
+
 describe('F2-G (m21): opções da $transaction', () => {
   it('maxWait 10s e timeout 20s', async () => {
     banco.ar(AR)

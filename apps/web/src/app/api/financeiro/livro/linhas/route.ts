@@ -252,7 +252,8 @@ export async function POST(req: NextRequest) {
         if (receitaPadrao === undefined) receitaPadrao = await categoriaReceitaPadraoId(tx, user.companyId)
         if (receitaPadrao) return receitaPadrao
       }
-      const ap = /^AP:([^:]+)$/.exec(ref)
+      // Fix 10 (F10-B): a saída devolvida (AP:<id>:devolvido) também é da AP.
+      const ap = /^AP:([^:]+)(:devolvido)?$/.exec(ref)
       if (ap) {
         const conta = await tx.accountPayable.findFirst({ where: { id: ap[1], company_id: user.companyId }, select: { category_id: true } })
         if (conta?.category_id) return conta.category_id

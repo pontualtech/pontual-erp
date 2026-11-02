@@ -29,11 +29,12 @@ beforeEach(() => {
 })
 
 describe('§3 estorno de AP', () => {
-  it('(b) DEBIT AP:id: CREDIT AP:id:estorno na conta do débito, um por conta', async () => {
+  it("(b) 'devolvido' em contas sem extrato: CREDIT AP:id:estorno na conta de cada saída; os DEBIT ganham :devolvido", async () => {
     banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 5000, total_amount: 5000 })
     banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 3000, bank_ref: 'AP:p1' })
     banco.transacao({ account_id: ACC2, transaction_type: 'DEBIT', amount: 2000, bank_ref: 'AP:p1' })
-    expect((await est('p1', { dinheiro: 'permanece' })).status).toBe(200)
+    expect((await est('p1', { dinheiro: 'devolvido' })).status).toBe(200)
+    expect(banco.tabelas.transaction.filter((t) => t.bank_ref === 'AP:p1:devolvido')).toHaveLength(2)
     expect(banco.saldo(ACC)).toBe(103000)
     expect(banco.saldo(ACC2)).toBe(2000)
     expect(doAP().filter((t) => t.bank_ref === 'AP:p1:estorno').map((t) => [t.account_id, t.amount]).sort()).toEqual([[ACC, 3000], [ACC2, 2000]])
@@ -51,7 +52,7 @@ describe('§3 estorno de AP', () => {
   it('PAGO com paid_amount 0 mas DEBIT próprio: aceita e compensa (antes 400)', async () => {
     banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 0, total_amount: 5000 })
     banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 5000, bank_ref: 'AP:p1' })
-    expect((await est('p1', { dinheiro: 'permanece' })).status).toBe(200)
+    expect((await est('p1', { dinheiro: 'devolvido' })).status).toBe(200)
     expect(banco.saldo(ACC)).toBe(105000)
   })
 
@@ -85,13 +86,13 @@ describe('§3 estorno de AP', () => {
       banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 5000, bank_ref: 'AP:p1' })
       Object.assign(ap(), { status: 'PAGO', paid_amount: 5000 })
     })
-    expect((await est('p1', { dinheiro: 'permanece' })).status).toBe(200)
+    expect((await est('p1', { dinheiro: 'devolvido' })).status).toBe(200)
     expect(banco.travas.map((t) => t.tabela)).toEqual(['accounts', 'accounts_payable'])
     expect(banco.saldo(ACC)).toBe(105000)
     expect(banco.prismaDentroDaTx()).toEqual([])
   })
 
-  it("#2: Pagar 1200 → livro liga o DEBIT (órfão) → estornar 'permanece' → Pagar a AP certa: uma saída de 1200 conta uma vez", async () => {
+  it("#2/#11: Pagar 1200 → livro liga o DEBIT (órfão) → estornar mover_para a AP certa: a linha passa para ela, nada novo, uma saída de 1200", async () => {
     const CORTE = '2026-10-29', DATA = '2026-11-02'
     banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 0, bank_ref: `AJUSTE:${ACC}:${CORTE}`, origin: 'AJUSTE', transaction_date: dia(CORTE) })
     banco.ap({ id: 'errada', status: 'PENDENTE', total_amount: 120000, description: 'Boleto A' })
@@ -102,9 +103,14 @@ describe('§3 estorno de AP', () => {
       account_id: ACC, corte: CORTE, linhas: [{ chave: `ITAU:${DATA}|BOLETO|-120000|1`, data: DATA, descricao: 'BOLETO', valor_centavos: -120000 }],
     })))
     expect((await linhas.json()).data.resultados[0]).toEqual(expect.objectContaining({ acao: 'LIGAR', origem: 'orfao' }))
-    expect((await est('errada', { dinheiro: 'permanece' })).status).toBe(200)
-    const r = await (await pagarAP('certa')).json()
-    expect(r.data.ligada).toBe(false) // a linha segue ligada à AP errada (compensada pelo :estorno)
+    const n = banco.tabelas.transaction.length
+    const { status, j } = await est('errada', { mover_para: 'certa' })
+    expect(status).toBe(200)
+    expect(j.data.movido_para).toBe('certa')
+    expect(banco.tabelas.transaction.find((t) => t.origin === 'BANCO' && t.transaction_type === 'DEBIT')).toEqual(expect.objectContaining({ linked_ref: 'AP:certa', description: 'Pgto: Boleto B · banco: BOLETO' }))
+    expect(banco.tabelas.transaction.length).toBe(n)
+    expect(ap('errada')).toEqual(expect.objectContaining({ status: 'PENDENTE', paid_amount: 0 }))
+    expect(ap('certa')).toEqual(expect.objectContaining({ status: 'PAGO', paid_amount: 120000 }))
     expect(banco.saldo(ACC)).toBe(100000 - 120000)
   })
 })
@@ -129,7 +135,7 @@ describe('F2-D (m9): conflito do banco no estorno de AP', () => {
     banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 5000, bank_ref: 'AP:p1' })
     for (const code of ['P2034', 'P2028']) {
       banco.tx.transaction.create.mockImplementationOnce(async () => { throw Object.assign(new Error('conflito'), { code }) })
-      const { status, j } = await est('p1', { dinheiro: 'permanece' })
+      const { status, j } = await est('p1', { dinheiro: 'devolvido' })
       expect(status).toBe(409)
       expect(j.error).toBe('conflito com outra operação — repita')
     }
@@ -159,12 +165,13 @@ describe('F2-E (#5, m4): legado detectado pela própria transação', () => {
   })
 })
 
-describe("F2-G (#12) → F8-A: DEBIT AP:id com marcador antigo LIGADA é dinheiro; 'permanece' o compensa como produção", () => {
-  it("source_text LIGADA:… e origin null, conta sem ajuste: pergunta; 'permanece' → CREDIT na conta", async () => {
+describe("F2-G (#12) → F10-B: DEBIT AP:id com marcador antigo LIGADA é dinheiro próprio", () => {
+  it("source_text LIGADA:… e origin null, conta sem extrato: pergunta; 'devolvido' → :devolvido + CREDIT na conta", async () => {
     banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 5000, total_amount: 5000 })
     banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 5000, bank_ref: 'AP:p1', source_text: 'LIGADA:ITAU:k' })
     expect((await est()).status).toBe(409)
-    expect((await est('p1', { dinheiro: 'permanece' })).status).toBe(200)
+    expect((await est('p1', { dinheiro: 'devolvido' })).status).toBe(200)
+    expect(banco.tabelas.transaction.filter((t) => t.bank_ref === 'AP:p1:devolvido')).toHaveLength(1)
     expect(doAP().filter((t) => t.bank_ref === 'AP:p1:estorno')).toEqual([expect.objectContaining({ amount: 5000, transaction_type: 'CREDIT' })])
     expect(banco.saldo(ACC)).toBe(105000)
   })
@@ -203,10 +210,10 @@ describe('F3-A (espelho na AP): legado (c) só em conta antiga e com o "Pgto: �
 })
 
 describe('F3-C (#2): 409 da taxa do adquirente só quando a AP não tem saída própria', () => {
-  it("taxa ESTIMADA 'Desconto automatico' paga pelo Receber (DEBIT AP:p1 vivo) → estorna pelo (b): 200 e CREDIT AP:p1:estorno", async () => {
+  it("taxa ESTIMADA 'Desconto automatico' paga pelo Receber (DEBIT AP:p1 vivo, conta sem extrato) → 'devolvido': 200 e CREDIT AP:p1:estorno", async () => {
     banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 1500, total_amount: 1500, payment_method: 'Desconto automatico' })
     banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 1500, bank_ref: 'AP:p1' })
-    expect((await est('p1', { dinheiro: 'permanece' })).status).toBe(200)
+    expect((await est('p1', { dinheiro: 'devolvido' })).status).toBe(200)
     expect(doAP().filter((t) => t.bank_ref === 'AP:p1:estorno')).toEqual([expect.objectContaining({ transaction_type: 'CREDIT', amount: 1500 })])
     expect(banco.saldo(ACC)).toBe(101500)
   })
@@ -217,13 +224,14 @@ describe('F3-C (#2): 409 da taxa do adquirente só quando a AP não tem saída p
     for (const id of ['p1', 'p2']) expect((await est(id)).status).toBe(409)
   })
 
-  it("a taxa com linha do banco ligada (AP:p1) também é estornável: pergunta; 'permanece' → CREDIT, a linha segue ligada", async () => {
+  it("a taxa com linha do banco ligada (AP:p1) também é estornável: pergunta; 'devolvido' (conta com extrato) → a linha fica AP:p1:devolvido, nada lançado", async () => {
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 0, origin: 'AJUSTE', bank_ref: `AJUSTE:${ACC}:2026-10-29`, created_at: new Date('2026-10-30T10:00:00Z') })
     banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 1500, total_amount: 1500, payment_method: 'Desconto automatico' })
     banco.transacao({ id: 'L', account_id: ACC, transaction_type: 'DEBIT', amount: 1500, origin: 'BANCO', bank_ref: 'K', source_text: 'TARIFA', linked_ref: 'AP:p1' })
     expect((await est()).status).toBe(409)
-    expect((await est('p1', { dinheiro: 'permanece' })).status).toBe(200)
-    expect(banco.tx_('L')!.linked_ref).toBe('AP:p1')
-    expect(doAP().filter((t) => t.bank_ref === 'AP:p1:estorno')).toEqual([expect.objectContaining({ amount: 1500 })])
+    expect((await est('p1', { dinheiro: 'devolvido' })).status).toBe(200)
+    expect(banco.tx_('L')!.linked_ref).toBe('AP:p1:devolvido')
+    expect(doAP().filter((t) => t.bank_ref === 'AP:p1:estorno')).toEqual([])
   })
 })
 
@@ -237,110 +245,111 @@ describe('F4-A (#1, espelho na AP): legado (c) só com o "Pgto: <descrição des
   })
 })
 
-describe('F8-A (§0, espelho na AP): o estorno PERGUNTA se o dinheiro voltou do fornecedor ou continua no banco', () => {
-  const PERGUNTA = 'O dinheiro deste pagamento voltou do fornecedor, ou continua no banco (lançado na conta errada/por engano)?'
-  it("Pagar → livro converte → estorno sem `dinheiro` → 409; 'permanece' → CREDIT AP:p1:estorno na conta da linha; Pagar de OUTRA AP fora da janela → saldo = banco", async () => {
-    const CORTE = '2026-10-29', DATA = '2026-11-02'
-    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 0, bank_ref: `AJUSTE:${ACC}:${CORTE}`, origin: 'AJUSTE', transaction_date: dia(CORTE) })
+describe("F10-B (AP): 'devolvido' (refs próprias ganham :devolvido) ou mover_para (engano)", () => {
+  const PERGUNTA = 'O dinheiro foi devolvido pelo fornecedor, ou lançado na conta errada?'
+  const CORTE = '2026-10-29', DATA = '2026-11-02'
+  const CAIXA = '33333333-3333-4333-8333-333333333333'
+  const ajuste = (conta = ACC) => banco.transacao({ account_id: conta, transaction_type: 'CREDIT', amount: 0, origin: 'AJUSTE', bank_ref: `AJUSTE:${conta}:${CORTE}`, created_at: new Date('2026-10-30T10:00:00Z'), transaction_date: dia(CORTE) })
+  const pagarEm = (id: string, data: string, conta = ACC, extra: Record<string, unknown> = {}) =>
+    pagar(new NextRequest('http://x/api', json({ paid_amount: 120000, account_id: conta, paid_at: data, ...extra })), { params: { id } })
+  const linhaDoBanco = (chave: string, valor: number) => lancarLinhas(new NextRequest('http://x/api', json({
+    account_id: ACC, corte: CORTE, linhas: [{ chave, data: DATA, descricao: valor < 0 ? 'BOLETO' : 'DEVOLUCAO FORNECEDOR', valor_centavos: valor }],
+  })))
+  const estornos = (id = 'p1') => banco.tabelas.transaction.filter((t) => t.bank_ref === `AP:${id}:estorno`)
+
+  it("Pagar → livro converte → estorno sem resposta → 409; 'devolvido' → a linha fica AP:p1:devolvido, nada lançado; a devolução entra pelo extrato; Pagar de novo lança: saldo = banco", async () => {
+    ajuste()
     banco.ap({ id: 'p1', status: 'PENDENTE', total_amount: 120000, description: 'Boleto A' })
-    banco.ap({ id: 'p2', status: 'PENDENTE', total_amount: 120000, description: 'Boleto B' })
-    const pagarEm = (id: string, data: string) => pagar(new NextRequest('http://x/api', json({ paid_amount: 120000, account_id: ACC, paid_at: data })), { params: { id } })
     await pagarEm('p1', DATA)
-    await lancarLinhas(new NextRequest('http://x/api', json({
-      account_id: ACC, corte: CORTE, linhas: [{ chave: `ITAU:${DATA}|BOLETO|-120000|1`, data: DATA, descricao: 'BOLETO', valor_centavos: -120000 }],
-    })))
+    await linhaDoBanco(`ITAU:${DATA}|BOLETO|-120000|1`, -120000)
     const { status, j } = await est('p1')
     expect(status).toBe(409)
     expect(j).toEqual(expect.objectContaining({ code: 'ESTORNO_PERGUNTA', error: PERGUNTA, lancados: [expect.objectContaining({ valor_centavos: 120000 })] }))
-    expect((await est('p1', { dinheiro: 'permanece' })).status).toBe(200)
-    expect(banco.tabelas.transaction.filter((t) => t.linked_ref === 'AP:p1')).toHaveLength(1)
-    expect(doAP('p1').filter((t) => t.bank_ref === 'AP:p1:estorno')).toEqual([expect.objectContaining({ account_id: ACC, amount: 120000, transaction_type: 'CREDIT' })])
-    await pagarEm('p2', '2026-11-22')
-    expect(banco.saldo(ACC)).toBe(100000 - 120000)
-  })
-
-  it("depois do 'permanece', o Pagar da MESMA AP lança a saída de novo (o :estorno desconta a linha ligada)", async () => {
-    const CORTE = '2026-10-29', DATA = '2026-11-02'
-    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 0, bank_ref: `AJUSTE:${ACC}:${CORTE}`, origin: 'AJUSTE', transaction_date: dia(CORTE) })
-    banco.ap({ id: 'p1', status: 'PENDENTE', total_amount: 120000, description: 'Boleto A' })
-    const pagarEm = (data: string) => pagar(new NextRequest('http://x/api', json({ paid_amount: 120000, account_id: ACC, paid_at: data })), { params: { id: 'p1' } })
-    await pagarEm(DATA)
-    await lancarLinhas(new NextRequest('http://x/api', json({
-      account_id: ACC, corte: CORTE, linhas: [{ chave: `ITAU:${DATA}|BOLETO|-120000|1`, data: DATA, descricao: 'BOLETO', valor_centavos: -120000 }],
-    })))
-    expect((await est('p1', { dinheiro: 'permanece' })).status).toBe(200)
+    expect((await est('p1', { dinheiro: 'devolvido' })).status).toBe(200)
+    expect(banco.tabelas.transaction.filter((t) => t.origin === 'BANCO' && t.linked_ref === 'AP:p1:devolvido')).toHaveLength(1)
+    expect(estornos()).toEqual([])
+    await linhaDoBanco(`ITAU:${DATA}|DEVOLUCAO FORNECEDOR|+120000|1`, 120000)
     expect(banco.saldo(ACC)).toBe(100000)
-    expect((await pagarEm('2026-11-22')).status).toBe(200)
+    expect((await pagarEm('p1', '2026-11-22')).status).toBe(200)
     expect(banco.tabelas.transaction.filter((t) => t.bank_ref === 'AP:p1')).toEqual([expect.objectContaining({ transaction_type: 'DEBIT', amount: 120000 })])
     expect(banco.saldo(ACC)).toBe(100000 - 120000)
   })
 
-  it('PAGO sem valor nem lançamento: 400 "nada a estornar"', async () => {
-    banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 0, total_amount: 5000 })
-    const { status, j } = await est()
-    expect(status).toBe(400)
-    expect(j.error).toBe('nada a estornar')
-    expect(ap().status).toBe('PAGO')
-  })
-
-  it("'devolvido' em conta com extrato (AJUSTE) → só status (a entrada da devolução vem pelo extrato)", async () => {
-    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 0, origin: 'AJUSTE', bank_ref: `AJUSTE:${ACC}:2026-10-29`, created_at: new Date('2026-10-30T10:00:00Z') })
-    banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 5000, total_amount: 5000 })
-    banco.transacao({ id: 'L', account_id: ACC, transaction_type: 'DEBIT', amount: 5000, origin: 'BANCO', bank_ref: 'K', source_text: 'PGTO', linked_ref: 'AP:p1' })
-    expect((await est('p1', { dinheiro: 'devolvido' })).status).toBe(200)
-    expect(banco.tx_('L')!.linked_ref).toBe('AP:p1')
-    expect(doAP()).toEqual([])
-    expect(ap().status).toBe('PENDENTE')
-  })
-})
-
-describe('F9-A/F9-B (espelho na AP)', () => {
-  const CORTE = '2026-10-29'
-  const CAIXA = '33333333-3333-4333-8333-333333333333'
-  const ajuste = (conta: string) => banco.transacao({ account_id: conta, transaction_type: 'CREDIT', amount: 0, origin: 'AJUSTE', bank_ref: `AJUSTE:${conta}:${CORTE}`, created_at: new Date('2026-10-30T10:00:00Z'), transaction_date: dia(CORTE) })
-
-  it("F9-A: só DEBIT anterior ao ajuste (Pagar 28/10, ajuste 30/10) → 'permanece' compensa X → Pagar de outra AP X → saldo = banco", async () => {
-    banco.tabelas.account[0].current_balance = -20000 // banco: 100000 − o boleto de 1200 (já no ajuste)
+  it("#1/#8/#16: depois do 'devolvido', o Pagar da MESMA AP pelo Caixa debita o Caixa (não fica 'já pago')", async () => {
+    banco.conta({ id: CAIXA, name: 'Caixa', current_balance: 0 })
+    ajuste()
     banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 120000, total_amount: 120000, description: 'Boleto A' })
-    banco.ap({ id: 'p2', status: 'PENDENTE', total_amount: 120000, description: 'Boleto B' })
-    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 120000, bank_ref: 'AP:p1', created_at: new Date('2026-10-28T15:00:00Z') })
-    ajuste(ACC)
-    expect((await est('p1', { dinheiro: 'permanece' })).status).toBe(200)
-    expect(doAP('p1').filter((t) => t.bank_ref === 'AP:p1:estorno')).toEqual([expect.objectContaining({ account_id: ACC, amount: 120000, transaction_type: 'CREDIT' })])
-    expect((await pagar(new NextRequest('http://x/api', json({ paid_amount: 120000, account_id: ACC, paid_at: '2026-11-03' })), { params: { id: 'p2' } })).status).toBe(200)
-    expect(banco.saldo(ACC)).toBe(-20000)
+    banco.transacao({ id: 'L', account_id: ACC, transaction_type: 'DEBIT', amount: 120000, origin: 'BANCO', bank_ref: 'K', source_text: 'BOLETO', linked_ref: 'AP:p1' })
+    await est('p1', { dinheiro: 'devolvido' })
+    const r = await (await pagarEm('p1', DATA, CAIXA)).json()
+    expect(r.data.aviso).toBeUndefined()
+    expect(banco.tabelas.transaction.filter((t) => t.bank_ref === 'AP:p1')).toEqual([expect.objectContaining({ account_id: CAIXA, amount: 120000 })])
+    expect(banco.saldo(CAIXA)).toBe(-120000)
   })
 
-  it("F9-A: linha posterior + DEBIT anterior ao ajuste na mesma AP → compensa o pago UMA vez, na conta da linha", async () => {
-    banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 120000, total_amount: 120000 })
-    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 120000, bank_ref: 'AP:p1', created_at: new Date('2026-10-28T15:00:00Z') })
-    ajuste(ACC)
-    ajuste(ACC2)
-    banco.transacao({ account_id: ACC2, transaction_type: 'DEBIT', amount: 120000, origin: 'BANCO', bank_ref: 'K', source_text: 'BOLETO', linked_ref: 'AP:p1' })
-    expect((await est('p1', { dinheiro: 'permanece' })).status).toBe(200)
-    expect(doAP('p1').filter((t) => t.bank_ref === 'AP:p1:estorno')).toEqual([expect.objectContaining({ account_id: ACC2, amount: 120000 })])
+  it("#6: depois do 'devolvido', o Pagar com vínculo explícito à saída nova liga essa linha", async () => {
+    ajuste()
+    banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 120000, total_amount: 120000, description: 'Boleto A' })
+    banco.transacao({ id: 'L', account_id: ACC, transaction_type: 'DEBIT', amount: 120000, origin: 'BANCO', bank_ref: 'K', source_text: 'BOLETO', linked_ref: 'AP:p1' })
+    banco.transacao({ id: 'L2', account_id: ACC, transaction_type: 'DEBIT', amount: 120000, origin: 'BANCO', bank_ref: 'K2', source_text: 'BOLETO 2', category_id: 'cat:A classificar', transaction_date: dia(DATA) })
+    await est('p1', { dinheiro: 'devolvido' })
+    const r = await (await pagarEm('p1', DATA, ACC, { livro_transaction_id: 'L2' })).json()
+    expect(r.data.ligada).toBe(true)
+    expect(banco.tx_('L2')!.linked_ref).toBe('AP:p1')
   })
 
-  it("F9-A: pago maior que a saída lançada → 'permanece' compensa o pago: a saída na conta dela e a sobra na conta da AP", async () => {
-    banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 5000, total_amount: 5000 })
-    banco.transacao({ account_id: ACC2, transaction_type: 'DEBIT', amount: 3000, bank_ref: 'AP:p1' })
-    expect((await est('p1', { dinheiro: 'permanece' })).status).toBe(200)
-    expect(doAP('p1').filter((t) => t.bank_ref === 'AP:p1:estorno').map((t) => [t.account_id, t.amount]).sort()).toEqual([[ACC, 2000], [ACC2, 3000]].sort())
-  })
-
-  it("F9-B: AP paga pelo Caixa → 'devolvido' → CREDIT :estorno no Caixa; paga no Itaú (com extrato) → nada", async () => {
+  it("'devolvido' no Caixa (sem extrato) → DEBIT AP:p1:devolvido + CREDIT AP:p1:estorno no Caixa: o saldo do Caixa volta; no Itaú (com extrato) nada", async () => {
     banco.conta({ id: CAIXA, name: 'Caixa', current_balance: -5000 })
     banco.ap({ id: 'p1', status: 'PAGO', account_id: CAIXA, paid_amount: 5000, total_amount: 5000 })
-    banco.transacao({ account_id: CAIXA, transaction_type: 'DEBIT', amount: 5000, bank_ref: 'AP:p1' })
+    banco.transacao({ id: 'D', account_id: CAIXA, transaction_type: 'DEBIT', amount: 5000, bank_ref: 'AP:p1' })
     expect((await est('p1', { dinheiro: 'devolvido' })).status).toBe(200)
-    expect(doAP('p1').filter((t) => t.bank_ref === 'AP:p1:estorno')).toEqual([expect.objectContaining({ account_id: CAIXA, amount: 5000, transaction_type: 'CREDIT' })])
+    expect(banco.tx_('D')!.bank_ref).toBe('AP:p1:devolvido')
+    expect(estornos()).toEqual([expect.objectContaining({ account_id: CAIXA, amount: 5000, transaction_type: 'CREDIT' })])
     expect(banco.saldo(CAIXA)).toBe(0)
 
-    ajuste(ACC)
+    ajuste()
     banco.ap({ id: 'p2', status: 'PAGO', account_id: ACC, paid_amount: 5000, total_amount: 5000 })
-    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 5000, bank_ref: 'AP:p2' })
+    banco.transacao({ id: 'D2', account_id: ACC, transaction_type: 'DEBIT', amount: 5000, bank_ref: 'AP:p2' })
     expect((await est('p2', { dinheiro: 'devolvido' })).status).toBe(200)
-    expect(doAP('p2').filter((t) => t.bank_ref === 'AP:p2:estorno')).toEqual([])
+    expect(banco.tx_('D2')!.bank_ref).toBe('AP:p2:devolvido')
+    expect(estornos('p2')).toEqual([])
+  })
+
+  it('mover_para: destino com saldo em aberto menor → 422; parcial → soma e fica PENDENTE; CANCELADO/inexistente/a própria → 422/404', async () => {
+    banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 5000, total_amount: 5000 })
+    banco.ap({ id: 'p2', status: 'PENDENTE', account_id: ACC, paid_amount: 2000, total_amount: 6000 })
+    banco.ap({ id: 'p3', status: 'PENDENTE', account_id: ACC, paid_amount: 0, total_amount: 20000 })
+    banco.ap({ id: 'p4', status: 'CANCELADO', account_id: ACC, paid_amount: 0, total_amount: 20000 })
+    banco.transacao({ id: 'D', account_id: ACC, transaction_type: 'DEBIT', amount: 5000, bank_ref: 'AP:p1' })
+    const r = await est('p1', { mover_para: 'p2' })
+    expect([r.status, r.j.error]).toEqual([422, 'valor maior que o saldo em aberto da conta de destino'])
+    expect((await est('p1', { mover_para: 'p4' })).status).toBe(422)
+    expect((await est('p1', { mover_para: 'p1' })).status).toBe(422)
+    expect((await est('p1', { mover_para: 'nao-existe' })).status).toBe(404)
+    expect(banco.tx_('D')!.bank_ref).toBe('AP:p1')
+    expect((await est('p1', { mover_para: 'p3' })).status).toBe(200)
+    expect(banco.tx_('D')).toEqual(expect.objectContaining({ bank_ref: 'AP:p3', amount: 5000 }))
+    expect(ap('p3')).toEqual(expect.objectContaining({ status: 'PENDENTE', paid_amount: 5000 }))
+    expect(banco.saldo(ACC)).toBe(100000)
+  })
+
+  it('mover_para: travas contas → as duas APs (FOR UPDATE, em ordem de id) → escritas pelo tx', async () => {
+    banco.ap({ id: 'z9', status: 'PAGO', account_id: ACC, paid_amount: 5000, total_amount: 5000 })
+    banco.ap({ id: 'b1', status: 'PENDENTE', account_id: ACC, paid_amount: 0, total_amount: 5000 })
+    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 5000, bank_ref: 'AP:z9' })
+    expect((await est('z9', { mover_para: 'b1' })).status).toBe(200)
+    expect(banco.travas.map((t) => [t.tabela, t.id])).toEqual([['accounts', ACC], ['accounts_payable', 'b1'], ['accounts_payable', 'z9']])
+    expect(banco.prismaDentroDaTx()).toEqual([])
+  })
+
+  it("estorno repetido → 400; resposta inválida (o antigo 'permanece', as duas escolhas) → 400; PAGO sem valor nem lançamento → 400", async () => {
+    banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 5000, total_amount: 5000 })
+    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 5000, bank_ref: 'AP:p1' })
+    for (const corpo of [{ dinheiro: 'permanece' }, { dinheiro: 'devolvido', mover_para: 'p2' }]) expect((await est('p1', corpo)).status).toBe(400)
+    expect((await est('p1', { dinheiro: 'devolvido' })).status).toBe(200)
+    expect((await est('p1', { dinheiro: 'devolvido' })).j.error).toBe('nada a estornar')
+    banco.ap({ id: 'p9', status: 'PAGO', account_id: ACC, paid_amount: 0, total_amount: 5000 })
+    expect((await est('p9')).j.error).toBe('nada a estornar')
   })
 })
 
