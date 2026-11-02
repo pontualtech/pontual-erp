@@ -6,7 +6,7 @@ import { logAudit } from '@/lib/audit'
 import { refsCreditoAdquirente } from '@/lib/acquirer/match-rules'
 import {
   CONFLITO_BANCO, conflitoDeBanco, ContaAlterada, contasComExtrato, contasDaAR, descreverDinheiro, DEVOLVIDO, dinheiroDaAR,
-  exigirTravadas, refsDaAR, travarContas, type DinheiroLancado, type LancamentoDaConta,
+  exigirTravadas, posAjuste, refsDaAR, travarContas, type DinheiroLancado, type LancamentoDaConta,
 } from '@/lib/financeiro/livro-baixa-db'
 
 /**
@@ -196,11 +196,16 @@ export async function POST(req: NextRequest, { params }: Params) {
           //   nunca o confirmou: Receber na conta errada, comprovante falso, devolução no Caixa);
           // · externo que não é pay_ em conta SEM extrato (cnab: na Inter, acquirer: fora do livro) → idem; pay_ e externo em
           //   conta COM extrato → só aviso (o webhook REFUNDED / o repasse da Rede trazem a devolução).
+          // · fix 13 (F13-A): nocional próprio ANTERIOR ao último AJUSTE de conta com linha do banco → o ajuste já o absorveu
+          //   (dinheiro confirmado): como a linha, só o sufixo :devolvido, sem lançamento — a devolução chega pelo extrato.
           const ligadaAntiga = (t: { source_text: string | null }) => (t.source_text ?? '').startsWith('LIGADA:')
           const externosNoc = dinheiro.nocionais.filter((t) => !propria(t.bank_ref))
-          const comExtrato = await contasComExtrato(tx, user.companyId, externosNoc.map((t) => t.account_id))
+          const comExtrato = await contasComExtrato(tx, user.companyId, dinheiro.nocionais.map((t) => t.account_id))
+          const propriosNoc = dinheiro.nocionais.filter((t) => propria(t.bank_ref) && !ligadaAntiga(t))
+          const posteriores = new Set((await posAjuste(tx, user.companyId, propriosNoc)).map((t) => t.id))
+          const absorvidos = propriosNoc.filter((t) => comExtrato.has(t.account_id) && !posteriores.has(t.id))
           const compensa = (t: (typeof dinheiro.nocionais)[number]) => propria(t.bank_ref)
-            ? !ligadaAntiga(t)
+            ? !ligadaAntiga(t) && !absorvidos.includes(t)
             : !(t.bank_ref ?? '').startsWith('pay_') && !comExtrato.has(t.account_id)
           for (const t of dinheiro.nocionais.filter(compensa)) {
             compensar.set(t.account_id, (compensar.get(t.account_id) ?? 0) + (t.vivo ?? t.amount))
@@ -219,6 +224,7 @@ export async function POST(req: NextRequest, { params }: Params) {
                 OR: [
                   { origin: 'BANCO', linked_ref: { in: [refs.proprio, refs.antecipacao] } },
                   { origin: null, bank_ref: { in: [refs.proprio, refs.antecipacao] }, source_text: { startsWith: 'LIGADA:' } },
+                  ...(absorvidos.length > 0 ? [{ id: { in: absorvidos.map((t) => t.id) } }] : []),
                 ],
               },
               select: { id: true, account_id: true, origin: true, bank_ref: true, linked_ref: true },

@@ -290,6 +290,37 @@ describe("F10-B (AP): 'devolvido' (refs próprias ganham :devolvido) ou mover_pa
     expect(banco.saldo(ACC)).toBe(100000)
   })
 
+  it("F13-A (espelho): DEBIT AP:p1 anterior ao ajuste no Itaú (com linha do banco) → só o sufixo, nada lançado; a entrada da devolução chega → saldo = banco; na Inter (sem linha) → CREDIT :estorno", async () => {
+    ajuste()
+    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 1, origin: 'BANCO', bank_ref: 'TARIFA', source_text: 'TARIFA', transaction_date: dia('2026-10-31') })
+    banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 120000, total_amount: 120000 })
+    banco.transacao({ id: 'D', account_id: ACC, transaction_type: 'DEBIT', amount: 120000, bank_ref: 'AP:p1', created_at: new Date('2026-10-20T15:00:00Z') })
+    expect((await est('p1', { dinheiro: 'devolvido' })).status).toBe(200)
+    expect(banco.tx_('D')!.bank_ref).toBe('AP:p1:devolvido')
+    expect(estornos()).toEqual([])
+    expect(banco.saldo(ACC)).toBe(100000)
+    await linhaDoBanco(`ITAU:${DATA}|DEVOLUCAO FORNECEDOR|+120000|1`, 120000)
+    expect(banco.saldo(ACC)).toBe(220000) // banco: 1000,00 + a devolução de 1.200,00
+
+    ajuste(ACC2)
+    banco.tabelas.account[1].current_balance = -5000
+    banco.ap({ id: 'p2', status: 'PAGO', account_id: ACC2, paid_amount: 5000, total_amount: 5000 })
+    banco.transacao({ id: 'E', account_id: ACC2, transaction_type: 'DEBIT', amount: 5000, bank_ref: 'AP:p2', created_at: new Date('2026-10-20T15:00:00Z') })
+    expect((await est('p2', { dinheiro: 'devolvido' })).status).toBe(200)
+    expect(banco.tx_('E')!.bank_ref).toBe('AP:p2')
+    expect(estornos('p2')).toEqual([expect.objectContaining({ account_id: ACC2, amount: 5000, transaction_type: 'CREDIT' })])
+    expect(banco.saldo(ACC2)).toBe(0)
+  })
+
+  it('m5: mover_para da AP — a linha que levava a categoria da origem passa a levar a do destino', async () => {
+    banco.categoria('Aluguel', 'financeiro_despesa')
+    banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 5000, total_amount: 5000, category_id: 'cat:Energia' })
+    banco.ap({ id: 'p2', status: 'PENDENTE', account_id: ACC, paid_amount: 0, total_amount: 5000, category_id: 'cat:Aluguel', description: 'Aluguel' })
+    banco.transacao({ id: 'L', account_id: ACC, transaction_type: 'DEBIT', amount: 5000, origin: 'BANCO', bank_ref: 'K', source_text: 'TED', linked_ref: 'AP:p1', category_id: 'cat:Energia' })
+    expect((await est('p1', { mover_para: 'p2' })).status).toBe(200)
+    expect(banco.tx_('L')).toEqual(expect.objectContaining({ linked_ref: 'AP:p2', category_id: 'cat:Aluguel' }))
+  })
+
   it("#1/#8/#16: depois do 'devolvido', o Pagar da MESMA AP pelo Caixa debita o Caixa (não fica 'já pago')", async () => {
     banco.conta({ id: CAIXA, name: 'Caixa', current_balance: 0 })
     ajuste()

@@ -4,8 +4,8 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import {
-  CONFLITO_BANCO, conflitoDeBanco, ContaAlterada, contasDaAP, descreverDinheiro, DEVOLVIDO, dinheiroDaAP, exigirTravadas,
-  travarContas,
+  CONFLITO_BANCO, conflitoDeBanco, ContaAlterada, contasComExtrato, contasDaAP, descreverDinheiro, DEVOLVIDO, dinheiroDaAP, exigirTravadas,
+  posAjuste, travarContas,
   type LancamentoDaConta,
 } from '@/lib/financeiro/livro-baixa-db'
 
@@ -150,14 +150,24 @@ export async function POST(req: NextRequest, { params }: Params) {
           // ── 'devolvido' (fix 12, F12-B): a linha do banco (e o marcador antigo LIGADA:) ganha :devolvido, nada lançado — a
           // entrada da devolução chega pelo extrato; o DEBIT AP:<id> não convertido, em qualquer conta, é compensado com
           // CREDIT AP:<id>:estorno na conta dele, sem renomear (o banco nunca confirmou essa saída) ──
+          // Fix 13 (F13-A): o DEBIT AP:<id> ANTERIOR ao último AJUSTE de conta com linha do banco já foi absorvido pelo ajuste
+          // (saída confirmada) → como a linha, só o sufixo :devolvido, sem lançamento.
           const ligadaAntiga = (t: { source_text: string | null }) => (t.source_text ?? '').startsWith('LIGADA:')
-          for (const t of dinheiro.nocionais.filter((n) => !ligadaAntiga(n))) {
+          const debitos = dinheiro.nocionais.filter((n) => !ligadaAntiga(n))
+          const comExtrato = await contasComExtrato(tx, user.companyId, debitos.map((t) => t.account_id))
+          const posteriores = new Set((await posAjuste(tx, user.companyId, debitos)).map((t) => t.id))
+          const absorvidos = debitos.filter((t) => comExtrato.has(t.account_id) && !posteriores.has(t.id))
+          for (const t of debitos.filter((n) => !absorvidos.includes(n))) {
             compensar.set(t.account_id, (compensar.get(t.account_id) ?? 0) + (t.vivo ?? t.amount))
           }
           const sufixar: { id: string; account_id: string; origin: string | null }[] = await tx.transaction.findMany({
             where: {
               company_id: user.companyId,
-              OR: [{ origin: 'BANCO', linked_ref: proprio }, { origin: null, bank_ref: proprio, source_text: { startsWith: 'LIGADA:' } }],
+              OR: [
+                { origin: 'BANCO', linked_ref: proprio },
+                { origin: null, bank_ref: proprio, source_text: { startsWith: 'LIGADA:' } },
+                ...(absorvidos.length > 0 ? [{ id: { in: absorvidos.map((t) => t.id) } }] : []),
+              ],
             },
             select: { id: true, account_id: true, origin: true },
           })

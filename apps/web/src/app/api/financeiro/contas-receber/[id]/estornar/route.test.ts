@@ -376,6 +376,29 @@ describe("F10-B: o estorno pergunta — 'devolvido' (refs próprias ganham :devo
     expect(banco.saldo(ACC)).toBe(120000) // banco: +300 −100
   })
 
+  it("F13-A: nocional ANTERIOR ao ajuste no Itaú (conta com linha do banco) → o ajuste já o absorveu: só o sufixo :devolvido, saldo intacto; a saída da devolução chega → saldo = banco", async () => {
+    extrato()
+    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC, received_amount: 15000, total_amount: 15000 })
+    banco.transacao({ id: 'N', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:r1', created_at: new Date('2026-10-20T15:00:00Z') })
+    expect((await est('r1', { dinheiro: 'devolvido' })).status).toBe(200)
+    expect(banco.tx_('N')!.bank_ref).toBe('AR:r1:devolvido')
+    expect(estornos()).toEqual([])
+    expect(banco.saldo(ACC)).toBe(100000)
+    await linhaDoBanco(`ITAU:${DATA}|PIX ENVIADO|-15000|1`, -15000)
+    expect(banco.saldo(ACC)).toBe(85000) // banco: 1000,00 − a devolução de 150,00
+  })
+
+  it("F13-A: o mesmo nocional anterior ao ajuste na Inter (AJUSTE, sem linha do banco) → compensa com DEBIT :estorno", async () => {
+    ajuste(ACC2)
+    banco.tabelas.account[1].current_balance = 15000
+    banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: ACC2, received_amount: 15000, total_amount: 15000 })
+    banco.transacao({ id: 'N', account_id: ACC2, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:r1', created_at: new Date('2026-10-20T15:00:00Z') })
+    expect((await est('r1', { dinheiro: 'devolvido' })).status).toBe(200)
+    expect(banco.tx_('N')!.bank_ref).toBe('AR:r1')
+    expect(estornos()).toEqual([expect.objectContaining({ account_id: ACC2, amount: 15000, transaction_type: 'DEBIT' })])
+    expect(banco.saldo(ACC2)).toBe(0)
+  })
+
   it("'devolvido' no Caixa (sem extrato) → DEBIT AR:r1:estorno no Caixa (o nocional fica, compensado): o saldo do Caixa volta", async () => {
     banco.conta({ id: CAIXA, name: 'Caixa', current_balance: 15000 })
     banco.ar({ id: 'r1', status: 'RECEBIDO', account_id: CAIXA, received_amount: 15000, total_amount: 15000 })
