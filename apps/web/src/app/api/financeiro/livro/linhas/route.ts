@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
-import { classificar, planejarLinha, escolherOrfao, limitesJanelaOrfao, creditoUsavelParaVinculo } from '@/lib/financeiro/livro'
+import { classificar, planejarLinha, escolherOrfao, limitesJanelaOrfao, creditoUsavelParaVinculo, refEstorno, compensado } from '@/lib/financeiro/livro'
 import { dataValida } from '@/lib/financeiro/livro-ajuste'
 import { garantirCategoriasERegras } from '@/lib/financeiro/livro-categorias'
 
@@ -96,6 +96,23 @@ export async function POST(req: NextRequest) {
       orderBy: [{ priority: 'asc' }, { created_at: 'asc' }],
     })
 
+    // Onda 4 (§2): tira os nocionais já compensados por um :estorno (par líquido 0 — não é dinheiro que entrou/saiu).
+    const semCompensados = async <T extends { bank_ref: string | null; created_at: Date | null }>(
+      db: Pick<typeof prisma, 'transaction'>,
+      lista: T[],
+    ): Promise<T[]> => {
+      const refs = [...new Set(lista.map((c) => refEstorno(c.bank_ref)).filter((r): r is string => r !== null))]
+      if (refs.length === 0) return lista
+      const estornos = await db.transaction.findMany({
+        where: { company_id: user.companyId, account_id: body.account_id, bank_ref: { in: refs } },
+        select: { bank_ref: true, account_id: true, created_at: true },
+      })
+      return lista.filter((c) => {
+        const ref = refEstorno(c.bank_ref)
+        return !ref || !compensado({ account_id: body.account_id, created_at: c.created_at }, estornos.filter((e) => e.bank_ref === ref))
+      })
+    }
+
     // Decide a linha usando o cliente informado (prisma na simulação; tx travada no real).
     const planejar = async (db: Pick<typeof prisma, 'transaction'>, linha: Linha) => {
       // Já lançada: a linha (ou um lançamento convertido nela: chave, chave#2, …) já está no livro.
@@ -123,30 +140,33 @@ export async function POST(req: NextRequest) {
             })
           : []
       // Ausente: já tomado por OUTRA linha (LIGADA:<outra chave>) ou criado até o ajuste (já absorvido por ele).
-      // (O convertido por outra linha já não tem este bank_ref — nem aparece aqui.)
-      const ligaveis = creditos.filter((c) => creditoUsavelParaVinculo(c, linha.chave, limiteOrfao))
+      // (O convertido por outra linha já não tem este bank_ref — nem aparece aqui.) Já estornado também não serve (§2).
+      const ligaveis = await semCompensados(db, creditos.filter((c) => creditoUsavelParaVinculo(c, linha.chave, limiteOrfao)))
       const creditosExistentes = ligaveis.map((c) => ({ bank_ref: c.bank_ref as string, amount: c.amount }))
       return { plano: planejarLinha(linha, body.corte, jaLancada, creditosExistentes), ligaveis }
     }
 
     // Procura crédito/débito já existente ("órfão") que corresponda à linha, na mesma empresa e conta.
     // Só vale p/ linha sem vínculo nenhum; ignora órfãos já usados neste pedido.
+    // Onda 4 (§2): nunca o par do estorno — nem o próprio :estorno, nem o nocional que ele já compensou.
     const buscarOrfao = async (db: Pick<typeof prisma, 'transaction'>, linha: Linha, usados: Set<string>) => {
       const { de, ate } = limitesJanelaOrfao(linha.data)
-      const candidatos = await db.transaction.findMany({
+      const lidos = await db.transaction.findMany({
         where: {
           company_id: user.companyId,
           account_id: body.account_id,
           origin: null,
           source_text: null,
+          OR: [{ bank_ref: null }, { NOT: { bank_ref: { endsWith: ':estorno' } } }],
           transaction_type: linha.valor_centavos > 0 ? 'CREDIT' : 'DEBIT',
           amount: Math.abs(linha.valor_centavos),
           transaction_date: { gte: de, lte: ate },
           created_at: { gt: limiteOrfao },
         },
         orderBy: [{ transaction_date: 'asc' }, { created_at: 'asc' }, { id: 'asc' }],
-        select: { id: true, amount: true, transaction_type: true, transaction_date: true, bank_ref: true, description: true, category_id: true },
+        select: { id: true, amount: true, transaction_type: true, transaction_date: true, bank_ref: true, description: true, category_id: true, created_at: true },
       })
+      const candidatos = await semCompensados(db, lidos)
       const id = escolherOrfao(
         linha,
         candidatos

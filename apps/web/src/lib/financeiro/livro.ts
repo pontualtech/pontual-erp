@@ -115,6 +115,28 @@ export function escolherOrfao(linha: LinhaBanco, candidatos: CandidatoOrfao[]): 
 }
 
 /**
+ * Onda 4 (§2): bank_ref do estorno que compensa um nocional próprio — AR:<id> e AR:<id>:anticipation → AR:<id>:estorno,
+ * AP:<id> → AP:<id>:estorno. Ref que nunca é compensada por :estorno (adquirente, Asaas, CNAB, o próprio estorno) → null.
+ */
+export function refEstorno(bankRef: string | null): string | null {
+  const m = bankRef ? /^(AR|AP):([^:]+)(:anticipation)?$/.exec(bankRef) : null
+  if (!m || (m[1] === 'AP' && m[3])) return null
+  return `${m[1]}:${m[2]}:estorno`
+}
+
+/**
+ * Nocional já compensado: há um :estorno dele NA MESMA CONTA criado no mesmo instante ou depois (o estorno anula
+ * tudo o que existia até ele). O recebido de novo depois do estorno continua vivo.
+ */
+export function compensado(
+  t: { account_id: string; created_at: Date | null },
+  estornos: { account_id: string; created_at: Date | null }[],
+): boolean {
+  const quando = (d: Date | null) => (d ? d.getTime() : 0)
+  return estornos.some((e) => e.account_id === t.account_id && quando(e.created_at) >= quando(t.created_at))
+}
+
+/**
  * Um crédito (citado em `links`) só serve para cobrir a linha se foi criado DEPOIS do ajuste de caixa
  * (o que existia antes já foi absorvido por ele) e não foi tomado por OUTRA linha (LIGADA:<outra chave>).
  */

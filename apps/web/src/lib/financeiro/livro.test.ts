@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { classificar, planejarLinha, escolherOrfao, limitesJanelaOrfao, creditoUsavelParaVinculo, type LinhaBanco } from './livro'
+import { classificar, planejarLinha, escolherOrfao, limitesJanelaOrfao, creditoUsavelParaVinculo, refEstorno, compensado, type LinhaBanco } from './livro'
 
 const CORTE = '2026-10-29'
 
@@ -196,5 +196,31 @@ describe('creditoUsavelParaVinculo', () => {
   })
   it('source_text qualquer não-LIGADA -> usável', () => {
     expect(creditoUsavelParaVinculo(c({ source_text: 'x' }), 'k1', limite)).toBe(true)
+  })
+})
+
+describe('refEstorno (onda 4 §2)', () => {
+  it('AR:<id> e AR:<id>:anticipation → AR:<id>:estorno; AP:<id> → AP:<id>:estorno', () => {
+    expect(refEstorno('AR:a1')).toBe('AR:a1:estorno')
+    expect(refEstorno('AR:a1:anticipation')).toBe('AR:a1:estorno')
+    expect(refEstorno('AP:p1')).toBe('AP:p1:estorno')
+  })
+  it('refs que nunca são compensadas por :estorno (adquirente, Asaas, CNAB, o próprio estorno, sem ref) → null', () => {
+    for (const r of ['acquirer:rede:1', 'pay_123', 'cnab:99', 'AR:a1:estorno', 'AP:p1:anticipation', 'ITAU:x', null]) expect(refEstorno(r)).toBeNull()
+  })
+})
+
+describe('compensado (onda 4 §2)', () => {
+  const t = (iso: string, account_id = 'acc1') => ({ account_id, created_at: new Date(iso) })
+  it(':estorno da mesma conta criado depois (ou no mesmo instante) compensa', () => {
+    expect(compensado(t('2026-11-03T10:00:00Z'), [t('2026-11-04T10:00:00Z')])).toBe(true)
+    expect(compensado(t('2026-11-03T10:00:00Z'), [t('2026-11-03T10:00:00Z')])).toBe(true)
+  })
+  it('recebido de novo DEPOIS do estorno: vivo', () => {
+    expect(compensado(t('2026-11-05T10:00:00Z'), [t('2026-11-04T10:00:00Z')])).toBe(false)
+  })
+  it(':estorno de outra conta não compensa; sem estorno: vivo', () => {
+    expect(compensado(t('2026-11-03T10:00:00Z'), [t('2026-11-04T10:00:00Z', 'acc2')])).toBe(false)
+    expect(compensado(t('2026-11-03T10:00:00Z'), [])).toBe(false)
   })
 })
