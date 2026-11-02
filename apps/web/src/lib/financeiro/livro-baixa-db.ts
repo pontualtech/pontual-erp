@@ -1,7 +1,7 @@
 // Acesso ao banco da baixa sobre o Livro-razão (a decisão pura fica em livro-baixa.ts).
 // Recebe o `tx` do Prisma para rodar dentro da mesma $transaction da baixa.
 import { refCnab, type CandidatoLivro, type JanelaBaixa } from './livro-baixa'
-import { classificar } from './livro'
+import { classificar, compensado, refEstorno } from './livro'
 import { refsCreditoAdquirente } from '@/lib/acquirer/match-rules'
 
 const DIA_MS = 86_400_000
@@ -129,6 +129,57 @@ export async function refsDaAR(db: any, companyId: string, ar: { id: string; pix
 
 // Linhas do banco que representam o dinheiro da AR: ligadas pela baixa (AR:<id>) ou convertidas de um nocional dela.
 export const refsLigadasAR = (r: RefsAR) => [r.proprio, r.antecipacao, ...r.externos]
+
+// Onda 4 (fix 2, F2-A): o dinheiro que já representa a conta — as linhas do BANCO ligadas/convertidas a qualquer ref dela
+// e os nocionais ainda vivos (sem :estorno posterior). É o `existing` do Conferir (§5) e o que o Receber/Pagar consultam
+// antes de lançar. `total` = soma; `conta` = conta do primeiro lançamento achado (para a conta que não tem uma).
+export interface Lancado { id: string; amount: number; account_id: string; bank_ref: string | null; source_text: string | null; created_at: Date | null }
+export interface DinheiroLancado { linhas: { id: string; amount: number; account_id: string }[]; nocionais: Lancado[]; total: number; conta: string | null }
+const SELECT_LANCADO = { id: true, amount: true, account_id: true, bank_ref: true, source_text: true, created_at: true } as const
+const resumir = (linhas: DinheiroLancado['linhas'], nocionais: Lancado[]): DinheiroLancado => ({
+  linhas, nocionais,
+  total: [...linhas, ...nocionais].reduce((s, t) => s + t.amount, 0),
+  conta: (linhas[0] ?? nocionais[0])?.account_id ?? null,
+})
+
+export async function dinheiroDaAR(db: any, companyId: string, ar: { id: string; pix_code?: string | null }): Promise<DinheiroLancado & { refs: RefsAR }> {
+  const refs = await refsDaAR(db, companyId, ar)
+  const linhas = await db.transaction.findMany({
+    where: { company_id: companyId, origin: 'BANCO', linked_ref: { in: refsLigadasAR(refs) } },
+    select: { id: true, amount: true, account_id: true },
+  })
+  // origin null inclui o marcador antigo LIGADA: (dinheiro do banco até a migração).
+  const lancados: Lancado[] = await db.transaction.findMany({
+    where: { company_id: companyId, origin: null, bank_ref: { in: [refs.proprio, refs.antecipacao, ...refs.externos] } },
+    select: SELECT_LANCADO,
+  })
+  const estornos = await db.transaction.findMany({
+    where: { company_id: companyId, bank_ref: refs.estorno },
+    select: { account_id: true, created_at: true },
+  })
+  // Nocional próprio já compensado por :estorno não é dinheiro da conta (o par se anula).
+  const nocionais = lancados.filter((t) => refEstorno(t.bank_ref) === null || !compensado(t, estornos))
+  return { refs, ...resumir(linhas, nocionais) }
+}
+
+export async function dinheiroDaAP(db: any, companyId: string, apId: string): Promise<DinheiroLancado> {
+  const linhas = await db.transaction.findMany({
+    where: { company_id: companyId, origin: 'BANCO', linked_ref: `AP:${apId}` },
+    select: { id: true, amount: true, account_id: true },
+  })
+  const lancados: Lancado[] = await db.transaction.findMany({
+    where: { company_id: companyId, origin: null, bank_ref: `AP:${apId}`, transaction_type: 'DEBIT' },
+    select: SELECT_LANCADO,
+  })
+  const estornos = await db.transaction.findMany({
+    where: { company_id: companyId, bank_ref: `AP:${apId}:estorno` },
+    select: { account_id: true, created_at: true },
+  })
+  return resumir(linhas, lancados.filter((t) => !compensado(t, estornos)))
+}
+
+// Aviso das baixas quando o dinheiro já está lançado (F2-A).
+export const AVISO_JA_LANCADO = 'dinheiro desta conta já está lançado (adquirente/CNAB/Asaas/banco) — nenhum lançamento novo criado'
 
 // Contas onde a AR tem dinheiro (a dela + as dos lançamentos próprios e das linhas ligadas) — o que travar.
 export async function contasDaAR(db: any, companyId: string, ar: { id: string; account_id: string | null; pix_code?: string | null }): Promise<(string | null)[]> {

@@ -21,8 +21,18 @@ type Params = { params: { id: string } }
 
 // Recusa decidida na releitura com as travas: nada gravado.
 class RecusaEstorno extends Error {
-  constructor(message: string, readonly status: 400 | 404) {
+  constructor(message: string, readonly status: 400 | 404 | 409) {
     super(message)
+  }
+}
+
+// AP de taxa criada pelo vínculo da maquininha (perform-match): 'Desconto automatico' ou notes { source: 'acquirer_match' }.
+function taxaDoAdquirente(ap: { payment_method: string | null; notes: string | null }): boolean {
+  if (ap.payment_method === 'Desconto automatico') return true
+  try {
+    return (JSON.parse(ap.notes ?? '') as { source?: unknown } | null)?.source === 'acquirer_match'
+  } catch {
+    return false // notes em texto livre
   }
 }
 
@@ -61,6 +71,9 @@ export async function POST(req: NextRequest, { params }: Params) {
         if (!paga && ap.status !== 'PENDENTE') {
           throw new RecusaEstorno('Apenas APs com status PAGO (ou PENDENTE com pagamento parcial) podem ser estornadas', 400)
         }
+        // Onda 4 (fix 2, F2-A): a taxa MDR/RA que o adquirente descontou do repasse (perform-match) nasce PAGA sem DEBIT —
+        // a saída já está no crédito líquido; estornar e pagar de novo debitaria a taxa 2x.
+        if (taxaDoAdquirente(ap)) throw new RecusaEstorno('taxa descontada no repasse do adquirente — não estornável', 409)
 
         // (a) linhas do banco que hoje representam a saída desta AP.
         const ligadas = await tx.transaction.findMany({

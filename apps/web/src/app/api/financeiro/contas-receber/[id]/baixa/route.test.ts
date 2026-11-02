@@ -147,3 +147,40 @@ describe('§7: trava conta → AR e decide pela releitura (G1, E7, #9)', () => {
     expect(creditosAR()).toEqual([])
   })
 })
+
+describe('F2-A (#3): Receber enxerga o dinheiro já lançado da AR', () => {
+  const AVISO = 'dinheiro desta conta já está lançado (adquirente/CNAB/Asaas/banco) — nenhum lançamento novo criado'
+  it('crédito do CNAB vivo (estorno (d) por engano): Receber não cria nada, não mexe no saldo e avisa; a AR ganha a conta do crédito', async () => {
+    banco.conta({ id: 'inter', current_balance: 50000 })
+    banco.ar({ ...AR, total_amount: 50000, account_id: null, pix_code: JSON.stringify({ nossoNumero: '123' }) })
+    banco.transacao({ account_id: 'inter', transaction_type: 'CREDIT', amount: 50000, bank_ref: 'cnab:123' })
+    const { status, j } = await receber({ received_amount: 50000 })
+    expect(status).toBe(200)
+    expect(j.data).toEqual(expect.objectContaining({ status: 'RECEBIDO', received_amount: 50000, ligada: false, aviso: AVISO }))
+    expect(creditosAR()).toEqual([])
+    expect(banco.tx.account.update).not.toHaveBeenCalled()
+    expect(ar().account_id).toBe('inter')
+  })
+
+  it('linha do banco ligada pela ref do Asaas (linked_ref pay_x): idem', async () => {
+    banco.ar({ ...AR, account_id: ACC })
+    banco.pagamento({ receivable_id: 'r1', provider: 'asaas', external_id: 'pay_x' })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 14600, origin: 'BANCO', bank_ref: 'ASAAS:PAY:pay_x', linked_ref: 'pay_x' })
+    linha() // linha livre de mesmo valor: não é ligada
+    const { j } = await receber()
+    expect(j.data.aviso).toBe(AVISO)
+    expect(banco.tx_('t1')!.linked_ref).toBeNull()
+    expect(creditosAR()).toEqual([])
+    expect(banco.saldo(ACC)).toBe(100000)
+  })
+
+  it('recebimento parcial já registrado (CREDIT AR:id = received_amount) não bloqueia a 2ª parcela', async () => {
+    banco.ar({ ...AR, received_amount: 5000 })
+    banco.transacao({ account_id: ACC, transaction_type: 'CREDIT', amount: 5000, bank_ref: 'AR:r1' })
+    const { j } = await receber({ received_amount: 10000 })
+    expect(j.data).not.toHaveProperty('aviso')
+    expect(creditosAR().map((t) => t.amount)).toEqual([5000, 10000])
+    expect(banco.saldo(ACC)).toBe(110000)
+  })
+})
+

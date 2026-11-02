@@ -133,7 +133,9 @@ describe('baixa de AP — livro-razão', () => {
       linha({ amount: 10000 })
       await pagar({ paid_amount: 10000, livro_transaction_id: 't1' })
       expect(ap()).toEqual(expect.objectContaining({ paid_amount: 10000, status: 'PAGO', notes: null }))
-      Object.assign(ap(), { status: 'PENDENTE', paid_amount: 3000 })
+      // Outro cenário na mesma AP: parcial de 3000 já paga (a linha de 10000 do caso acima não é desta parcial).
+      Object.assign(ap(), { status: 'PENDENTE', paid_amount: 3000, notes: null })
+      banco.tx_('t1')!.linked_ref = null
       linha({ id: 't2', bank_ref: 'ITAU:k2', amount: 6990 })
       await pagar({ paid_amount: 6990, livro_transaction_id: 't2' })
       expect(ap()).toEqual(expect.objectContaining({ paid_amount: 10000, status: 'PAGO', notes: 'diferença bancária de R$ 0,10' }))
@@ -264,6 +266,28 @@ describe('§8: mensagens e datas', () => {
     expect((await pagar({ paid_amount: 5000, paid_at: '31/10/2026' })).status).toBe(422)
     expect(ap().status).toBe('PENDENTE')
     expect(debitosAP()).toEqual([])
+  })
+})
+
+describe('F2-A (#3): Pagar enxerga a saída já lançada da AP', () => {
+  it('DEBIT AP:id vivo (marcador antigo LIGADA que o estorno (d) não compensou): Pagar não cria nada e avisa', async () => {
+    banco.ap({ ...AP, paid_amount: 0 })
+    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 5000, bank_ref: 'AP:p1', source_text: 'LIGADA:ITAU:k' })
+    const { status, j } = await pagar({ paid_amount: 5000, paid_at: '2026-10-29' })
+    expect(status).toBe(200)
+    expect(j.data).toEqual(expect.objectContaining({ status: 'PAGO', paid_amount: 5000, ligada: false, aviso: 'dinheiro desta conta já está lançado (adquirente/CNAB/Asaas/banco) — nenhum lançamento novo criado' }))
+    expect(debitosAP()).toHaveLength(1)
+    expect(banco.tx.account.update).not.toHaveBeenCalled()
+  })
+
+  it('linha do banco ligada a AP:id e AP com pagamento 0: idem; pagamento parcial já registrado não bloqueia a 2ª parcela', async () => {
+    banco.ap({ ...AP, paid_amount: 0, total_amount: 10000 })
+    banco.transacao({ account_id: ACC, transaction_type: 'DEBIT', amount: 5000, origin: 'BANCO', bank_ref: 'ITAU:k0', linked_ref: 'AP:p1' })
+    expect((await pagar({ paid_amount: 5000, paid_at: '2026-10-29' })).j.data.aviso).toBeTruthy()
+    expect(debitosAP()).toEqual([])
+    const { j } = await pagar({ paid_amount: 5000, paid_at: '2026-10-29' })
+    expect(j.data).not.toHaveProperty('aviso')
+    expect(debitosAP()).toEqual([expect.objectContaining({ amount: 5000 })])
   })
 })
 

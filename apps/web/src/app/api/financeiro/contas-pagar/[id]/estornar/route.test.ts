@@ -121,3 +121,18 @@ describe('§3 estorno de AP', () => {
     expect(banco.saldo(ACC)).toBe(100000 - 120000)
   })
 })
+
+describe('F2-A: AP da taxa do adquirente não é estornável', () => {
+  it("payment_method 'Desconto automatico' ou notes.source 'acquirer_match' → 409, nada muda", async () => {
+    banco.ap({ id: 'p1', status: 'PAGO', account_id: ACC, paid_amount: 300, total_amount: 300, payment_method: 'Desconto automatico' })
+    banco.ap({ id: 'p2', status: 'PAGO', account_id: ACC, paid_amount: 300, total_amount: 300, notes: JSON.stringify({ source: 'acquirer_match', fee_type: 'MDR' }) })
+    for (const id of ['p1', 'p2']) {
+      const { status, j } = await est(id)
+      expect(status).toBe(409)
+      expect(j.error).toBe('taxa descontada no repasse do adquirente — não estornável')
+      expect(ap(id).status).toBe('PAGO')
+    }
+    expect(banco.tabelas.transaction).toEqual([])
+  })
+})
+

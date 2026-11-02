@@ -6,10 +6,10 @@ import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { decidirBaixa, JANELA_BAIXA, JANELA_CONFERIR, recebeCategoria, type CandidatoLivro } from '@/lib/financeiro/livro-baixa'
 import {
-  candidatosLivro, ContaAlterada, contasDaAR, desligarLinhas, exigirTravadas, hojeSP, nomeCategoria, refsDaAR, refsLigadasAR,
+  candidatosLivro, ContaAlterada, contasDaAR, desligarLinhas, dinheiroDaAR, exigirTravadas, hojeSP, nomeCategoria,
   SELECT_LINHA_LIGADA, travarContas,
 } from '@/lib/financeiro/livro-baixa-db'
-import { compensado, refEstorno } from '@/lib/financeiro/livro'
+import { compensado } from '@/lib/financeiro/livro'
 import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
 import { CATEGORIA_RECEITA_SERVICOS } from '@/lib/financeiro/livro-categorias'
 
@@ -138,20 +138,7 @@ export async function POST(req: NextRequest) {
             // Onda 4 (§5): o que já é dinheiro desta AR (existing) — nocionais vivos AR:id e :anticipation (o já
             // compensado por :estorno não conta), créditos do adquirente/Asaas (Payment) e do CNAB (pix_code), e as
             // linhas do BANCO ligadas/convertidas a qualquer desses. Sem nada disso → decide ligar/criar.
-            const refs = await refsDaAR(tx, user.companyId, ar)
-            const linhasDaAR = await tx.transaction.findMany({
-              where: { company_id: user.companyId, origin: 'BANCO', linked_ref: { in: refsLigadasAR(refs) } },
-              select: { id: true },
-            })
-            const lancados = await tx.transaction.findMany({
-              where: { company_id: user.companyId, origin: null, bank_ref: { in: [refs.proprio, refs.antecipacao, ...refs.externos] } },
-              select: { id: true, amount: true, account_id: true, bank_ref: true, source_text: true, created_at: true },
-            })
-            const estornos = await tx.transaction.findMany({
-              where: { company_id: user.companyId, bank_ref: refs.estorno },
-              select: { account_id: true, created_at: true },
-            })
-            const nocionais = lancados.filter((t) => refEstorno(t.bank_ref) === null || !compensado(t, estornos))
+            const { refs, linhas: linhasDaAR, nocionais } = await dinheiroDaAR(tx, user.companyId, ar)
 
             // Uma data só por AR: busca e decisão no mesmo dia mesmo se a meia-noite virar no meio.
             const hoje = hojeSP()

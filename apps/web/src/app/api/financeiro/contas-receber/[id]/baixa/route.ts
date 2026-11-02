@@ -6,7 +6,7 @@ import { logAudit } from '@/lib/audit'
 import { baixaSchema } from '@/lib/validations/financeiro'
 import { isReceivableSettled } from '@/lib/finance/receivable-status'
 import { decidirBaixa, JANELA_BAIXA, recebeCategoria } from '@/lib/financeiro/livro-baixa'
-import { candidatosLivro, categoriaId, ConflitoBaixa, hojeSP, nomeCategoria, travarContas } from '@/lib/financeiro/livro-baixa-db'
+import { AVISO_JA_LANCADO, candidatosLivro, categoriaId, ConflitoBaixa, dinheiroDaAR, hojeSP, nomeCategoria, travarContas } from '@/lib/financeiro/livro-baixa-db'
 import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
 import { CATEGORIA_RECEITA_SERVICOS } from '@/lib/financeiro/livro-categorias'
 
@@ -83,9 +83,16 @@ export async function POST(req: NextRequest, { params }: Params) {
       }
       const isReceivedInFull = newReceivedTotal >= fresh.total_amount
 
+      // Onda 4 (fix 2, F2-A): o dinheiro desta AR já está lançado além do que ela registra como recebido (crédito do
+      // adquirente/CNAB/Asaas ou nocional que um estorno não compensou, linha do banco ligada a uma ref dela) →
+      // só o status/valor; nenhum lançamento novo nem saldo (senão o mesmo dinheiro conta 2x). Parcelas já
+      // registradas (total = recebido) não bloqueiam a próxima.
+      const dinheiro = await dinheiroDaAR(tx, user.companyId, fresh)
+      const jaLancado = dinheiro.total > previousReceived
+
       // Livro-razão (30/10): se a entrada já foi lançada pelo banco, liga a ela (decide antes de escrever).
       const dataBaixa = data.received_at ? new Date(data.received_at).toISOString().slice(0, 10) : hojeSP()
-      const candidatos = await candidatosLivro(tx, user.companyId, data.account_id, 'CREDIT', dataBaixa, null, JANELA_BAIXA)
+      const candidatos = jaLancado ? [] : await candidatosLivro(tx, user.companyId, data.account_id, 'CREDIT', dataBaixa, null, JANELA_BAIXA)
       const categoria = fresh.category_id
         ?? await categoriaReceitaPadraoId(tx, user.companyId)
       const nomeAlvo = fresh.category_id ? await nomeCategoria(tx, user.companyId, fresh.category_id) : CATEGORIA_RECEITA_SERVICOS
@@ -106,6 +113,8 @@ export async function POST(req: NextRequest, { params }: Params) {
         data: {
           received_amount: newReceivedTotal,
           status: isReceivedInFull ? 'RECEBIDO' : 'PENDENTE',
+          // F2-A: dinheiro já lançado — a AR sem conta fica com a conta desse lançamento.
+          ...(jaLancado && !fresh.account_id && dinheiro.conta ? { account_id: dinheiro.conta } : {}),
           // Wave Z (2026-05-24): NÃO setar reconciled=true (admin confere extrato depois).
           updated_at: new Date(),
         },
@@ -117,6 +126,10 @@ export async function POST(req: NextRequest, { params }: Params) {
       const updated = await tx.accountReceivable.findFirstOrThrow({
         where: { id: params.id, company_id: user.companyId },
       })
+
+      if (jaLancado) {
+        return { updated, previousReceived, newReceivedTotal, isReceivedInFull, freshStatus: fresh.status, group_id: fresh.group_id, aviso: AVISO_JA_LANCADO }
+      }
 
       if ('usar' in decisao) {
         // Liga ao lançamento do livro: o dinheiro já está no saldo — NÃO cria transação nem mexe na conta.
@@ -209,7 +222,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       throw e
     }
 
-    const { updated: receivableData, previousReceived, newReceivedTotal, isReceivedInFull, freshStatus, group_id } = receivable as any
+    const { updated: receivableData, previousReceived, newReceivedTotal, isReceivedInFull, freshStatus, group_id, aviso } = receivable as any
 
     // If this is a GROUPED receivable that was fully paid, mark all originals as RECEBIDO
     if (isReceivedInFull && group_id) {
@@ -243,7 +256,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       newValue: { received_amount: newReceivedTotal, status: receivableData.status, account_id: data.account_id },
     })
 
-    return success({ ...receivableData, ligada })
+    return success({ ...receivableData, ligada, ...(aviso ? { aviso } : {}) })
   } catch (err) {
     return handleError(err)
   }

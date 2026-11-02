@@ -4,8 +4,8 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { z } from 'zod'
-import { decidirBaixa, JANELA_BAIXA, recebeCategoria, TOLERANCIA_EXPLICITO } from '@/lib/financeiro/livro-baixa'
-import { candidatosLivro, ConflitoBaixa, hojeSP, nomeCategoria, travarContas } from '@/lib/financeiro/livro-baixa-db'
+import { decidirBaixa, JANELA_BAIXA, recebeCategoria, TOLERANCIA_EXPLICITO, type DecisaoBaixa } from '@/lib/financeiro/livro-baixa'
+import { AVISO_JA_LANCADO, candidatosLivro, ConflitoBaixa, dinheiroDaAP, hojeSP, nomeCategoria, travarContas } from '@/lib/financeiro/livro-baixa-db'
 
 // Escolha explícita de lançamento do livro inválida → 422 sem escrever nada.
 class LivroInvalido extends Error {}
@@ -89,9 +89,15 @@ export async function POST(req: NextRequest, { params }: Params) {
       const previousPaid = fresh.paid_amount || 0
       const restante = fresh.total_amount - previousPaid
 
+      // Onda 4 (fix 2, F2-A): a saída desta AP já está lançada além do que ela registra como pago (DEBIT AP:<id> que um
+      // estorno não compensou, linha do banco ligada a AP:<id>) → só o status/valor; nenhum DEBIT nem saldo.
+      // Parcelas já registradas (total = pago) não bloqueiam a próxima.
+      const dinheiro = await dinheiroDaAP(tx, user.companyId, params.id)
+      const jaLancado = dinheiro.total > previousPaid
+
       // Livro-razão: se a saída já foi lançada pelo banco, liga a ela (decide antes de escrever).
       const dataBaixa = data.paid_at ? new Date(data.paid_at).toISOString().slice(0, 10) : hojeSP()
-      const candidatos = await candidatosLivro(tx, user.companyId, data.account_id, 'DEBIT', dataBaixa, data.livro_transaction_id ?? null, JANELA_BAIXA)
+      const candidatos = jaLancado ? [] : await candidatosLivro(tx, user.companyId, data.account_id, 'DEBIT', dataBaixa, data.livro_transaction_id ?? null, JANELA_BAIXA)
 
       // F6: vínculo explícito com linha a até R$ 1 do restante quita a AP por inteiro (paid = restante);
       // a diferença bancária fica registrada nas notes da AP.
@@ -119,7 +125,9 @@ export async function POST(req: NextRequest, { params }: Params) {
       const isPaidInFull = newPaidTotal >= fresh.total_amount
 
       const categoriaAP = await nomeCategoria(tx, user.companyId, fresh.category_id)
-      const decisao = decidirBaixa({ tipo: 'DEBIT', amount: valorBaixa, data: dataBaixa, categoria: categoriaAP }, data.livro_transaction_id ?? null, candidatos, JANELA_BAIXA)
+      const decisao: DecisaoBaixa = jaLancado
+        ? { criar: true } // não usado: com o dinheiro já lançado nada é criado nem ligado
+        : decidirBaixa({ tipo: 'DEBIT', amount: valorBaixa, data: dataBaixa, categoria: categoriaAP }, data.livro_transaction_id ?? null, candidatos, JANELA_BAIXA)
       if ('erro' in decisao) throw new LivroInvalido(decisao.erro)
       // Onda 4 (§6, #14): AP sem categoria ligada a linha já categorizada (ex.: regra ELETROPAULO → Energia) recebe a categoria da linha.
       const linhaUsada = 'usar' in decisao ? candidatos.find((c) => c.id === decisao.usar) : undefined
@@ -146,7 +154,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           status: isPaidInFull ? 'PAGO' : 'PENDENTE',
           payment_method: fresh.payment_method,
           // E5: AP sem conta ganha a da baixa (o estorno compensa pela conta do próprio DEBIT, não por esta).
-          ...(fresh.account_id ? {} : { account_id: data.account_id }),
+          ...(fresh.account_id ? {} : { account_id: jaLancado ? dinheiro.conta ?? data.account_id : data.account_id }),
           ...(categoriaDaLinha ? { category_id: categoriaDaLinha } : {}),
           ...(notaDiferenca ? { notes: fresh.notes ? `${fresh.notes} — ${notaDiferenca}` : notaDiferenca } : {}),
           updated_at: new Date(),
@@ -159,6 +167,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       const updated = await tx.accountPayable.findFirstOrThrow({
         where: { id: params.id, company_id: user.companyId },
       })
+      if (jaLancado) return { updated, previousPaid, newPaidTotal, aviso: AVISO_JA_LANCADO }
 
       // account_id e obrigatorio (schema), entao SEMPRE criamos Transaction
       // e debitamos saldo. C1 fix: bank_ref + reconciled=true marca a Transaction
@@ -220,7 +229,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       throw e
     }
 
-    const { updated: payableData, previousPaid, newPaidTotal } = payable as any
+    const { updated: payableData, previousPaid, newPaidTotal, aviso } = payable as any
 
     logAudit({
       companyId: user.companyId,
@@ -232,7 +241,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       newValue: { paid_amount: newPaidTotal, status: payableData.status, account_id: data.account_id },
     })
 
-    return success({ ...payableData, ligada })
+    return success({ ...payableData, ligada, ...(aviso ? { aviso } : {}) })
   } catch (err) {
     return handleError(err)
   }
