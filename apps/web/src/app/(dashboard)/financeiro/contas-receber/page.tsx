@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/use-auth'
 import { exportToExcel, exportToCSV, exportToPDF, importFromFile } from '@/lib/export-data'
 import { cleanDescription } from '@/lib/payment-display'
-import { resultadoConferencia } from '@/lib/financeiro/conferencia'
+import { resultadoBaixa, resultadoConferencia } from '@/lib/financeiro/conferencia'
 import { DateInputBR } from '@/app/(dashboard)/components/date-input-br'
 import { MultiStatusPicker } from '@/app/(dashboard)/financeiro/_components/multi-status-picker'
 
@@ -615,7 +615,10 @@ export default function ContasReceberPage() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Erro ao registrar recebimento')
-      toast.success('Recebimento registrado com sucesso')
+      // Fix 4 (F4-E, #7): com `aviso` (dinheiro já lançado) mostra atenção, como a tela de detalhe.
+      const r = resultadoBaixa(data.data, 'Recebimento registrado com sucesso')
+      if (r.aviso) toast.warning(r.mensagem)
+      else toast.success(r.mensagem)
       setBaixaId(null)
       loadContas()
     } catch (err) {

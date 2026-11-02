@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Download, Upload, Loader2, CheckCircle, XCircle, FileText, Settings, Save, AlertTriangle, Printer, Mail } from 'lucide-react'
 import { toast } from 'sonner'
+import { resultadoRetornoCnab } from '@/lib/financeiro/conferencia'
 
 interface RetornoResult {
   success: boolean
@@ -14,6 +15,8 @@ interface RetornoResult {
   totalRecebido: number
   contaBancaria: string | null
   detalhes: Array<{ nossoNumero: string; seuNumero: string; status: string; valorPago: number; ocorrencia: string }>
+  // Fix 4 (F4-E, m10): boletos que não entraram por conflito com outra operação (reimportar é idempotente).
+  erros?: Array<{ seuNumero: string; nossoNumero: string; erro: string }>
 }
 
 export default function CNABPage() {
@@ -127,7 +130,9 @@ export default function CNABPage() {
       const data = await res.json()
       if (res.ok) {
         setRetornoResult(data)
-        toast.success(`Retorno processado: ${data.pagos} pagos, ${data.rejeitados} rejeitados`)
+        const r = resultadoRetornoCnab(data)
+        if (r.aviso) toast.warning(r.mensagem)
+        else toast.success(r.mensagem)
       } else {
         toast.error(data.error || 'Erro ao processar retorno')
       }
@@ -272,6 +277,15 @@ export default function CNABPage() {
                       {!retornoResult.contaBancaria && <p className="text-amber-600">Sem conta bancária vinculada — cadastre em Contas</p>}
                     </div>
                   </div>
+                </div>
+              )}
+
+              {resultadoRetornoCnab(retornoResult).naoProcessadas.length > 0 && (
+                <div className="rounded-lg bg-amber-50 border border-amber-200 p-4 mb-4 text-sm text-amber-800">
+                  <p className="font-medium mb-1">Não processadas — reimporte o arquivo:</p>
+                  <ul className="list-disc pl-5">
+                    {resultadoRetornoCnab(retornoResult).naoProcessadas.map((l) => <li key={l}>{l}</li>)}
+                  </ul>
                 </div>
               )}
 

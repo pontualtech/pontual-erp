@@ -23,3 +23,17 @@ export function resultadoConferencia(d: RespostaConferencia | undefined, sucesso
 export function resultadoBaixa(d: { aviso?: string | null } | undefined, sucesso: string): { aviso: boolean; mensagem: string } {
   return d?.aviso ? { aviso: true, mensagem: d.aviso } : { aviso: false, mensagem: sucesso }
 }
+
+// Fix 4 (F4-E, m10): resposta do retorno CNAB — os boletos que não entraram (conflito com outra operação) vão em
+// `erros`; com algum, a tela avisa para reimportar (é idempotente) e lista '<nosso número> — <motivo>'.
+export function resultadoRetornoCnab(d: {
+  pagos: number
+  rejeitados: number
+  erros?: { seuNumero: string; nossoNumero: string; erro: string }[]
+}): { aviso: boolean; mensagem: string; naoProcessadas: string[] } {
+  const base = `Retorno processado: ${d.pagos} pagos, ${d.rejeitados} rejeitados`
+  const naoProcessadas = (d.erros ?? []).map((e) => `${e.nossoNumero || e.seuNumero} — ${e.erro}`)
+  return naoProcessadas.length === 0
+    ? { aviso: false, mensagem: base, naoProcessadas }
+    : { aviso: true, mensagem: `${base} — ${naoProcessadas.length} não processado(s): reimporte o arquivo`, naoProcessadas }
+}

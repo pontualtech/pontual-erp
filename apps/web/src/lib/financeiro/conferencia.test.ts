@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { resultadoBaixa, resultadoConferencia } from './conferencia'
+import { resultadoBaixa, resultadoConferencia, resultadoRetornoCnab } from './conferencia'
 
 describe('resultadoConferencia (F14)', () => {
   it('conferida sem vínculo: sucesso com a mensagem da tela', () => {
@@ -41,5 +41,23 @@ describe('resultadoBaixa (F3-H, m4): Receber/Pagar com aviso não mostram sucess
     expect(resultadoBaixa({ aviso: null }, 'Pagamento registrado!')).toEqual({ aviso: false, mensagem: 'Pagamento registrado!' })
     expect(resultadoBaixa({ aviso: '' }, 'Pagamento registrado!').aviso).toBe(false)
     expect(resultadoBaixa(undefined, 'Pagamento registrado!').aviso).toBe(false)
+  })
+})
+
+describe('resultadoRetornoCnab (F4-E, m10): retorno com linhas não processadas não vira sucesso', () => {
+  it('sem erros: sucesso com pagos/rejeitados e nenhuma linha pendente', () => {
+    expect(resultadoRetornoCnab({ pagos: 3, rejeitados: 1 })).toEqual({ aviso: false, mensagem: 'Retorno processado: 3 pagos, 1 rejeitados', naoProcessadas: [] })
+    expect(resultadoRetornoCnab({ pagos: 2, rejeitados: 0, erros: [] }).aviso).toBe(false)
+  })
+  it('com erros: atenção pedindo para reimportar, e a lista "<nosso número> — <motivo>"', () => {
+    const r = resultadoRetornoCnab({ pagos: 1, rejeitados: 0, erros: [{ seuNumero: 'r1', nossoNumero: '123', erro: 'conflito com outra operação — repita' }] })
+    expect(r).toEqual({
+      aviso: true,
+      mensagem: 'Retorno processado: 1 pagos, 0 rejeitados — 1 não processado(s): reimporte o arquivo',
+      naoProcessadas: ['123 — conflito com outra operação — repita'],
+    })
+  })
+  it('sem nosso número usa o seu número', () => {
+    expect(resultadoRetornoCnab({ pagos: 0, rejeitados: 0, erros: [{ seuNumero: 'r9', nossoNumero: '', erro: 'x' }] }).naoProcessadas).toEqual(['r9 — x'])
   })
 })
