@@ -1,8 +1,13 @@
 import { prisma } from '@pontual/db'
 import { novoEstadoReceivable, planoTaxas } from './match-rules'
 import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
-import { ondeRef } from '@/lib/financeiro/livro'
+import { compensado, ondeRef } from '@/lib/financeiro/livro'
 import { CONFLITO_BANCO, conflitoDeBanco, travarContas } from '@/lib/financeiro/livro-baixa-db'
+import { isReceivableSettled } from '@/lib/finance/receivable-status'
+import { avisarDuplicidade } from '@/lib/financeiro/aviso-duplicidade'
+
+// Fix 6 (F6-E, m2): a AR escolhida foi excluída/cancelada enquanto o vínculo esperava a trava → desfaz tudo.
+class ArMudou extends Error {}
 
 /**
  * Logica compartilhada de criar Payment + AR + 2 APs ao vincular uma
@@ -78,6 +83,8 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
   const billingType = txn.modality === 'debit' ? 'DEBIT_CARD' : 'CREDIT_CARD'
   const osNum = String(os.os_number).padStart(4, '0')
 
+  // Fix 6 (F6-F): o aviso de duplicidade só sai depois do commit (nunca num rollback).
+  let duplicidade: { conta: string; receivable_id: string } | null = null
   try {
     const linked = await prisma.$transaction(async (tx) => {
       // Onda 4 (fix 2, F2-D, #4): ordem única de travas — a conta de liquidação (accounts) antes da AR e da checagem
@@ -118,17 +125,22 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
       let receivable = await tx.accountReceivable.findFirst({
         where: { service_order_id: os.id, company_id: companyId, deleted_at: null, status: { not: 'CANCELADO' } },
       })
+      let quitadaAntes = false
 
       if (receivable) {
         // Fix 4 (F4-D, #6): trava a AR (depois da conta — ordem do §7) e decide pela releitura: um Receber/Conferir/webhook
         // que comitou enquanto esperava conta no received_amount (senão o match grava por cima da foto velha).
         await tx.$queryRaw`SELECT id FROM accounts_receivable WHERE id = ${receivable.id} AND company_id = ${companyId} FOR UPDATE`
-        receivable = (await tx.accountReceivable.findFirst({ where: { id: receivable.id, company_id: companyId } })) ?? receivable
+        const relida = await tx.accountReceivable.findFirst({ where: { id: receivable.id, company_id: companyId } })
+        // Fix 6 (F6-E, m2): excluída/cancelada durante a espera → nada é escrito (nem Payment, nem crédito).
+        if (!relida || relida.deleted_at || relida.status === 'CANCELADO') throw new ArMudou('conta a receber excluída ou cancelada durante o vínculo — repita')
+        receivable = relida
         // Fix 2026-05-27 + auditoria 2026-06-27: guard contra double-credit. Se
         // o AR já está QUITADO (RECEBIDO/LIQUIDADO/PAGO ou reconciled — ver
         // isReceivableSettled), match da maquininha NÃO soma received_amount
         // novamente (caso 27/05: R$ 2.388,11 fantasma). Regras em match-rules.ts;
         // com creditDate (banco confirmou) a AR vira LIQUIDADO.
+        quitadaAntes = isReceivableSettled(receivable)
         await tx.accountReceivable.update({
           where: { id: receivable.id },
           data: novoEstadoReceivable(receivable, txn.gross_amount, billingType, !!creditDate),
@@ -172,14 +184,23 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
 
       // Taxa estimada da entrega × taxa real da adquirente: "não pode ser lançado a taxa em dobro" (Karlão 29/10).
       // Estimada PENDENTE → cancelada; estimada já PAGA → não lança a real.
-      const apsDaOS = await tx.accountPayable.findMany({
+      // Fix 6 (F6-E, m3): trava as APs da OS (FOR UPDATE, por id) e decide pela releitura — a estimada paga enquanto
+      // esperava não é cancelada nem deixa entrar a taxa real (taxa em dobro); só cancela a que ainda está PENDENTE.
+      const candidatasAP = await tx.accountPayable.findMany({
         where: { company_id: companyId, deleted_at: null, status: { not: 'CANCELADO' }, description: { contains: `OS-${osNum}`, mode: 'insensitive' } },
+        select: { id: true },
+      })
+      for (const id of candidatasAP.map((a) => a.id).sort()) {
+        await tx.$queryRaw`SELECT id FROM accounts_payable WHERE id = ${id} AND company_id = ${companyId} FOR UPDATE`
+      }
+      const apsDaOS = candidatasAP.length === 0 ? [] : await tx.accountPayable.findMany({
+        where: { id: { in: candidatasAP.map((a) => a.id) }, company_id: companyId, deleted_at: null, status: { not: 'CANCELADO' } },
         select: { id: true, description: true, status: true },
       })
       const taxas = planoTaxas(apsDaOS, os.os_number)
       if (taxas.cancelar.length) {
         await tx.accountPayable.updateMany({
-          where: { id: { in: taxas.cancelar }, company_id: companyId },
+          where: { id: { in: taxas.cancelar }, company_id: companyId, status: 'PENDENTE' },
           data: { status: 'CANCELADO', notes: `Cancelada: taxa estimada na entrega substituída pela taxa real da ${txn.acquirer} (NSU ${txn.external_id}).`, updated_at: new Date() },
         })
       }
@@ -248,7 +269,37 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
         where: { company_id: companyId, ...ondeRef(refCredito) },
         select: { id: true },
       })
-      if (acquirerAccountId && !creditoJaLancado) {
+      // Fix 6 (F6-E, #6): AR já quitada por um Receber manual antes do match — o dinheiro pode já estar lançado pela ref
+      // própria (como no webhook Asaas, F4-D): linha do banco ligada a AR:<id> na conta da adquirente → não credita;
+      // nocional AR:<id> vivo nessa conta → SWAP (apaga com o saldo; entra o acquirer: líquido); dinheiro AR:<id> noutra
+      // conta → credita e avisa a possível duplicidade (depois do commit).
+      let jaNoBanco = false
+      if (acquirerAccountId && !creditoJaLancado && quitadaAntes && receivable) {
+        const proprio = `AR:${receivable.id}`
+        const linhas = await tx.transaction.findMany({
+          where: { company_id: companyId, origin: 'BANCO', linked_ref: proprio, transaction_type: 'CREDIT' },
+          select: { account_id: true },
+        })
+        jaNoBanco = linhas.some((l) => l.account_id === acquirerAccountId)
+        const creditos = await tx.transaction.findMany({
+          where: { company_id: companyId, bank_ref: proprio, transaction_type: 'CREDIT', origin: null, source_text: null },
+          select: { id: true, amount: true, account_id: true, created_at: true },
+        })
+        const estornos = await tx.transaction.findMany({
+          where: { company_id: companyId, bank_ref: `${proprio}:estorno` },
+          select: { account_id: true, created_at: true },
+        })
+        const vivos = creditos.filter((c) => !compensado(c, estornos))
+        if (!jaNoBanco) {
+          for (const c of vivos.filter((v) => v.account_id === acquirerAccountId)) {
+            await tx.transaction.delete({ where: { id: c.id } })
+            await tx.account.update({ where: { id: acquirerAccountId }, data: { current_balance: { decrement: c.amount }, updated_at: new Date() } })
+          }
+        }
+        const fora = [...vivos, ...linhas].find((t) => t.account_id !== acquirerAccountId)
+        if (fora) duplicidade = { conta: fora.account_id, receivable_id: receivable.id }
+      }
+      if (acquirerAccountId && !creditoJaLancado && !jaNoBanco) {
         const netAmount = txn.net_amount > 0 ? txn.net_amount : (txn.gross_amount - txn.total_fee_amount)
         await tx.transaction.create({
           data: {
@@ -307,6 +358,15 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
       return { payment, receivable }
     }, { maxWait: 10000, timeout: 20000 })
 
+    // (atribuída dentro do callback da tx — o TS não acompanha; a leitura é depois do commit)
+    const d = duplicidade as { conta: string; receivable_id: string } | null
+    if (d) {
+      const conta = await prisma.account.findFirst({ where: { id: d.conta }, select: { name: true } }).catch(() => null)
+      await avisarDuplicidade(companyId, `(NSU ${txn.external_id})`,
+        `possível duplicidade: AR recebida manualmente em ${conta?.name ?? d.conta} e também pela ${txn.acquirer}`,
+        { url: 'perform-match', params: { receivable_id: d.receivable_id, nsu: txn.external_id } })
+    }
+
     return {
       ok: true,
       payment_id: linked.payment.id,
@@ -317,6 +377,7 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
   } catch (e) {
     // Fix 3 (F3-D, #4): trava demorou/deadlock → mensagem de 'repita' em vez do erro cru do Prisma.
     if (conflitoDeBanco(e)) return { ok: false, error: CONFLITO_BANCO }
+    if (e instanceof ArMudou) return { ok: false, error: e.message }
     return { ok: false, error: e instanceof Error ? e.message : 'erro na transacao' }
   }
 }

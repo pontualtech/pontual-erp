@@ -3,6 +3,7 @@ import { prisma } from '@pontual/db'
 import { getPortalUserFromRequest } from '@/lib/portal-auth'
 import { getPaymentProviderForAccount, getPaymentProvider } from '@/lib/payments/factory'
 import { isImprimitechHandoffStatus } from '@/lib/imprimitech-handoff'
+import { isReceivableSettled } from '@/lib/finance/receivable-status'
 
 /**
  * POST /api/portal/payments/[id]/verify
@@ -85,22 +86,34 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     // Se esta como CONFIRMED/RECEIVED, grava e faz baixa
     const isPaid = newStatus === 'CONFIRMED' || newStatus === 'RECEIVED' || remote.status === 'CONFIRMED'
 
+    // Fix 6 (F6-E, #8): o webhook RECEIVED pode comitar entre a leitura de cima e esta gravação. Trava a AR (FOR UPDATE)
+    // e relê Payment e AR: o Payment nunca regride (RECEIVED não volta a CONFIRMED; já no status remoto não regrava) e a
+    // AR só soma o pagamento se o Payment relido ainda não estava pago e a AR relida não está quitada.
     await prisma.$transaction(async (tx) => {
-      await tx.payment.update({
-        where: { id: payment.id },
-        data: {
-          status: isPaid ? 'CONFIRMED' : newStatus,
-          paid_at: isPaid ? (remote.paidAt || new Date()) : null,
-          updated_at: new Date(),
-        },
-      })
+      if (payment.receivable_id) {
+        await tx.$queryRaw`SELECT id FROM accounts_receivable WHERE id = ${payment.receivable_id} AND company_id = ${payment.company_id} FOR UPDATE`
+      }
+      const relido = await tx.payment.findFirst({ where: { id: payment.id, company_id: payment.company_id } })
+      if (!relido) return
+      const statusNovo = isPaid ? 'CONFIRMED' : newStatus
+      const jaPago = relido.status === 'RECEIVED' || relido.status === 'CONFIRMED'
+      if (!jaPago && relido.status !== statusNovo) {
+        await tx.payment.updateMany({
+          where: { id: payment.id, status: relido.status },
+          data: {
+            status: statusNovo,
+            paid_at: isPaid ? (remote.paidAt || new Date()) : null,
+            updated_at: new Date(),
+          },
+        })
+      }
 
       // Baixa no AR se vinculado
-      if (isPaid && payment.receivable_id) {
+      if (isPaid && !jaPago && payment.receivable_id) {
         const ar = await tx.accountReceivable.findFirst({
           where: { id: payment.receivable_id, company_id: payment.company_id },
         })
-        if (ar && ar.status !== 'RECEBIDO') {
+        if (ar && !isReceivableSettled(ar)) {
           const newReceived = (ar.received_amount || 0) + payment.amount
           const fullyPaid = newReceived >= ar.total_amount
           await tx.accountReceivable.update({
@@ -125,7 +138,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
           status: isPaid ? 'PROCESSED' : 'IGNORED',
         },
       }).catch(() => {})
-    })
+    }, { maxWait: 10000, timeout: 20000 })
 
     return NextResponse.json({
       data: {

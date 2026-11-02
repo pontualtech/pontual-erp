@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('@pontual/db', async () => ({ prisma: (await import('@/test-utils/banco-falso')).banco.prisma }))
+vi.mock('@/lib/observability', () => ({ logError: vi.fn(async () => undefined) }))
 
 import { performMatch } from './perform-match'
 import { banco } from '@/test-utils/banco-falso'
+import { logError } from '@/lib/observability'
 
 const REF = 'acquirer:rede:NSU1'
 const vincular = () => performMatch({ transactionId: 't1', serviceOrderId: 'os1', companyId: 'c1', matchMethod: 'MANUAL' })
@@ -81,5 +83,72 @@ describe('F4-D (#6): vínculo da maquininha trava a AR e decide pela releitura',
     expect((await vincular()).ok).toBe(true)
     expect(banco.tabelas.accountReceivable[0]).toEqual(expect.objectContaining({ received_amount: 10000, status: 'RECEBIDO' }))
     expect(banco.travas.map((t) => t.tabela)).toEqual(['accounts', 'accounts_receivable'])
+  })
+})
+
+describe('F6-E (#6, m2, m3): vínculo da maquininha com as guardas do webhook', () => {
+  const CAIXA = 'caixa'
+  beforeEach(() => { vi.mocked(logError).mockClear() })
+
+  it('#6: AR já quitada por Receber manual com nocional AR:a1 na conta da adquirente → SWAP: apaga o AR:a1 (e o saldo) e cria o acquirer: líquido', async () => {
+    banco.ar({ id: 'a1', service_order_id: 'os1', status: 'RECEBIDO', total_amount: 100000, received_amount: 100000, account_id: 'itau' })
+    banco.transacao({ id: 'noc', account_id: 'itau', transaction_type: 'CREDIT', amount: 100000, bank_ref: 'AR:a1' })
+    banco.tabelas.account[0].current_balance = 100000
+    expect((await vincular()).ok).toBe(true)
+    expect(banco.tx_('noc')).toBeUndefined()
+    expect(doNSU()).toEqual([expect.objectContaining({ bank_ref: REF, amount: 97000 })])
+    expect(banco.saldo('itau')).toBe(97000)
+    expect(logError).not.toHaveBeenCalled()
+  })
+
+  it('nocional AR:a1 noutra conta (Caixa) → cria o acquirer: e registra a possível duplicidade (depois do commit)', async () => {
+    banco.conta({ id: CAIXA, name: 'Caixa', current_balance: 100000 })
+    banco.ar({ id: 'a1', service_order_id: 'os1', status: 'RECEBIDO', total_amount: 100000, received_amount: 100000, account_id: CAIXA })
+    banco.transacao({ id: 'noc', account_id: CAIXA, transaction_type: 'CREDIT', amount: 100000, bank_ref: 'AR:a1' })
+    expect((await vincular()).ok).toBe(true)
+    expect(banco.tx_('noc')).toBeDefined()
+    expect(doNSU()).toHaveLength(1)
+    expect(logError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining('possível duplicidade: AR recebida manualmente em Caixa e também pela rede (NSU NSU1)') }),
+      expect.objectContaining({ company_id: 'c1' }),
+      'warning',
+    )
+  })
+
+  it('linha do banco ligada a AR:a1 na conta da adquirente → não cria o acquirer: (o dinheiro já está)', async () => {
+    banco.ar({ id: 'a1', service_order_id: 'os1', status: 'LIQUIDADO', total_amount: 100000, received_amount: 100000, account_id: 'itau' })
+    banco.transacao({ account_id: 'itau', transaction_type: 'CREDIT', amount: 100000, origin: 'BANCO', bank_ref: 'ITAU:k', linked_ref: 'AR:a1' })
+    banco.tabelas.account[0].current_balance = 100000
+    expect((await vincular()).ok).toBe(true)
+    expect(doNSU()).toEqual([])
+    expect(banco.saldo('itau')).toBe(100000)
+  })
+
+  it('m2: AR excluída enquanto esperava a trava → nada escrito (nem Payment, nem crédito), erro', async () => {
+    banco.ar({ id: 'a1', service_order_id: 'os1', status: 'PENDENTE', total_amount: 100000, received_amount: 0, account_id: 'itau' })
+    banco.aoTravar(({ tabela }) => {
+      if (tabela !== 'accounts_receivable') return
+      banco.tabelas.accountReceivable[0].deleted_at = new Date()
+      banco.aoTravar(null)
+    })
+    const r = await vincular()
+    expect(r.ok).toBe(false)
+    expect(banco.tabelas.payment ?? []).toEqual([])
+    expect(doNSU()).toEqual([])
+    expect(banco.tabelas.accountReceivable[0].status).toBe('PENDENTE')
+  })
+
+  it('m3: taxa estimada paga enquanto esperava a trava → não é cancelada e a taxa real não entra', async () => {
+    banco.ar({ id: 'a1', service_order_id: 'os1', status: 'PENDENTE', total_amount: 100000, received_amount: 0, account_id: 'itau' })
+    banco.ap({ id: 'est', description: 'Taxa cartão OS-63001 — estimada', status: 'PENDENTE', total_amount: 3000 })
+    banco.tabelas.acquirerTransaction[0].mdr_fee_amount = 3000
+    banco.aoTravar(({ tabela }) => {
+      if (tabela !== 'accounts_payable') return
+      Object.assign(banco.tabelas.accountPayable.find((a) => a.id === 'est')!, { status: 'PAGO', paid_amount: 3000 })
+      banco.aoTravar(null)
+    })
+    expect((await vincular()).ok).toBe(true)
+    expect(banco.tabelas.accountPayable.find((a) => a.id === 'est')!.status).toBe('PAGO')
+    expect(banco.tabelas.accountPayable.filter((a) => (a.description as string).startsWith('MDR'))).toEqual([])
   })
 })
