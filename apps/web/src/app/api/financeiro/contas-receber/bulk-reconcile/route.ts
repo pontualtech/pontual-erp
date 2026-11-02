@@ -206,7 +206,8 @@ export async function POST(req: NextRequest) {
             }
 
             // (ii) #6: cartão/boleto Asaas confirmado — o crédito (líquido) entra pelo webhook quando o dinheiro cair.
-            if (!pedido && refs.pagamentos.some((p) => p.provider === 'asaas' && (p.status === 'CONFIRMED' || p.status === 'RECEIVED'))) {
+            // Fix 2 (F2-I, m10/m13): RECEIVED sem crédito não espera nada (o webhook já veio) → segue para ligar/criar.
+            if (!pedido && refs.pagamentos.some((p) => p.provider === 'asaas' && p.status === 'CONFIRMED')) {
               return { erro: 'cobrança Asaas: o crédito entra pelo webhook quando o dinheiro cair' }
             }
 

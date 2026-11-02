@@ -479,3 +479,22 @@ describe('§8: erros por AR nunca derrubam o lote (resolve #16, m9)', () => {
   })
 })
 
+describe('F2-I (m10, m13): Asaas RECEIVED sem crédito não é bloqueado', () => {
+  it('Payment RECEIVED sem pay_ lançado e linha do banco livre → liga a linha', async () => {
+    banco.ar(AR)
+    banco.pagamento({ receivable_id: 'a1', provider: 'asaas', external_id: 'pay_x', status: 'RECEIVED' })
+    linhaLivro({ bank_ref: 'ASAAS:PAY:pay_x' })
+    const { j } = await conferir()
+    expect(j.data).toEqual(expect.objectContaining({ updated: 1, ligadas: 1, erros: [] }))
+    expect(banco.tx_('t1')!.linked_ref).toBe('AR:a1')
+  })
+
+  it('Payment RECEIVED sem pay_ e sem linha → cria o crédito como uma AR comum', async () => {
+    banco.ar(AR)
+    banco.pagamento({ receivable_id: 'a1', provider: 'asaas', external_id: 'pay_x', status: 'RECEIVED' })
+    const { j } = await conferir()
+    expect(j.data).toEqual(expect.objectContaining({ updated: 1, erros: [], balance_delta: 15000 }))
+    expect(creditosAR()).toHaveLength(1)
+  })
+})
+
