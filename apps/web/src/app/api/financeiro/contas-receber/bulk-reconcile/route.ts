@@ -341,6 +341,7 @@ export async function POST(req: NextRequest) {
           // LIQUIDADO → RECEBIDO (onda 4 §4), relido com a AR travada: as linhas do banco ligadas à AR são DESLIGADAS
           // (sem apagar nem mexer no saldo) e TODOS os créditos nocionais AR:id ainda vivos são apagados com o saldo;
           // o já compensado por um :estorno fica (o par se anula). Crédito com o marcador antigo LIGADA: é dinheiro do banco.
+          // Fix 8 (F8-B, #3): o nocional anterior ao ajuste de caixa da conta também fica (o ajuste já o absorveu).
           const ligadas = await tx.transaction.findMany({
             where: { company_id: user.companyId, origin: 'BANCO', linked_ref: `AR:${ar.id}` },
             select: SELECT_LINHA_LIGADA,
@@ -353,7 +354,7 @@ export async function POST(req: NextRequest) {
             where: { company_id: user.companyId, bank_ref: `AR:${ar.id}:estorno` },
             select: { account_id: true, created_at: true },
           })
-          const vivos = creditos.filter((c) => !compensado(c, estornos))
+          const vivos = await posAjuste(tx, user.companyId, creditos.filter((c) => !compensado(c, estornos)))
           exigirTravadas(travadas, [...ligadas.map((l) => l.account_id), ...vivos.map((c) => c.account_id)])
           await tx.accountReceivable.update({
             where: { id: ar.id, company_id: user.companyId },

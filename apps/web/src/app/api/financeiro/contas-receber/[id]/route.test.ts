@@ -185,6 +185,42 @@ describe('fix 1.4 (#15): o dinheiro da AR inclui Payments (pay_/acquirer:) e CNA
   })
 })
 
+describe('F8-A/F8-B: o DELETE conta o dinheiro VIVO da conta', () => {
+  const AJUSTE = () => banco.transacao({ account_id: 'acc1', transaction_type: 'CREDIT', amount: 0, origin: 'AJUSTE', bank_ref: 'AJUSTE:acc1:2026-10-29', created_at: new Date('2026-10-30T10:00:00Z') })
+
+  it("estornada com 'permanece' (linha segue ligada, DEBIT :estorno do mesmo valor depois dela): exclui", async () => {
+    banco.ar({ ...AR, received_amount: 0 })
+    banco.transacao({ account_id: 'acc1', origin: 'BANCO', bank_ref: 'K', transaction_type: 'CREDIT', amount: 5000, linked_ref: 'AR:r1' })
+    t('AR:r1:estorno', 'DEBIT', 5000)
+    expect((await excluir()).status).toBe(200)
+  })
+
+  it("baixa mista estornada com 'permanece' (linha 12000 + nocional 3000 − DEBIT 15000): exclui", async () => {
+    banco.ar({ ...AR, received_amount: 0 })
+    banco.transacao({ account_id: 'acc1', origin: 'BANCO', bank_ref: 'K', transaction_type: 'CREDIT', amount: 12000, linked_ref: 'AR:r1' })
+    t('AR:r1', 'CREDIT', 3000)
+    t('AR:r1:estorno', 'DEBIT', 15000)
+    expect((await excluir()).status).toBe(200)
+  })
+
+  it('combinação inesperada que o dinheiro vivo não enxerga (CREDIT AR:id:estorno sozinho) continua bloqueando: 409', async () => {
+    banco.ar({ ...AR, received_amount: 0 })
+    t('AR:r1:estorno', 'CREDIT', 5000)
+    expect((await excluir()).j.error).toBe(PROPRIOS)
+  })
+
+  it('#3 (F8-B): nocional AR:id anterior ao ajuste de caixa (o ajuste já o absorveu) não impede; o posterior impede', async () => {
+    banco.ar({ ...AR, received_amount: 0 })
+    banco.transacao({ account_id: 'acc1', transaction_type: 'CREDIT', amount: 5000, bank_ref: 'AR:r1', created_at: new Date('2026-10-28T15:00:00Z') })
+    AJUSTE()
+    expect((await excluir()).status).toBe(200)
+    banco.reset(); banco.conta({ id: 'acc1' }); banco.ar({ ...AR, received_amount: 0 })
+    AJUSTE()
+    banco.transacao({ account_id: 'acc1', transaction_type: 'CREDIT', amount: 5000, bank_ref: 'AR:r1', created_at: new Date('2026-10-31T15:00:00Z') })
+    expect((await excluir()).j.error).toBe(PROPRIOS)
+  })
+})
+
 describe('F2-G (m21): opções da $transaction', () => {
   it('maxWait 10s e timeout 20s', async () => {
     banco.ar(AR)

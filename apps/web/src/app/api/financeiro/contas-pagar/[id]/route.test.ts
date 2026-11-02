@@ -106,6 +106,34 @@ describe('fix 1.4 (#15, espelho na AP)', () => {
   })
 })
 
+describe('F8-A/F8-B (espelho na AP): o DELETE conta a saída VIVA da conta', () => {
+  const AJUSTE = () => banco.transacao({ account_id: 'acc1', transaction_type: 'CREDIT', amount: 0, origin: 'AJUSTE', bank_ref: 'AJUSTE:acc1:2026-10-29', created_at: new Date('2026-10-30T10:00:00Z') })
+
+  it("estornada com 'permanece' (linha segue ligada, CREDIT :estorno do mesmo valor depois dela): exclui", async () => {
+    banco.ap({ ...AP, paid_amount: 0 })
+    banco.transacao({ account_id: 'acc1', origin: 'BANCO', bank_ref: 'K', transaction_type: 'DEBIT', amount: 2000, linked_ref: 'AP:p1' })
+    t('AP:p1:estorno', 'CREDIT', 2000)
+    expect((await excluir()).status).toBe(200)
+  })
+
+  it('combinação inesperada que a saída viva não enxerga (CREDIT AP:id sozinho) continua bloqueando: 409', async () => {
+    banco.ap({ ...AP, paid_amount: 0 })
+    t('AP:p1', 'CREDIT', 2000)
+    expect((await excluir()).j.error).toBe(PROPRIOS)
+  })
+
+  it('F8-B: DEBIT AP:id anterior ao ajuste de caixa não impede; o posterior impede', async () => {
+    banco.ap({ ...AP, paid_amount: 0 })
+    banco.transacao({ account_id: 'acc1', transaction_type: 'DEBIT', amount: 2000, bank_ref: 'AP:p1', created_at: new Date('2026-10-28T15:00:00Z') })
+    AJUSTE()
+    expect((await excluir()).status).toBe(200)
+    banco.reset(); banco.conta({ id: 'acc1' }); banco.ap({ ...AP, paid_amount: 0 })
+    AJUSTE()
+    banco.transacao({ account_id: 'acc1', transaction_type: 'DEBIT', amount: 2000, bank_ref: 'AP:p1', created_at: new Date('2026-10-31T15:00:00Z') })
+    expect((await excluir()).j.error).toBe(PROPRIOS)
+  })
+})
+
 describe('F2-G (m21): opções da $transaction', () => {
   it('maxWait 10s e timeout 20s', async () => {
     banco.ap(AP)

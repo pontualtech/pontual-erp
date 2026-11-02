@@ -728,6 +728,31 @@ describe('F7-A (#1): Conferir só troca nocional posterior ao ajuste de caixa', 
     expect(banco.saldo(ACC)).toBe(100000)
   })
 
+  it('#3 (F8-B): Receber 28/10, ajuste 30/10, linha 31/10, Conferir livro[a1], Desfazer, Conferir → saldo = banco (o Desfazer não apaga o nocional absorvido)', async () => {
+    banco.ar(AR)
+    banco.transacao({ id: 'noc', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1', created_at: new Date('2026-10-28T15:00:00Z') })
+    ajuste()
+    linhaLivro()
+    const BANCO = 100000 // saldo do ERP = banco depois do ajuste e da linha (o nocional foi absorvido pelo ajuste)
+    expect((await conferir(['a1'], { a1: 't1' })).j.data).toEqual(expect.objectContaining({ ligadas: 1, balance_delta: 0, erros: [] }))
+    expect(banco.saldo(ACC)).toBe(BANCO)
+    expect((await desfazer()).j.data).toEqual(expect.objectContaining({ updated: 1, erros: [] }))
+    expect(banco.tx_('noc')).toBeDefined()
+    expect(banco.saldo(ACC)).toBe(BANCO)
+    expect((await conferir()).j.data.erros).toEqual([])
+    expect(banco.saldo(ACC)).toBe(BANCO)
+  })
+
+  it('Desfazer ainda apaga o nocional posterior ao ajuste (com o saldo)', async () => {
+    banco.ar({ ...AR, status: 'LIQUIDADO', reconciled: true })
+    ajuste()
+    banco.transacao({ id: 'noc', account_id: ACC, transaction_type: 'CREDIT', amount: 15000, bank_ref: 'AR:a1', created_at: new Date() })
+    banco.tabelas.account[0].current_balance = 115000
+    expect((await desfazer()).j.data).toEqual(expect.objectContaining({ updated: 1, balance_delta: -15000 }))
+    expect(banco.tx_('noc')).toBeUndefined()
+    expect(banco.saldo(ACC)).toBe(100000)
+  })
+
   it('(iii) nocional posterior ao ajuste → SWAP como antes', async () => {
     banco.ar(AR)
     ajuste()

@@ -4,7 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { z } from 'zod'
-import { CONFLITO_BANCO, conflitoDeBanco, ContaAlterada, refsDaAR, refsLigadasAR, travarContas } from '@/lib/financeiro/livro-baixa-db'
+import { CONFLITO_BANCO, conflitoDeBanco, ContaAlterada, dinheiroDaAR, posAjuste, travarContas } from '@/lib/financeiro/livro-baixa-db'
 import { isReceivableSettled } from '@/lib/finance/receivable-status'
 
 type Params = { params: { id: string } }
@@ -220,7 +220,8 @@ export async function DELETE(req: NextRequest, { params }: Params) {
 
       // Onda 4 (fix 1.4, #15): o dinheiro desta conta inclui também os créditos dos Payments (pay_…, acquirer:…) e do
       // CNAB (cnab:<nossoNumero>); compensam o :estorno e a devolução do próprio Asaas (<pay>-refund / -chargeback).
-      const refs = await refsDaAR(tx, user.companyId, existing)
+      const dinheiro = await dinheiroDaAR(tx, user.companyId, existing)
+      const refs = dinheiro.refs
       const devolucoesAsaas = refs.pagamentos
         .filter((p) => p.provider === 'asaas' && p.external_id)
         .flatMap((p) => [`${p.external_id}-refund`, `${p.external_id}-chargeback`])
@@ -234,19 +235,14 @@ export async function DELETE(req: NextRequest, { params }: Params) {
       const sinal = (t: { transaction_type: string; bank_ref: string | null }) =>
         t.transaction_type === 'CREDIT' && creditos.has(t.bank_ref ?? '') ? 1
           : t.transaction_type === 'DEBIT' && compensacoes.has(t.bank_ref ?? '') ? -1 : 0
-      let liquido = proprias.reduce((soma, t) => soma + sinal(t) * t.amount, 0)
-      // #15: a compensação existe e não há CREDIT AR:<id> — o estorno (antigo) compensou um crédito real de outra origem
-      // (adquirente, Asaas, CNAB, baixa sem bank_ref): a conta está estornada.
-      const temCreditoProprio = proprias.some((t) => t.transaction_type === 'CREDIT' && t.bank_ref === refs.proprio)
-      if (liquido !== 0 && proprias.some((t) => sinal(t) === -1) && !temCreditoProprio) liquido = 0
-      if (proprias.some((t) => sinal(t) === 0) || liquido !== 0) return { status: 409, erro: 'há lançamentos financeiros desta conta; estorne antes de excluir' }
-      // Linha do banco que representa o dinheiro desta conta (baixa ou nocional convertido pelo livro, inclusive
-      // antecipação, adquirente, Asaas e CNAB): o estorno a desliga antes.
-      const ligada = await tx.transaction.findFirst({
-        where: { company_id: user.companyId, linked_ref: { in: refsLigadasAR(refs) } },
-        select: { id: true },
-      })
-      if (ligada) return { status: 409, erro: 'Há lançamento do banco ligado; estorne antes de excluir.' }
+      const PROPRIOS = { status: 409 as const, erro: 'há lançamentos financeiros desta conta; estorne antes de excluir' }
+      if (proprias.some((t) => sinal(t) === 0)) return PROPRIOS
+      // Fix 8 (F8-A/F8-B): o dinheiro VIVO da conta (dinheiroDaAR: cada :estorno anula, na sua conta, o dinheiro criado até
+      // ele — linhas ligadas, nocionais próprios e créditos externos; a devolução do Asaas anula o pagamento). Nocional
+      // anterior ao ajuste de caixa não conta (o ajuste já o absorveu). Linha do banco ligada e não compensada (baixa ou
+      // nocional convertido pelo livro, inclusive antecipação, adquirente, Asaas e CNAB) também impede.
+      if ((await posAjuste(tx, user.companyId, dinheiro.nocionais)).some((t) => (t.vivo ?? t.amount) > 0)) return PROPRIOS
+      if (dinheiro.linhas.length > 0) return { status: 409, erro: 'Há lançamento do banco ligado; estorne antes de excluir.' }
       await tx.accountReceivable.updateMany({
         where: { id: params.id, company_id: user.companyId },
         data: { deleted_at: new Date() },

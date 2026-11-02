@@ -4,7 +4,7 @@ import { requirePermission } from '@/lib/auth'
 import { success, error, handleError } from '@/lib/api-response'
 import { logAudit } from '@/lib/audit'
 import { z } from 'zod'
-import { CONFLITO_BANCO, conflitoDeBanco, ContaAlterada, travarContas } from '@/lib/financeiro/livro-baixa-db'
+import { CONFLITO_BANCO, conflitoDeBanco, ContaAlterada, dinheiroDaAP, posAjuste, travarContas } from '@/lib/financeiro/livro-baixa-db'
 
 type Params = { params: { id: string } }
 
@@ -187,17 +187,14 @@ export async function DELETE(req: NextRequest, { params }: Params) {
       const sinal = (t: { transaction_type: string; bank_ref: string | null }) =>
         t.transaction_type === 'DEBIT' && t.bank_ref === `AP:${params.id}` ? 1
           : t.transaction_type === 'CREDIT' && t.bank_ref === `AP:${params.id}:estorno` ? -1 : 0
-      let liquido = proprias.reduce((soma, t) => soma + sinal(t) * t.amount, 0)
-      // Onda 4 (fix 1.4, #15): há CREDIT AP:<id>:estorno e nenhum DEBIT AP:<id> — o estorno (antigo) compensou uma saída
-      // de outra origem (baixa sem bank_ref): a conta está estornada.
-      const temDebitoProprio = proprias.some((t) => t.transaction_type === 'DEBIT' && t.bank_ref === `AP:${params.id}`)
-      if (liquido !== 0 && proprias.some((t) => sinal(t) === -1) && !temDebitoProprio) liquido = 0
-      if (proprias.some((t) => sinal(t) === 0) || liquido !== 0) return { status: 409, erro: 'há lançamentos financeiros desta conta; estorne antes de excluir' }
-      const ligada = await tx.transaction.findFirst({
-        where: { company_id: user.companyId, linked_ref: `AP:${params.id}` },
-        select: { id: true },
-      })
-      if (ligada) return { status: 409, erro: 'Há lançamento do banco ligado; estorne antes de excluir.' }
+      const PROPRIOS = { status: 409 as const, erro: 'há lançamentos financeiros desta conta; estorne antes de excluir' }
+      if (proprias.some((t) => sinal(t) === 0)) return PROPRIOS
+      // Fix 8 (F8-A/F8-B): a saída VIVA da AP (dinheiroDaAP: cada CREDIT :estorno anula, na sua conta, a saída criada até
+      // ele — linha ligada ou DEBIT AP:<id>). DEBIT anterior ao ajuste de caixa não conta (o ajuste já o absorveu); CREDIT
+      // :estorno sem DEBIT (estorno antigo de saída de outra origem, #15) não deixa nada vivo.
+      const dinheiro = await dinheiroDaAP(tx, user.companyId, params.id)
+      if ((await posAjuste(tx, user.companyId, dinheiro.nocionais)).some((t) => (t.vivo ?? t.amount) > 0)) return PROPRIOS
+      if (dinheiro.linhas.length > 0) return { status: 409, erro: 'Há lançamento do banco ligado; estorne antes de excluir.' }
       await tx.accountPayable.updateMany({
         where: { id: params.id, company_id: user.companyId },
         data: { deleted_at: new Date() },
