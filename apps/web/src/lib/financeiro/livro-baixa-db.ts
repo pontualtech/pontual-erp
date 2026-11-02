@@ -239,6 +239,34 @@ export async function contasDaAR(db: any, companyId: string, ar: { id: string; a
   return [ar.account_id, ...ts.map((t) => t.account_id)]
 }
 
+// Conta Asaas da empresa: a 1ª conta ativa com 'asaas' no nome ou no banco — a que o webhook Asaas usa sem conta na AR.
+export async function contaAsaasDaEmpresa(db: any, companyId: string): Promise<string | null> {
+  const conta = await db.account.findFirst({
+    where: {
+      company_id: companyId,
+      is_active: true,
+      OR: [
+        { name: { contains: 'asaas', mode: 'insensitive' } },
+        { bank_name: { contains: 'asaas', mode: 'insensitive' } },
+      ],
+    },
+    select: { id: true },
+  })
+  return conta?.id ?? null
+}
+
+// Fix 4 (F4-B, #3/#10): conta em que entra o crédito de um pagamento Asaas — a do Payment (metadata.account_id, se for
+// da empresa); senão a conta Asaas da empresa; só sem nenhuma, a da AR. É a conta onde o livro posta a linha
+// ASAAS:PAY:<pay> com links [pay]: o nocional fora dela nunca seria convertido (contaria 2x).
+export async function contaDoCreditoAsaas(db: any, companyId: string, metadata: unknown, contaDaAR: string | null): Promise<string | null> {
+  const id = (metadata as { account_id?: unknown } | null)?.account_id
+  if (typeof id === 'string' && id) {
+    const conta = await db.account.findFirst({ where: { id, company_id: companyId }, select: { id: true } })
+    if (conta) return conta.id
+  }
+  return (await contaAsaasDaEmpresa(db, companyId)) ?? contaDaAR
+}
+
 // Idem para a conta a pagar (AP:<id>, AP:<id>:estorno e linhas ligadas a AP:<id>).
 export async function contasDaAP(db: any, companyId: string, ap: { id: string; account_id: string | null }): Promise<(string | null)[]> {
   const ts: { account_id: string }[] = await db.transaction.findMany({

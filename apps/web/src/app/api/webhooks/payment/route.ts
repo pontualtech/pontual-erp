@@ -5,7 +5,7 @@ import { captureFeesForPayment } from '@/lib/payments/capture-fees'
 import { estadoArConfirmado, estadoArRecebido, valorCreditoAsaas, dataCreditoAsaas } from '@/lib/payments/asaas-rules'
 import { isImprimitechHandoffStatus } from '@/lib/imprimitech-handoff'
 import { ondeRef } from '@/lib/financeiro/livro'
-import { conflitoDeBanco, travarContas } from '@/lib/financeiro/livro-baixa-db'
+import { conflitoDeBanco, contaAsaasDaEmpresa, travarContas } from '@/lib/financeiro/livro-baixa-db'
 
 // Valid status transitions — reject anything not in this map
 const VALID_TRANSITIONS: Record<string, string[]> = {
@@ -106,18 +106,7 @@ async function relerAR<T extends { id: string; company_id: string }>(tx: any, li
 // Conta em que o dinheiro da cobrança Asaas entra/sai: a da AR; sem ela, a 1ª conta ativa 'Asaas' da empresa.
 async function contaDaCobranca(tx: any, companyId: string, contaDaAR: string | null): Promise<string | null> {
   if (contaDaAR) return contaDaAR
-  const inferred = await tx.account.findFirst({
-    where: {
-      company_id: companyId,
-      is_active: true,
-      OR: [
-        { name: { contains: 'asaas', mode: 'insensitive' } },
-        { bank_name: { contains: 'asaas', mode: 'insensitive' } },
-      ],
-    },
-    select: { id: true },
-  })
-  return inferred?.id ?? null
+  return contaAsaasDaEmpresa(tx, companyId)
 }
 
 async function resolveRevenueChart(
