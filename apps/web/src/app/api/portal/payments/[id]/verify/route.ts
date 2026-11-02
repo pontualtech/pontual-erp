@@ -4,6 +4,8 @@ import { getPortalUserFromRequest } from '@/lib/portal-auth'
 import { getPaymentProviderForAccount, getPaymentProvider } from '@/lib/payments/factory'
 import { isImprimitechHandoffStatus } from '@/lib/imprimitech-handoff'
 import { isReceivableSettled } from '@/lib/finance/receivable-status'
+import { conflitoDeBanco } from '@/lib/financeiro/livro-baixa-db'
+import { logError } from '@/lib/observability'
 
 /**
  * POST /api/portal/payments/[id]/verify
@@ -89,11 +91,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     // Fix 6 (F6-E, #8): o webhook RECEIVED pode comitar entre a leitura de cima e esta gravação. Trava a AR (FOR UPDATE)
     // e relê Payment e AR: o Payment nunca regride (RECEIVED não volta a CONFIRMED; já no status remoto não regrava) e a
     // AR só soma o pagamento se o Payment relido ainda não estava pago e a AR relida não está quitada.
+    // Fix 7 (F7-F, #9/#17/m9): a ordem das travas é a do webhook — Payment (FOR UPDATE) e depois a AR; na ordem inversa
+    // as duas tx se esperavam (deadlock). O verify não cria crédito, então não trava conta.
     await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM payments WHERE id = ${payment.id} AND company_id = ${payment.company_id} FOR UPDATE`
+      const relido = await tx.payment.findFirst({ where: { id: payment.id, company_id: payment.company_id } })
       if (payment.receivable_id) {
         await tx.$queryRaw`SELECT id FROM accounts_receivable WHERE id = ${payment.receivable_id} AND company_id = ${payment.company_id} FOR UPDATE`
       }
-      const relido = await tx.payment.findFirst({ where: { id: payment.id, company_id: payment.company_id } })
       if (!relido) return
       const statusNovo = isPaid ? 'CONFIRMED' : newStatus
       const jaPago = relido.status === 'RECEIVED' || relido.status === 'CONFIRMED'
@@ -149,8 +154,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       },
     })
   } catch (err) {
+    // Fix 7 (F7-F): conflito com o webhook (deadlock/espera de trava) → 409 amigável; qualquer outro erro → mensagem
+    // genérica + log — nunca o texto do banco/Prisma para o cliente.
+    if (conflitoDeBanco(err)) {
+      return NextResponse.json({ error: 'Estamos confirmando seu pagamento; tente de novo em instantes.' }, { status: 409 })
+    }
     console.error('[Portal Payment Verify]', err)
-    const msg = err instanceof Error ? err.message : 'Erro ao verificar'
-    return NextResponse.json({ error: msg }, { status: 500 })
+    void logError(err, { url: '/api/portal/payments/[id]/verify', method: 'POST', params: { payment: params.id } })
+    return NextResponse.json({ error: 'Não foi possível verificar o pagamento agora; tente de novo em instantes.' }, { status: 500 })
   }
 }
