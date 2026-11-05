@@ -274,14 +274,17 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
       // própria (como no webhook Asaas, F4-D): linha do banco ligada a AR:<id> na conta da adquirente → não credita;
       // nocional AR:<id> vivo nessa conta → SWAP (apaga com o saldo; entra o acquirer: líquido); dinheiro AR:<id> noutra
       // conta → credita e avisa a possível duplicidade (depois do commit).
+      const netAmount = txn.net_amount > 0 ? txn.net_amount : (txn.gross_amount - txn.total_fee_amount)
       let jaNoBanco = false
       if (acquirerAccountId && !creditoJaLancado && quitadaAntes && receivable) {
         const proprio = `AR:${receivable.id}`
         const linhas = await tx.transaction.findMany({
           where: { company_id: companyId, origin: 'BANCO', linked_ref: proprio, transaction_type: 'CREDIT' },
-          select: { account_id: true },
+          select: { account_id: true, amount: true },
         })
-        jaNoBanco = linhas.some((l) => l.account_id === acquirerAccountId)
+        // 05/11 (OS 62473, paga em 2 formas): só é esta venda a linha que cobre o líquido dela. O Pix ligado à mesma AR não é o
+        // repasse do cartão: contá-lo como "já no banco" deixava o nocional do cartão vivo ao lado do repasse (dinheiro 2x).
+        jaNoBanco = linhas.some((l) => l.account_id === acquirerAccountId && l.amount >= netAmount)
         const creditos = await tx.transaction.findMany({
           where: { company_id: companyId, bank_ref: proprio, transaction_type: 'CREDIT', origin: null, source_text: null },
           select: { id: true, amount: true, account_id: true, created_at: true },
@@ -302,7 +305,6 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
         if (fora) duplicidade = { conta: fora.account_id, receivable_id: receivable.id }
       }
       if (acquirerAccountId && !creditoJaLancado && !jaNoBanco) {
-        const netAmount = txn.net_amount > 0 ? txn.net_amount : (txn.gross_amount - txn.total_fee_amount)
         const dataCredito = creditDate || txn.expected_credit_date || txn.transaction_date
         const descricao = `Maquininha ${txn.acquirer} — OS-${osNum} — ${billingType === 'DEBIT_CARD' ? 'debito' : `credito ${txn.installments}x`}`
         // 05/11 (OS 63022): o repasse já entrou no livro como linha do banco livre (o extrato chegou antes do vínculo) →

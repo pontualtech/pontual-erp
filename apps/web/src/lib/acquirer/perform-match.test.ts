@@ -154,6 +154,20 @@ describe('F6-E (#6, m2, m3): vínculo da maquininha com as guardas do webhook', 
     expect(banco.saldo('itau')).toBe(100000)
   })
 
+  it('OS paga em 2 formas (62473): a linha do Pix ligada à AR não cobre a venda → troca o nocional do cartão e liga ao repasse', async () => {
+    banco.ar({ id: 'a1', service_order_id: 'os1', status: 'RECEBIDO', total_amount: 130000, received_amount: 130000, account_id: 'itau' })
+    banco.transacao({ id: 'pix', account_id: 'itau', transaction_type: 'CREDIT', amount: 30000, origin: 'BANCO', bank_ref: 'ITAU:pix', linked_ref: 'AR:a1', transaction_date: new Date('2026-11-01T00:00:00Z') })
+    banco.transacao({ id: 'noc', account_id: 'itau', transaction_type: 'CREDIT', amount: 100000, bank_ref: 'AR:a1' })
+    banco.transacao({ id: 'repasse', account_id: 'itau', transaction_type: 'CREDIT', amount: 97000, origin: 'BANCO', bank_ref: 'ITAU:rep', linked_ref: null, source_text: 'RECEBIMENTO REDE MAST', transaction_date: new Date('2026-11-02T00:00:00Z') })
+    banco.tabelas.account[0].current_balance = 227000
+    expect((await performMatch({ transactionId: 't1', serviceOrderId: 'os1', companyId: 'c1', matchMethod: 'MANUAL', creditDate: new Date('2026-11-02T12:00:00-03:00') })).ok).toBe(true)
+    expect(banco.tx_('noc')).toBeUndefined()
+    expect(banco.tx_('pix')).toEqual(expect.objectContaining({ linked_ref: 'AR:a1', amount: 30000 }))
+    expect(doNSU()).toEqual([expect.objectContaining({ id: 'repasse', origin: 'BANCO', linked_ref: REF })])
+    expect(banco.saldo('itau')).toBe(127000)
+    expect(logError).not.toHaveBeenCalled()
+  })
+
   it('m2: AR excluída enquanto esperava a trava → nada escrito (nem Payment, nem crédito), erro', async () => {
     banco.ar({ id: 'a1', service_order_id: 'os1', status: 'PENDENTE', total_amount: 100000, received_amount: 0, account_id: 'itau' })
     banco.aoTravar(({ tabela }) => {
