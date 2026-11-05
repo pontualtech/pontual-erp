@@ -123,9 +123,11 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
         },
       })
 
-      let receivable = await tx.accountReceivable.findFirst({
+      // 05/11 (OS 62959, cartão + Pix): com mais de uma conta na OS, a venda vai para a do valor dela, não para a primeira.
+      const contasDaOS = await tx.accountReceivable.findMany({
         where: { service_order_id: os.id, company_id: companyId, deleted_at: null, status: { not: 'CANCELADO' } },
       })
+      let receivable = contasDaOS.find((a) => a.total_amount === txn.gross_amount) ?? contasDaOS[0] ?? null
       let quitadaAntes = false
 
       if (receivable) {

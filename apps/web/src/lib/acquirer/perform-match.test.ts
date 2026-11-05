@@ -168,6 +168,13 @@ describe('F6-E (#6, m2, m3): vínculo da maquininha com as guardas do webhook', 
     expect(logError).not.toHaveBeenCalled()
   })
 
+  it('OS com 2 contas (62959, cartão + Pix): a venda vai para a conta do valor dela, não para a primeira', async () => {
+    banco.ar({ id: 'pix', service_order_id: 'os1', status: 'RECEBIDO', total_amount: 20000, received_amount: 20000, account_id: 'itau' })
+    banco.ar({ id: 'cartao', service_order_id: 'os1', status: 'RECEBIDO', total_amount: 100000, received_amount: 100000, account_id: 'itau' })
+    const r = await performMatch({ transactionId: 't1', serviceOrderId: 'os1', companyId: 'c1', matchMethod: 'MANUAL', creditDate: new Date('2026-11-02T12:00:00-03:00') })
+    expect(r.receivable_id).toBe('cartao')
+  })
+
   it('m2: AR excluída enquanto esperava a trava → nada escrito (nem Payment, nem crédito), erro', async () => {
     banco.ar({ id: 'a1', service_order_id: 'os1', status: 'PENDENTE', total_amount: 100000, received_amount: 0, account_id: 'itau' })
     banco.aoTravar(({ tabela }) => {
