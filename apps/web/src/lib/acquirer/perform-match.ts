@@ -2,7 +2,8 @@ import { prisma } from '@pontual/db'
 import { novoEstadoReceivable, planoTaxas } from './match-rules'
 import { categoriaReceitaPadraoId } from '@/lib/financeiro/categoria-receita-padrao'
 import { compensado, ondeRef } from '@/lib/financeiro/livro'
-import { CONFLITO_BANCO, conflitoDeBanco, posAjuste, travarContas } from '@/lib/financeiro/livro-baixa-db'
+import { candidatosLivro, CONFLITO_BANCO, conflitoDeBanco, posAjuste, travarContas } from '@/lib/financeiro/livro-baixa-db'
+import { decidirBaixa, JANELA_BAIXA } from '@/lib/financeiro/livro-baixa'
 import { isReceivableSettled } from '@/lib/finance/receivable-status'
 import { avisarDuplicidade } from '@/lib/financeiro/aviso-duplicidade'
 
@@ -302,22 +303,39 @@ export async function performMatch(input: PerformMatchInput): Promise<PerformMat
       }
       if (acquirerAccountId && !creditoJaLancado && !jaNoBanco) {
         const netAmount = txn.net_amount > 0 ? txn.net_amount : (txn.gross_amount - txn.total_fee_amount)
-        await tx.transaction.create({
-          data: {
-            company_id: companyId,
-            account_id: acquirerAccountId,
-            transaction_type: 'CREDIT',
-            amount: netAmount,
-            description: `Maquininha ${txn.acquirer} — OS-${osNum} — ${billingType === 'DEBIT_CARD' ? 'debito' : `credito ${txn.installments}x`}`,
-            transaction_date: creditDate || txn.expected_credit_date || txn.transaction_date,
-            bank_ref: refCredito,
-            reconciled: true,
-          },
-        })
-        await tx.account.update({
-          where: { id: acquirerAccountId },
-          data: { current_balance: { increment: netAmount }, updated_at: new Date() },
-        })
+        const dataCredito = creditDate || txn.expected_credit_date || txn.transaction_date
+        const descricao = `Maquininha ${txn.acquirer} — OS-${osNum} — ${billingType === 'DEBIT_CARD' ? 'debito' : `credito ${txn.installments}x`}`
+        // 05/11 (OS 63022): o repasse já entrou no livro como linha do banco livre (o extrato chegou antes do vínculo) →
+        // liga a ela, como o Receber faz; criar o acquirer: por cima contava o mesmo dinheiro 2x. Mesmo valor líquido, na
+        // conta da adquirente, na janela da baixa; a linha mantém a categoria (receita) e o saldo não muda.
+        const dia = new Date(dataCredito).toISOString().slice(0, 10)
+        const candidatos = await candidatosLivro(tx, companyId, acquirerAccountId, 'CREDIT', dia, null, JANELA_BAIXA)
+        const decisao = decidirBaixa({ tipo: 'CREDIT', amount: netAmount, data: dia, categoria: null }, null, candidatos, JANELA_BAIXA)
+        if ('usar' in decisao) {
+          const alvo = await tx.transaction.findFirst({ where: { id: decisao.usar, company_id: companyId }, select: { source_text: true } })
+          const ligou = await tx.transaction.updateMany({
+            where: { id: decisao.usar, company_id: companyId, linked_ref: null },
+            data: { linked_ref: refCredito, description: `${descricao} · banco: ${alvo?.source_text ?? ''}`, reconciled: true },
+          })
+          if (ligou.count === 0) throw new ArMudou('a linha do banco do repasse foi ligada por outra operação — repita')
+        } else {
+          await tx.transaction.create({
+            data: {
+              company_id: companyId,
+              account_id: acquirerAccountId,
+              transaction_type: 'CREDIT',
+              amount: netAmount,
+              description: descricao,
+              transaction_date: dataCredito,
+              bank_ref: refCredito,
+              reconciled: true,
+            },
+          })
+          await tx.account.update({
+            where: { id: acquirerAccountId },
+            data: { current_balance: { increment: netAmount }, updated_at: new Date() },
+          })
+        }
       }
 
       // Bug 3 fix 22/05: marca TODAS as Installments do AR como RECEBIDO

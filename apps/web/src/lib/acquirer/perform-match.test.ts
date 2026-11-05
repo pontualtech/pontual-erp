@@ -41,6 +41,36 @@ describe('vínculo da maquininha — "já lançado" vale também para o crédito
   })
 })
 
+// 05/11 (OS 63022): o repasse da Rede entrou no livro ANTES do vínculo (linha do banco livre, líquido da venda) — o
+// vínculo tem de ligar a essa linha; criar o acquirer: por cima contava o mesmo dinheiro 2x no Itaú.
+describe('repasse já no livro como linha do banco livre (entrou antes do vínculo)', () => {
+  const vincularEm = (dia: string) => performMatch({ transactionId: 't1', serviceOrderId: 'os1', companyId: 'c1', matchMethod: 'MANUAL', creditDate: new Date(`${dia}T12:00:00-03:00`) })
+
+  it('linha BANCO livre do líquido na conta da adquirente, perto da data do crédito → liga a ela, sem 2º crédito nem saldo', async () => {
+    banco.transacao({ id: 'linha', account_id: 'itau', transaction_type: 'CREDIT', amount: 97000, origin: 'BANCO', bank_ref: 'ITAU:k2', linked_ref: null, source_text: 'RECEBIMENTO REDE VISA', transaction_date: new Date('2026-11-02T00:00:00Z') })
+    banco.tabelas.account[0].current_balance = 97000
+    expect((await vincularEm('2026-11-02')).ok).toBe(true)
+    expect(doNSU()).toEqual([expect.objectContaining({ id: 'linha', origin: 'BANCO', linked_ref: REF })])
+    expect(doNSU()[0].description).toMatch(/Maquininha rede — OS-63001 — credito 1x · banco: RECEBIMENTO REDE VISA/)
+    expect(banco.tabelas.transaction.filter((t) => t.bank_ref === REF)).toHaveLength(0)
+    expect(banco.saldo('itau')).toBe(97000)
+  })
+
+  it('linha do banco de outro valor ou já ligada a outra coisa não é tomada → cria o acquirer: como antes', async () => {
+    banco.transacao({ account_id: 'itau', transaction_type: 'CREDIT', amount: 96999, origin: 'BANCO', bank_ref: 'ITAU:k3', linked_ref: null, transaction_date: new Date('2026-11-02T00:00:00Z') })
+    banco.transacao({ account_id: 'itau', transaction_type: 'CREDIT', amount: 97000, origin: 'BANCO', bank_ref: 'ITAU:k4', linked_ref: 'AR:outra', transaction_date: new Date('2026-11-02T00:00:00Z') })
+    expect((await vincularEm('2026-11-02')).ok).toBe(true)
+    expect(banco.tabelas.transaction.filter((t) => t.bank_ref === REF)).toEqual([expect.objectContaining({ amount: 97000, origin: null })])
+    expect(banco.saldo('itau')).toBe(97000)
+  })
+
+  it('linha BANCO livre do mesmo valor mas fora da janela (20 dias antes) → não liga; cria o acquirer:', async () => {
+    banco.transacao({ account_id: 'itau', transaction_type: 'CREDIT', amount: 97000, origin: 'BANCO', bank_ref: 'ITAU:k5', linked_ref: null, transaction_date: new Date('2026-10-13T00:00:00Z') })
+    expect((await vincularEm('2026-11-02')).ok).toBe(true)
+    expect(banco.tabelas.transaction.filter((t) => t.bank_ref === REF)).toHaveLength(1)
+  })
+})
+
 // F2-D (#4): a conta (accounts) é travada antes de a AR ser atualizada e antes da checagem "já lançado".
 const ordemTravas = (modeloAR: string) => {
   const trava = banco.travas.find((t) => t.tabela === 'accounts')!
