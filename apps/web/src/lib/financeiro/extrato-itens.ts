@@ -38,3 +38,18 @@ export function itemDeTransacao(t: TransacaoExtratoRow, contaNome: string) {
     criado_em: t.created_at ? new Date(t.created_at).toISOString() : null,
   }
 }
+
+/**
+ * Contas (AR/AP) cujo dinheiro já está nas transações listadas: o extrato da conta mostra só a transação.
+ * AR/AP sem transação continua aparecendo (C9, 22/05). Estorno e antecipação têm sufixo e não contam.
+ */
+export function idsJaNoBanco(transacoes: { bank_ref?: string | null; linked_ref?: string | null }[]): Set<string> {
+  const ids = new Set<string>()
+  for (const t of transacoes) {
+    for (const ref of [t.bank_ref, t.linked_ref]) {
+      const m = /^A[RP]:([^:]+)$/.exec(ref ?? '')
+      if (m) ids.add(m[1])
+    }
+  }
+  return ids
+}

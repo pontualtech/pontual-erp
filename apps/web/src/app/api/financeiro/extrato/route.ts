@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@pontual/db'
 import { requirePermission } from '@/lib/auth'
 import { success, handleError } from '@/lib/api-response'
-import { itemDeTransacao } from '@/lib/financeiro/extrato-itens'
+import { idsJaNoBanco, itemDeTransacao } from '@/lib/financeiro/extrato-itens'
 
 /**
  * GET /api/financeiro/extrato — Extrato financeiro completo
@@ -174,9 +174,12 @@ export async function GET(request: NextRequest) {
     }
 
     const items: ExtratoItem[] = []
+    // 06/11: com a conta filtrada, a conta paga/recebida e a transação ligada a ela são o mesmo dinheiro (dobrava as saídas).
+    const jaNoBanco = idsJaNoBanco(bankTransactions)
 
     // Entradas (recebimentos)
     for (const r of receivables) {
+      if (jaNoBanco.has(r.id)) continue
       items.push({
         id: r.id,
         data: r.due_date ? new Date(r.due_date).toISOString() : '',
@@ -195,6 +198,7 @@ export async function GET(request: NextRequest) {
 
     // Saídas (pagamentos)
     for (const p of payables) {
+      if (jaNoBanco.has(p.id)) continue
       items.push({
         id: p.id,
         data: p.due_date ? new Date(p.due_date).toISOString() : '',

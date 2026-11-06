@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { itemDeTransacao } from './extrato-itens'
+import { idsJaNoBanco, itemDeTransacao } from './extrato-itens'
 
 const base = {
   id: 't1',
@@ -53,5 +53,22 @@ describe('itemDeTransacao', () => {
     expect(i.tipo).toBe('SAIDA')
     expect(i.texto_banco).toBeNull()
     expect(i.criado_em).toBeNull()
+  })
+})
+
+// 06/11 (folha): com a conta filtrada o salário aparecia 2x, como conta paga e como saída do banco
+describe('idsJaNoBanco', () => {
+  it('pega a conta ligada à linha do banco e a do lançamento da baixa', () => {
+    const ids = idsJaNoBanco([{ bank_ref: 'ASAAS:x', linked_ref: 'AP:ap1' }, { bank_ref: 'AR:ar1', linked_ref: null }])
+    expect([...ids].sort()).toEqual(['ap1', 'ar1'])
+  })
+  it('ignora estorno, antecipação e referência de outra origem', () => {
+    const ids = idsJaNoBanco([
+      { bank_ref: 'AR:ar2:estorno', linked_ref: null },
+      { bank_ref: 'AR:ar3:anticipation', linked_ref: null },
+      { bank_ref: 'ITAU:2026-11-05|X|100|1', linked_ref: 'acquirer:abc' },
+      { bank_ref: null, linked_ref: null },
+    ])
+    expect(ids.size).toBe(0)
   })
 })
